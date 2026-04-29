@@ -1,18 +1,18 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
     "outDir": "dist",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "noEmit": true,
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@innovic/shared": ["../../packages/shared/src"],
+      "@innovic/shared": ["../../packages/shared/src/index.ts"],
       "@innovic/shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "drizzle.config.ts"],
   "exclude": ["dist", "node_modules"]
 }

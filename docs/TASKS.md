@@ -11,15 +11,16 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-004
-**Title:** Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror docs/SCHEMA.md)
+**ID:** T-005
+**Title:** Configure Drizzle migrations + seed admin; apply Phase 1 schema to dev Supabase
 **Status:** [ ] Not started
 **Acceptance:**
-- [ ] Drizzle TS schema covers all Phase 1 tables, columns, types, FKs, defaults, partial unique indexes
-- [ ] Enums (`user_role`, `uom`, `item_type`) declared via `pgEnum`
-- [ ] RLS policies declared via `pgPolicy` and `.enableRLS()` (Drizzle 0.36+)
-- [ ] `pnpm --filter api typecheck` passes
-- [ ] No SQL applied yet — that is T-005
+- [ ] `apps/api/src/db/migrations/0000_helpers.sql` (handwritten): SQL helper functions + `auth.users` triggers
+- [ ] `pnpm --filter api db:generate` produces `0001_initial_schema.sql` from `schema.ts`
+- [ ] Generated SQL reviewed and patched: deferrable FKs on `companies.created_by/updated_by`
+- [ ] `pnpm --filter api db:migrate` applies cleanly to dev (Supabase pg 17.6 via pooler)
+- [ ] `migration/seed-admin.ts` (idempotent): creates first auth user, first company, links them
+- [ ] Manual sanity: `select 1` from `authenticated` role respects RLS on items
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -31,7 +32,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 |---|---|---|
 | T-002 | Provision Supabase project (dev only — Mumbai `ap-south-1`, Pro tier, pooler `aws-1-ap-south-1`, pg 17.6, connection verified) | [x] Done (2026-04-29) |
 | T-003 | Design Phase 1 schema in `docs/SCHEMA.md` (companies, users, items + RLS helpers) | [x] Done (2026-04-29) |
-| T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [ ] |
+| T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [x] Done (2026-04-30) |
 | T-005 | Configure Drizzle migrations + seeding (drizzle-kit) | [ ] |
 | T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [ ] |
 | T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router) | [ ] |
@@ -128,6 +129,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-004 | Drizzle schema for companies/users/items in `apps/api/src/db/schema.ts`; enums sourced from `@innovic/shared`; RLS policies via `pgPolicy`; typecheck passes |
 | 2026-04-29 | T-003 | Phase 1 schema designed in `docs/SCHEMA.md`: companies, users, items + helpers (`current_company_id`, `current_user_role`, `set_updated_at`), `auth.users` triggers, RLS policies |
 | 2026-04-29 | T-002 | Supabase dev provisioned (Mumbai, Pro, pooler `aws-1-ap-south-1`, pg 17.6); `.env.local` filled and connection verified |
 | 2026-04-29 | T-001 | Repository bootstrap — git init, dir tree per CLAUDE.md §4, all `docs/*.md`, root tooling, workspace stubs, ADR-001..008 |

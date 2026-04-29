@@ -1,0 +1,11 @@
+feat(db): T-004 — Drizzle schema for companies, users, items
+
+- 3 enums (user_role, uom, item_type) sourced from
+  @innovic/shared so frontend and DB share values
+- 3 tables with audit columns, soft delete, partial unique
+  indexes (where deleted_at is null), RLS policies
+- Lazy AnyPgColumn refs handle companies.created_by <-> users.id
+  cycle without deferrable constraints (those land in T-005)
+- @innovic/shared moved to runtime deps in api + web
+- apps/api/tsconfig.json: drop rootDir to allow cross-package
+  imports; add noEmit (build strategy decided later)
