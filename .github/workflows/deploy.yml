@@ -1,0 +1,23 @@
+name: Deploy
+
+# Wired in T-011. Currently a skeleton; do not enable until staging Supabase + hosting are provisioned (T-002).
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+jobs:
+  deploy-api:
+    if: false # disabled until T-011
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO: deploy API to Railway/Hetzner"
+
+  deploy-web:
+    if: false # disabled until T-011
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TODO: deploy frontend to Cloudflare Pages"

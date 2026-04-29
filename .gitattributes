@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.{cmd,bat,ps1} text eol=crlf
+*.{png,jpg,jpeg,gif,ico,pdf,docx,xlsx} binary
+legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html -text
