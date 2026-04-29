@@ -15,7 +15,7 @@ coverage/
 *.tsbuildinfo
 .turbo/
 .cache/
-_install.log
-_diag.txt
-_docx_extract/
+# Harness-helper temp files (logs, scripts, extracts) used in this dev box.
+# Anything starting with _ at the repo root or any subdir is ignored.
+_*
 legacy/Innovic_ERP_Migration_Proposal.extracted.txt
