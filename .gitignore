@@ -18,4 +18,6 @@ coverage/
 # Harness-helper temp files (logs, scripts, extracts) used in this dev box.
 # Anything starting with _ at the repo root or any subdir is ignored.
 _*
+# But drizzle-kit's _journal.json is required state — override the rule:
+!**/meta/_journal.json
 legacy/Innovic_ERP_Migration_Proposal.extracted.txt
