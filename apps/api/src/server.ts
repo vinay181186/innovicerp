@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
+import { itemsRoutes } from './modules/items/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
 
@@ -33,6 +34,8 @@ app.get('/me', async (req): Promise<MeResponse> => {
   if (!req.user) throw new AuthenticationError();
   return req.user;
 });
+
+await app.register(itemsRoutes);
 
 try {
   await app.listen({ port: env.API_PORT, host: '0.0.0.0' });

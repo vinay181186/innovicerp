@@ -11,17 +11,17 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-009
-**Title:** Build Items master module — API (routes, service, schema, tests) per CLAUDE.md §8
+**ID:** T-010
+**Title:** Build Items master module — Web (api hooks, list/detail/create/edit views)
 **Status:** [ ] Not started
 **Acceptance:**
-- [ ] `packages/shared/src/schemas/items.ts` — Zod schemas for `Item`, `CreateItemInput`, `UpdateItemInput`, `ListItemsQuery`
-- [ ] `apps/api/src/modules/items/service.ts` — `listItems`, `getItem`, `createItem`, `updateItem`, `softDeleteItem`. Each takes `(input, currentUser)`. Throws `NotFoundError` / `ValidationError` / `AuthorizationError`. Sets `created_by`/`updated_by` and propagates JWT claims to Postgres session for RLS
-- [ ] `apps/api/src/modules/items/routes.ts` — Fastify routes only. Validate via Zod, call service, return result
-- [ ] `apps/api/src/modules/items/schema.ts` — re-exports from `@innovic/shared`
-- [ ] `apps/api/src/modules/items/service.test.ts` — Vitest unit tests: success, validation failure, authorization failure, RLS isolation
-- [ ] `apps/api/src/modules/items/routes.test.ts` — integration tests against test DB
-- [ ] All tests pass; coverage ≥70% (CLAUDE.md §9)
+- [ ] `apps/web/src/modules/items/api.ts` — TanStack Query hooks: `useItemsList(query)`, `useItem(id)`, `useCreateItem()`, `useUpdateItem()`, `useSoftDeleteItem()`. Hits `/items*` via the `apiFetch` helper
+- [ ] `apps/web/src/modules/items/routes/list.tsx` — `/items` route: TanStack Table with search box, item-type filter, pagination
+- [ ] `apps/web/src/modules/items/routes/detail.tsx` — `/items/$id` route: read-only detail view + edit/delete buttons
+- [ ] `apps/web/src/modules/items/routes/edit.tsx` — `/items/$id/edit` and `/items/new` routes: react-hook-form + Zod resolver from `@innovic/shared`
+- [ ] Add shadcn Table, Form, Card components as needed (manual scaffold)
+- [ ] All routes are children of `_authenticated` (auth guard from T-008)
+- [ ] Manual verify: dev server up; create/list/edit/delete an item end-to-end
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -38,7 +38,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [x] Done (2026-04-30) |
 | T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router) | [x] Done (2026-04-30) |
 | T-008 | Implement auth flow end-to-end (login, JWT, protected routes, RLS session claims) | [x] Done (2026-04-30) |
-| T-009 | Build Items master module — API (routes, service, schema, tests) | [ ] |
+| T-009 | Build Items master module — API (routes, service, schema, tests) | [x] Done (2026-04-30) |
 | T-010 | Build Items master module — Web (api hooks, list/detail/create/edit) | [ ] |
 | T-011 | Set up CI/CD via GitHub Actions (typecheck, lint, test, deploy) | [ ] |
 | T-012 | Phase 1 sign-off: Items master fully working with RLS verified across roles | [ ] |
@@ -130,6 +130,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-009 | Items master API per CLAUDE.md §8: shared Zod schemas; `withUserContext` for RLS claim injection; service (list/get/create/update/softDelete) + routes (5 endpoints); 12 tests pass (8 service, 4 routes) against dev Supabase |
 | 2026-04-30 | T-008 | Auth E2E: API `/me`, login route (magic-link + password), `/auth/callback`, pathless `_authenticated` parent route as guard, `useSession` hook, sign out via `router.invalidate()` on `SIGNED_OUT`. Verified end-to-end via password sign-in (magic-link blocked by free-tier email rate limit during testing) |
 | 2026-04-30 | T-007 | React app: Vite + Tailwind + shadcn/ui (Button), TanStack Router (root + index) + TanStack Query, `apiClient` w/ Supabase access token, env-via-Zod. Visual check passed |
 | 2026-04-30 | T-006 | Fastify 5 server: env-via-Zod, Pino, domain errors, Drizzle client (transaction pooler), auth plugin (Supabase JWT → public.users → request.user), error handler, helmet+cors+sensible, `/health`. Verified: typecheck + boot + curl |
