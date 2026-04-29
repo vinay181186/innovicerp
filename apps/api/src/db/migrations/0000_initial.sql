@@ -1,3 +1,16 @@
+-- Helpers required by RLS policies below. CREATE POLICY validates referenced
+-- functions at definition time, so these must exist before policies are created.
+-- (set_updated_at and the auth.users triggers live in 0001_post_init.sql.)
+CREATE OR REPLACE FUNCTION public.current_company_id() RETURNS uuid
+  LANGUAGE sql STABLE AS $$
+    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'company_id', '')::uuid
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.current_user_role() RETURNS text
+  LANGUAGE sql STABLE AS $$
+    SELECT current_setting('request.jwt.claims', true)::jsonb->>'role'
+$$;
+--> statement-breakpoint
 CREATE TYPE "public"."item_type" AS ENUM('component', 'assembly');--> statement-breakpoint
 CREATE TYPE "public"."uom" AS ENUM('NOS', 'KGS', 'SET', 'MTR');--> statement-breakpoint
 CREATE TYPE "public"."user_role" AS ENUM('admin', 'manager', 'operator', 'qc', 'procurement', 'dispatch', 'design', 'viewer');--> statement-breakpoint

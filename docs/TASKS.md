@@ -11,16 +11,16 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-005
-**Title:** Configure Drizzle migrations + seed admin; apply Phase 1 schema to dev Supabase
+**ID:** T-006
+**Title:** Bootstrap Fastify API (server, auth plugin, error handler, Pino logger)
 **Status:** [ ] Not started
 **Acceptance:**
-- [ ] `apps/api/src/db/migrations/0000_helpers.sql` (handwritten): SQL helper functions + `auth.users` triggers
-- [ ] `pnpm --filter api db:generate` produces `0001_initial_schema.sql` from `schema.ts`
-- [ ] Generated SQL reviewed and patched: deferrable FKs on `companies.created_by/updated_by`
-- [ ] `pnpm --filter api db:migrate` applies cleanly to dev (Supabase pg 17.6 via pooler)
-- [ ] `migration/seed-admin.ts` (idempotent): creates first auth user, first company, links them
-- [ ] Manual sanity: `select 1` from `authenticated` role respects RLS on items
+- [ ] `apps/api/src/server.ts` boots a real Fastify app with `@fastify/sensible`, `@fastify/cors`, `@fastify/helmet`
+- [ ] Pino structured logger wired to Fastify request logging
+- [ ] Auth plugin: validates Supabase JWT, attaches `request.user` (`id`, `company_id`, `role`)
+- [ ] Error handler: maps domain errors (`NotFoundError`, `ValidationError`, `AuthorizationError`, `ConflictError`) to 4xx
+- [ ] `/health` route returns 200 + version + git sha
+- [ ] `pnpm --filter api dev` starts server on port 3000 (or `API_PORT`); `curl /health` passes
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -33,7 +33,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-002 | Provision Supabase project (dev only — Mumbai `ap-south-1`, Pro tier, pooler `aws-1-ap-south-1`, pg 17.6, connection verified) | [x] Done (2026-04-29) |
 | T-003 | Design Phase 1 schema in `docs/SCHEMA.md` (companies, users, items + RLS helpers) | [x] Done (2026-04-29) |
 | T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [x] Done (2026-04-30) |
-| T-005 | Configure Drizzle migrations + seeding (drizzle-kit) | [ ] |
+| T-005 | Configure Drizzle migrations + seeding (drizzle-kit); applied to dev | [x] Done (2026-04-30) |
 | T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [ ] |
 | T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router) | [ ] |
 | T-008 | Implement auth flow end-to-end (login, JWT, protected routes, RLS session claims) | [ ] |
@@ -129,6 +129,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-005 | Migrations applied to dev Supabase (pg 17.6): 3 enums, 3 tables, 7 indexes, 8 FKs (4 deferrable), 6 RLS policies, 5 helper functions, 5 triggers. Seed admin created (1 company, 1 active admin); magic-link sent to `innovic.technology@gmail.com` |
 | 2026-04-30 | T-004 | Drizzle schema for companies/users/items in `apps/api/src/db/schema.ts`; enums sourced from `@innovic/shared`; RLS policies via `pgPolicy`; typecheck passes |
 | 2026-04-29 | T-003 | Phase 1 schema designed in `docs/SCHEMA.md`: companies, users, items + helpers (`current_company_id`, `current_user_role`, `set_updated_at`), `auth.users` triggers, RLS policies |
 | 2026-04-29 | T-002 | Supabase dev provisioned (Mumbai, Pro, pooler `aws-1-ap-south-1`, pg 17.6); `.env.local` filled and connection verified |
