@@ -215,7 +215,7 @@ These choices are NOT up for debate. Do not suggest alternatives. Do not "improv
 ### Backend
 - **Language:** TypeScript (strict mode, no `any` without comment justification)
 - **Runtime:** Node.js 24 (current). Originally specified as Node 20 LTS; upgraded to 24 by user decision — see ADR-008 in `docs/DECISIONS.md`.
-- **Framework:** Fastify 4.x
+- **Framework:** Fastify 5 (originally specified as 4.x; upgraded by ADR-009)
 - **ORM:** Drizzle ORM (NOT Prisma, NOT TypeORM, NOT Knex)
 - **Validation:** Zod (every route input + output validated)
 - **Logging:** Pino (structured JSON, never `console.log`)

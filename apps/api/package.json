@@ -25,7 +25,8 @@
     "@innovic/shared": "workspace:*",
     "@supabase/supabase-js": "^2.46.1",
     "drizzle-orm": "^0.36.4",
-    "fastify": "^4.28.1",
+    "fastify": "^5.1.0",
+    "fastify-plugin": "^5.0.1",
     "pino": "^9.5.0",
     "postgres": "^3.4.5",
     "zod": "^3.23.8"

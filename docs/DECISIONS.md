@@ -152,10 +152,28 @@ Use Node.js 24 across local development, CI, and production. CLAUDE.md §5 amend
 
 ---
 
-(Append new decisions below as ADR-009, ADR-010, ...)
+## ADR-009: Fastify 5 instead of Fastify 4
+**Date:** 2026-04-30
+**Status:** Accepted
+
+### Context
+CLAUDE.md §5 originally pinned Fastify 4.x — the current stable when the migration proposal was written (mid-2024). Fastify 5 shipped in late 2024 and the plugin ecosystem (`@fastify/cors` 10, `@fastify/helmet` 12, `@fastify/sensible` 6) now targets Fastify 5 by default. The T-001 bootstrap inadvertently pinned the plugins at their Fastify-5 line without bumping Fastify itself, which surfaced as `FST_ERR_PLUGIN_VERSION_MISMATCH` during T-006 server boot.
+
+### Decision
+Upgrade `fastify` from 4.x to 5.x. Plugins stay at their current versions. CLAUDE.md §5 amended.
+
+### Alternatives Considered
+- **Downgrade plugins to Fastify-4-compatible versions** (`@fastify/cors` 9, `@fastify/helmet` 11, `@fastify/sensible` 5) — rejected: a 2026 greenfield project should not start on the previous Fastify generation. Fastify 4 receives only maintenance backports; 5 has the active feature track.
+
+### Consequences
+- Positive: latest Fastify, current plugin ecosystem, better type inference, longer support runway.
+- Negative: small API tweak in `server.ts` (`logger` option → `loggerInstance` keyword for passing a Pino instance).
+- Risks: low; Fastify 5 is mature by now.
+
+(Append new decisions below as ADR-010, ADR-011, ...)
 
 ## Pending Decisions
 
-- **ADR-009 (pending):** API hosting — Railway ($7/mo managed) vs Hetzner CCX13 (~₹450/mo self-managed). Affects deploy.yml + runbook.
-- **ADR-010 (pending):** Domain name and transactional email-from address.
-- **ADR-011 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-010 (pending):** API hosting — Railway ($7/mo managed) vs Hetzner CCX13 (~₹450/mo self-managed). Affects deploy.yml + runbook.
+- **ADR-011 (pending):** Domain name and transactional email-from address.
+- **ADR-012 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).

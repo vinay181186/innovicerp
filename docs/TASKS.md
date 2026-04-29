@@ -11,16 +11,16 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-006
-**Title:** Bootstrap Fastify API (server, auth plugin, error handler, Pino logger)
+**ID:** T-007
+**Title:** Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router)
 **Status:** [ ] Not started
 **Acceptance:**
-- [ ] `apps/api/src/server.ts` boots a real Fastify app with `@fastify/sensible`, `@fastify/cors`, `@fastify/helmet`
-- [ ] Pino structured logger wired to Fastify request logging
-- [ ] Auth plugin: validates Supabase JWT, attaches `request.user` (`id`, `company_id`, `role`)
-- [ ] Error handler: maps domain errors (`NotFoundError`, `ValidationError`, `AuthorizationError`, `ConflictError`) to 4xx
-- [ ] `/health` route returns 200 + version + git sha
-- [ ] `pnpm --filter api dev` starts server on port 3000 (or `API_PORT`); `curl /health` passes
+- [ ] `apps/web/src/main.tsx` mounts a real React tree; index.html boots without errors
+- [ ] Tailwind compiles (`@tailwind base/components/utilities` in entry CSS); `tailwind.config.ts` content paths correct
+- [ ] TanStack Router skeleton (file-based or code-based routes; one root route for now)
+- [ ] TanStack Query provider wraps the tree; `apiClient` helper in `src/lib/api.ts` uses `VITE_API_URL` and attaches Supabase access token
+- [ ] At least one shadcn/ui component installed and rendering (Button, e.g.) to validate the styling pipeline
+- [ ] `pnpm --filter web dev` serves at `http://localhost:5173` and the page renders without console errors
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -34,7 +34,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-003 | Design Phase 1 schema in `docs/SCHEMA.md` (companies, users, items + RLS helpers) | [x] Done (2026-04-29) |
 | T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [x] Done (2026-04-30) |
 | T-005 | Configure Drizzle migrations + seeding (drizzle-kit); applied to dev | [x] Done (2026-04-30) |
-| T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [ ] |
+| T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [x] Done (2026-04-30) |
 | T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router) | [ ] |
 | T-008 | Implement auth flow end-to-end (login, JWT, protected routes, RLS session claims) | [ ] |
 | T-009 | Build Items master module — API (routes, service, schema, tests) | [ ] |
@@ -129,6 +129,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-006 | Fastify 5 server: env-via-Zod, Pino, domain errors, Drizzle client (transaction pooler), auth plugin (Supabase JWT → public.users → request.user), error handler, helmet+cors+sensible, `/health`. Verified: typecheck + boot + curl |
 | 2026-04-30 | T-005 | Migrations applied to dev Supabase (pg 17.6): 3 enums, 3 tables, 7 indexes, 8 FKs (4 deferrable), 6 RLS policies, 5 helper functions, 5 triggers. Seed admin created (1 company, 1 active admin); magic-link sent to `innovic.technology@gmail.com` |
 | 2026-04-30 | T-004 | Drizzle schema for companies/users/items in `apps/api/src/db/schema.ts`; enums sourced from `@innovic/shared`; RLS policies via `pgPolicy`; typecheck passes |
 | 2026-04-29 | T-003 | Phase 1 schema designed in `docs/SCHEMA.md`: companies, users, items + helpers (`current_company_id`, `current_user_role`, `set_updated_at`), `auth.users` triggers, RLS policies |
