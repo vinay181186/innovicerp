@@ -36,6 +36,15 @@ git push origin staging
 
 ## Common Issues
 
+### "ENOTFOUND db.\<ref\>.supabase.co" from app or migration
+- The `db.<ref>.supabase.co` hostname is **IPv6-only** on Supabase. Most Indian residential ISPs don't route IPv6, so it fails to resolve.
+- Fix: use the Supavisor pooler instead. Both `DATABASE_URL` (port 5432, session pooler) and `DATABASE_URL_POOLED` (port 6543, transaction pooler) should point to `aws-X-<region>.pooler.supabase.com` with user `postgres.<ref>`.
+- For `ap-south-1`, newer projects live on `aws-1-ap-south-1.pooler.supabase.com` (older ones use `aws-0-`). Try `aws-1-` first.
+
+### "XX000 Tenant or user not found" from Supavisor
+- The user portion is wrong (must be `postgres.<project-ref>`, not just `postgres`), OR the pooler region in the host doesn't match the project's actual region.
+- Try the alternate pooler shard: `aws-0-` ↔ `aws-1-`.
+
 ### "Connection pool exhausted"
 - Check Supabase dashboard → Database → Connection Pooler usage.
 - Increase pool size, or confirm PgBouncer (port 6543) is being used in `DATABASE_URL_POOLED`.

@@ -11,21 +11,15 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-002
-**Title:** Provision Supabase project (dev + staging + prod) in Mumbai (`ap-south-1`)
-**Status:** [!] Blocked — needs user inputs
+**ID:** T-004
+**Title:** Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror docs/SCHEMA.md)
+**Status:** [ ] Not started
 **Acceptance:**
-- [ ] Three Supabase projects created in Mumbai region (dev, staging, prod)
-- [ ] Project refs + URLs collected and pasted into `.env.example` placeholders
-- [ ] Anon + service-role keys saved in password manager (NOT in repo per CLAUDE.md §6 rule 10)
-- [ ] User has logged into each project once
-- [ ] Owner team confirmed; billing card added (Pro tier required for daily backups)
-
-**Blocking inputs needed from user:**
-- Supabase organization name to use (existing or new)
-- Email associated with the Supabase login
-- Confirm payment method ready for Pro tier (~$25/mo per project; can defer staging+prod to start with dev only)
-- Domain name to be used for the new system (affects custom domain config later)
+- [ ] Drizzle TS schema covers all Phase 1 tables, columns, types, FKs, defaults, partial unique indexes
+- [ ] Enums (`user_role`, `uom`, `item_type`) declared via `pgEnum`
+- [ ] RLS policies declared via `pgPolicy` and `.enableRLS()` (Drizzle 0.36+)
+- [ ] `pnpm --filter api typecheck` passes
+- [ ] No SQL applied yet — that is T-005
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -35,9 +29,9 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Phase 1 Backlog
 | ID | Task | Status |
 |---|---|---|
-| T-002 | Provision Supabase project (dev + staging + prod) in Mumbai (`ap-south-1`) | [!] Blocked |
-| T-003 | Apply complete schema to Supabase dev (matches `docs/SCHEMA.md`) | [ ] |
-| T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` | [ ] |
+| T-002 | Provision Supabase project (dev only — Mumbai `ap-south-1`, Pro tier, pooler `aws-1-ap-south-1`, pg 17.6, connection verified) | [x] Done (2026-04-29) |
+| T-003 | Design Phase 1 schema in `docs/SCHEMA.md` (companies, users, items + RLS helpers) | [x] Done (2026-04-29) |
+| T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [ ] |
 | T-005 | Configure Drizzle migrations + seeding (drizzle-kit) | [ ] |
 | T-006 | Bootstrap Fastify API (server, auth plugin, error handler, Pino logger) | [ ] |
 | T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, TanStack Router) | [ ] |
@@ -128,12 +122,14 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Blockers
 | ID | Task | Blocker | Needs |
 |---|---|---|---|
-| T-002 | Provision Supabase | User decisions pending | Supabase org name, billing OK for Pro tier, confirm domain |
 | T-011 | CI/CD deploy | API hosting choice | Decide Railway vs Hetzner CCX13 (ADR-009 pending) |
+| Future | Staging + prod Supabase | Defer | Provision when Phase 4 (sales chain) is in flight |
 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-29 | T-003 | Phase 1 schema designed in `docs/SCHEMA.md`: companies, users, items + helpers (`current_company_id`, `current_user_role`, `set_updated_at`), `auth.users` triggers, RLS policies |
+| 2026-04-29 | T-002 | Supabase dev provisioned (Mumbai, Pro, pooler `aws-1-ap-south-1`, pg 17.6); `.env.local` filled and connection verified |
 | 2026-04-29 | T-001 | Repository bootstrap — git init, dir tree per CLAUDE.md §4, all `docs/*.md`, root tooling, workspace stubs, ADR-001..008 |
 
 ## Notes
