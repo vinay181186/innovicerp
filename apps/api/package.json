@@ -5,17 +5,18 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "dotenv -e ../../.env.local -- tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:generate": "dotenv -e ../../.env.local -- drizzle-kit generate",
+    "db:migrate": "dotenv -e ../../.env.local -- drizzle-kit migrate",
+    "db:push": "dotenv -e ../../.env.local -- drizzle-kit push",
+    "db:studio": "dotenv -e ../../.env.local -- drizzle-kit studio",
+    "seed": "dotenv -e ../../.env.local -- tsx src/db/seed.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@types/node": "^22.9.3",
     "@types/supertest": "^6.0.2",
+    "dotenv-cli": "^7.4.2",
     "drizzle-kit": "^0.28.1",
     "pino-pretty": "^11.3.0",
     "supertest": "^7.0.0",
