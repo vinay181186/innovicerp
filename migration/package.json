@@ -6,13 +6,17 @@
   "scripts": {
     "export": "dotenv -e ../.env.local -- tsx export-firestore.ts",
     "transform": "tsx transform.ts",
+    "load": "dotenv -e ../.env.local -- tsx load.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@innovic/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.46.1",
+    "drizzle-orm": "^0.36.4",
     "firebase-admin": "^12.6.0",
+    "postgres": "^3.4.5",
     "uuid": "^10.0.0"
   },
   "devDependencies": {

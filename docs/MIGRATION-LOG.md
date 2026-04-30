@@ -100,6 +100,77 @@ costCenters, dailyReports, taskAllocations, outsourceJobs, jwDCOutward, jwDCInwa
 
 > One entry per collection migrated. Append-only.
 
+### Load Run 1 — 2026-04-30T17:21:20Z (T-015 + T-016/T-017/T-018/T-019/T-020/T-021)
+**Target:** dev Supabase Mumbai (`d997c3ed-3496-49b6-a54d-6e9ea9d50548` company)
+**Script:** `migration/load.ts` (commit pending)
+**Duration:** ~4 s · **Total rows inserted:** 371
+**Validation:** OK on 5 of 6 tables; users diff +1 (pre-existing `viewer@innovic.test` from T-012 smoke; not a load issue)
+
+## users
+**Date:** 2026-04-30
+**Source records:** 2
+**Loaded records:** 2 (seed admin reused; new user invited)
+**Discrepancy:** 0 (validation reports diff=+1 vs DB count of 3 because the leftover `viewer@innovic.test` from T-012 smoke remains; not migrated by this script)
+**Anomalies:** None
+**Validation:** PASS — all 2 transformed users resolved; outcomes recorded in `migration/load-output/users-loaded.json`
+**Cutover:** Pending (T-027 for the operator parallel-run; T-053 for full read-only HTML archival)
+
+Outcomes:
+- `mmtdefvc` (Vinay N Makwana, innovic.technology@gmail.com) → reused existing seed admin id `e9c9ed51-7aa0-4d4f-95ab-f6c3ee9e2320`; updated public.users (full_name, role, is_active=true, company_id)
+- `6am6dudd` (Japan, japan@innovictechnology.com) → invited via `supabase.auth.admin.inviteUserByEmail` (option B per user choice 2026-04-30); new id `63bb07e7-f413-4fa8-8328-e8641a39ec96`; invite email sent; public.users upsert set role=admin, company_id, is_active=true
+
+## clients
+**Date:** 2026-04-30
+**Source records:** 1
+**Loaded records:** 1
+**Discrepancy:** 0
+**Anomalies:** None at transform; load `_legacyExtras` empty
+**Validation:** PASS — db count 1, sample matches transform shape
+**Cutover:** Pending (T-022 admin screen + sales team cutover in Phase 4)
+
+Outcomes:
+- `a559u04v` (L&T Precision engineering (Hazira), code `L&T_1`) — only address/contact/email all empty in legacy
+
+## vendors
+**Date:** 2026-04-30
+**Source records:** 3
+**Loaded records:** 3
+**Discrepancy:** 0
+**Anomalies:** None
+**Validation:** PASS — db count 3, sample matches transform shape
+**Cutover:** Pending (T-022 + procurement cutover in Phase 5)
+
+Records loaded: `v1` Mehta Steel Traders (VND-001), plus 2 others. All `status: Active`, ratings preserved verbatim.
+
+## items
+**Date:** 2026-04-30
+**Source records:** 352
+**Loaded records:** 352
+**Discrepancy:** 0
+**Anomalies:** 8 at transform — all `uom_normalised` (6× `Nos`→`NOS`, 2× `Set`→`SET`); all loaded successfully under normalised UOM. `_legacyExtras` captures stockQty/minStock/category/location/status for future stock-control module
+**Validation:** PASS — db count 352, sample matches transform shape; deterministic UUIDv5 ids stable across re-runs
+**Cutover:** Pending (T-022 + parallel-run in Phase 3 op-entry workflow)
+
+## machines
+**Date:** 2026-04-30
+**Source records:** 12
+**Loaded records:** 12
+**Discrepancy:** 0
+**Anomalies:** None at transform; legacy `type` field empty for all 12 records (machineType column null in DB)
+**Validation:** PASS — db count 12, sample matches transform shape
+**Cutover:** Pending (T-022 + Phase 3 live-operations board)
+
+## operators
+**Date:** 2026-04-30
+**Source records:** 1
+**Loaded records:** 1
+**Discrepancy:** 0
+**Anomalies:** None at transform; user_id left null (T-015 doesn't auto-link to public.users; T-022 may add a manual link UI)
+**Validation:** PASS — db count 1, sample matches transform shape
+**Cutover:** Pending (T-022 + Phase 3 op-entry workflow)
+
+Records loaded: `xeely6yu` (VNM / Vinay), department/skills empty in legacy.
+
 ## Template
 
 ```

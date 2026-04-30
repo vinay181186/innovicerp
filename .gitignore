@@ -45,3 +45,5 @@ migration/export/
 # Transform outputs (regenerated from export + transform logic; gitignored
 # because contents are deterministic from inputs and shouldn't churn diffs).
 migration/transform/
+# Load outputs (audit JSON of a one-time load, contains user emails / UUIDs).
+migration/load-output/

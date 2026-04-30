@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-014 done — Phase 2 master schemas (clients/vendors/machines/operators) added; all 6 transforms wired; 371 rows total)
+> Last updated: 2026-04-30 (T-015 + T-016/T-017/T-018/T-019/T-020/T-021 done — all 371 master-data rows loaded into dev Supabase, validation OK)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,22 +11,19 @@
 Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-015
-**Title:** Build bulk-load script (`migration/load-supabase.ts`) — Phase 2 master data
+**ID:** T-022
+**Title:** Build admin screens for each master entity (web)
 **Status:** [ ] Not started
-**Scope:** Load `migration/transform/users.json` and `migration/transform/items.json` into Supabase. Two-phase for users: (a) create Supabase Auth accounts with temporary passwords (or magic-link), get assigned UUIDs, write back to `_id_map.json`; (b) update `public.users` rows with companyId/role/fullName/isActive. For items: resolve `companyId` (seed company), `createdBy`/`updatedBy` (seed admin), then bulk insert.
+**Scope:** Per CLAUDE.md §8, build the API + Web modules for `clients`, `vendors`, `machines`, `operators` to mirror the existing `items` reference module. The storage layer, RLS, and migrated data are all in place from T-014/T-015.
 **Acceptance:**
-- [ ] CLI: `--only=users,items`, `--dry-run` (validates without writing), `--env=dev|staging` (selects target Supabase via env vars)
-- [ ] Idempotent: re-running with no transform changes is a no-op (uses `on conflict do update where ...`); resumable after partial failure
-- [ ] Users: send password-reset emails via Supabase Admin API; record outcome in `_id_map.json` plus a `migration/load/users-loaded.json` audit
-- [ ] Items: bulk insert in batches of 100; FK resolution via id_map; conflict-on-(company_id, code) updates instead of duplicating
-- [ ] Validation: post-load select counts match transform rowCounts; sample 5 random rows to verify shape; report mismatches as `migration/load/_validation.json`
-- [ ] Append a per-collection entry to `docs/MIGRATION-LOG.md` § Per-Collection Migration Entries
-
-## Phase 2 sub-tasks unblocked by T-014
-- **T-016 (users migrate):** Once T-015 lands, run users load + verify in dev Supabase. Append MIGRATION-LOG entry.
-- **T-019 (items migrate):** Same — items load + verify. 352 records.
-- **T-017/T-018/T-020/T-021 (clients/vendors/machines/operators):** Each requires schema design (CLAUDE.md §8) BEFORE T-014 can grow a transform for it. Sequence per task: SCHEMA.md → Drizzle schema + migration → add transform to `migration/transforms/<name>.ts` → load + verify.
+- [ ] For each of clients/vendors/machines/operators:
+  - [ ] Zod schemas in `packages/shared/src/schemas/<name>.ts` (with `code`, validation rules, etc.)
+  - [ ] API module: `apps/api/src/modules/<name>/{routes,service,schema}.ts` + tests (mirror items pattern; CLAUDE.md §9 coverage)
+  - [ ] Web module: `apps/web/src/modules/<name>/{api,components,routes}` (mirror items pattern; preserve UI from legacy HTML per memory `feedback_ui_match_legacy_html`)
+  - [ ] Add to web nav alongside Items
+- [ ] Manual smoke per CLAUDE.md §7 — list/create/edit/soft-delete each entity in production Railway
+- [ ] CI green
+**Sequencing:** clients first (simplest, 1 record), then vendors, machines, operators. Each takes ~1.5–2h once items pattern is followed.
 
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
@@ -61,13 +58,13 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 |---|---|---|
 | T-013 | Build one-time Firestore export script (`migration/export-firestore.ts`) | [x] Done (2026-04-30) |
 | T-014 | Build transformation script (JSON-blob → per-record rows, UUID + UID mapping) | [x] Done (2026-04-30) — all 6 master-data transforms wired + Phase 2 schemas |
-| T-015 | Build bulk-load script in FK dependency order (`migration/load-supabase.ts`) | [ ] |
-| T-016 | Migrate `users` (Firebase Auth UIDs → Supabase users) | [ ] |
-| T-017 | Migrate `clients` master | [ ] |
-| T-018 | Migrate `vendors` master | [ ] |
-| T-019 | Migrate `items` master | [ ] |
-| T-020 | Migrate `machines` master | [ ] |
-| T-021 | Migrate `operators` master | [ ] |
+| T-015 | Build bulk-load script in FK dependency order (`migration/load.ts`) | [x] Done (2026-04-30) — 371 rows loaded; users via Supabase Auth invite |
+| T-016 | Migrate `users` (Firebase Auth UIDs → Supabase users) | [x] Done (2026-04-30) — seed admin reused; japan@ invited via Supabase Admin API |
+| T-017 | Migrate `clients` master | [x] Done (2026-04-30) — 1/1 record |
+| T-018 | Migrate `vendors` master | [x] Done (2026-04-30) — 3/3 records |
+| T-019 | Migrate `items` master | [x] Done (2026-04-30) — 352/352 records, 8 uom_normalised anomalies |
+| T-020 | Migrate `machines` master | [x] Done (2026-04-30) — 12/12 records |
+| T-021 | Migrate `operators` master | [x] Done (2026-04-30) — 1/1 record |
 | T-022 | Build admin screens for each master entity (web) | [ ] |
 | T-023 | Validation pass: row counts match, sample records identical, no orphaned FKs | [ ] |
 
@@ -143,6 +140,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-015 + T-016/T-017/T-018/T-019/T-020/T-021 | **Phase 2 master-data MIGRATED.** Built `migration/load.ts` (orchestrator) + `load/{users-loader,bulk-loader,validate}.ts`. Two-phase users: seed admin reused (`mmtdefvc`→`e9c9ed51...`), `japan@innovictechnology.com` invited via Supabase Admin API (option B per user, real email sent → `63bb07e7...`). Bulk-loaded 5 master tables in batches of 100 with `on conflict (company_id, code) do nothing`: clients 1/1, vendors 3/3, items 352/352, machines 12/12, operators 1/1. Total: **371 rows in dev Supabase**. Per-collection entries appended to MIGRATION-LOG. Users validation diff = +1 (the `viewer@innovic.test` user from T-012 smoke is still in DB; not a load issue). Active task: T-022 (admin screens) |
 | 2026-04-30 | T-014 | Phase 2 storage layer + transforms complete. Drizzle schemas for clients/vendors/machines/operators added; migration `0002_tricky_fallen_one.sql` (auto-gen) + `0003_phase2_triggers.sql` (hand-written triggers) applied to dev Supabase. All 6 master-data transforms wired in `migration/transforms/<name>.ts`; 38/38 vitest pass; full real-data run produces 371 rows total (users 2 + clients 1 + vendors 3 + items 352 + machines 12 + operators 1) with 8 anomalies (all `uom_normalised` on items). SCHEMA.md / MIGRATION-LOG.md updated. T-014 (partial) entry below superseded |
 | 2026-04-30 | T-014 (partial) | Transform infrastructure + users/items shipped. `migration/transform.ts` orchestrator, per-collection functions in `migration/transforms/<name>.ts`, deterministic UUIDv5 (`uuid-namespace.ts`). 18/18 vitest pass; real-data run produces users 2/2 + items 352/352 = 354 rows in `migration/transform/`, 8 anomalies (all `uom_normalised`: 6 `Nos`→`NOS`, 2 `Set`→`SET`). Stubs throw with TASKS pointer for clients/vendors/machines/operators (need schema first per CLAUDE.md §8) |
 | 2026-04-30 | T-013 | Firestore export: `migration/export-firestore.ts` (firebase-admin, 235 lines) — full run dumped 550 records across 65 collections (27 active, 38 `doc_missing` for unused legacy features); 2 singletons (`_settings` exists, `companies/innovic` absent). 38 s, 1.2 MB on disk. Per-run details in `docs/MIGRATION-LOG.md` § "Run 1". Corrected docs from "67 collections" → 65 (legacy HTML count). DLP note added to `migration/README.md` (pnpm/dotenv-cli silent-exits in non-interactive shells; direct `node --import tsx` bypasses) |
