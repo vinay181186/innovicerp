@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-022 done — all 4 master entities + home nav shipped; T-023 validation next)
+> Last updated: 2026-05-01 (T-023 done — Phase 2 master data signed off; T-024 starts Phase 3)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,15 +11,21 @@
 Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-023
-**Title:** Phase 2 validation pass — row counts match, sample records identical, no orphaned FKs
+**ID:** T-024
+**Title:** Migrate `jobCards`, `jcOps`, `opLog` data (Phase 3, Critical)
 **Status:** [ ] Not started
+**Scope:** Per CLAUDE.md §8, Phase 3 is the critical op-entry chain. Source data exists (jobCards 3, jcOps 20, opLog 81 — see MIGRATION-LOG export Run 1). Need:
+- Drizzle schema for `job_cards`, `jc_ops`, `op_log` (T-024 also designs Phase 3 schema)
+- RLS policies + audit triggers
+- Transform layer (`migration/transforms/{job-cards,jc-ops,op-log}.ts`) with id_map continuity to items/machines/operators
+- Bulk-load + validation
 **Acceptance:**
-- [ ] For each migrated table (users, clients, vendors, items, machines, operators), source row count matches loaded row count (modulo known deltas — e.g. extra `viewer@innovic.test` user from T-012 smoke)
-- [ ] Sample 3 records per table by hand: every legacy field accounted for in the new row, transformations correct (uom normalisation, etc.)
-- [ ] No orphaned FKs (operator.user_id, audit columns)
-- [ ] Phase 2 sign-off note appended to MIGRATION-LOG.md
-**Reference:** `docs/MIGRATION-LOG.md` already has per-collection load counts from T-015/T-016/T-017/T-018/T-019/T-020/T-021.
+- [ ] SCHEMA.md updated with Phase 3 tables (3 tables, FKs to items/machines/operators)
+- [ ] Drizzle schema + migration applied to dev Supabase
+- [ ] Transform produces 104 rows (3 + 20 + 81); transform tests pass
+- [ ] Bulk-load lands 104 rows; validation script (`validate-phase2.ts`-style) shows 0 field diffs and 0 orphan FKs
+- [ ] MIGRATION-LOG entries for each collection
+**Reference:** Follow the same pattern as T-014 + T-015 + T-023.
 
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
@@ -62,7 +68,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 | T-020 | Migrate `machines` master | [x] Done (2026-04-30) — 12/12 records |
 | T-021 | Migrate `operators` master | [x] Done (2026-04-30) — 1/1 record |
 | T-022 | Build admin screens for each master entity (web) | [x] Done (2026-05-01) — all 4 entities (clients/vendors/machines/operators) shipped + home nav |
-| T-023 | Validation pass: row counts match, sample records identical, no orphaned FKs | [ ] |
+| T-023 | Validation pass: row counts match, sample records identical, no orphaned FKs | [x] Done (2026-05-01) — `validate-phase2.ts`: 369/369 field-level matches, 14/14 orphan checks clean, users delta as expected. Sign-off in MIGRATION-LOG |
 
 ## Phase 3 Backlog — Op Entry (Week 4–5, Critical)
 | ID | Task | Status |
@@ -136,6 +142,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-023 | **Phase 2 sign-off.** New `migration/validate-phase2.ts` (read-only): per-table field-level diff between transform output and DB rows, plus 14 orphan-FK checks. Result: **369/369 mapped rows** match transform on every column (items 352, clients 1, vendors 3, machines 12, operators 1); users count matches `transformRowCount + 1` (T-012 smoke leftover, expected); 0 orphan FKs across `created_by` / `updated_by` for all 5 master tables + `operators.user_id` + users audit + `users.company_id`. Output `migration/load-output/_phase2_validation.json` (gitignored). Reproducible via `pnpm --filter @innovic/migration validate:phase2`. Sign-off section appended to MIGRATION-LOG; T-024 (Phase 3 op-entry migration) is next |
 | 2026-05-01 | T-022 (operators + close) | **T-022 closed.** Operators admin module shipped per CLAUDE.md §8: shared Zod schemas (department + skills text, isActive boolean, optional userId FK to users); api module (5 endpoints, 7 service + 4 routes tests, 11/11 against dev Supabase); web module (OperatorForm with Active/Inactive select + skills + linked-user inputs, list with code/name/dept/skills/status columns + active filter, detail card). Home nav (`apps/web/src/routes/index.tsx`) refactored to a typed `MASTER_LINKS` array — Items + Clients + Vendors + Machines + Operators all surfaced. Full api suite 56/56 green; workspace typecheck/lint clean. UI matches legacy `operatorForm` (lines 13726-43): Operator ID, Name, Department, Status, Skills/Machines, with `userId` added forward per SCHEMA.md |
 | 2026-04-30 | T-022 (machines) | Machines admin module shipped per CLAUDE.md §8: shared Zod schemas (machineType, capacityPerShift int, shiftsPerDay int default 1, status text); api module (5 endpoints, 7 service tests + 4 routes tests); web module (MachineForm with status select Idle/Running/Down/Maintenance, list with type/cap/shifts/status columns + status filter, detail card). Workspace typecheck/lint clean |
 | 2026-04-30 | T-022 (vendors) | Vendors admin module shipped per CLAUDE.md §8: shared Zod schemas (adds materialsSupplied + rating); api module (5 endpoints, 7 service tests + 4 routes tests, 11/11 against dev Supabase); web module (TanStack Query hooks, VendorForm with materials textarea + rating field, list with rating column, detail with materials section). Workspace typecheck/lint clean; 34/34 api tests pass total |

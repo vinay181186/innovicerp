@@ -171,6 +171,49 @@ Records loaded: `v1` Mehta Steel Traders (VND-001), plus 2 others. All `status: 
 
 Records loaded: `xeely6yu` (VNM / Vinay), department/skills empty in legacy.
 
+---
+
+## Phase 2 Sign-Off — 2026-05-01 (T-023)
+
+**Script:** `migration/validate-phase2.ts` · **Output:** `migration/load-output/_phase2_validation.json` (gitignored) · **Overall status:** **PASS**
+
+Read-only field-level diff + orphan FK pass against dev Supabase, run via `pnpm --filter @innovic/migration validate:phase2`.
+
+**Field-level diff (transform → DB, mapped columns):**
+
+| Table | Transform rows | DB count | Matched | Field diffs | Missing from DB |
+|---|---:|---:|---:|---:|---:|
+| items | 352 | 352 | 352 | 0 | 0 |
+| clients | 1 | 1 | 1 | 0 | 0 |
+| vendors | 3 | 3 | 3 | 0 | 0 |
+| machines | 12 | 12 | 12 | 0 | 0 |
+| operators | 1 | 1 | 1 | 0 | 0 |
+
+Total: **369 / 369 mapped rows match transform on every loaded column**. The 8 known anomalies (uom_normalised on items, T-014 Run 2) are by-design transformations and are reflected in both transform output and DB rows — they are not field diffs.
+
+**Users count:** transform 2 + 1 expected delta (`viewer@innovic.test` left over from T-012 smoke) = **3 in DB. OK.**
+
+**Orphan FK checks (14 columns checked, all 0 orphans):**
+
+- `items.created_by`, `items.updated_by`
+- `clients.created_by`, `clients.updated_by`
+- `vendors.created_by`, `vendors.updated_by`
+- `machines.created_by`, `machines.updated_by`
+- `operators.created_by`, `operators.updated_by`, `operators.user_id` (nullable)
+- `users.created_by`, `users.updated_by`, `users.company_id`
+
+**Conclusions:**
+- Every legacy field that has a column in the new schema lands in DB byte-for-byte (or via documented transform: uom normalisation).
+- Audit columns and the optional `operators.user_id` link are FK-clean.
+- Users count exactly matches `transformRowCount + 1` (smoke leftover); no migrated users went missing or duplicated.
+
+**Phase 2 master data is sign-off ready.** Next: Phase 3 op-entry chain (T-024).
+
+> Re-run anytime to confirm the DB still matches transform output:
+> `pnpm --filter @innovic/migration validate:phase2`
+
+---
+
 ## Template
 
 ```
