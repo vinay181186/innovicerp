@@ -5,6 +5,9 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
+import { vendorsListRoute } from './modules/vendors/routes/list';
+import { vendorDetailRoute } from './modules/vendors/routes/detail';
+import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
 import { authCallbackRoute } from './routes/auth-callback';
 import { authenticatedRoute } from './routes/_authenticated';
 import { indexRoute } from './routes/index';
@@ -24,6 +27,10 @@ const routeTree = rootRoute.addChildren([
     clientNewRoute,
     clientDetailRoute,
     clientEditRoute,
+    vendorsListRoute,
+    vendorNewRoute,
+    vendorDetailRoute,
+    vendorEditRoute,
   ]),
 ]);
 
