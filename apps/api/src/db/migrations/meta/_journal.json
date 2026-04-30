@@ -15,6 +15,13 @@
       "when": 1777489899657,
       "tag": "0001_post_init",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777568248281,
+      "tag": "0002_tricky_fallen_one",
+      "breakpoints": true
     }
   ]
 }

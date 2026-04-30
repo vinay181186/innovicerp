@@ -262,6 +262,102 @@ create policy items_manager_write on items
 
 ---
 
+## Phase 2 Tables — Master Data (clients, vendors, machines, operators)
+
+Storage layer only. API + Web modules ship in T-022 (admin screens). Designed in T-014 with the migration's transform layer; loaded in T-015.
+
+All four tables follow the **items pattern**:
+- `id uuid pk default gen_random_uuid()`
+- `company_id uuid not null → companies(id)`
+- `code text not null` (business key, unique within company while not soft-deleted)
+- audit columns + `deleted_at`
+- `before update` trigger calling `set_updated_at()`
+- 2 RLS policies: `<table>_company_read` (any role, same company) and `<table>_manager_write` (admin/manager only)
+
+No new enums — vendor `rating` and machine `status` kept as `text` for forward flexibility.
+
+### `clients`
+
+Customer master. Replaces legacy `clients` collection (1 record at T-013 export).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK → `companies(id)` |
+| `code` | `text` | not null. Business key (e.g. `L&T_1`) |
+| `name` | `text` | not null |
+| `contact_person` | `text` | nullable. Legacy `contact` field |
+| `email` | `text` | nullable |
+| `phone` | `text` | nullable. (Not in legacy schema; added forward.) |
+| `gst_number` | `text` | nullable. Indian GSTIN |
+| `address_line1` | `text` | nullable. Legacy `address` collapsed here |
+| `city`, `state`, `pincode` | `text` | nullable |
+| `is_active` | `boolean` | not null, default `true` |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes: `unique (company_id, code) where deleted_at is null`, `(company_id) where deleted_at is null`.
+
+### `vendors`
+
+Supplier master. Replaces legacy `vendors` (3 records).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Legacy `code` (e.g. `VND-001`) |
+| `name` | `text` | not null |
+| `contact_person` | `text` | nullable. Legacy `contact` |
+| `email` | `text` | nullable |
+| `phone` | `text` | nullable |
+| `gst_number` | `text` | nullable. Legacy `gst` |
+| `address_line1` | `text` | nullable. Legacy `address` |
+| `city`, `state`, `pincode` | `text` | nullable |
+| `materials_supplied` | `text` | nullable. Legacy `materials` (free-form, e.g. `EN8, EN24, EN31`) |
+| `rating` | `text` | nullable. Legacy `rating` (free `A`/`B`/`C` etc.) |
+| `is_active` | `boolean` | not null, default `true`. Derived from legacy `status === 'Active'` |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes: `unique (company_id, code) where deleted_at is null`, `(company_id) where deleted_at is null`.
+
+### `machines`
+
+Shop-floor equipment master. Replaces legacy `machines` (12 records).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Legacy `machineId` (e.g. `CNC-01`) |
+| `name` | `text` | not null. Legacy `name` (e.g. `DX-200 5A`) |
+| `machine_type` | `text` | nullable. Legacy `type` (often empty) |
+| `capacity_per_shift` | `integer` | nullable. Legacy `capPerShift` |
+| `shifts_per_day` | `integer` | not null, default `1`. Legacy `shifts` |
+| `status` | `text` | not null, default `'Idle'`. Legacy `status` (`Running`/`Idle`/`Down`/`Maintenance`) |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes: `unique (company_id, code) where deleted_at is null`, `(company_id) where deleted_at is null`, `(company_id, status) where deleted_at is null` (for the live operations board, Phase 3+).
+
+### `operators`
+
+Shop-floor worker master. Replaces legacy `operators` (1 record).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Legacy `opId` (e.g. `VNM`) |
+| `name` | `text` | not null |
+| `department` | `text` | nullable |
+| `skills` | `text` | nullable. Free-form (e.g. `CNC, Welding`); junction table only if it earns its keep |
+| `is_active` | `boolean` | not null, default `true` |
+| `user_id` | `uuid` | **nullable**, FK → `users(id)`. Set when an operator also has a login; null for shop-floor-only |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes: `unique (company_id, code) where deleted_at is null`, `(company_id) where deleted_at is null`, `(user_id) where deleted_at is null` (for finding operators by their login).
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:
@@ -277,4 +373,5 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 
 | Date | Migration | Notes |
 |---|---|---|
-| — | — | (first migration `0001_initial_schema` lands in T-005) |
+| 2026-04-30 | `0000_initial.sql` + `0001_post_init.sql` | Phase 1 — companies, users, items + helpers + auth.users triggers (T-005) |
+| 2026-04-30 | `0002_phase2_master.sql` (this commit) | Phase 2 storage layer — clients, vendors, machines, operators tables, indexes, RLS, BEFORE UPDATE triggers |

@@ -22,32 +22,27 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { transformClients } from './transforms/clients';
 import { transformItems } from './transforms/items';
+import { transformMachines } from './transforms/machines';
+import { transformOperators } from './transforms/operators';
 import type { Anomaly, IdMap, TransformResult } from './transforms/types';
 import { transformUsers } from './transforms/users';
+import { transformVendors } from './transforms/vendors';
 
 const TRANSFORMS = {
   users: transformUsers,
+  clients: transformClients,
+  vendors: transformVendors,
   items: transformItems,
-  // Stubs for tables that don't exist yet — implemented in T-017–T-021.
-  clients: () => {
-    throw new Error('clients schema not yet defined; implement under T-017');
-  },
-  vendors: () => {
-    throw new Error('vendors schema not yet defined; implement under T-018');
-  },
-  machines: () => {
-    throw new Error('machines schema not yet defined; implement under T-020');
-  },
-  operators: () => {
-    throw new Error('operators schema not yet defined; implement under T-021');
-  },
+  machines: transformMachines,
+  operators: transformOperators,
 } as const;
 
 type CollectionName = keyof typeof TRANSFORMS;
 const ALL_COLLECTIONS = Object.keys(TRANSFORMS) as CollectionName[];
-// Collections actually wired today.
-const WIRED_COLLECTIONS: CollectionName[] = ['users', 'items'];
+// All wired now (Phase 2 storage layer landed in 0002/0003 migrations).
+const WIRED_COLLECTIONS: CollectionName[] = [...ALL_COLLECTIONS];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {
   console.log(JSON.stringify({ time: new Date().toISOString(), level, msg, ...(ctx ?? {}) }));
@@ -110,19 +105,6 @@ async function main(): Promise<void> {
   const summaries: PerCollectionSummary[] = [];
 
   for (const collection of targets) {
-    if (!WIRED_COLLECTIONS.includes(collection)) {
-      // Trigger the stub error explicitly so the caller sees why nothing happened.
-      try {
-        TRANSFORMS[collection]([] as never);
-      } catch (e) {
-        log('warn', 'collection_not_wired', {
-          collection,
-          reason: (e as Error).message,
-        });
-      }
-      continue;
-    }
-
     const records = readExport(collection, exportDir);
     log('info', 'transforming', { collection, inputCount: records.length });
 

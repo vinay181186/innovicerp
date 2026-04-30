@@ -71,6 +71,29 @@ costCenters, dailyReports, taskAllocations, outsourceJobs, jwDCOutward, jwDCInwa
 
 **Stubs (not yet wired — pending schemas in T-017/T-018/T-020/T-021):** clients, vendors, machines, operators.
 
+### Run 2 — 2026-04-30T17:00:25Z (T-014 complete: all 6 master-data transforms)
+**Inputs:** users, clients, vendors, items, machines, operators export files
+**Output:** 6 `<table>.json` files in `migration/transform/` plus updated `_id_map.json` and `_anomalies.json`
+**Tests:** 38/38 vitest pass (8 users + 5 clients + 5 vendors + 10 items + 5 machines + 5 operators)
+**Total rows:** 371 (vs 354 in Run 1 — added 1 client, 3 vendors, 12 machines, 1 operator)
+
+| Table | Input | Rows | Anomalies | Notes |
+|---|---:|---:|---:|---|
+| users | 2 | 2 | 0 | Same as Run 1 |
+| clients | 1 | 1 | 0 | Single L&T record, address/contact/email all empty in legacy |
+| vendors | 3 | 3 | 0 | Mehta Steel + 2 others, all `status: Active`, ratings present |
+| items | 352 | 352 | 8 | Same as Run 1 (uom_normalised: 6 `Nos`→`NOS`, 2 `Set`→`SET`) |
+| machines | 12 | 12 | 0 | All shop-floor CNCs, statuses Running/Idle |
+| operators | 1 | 1 | 0 | Single shop-floor operator (`VNM` / Vinay), userId left null for T-015 |
+
+**Schema additions in this run** (migrations `0002_tricky_fallen_one.sql` + `0003_phase2_triggers.sql`):
+- `clients` (18 cols) + `vendors` (20 cols) + `machines` (13 cols) + `operators` (13 cols)
+- Each: company-scoped `(company_id, code)` unique index, `(company_id)` index, RLS pair (`company_read` / `manager_write`)
+- Plus `before update` triggers calling `set_updated_at()`
+- `operators.user_id` is nullable FK → `users(id)` for the optional operator-has-login link
+
+**id_map state after Run 2:** items/clients/vendors/machines/operators all have deterministic UUIDv5 ids; users entries still null pending Supabase Auth assignment in T-015.
+
 ---
 
 ## Per-Collection Migration Entries
