@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-010 web Items module + T-010b ESLint v9 migration)
+> Last updated: 2026-04-30 (DLP-friendly dev script: plain `tsx` confirmed; `dev`/`dev:watch` split)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -12,14 +12,19 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 
 ## Active Task
 **ID:** T-011
-**Title:** Set up CI/CD via GitHub Actions (typecheck, lint, test, deploy)
-**Status:** [ ] Not started — blocked only on ADR-010 (Railway vs Hetzner)
+**Title:** Set up CI/CD via GitHub Actions (typecheck, lint, test) + Railway deploy verification
+**Status:** [~] In progress
 **Acceptance:**
-- [ ] `.github/workflows/ci.yml` — runs typecheck, lint, test on PR and push
-- [ ] Pin Node 24 (per ADR-008)
-- [ ] Resolve ADR-010: pick API host (Railway vs Hetzner CCX13)
-- [ ] Add deploy workflow for chosen host
-- [ ] First green build on `main`
+- [x] Resolve ADR-010: API host = Railway Singapore
+- [x] `apps/api/Dockerfile` + `railway.json` (phase 1, already shipped)
+- [x] `.github/workflows/ci.yml` — Node 24 + pnpm 10; jobs: lint-typecheck (always) + test (gated on `CI_*` repo secrets, materialises `.env.local` on the runner)
+- [x] `.github/workflows/deploy.yml` — clarified: API deploy stays with Railway's GitHub integration per ADR-010; web deploy stub disabled until Cloudflare Pages is wired
+- [x] `apps/web/package.json` — `vitest run --passWithNoTests` so empty web suite doesn't redden CI
+- [ ] First green build on `main` (push to verify)
+- [ ] Railway env vars + region (`asia-southeast1`) set in dashboard, first `railway up`, `/health` 200
+- [ ] Connect Railway → GitHub for push-to-`main` deploys (after CI is green)
+- [ ] `docs/RUNBOOK.md` — Railway deploy / logs / rollback commands
+- [ ] `docs/ARCHITECTURE.md` — replace "Railway/Hetzner" placeholder with "Railway (Singapore)"
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -29,6 +34,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Phase 1 Backlog
 | ID | Task | Status |
 |---|---|---|
+| T-010c | Run `pnpm format` workspace-wide and re-enable `format:check` in CI (currently dropped from `ci.yml` because 26 files fail) | [ ] |
 | T-002 | Provision Supabase project (dev only — Mumbai `ap-south-1`, Pro tier, pooler `aws-1-ap-south-1`, pg 17.6, connection verified) | [x] Done (2026-04-29) |
 | T-003 | Design Phase 1 schema in `docs/SCHEMA.md` (companies, users, items + RLS helpers) | [x] Done (2026-04-29) |
 | T-004 | Build Drizzle schema definitions in `apps/api/src/db/schema.ts` (mirror SCHEMA.md) | [x] Done (2026-04-30) |
@@ -123,13 +129,13 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Blockers
 | ID | Task | Blocker | Needs |
 |---|---|---|---|
-| T-011 | CI/CD deploy | API hosting choice | Decide Railway vs Hetzner CCX13 (ADR-010 pending) |
+| T-011 | CI/CD deploy | API hosting choice | Resolved (ADR-010: Railway Singapore). Remaining T-011 work: GitHub Actions `ci.yml` + Railway env var setup |
 | Future | Staging + prod Supabase | Defer | Provision when Phase 4 (sales chain) is in flight |
-| Future | DLP-friendly dev script | Open ask | Investigate whether plain `tsx` (no watch) survives Seclore/eScan; only escalate to full `tsc -b --watch` + `node --watch` if it doesn't (would require shared-package build pipeline + project refs) |
 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | dev-env | DLP-friendly api `dev` script: split `dev` (plain `tsx`, DLP-safe) and `dev:watch` (`tsx watch`, blocked here). Confirmed end-to-end browser flow: login → `/me` 200 → `/items` 200 → items page renders. RUNBOOK §"Local Dev — Starting the API and Web" added; memory note updated to mark workaround durable |
 | 2026-04-30 | T-010b | ESLint v9 flat-config migration: replaced `.eslintrc.cjs` with `eslint.config.mjs` (uses `tseslint.config()` helper); added `@eslint/js@^9` and `typescript-eslint@^8` devDeps; dropped removed `--ext` flag from per-package `lint` scripts; carved out `no-console` for operational CLI paths (`**/db/seed.ts`, `**/scripts/**`, `migration/**`) per the script-vs-runtime split — CLAUDE.md §6.7 still binds runtime code. Workspace-wide `pnpm lint` and `pnpm typecheck` both clean |
 | 2026-04-30 | T-010 | Items master Web: TanStack Query hooks (`useItemsList/useItem/useCreateItem/useUpdateItem/useSoftDeleteItem`); list (TanStack Table + debounced search + type filter + URL-state pagination), detail (Card + delete-confirm), edit + new routes (react-hook-form + Zod from `@innovic/shared`); shadcn primitives added (card/label/select/textarea/table); routes registered under `_authenticated`; web typecheck clean. Lint blocked project-wide by pre-existing ESLint v9 config gap → tracked as T-010b. Manual smoke gated on user (dev API needs to be up; tsx watch dies under Seclore/eScan on this box) |
 | 2026-04-30 | T-009 | Items master API per CLAUDE.md §8: shared Zod schemas; `withUserContext` for RLS claim injection; service (list/get/create/update/softDelete) + routes (5 endpoints); 12 tests pass (8 service, 4 routes) against dev Supabase |

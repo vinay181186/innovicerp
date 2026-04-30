@@ -1,22 +1,16 @@
 name: Deploy
 
-# Wired in T-011. Currently a skeleton; do not enable until staging Supabase + hosting are provisioned (T-002).
+# API deploy is handled by Railway's GitHub integration (ADR-010), NOT this workflow.
+# Railway watches `main` and runs the Dockerfile at apps/api/Dockerfile.
+# This workflow exists for the web deploy to Cloudflare Pages, kept disabled
+# until that's wired (separate task; not part of T-011).
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
 
 jobs:
-  deploy-api:
-    if: false # disabled until T-011
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "TODO: deploy API to Railway/Hetzner"
-
   deploy-web:
-    if: false # disabled until T-011
+    if: false # disabled until Cloudflare Pages is wired
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

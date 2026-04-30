@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "dotenv -e ../../.env.local -- tsx watch src/server.ts",
+    "dev": "dotenv -e ../../.env.local -- tsx src/server.ts",
+    "dev:watch": "dotenv -e ../../.env.local -- tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:production": "tsx src/server.ts",

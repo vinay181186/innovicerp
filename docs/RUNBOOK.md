@@ -72,9 +72,38 @@ First Monday of every month:
 - Set PowerShell ExecutionPolicy: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
 - `pnpm install` from repo root
 - `cp .env.example .env.local` and fill in dev Supabase keys
-- `pnpm dev` — runs api + web in parallel
+
+## Local Dev — Starting the API and Web
+The API and web dev servers run in **two separate, foreground terminals**. Don't background them and don't combine them in one terminal.
+
+### Terminal #1 — API (Fastify, port 3000)
+```
+pnpm --filter @innovic/api dev
+```
+This invokes plain `tsx src/server.ts` (no watch — see "Seclore / eScan notes" below). Wait for the Pino `Server listening at http://127.0.0.1:3000` line. **Manual restart on code changes:** Ctrl+C, then re-run.
+
+A `dev:watch` variant exists (`pnpm --filter @innovic/api dev:watch`) for machines where DLP isn't intercepting `tsx`'s watcher. On this workstation it silently exits — don't use it here.
+
+### Terminal #2 — Web (Vite, port 5173)
+```
+pnpm --filter @innovic/web dev
+```
+Wait for `Local: http://localhost:5173/`. If 5173 is already bound by an orphan from a prior session, Vite will jump to 5174 — kill the orphan first:
+```
+netstat -ano | findstr :5173
+taskkill /F /PID <pid>
+```
+
+### Verifying both are up
+```
+curl http://localhost:3000/health      # API → {"ok":true,...}
+# then open http://localhost:5173 in the browser, log in,
+# DevTools → Network → confirm /me and /items? return 200.
+```
 
 ## Seclore / eScan Notes (this dev box only)
-- This workstation runs Seclore FileSecure DLP and eScan AV. Both intercept PowerShell execution and stdout from native processes.
+- This workstation runs Seclore FileSecure DLP and eScan AV. Both intercept PowerShell execution and child-process loaders for native binaries.
+- **`tsx watch` is silently killed.** Plain `tsx` (single-shot, no watch) is fine. The api `dev` script uses plain `tsx` for that reason. If even plain `tsx` ever stops working, fall back to compiled output: `pnpm --filter @innovic/api build && node dist/server.js`.
+- The web dev server (`vite`) is unaffected — it survives backgrounding fine.
 - For local-only ops scripts, prefer `.cmd`/`.bat` wrappers or invoke via Node (`node ./scripts/foo.js`) to bypass PowerShell-specific blocks.
-- Clarification of Seclore egress policy on legacy spec/migration scripts is an open ADR (see `docs/DECISIONS.md` ADR-011 pending).
+- Clarification of Seclore egress policy on legacy spec/migration scripts is an open ADR (see `docs/DECISIONS.md` ADR-012 pending).
