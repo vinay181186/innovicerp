@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-013 done — Firestore export of 550 records across 65 collections complete)
+> Last updated: 2026-04-30 (T-014 partial — transform infrastructure + users/items shipped; clients/vendors/machines/operators stubbed pending their schemas)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,17 +11,22 @@
 Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-014
-**Title:** Build transformation script (`migration/transform.ts`) — JSON-blob → per-record rows + UUID/UID mapping
+**ID:** T-015
+**Title:** Build bulk-load script (`migration/load-supabase.ts`) — Phase 2 master data
 **Status:** [ ] Not started
+**Scope:** Load `migration/transform/users.json` and `migration/transform/items.json` into Supabase. Two-phase for users: (a) create Supabase Auth accounts with temporary passwords (or magic-link), get assigned UUIDs, write back to `_id_map.json`; (b) update `public.users` rows with companyId/role/fullName/isActive. For items: resolve `companyId` (seed company), `createdBy`/`updatedBy` (seed admin), then bulk insert.
 **Acceptance:**
-- [ ] For each export file in `migration/export/<collection>.json`, produce a `migration/transform/<table>.json` with rows shaped for the new Postgres schema
-- [ ] Generate stable UUIDs for new primary keys; build a Firebase-Auth-UID → Supabase-user-UUID map (read from a fixture or live Supabase) and persist `migration/transform/_id_map.json` so re-runs are deterministic
-- [ ] Map FK references using the id_map (e.g. `users.id` Firestore → `users.id` Supabase); error on unresolved refs
-- [ ] Soft-delete records (legacy `_deleted: true` or in `trash` collection if tracked there) → set `deleted_at = recorded date`; otherwise leave null
-- [ ] Apply per-collection transformations in their own functions (one per legacy collection) so they're testable independently
-- [ ] Vitest fixture-based unit tests (CLAUDE.md §9: 100% branch coverage on transform functions)
-- [ ] Anomalies report: missing FKs, unmappable enums, malformed dates, etc., written to `migration/transform/_anomalies.json`
+- [ ] CLI: `--only=users,items`, `--dry-run` (validates without writing), `--env=dev|staging` (selects target Supabase via env vars)
+- [ ] Idempotent: re-running with no transform changes is a no-op (uses `on conflict do update where ...`); resumable after partial failure
+- [ ] Users: send password-reset emails via Supabase Admin API; record outcome in `_id_map.json` plus a `migration/load/users-loaded.json` audit
+- [ ] Items: bulk insert in batches of 100; FK resolution via id_map; conflict-on-(company_id, code) updates instead of duplicating
+- [ ] Validation: post-load select counts match transform rowCounts; sample 5 random rows to verify shape; report mismatches as `migration/load/_validation.json`
+- [ ] Append a per-collection entry to `docs/MIGRATION-LOG.md` § Per-Collection Migration Entries
+
+## Phase 2 sub-tasks unblocked by T-014
+- **T-016 (users migrate):** Once T-015 lands, run users load + verify in dev Supabase. Append MIGRATION-LOG entry.
+- **T-019 (items migrate):** Same — items load + verify. 352 records.
+- **T-017/T-018/T-020/T-021 (clients/vendors/machines/operators):** Each requires schema design (CLAUDE.md §8) BEFORE T-014 can grow a transform for it. Sequence per task: SCHEMA.md → Drizzle schema + migration → add transform to `migration/transforms/<name>.ts` → load + verify.
 
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
@@ -55,7 +60,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 | ID | Task | Status |
 |---|---|---|
 | T-013 | Build one-time Firestore export script (`migration/export-firestore.ts`) | [x] Done (2026-04-30) |
-| T-014 | Build transformation script (JSON-blob → per-record rows, UUID + UID mapping) | [ ] |
+| T-014 | Build transformation script (JSON-blob → per-record rows, UUID + UID mapping) | [~] Partial — infra + users + items done; 4 stubs pending their schemas |
 | T-015 | Build bulk-load script in FK dependency order (`migration/load-supabase.ts`) | [ ] |
 | T-016 | Migrate `users` (Firebase Auth UIDs → Supabase users) | [ ] |
 | T-017 | Migrate `clients` master | [ ] |
@@ -138,6 +143,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-014 (partial) | Transform infrastructure + users/items shipped. `migration/transform.ts` orchestrator, per-collection functions in `migration/transforms/<name>.ts`, deterministic UUIDv5 (`uuid-namespace.ts`). 18/18 vitest pass; real-data run produces users 2/2 + items 352/352 = 354 rows in `migration/transform/`, 8 anomalies (all `uom_normalised`: 6 `Nos`→`NOS`, 2 `Set`→`SET`). Stubs throw with TASKS pointer for clients/vendors/machines/operators (need schema first per CLAUDE.md §8) |
 | 2026-04-30 | T-013 | Firestore export: `migration/export-firestore.ts` (firebase-admin, 235 lines) — full run dumped 550 records across 65 collections (27 active, 38 `doc_missing` for unused legacy features); 2 singletons (`_settings` exists, `companies/innovic` absent). 38 s, 1.2 MB on disk. Per-run details in `docs/MIGRATION-LOG.md` § "Run 1". Corrected docs from "67 collections" → 65 (legacy HTML count). DLP note added to `migration/README.md` (pnpm/dotenv-cli silent-exits in non-interactive shells; direct `node --import tsx` bypasses) |
 | 2026-04-30 | T-012 | **PHASE 1 SIGN-OFF.** Manual smoke on Railway production URL with web pointing at Railway API: admin happy path (login → create → edit → soft-delete → re-list) all 200; non-admin (`viewer`) confirmed blocked from writes by RLS; cross-browser clean (Chrome + Firefox). CI Test job confirmed running all 12 api integration tests against dev Supabase via `CI_*` secrets (CI #21 green). Phase 2 carry-over notes captured in §"Phase 2 carry-over notes" |
 | 2026-04-30 | T-011 | CI/CD live: `.github/workflows/ci.yml` with two-job split (lint-typecheck always, test gated on `CI_*` secrets); CI #17 green on `main` in 1 min. Railway service deployed to `asia-southeast1`, env vars set, `/health` 200, GitHub repo connected for push-to-`main` auto-deploy (ADR-010). Stale `deploy.yml` removed. RUNBOOK §"Deploy — API (Railway)" added with logs/rollback/health/env procedures |

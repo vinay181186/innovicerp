@@ -54,6 +54,25 @@ costCenters, dailyReports, taskAllocations, outsourceJobs, jwDCOutward, jwDCInwa
 
 ---
 
+## Transform Runs
+
+### Run 1 — 2026-04-30T16:40:17Z (T-014 partial: users + items)
+**Inputs:** `migration/export/users.json` (2 records), `migration/export/items.json` (352 records)
+**Output:** `migration/transform/users.json`, `migration/transform/items.json`, `_id_map.json`, `_anomalies.json`
+**Tests:** 18/18 vitest pass (8 users + 10 items)
+**Total rows transformed:** 354
+
+| Table | Input | Rows | Anomalies | Notes |
+|---|---:|---:|---:|---|
+| users | 2 | 2 | 0 | Both admins; PINs carried in `_legacyPin` for T-015 (load) — Supabase Auth signup will replace with temporary passwords |
+| items | 352 | 352 | 8 | All anomalies are `uom_normalised` (6 `Nos`→`NOS`, 2 `Set`→`SET`); no validation skips, no missing fields, no `drawingData` to migrate to Storage |
+
+**id_map state:** users entries are null (Supabase Auth assigns at load time); items entries are deterministic UUIDv5 (stable across re-runs via fixed namespace `f5b8a3a4-1c2d-4e3f-8a5b-6c7d8e9f0a1b`).
+
+**Stubs (not yet wired — pending schemas in T-017/T-018/T-020/T-021):** clients, vendors, machines, operators.
+
+---
+
 ## Per-Collection Migration Entries
 
 > One entry per collection migrated. Append-only.

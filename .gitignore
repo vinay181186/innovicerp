@@ -42,3 +42,6 @@ firebase-service-account*.json
 *-firebase-adminsdk-*.json
 # Migration export dumps (large generated JSON; regenerated from Firestore).
 migration/export/
+# Transform outputs (regenerated from export + transform logic; gitignored
+# because contents are deterministic from inputs and shouldn't churn diffs).
+migration/transform/
