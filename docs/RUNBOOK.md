@@ -91,6 +91,37 @@ Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.y
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
+## Release Smoke / Sign-off Procedure
+Run this before declaring a release ready, and after any infra change (Railway region, env var rotation, schema migration, new module rollout).
+
+### Setup — point local web at production API
+1. Edit `.env.local` (repo root): set `VITE_API_URL` to the Railway URL (e.g. `https://innovic-erp-production-xxxx.up.railway.app`). Do not commit this change.
+2. `pnpm --filter @innovic/web dev` — local Vite on `:5173`, talking to production API.
+
+### Part A — Admin happy path (Chrome)
+1. Open DevTools → Network → tick "Preserve log".
+2. Log in as admin.
+3. For each touched module: list → create → edit → soft-delete → confirm gone from list. All HTTP responses 2xx.
+
+### Part B — Non-admin role (RLS verification)
+1. Supabase dashboard → Authentication → add a fresh user.
+2. Activate via SQL: `update public.users set role = '<role>', company_id = (select id from public.companies where ...), is_active = true where email = '<test-email>';`
+3. Sign out, log in as the new user.
+4. Read should succeed (per `company_isolation` RLS policy).
+5. Write attempts that exceed the role's policy must fail (403 from service-layer check, OR DB-level RLS rejection — both acceptable; document if it surfaces as 500).
+6. Cross-company isolation check: never visible from this user's account.
+
+### Part C — Cross-browser
+Repeat Part A in Firefox. Optional: Edge / Safari if any user is on those.
+
+### Cleanup
+1. Revert `.env.local` to `VITE_API_URL=http://localhost:3000`.
+2. Soft-delete or hard-delete the smoke records (per current data policy — soft is the project default per ADR-006).
+3. Remove the test non-admin user if no longer needed.
+
+### Sign-off
+Record date + browsers + roles tested + result in `docs/TASKS.md` recently-completed table, with a one-line note. Phase cutovers also get an entry in `docs/MIGRATION-LOG.md`.
+
 ## Monthly Restore Drill (T-058)
 First Monday of every month:
 1. Pull latest backup.

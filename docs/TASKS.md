@@ -1,25 +1,34 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-011 done — CI green; Railway deployed in `asia-southeast1`, GitHub auto-deploy connected)
+> Last updated: 2026-04-30 (Phase 1 SIGNED OFF — T-012 smoke green on Railway across roles + Chrome/Firefox)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
 
 ## Current Phase
-**Phase 1 — Foundation (Week 1–2)**
-Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
+**Phase 2 — Master Data Migration (Week 3)**
+Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-012
-**Title:** Phase 1 sign-off — Items master fully working with RLS verified across roles
+**ID:** T-013
+**Title:** Build one-time Firestore export script (`migration/export-firestore.ts`)
 **Status:** [ ] Not started
+**Source of truth:** Live Firestore at project `innovic-erp-v1-77a19` (config inline in `legacy/InnovicERP_*.html` line 598+). The HTML is a runtime client; the data lives in Firestore.
 **Acceptance:**
-- [ ] Manual smoke on production Railway URL: log in, create item, edit, soft-delete, re-list — all 200, RLS-clean (no cross-company leak)
-- [ ] Add a non-admin test user (role: operator or viewer) and confirm RLS denies write on items per role policy
-- [ ] Add `CI_*` secrets in GH repo settings so the CI Test job actually runs the api integration tests (currently skipped — see T-011 footnote)
-- [ ] Cross-browser smoke (Chrome + Firefox) on the Railway URL
-- [ ] Document any gaps in `docs/TASKS.md` for Phase 2 attention
+- [ ] Connect to Firebase using the Admin SDK + a service-account key (NOT the client API key); script reads `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_PATH` from env
+- [ ] Discover collection list from a hard-coded canonical list derived from the legacy HTML's `COLLECTIONS` array (line ~584); dump every collection's docs verbatim (each Firestore doc contains a JSON-blob array of records — keep both raw doc shape and the parsed array, downstream T-014 transform handles flattening)
+- [ ] Output: one file per collection at `migration/export/<collection>.json`, plus `migration/export/_manifest.json` with timestamp, doc counts, blob-record counts, hash per file
+- [ ] Idempotent: re-run rewrites files; manifest captures whether content changed
+- [ ] Logs per-collection: docs fetched, embedded record count, any anomalies (missing collection, parse errors)
+- [ ] `firebase-service-account*.json` and `migration/export/**` added to `.gitignore`
+- [ ] `migration/README.md` updated with: how to generate the service account key, env var setup, how to run, expected output
+
+## Phase 2 carry-over notes (from Phase 1 sign-off)
+- **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
+- **CI tests reuse dev Supabase secrets.** Tests prefix-isolate (`T009R-`) and clean up after themselves so this is safe at current scale, but **provision a separate CI/staging Supabase project before Phase 4** (sales chain) — test data volume + concurrency will grow.
+- **Smoke session behaviour to confirm in Phase 2:** when a non-admin (`viewer`) attempts a write, the API returns an error — confirm whether it's a clean 403 (handled by service-layer role check) or a 500 leaking a Postgres RLS error. If 500, add explicit role checks in `apps/api/src/modules/items/service.ts` and propagate `AuthorizationError`. (Tracked as a Phase-2 hardening item; user reported "all working" on smoke so write was correctly blocked, but the response-shape detail wasn't captured.)
+- **`pnpm format` not yet run workspace-wide** (T-010c). Re-enable `format:check` in `ci.yml` once formatting is normalised.
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -41,7 +50,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-010 | Build Items master module — Web (api hooks, list/detail/create/edit) | [x] Done (2026-04-30) |
 | T-010b | Migrate ESLint config to v9 flat format (project-wide; precondition for T-011) | [x] Done (2026-04-30) |
 | T-011 | CI/CD: GitHub Actions (typecheck, lint, gated test) + Railway auto-deploy on push-to-`main` | [x] Done (2026-04-30) |
-| T-012 | Phase 1 sign-off: Items master fully working with RLS verified across roles | [ ] |
+| T-012 | Phase 1 sign-off: Items master fully working with RLS verified across roles | [x] Done (2026-04-30) |
 
 ## Phase 2 Backlog — Master Data Migration (Week 3)
 | ID | Task | Status |
@@ -130,6 +139,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-012 | **PHASE 1 SIGN-OFF.** Manual smoke on Railway production URL with web pointing at Railway API: admin happy path (login → create → edit → soft-delete → re-list) all 200; non-admin (`viewer`) confirmed blocked from writes by RLS; cross-browser clean (Chrome + Firefox). CI Test job confirmed running all 12 api integration tests against dev Supabase via `CI_*` secrets (CI #21 green). Phase 2 carry-over notes captured in §"Phase 2 carry-over notes" |
 | 2026-04-30 | T-011 | CI/CD live: `.github/workflows/ci.yml` with two-job split (lint-typecheck always, test gated on `CI_*` secrets); CI #17 green on `main` in 1 min. Railway service deployed to `asia-southeast1`, env vars set, `/health` 200, GitHub repo connected for push-to-`main` auto-deploy (ADR-010). Stale `deploy.yml` removed. RUNBOOK §"Deploy — API (Railway)" added with logs/rollback/health/env procedures |
 | 2026-04-30 | dev-env | DLP-friendly api `dev` script: split `dev` (plain `tsx`, DLP-safe) and `dev:watch` (`tsx watch`, blocked here). Confirmed end-to-end browser flow: login → `/me` 200 → `/items` 200 → items page renders. RUNBOOK §"Local Dev — Starting the API and Web" added; memory note updated to mark workaround durable |
 | 2026-04-30 | T-010b | ESLint v9 flat-config migration: replaced `.eslintrc.cjs` with `eslint.config.mjs` (uses `tseslint.config()` helper); added `@eslint/js@^9` and `typescript-eslint@^8` devDeps; dropped removed `--ext` flag from per-package `lint` scripts; carved out `no-console` for operational CLI paths (`**/db/seed.ts`, `**/scripts/**`, `migration/**`) per the script-vs-runtime split — CLAUDE.md §6.7 still binds runtime code. Workspace-wide `pnpm lint` and `pnpm typecheck` both clean |

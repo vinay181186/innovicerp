@@ -35,3 +35,10 @@ legacy/Innovic_ERP_Migration_Proposal.extracted.txt
 /*.png
 /*.gif
 /*.webp
+# Firebase Admin SDK service-account keys (NEVER commit — private credentials).
+# Covers Google's default name (`<project>-firebase-adminsdk-<id>-<rand>.json`)
+# and any sensibly-renamed `firebase-service-account*.json`.
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
+# Migration export dumps (large generated JSON; regenerated from Firestore).
+migration/export/
