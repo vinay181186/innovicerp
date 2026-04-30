@@ -5,6 +5,9 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
+import { machinesListRoute } from './modules/machines/routes/list';
+import { machineDetailRoute } from './modules/machines/routes/detail';
+import { machineEditRoute, machineNewRoute } from './modules/machines/routes/edit';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -31,6 +34,10 @@ const routeTree = rootRoute.addChildren([
     vendorNewRoute,
     vendorDetailRoute,
     vendorEditRoute,
+    machinesListRoute,
+    machineNewRoute,
+    machineDetailRoute,
+    machineEditRoute,
   ]),
 ]);
 

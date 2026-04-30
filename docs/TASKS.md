@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-022 — clients + vendors modules shipped; machines/operators pending)
+> Last updated: 2026-04-30 (T-022 — clients + vendors + machines shipped; operators pending)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,9 +11,9 @@
 Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-022 (continuing — machines/operators)
+**ID:** T-022 (continuing — operators)
 **Title:** Build admin screens for each master entity (web)
-**Status:** [~] In progress — clients + vendors done; 2 entities remaining
+**Status:** [~] In progress — clients + vendors + machines done; 1 entity remaining
 **Scope:** Per CLAUDE.md §8, build the API + Web modules for `clients`, `vendors`, `machines`, `operators` to mirror the existing `items` reference module. The storage layer, RLS, and migrated data are all in place from T-014/T-015.
 **Acceptance:**
 - [ ] For each of clients/vendors/machines/operators:
@@ -140,6 +140,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-022 (machines) | Machines admin module shipped per CLAUDE.md §8: shared Zod schemas (machineType, capacityPerShift int, shiftsPerDay int default 1, status text); api module (5 endpoints, 7 service tests + 4 routes tests); web module (MachineForm with status select Idle/Running/Down/Maintenance, list with type/cap/shifts/status columns + status filter, detail card). Workspace typecheck/lint clean |
 | 2026-04-30 | T-022 (vendors) | Vendors admin module shipped per CLAUDE.md §8: shared Zod schemas (adds materialsSupplied + rating); api module (5 endpoints, 7 service tests + 4 routes tests, 11/11 against dev Supabase); web module (TanStack Query hooks, VendorForm with materials textarea + rating field, list with rating column, detail with materials section). Workspace typecheck/lint clean; 34/34 api tests pass total |
 | 2026-04-30 | T-022 (clients) | Clients admin module shipped per CLAUDE.md §8: shared Zod schemas; api module (routes/service/schema + 4 routes tests + 7 service tests, 11/11 pass against dev Supabase); web module (TanStack Query hooks, ClientForm with create/edit modes, list with search/status filter + pagination, detail with delete-confirm, edit + new routes); registered in router. Workspace typecheck + lint clean. Vendors/machines/operators follow same pattern in subsequent commits |
 | 2026-04-30 | T-015 + T-016/T-017/T-018/T-019/T-020/T-021 | **Phase 2 master-data MIGRATED.** Built `migration/load.ts` (orchestrator) + `load/{users-loader,bulk-loader,validate}.ts`. Two-phase users: seed admin reused (`mmtdefvc`→`e9c9ed51...`), `japan@innovictechnology.com` invited via Supabase Admin API (option B per user, real email sent → `63bb07e7...`). Bulk-loaded 5 master tables in batches of 100 with `on conflict (company_id, code) do nothing`: clients 1/1, vendors 3/3, items 352/352, machines 12/12, operators 1/1. Total: **371 rows in dev Supabase**. Per-collection entries appended to MIGRATION-LOG. Users validation diff = +1 (the `viewer@innovic.test` user from T-012 smoke is still in DB; not a load issue). Active task: T-022 (admin screens) |
