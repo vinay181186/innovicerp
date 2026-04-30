@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
+import { clientsRoutes } from './modules/clients/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
@@ -36,6 +37,7 @@ app.get('/me', async (req): Promise<MeResponse> => {
 });
 
 await app.register(itemsRoutes);
+await app.register(clientsRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

@@ -1,4 +1,7 @@
 import { createRouter } from '@tanstack/react-router';
+import { clientsListRoute } from './modules/clients/routes/list';
+import { clientDetailRoute } from './modules/clients/routes/detail';
+import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
@@ -17,6 +20,10 @@ const routeTree = rootRoute.addChildren([
     itemNewRoute,
     itemDetailRoute,
     itemEditRoute,
+    clientsListRoute,
+    clientNewRoute,
+    clientDetailRoute,
+    clientEditRoute,
   ]),
 ]);
 
