@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (DLP-friendly dev script: plain `tsx` confirmed; `dev`/`dev:watch` split)
+> Last updated: 2026-04-30 (T-011 CI green on main; Railway dashboard + CI secrets remain user-owned)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -20,11 +20,12 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 - [x] `.github/workflows/ci.yml` — Node 24 + pnpm 10; jobs: lint-typecheck (always) + test (gated on `CI_*` repo secrets, materialises `.env.local` on the runner)
 - [x] `.github/workflows/deploy.yml` — clarified: API deploy stays with Railway's GitHub integration per ADR-010; web deploy stub disabled until Cloudflare Pages is wired
 - [x] `apps/web/package.json` — `vitest run --passWithNoTests` so empty web suite doesn't redden CI
-- [ ] First green build on `main` (push to verify)
-- [ ] Railway env vars + region (`asia-southeast1`) set in dashboard, first `railway up`, `/health` 200
-- [ ] Connect Railway → GitHub for push-to-`main` deploys (after CI is green)
-- [ ] `docs/RUNBOOK.md` — Railway deploy / logs / rollback commands
-- [ ] `docs/ARCHITECTURE.md` — replace "Railway/Hetzner" placeholder with "Railway (Singapore)"
+- [x] First green build on `main` — CI #17 (`14fda98`), 1 min total: Lint+Typecheck ✅, Test ✅ (secrets-gate skipped step). Two prior false starts surfaced and fixed: `pnpm/action-setup@v4` dual-spec error, and `_*` gitignore shadow-banning TanStack Router routes (`__root.tsx`, `_authenticated.tsx`)
+- [x] `docs/ARCHITECTURE.md` — replaced "Railway/Hetzner" placeholder with "Railway, asia-southeast1 / Singapore — ADR-010"; noted ~150ms p95 cost vs Fly.io Mumbai
+- [ ] Railway env vars + region (`asia-southeast1`) set in dashboard, first `railway up`, `/health` 200 — **user-owned (Track B)**
+- [ ] Connect Railway → GitHub for push-to-`main` deploys — **user-owned (Track B)**
+- [ ] `docs/RUNBOOK.md` — Railway deploy / logs / rollback commands (do after Track B lands so we can document actual flow, not anticipated)
+- [ ] Add `CI_*` secrets in GH repo settings (DATABASE_URL, DATABASE_URL_POOLED, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET) so the Test job stops skipping
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
