@@ -8,6 +8,7 @@
     "dev": "dotenv -e ../../.env.local -- tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "start:production": "tsx src/server.ts",
     "test": "dotenv -e ../../.env.local -- vitest run",
     "test:watch": "dotenv -e ../../.env.local -- vitest",
     "typecheck": "tsc --noEmit",

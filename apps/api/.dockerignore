@@ -1,0 +1,42 @@
+# Build context is repo root, so most of these patterns target the root tree.
+# Keep this lean — every byte affects cold-build time.
+
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.turbo
+**/.cache
+**/*.tsbuildinfo
+
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+
+# Workspace packages we don't need in the API image
+apps/web
+**/playwright-report
+**/test-results
+
+# Local env, never ship secrets
+.env
+.env.*
+!.env.example
+
+# Legacy / migration / docs not needed at runtime
+legacy
+migration
+docs
+*.md
+!README.md
+
+# Editor + OS noise
+**/.DS_Store
+*.log
+
+# Harness-helper temp files (CLAUDE.md convention)
+**/_*
+!**/meta/_journal.json

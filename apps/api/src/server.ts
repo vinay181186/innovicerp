@@ -38,7 +38,7 @@ app.get('/me', async (req): Promise<MeResponse> => {
 await app.register(itemsRoutes);
 
 try {
-  await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
+  await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });
 } catch (err) {
   logger.error({ err }, 'failed to start server');
   process.exit(1);

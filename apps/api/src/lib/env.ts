@@ -3,6 +3,9 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  // PORT is the platform convention (Railway, Fly, Heroku all inject it). API_PORT
+  // is the local-dev convention from .env.local. server.ts prefers PORT when set.
+  PORT: z.coerce.number().int().positive().optional(),
   API_PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),
   DATABASE_URL_POOLED: z.string().url(),

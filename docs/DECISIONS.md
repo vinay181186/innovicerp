@@ -170,10 +170,86 @@ Upgrade `fastify` from 4.x to 5.x. Plugins stay at their current versions. CLAUD
 - Negative: small API tweak in `server.ts` (`logger` option → `loggerInstance` keyword for passing a Pino instance).
 - Risks: low; Fastify 5 is mature by now.
 
-(Append new decisions below as ADR-010, ADR-011, ...)
+---
+
+## ADR-010: API hosting — Railway (Singapore) accepted; Fly.io Mumbai considered
+**Date:** 2026-04-30
+**Status:** Accepted
+
+### Context
+
+CLAUDE.md §1 locks the data region to Mumbai (`ap-south-1`); Supabase Postgres + Storage + Auth all live there. The Fastify API needs to sit physically close to Postgres because every request hits the DB at least once (RLS-checked queries + audit writes), and at 100 concurrent users the cumulative cross-region latency would dominate p95.
+
+The original migration proposal listed Railway and Hetzner CCX13 as candidates. Both predate the hard region lock; this ADR revisits with the constraint binding.
+
+Round-trip latency from each candidate to Supabase Mumbai (`aws-1-ap-south-1`):
+
+| Host | Region | RTT to Supabase Mumbai |
+|---|---|---|
+| Fly.io | `bom` (Mumbai) | <5 ms (same metro) |
+| Railway | `asia-southeast1` (Singapore) | ~50 ms |
+| Hetzner CCX13 | Helsinki / Falkenstein | ~140–180 ms |
+| AWS App Runner / ECS | `ap-south-1` (Mumbai) | <5 ms (same region) |
+| DigitalOcean | `BLR1` (Bangalore) | ~10 ms |
+
+For a typical API request that issues 1 write + 2 SELECTs against Postgres, the round-trips alone:
+- Fly.io: ~15 ms baseline overhead
+- Railway: ~150 ms baseline (3× round-trips × 50 ms)
+- Hetzner: ~450–540 ms baseline — would blow the p95 < 300 ms target in `docs/ARCHITECTURE.md` before any application time is added.
+
+### Decision
+
+**Use Railway with the API in `asia-southeast1` (Singapore).** Single service, Dockerfile-based build, push-to-deploy via Railway's GitHub integration.
+
+The Fly.io `bom` option had a clear technical edge (~150 ms cheaper baseline), but the user (project operator and primary on-call) chose Railway for DX reasons — familiarity, dashboard ergonomics, simpler env-var management, single-button rollbacks. The latency tax is acceptable at our current scale: ~150 ms baseline still leaves ~150 ms of app + query time under the p95 < 300 ms target if the API stays lean (no N+1, no synchronous heavy work in handlers, RLS policies index-friendly).
+
+We run **`tsx` directly at the entrypoint** rather than compiling to `dist/` first — see "Build pipeline" below.
+
+### Alternatives Considered
+
+- **Fly.io `bom` (Mumbai)** — closer to Supabase by ~140 ms baseline; rejected on operator-DX grounds. We document the cost so the call is reversible: if p95 latency or perceived UI lag becomes a problem at >50 concurrent users, the Fly.io option is the first thing to reconsider. Same Dockerfile would work; only the deploy target changes.
+- **Hetzner CCX13** (~₹450/mo, ~$5/mo) — **rejected: no Mumbai region.** Nearest is Helsinki / Falkenstein. The 150 ms+ RTT to Supabase makes the p95 latency target unattainable, and we'd lose CLAUDE.md §1's "all data and compute stays in India" promise to the user.
+- **AWS App Runner / Fargate / EC2** in `ap-south-1` — rejected: solves the region problem but reintroduces AWS ops overhead that ADR-001 specifically rejected vs Supabase. ~$25/mo minimum for sized memory + CloudWatch + ALB; not enough advantage to justify.
+- **DigitalOcean App Platform / Droplet** in BLR1 (Bangalore, ~10 ms RTT) — rejected: viable; kept as fallback if Railway Singapore degrades for an extended period.
+- **Vercel / Cloudflare Workers / Edge Functions** — rejected: cold starts on a Postgres-bound API are a known foot-gun (the pooled connection from a freshly-cold function adds 200+ ms). The API is a long-running stateful Fastify process by design (auth plugin caches, in-memory rate limits), not a serverless handler.
+- **Self-host on user's existing on-prem hardware** — not seriously considered. We're explicitly migrating *off* a single-machine setup.
+
+### Build pipeline — `tsx` in production (deferred compile)
+
+Decided to run `tsx src/server.ts` as the production entrypoint instead of `node dist/server.js`. Avoids:
+
+- A separate `tsconfig.build.json` per workspace package
+- Rewiring `packages/shared`'s `package.json` exports for runtime resolution
+- Rewriting ~20 imports across the api to add `.js` extensions (required by `module: "NodeNext"`)
+- TypeScript Project References
+
+Cost: ~50 ms tsx loader startup overhead per cold start, ~20 MB extra resident memory for the loader. Both negligible at 15–100 users. Migration to a compiled image is a one-day task we can tackle when we want a smaller production attack surface (and a slightly faster cold start) — flagged in TASKS.md "Future / DLP-friendly dev script" alongside the same dev-side work.
+
+### Consequences
+
+- **Positive:** Push-to-deploy via Railway's GitHub integration. Dashboard for env vars, logs, metrics, rollbacks. Dockerfile gives us a portable build — switching to Fly.io / DO / AWS later means changing the deploy target, not the build. No code-level vendor lock-in.
+- **Negative:** ~150 ms latency floor vs an in-region host. Eats into our p95 budget; bad app-side decisions (N+1, missing indexes) will surface as user-visible slowness sooner than they would on Fly Mumbai. Mitigation: we already index FKs and have query-plan discipline (see SCHEMA.md).
+- **Risks:**
+  - Railway's APAC presence is a single region (Singapore) — no failover. Mitigation: keep `pg_dump` portability (ADR-001) and the same Dockerfile that works elsewhere. Failover plan: deploy to DO BLR1 (~30 min, manual) if Singapore region degrades for >2 hr.
+  - Latency could outgrow the p95 target as the workload grows. Mitigation: track p95 in Better Stack / Sentry; if it crosses 250 ms sustained, that's the trigger to revisit Fly.io Mumbai.
+
+### Action items (T-011 implementation)
+
+- [x] `apps/api/Dockerfile` — multi-stage, build context = repo root, runs `tsx src/server.ts`
+- [x] `apps/api/.dockerignore` — strip web, legacy, docs, env, node_modules
+- [x] `railway.json` at repo root — `builder: DOCKERFILE`, healthcheck `/health`
+- [x] `apps/api/src/lib/env.ts` — accept `PORT` (Railway injects it) and prefer it over `API_PORT`
+- [ ] Set Railway env vars in dashboard: `NODE_ENV=production`, `DATABASE_URL`, `DATABASE_URL_POOLED`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`
+- [ ] Set Railway region to `asia-southeast1`
+- [ ] First `railway up` from CLI → verify `/health` returns 200
+- [ ] Connect Railway → GitHub for push-to-`main` deploys (after CI is green)
+- [ ] `.github/workflows/ci.yml` runs typecheck + lint + test (deploy stays with Railway, not GH Actions)
+- [ ] `docs/RUNBOOK.md` — Railway deploy / logs / rollback commands
+- [ ] `docs/ARCHITECTURE.md` — replace "Railway/Hetzner" placeholder with "Railway (Singapore)"
+
+(Append new decisions below as ADR-011, ADR-012, ...)
 
 ## Pending Decisions
 
-- **ADR-010 (pending):** API hosting — Railway ($7/mo managed) vs Hetzner CCX13 (~₹450/mo self-managed). Affects deploy.yml + runbook.
 - **ADR-011 (pending):** Domain name and transactional email-from address.
 - **ADR-012 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
