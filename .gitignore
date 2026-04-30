@@ -28,3 +28,10 @@ _*
 !apps/web/src/**/_*.ts
 !apps/web/src/**/_*.tsx
 legacy/Innovic_ERP_Migration_Proposal.extracted.txt
+# Screenshots / images dropped at the repo root (ad-hoc debugging artefacts).
+# Root-anchored so apps/web/public/, legacy/, etc. remain trackable.
+/*.jpg
+/*.jpeg
+/*.png
+/*.gif
+/*.webp
