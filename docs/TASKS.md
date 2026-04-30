@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-010 web Items module)
+> Last updated: 2026-04-30 (T-010 web Items module + T-010b ESLint v9 migration)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -13,14 +13,13 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Active Task
 **ID:** T-011
 **Title:** Set up CI/CD via GitHub Actions (typecheck, lint, test, deploy)
-**Status:** [ ] Not started — blocked on ADR-010 (Railway vs Hetzner) AND T-010b (ESLint v9 flat-config migration)
+**Status:** [ ] Not started — blocked only on ADR-010 (Railway vs Hetzner)
 **Acceptance:**
 - [ ] `.github/workflows/ci.yml` — runs typecheck, lint, test on PR and push
 - [ ] Pin Node 24 (per ADR-008)
 - [ ] Resolve ADR-010: pick API host (Railway vs Hetzner CCX13)
 - [ ] Add deploy workflow for chosen host
 - [ ] First green build on `main`
-- [ ] Migrate ESLint config to v9 flat format (precondition — currently `pnpm lint` fails project-wide; see T-010b)
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -39,7 +38,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-008 | Implement auth flow end-to-end (login, JWT, protected routes, RLS session claims) | [x] Done (2026-04-30) |
 | T-009 | Build Items master module — API (routes, service, schema, tests) | [x] Done (2026-04-30) |
 | T-010 | Build Items master module — Web (api hooks, list/detail/create/edit) | [x] Done (2026-04-30) |
-| T-010b | Migrate ESLint config to v9 flat format (project-wide; precondition for T-011) | [ ] |
+| T-010b | Migrate ESLint config to v9 flat format (project-wide; precondition for T-011) | [x] Done (2026-04-30) |
 | T-011 | Set up CI/CD via GitHub Actions (typecheck, lint, test, deploy) | [ ] |
 | T-012 | Phase 1 sign-off: Items master fully working with RLS verified across roles | [ ] |
 
@@ -124,14 +123,14 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Blockers
 | ID | Task | Blocker | Needs |
 |---|---|---|---|
-| T-011 | CI/CD deploy | API hosting choice + lint broken | Decide Railway vs Hetzner CCX13 (ADR-010 pending); finish T-010b |
-| T-010b | ESLint v9 migration | none — straightforward | Replace `.eslintrc.cjs` with `eslint.config.js` flat format across api/web/shared |
+| T-011 | CI/CD deploy | API hosting choice | Decide Railway vs Hetzner CCX13 (ADR-010 pending) |
 | Future | Staging + prod Supabase | Defer | Provision when Phase 4 (sales chain) is in flight |
 | Future | DLP-friendly dev script | Open ask | Investigate whether plain `tsx` (no watch) survives Seclore/eScan; only escalate to full `tsc -b --watch` + `node --watch` if it doesn't (would require shared-package build pipeline + project refs) |
 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-010b | ESLint v9 flat-config migration: replaced `.eslintrc.cjs` with `eslint.config.mjs` (uses `tseslint.config()` helper); added `@eslint/js@^9` and `typescript-eslint@^8` devDeps; dropped removed `--ext` flag from per-package `lint` scripts; carved out `no-console` for operational CLI paths (`**/db/seed.ts`, `**/scripts/**`, `migration/**`) per the script-vs-runtime split — CLAUDE.md §6.7 still binds runtime code. Workspace-wide `pnpm lint` and `pnpm typecheck` both clean |
 | 2026-04-30 | T-010 | Items master Web: TanStack Query hooks (`useItemsList/useItem/useCreateItem/useUpdateItem/useSoftDeleteItem`); list (TanStack Table + debounced search + type filter + URL-state pagination), detail (Card + delete-confirm), edit + new routes (react-hook-form + Zod from `@innovic/shared`); shadcn primitives added (card/label/select/textarea/table); routes registered under `_authenticated`; web typecheck clean. Lint blocked project-wide by pre-existing ESLint v9 config gap → tracked as T-010b. Manual smoke gated on user (dev API needs to be up; tsx watch dies under Seclore/eScan on this box) |
 | 2026-04-30 | T-009 | Items master API per CLAUDE.md §8: shared Zod schemas; `withUserContext` for RLS claim injection; service (list/get/create/update/softDelete) + routes (5 endpoints); 12 tests pass (8 service, 4 routes) against dev Supabase |
 | 2026-04-30 | T-008 | Auth E2E: API `/me`, login route (magic-link + password), `/auth/callback`, pathless `_authenticated` parent route as guard, `useSession` hook, sign out via `router.invalidate()` on `SIGNED_OUT`. Verified end-to-end via password sign-in (magic-link blocked by free-tier email rate limit during testing) |
