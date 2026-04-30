@@ -21,4 +21,10 @@ coverage/
 _*
 # But drizzle-kit's _journal.json is required state — override the rule:
 !**/meta/_journal.json
+# TanStack Router conventions: pathless layout routes are prefixed with `_`
+# (e.g. `_authenticated.tsx`) and the root is `__root.tsx`. Override the `_*`
+# rule for any underscore-prefixed source file under apps/web/src so route
+# files stay tracked.
+!apps/web/src/**/_*.ts
+!apps/web/src/**/_*.tsx
 legacy/Innovic_ERP_Migration_Proposal.extracted.txt
