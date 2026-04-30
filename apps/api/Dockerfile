@@ -20,8 +20,7 @@ FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/shared/package.json ./packages/shared/
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter '@innovic/api...'
+RUN pnpm install --frozen-lockfile --filter '@innovic/api...'
 
 # ─── runtime ──────────────────────────────────────────────────────────────────
 FROM base
