@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-022 — clients + vendors + machines shipped; operators pending)
+> Last updated: 2026-05-01 (T-022 done — all 4 master entities + home nav shipped; T-023 validation next)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,19 +11,15 @@
 Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
 
 ## Active Task
-**ID:** T-022 (continuing — operators)
-**Title:** Build admin screens for each master entity (web)
-**Status:** [~] In progress — clients + vendors + machines done; 1 entity remaining
-**Scope:** Per CLAUDE.md §8, build the API + Web modules for `clients`, `vendors`, `machines`, `operators` to mirror the existing `items` reference module. The storage layer, RLS, and migrated data are all in place from T-014/T-015.
+**ID:** T-023
+**Title:** Phase 2 validation pass — row counts match, sample records identical, no orphaned FKs
+**Status:** [ ] Not started
 **Acceptance:**
-- [ ] For each of clients/vendors/machines/operators:
-  - [ ] Zod schemas in `packages/shared/src/schemas/<name>.ts` (with `code`, validation rules, etc.)
-  - [ ] API module: `apps/api/src/modules/<name>/{routes,service,schema}.ts` + tests (mirror items pattern; CLAUDE.md §9 coverage)
-  - [ ] Web module: `apps/web/src/modules/<name>/{api,components,routes}` (mirror items pattern; preserve UI from legacy HTML per memory `feedback_ui_match_legacy_html`)
-  - [ ] Add to web nav alongside Items
-- [ ] Manual smoke per CLAUDE.md §7 — list/create/edit/soft-delete each entity in production Railway
-- [ ] CI green
-**Sequencing:** clients first (simplest, 1 record), then vendors, machines, operators. Each takes ~1.5–2h once items pattern is followed.
+- [ ] For each migrated table (users, clients, vendors, items, machines, operators), source row count matches loaded row count (modulo known deltas — e.g. extra `viewer@innovic.test` user from T-012 smoke)
+- [ ] Sample 3 records per table by hand: every legacy field accounted for in the new row, transformations correct (uom normalisation, etc.)
+- [ ] No orphaned FKs (operator.user_id, audit columns)
+- [ ] Phase 2 sign-off note appended to MIGRATION-LOG.md
+**Reference:** `docs/MIGRATION-LOG.md` already has per-collection load counts from T-015/T-016/T-017/T-018/T-019/T-020/T-021.
 
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
@@ -65,7 +61,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 | T-019 | Migrate `items` master | [x] Done (2026-04-30) — 352/352 records, 8 uom_normalised anomalies |
 | T-020 | Migrate `machines` master | [x] Done (2026-04-30) — 12/12 records |
 | T-021 | Migrate `operators` master | [x] Done (2026-04-30) — 1/1 record |
-| T-022 | Build admin screens for each master entity (web) | [ ] |
+| T-022 | Build admin screens for each master entity (web) | [x] Done (2026-05-01) — all 4 entities (clients/vendors/machines/operators) shipped + home nav |
 | T-023 | Validation pass: row counts match, sample records identical, no orphaned FKs | [ ] |
 
 ## Phase 3 Backlog — Op Entry (Week 4–5, Critical)
@@ -140,6 +136,7 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-022 (operators + close) | **T-022 closed.** Operators admin module shipped per CLAUDE.md §8: shared Zod schemas (department + skills text, isActive boolean, optional userId FK to users); api module (5 endpoints, 7 service + 4 routes tests, 11/11 against dev Supabase); web module (OperatorForm with Active/Inactive select + skills + linked-user inputs, list with code/name/dept/skills/status columns + active filter, detail card). Home nav (`apps/web/src/routes/index.tsx`) refactored to a typed `MASTER_LINKS` array — Items + Clients + Vendors + Machines + Operators all surfaced. Full api suite 56/56 green; workspace typecheck/lint clean. UI matches legacy `operatorForm` (lines 13726-43): Operator ID, Name, Department, Status, Skills/Machines, with `userId` added forward per SCHEMA.md |
 | 2026-04-30 | T-022 (machines) | Machines admin module shipped per CLAUDE.md §8: shared Zod schemas (machineType, capacityPerShift int, shiftsPerDay int default 1, status text); api module (5 endpoints, 7 service tests + 4 routes tests); web module (MachineForm with status select Idle/Running/Down/Maintenance, list with type/cap/shifts/status columns + status filter, detail card). Workspace typecheck/lint clean |
 | 2026-04-30 | T-022 (vendors) | Vendors admin module shipped per CLAUDE.md §8: shared Zod schemas (adds materialsSupplied + rating); api module (5 endpoints, 7 service tests + 4 routes tests, 11/11 against dev Supabase); web module (TanStack Query hooks, VendorForm with materials textarea + rating field, list with rating column, detail with materials section). Workspace typecheck/lint clean; 34/34 api tests pass total |
 | 2026-04-30 | T-022 (clients) | Clients admin module shipped per CLAUDE.md §8: shared Zod schemas; api module (routes/service/schema + 4 routes tests + 7 service tests, 11/11 pass against dev Supabase); web module (TanStack Query hooks, ClientForm with create/edit modes, list with search/status filter + pagination, detail with delete-confirm, edit + new routes); registered in router. Workspace typecheck + lint clean. Vendors/machines/operators follow same pattern in subsequent commits |

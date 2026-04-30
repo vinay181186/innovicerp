@@ -8,6 +8,9 @@ import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
 import { machinesListRoute } from './modules/machines/routes/list';
 import { machineDetailRoute } from './modules/machines/routes/detail';
 import { machineEditRoute, machineNewRoute } from './modules/machines/routes/edit';
+import { operatorsListRoute } from './modules/operators/routes/list';
+import { operatorDetailRoute } from './modules/operators/routes/detail';
+import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -38,6 +41,10 @@ const routeTree = rootRoute.addChildren([
     machineNewRoute,
     machineDetailRoute,
     machineEditRoute,
+    operatorsListRoute,
+    operatorNewRoute,
+    operatorDetailRoute,
+    operatorEditRoute,
   ]),
 ]);
 
