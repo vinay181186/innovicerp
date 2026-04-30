@@ -15,6 +15,7 @@ coverage/
 *.tsbuildinfo
 .turbo/
 .cache/
+.claude/
 # Harness-helper temp files (logs, scripts, extracts) used in this dev box.
 # Anything starting with _ at the repo root or any subdir is ignored.
 _*
