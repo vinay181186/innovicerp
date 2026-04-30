@@ -1,5 +1,5 @@
-import { createRoute } from '@tanstack/react-router';
-import { CheckCircle2, LogOut } from 'lucide-react';
+import { Link, createRoute } from '@tanstack/react-router';
+import { ArrowRight, CheckCircle2, LogOut, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signOut, useSession } from '@/lib/session';
 import { authenticatedRoute } from './_authenticated';
@@ -52,6 +52,24 @@ function IndexPage() {
             <span>Token attached to API requests</span>
           </div>
         </div>
+
+        <nav>
+          <Link
+            to="/items"
+            className="group flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent"
+          >
+            <span className="flex items-center gap-3">
+              <Package className="h-5 w-5 text-muted-foreground" />
+              <span>
+                <span className="block font-medium">Items master</span>
+                <span className="block text-xs text-muted-foreground">
+                  Components and assemblies
+                </span>
+              </span>
+            </span>
+            <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        </nav>
       </div>
     </main>
   );
