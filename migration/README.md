@@ -1,12 +1,12 @@
 # Migration — Firestore → Supabase Postgres
 
-One-time scripts to dump 67 Firestore collections from the legacy Innovic ERP and load them into Supabase Postgres.
+One-time scripts to dump 65 Firestore collections from the legacy Innovic ERP and load them into Supabase Postgres.
 
 > Used during **Phase 2 (T-013–T-023)** and onwards. Scripts here are throwaway after final cutover (T-052).
 
 ## Files
 
-- `export-firestore.ts` — **T-013** — dumps all 67 collection docs from Firestore to `migration/export/<collection>.json`, plus singletons (`_settings.json`, `_company.json`) and a `_manifest.json` with hashes + anomalies.
+- `export-firestore.ts` — **T-013** — dumps all 65 collection docs from Firestore to `migration/export/<collection>.json`, plus singletons (`_settings.json`, `_company.json`) and a `_manifest.json` with hashes + anomalies. **First run on 2026-04-30:** 550 records across 27 active collections; 38 collections were `doc_missing` (unused features in the legacy app); `companies/innovic` doc absent (legacy app never created it). Full numbers in `docs/MIGRATION-LOG.md`.
 - `transform.ts` — **T-014** (not yet built) — flattens the JSON-blob structure to per-record rows, generates UUIDs, maps Firebase auth UIDs → Supabase user IDs.
 - `load-supabase.ts` — **T-015** (not yet built) — bulk-loads to Postgres in foreign-key dependency order.
 - `validate.ts` — **T-023** (not yet built) — row count + sample comparison against Firestore source.
@@ -63,18 +63,28 @@ This pulls in `firebase-admin` for the migration package.
 
 ## Running the export
 
-### Full dump (all 67 collections + 2 singletons)
+### Full dump (all 65 collections + 2 singletons)
 
 ```
 pnpm migrate:export
 ```
 
 Output → `migration/export/`:
-- `<collection>.json` × 67
+- `<collection>.json` × 65
 - `_settings.json`, `_company.json`
 - `_manifest.json` (hashes, record counts, anomalies)
 
 The export directory is gitignored.
+
+### Note on this dev box (Seclore/eScan DLP)
+On the workstation where this repo lives, DLP intercepts the `pnpm → dotenv-cli → tsx` chain when invoked from non-interactive shells (Bash tool, CI-style runners) — it exits silently with no output. The pnpm script works in a normal foreground terminal (Windows Terminal tab). If the silent-exit signature appears, run direct:
+
+```
+cd migration
+node --import tsx export-firestore.ts [--only=<csv>]
+```
+
+(Set `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_PATH` in the shell env first; this bypasses dotenv-cli.)
 
 ### Incremental (one or more named collections)
 

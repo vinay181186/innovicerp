@@ -28,7 +28,7 @@ Every table has:
 | Outsource | outsource_jobs, osp_process_config, osp_dc, service_pos | outsourceJobs, ospProcessConfig, ospDC, servicePOs |
 | Audit & Config | activity_log, dashboard_config, alert_config, print_templates, print_template_revisions | activityLog, trash, dashboardConfig, alertConfig, printTemplates, printTemplateRevisions, stuckThresholds, reportTypes |
 
-Total target: ~41 tables (replacing 67 Firestore collections).
+Total target: ~41 tables (replacing 65 Firestore collections — count corrected in T-013, originally documented as 67).
 
 ## RLS Policy Pattern
 
