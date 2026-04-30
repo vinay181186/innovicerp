@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-04-30 (T-011 CI green on main; Railway dashboard + CI secrets remain user-owned)
+> Last updated: 2026-04-30 (T-011 done — CI green; Railway deployed in `asia-southeast1`, GitHub auto-deploy connected)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -11,21 +11,15 @@
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
-**ID:** T-011
-**Title:** Set up CI/CD via GitHub Actions (typecheck, lint, test) + Railway deploy verification
-**Status:** [~] In progress
+**ID:** T-012
+**Title:** Phase 1 sign-off — Items master fully working with RLS verified across roles
+**Status:** [ ] Not started
 **Acceptance:**
-- [x] Resolve ADR-010: API host = Railway Singapore
-- [x] `apps/api/Dockerfile` + `railway.json` (phase 1, already shipped)
-- [x] `.github/workflows/ci.yml` — Node 24 + pnpm 10; jobs: lint-typecheck (always) + test (gated on `CI_*` repo secrets, materialises `.env.local` on the runner)
-- [x] `.github/workflows/deploy.yml` — clarified: API deploy stays with Railway's GitHub integration per ADR-010; web deploy stub disabled until Cloudflare Pages is wired
-- [x] `apps/web/package.json` — `vitest run --passWithNoTests` so empty web suite doesn't redden CI
-- [x] First green build on `main` — CI #17 (`14fda98`), 1 min total: Lint+Typecheck ✅, Test ✅ (secrets-gate skipped step). Two prior false starts surfaced and fixed: `pnpm/action-setup@v4` dual-spec error, and `_*` gitignore shadow-banning TanStack Router routes (`__root.tsx`, `_authenticated.tsx`)
-- [x] `docs/ARCHITECTURE.md` — replaced "Railway/Hetzner" placeholder with "Railway, asia-southeast1 / Singapore — ADR-010"; noted ~150ms p95 cost vs Fly.io Mumbai
-- [ ] Railway env vars + region (`asia-southeast1`) set in dashboard, first `railway up`, `/health` 200 — **user-owned (Track B)**
-- [ ] Connect Railway → GitHub for push-to-`main` deploys — **user-owned (Track B)**
-- [ ] `docs/RUNBOOK.md` — Railway deploy / logs / rollback commands (do after Track B lands so we can document actual flow, not anticipated)
-- [ ] Add `CI_*` secrets in GH repo settings (DATABASE_URL, DATABASE_URL_POOLED, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET) so the Test job stops skipping
+- [ ] Manual smoke on production Railway URL: log in, create item, edit, soft-delete, re-list — all 200, RLS-clean (no cross-company leak)
+- [ ] Add a non-admin test user (role: operator or viewer) and confirm RLS denies write on items per role policy
+- [ ] Add `CI_*` secrets in GH repo settings so the CI Test job actually runs the api integration tests (currently skipped — see T-011 footnote)
+- [ ] Cross-browser smoke (Chrome + Firefox) on the Railway URL
+- [ ] Document any gaps in `docs/TASKS.md` for Phase 2 attention
 
 ## Phase 0 Backlog (Bootstrap)
 | ID | Task | Status |
@@ -46,7 +40,7 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 | T-009 | Build Items master module — API (routes, service, schema, tests) | [x] Done (2026-04-30) |
 | T-010 | Build Items master module — Web (api hooks, list/detail/create/edit) | [x] Done (2026-04-30) |
 | T-010b | Migrate ESLint config to v9 flat format (project-wide; precondition for T-011) | [x] Done (2026-04-30) |
-| T-011 | Set up CI/CD via GitHub Actions (typecheck, lint, test, deploy) | [ ] |
+| T-011 | CI/CD: GitHub Actions (typecheck, lint, gated test) + Railway auto-deploy on push-to-`main` | [x] Done (2026-04-30) |
 | T-012 | Phase 1 sign-off: Items master fully working with RLS verified across roles | [ ] |
 
 ## Phase 2 Backlog — Master Data Migration (Week 3)
@@ -130,12 +124,13 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 ## Blockers
 | ID | Task | Blocker | Needs |
 |---|---|---|---|
-| T-011 | CI/CD deploy | API hosting choice | Resolved (ADR-010: Railway Singapore). Remaining T-011 work: GitHub Actions `ci.yml` + Railway env var setup |
 | Future | Staging + prod Supabase | Defer | Provision when Phase 4 (sales chain) is in flight |
+| T-012 | Full CI test job | Pending CI secrets | Add `CI_DATABASE_URL`, `CI_DATABASE_URL_POOLED`, `CI_SUPABASE_URL`, `CI_SUPABASE_ANON_KEY`, `CI_SUPABASE_SERVICE_ROLE_KEY`, `CI_SUPABASE_JWT_SECRET` in GH repo settings |
 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-04-30 | T-011 | CI/CD live: `.github/workflows/ci.yml` with two-job split (lint-typecheck always, test gated on `CI_*` secrets); CI #17 green on `main` in 1 min. Railway service deployed to `asia-southeast1`, env vars set, `/health` 200, GitHub repo connected for push-to-`main` auto-deploy (ADR-010). Stale `deploy.yml` removed. RUNBOOK §"Deploy — API (Railway)" added with logs/rollback/health/env procedures |
 | 2026-04-30 | dev-env | DLP-friendly api `dev` script: split `dev` (plain `tsx`, DLP-safe) and `dev:watch` (`tsx watch`, blocked here). Confirmed end-to-end browser flow: login → `/me` 200 → `/items` 200 → items page renders. RUNBOOK §"Local Dev — Starting the API and Web" added; memory note updated to mark workaround durable |
 | 2026-04-30 | T-010b | ESLint v9 flat-config migration: replaced `.eslintrc.cjs` with `eslint.config.mjs` (uses `tseslint.config()` helper); added `@eslint/js@^9` and `typescript-eslint@^8` devDeps; dropped removed `--ext` flag from per-package `lint` scripts; carved out `no-console` for operational CLI paths (`**/db/seed.ts`, `**/scripts/**`, `migration/**`) per the script-vs-runtime split — CLAUDE.md §6.7 still binds runtime code. Workspace-wide `pnpm lint` and `pnpm typecheck` both clean |
 | 2026-04-30 | T-010 | Items master Web: TanStack Query hooks (`useItemsList/useItem/useCreateItem/useUpdateItem/useSoftDeleteItem`); list (TanStack Table + debounced search + type filter + URL-state pagination), detail (Card + delete-confirm), edit + new routes (react-hook-form + Zod from `@innovic/shared`); shadcn primitives added (card/label/select/textarea/table); routes registered under `_authenticated`; web typecheck clean. Lint blocked project-wide by pre-existing ESLint v9 config gap → tracked as T-010b. Manual smoke gated on user (dev API needs to be up; tsx watch dies under Seclore/eScan on this box) |

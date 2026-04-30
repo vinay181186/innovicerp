@@ -1,19 +1,50 @@
 # RUNBOOK.md — Operational Procedures
 
-## Deploy to Staging
+## Deploy — API (Railway, Singapore / `asia-southeast1`)
+
+API deploys are handled by **Railway's GitHub integration** (not GitHub Actions — see ADR-010). On every push to `main`, Railway pulls the repo, builds `apps/api/Dockerfile`, and rolls the new image. GitHub Actions runs CI in parallel (typecheck + lint + gated tests) but does not deploy.
+
+### Trigger a deploy
+- **Standard:** push to `main` → Railway auto-deploys within ~30 seconds.
+- **Manual:** `railway up` from the repo root (uploads local code via CLI; bypasses GitHub).
+- **Empty trigger:** `git commit --allow-empty -m "chore: redeploy" && git push` (e.g. after env var rotation).
+
+### View logs
+- **CLI:** `railway logs` (live tail) or `railway logs --tail 200`
+- **Dashboard:** project → API service → "Deployments" tab → click any deployment → "View Logs"
+
+### Rollback
+1. Railway dashboard → API service → **Deployments** tab.
+2. Find the last known-good deployment (look for green checkmark + healthy `/health`).
+3. Click the `…` menu on that row → **Redeploy**.
+4. Railway re-rolls the prior image. Verify `/health` after ~30 seconds.
+
+If the bad deployment came from a code bug rather than env/config, also revert the offending commit on `main` so the next push doesn't redeploy the same broken code.
+
+### Verify health
 ```
-git checkout staging
-git merge main
-git push origin staging
-# GitHub Actions handles the rest (wired in T-011)
+curl https://<railway-service>.up.railway.app/health
+# Expected: {"ok":true,"env":"production","version":"X.Y.Z","gitSha":"...","timestamp":"..."}
 ```
 
-## Deploy to Production
-1. Merge to `main` after staging verification.
-2. GitHub Actions runs CI; manual approval gate triggers.
-3. Approve in GitHub Actions UI.
-4. Migrations run automatically via Drizzle Kit (`pnpm --filter api db:migrate`).
-5. Verify health: `curl https://api.<domain>/health`.
+The Railway public URL is shown on the service's main panel. Custom domains (when added) replace the `*.up.railway.app` hostname; same `/health` path.
+
+### Required env vars (Railway → service → Settings → Variables)
+- `NODE_ENV=production`
+- `DATABASE_URL` — session pooler (port 5432, used by migrations + seed)
+- `DATABASE_URL_POOLED` — transaction pooler (port 6543, used by runtime API)
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_JWT_SECRET`
+
+**Do not** set `PORT` — Railway injects it automatically and `apps/api/src/lib/env.ts` prefers Railway's `PORT` over `API_PORT` (ADR-010).
+
+### After env var changes
+Railway auto-redeploys when variables are edited. To force without changing values, click "Redeploy" on the latest deployment row.
+
+## Deploy — Web (Cloudflare Pages, future)
+Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.yml`) when the Cloudflare account is set up. Until then, the web app runs only locally.
 
 ## Restore from Backup
 1. Pull latest dump from Backblaze B2:
@@ -30,9 +61,10 @@ git push origin staging
 
 ## Rotate Secrets
 1. Generate new value (Supabase service key, JWT secret, etc.).
-2. Update Railway / Hetzner env var.
-3. Redeploy API.
-4. Revoke old value at the source.
+2. Update the Railway env var (Railway dashboard → API service → Settings → Variables; auto-redeploys on save).
+3. If CI/test secrets changed, also update them in GitHub repo settings → Secrets and variables → Actions (`CI_*` prefix per `ci.yml`).
+4. Verify the new deployment is healthy (`/health` 200) before revoking the old value.
+5. Revoke old value at the source (Supabase dashboard / etc.).
 
 ## Common Issues
 
