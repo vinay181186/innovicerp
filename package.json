@@ -16,7 +16,8 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "migrate:export": "pnpm --filter @innovic/migration run export"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
