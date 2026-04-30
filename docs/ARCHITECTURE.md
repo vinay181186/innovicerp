@@ -7,13 +7,15 @@ Browser (User Device)
    ↓ HTTPS / WebSocket
 React SPA (Cloudflare Pages, free)
    ↓
-Fastify API (Railway / Hetzner CCX13 — choice TBD, ADR pending)
-   ↓
+Fastify API (Railway, asia-southeast1 / Singapore — ADR-010)
+   ↓ ~50ms RTT
 Supabase Pro (Mumbai, ap-south-1)
    Postgres + Auth + Storage + Realtime + Daily backups + 7-day PITR
 + Backblaze B2 (offsite pg_dump, daily 02:00 IST)
 + Sentry (errors), Better Stack (uptime), Resend (transactional email)
 ```
+
+**Note on API region (ADR-010):** Railway's nearest region is `asia-southeast1` (Singapore), not Mumbai. Round-trip to Supabase Mumbai is ~50 ms, which costs ~150 ms of baseline p95 budget per typical request (1 write + 2 reads). User chose Railway for DX over Fly.io `bom` (Mumbai, <5 ms). If sustained p95 crosses 250 ms, the documented escape hatch is Fly.io Mumbai using the same Dockerfile.
 
 ## Component Responsibilities
 - **React SPA** — UI only, zero business logic
