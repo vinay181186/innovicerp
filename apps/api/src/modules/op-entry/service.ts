@@ -196,6 +196,7 @@ export async function listRunningOps(
 interface JcOpRow {
   id: string;
   jobCardId: string;
+  opSeq: number;
   opType: 'process' | 'qc' | 'outsource';
   machineId: string | null;
 }
@@ -214,6 +215,7 @@ async function loadJcOp(
     .select({
       id: jcOps.id,
       jobCardId: jcOps.jobCardId,
+      opSeq: jcOps.opSeq,
       opType: jcOps.opType,
       machineId: jcOps.machineId,
     })
@@ -295,7 +297,8 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       .returning();
 
     // After this insert, recompute availability — if we've consumed all
-    // available qty for this op, transition any active running_op to 'done'.
+    // available qty for this op, transition any active running_op to 'done'
+    // AND auto-set qcCallDate on the next QC op (mirrors legacy line 5471-5479).
     const post = await loadAvailability(tx, input.jcOpId);
     if (post.available === 0) {
       await tx
@@ -308,6 +311,36 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
             eq(runningOps.status, 'running'),
           ),
         );
+
+      // Look up the next op in the same JC; if it's a QC op without a
+      // qc_call_date, set it to today's log_date. Operators rely on this to
+      // know which QC ops are now ready to inspect.
+      const next = await tx
+        .select({
+          id: jcOps.id,
+          opType: jcOps.opType,
+          qcRequired: jcOps.qcRequired,
+          qcCallDate: jcOps.qcCallDate,
+        })
+        .from(jcOps)
+        .where(
+          and(
+            eq(jcOps.jobCardId, op.jobCardId),
+            eq(jcOps.opSeq, op.opSeq + 1),
+          ),
+        )
+        .limit(1);
+      const nextOp = next[0];
+      if (
+        nextOp &&
+        (nextOp.opType === 'qc' || nextOp.qcRequired) &&
+        !nextOp.qcCallDate
+      ) {
+        await tx
+          .update(jcOps)
+          .set({ qcCallDate: input.logDate, updatedBy: user.id })
+          .where(eq(jcOps.id, nextOp.id));
+      }
     }
 
     const row = inserted[0]!;

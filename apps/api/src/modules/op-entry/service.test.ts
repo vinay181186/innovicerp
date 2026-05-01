@@ -1,4 +1,5 @@
-import { eq, like } from 'drizzle-orm';
+import { startOpInputSchema } from '@innovic/shared';
+import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, jcOps, jobCards, opLog, runningOps, users } from '../../db/schema';
@@ -73,14 +74,18 @@ async function setupFixture(): Promise<void> {
 
 async function teardownFixture(): Promise<void> {
   // Hard-delete everything in dependency order. Service-role bypasses RLS.
-  if (testJcOpId) {
-    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
-    await db.delete(runningOps).where(eq(runningOps.jcOpId, testJcOpId));
-    await db.delete(jcOps).where(eq(jcOps.id, testJcOpId));
+  // Sweep ALL jc_ops on the test JC (covers the extra QC op the T-026 test
+  // creates if it crashed before its own cleanup ran).
+  if (testJcId) {
+    const opsOnJc = await db.select({ id: jcOps.id }).from(jcOps).where(eq(jcOps.jobCardId, testJcId));
+    for (const o of opsOnJc) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, o.id));
+      await db.delete(runningOps).where(eq(runningOps.jcOpId, o.id));
+    }
+    await db.delete(jcOps).where(eq(jcOps.jobCardId, testJcId));
   }
   if (testJcId) await db.delete(jobCards).where(eq(jobCards.id, testJcId));
   if (testItemId) await db.delete(items).where(eq(items.id, testItemId));
-  // Sweep any leftovers from prior failed runs.
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
 }
@@ -238,6 +243,77 @@ describe('op-entry service', () => {
       .where(eq(runningOps.id, started.id))
       .limit(1);
     expect(after[0]?.status).toBe('done');
+  });
+
+  it('startOp Zod schema rejects when neither operatorId nor operatorName is provided (T-026)', () => {
+    const r = startOpInputSchema.safeParse({
+      jcOpId: '00000000-0000-0000-0000-000000000000',
+      startDate: '2026-05-01',
+      startTime: '10:00',
+      shift: 'day',
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]?.message).toMatch(/operator/i);
+    }
+  });
+
+  it('submitOpLog auto-sets qc_call_date on the next QC op when prior op completes (T-026)', async () => {
+    // Add a second op (op_seq=2, qc_required=true) on the test JC.
+    const inserted = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: testJcId,
+        opSeq: 2,
+        operation: 'inspect',
+        opType: 'qc',
+        cycleTimeMin: '0.00',
+        qcRequired: true,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const qcOpId = inserted[0]!.id;
+
+    // Reset op_log on the prior op so we can drive it cleanly.
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(runningOps).where(eq(runningOps.jcOpId, testJcOpId));
+
+    // Sanity: qc op starts with no qcCallDate
+    const before = await db
+      .select({ qcCallDate: jcOps.qcCallDate })
+      .from(jcOps)
+      .where(eq(jcOps.id, qcOpId))
+      .limit(1);
+    expect(before[0]?.qcCallDate).toBeNull();
+
+    // Submit ALL 10 pcs on op 1 → op 1 becomes complete → op 2 (QC) qcCallDate is set.
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-01',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+
+    const after = await db
+      .select({ qcCallDate: jcOps.qcCallDate })
+      .from(jcOps)
+      .where(eq(jcOps.id, qcOpId))
+      .limit(1);
+    expect(after[0]?.qcCallDate).toBe('2026-05-01');
+
+    // Cleanup the extra QC op so subsequent tests still see only op_seq=1.
+    await db.delete(jcOps).where(and(eq(jcOps.id, qcOpId)));
   });
 
   it('listJcOpsEnriched filters by machineId and returns only ops on that machine', async () => {

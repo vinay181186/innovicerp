@@ -125,15 +125,20 @@ export const submitOpLogInputSchema = z.object({
 });
 export type SubmitOpLogInput = z.infer<typeof submitOpLogInputSchema>;
 
-export const startOpInputSchema = z.object({
-  jcOpId: z.string().uuid(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  startTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/),
-  shift: shiftSchema,
-  operatorId: z.string().uuid().optional(),
-  operatorName: z.string().min(1).max(120).optional(),
-  remarks: z.string().max(500).optional(),
-});
+export const startOpInputSchema = z
+  .object({
+    jcOpId: z.string().uuid(),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    startTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/),
+    shift: shiftSchema,
+    operatorId: z.string().uuid().optional(),
+    operatorName: z.string().min(1).max(120).optional(),
+    remarks: z.string().max(500).optional(),
+  })
+  .refine(
+    (i) => Boolean(i.operatorId) || Boolean(i.operatorName?.trim()),
+    { message: 'operatorId or operatorName is required to start an op (legacy line 5497)' },
+  );
 export type StartOpInput = z.infer<typeof startOpInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
