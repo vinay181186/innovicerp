@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-029a done — Phase 4 sales-chain schema design approved as ADR-012. T-029b (Drizzle schema + migration) is next.)
+> Last updated: 2026-05-01 (T-029b done — Phase 4 storage layer live in dev Supabase. T-029c (transform layer) is next.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -27,26 +27,20 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 4. **Then T-030–T-033** (sales API + web + auto-close cascade).
 
 ## Active Task
-**ID:** T-029b
-**Title:** Phase 4 — Drizzle schema + migrations (sales chain storage layer)
+**ID:** T-029c
+**Title:** Phase 4 — Transform layer (sales-orders + job-work-orders)
 **Status:** [ ] Not started
-**Scope:** Per ADR-012. SCHEMA.md §"Phase 4 Tables" is the spec.
-- Drizzle schema in `apps/api/src/db/schema.ts` — 4 new tables (`sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`)
-- 2 new pg enums: `so_type`, `so_status` (shared between SO and JW)
-- RLS policies per table (read = any role; manager/admin write only)
-- Migrations:
-  - `0007_phase4_sales_chain.sql` (drizzle-kit autogen — tables, enums, FKs, indexes, RLS)
-  - `0008_phase4_jc_alters.sql` (hand-written) — `ALTER TABLE job_cards RENAME COLUMN source_jw_id TO source_jw_line_id`; add FKs `source_so_line_id → sales_order_lines(id)` and `source_jw_line_id → job_work_order_lines(id)`; `ADD CONSTRAINT job_cards_source_check CHECK (num_nonnulls(source_so_line_id, source_jw_line_id) <= 1)`
-  - `0009_phase4_triggers.sql` (hand-written) — `before update` triggers on the 4 new tables
-- Apply: drizzle-kit migrate for 0007, then `apply-sql.ts` for 0008 + 0009
-- Verify EXPLAIN on the indexed FK paths once data lands (T-029d)
-- Update SCHEMA.md "Migration History"
+**Scope:** Per the existing Phase 3 transform pattern (`migration/transforms/*.ts` + `_id_map.json` + LookupRegistry).
+- `migration/transforms/sales-orders.ts` — group 9 source docs by `soNo` → 2 header rows + 9 line rows. Returns `[salesOrdersResult, salesOrderLinesResult]` (multi-output like `route-cards.ts` did). FK-resolve `clientId` via `byCode.clients` lookup (fallback to `customer_name` text); FK-resolve `itemCode` via `byCode.items` (fallback to `item_code_text`).
+- `migration/transforms/job-work-orders.ts` — same pattern; group 2 docs by `jwNo` → 2 header rows + 2 line rows. Both lines reference items not in master (`ITM-003`, `ITM-001`) — load with `item_id=null` + text fallback per ADR-012 #10.
+- Wire into `transform.ts` orchestrator in FK-dependency order after Phase 3.
+- Tests for each transform.
 
 **Acceptance:**
-- [ ] Schema typechecks; drizzle-kit generate produces a clean SQL with no surprises (review before apply)
-- [ ] All three migrations apply cleanly to dev Supabase
-- [ ] Existing `op_entry` tests still 73/73 (migration shouldn't break Phase 3)
-- [ ] SCHEMA.md "Migration History" table updated
+- [ ] Two new transform files + tests
+- [ ] Real-data run produces 4 JSON outputs: `sales_orders.json` (2), `sales_order_lines.json` (9), `job_work_orders.json` (2), `job_work_order_lines.json` (2)
+- [ ] Anomalies captured for unresolved itemCodes (expect ~2 in JW lines)
+- [ ] Full migration test suite green
 
 ## Phase 3 Sub-tasks (T-024 closed)
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
@@ -127,8 +121,8 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 | ID | Task | Status |
 |---|---|---|
 | T-029a | Phase 4 schema design (SCHEMA.md + ADR-012) | [x] Done (2026-05-01) |
-| T-029b | Phase 4 Drizzle schema + migrations to dev Supabase | [ ] Active |
-| T-029c | Phase 4 transform layer (sales-orders, job-work-orders; header+lines split) | [ ] |
+| T-029b | Phase 4 Drizzle schema + migrations to dev Supabase | [x] Done (2026-05-01) |
+| T-029c | Phase 4 transform layer (sales-orders, job-work-orders; header+lines split) | [ ] Active |
 | T-029d | Phase 4 bulk-load + JC source FK backfill + validate-phase4 | [ ] |
 | T-030 | Build SO list / detail / create / edit screens | [ ] |
 | T-031 | Build JW list / detail screens | [ ] |
@@ -188,6 +182,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-029b | **Phase 4 storage layer live in dev Supabase.** 2 new shared enums (`SO_TYPES`, `SO_STATUSES`); 4 new Drizzle tables in `apps/api/src/db/schema.ts` matching SCHEMA.md exactly. Three migration files: `0007_phase4_sales_chain.sql` (drizzle-gen — tables, enums, FKs, indexes, RLS), `0008_phase4_jc_alters.sql` (hand-written — column rename + 2 FKs ON DELETE SET NULL + CHECK), `0009_phase4_triggers.sql` (hand-written — 4 BEFORE UPDATE triggers). Drizzle schema also updated to include the 2 new FKs and the CHECK constraint (so `drizzle-kit generate` reports no drift). Snapshot patched to match Drizzle's FK naming convention; one-shot DB ALTER renamed live FKs to match. **All 73 api tests still green** after the schema change. T-029c (transform layer) is next |
 | 2026-05-01 | T-029a | **Phase 4 sales-chain schema design approved (ADR-012).** `docs/SCHEMA.md` §"Phase 4 Tables — Sales Chain" added: 4 new tables (`sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`) + 2 enums (`so_type`, `so_status` — the latter shared between SO and JW since semantics are identical) + ALTER on `job_cards` (rename `source_jw_id`→`source_jw_line_id`, add FKs, add CHECK `<= 1`). 11 explicit decisions surfaced for sign-off; all approved. Most consequential: header+lines split for both SO and JW (symmetry with JC source link); `source_legacy_ref` kept one phase as audit trail; CHECK relaxed to `<= 1` from ADR-011's `= 1` to allow source-less JCs going forward; BOM/milestones deferred; customer_name + item_code_text fallbacks mean no row drops on master-data gaps (unlike Phase 3's ITM-001 cascade). ADR-012 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-013/014). T-029b (Drizzle + migration) is next |
 | 2026-05-01 | T-027 (tooling) | **Reconciliation script for Phase 3 parallel run.** New `migration/reconcile-op-log.ts` compares legacy `opLog` (re-exported daily from Firestore) vs new `op_log` table for a given date (default = today IST). Match key `(jcNo, opSeq, log_date)`; sums production qty per group, excluding `'start'` and `'qc'` types on legacy and filtering to `log_type='complete'` on new — mirrors the legacy line 2595 "today's completed qty" filter. Per-key categorisation: MATCH / QTY_MISMATCH / LEGACY_ONLY / NEW_ONLY. Output to `migration/load-output/_reconcile_<date>.json` (gitignored) plus stdout summary. Exit 0 on PASS, 1 on FAIL — usable from cron. New `pnpm --filter @innovic/migration reconcile` script. Smoke-run on historic 2026-03-07 correctly flagged the 3 ITM-001 cascade divergences (15 pcs of legacy-only work that we already accepted as lost in T-024c) |
 | 2026-05-01 | T-026 | **Op Entry server-side validations — gap closure beyond T-025a.** (1) `startOpInputSchema` Zod refine now requires `operatorId` OR `operatorName` (mirrors legacy line 5497 hard-block on "Select or enter operator name"). (2) `submitOpLog` post-insert: when an op transitions to `available=0` (fully done), the next op (op_seq+1) on the same JC, if it's a QC op without a `qc_call_date`, gets it set to the log_date — matches legacy line 5471-5479 ("operators rely on this to know which QC ops are now ready to inspect"). All other CLAUDE.md §1 validations were already implicit via `v_jc_op_status` (sequencing — input_avail of op N+1 = output of op N; cannot-skip-QC — qcRequired ops gate output via getOutput legacy line 1647-1651). 2 new tests; full api suite **73/73 green ×3 stability runs**. Test fixture teardown made more defensive (sweep all jc_ops on test JC, not just the seed op). Deferred to later phases: rework decrement (Phase 6 NC), stock update on last op (Phase 5 procurement), OSP auto-PR (Phase 5) |

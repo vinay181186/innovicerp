@@ -6,6 +6,8 @@ import {
   OUTSOURCE_STATUSES,
   RUNNING_OP_STATUSES,
   SHIFTS,
+  SO_STATUSES,
+  SO_TYPES,
   UOMS,
   USER_ROLES,
 } from '@innovic/shared';
@@ -40,6 +42,10 @@ export const outsourceStatusEnum = pgEnum('outsource_status', OUTSOURCE_STATUSES
 export const runningOpStatusEnum = pgEnum('running_op_status', RUNNING_OP_STATUSES);
 export const shiftEnum = pgEnum('shift', SHIFTS);
 export const jcPriorityEnum = pgEnum('jc_priority', JC_PRIORITIES);
+
+// ─── Phase 4 enums (T-029b) ───────────────────────────────────────────────
+export const soTypeEnum = pgEnum('so_type', SO_TYPES);
+export const soStatusEnum = pgEnum('so_status', SO_STATUSES);
 
 export const companies = pgTable(
   'companies',
@@ -507,9 +513,18 @@ export const jobCards = pgTable(
     priority: jcPriorityEnum('priority').notNull().default('normal'),
     dueDate: date('due_date'),
     drawingFilePath: text('drawing_file_path'),
-    // Source SO/JW link — FKs deferred to Phase 4 per ADR-011 #5
-    sourceSoLineId: uuid('source_so_line_id'),
-    sourceJwId: uuid('source_jw_id'),
+    // Source SO/JW link — FKs landed in Phase 4 (0008_phase4_jc_alters.sql)
+    // per ADR-012 #2-#4. source_jw_id renamed to source_jw_line_id; both
+    // columns now FK-enforced (ON DELETE SET NULL — drop the SO/JW without
+    // cascade-deleting JCs) + CHECK num_nonnulls(...) <= 1.
+    sourceSoLineId: uuid('source_so_line_id').references(
+      (): AnyPgColumn => salesOrderLines.id,
+      { onDelete: 'set null' },
+    ),
+    sourceJwLineId: uuid('source_jw_line_id').references(
+      (): AnyPgColumn => jobWorkOrderLines.id,
+      { onDelete: 'set null' },
+    ),
     sourceLegacyRef: text('source_legacy_ref'),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -536,6 +551,10 @@ export const jobCards = pgTable(
       .on(t.companyId, t.jcDate)
       .where(sql`${t.deletedAt} is null`),
     check('job_cards_order_qty_positive', sql`${t.orderQty} > 0`),
+    check(
+      'job_cards_source_check',
+      sql`num_nonnulls(${t.sourceSoLineId}, ${t.sourceJwLineId}) <= 1`,
+    ),
     pgPolicy('job_cards_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -732,6 +751,225 @@ export const runningOps = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 4 tables — Sales Chain (T-029b) ────────────────────────────────
+// Per ADR-012 and SCHEMA.md §"Phase 4 Tables".
+// Each legacy SO/JW doc was a LINE with header fields repeated; transforms
+// group by code (soNo/jwNo) to derive headers. Both header+lines splits use
+// the shared so_status enum (auto-close cascade rules are identical).
+
+export const salesOrders = pgTable(
+  'sales_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    soDate: date('so_date').notNull(),
+    clientId: uuid('client_id').references(() => clients.id),
+    customerName: text('customer_name'),
+    clientPoNo: text('client_po_no'),
+    type: soTypeEnum('type').notNull(),
+    status: soStatusEnum('status').notNull().default('open'),
+    gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18.00'),
+    bomMasterId: text('bom_master_id'),
+    bomStatus: text('bom_status'),
+    costCenter: text('cost_center'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('sales_orders_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('sales_orders_company_client_idx')
+      .on(t.companyId, t.clientId)
+      .where(sql`${t.deletedAt} is null`),
+    index('sales_orders_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('sales_orders_company_date_idx')
+      .on(t.companyId, t.soDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('sales_orders_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('sales_orders_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const salesOrderLines = pgTable(
+  'sales_order_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    partName: text('part_name').notNull(),
+    material: text('material'),
+    drawingNo: text('drawing_no'),
+    uom: uomEnum('uom').notNull().default('NOS'),
+    orderQty: integer('order_qty').notNull(),
+    rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    dueDate: date('due_date'),
+    clientPoLineNo: text('client_po_line_no'),
+    status: soStatusEnum('status').notNull().default('open'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('sales_order_lines_so_line_uniq')
+      .on(t.salesOrderId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('sales_order_lines_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    index('sales_order_lines_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    check('sales_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
+    pgPolicy('sales_order_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('sales_order_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jobWorkOrders = pgTable(
+  'job_work_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    jwDate: date('jw_date').notNull(),
+    clientId: uuid('client_id').references(() => clients.id),
+    customerName: text('customer_name'),
+    clientPoNo: text('client_po_no'),
+    status: soStatusEnum('status').notNull().default('open'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('job_work_orders_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('job_work_orders_company_client_idx')
+      .on(t.companyId, t.clientId)
+      .where(sql`${t.deletedAt} is null`),
+    index('job_work_orders_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('job_work_orders_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('job_work_orders_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jobWorkOrderLines = pgTable(
+  'job_work_order_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jobWorkOrderId: uuid('job_work_order_id')
+      .notNull()
+      .references(() => jobWorkOrders.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    partName: text('part_name').notNull(),
+    material: text('material'),
+    drawingNo: text('drawing_no'),
+    uom: uomEnum('uom').notNull().default('NOS'),
+    orderQty: integer('order_qty').notNull(),
+    dueDate: date('due_date'),
+    clientMaterial: text('client_material'),
+    clientMaterialQty: numeric('client_material_qty', { precision: 12, scale: 2 }),
+    materialReceivedDate: date('material_received_date'),
+    materialReceivedQty: numeric('material_received_qty', { precision: 12, scale: 2 }),
+    status: soStatusEnum('status').notNull().default('open'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('job_work_order_lines_jw_line_uniq')
+      .on(t.jobWorkOrderId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('job_work_order_lines_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    check('job_work_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
+    pgPolicy('job_work_order_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('job_work_order_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -760,3 +998,11 @@ export type OpLog = typeof opLog.$inferSelect;
 export type NewOpLog = typeof opLog.$inferInsert;
 export type RunningOp = typeof runningOps.$inferSelect;
 export type NewRunningOp = typeof runningOps.$inferInsert;
+export type SalesOrder = typeof salesOrders.$inferSelect;
+export type NewSalesOrder = typeof salesOrders.$inferInsert;
+export type SalesOrderLine = typeof salesOrderLines.$inferSelect;
+export type NewSalesOrderLine = typeof salesOrderLines.$inferInsert;
+export type JobWorkOrder = typeof jobWorkOrders.$inferSelect;
+export type NewJobWorkOrder = typeof jobWorkOrders.$inferInsert;
+export type JobWorkOrderLine = typeof jobWorkOrderLines.$inferSelect;
+export type NewJobWorkOrderLine = typeof jobWorkOrderLines.$inferInsert;

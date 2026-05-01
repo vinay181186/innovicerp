@@ -7,6 +7,8 @@ export * from './enums/outsource-status';
 export * from './enums/running-op-status';
 export * from './enums/shift';
 export * from './enums/jc-priority';
+export * from './enums/so-type';
+export * from './enums/so-status';
 export * from './types/auth';
 export * from './schemas/item';
 export * from './schemas/client';
