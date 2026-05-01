@@ -27,11 +27,13 @@ import { transformClients } from './transforms/clients';
 import { transformItems } from './transforms/items';
 import { transformJcOps } from './transforms/jc-ops';
 import { transformJobCards } from './transforms/job-cards';
+import { transformJobWorkOrders } from './transforms/job-work-orders';
 import { transformMachines } from './transforms/machines';
 import { transformOperators } from './transforms/operators';
 import { transformOpLog } from './transforms/op-log';
 import { transformRouteCards } from './transforms/route-cards';
 import { transformRunningOps } from './transforms/running-ops';
+import { transformSalesOrders } from './transforms/sales-orders';
 import {
   emptyRegistry,
   ensureLookup,
@@ -65,6 +67,11 @@ const TRANSFORMS: Record<string, TransformFn> = {
   opLog: (rs, ctx) => transformOpLog(rs as Parameters<typeof transformOpLog>[0], ctx),
   runningOps: (rs, ctx) =>
     transformRunningOps(rs as Parameters<typeof transformRunningOps>[0], ctx),
+  // Phase 4 (T-029c) — sales chain
+  salesOrders: (rs, ctx) =>
+    transformSalesOrders(rs as Parameters<typeof transformSalesOrders>[0], ctx),
+  jobWorkOrders: (rs, ctx) =>
+    transformJobWorkOrders(rs as Parameters<typeof transformJobWorkOrders>[0], ctx),
 };
 
 type CollectionName = keyof typeof TRANSFORMS;
@@ -86,6 +93,8 @@ const WIRED_COLLECTIONS: CollectionName[] = [
   'jcOps',
   'opLog',
   'runningOps',
+  'salesOrders',
+  'jobWorkOrders',
 ];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {
@@ -201,6 +210,10 @@ function prefetchDependencyLookups(
     need('machines', 'code');
     need('operators', 'code');
     needName('operators', 'name');
+  }
+  if (targets.includes('salesOrders') || targets.includes('jobWorkOrders')) {
+    need('items', 'code');
+    need('clients', 'code');
   }
 }
 

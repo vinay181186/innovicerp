@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-029b done — Phase 4 storage layer live in dev Supabase. T-029c (transform layer) is next.)
+> Last updated: 2026-05-01 (T-029c done — Phase 4 transforms produce 15 rows, 0 anomalies. T-029d (load + JC FK backfill + validate) is next.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -27,20 +27,24 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 4. **Then T-030–T-033** (sales API + web + auto-close cascade).
 
 ## Active Task
-**ID:** T-029c
-**Title:** Phase 4 — Transform layer (sales-orders + job-work-orders)
+**ID:** T-029d
+**Title:** Phase 4 — Bulk-load + JC source FK backfill + validate-phase4
 **Status:** [ ] Not started
-**Scope:** Per the existing Phase 3 transform pattern (`migration/transforms/*.ts` + `_id_map.json` + LookupRegistry).
-- `migration/transforms/sales-orders.ts` — group 9 source docs by `soNo` → 2 header rows + 9 line rows. Returns `[salesOrdersResult, salesOrderLinesResult]` (multi-output like `route-cards.ts` did). FK-resolve `clientId` via `byCode.clients` lookup (fallback to `customer_name` text); FK-resolve `itemCode` via `byCode.items` (fallback to `item_code_text`).
-- `migration/transforms/job-work-orders.ts` — same pattern; group 2 docs by `jwNo` → 2 header rows + 2 line rows. Both lines reference items not in master (`ITM-003`, `ITM-001`) — load with `item_id=null` + text fallback per ADR-012 #10.
-- Wire into `transform.ts` orchestrator in FK-dependency order after Phase 3.
-- Tests for each transform.
+**Scope:**
+- Extend `migration/load.ts` for the 4 new tables in FK order: `sales_orders` → `sales_order_lines` → `job_work_orders` → `job_work_order_lines`
+- After load: **backfill `job_cards.source_so_line_id` / `source_jw_line_id`** by reading each JC's `source_legacy_ref` JSON, looking up via the new `_id_map.json`, issuing UPDATE
+- Build `migration/validate-phase4.ts` mirroring `validate-phase3.ts`:
+  - Per-table field-level diff
+  - Orphan FK checks for the 4 new tables + the 2 new FKs on `job_cards`
+  - Backfill verification: every JC with non-null `source_legacy_ref` has either a resolved FK OR appears in an anomaly list
+- Add `pnpm --filter @innovic/migration validate:phase4` script
+- MIGRATION-LOG entries for both source collections + Phase 4 sign-off section
 
 **Acceptance:**
-- [ ] Two new transform files + tests
-- [ ] Real-data run produces 4 JSON outputs: `sales_orders.json` (2), `sales_order_lines.json` (9), `job_work_orders.json` (2), `job_work_order_lines.json` (2)
-- [ ] Anomalies captured for unresolved itemCodes (expect ~2 in JW lines)
-- [ ] Full migration test suite green
+- [ ] All 4 tables loaded; row counts match transform output (2 + 9 + 2 + 2 = 15)
+- [ ] JC source FKs backfilled: IN-JC-00002 → SO-436 line `4n7tmo9u`, IN-JC-00003 → SO-436 line `mmrfp7d3`
+- [ ] `validate-phase4.ts` shows 0 field diffs, 0 orphan FKs, both backfills verified
+- [ ] MIGRATION-LOG sign-off appended
 
 ## Phase 3 Sub-tasks (T-024 closed)
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
@@ -112,18 +116,15 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 | T-025c | Manual browser smoke (admin happy path + viewer 403 + Realtime visible) | [ ] Gated on user |
 | T-026 | Server-side validations — operator-required-on-Start + qc_call_date auto-set | [x] Done (2026-05-01) |
 | T-027 | Phase 3 parallel run — reconciliation script + 5-day clean window | [~] Tooling ready, daily runs pending |
-| T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
-| T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
-| T-027 | Run parallel mode (operators in BOTH systems, end-of-day reconciliation, 5 working days) | [ ] |
-| T-028 | Cutover operators to new system only | [ ] |
+| T-028 | Cutover operators to new system only | [ ] Gated on T-027 5 clean days |
 
 ## Phase 4 Backlog — Sales Chain (Week 6–7)
 | ID | Task | Status |
 |---|---|---|
 | T-029a | Phase 4 schema design (SCHEMA.md + ADR-012) | [x] Done (2026-05-01) |
 | T-029b | Phase 4 Drizzle schema + migrations to dev Supabase | [x] Done (2026-05-01) |
-| T-029c | Phase 4 transform layer (sales-orders, job-work-orders; header+lines split) | [ ] Active |
-| T-029d | Phase 4 bulk-load + JC source FK backfill + validate-phase4 | [ ] |
+| T-029c | Phase 4 transform layer (sales-orders, job-work-orders; header+lines split) | [x] Done (2026-05-01) |
+| T-029d | Phase 4 bulk-load + JC source FK backfill + validate-phase4 | [ ] Active |
 | T-030 | Build SO list / detail / create / edit screens | [ ] |
 | T-031 | Build JW list / detail screens | [ ] |
 | T-032 | Build JC list with filtering (status, machine, operator) | [ ] |
@@ -182,6 +183,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-029c | **Phase 4 transform layer shipped** — 2 new multi-output transforms in `migration/transforms/`: `sales-orders.ts` (groups 9 source docs by `soNo` → 2 headers + 9 lines) and `job-work-orders.ts` (groups 2 docs by `jwNo` → 2 headers + 2 lines). Both follow the route-cards multi-output pattern. FK resolution via `_id_map` lookups: `clientId` via `byCode.clients` (fallback to `customer_name`); `itemCode` via `byCode.items` (fallback to `item_code_text` — per ADR-012 #10 NOT an anomaly). Real-data run: **15 rows, 0 anomalies** across 4 output tables. 13 new tests; full migration suite **84/84 green**. Stale T-025/T-026/T-027/T-028 stubs in Phase 3 backlog cleaned up |
 | 2026-05-01 | T-029b | **Phase 4 storage layer live in dev Supabase.** 2 new shared enums (`SO_TYPES`, `SO_STATUSES`); 4 new Drizzle tables in `apps/api/src/db/schema.ts` matching SCHEMA.md exactly. Three migration files: `0007_phase4_sales_chain.sql` (drizzle-gen — tables, enums, FKs, indexes, RLS), `0008_phase4_jc_alters.sql` (hand-written — column rename + 2 FKs ON DELETE SET NULL + CHECK), `0009_phase4_triggers.sql` (hand-written — 4 BEFORE UPDATE triggers). Drizzle schema also updated to include the 2 new FKs and the CHECK constraint (so `drizzle-kit generate` reports no drift). Snapshot patched to match Drizzle's FK naming convention; one-shot DB ALTER renamed live FKs to match. **All 73 api tests still green** after the schema change. T-029c (transform layer) is next |
 | 2026-05-01 | T-029a | **Phase 4 sales-chain schema design approved (ADR-012).** `docs/SCHEMA.md` §"Phase 4 Tables — Sales Chain" added: 4 new tables (`sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`) + 2 enums (`so_type`, `so_status` — the latter shared between SO and JW since semantics are identical) + ALTER on `job_cards` (rename `source_jw_id`→`source_jw_line_id`, add FKs, add CHECK `<= 1`). 11 explicit decisions surfaced for sign-off; all approved. Most consequential: header+lines split for both SO and JW (symmetry with JC source link); `source_legacy_ref` kept one phase as audit trail; CHECK relaxed to `<= 1` from ADR-011's `= 1` to allow source-less JCs going forward; BOM/milestones deferred; customer_name + item_code_text fallbacks mean no row drops on master-data gaps (unlike Phase 3's ITM-001 cascade). ADR-012 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-013/014). T-029b (Drizzle + migration) is next |
 | 2026-05-01 | T-027 (tooling) | **Reconciliation script for Phase 3 parallel run.** New `migration/reconcile-op-log.ts` compares legacy `opLog` (re-exported daily from Firestore) vs new `op_log` table for a given date (default = today IST). Match key `(jcNo, opSeq, log_date)`; sums production qty per group, excluding `'start'` and `'qc'` types on legacy and filtering to `log_type='complete'` on new — mirrors the legacy line 2595 "today's completed qty" filter. Per-key categorisation: MATCH / QTY_MISMATCH / LEGACY_ONLY / NEW_ONLY. Output to `migration/load-output/_reconcile_<date>.json` (gitignored) plus stdout summary. Exit 0 on PASS, 1 on FAIL — usable from cron. New `pnpm --filter @innovic/migration reconcile` script. Smoke-run on historic 2026-03-07 correctly flagged the 3 ITM-001 cascade divergences (15 pcs of legacy-only work that we already accepted as lost in T-024c) |
