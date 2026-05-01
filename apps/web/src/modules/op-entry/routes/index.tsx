@@ -92,12 +92,20 @@ function OpEntryPage() {
               Log shop-floor work against a job card.
             </p>
           </div>
-          <Button variant="outline" asChild>
-            <Link to="/op-entry/running">
-              <ArrowRight />
-              Live operations board
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/op-entry/machines">
+                <ArrowRight />
+                Machine view
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/op-entry/running">
+                <ArrowRight />
+                Live ops board
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <form onSubmit={handleJcSubmit} className="flex flex-col gap-3 md:flex-row md:items-end">

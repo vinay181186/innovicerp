@@ -42,10 +42,11 @@ export function useJcOpsEnriched(
   const params = new URLSearchParams();
   if (query.jobCardId) params.set('jobCardId', query.jobCardId);
   if (query.jobCardCode) params.set('jobCardCode', query.jobCardCode);
+  if (query.machineId) params.set('machineId', query.machineId);
   return useQuery<JcOpEnriched[]>({
     queryKey: opEntryKeys.jcOps(query),
     queryFn: () => apiFetch<JcOpEnriched[]>(`/op-entry/jc-ops?${params.toString()}`),
-    enabled: Boolean(query.jobCardId || query.jobCardCode),
+    enabled: Boolean(query.jobCardId || query.jobCardCode || query.machineId),
     placeholderData: (prev) => prev,
     ...options,
   });

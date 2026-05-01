@@ -138,10 +138,16 @@ export type StartOpInput = z.infer<typeof startOpInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 
-export const listJcOpsQuerySchema = z.object({
-  jobCardId: z.string().uuid().optional(),
-  jobCardCode: z.string().min(1).max(64).optional(),
-});
+export const listJcOpsQuerySchema = z
+  .object({
+    jobCardId: z.string().uuid().optional(),
+    jobCardCode: z.string().min(1).max(64).optional(),
+    machineId: z.string().uuid().optional(),
+  })
+  .refine(
+    (q) => Boolean(q.jobCardId || q.jobCardCode || q.machineId),
+    { message: 'Provide jobCardId, jobCardCode, or machineId' },
+  );
 export type ListJcOpsQuery = z.infer<typeof listJcOpsQuerySchema>;
 
 export const listOpLogQuerySchema = z.object({

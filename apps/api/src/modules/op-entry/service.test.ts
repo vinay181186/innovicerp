@@ -240,6 +240,15 @@ describe('op-entry service', () => {
     expect(after[0]?.status).toBe('done');
   });
 
+  it('listJcOpsEnriched filters by machineId and returns only ops on that machine', async () => {
+    // The fixture's jc_op has machineId=null, so a query for some random
+    // machineId should return zero rows. Use a UUID that doesn't match
+    // anything to keep the assertion robust.
+    const noMatch = '00000000-0000-0000-0000-000000000000';
+    const rows = await service.listJcOpsEnriched({ machineId: noMatch }, admin);
+    expect(rows).toHaveLength(0);
+  });
+
   it('listOpLog returns log entries for the jc_op (newest first)', async () => {
     const logs = await service.listOpLog({ jcOpId: testJcOpId, limit: 50 }, admin);
     // Earlier tests inserted multiple entries; ensure ordering is desc by createdAt

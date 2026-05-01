@@ -9,6 +9,7 @@ import { machinesListRoute } from './modules/machines/routes/list';
 import { machineDetailRoute } from './modules/machines/routes/detail';
 import { machineEditRoute, machineNewRoute } from './modules/machines/routes/edit';
 import { opEntryRoute } from './modules/op-entry/routes/index';
+import { machineOpEntryRoute } from './modules/op-entry/routes/machines';
 import { runningOpsRoute } from './modules/op-entry/routes/running';
 import { operatorsListRoute } from './modules/operators/routes/list';
 import { operatorDetailRoute } from './modules/operators/routes/detail';
@@ -49,6 +50,7 @@ const routeTree = rootRoute.addChildren([
     operatorEditRoute,
     opEntryRoute,
     runningOpsRoute,
+    machineOpEntryRoute,
   ]),
 ]);
 

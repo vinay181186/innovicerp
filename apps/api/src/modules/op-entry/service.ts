@@ -56,10 +56,18 @@ export async function listJcOpsEnriched(
   user: AuthContext,
 ): Promise<JcOpEnriched[]> {
   const companyId = requireCompany(user);
-  if (!input.jobCardId && !input.jobCardCode) {
-    throw new ValidationError('Provide jobCardId or jobCardCode');
+  if (!input.jobCardId && !input.jobCardCode && !input.machineId) {
+    throw new ValidationError('Provide jobCardId, jobCardCode, or machineId');
   }
   return withUserContext(user, async (tx) => {
+    const filter = input.jobCardId
+      ? sql`jc.id = ${input.jobCardId}::uuid`
+      : input.jobCardCode
+        ? sql`jc.code = ${input.jobCardCode}`
+        : sql`o.machine_id = ${input.machineId!}::uuid`;
+    const orderBy = input.machineId
+      ? sql`ORDER BY jc.code ASC, o.op_seq ASC`
+      : sql`ORDER BY o.op_seq ASC`;
     const result = await tx.execute(sql`
       SELECT
         o.id,
@@ -91,8 +99,8 @@ export async function listJcOpsEnriched(
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
       WHERE o.company_id = ${companyId}::uuid
         AND o.deleted_at IS NULL
-        AND ${input.jobCardId ? sql`jc.id = ${input.jobCardId}::uuid` : sql`jc.code = ${input.jobCardCode!}`}
-      ORDER BY o.op_seq ASC
+        AND ${filter}
+      ${orderBy}
     `);
     return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       ...r,
