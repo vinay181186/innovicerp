@@ -358,6 +358,274 @@ Indexes: `unique (company_id, code) where deleted_at is null`, `(company_id) whe
 
 ---
 
+## Phase 3 Tables — Op Entry Chain (T-024a draft, awaiting approval)
+
+> **Status:** design draft from T-024a. No code generated yet. Decisions surfaced inline below for explicit user sign-off; once approved, recorded as ADR-011 and implemented in T-024b.
+
+Replaces legacy collections: `routeCards` (14), `jobCards` (3), `jcOps` (20), `opLog` (81), `runningOps` (2). Total source: 120 records (104 op-chain + 14 + 2 derived).
+
+Spec source: `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. Key references quoted below: `calcEngine()` at lines 1626–1731, op-entry submit at 5410–5490, machine op entry at 5668–5734, route-card lookup at 5966 / 6881–6935.
+
+### Phase 3 Design Decisions (for user approval)
+
+Each numbered point below is a binding decision the rest of this section depends on. Override individually before approval.
+
+1. **`routeCards` → separate `route_cards` master + `route_card_ops` children + `route_card_revisions` (jsonb history).** Legacy looks up route by `itemCode`, copies ops to `jcOps` at JC creation (line 5966, 6881). Master template lifecycle is independent of jobs and already has `revision`/`revisionLog[]` semantics — split, don't denormalise. Snapshots in `route_card_revisions` use `jsonb` because they are archival point-in-time copies, never queried by structure (the JSON-blob anti-pattern only applies to live data).
+2. **JC and JC-op statuses are NOT stored — they are computed via SQL views (`v_jc_op_status`, `v_jc_status`) mirroring `calcEngine()`.** Legacy never stored these (line 1718–1728 derives `jcStatus` from `jobCards.map(...)`). At our current scale (104 op rows × N reads/sec) the view cost is free; we get correctness-by-derivation, no cache invalidation, and Realtime subs to the underlying tables propagate automatically. Promote to materialized view in Phase 7 only if a report measurement says so.
+3. **`runningOps` → real table `running_ops`, NOT a view.** It captures sessions that stop without completing (line 5703 sets `status='Stopped'`), holds session metadata (start time, operator, shift) that op_log alone can't reconstruct, and acts as the lock holder for the "machine runs one op at a time" rule (line 5526). Two partial unique indexes enforce the rules at DB level: `(company_id, jc_op_id) where status='running'` and `(machine_id) where status='running'`.
+4. **`op_log` is a flat append-only table with a `type` enum (`start | complete | qc`).** Legacy `type` values seen: `'start'` (qty=0 with startTime), `'qc'` (qty=accepted, rejectQty=rejected), and `undefined`/`'complete'` (production — JC-wise form leaves it null at line 5426; Machine form sets `'complete'` at line 5679). Normalise: missing `type` → `'complete'` during transform.
+5. **SO/JW link on `job_cards` → two nullable FK columns (`source_so_line_id`, `source_jw_id`) with FKs DEFERRED until Phase 4** when those tables exist. For now: `source_legacy_ref text` captures the legacy `(soNo, soRefId, soLineNo)` blob. Phase 4 backfills FKs and adds a `check (num_nonnulls(source_so_line_id, source_jw_id) = 1)` constraint.
+6. **Outsource fields kept inline on `jc_ops`** (matches legacy structure, matches small-data reality). Normalisation into proper `osp_jobs` is deferred to Phase 8 (`outsourceJobs` collection migration). `outsource_vendor_id` is the only FK; PR/PO/DC numbers stay as text refs until those modules ship.
+7. **Realtime selectivity (ADR-004):** `op_log` and `running_ops` are the hot tables. Both carry `(company_id, jc_op_id)` natively, supporting Postgres Realtime row filters out of the box.
+8. **Operator on `op_log` → both FK and free-text fallback.** Legacy stores free-text name (`'Suresh P.'`, `'Vinay'`, `''`, `'Operator'`); some entries don't match any operator master. Add `operator_id uuid nullable references operators(id)` (best-effort transform match by name) plus `operator_name text` (always preserved). Service layer prefers the FK; falls back to text.
+9. **Drawing data on `job_cards` → Storage path only**, mirroring `items.drawing_file_path`. Legacy `drawingData` base64 blob is dropped; `drawingFile` filename → `drawing_file_path`. All 3 source records have empty values, so no migration cost.
+10. **`qcDocs[]` on `job_cards` is deferred to Phase 6 (QC module).** All 3 source records are empty.
+11. **Orphan `op_log` rows** (7 rows pointing at `JC-MS-002`/`003`/`004` which don't exist in `jobCards`) are captured as anomalies and NOT loaded. Same pattern as Phase 2 `_anomalies.json`.
+
+### Phase 3 Enums
+
+```sql
+create type op_type           as enum ('process', 'qc', 'outsource');
+create type op_log_type       as enum ('start', 'complete', 'qc');
+create type outsource_status  as enum ('pending', 'pr_raised', 'po_created', 'sent', 'received');
+create type running_op_status as enum ('running', 'done', 'stopped');
+create type shift             as enum ('day', 'night');
+create type jc_priority       as enum ('normal', 'high');  -- legacy form line 5982 only exposes Normal/High
+```
+
+(Lowercase enum values; transform normalises legacy mixed-case to lowercase.)
+
+### `route_cards`
+
+Master template defining the operation sequence for a manufactured item. Looked up by `item_id` at JC creation; ops are copied to `jc_ops` (snapshot semantics).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `rcNo`, e.g. `IN-RC-00001`) |
+| `item_id` | `uuid` | not null, FK → `items(id)`. Legacy `itemCode` |
+| `current_revision` | `integer` | not null, default `1`. Bumped by service layer when ops mutate |
+| `notes` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `unique (company_id, item_id) where deleted_at is null` — one active route card per item per company (matches legacy `find(r=>r.itemCode===itemCode)` lookup pattern at line 6925)
+- `(item_id) where deleted_at is null`
+
+RLS: `route_cards_company_read` (any role, same company) + `route_cards_manager_write` (admin/manager only).
+
+### `route_card_ops`
+
+Live ops for the current revision of a route card. Editable. Copied to `jc_ops` at JC creation.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `route_card_id` | `uuid` | not null, FK → `route_cards(id) on delete cascade` |
+| `op_seq` | `integer` | not null. 1-indexed sequence within route |
+| `machine_id` | `uuid` | nullable, FK → `machines(id)`. Null for OSP-only steps (legacy `machineId: ""`) |
+| `machine_code_text` | `text` | nullable. Preserves legacy `'QC'` sentinel and other free-text values that don't FK-resolve |
+| `operation` | `text` | not null. Free-text op label (e.g. `'od turn'`, `'DIR'`, `'COATING'`) |
+| `op_type` | `op_type` | not null, default `'process'` |
+| `cycle_time_min` | `numeric(10,2)` | not null, default `0`. Minutes per piece |
+| `program` | `text` | nullable |
+| `tool_no` | `text` | nullable |
+| `tool_details` | `text` | nullable |
+| `qc_required` | `boolean` | not null, default `false` |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (route_card_id, op_seq) where deleted_at is null`
+- `(machine_id) where deleted_at is null`
+
+RLS: same pattern as parent.
+
+### `route_card_revisions`
+
+Append-only history of past route card revisions. Snapshot held as `jsonb` (archival, not queried by shape).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `route_card_id` | `uuid` | not null, FK → `route_cards(id) on delete cascade` |
+| `revision_no` | `integer` | not null. 1-indexed |
+| `notes` | `text` | nullable. Legacy `notes` (e.g. `"Updated"`) |
+| `ops_snapshot` | `jsonb` | not null. Frozen array of ops at the time of revision |
+| `created_at` | `timestamptz` | not null, default `now()` |
+| `created_by` | `uuid` | not null, FK → `users(id)` |
+
+(No `updated_at`/`deleted_at` — revisions are immutable history.)
+
+Indexes:
+- `unique (route_card_id, revision_no)`
+- `(route_card_id, created_at desc)` — for revision-history view
+
+RLS: `route_card_revisions_company_read` (any role).
+
+### `job_cards`
+
+Production batch on the shop floor for a specific item and quantity. Header table.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `jcNo`, e.g. `IN-JC-00001`) |
+| `jc_date` | `date` | not null. Legacy `date` (creation/issue date) |
+| `item_id` | `uuid` | not null, FK → `items(id)`. Legacy `itemCode` |
+| `order_qty` | `integer` | not null, check `> 0` |
+| `priority` | `jc_priority` | not null, default `'normal'` |
+| `due_date` | `date` | nullable |
+| `drawing_file_path` | `text` | nullable. Storage path; replaces legacy base64 `drawingData` |
+| `source_so_line_id` | `uuid` | nullable. FK → `sales_order_lines(id)` **deferred to Phase 4** |
+| `source_jw_id` | `uuid` | nullable. FK → `job_work_orders(id)` **deferred to Phase 4** |
+| `source_legacy_ref` | `text` | nullable. Captures legacy `(soNo, soRefId, soLineNo, soPartName, clientPoLineNo)` as JSON-encoded text until Phase 4 backfills FKs |
+| `closed_at` | `timestamptz` | nullable. Set when JC manually closed (legacy `'Closed'` status path) |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, item_id) where deleted_at is null`
+- `(company_id, due_date) where deleted_at is null and closed_at is null` — overdue JC reports
+- `(company_id, jc_date) where deleted_at is null`
+
+RLS: `job_cards_company_read` (any role) + `job_cards_manager_write` (admin/manager only — operators cannot create JCs, they only log against existing ones).
+
+**No status column** — derived via `v_jc_status` view (decision #2). The view projects: `total_ops`, `done_ops`, `qc_pending_ops`, `status` (`no_ops` | `open` | `qc_pending` | `complete` | `closed`).
+
+### `jc_ops`
+
+Per-step routing of a job card. Snapshot copied from `route_card_ops` at JC creation; thereafter independent.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `job_card_id` | `uuid` | not null, FK → `job_cards(id) on delete cascade` |
+| `op_seq` | `integer` | not null. 1-indexed within JC |
+| `machine_id` | `uuid` | nullable, FK → `machines(id)` |
+| `machine_code_text` | `text` | nullable. Preserves legacy `'QC'` and other unresolvable strings |
+| `operation` | `text` | not null |
+| `op_type` | `op_type` | not null, default `'process'` |
+| `cycle_time_min` | `numeric(10,2)` | not null, default `0` |
+| `program` | `text` | nullable |
+| `tool_no` | `text` | nullable |
+| `tool_details` | `text` | nullable |
+| `qc_required` | `boolean` | not null, default `false` |
+| `qc_call_date` | `date` | nullable. Auto-set when prior op completes (legacy line 5476) |
+| `qc_attended_date` | `date` | nullable |
+| `rework_qty` | `integer` | not null, default `0`. Counter, decremented by op-log entries (legacy line 5462) |
+| `outsource_vendor_id` | `uuid` | nullable, FK → `vendors(id)`. Legacy `outsourceVendor` text resolved to FK; null if unresolvable |
+| `outsource_vendor_text` | `text` | nullable. Fallback for unresolvable legacy vendor codes |
+| `outsource_cost` | `numeric(12,2)` | not null, default `0` |
+| `outsource_status` | `outsource_status` | nullable. Null for non-outsource ops; default `'pending'` when `op_type='outsource'` |
+| `outsource_pr_no` | `text` | nullable. Until Phase 5 (procurement) ships |
+| `outsource_po_no` | `text` | nullable |
+| `outsource_dc_no` | `text` | nullable |
+| `outsource_sent_qty` | `integer` | not null, default `0` |
+| `outsource_sent_date` | `date` | nullable |
+| `outsource_returned_qty` | `integer` | not null, default `0` |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (job_card_id, op_seq) where deleted_at is null`
+- `(machine_id) where deleted_at is null`
+- `(company_id, op_type) where deleted_at is null` — for outsource queue / QC dashboard filters
+- `(outsource_vendor_id) where deleted_at is null and op_type = 'outsource'`
+
+RLS: `jc_ops_company_read` (any role) + `jc_ops_manager_write` (admin/manager — operators don't edit op definitions, only log against them).
+
+**No completed/accepted/rejected qty columns** — derived from `op_log` via `v_jc_op_status` view (decision #2).
+
+### `op_log`
+
+Append-only log of work events against a `jc_op`. Hot table — Realtime row-filterable.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `jc_op_id` | `uuid` | not null, FK → `jc_ops(id) on delete cascade` |
+| `log_no` | `text` | not null. Legacy `logNo` (e.g. `LOG-022`); NOT unique — legacy generates duplicates (e.g. LOG-008 appears twice in source) |
+| `log_type` | `op_log_type` | not null. `'start'` (qty=0, has start_time), `'complete'` (production), `'qc'` (qty=accepted, reject_qty=rejected) |
+| `log_date` | `date` | not null |
+| `shift` | `shift` | not null |
+| `qty` | `integer` | not null, default `0`, check `>= 0`. For `'qc'` type: accepted qty |
+| `reject_qty` | `integer` | not null, default `0`, check `>= 0`. For `'qc'` type: rejected qty; for `'complete'`: rejected during production |
+| `operator_id` | `uuid` | nullable, FK → `operators(id)`. Best-effort name match during transform |
+| `operator_name` | `text` | nullable. Preserved from legacy free-text |
+| `start_time` | `time` | nullable. Set only when `log_type='start'` (HH:MM in legacy) |
+| `remarks` | `text` | nullable |
+| `created_at` | `timestamptz` | not null, default `now()` |
+| `created_by` | `uuid` | not null, FK → `users(id)` |
+
+(No `updated_at`/`updated_by`/`deleted_at` — log entries are immutable. Corrections happen by appending a reversing entry, not by editing.)
+
+Indexes:
+- `(company_id, jc_op_id, log_date)` — primary read pattern (Realtime filter + history queries)
+- `(company_id, log_date) where log_type = 'complete'` — daily production reports
+- `(operator_id, log_date) where operator_id is not null` — operator productivity reports
+
+RLS:
+- `op_log_company_read` (any role)
+- `op_log_operator_insert` — operators can insert ONLY where `created_by = current_user_id() and log_type in ('start', 'complete')` (no QC entries from shop floor)
+- `op_log_qc_insert` — `qc` role can insert with `log_type = 'qc'`
+- No update/delete policies — table is append-only by RLS as well as by convention
+
+Realtime: enable on this table; client subscribes filtered by `(company_id = X and jc_op_id = Y)` for the Op Entry screen.
+
+### `running_ops`
+
+Live session record. One row per (jc_op, attempt). Closed by setting `status = 'done'` (totalDone >= orderQty, line 5436) or `'stopped'` (manual stop, line 5703).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `jc_op_id` | `uuid` | not null, FK → `jc_ops(id) on delete cascade` |
+| `machine_id` | `uuid` | nullable, FK → `machines(id)`. Null for OSP sessions (legacy uses `'OSP'` sentinel) |
+| `is_osp` | `boolean` | not null, default `false`. Legacy `isOSP` flag |
+| `operator_id` | `uuid` | nullable, FK → `operators(id)` |
+| `operator_name` | `text` | nullable. Free-text fallback |
+| `start_date` | `date` | not null |
+| `start_time` | `time` | not null |
+| `shift` | `shift` | not null |
+| `status` | `running_op_status` | not null, default `'running'` |
+| `ended_at` | `timestamptz` | nullable. Set when status transitions to `done` or `stopped` |
+| audit (`created_at`, `created_by`, `updated_at`, `updated_by`) | (audit pattern, no `deleted_at`) | |
+
+Indexes:
+- `unique (company_id, jc_op_id) where status = 'running'` — enforces "only one running session per op" (legacy line 5523)
+- `unique (machine_id) where status = 'running' and is_osp = false` — enforces "machine runs one op at a time" (legacy line 5526)
+- `(company_id, status, start_date desc)` — Live Operations Board
+
+RLS:
+- `running_ops_company_read` (any role)
+- `running_ops_operator_write` — operators insert/update where `created_by = current_user_id()`
+- `running_ops_manager_write` — admin/manager can update any row (e.g. force-stop)
+
+Realtime: enable; client subscribes filtered by `(company_id = X)` for the Live Operations Board.
+
+### Phase 3 Views (specified now, SQL written in T-024b)
+
+`v_jc_op_status` — projects from `jc_ops + op_log + running_ops` the columns: `jc_op_id, completed_qty, qc_accepted_qty, qc_rejected_qty, input_avail, available, qc_pending, computed_status` where `computed_status` is one of `waiting | available | in_progress | running | qc_pending | complete | pr_raised | po_created | at_vendor | received | ready_for_pr | outsource`. Mirrors `calcEngine().enrichedOps` (legacy line 1657–1701).
+
+`v_jc_status` — projects from `job_cards + v_jc_op_status` the columns: `job_card_id, total_ops, done_ops, qc_pending_ops, computed_status` where `computed_status` is one of `no_ops | open | qc_pending | complete | closed`. Mirrors `calcEngine().jcStatus` (legacy line 1718–1728). `closed` triggers when `closed_at is not null`.
+
+`v_machine_load` — Phase 7 candidate, NOT included in T-024b. Mirrors `calcEngine().machineLoad`.
+
+### Phase 3 Triggers
+
+- `before update` on each of `route_cards`, `route_card_ops`, `job_cards`, `jc_ops`, `running_ops` → `set_updated_at()` (existing helper from Phase 1).
+- (No status-maintenance triggers — statuses are view-derived per decision #2.)
+- (Server-side validations like "qty cannot exceed planned" land in T-026 service layer, not as DB triggers — Drizzle services are the testable business-logic layer per CLAUDE.md §6.2.)
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:

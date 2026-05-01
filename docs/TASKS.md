@@ -1,36 +1,62 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-023 done — Phase 2 master data signed off; T-024 starts Phase 3)
+> Last updated: 2026-05-01 (T-024a done — Phase 3 schema design approved as ADR-011; T-024b is next: Drizzle schema + migration to dev Supabase)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
 
 ## Current Phase
-**Phase 2 — Master Data Migration (Week 3)**
-Goal: Build the one-time Firestore export → transform → bulk-load pipeline, then migrate users/clients/vendors/items/machines/operators with row-count + sample validation.
+**Phase 3 — Op Entry (Week 4–5, Critical)** — starts with T-024 next session.
+Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op Entry screen with Realtime, implement server-side validations, run a 5-day parallel mode against the legacy HTML, then cut operators over.
+
+**Phase 2 closed 2026-05-01:** all master data migrated (371 rows) + validated (369/369 field-level matches, 0 orphan FKs); admin screens for items/clients/vendors/machines/operators live in production. See "Recently Completed" below.
+
+## Resume Checklist (next session)
+
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-024b.
+
+1. **Carry-over from Phase 2: viewer-role smoke (~15 min, closes T-022's last open acceptance row).** Sign in as admin → for each of clients/vendors/machines/operators run list → create → edit → soft-delete; verify row disappears. Then sign in as `viewer` and attempt a write — capture response shape: clean **403** (service-layer `AuthorizationError`) or leaked **500** (Postgres RLS error). If 500, patch service-layer role check on items + the other 4 master tables before any Phase 3 code lands. Tracked in "Phase 2 carry-over notes" below.
+
+2. **Then T-024b: Drizzle schema + migration to dev Supabase.** Per ADR-011 action items: 7 new tables, 5 new enums, hand-written views (`v_jc_op_status`, `v_jc_status`) in a separate migration file. Apply, run `EXPLAIN` on the two views, update SCHEMA.md "Migration History" with the migration filenames.
 
 ## Active Task
-**ID:** T-024
-**Title:** Migrate `jobCards`, `jcOps`, `opLog` data (Phase 3, Critical)
+**ID:** T-024b
+**Title:** Phase 3 — Drizzle schema + migration to dev Supabase
 **Status:** [ ] Not started
-**Scope:** Per CLAUDE.md §8, Phase 3 is the critical op-entry chain. Source data exists (jobCards 3, jcOps 20, opLog 81 — see MIGRATION-LOG export Run 1). Need:
-- Drizzle schema for `job_cards`, `jc_ops`, `op_log` (T-024 also designs Phase 3 schema)
-- RLS policies + audit triggers
-- Transform layer (`migration/transforms/{job-cards,jc-ops,op-log}.ts`) with id_map continuity to items/machines/operators
-- Bulk-load + validation
+**Scope:** Per ADR-011. SCHEMA.md §"Phase 3 Tables" is the spec.
+- Drizzle schema in `apps/api/src/db/schema.ts` — 7 tables: `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`
+- 5 new pg enums: `op_type`, `op_log_type`, `outsource_status`, `running_op_status`, `shift`, `jc_priority` (6 actually — `shift` is the 6th)
+- RLS policies per table (read = any role; writes per role rules in SCHEMA.md)
+- Migrations: `0004_phase3_op_entry.sql` (drizzle-kit autogen) + `0005_phase3_views.sql` (hand-written for the two views) + `0006_phase3_triggers.sql` if needed for `set_updated_at` on the new tables
+- Apply to dev Supabase; run `EXPLAIN` on the two views to baseline plan shape
+- Update SCHEMA.md "Migration History" table
+
 **Acceptance:**
-- [ ] SCHEMA.md updated with Phase 3 tables (3 tables, FKs to items/machines/operators)
-- [ ] Drizzle schema + migration applied to dev Supabase
-- [ ] Transform produces 104 rows (3 + 20 + 81); transform tests pass
-- [ ] Bulk-load lands 104 rows; validation script (`validate-phase2.ts`-style) shows 0 field diffs and 0 orphan FKs
-- [ ] MIGRATION-LOG entries for each collection
-**Reference:** Follow the same pattern as T-014 + T-015 + T-023.
+- [ ] Drizzle schema typechecks (`pnpm --filter api typecheck`)
+- [ ] `drizzle-kit generate` produces a clean SQL migration with no surprises (review before apply)
+- [ ] Migrations apply cleanly to dev Supabase
+- [ ] Both views return rows for the existing Phase 2 data (no JC data yet, so views should return 0 rows but execute without error)
+- [ ] SCHEMA.md "Migration History" table updated with the migration filenames
+
+## Phase 3 Sub-tasks
+- **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
+- **T-024b — Drizzle schema + migration** [ ] Active
+- **T-024c — Transform layer** [ ] Pending — 3 transforms (`job-cards.ts`, `jc-ops.ts`, `op-log.ts` + supporting `route-cards.ts` + `running-ops.ts`), FK resolution via `_id_map.json`, anomaly capture (per decision #11: 7 orphan opLog rows expected)
+- **T-024d — Bulk-load + validation** [ ] Pending — extend `migration/load.ts` for the 5 new collections in FK-dependency order; extend `validate-phase2.ts` to a `validate-phase3.ts` covering the new tables
+
+## Phase 3 carry-over notes (open questions to resolve in T-024a schema design)
+
+- **`routeCards` (legacy collection, 14 records exported)** is in the Phase 1 export but NOT in CLAUDE.md §13 glossary or `docs/SCHEMA.md` Module map. Decide in T-024a: separate `route_cards` master table (linked to items via item-id) OR denormalised onto `job_cards` as a snapshot at JC-creation time. Quote the legacy HTML usage (`legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`) before deciding. Record decision as an ADR.
+- **Status enums must reflect ALL legacy values, not just exhibited ones.** Source data is small (3 + 20 + 81 = 104 rows) — easy to design a schema that fits the export but breaks on a status the data didn't happen to hit. Read the legacy HTML's status-handling JS for `jobCards`, `jcOps`, `opLog` and capture every literal status string before locking the enum.
+- **Quantity columns:** `jc_ops` and `op_log` need planned-vs-actual qty modelling. The "cannot exceed planned qty" / "cannot skip required QC" validations from T-026 hinge on this. Pin column names + types in T-024a; don't punt.
+- **`runningOps` (legacy collection, 2 records exported)** likely materialises live op-entry state. Decide in T-024a: is this a derived view over `op_log` OR a real table? Probably a view if we're doing optimistic updates via TanStack Query.
+- **Realtime selectivity** (ADR-004): `op_log` IS one of the four hot screens, so the table needs to support filtered Postgres Realtime subs. Confirm column shape supports the planned filter (most likely `(company_id, jc_op_id)` row filter).
 
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
 - **CI tests reuse dev Supabase secrets.** Tests prefix-isolate (`T009R-`) and clean up after themselves so this is safe at current scale, but **provision a separate CI/staging Supabase project before Phase 4** (sales chain) — test data volume + concurrency will grow.
-- **Smoke session behaviour to confirm in Phase 2:** when a non-admin (`viewer`) attempts a write, the API returns an error — confirm whether it's a clean 403 (handled by service-layer role check) or a 500 leaking a Postgres RLS error. If 500, add explicit role checks in `apps/api/src/modules/items/service.ts` and propagate `AuthorizationError`. (Tracked as a Phase-2 hardening item; user reported "all working" on smoke so write was correctly blocked, but the response-shape detail wasn't captured.)
+- **Smoke session behaviour to confirm in Phase 2:** when a non-admin (`viewer`) attempts a write, the API returns an error — confirm whether it's a clean 403 (handled by service-layer role check) or a 500 leaking a Postgres RLS error. If 500, add explicit role checks in `apps/api/src/modules/items/service.ts` (and likely clients/vendors/machines/operators too) and propagate `AuthorizationError`. (Tracked as a Phase-2 hardening item; user reported "all working" on smoke so write was correctly blocked, but the response-shape detail wasn't captured.)
 - **`pnpm format` not yet run workspace-wide** (T-010c). Re-enable `format:check` in `ci.yml` once formatting is normalised.
 
 ## Phase 0 Backlog (Bootstrap)
@@ -73,7 +99,10 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 ## Phase 3 Backlog — Op Entry (Week 4–5, Critical)
 | ID | Task | Status |
 |---|---|---|
-| T-024 | Migrate `jobCards`, `jcOps`, `opLog` data | [ ] |
+| T-024a | Phase 3 schema design (SCHEMA.md + ADR-011) | [x] Done (2026-05-01) |
+| T-024b | Phase 3 Drizzle schema + migration to dev Supabase | [ ] Active |
+| T-024c | Phase 3 transform layer (job-cards, jc-ops, op-log, route-cards, running-ops) | [ ] |
+| T-024d | Phase 3 bulk-load + validation (`validate-phase3.ts`) | [ ] |
 | T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
 | T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
 | T-027 | Run parallel mode (operators in BOTH systems, end-of-day reconciliation, 5 working days) | [ ] |
@@ -137,11 +166,11 @@ Goal: Build the one-time Firestore export → transform → bulk-load pipeline, 
 | ID | Task | Blocker | Needs |
 |---|---|---|---|
 | Future | Staging + prod Supabase | Defer | Provision when Phase 4 (sales chain) is in flight |
-| T-012 | Full CI test job | Pending CI secrets | Add `CI_DATABASE_URL`, `CI_DATABASE_URL_POOLED`, `CI_SUPABASE_URL`, `CI_SUPABASE_ANON_KEY`, `CI_SUPABASE_SERVICE_ROLE_KEY`, `CI_SUPABASE_JWT_SECRET` in GH repo settings |
 
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-024a | **Phase 3 schema design approved (ADR-011).** `docs/SCHEMA.md` §"Phase 3 Tables — Op Entry Chain" added (lines 359–614): 7 tables (`route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`), 6 enums, 2 SQL views (`v_jc_op_status`, `v_jc_status` mirroring legacy `calcEngine()` line 1626–1731). 11 explicit decisions surfaced for sign-off. Five most consequential: route_cards as separate master, statuses derived via views (not stored), running_ops as real table with partial unique indexes for "one op per machine" + "one running per op", op_log append-only with `(start|complete|qc)` enum, SO/JW link on job_cards via two nullable FKs deferred to Phase 4. ADR-011 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-012/013). T-024b (Drizzle schema + migration) is next |
 | 2026-05-01 | T-023 | **Phase 2 sign-off.** New `migration/validate-phase2.ts` (read-only): per-table field-level diff between transform output and DB rows, plus 14 orphan-FK checks. Result: **369/369 mapped rows** match transform on every column (items 352, clients 1, vendors 3, machines 12, operators 1); users count matches `transformRowCount + 1` (T-012 smoke leftover, expected); 0 orphan FKs across `created_by` / `updated_by` for all 5 master tables + `operators.user_id` + users audit + `users.company_id`. Output `migration/load-output/_phase2_validation.json` (gitignored). Reproducible via `pnpm --filter @innovic/migration validate:phase2`. Sign-off section appended to MIGRATION-LOG; T-024 (Phase 3 op-entry migration) is next |
 | 2026-05-01 | T-022 (operators + close) | **T-022 closed.** Operators admin module shipped per CLAUDE.md §8: shared Zod schemas (department + skills text, isActive boolean, optional userId FK to users); api module (5 endpoints, 7 service + 4 routes tests, 11/11 against dev Supabase); web module (OperatorForm with Active/Inactive select + skills + linked-user inputs, list with code/name/dept/skills/status columns + active filter, detail card). Home nav (`apps/web/src/routes/index.tsx`) refactored to a typed `MASTER_LINKS` array — Items + Clients + Vendors + Machines + Operators all surfaced. Full api suite 56/56 green; workspace typecheck/lint clean. UI matches legacy `operatorForm` (lines 13726-43): Operator ID, Name, Department, Status, Skills/Machines, with `userId` added forward per SCHEMA.md |
 | 2026-04-30 | T-022 (machines) | Machines admin module shipped per CLAUDE.md §8: shared Zod schemas (machineType, capacityPerShift int, shiftsPerDay int default 1, status text); api module (5 endpoints, 7 service tests + 4 routes tests); web module (MachineForm with status select Idle/Running/Down/Maintenance, list with type/cap/shifts/status columns + status filter, detail card). Workspace typecheck/lint clean |
