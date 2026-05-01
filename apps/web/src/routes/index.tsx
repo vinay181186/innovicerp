@@ -1,5 +1,6 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import {
+  Activity,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -9,12 +10,15 @@ import {
   LogOut,
   Package,
   Truck,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signOut, useSession } from '@/lib/session';
 import { authenticatedRoute } from './_authenticated';
 
 const MASTER_LINKS = [
+  { to: '/op-entry', icon: Wrench, title: 'Op Entry', subtitle: 'Log shop-floor work against a job card' },
+  { to: '/op-entry/running', icon: Activity, title: 'Live operations board', subtitle: 'Sessions running right now' },
   { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
   { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },
   { to: '/vendors', icon: Truck, title: 'Vendors master', subtitle: 'Suppliers we buy from' },

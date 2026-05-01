@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-025a done — Op Entry API module shipped. T-025b (Web + Realtime) is next)
+> Last updated: 2026-05-01 (T-025 closed — Op Entry API + Web + Realtime shipped. T-025c manual smoke gated on user. T-026 next.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -14,34 +14,25 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-025b.
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with the **manual smoke** (5–10 min) before any T-026 code lands.
 
-1. **T-025b: Op Entry Web** (API ready from T-025a):
-   - `apps/web/src/modules/op-entry/api.ts` — TanStack Query hooks against the new endpoints (`GET /op-entry/jc-ops?jobCardCode=...`, `POST /op-entry/op-log`, `POST /op-entry/start`, `POST /op-entry/running-ops/:id/stop`)
-   - Realtime subscriptions: `op_log` (filter `company_id = X AND jc_op_id = Y` for the per-op view); `running_ops` (filter `company_id = X` for the live board). Invalidate the right Query keys on each event.
-   - Optimistic update on `useSubmitOpLog`: optimistically bump `available` by `-qty` in the jc_ops cache; rollback on server error
-   - JC-wise Op Entry screen — mirror legacy line 5200–5340 layout
-   - Machine Op Entry screen — mirror legacy `renderMachOpEntry` lines 5540–5666
-   - Manual smoke: as admin, start op → verify Realtime updates running_ops view; submit qty → see `available` decrement immediately (optimistic) and confirm via Realtime; viewer role attempting POST returns clean 403
+1. **Manual browser smoke (T-025c — gated on user):**
+   - Start API + web locally (`pnpm --filter api dev` + `pnpm --filter web dev`).
+   - As admin → `/op-entry` → enter `IN-JC-00002` → ops table loads with computed status badges.
+   - Click op_seq 3 (process op, machine CNC-01) → form appears; click **Start session** → top of `/op-entry/running` shows the new running row (Realtime).
+   - Back to op_seq 3 form → submit qty `5` → `available` should drop optimistically before the server round-trip; Realtime then reconciles. Submit again with qty exceeding `available` → expect 400 with the validation message.
+   - As `viewer` user → same sequence; submit POST should return clean 403 `{error: "forbidden"}` (already covered by routes test, but confirm in browser DevTools).
+   - If anything diverges: file the symptom + screenshot, then we patch before T-026.
 
-2. **T-026:** Server-side validations from CLAUDE.md §1 — these are ALREADY mostly in T-025a's `submitOpLog` service (qty <= available, qc_pending blocks submit). T-026 may add: rework qty after NC, sequencing rule (must complete op_seq N before N+1)? Re-read legacy to confirm scope.
+2. **T-026: Sequencing + rework validations.** The qty-cap and qc-pending checks are already in `submitOpLog`. Re-read legacy line 5400–5490 for the additional rules — sequencing (must complete op_seq N before N+1?), rework deduction from `jc_ops.rework_qty` (legacy line 5462), QC auto-call on prior op completion (line 5476). Decide which land as service-layer checks vs. as DB triggers vs. as later-phase work.
 
 3. **T-027 / T-028:** 5-day parallel run + operator cutover.
 
 ## Active Task
-**ID:** T-025b
-**Title:** Op Entry Web — TanStack Query hooks + Realtime subscription + UI
+**ID:** T-026 (queued behind manual smoke of T-025)
+**Title:** Server-side validations — sequencing + rework, beyond qty-cap/qc-pending already done
 **Status:** [ ] Not started
-**Scope:** API is in place from T-025a. Now build the web side mirroring the legacy screen (legacy lines 5200–5734 — JC-wise Op Entry + Machine Op Entry).
-
-**Acceptance:**
-- [ ] `apps/web/src/modules/op-entry/api.ts` — TanStack Query hooks: `useJcOpsEnriched`, `useOpLog`, `useRunningOps`, `useSubmitOpLog`, `useStartOp`, `useStopOp`
-- [ ] Realtime subscriptions on `op_log` and `running_ops` filtered by `company_id` (and `jc_op_id` for the per-op view); invalidate the right Query keys on insert/update; teardown on unmount
-- [ ] Optimistic update wired on `useSubmitOpLog` mutation; rollback on server error
-- [ ] Routes: list view (JC-wise pick + ops + log history) + Machine Op Entry view (legacy `renderMachOpEntry`)
-- [ ] Components mirror legacy UI layout — preserve, don't redesign
-- [ ] Manual smoke in browser: admin happy path (start → log qty → see status flip via Realtime)
-- [ ] Web typecheck + lint clean
+**Scope:** Re-read legacy lines 5400–5490 to enumerate the remaining rules (sequencing, rework deduction, QC auto-call). Land as service-layer checks where they're business logic, as DB triggers where they need DB-level invariants. Don't pre-implement Machine Op Entry sub-rules until the JC-wise smoke passes.
 
 ## Phase 3 Sub-tasks (T-024 closed)
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
@@ -108,7 +99,8 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 | T-024c | Phase 3 transform layer (job-cards, jc-ops, op-log, route-cards, running-ops) | [x] Done (2026-05-01) |
 | T-024d | Phase 3 bulk-load + validation (`validate-phase3.ts`) | [x] Done (2026-05-01) |
 | T-025a | Op Entry API module (routes/service/schema + tests) | [x] Done (2026-05-01) |
-| T-025b | Op Entry Web (TanStack Query + Realtime + optimistic updates) | [ ] Active |
+| T-025b | Op Entry Web (TanStack Query + Realtime + optimistic updates) | [x] Done (2026-05-01) |
+| T-025c | Manual browser smoke (admin happy path + viewer 403 + Realtime visible) | [ ] Gated on user |
 | T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
 | T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
 | T-027 | Run parallel mode (operators in BOTH systems, end-of-day reconciliation, 5 working days) | [ ] |
@@ -176,6 +168,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-025b | **Op Entry Web shipped — TanStack Query + Supabase Realtime + optimistic updates.** New `apps/web/src/modules/op-entry/`: api.ts (6 hooks + 2 Realtime helpers `useRealtimeOpLog`/`useRealtimeRunningOps`), 5 components (status badges, jc-ops table, op-entry form, op-log history, running-ops board), 2 routes (`/op-entry` JC-wise picker + `/op-entry/running` live board). Optimistic update on `useSubmitOpLog` decrements `available` and bumps `completedQty` in the cached jc_ops list before the server round-trip; rollback via snapshot on error; Realtime INSERT on op_log invalidates to reconcile. Realtime channels filter by `jc_op_id` (per-op view) and rely on RLS for company isolation (running_ops board). Home nav extended with op-entry + live-board cards. Web typecheck + lint clean. **Manual browser smoke pending user (T-025c)** — happy path + viewer 403 + Realtime propagation; runs in 5–10 min, blocks T-026 |
 | 2026-05-01 | T-025a | **Op Entry API module shipped.** New `apps/api/src/modules/op-entry/`: routes (`GET /op-entry/{jc-ops,op-log,running-ops}`, `POST /op-entry/{op-log,start}`, `POST /op-entry/running-ops/:id/stop`), service uses raw SQL through `tx.execute(sql\`\`)` to query `v_jc_op_status` view (calcEngine mirror) for status + availability — service NEVER recomputes status, always reads from view per ADR-011 #2. Cannot-exceed-planned-qty + cannot-skip-required-QC validations land in `submitOpLog`. `requireOpEntryRole` (operator/manager/admin) added to `lib/auth.ts` alongside the existing `requireWriteRole`. Running-ops uniqueness errors caught via Postgres SQLSTATE 23505 → typed `ConflictError`. Shared schemas in `packages/shared/src/schemas/op-entry.ts` (12-value `ComputedJcOpStatus` enum + read/write/query schemas). 13 new op-entry tests (9 service + 4 routes); full api suite **70/70 green** |
 | 2026-05-01 | T-024d | **Phase 3 sign-off — op-entry chain loaded + validated.** `migration/load.ts` extended with per-table conflict targets (`(company_id, code)` for masters/job_cards/route_cards; `(route_card_id, op_seq)` for child ops; `(id)` for op_log/running_ops) + audit shapes (`full` vs `created_only` for immutable tables). Generic bulk-loader refactored — Phase 2 behaviour preserved. New `migration/validate-phase3.ts` (read-only): 7-table field-level diff with jsonb canonical-JSON compare + HH:MM↔HH:MM:SS time normalisation + 25 orphan FK checks + view sanity. **Result:** 119 rows in dev Supabase; 0 field diffs; 0 orphan FKs; v_jc_op_status returns 15 rows with `waiting:5, available:2, running:1, qc_pending:2, complete:4, at_vendor:1`; v_jc_status returns 2 rows (open:1, qc_pending:1) — confirms calcEngine mirror works on real data. MIGRATION-LOG sign-off appended; postgres-js jsonb caveat (use `JSON.stringify` not raw array) noted in load.ts |
 | 2026-05-01 | T-024c | **Phase 3 transform layer shipped.** 5 new transforms in `migration/transforms/`: `route-cards.ts` (returns 3 results — cards + ops + revisions), `job-cards.ts`, `jc-ops.ts`, `op-log.ts`, `running-ops.ts`. New `LookupRegistry` in `transforms/types.ts` carries code → uuid maps incrementally; orchestrator updates it after each transform and pre-loads from disk for `--only` runs. `transforms/lookups.ts` provides the disk-fallback helpers. 33 new unit tests (71/71 total migration suite green). Real-data run produces 119 valid rows + 72 anomalies. **Surfaced data-integrity finding:** `ITM-001` referenced by IN-RC-00012 + IN-JC-00001 doesn't exist in production items master (only in legacy HTML seed). Cascade drops 69 rows total. User decision required before T-024d — see Resume Checklist for options (a)/(b)/(c) |
