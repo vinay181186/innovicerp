@@ -1,6 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { clients } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   Client,
@@ -75,6 +76,7 @@ export async function createClient(
   input: CreateClientInput,
   user: AuthContext,
 ): Promise<Client> {
+  requireWriteRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -116,6 +118,7 @@ export async function updateClient(
   input: UpdateClientInput,
   user: AuthContext,
 ): Promise<Client> {
+  requireWriteRole(user);
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -147,6 +150,7 @@ export async function updateClient(
 }
 
 export async function softDeleteClient(id: string, user: AuthContext): Promise<{ ok: true }> {
+  requireWriteRole(user);
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-024a done — Phase 3 schema design approved as ADR-011; T-024b is next: Drizzle schema + migration to dev Supabase)
+> Last updated: 2026-05-01 (T-024a done + Phase 2 carry-over hardening done — viewer-role writes now return clean 403; T-024b is next: Drizzle schema + migration to dev Supabase)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -16,9 +16,9 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 
 > Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-024b.
 
-1. **Carry-over from Phase 2: viewer-role smoke (~15 min, closes T-022's last open acceptance row).** Sign in as admin → for each of clients/vendors/machines/operators run list → create → edit → soft-delete; verify row disappears. Then sign in as `viewer` and attempt a write — capture response shape: clean **403** (service-layer `AuthorizationError`) or leaked **500** (Postgres RLS error). If 500, patch service-layer role check on items + the other 4 master tables before any Phase 3 code lands. Tracked in "Phase 2 carry-over notes" below.
+1. **T-024b: Drizzle schema + migration to dev Supabase.** Per ADR-011 action items: 7 new tables, 6 new enums, hand-written views (`v_jc_op_status`, `v_jc_status`) in a separate migration file. Apply, run `EXPLAIN` on the two views, update SCHEMA.md "Migration History" with the migration filenames.
 
-2. **Then T-024b: Drizzle schema + migration to dev Supabase.** Per ADR-011 action items: 7 new tables, 5 new enums, hand-written views (`v_jc_op_status`, `v_jc_status`) in a separate migration file. Apply, run `EXPLAIN` on the two views, update SCHEMA.md "Migration History" with the migration filenames.
+(Phase 2 carry-over closed 2026-05-01: `requireWriteRole` helper in `apps/api/src/lib/auth.ts` now gates `create`/`update`/`softDelete` on all 5 master modules. Regression test in `items/routes.test.ts` asserts viewer → 403 with `{error: "forbidden"}`. Browser smoke no longer needed.)
 
 ## Active Task
 **ID:** T-024b
@@ -56,7 +56,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Phase 2 carry-over notes (from Phase 1 sign-off)
 - **CORS currently permissive** (`origin: true, credentials: true` in `apps/api/src/server.ts`). Acceptable while web is local-only; **tighten to a specific allowlist before Cloudflare Pages web deploy** is wired.
 - **CI tests reuse dev Supabase secrets.** Tests prefix-isolate (`T009R-`) and clean up after themselves so this is safe at current scale, but **provision a separate CI/staging Supabase project before Phase 4** (sales chain) — test data volume + concurrency will grow.
-- **Smoke session behaviour to confirm in Phase 2:** when a non-admin (`viewer`) attempts a write, the API returns an error — confirm whether it's a clean 403 (handled by service-layer role check) or a 500 leaking a Postgres RLS error. If 500, add explicit role checks in `apps/api/src/modules/items/service.ts` (and likely clients/vendors/machines/operators too) and propagate `AuthorizationError`. (Tracked as a Phase-2 hardening item; user reported "all working" on smoke so write was correctly blocked, but the response-shape detail wasn't captured.)
+- ~~Smoke session behaviour to confirm in Phase 2 — viewer write response shape.~~ **Resolved 2026-05-01.** Code analysis confirmed the leak (every service had only `requireCompany`, no role check; RLS would block but the error handler fall-through returns generic 500). Fixed via `apps/api/src/lib/auth.ts:requireWriteRole` called at top of every `create`/`update`/`softDelete` across all 5 master modules. Regression test in `items/routes.test.ts` asserts viewer → 403 `{error: "forbidden"}`. Full api suite green at 57/57.
 - **`pnpm format` not yet run workspace-wide** (T-010c). Re-enable `format:check` in `ci.yml` once formatting is normalised.
 
 ## Phase 0 Backlog (Bootstrap)
@@ -170,6 +170,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | hardening | **Phase 2 viewer-write carry-over closed.** New `apps/api/src/lib/auth.ts:requireWriteRole` (admin/manager only) now called at top of `create`/`update`/`softDelete` across all 5 master modules (items, clients, vendors, machines, operators) — 15 call sites. Regression test in `items/routes.test.ts` asserts a viewer-role write returns clean 403 `{error: "forbidden"}` instead of leaked 500. Full api suite 57/57 green; typecheck + lint clean. Browser smoke no longer needed |
 | 2026-05-01 | T-024a | **Phase 3 schema design approved (ADR-011).** `docs/SCHEMA.md` §"Phase 3 Tables — Op Entry Chain" added (lines 359–614): 7 tables (`route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`), 6 enums, 2 SQL views (`v_jc_op_status`, `v_jc_status` mirroring legacy `calcEngine()` line 1626–1731). 11 explicit decisions surfaced for sign-off. Five most consequential: route_cards as separate master, statuses derived via views (not stored), running_ops as real table with partial unique indexes for "one op per machine" + "one running per op", op_log append-only with `(start|complete|qc)` enum, SO/JW link on job_cards via two nullable FKs deferred to Phase 4. ADR-011 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-012/013). T-024b (Drizzle schema + migration) is next |
 | 2026-05-01 | T-023 | **Phase 2 sign-off.** New `migration/validate-phase2.ts` (read-only): per-table field-level diff between transform output and DB rows, plus 14 orphan-FK checks. Result: **369/369 mapped rows** match transform on every column (items 352, clients 1, vendors 3, machines 12, operators 1); users count matches `transformRowCount + 1` (T-012 smoke leftover, expected); 0 orphan FKs across `created_by` / `updated_by` for all 5 master tables + `operators.user_id` + users audit + `users.company_id`. Output `migration/load-output/_phase2_validation.json` (gitignored). Reproducible via `pnpm --filter @innovic/migration validate:phase2`. Sign-off section appended to MIGRATION-LOG; T-024 (Phase 3 op-entry migration) is next |
 | 2026-05-01 | T-022 (operators + close) | **T-022 closed.** Operators admin module shipped per CLAUDE.md §8: shared Zod schemas (department + skills text, isActive boolean, optional userId FK to users); api module (5 endpoints, 7 service + 4 routes tests, 11/11 against dev Supabase); web module (OperatorForm with Active/Inactive select + skills + linked-user inputs, list with code/name/dept/skills/status columns + active filter, detail card). Home nav (`apps/web/src/routes/index.tsx`) refactored to a typed `MASTER_LINKS` array — Items + Clients + Vendors + Machines + Operators all surfaced. Full api suite 56/56 green; workspace typecheck/lint clean. UI matches legacy `operatorForm` (lines 13726-43): Operator ID, Name, Department, Status, Skills/Machines, with `userId` added forward per SCHEMA.md |

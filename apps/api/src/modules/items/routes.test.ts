@@ -90,4 +90,23 @@ describe('items routes', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toMatchObject({ error: 'validation_error' });
   });
+
+  it('POST /items returns clean 403 for viewer role (not 500 from RLS leak)', async () => {
+    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    app = await buildApp(viewer);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/items',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        code: `${TEST_PREFIX}V`,
+        name: 'Viewer Block',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+      },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'forbidden' });
+  });
 });

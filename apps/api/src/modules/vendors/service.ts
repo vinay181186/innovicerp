@@ -1,6 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   CreateVendorInput,
@@ -75,6 +76,7 @@ export async function createVendor(
   input: CreateVendorInput,
   user: AuthContext,
 ): Promise<Vendor> {
+  requireWriteRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -118,6 +120,7 @@ export async function updateVendor(
   input: UpdateVendorInput,
   user: AuthContext,
 ): Promise<Vendor> {
+  requireWriteRole(user);
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -152,6 +155,7 @@ export async function updateVendor(
 }
 
 export async function softDeleteVendor(id: string, user: AuthContext): Promise<{ ok: true }> {
+  requireWriteRole(user);
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
