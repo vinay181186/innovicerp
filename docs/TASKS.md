@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-024c done — Phase 3 transforms produce 119 rows + 72 anomalies; data-integrity finding around `ITM-001` surfaced for user decision before T-024d)
+> Last updated: 2026-05-01 (T-024d done — Phase 3 op-entry chain loaded + validated. 119 rows in dev Supabase; 0 orphan FKs; both views return sensible computed_status. T-025 (Op Entry screen) is next)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -14,41 +14,38 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with the T-024c data-integrity decision below, then T-024d.
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-025.
 
-1. **DECIDE on the `ITM-001` cascade BEFORE T-024d loads anything.** The production items master does NOT contain `ITM-001` (only legacy HTML seed data referenced it). Cascade impact (per `migration/transform/_anomalies.json`):
-   - Route card `IN-RC-00012` (itemCode `ITM-001`) → dropped (1 card + 5 ops never produced)
-   - Job card `IN-JC-00001` (itemCode `ITM-001`) → dropped (1 JC + its 5 jc_ops never produced)
-   - Op_logs attached to `IN-JC-00001`'s 5 jc_ops → ~50 logs dropped
-   - Plus the 7 expected orphans (`JC-MS-002/003/004` jcNos) per ADR-011 #11
-   - **Net loss: 1 RC + 5 RC ops + 1 JC + 5 jc_ops + ~57 op_logs = 69 rows.**
-   - **Three options for the user:**
-     - **(a)** Accept the loss. Final load counts: route_cards 13, route_card_ops 61, route_card_revisions 2, job_cards 2, jc_ops 15, op_log 24, running_ops 2 = 119 rows.
-     - **(b)** Add `ITM-001` to the items master in dev Supabase (manual `INSERT` or via the items admin UI), re-run transform. Recovers the 69 rows.
-     - **(c)** Restore `ITM-001` in legacy HTML data, re-export, re-run transform. Heaviest option.
+1. **T-025: Op Entry screen.** Per ADR-004, this is one of the four hot screens that DO get Realtime subs. Scope:
+   - TanStack Query hooks in `apps/web/src/modules/op-entry/api.ts` for jc_ops list, op_log mutations
+   - Realtime subscription on `op_log` filtered by `(company_id, jc_op_id)` and on `running_ops` filtered by `company_id` (matches the row-filter shape pre-validated in T-024a)
+   - Optimistic updates: when an operator submits an op_log entry, mutate the in-flight cache before the round-trip
+   - Mirror legacy UI shape (legacy lines 5400–5535 — `submitOpLog` + `submitStartOp` + `_machSubmitLog`); per CLAUDE.md preserve-UI memory, don't redesign
+   - Service layer: `apps/api/src/modules/op-entry/{routes,service,schema}.ts` + tests. Server-side validations land in T-026 — for T-025 the service just gates by role (operator+manager+admin can insert, others read)
 
-2. **T-024d: Bulk-load + validate-phase3.** Extend `migration/load.ts` to load Phase 3 in FK order (route_cards → route_card_ops → route_card_revisions → job_cards → jc_ops → op_log → running_ops). Build `migration/validate-phase3.ts` mirroring `validate-phase2.ts` (per-table field-level diff + orphan FK checks). Use the seed admin's `id` for `created_by` / `updated_by` columns (no legacy attribution exists for these).
+2. **T-026 follow-on:** Server-side validations from CLAUDE.md §1 (cannot exceed planned qty; cannot skip required QC). The `v_jc_op_status` view's `available` and `qc_pending` columns are the natural inputs.
+
+3. **T-027 / T-028:** 5-day parallel run + operator cutover.
 
 ## Active Task
-**ID:** T-024d (gated on user decision re: `ITM-001` cascade — see Resume Checklist)
-**Title:** Phase 3 — Bulk-load + validate-phase3
+**ID:** T-025
+**Title:** Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription)
 **Status:** [ ] Not started
-**Scope:** Once user picks option (a)/(b)/(c) from the Resume Checklist:
-- Extend `migration/load.ts` for the 7 new tables in FK-dependency order: route_cards → route_card_ops → route_card_revisions → job_cards → jc_ops → op_log → running_ops
-- Use seed admin id for `created_by` / `updated_by` (no legacy attribution exists for Phase 3 data)
-- Build `migration/validate-phase3.ts` mirroring `validate-phase2.ts` (field-level diff + orphan FK checks across the 12 FKs added in Phase 3)
+**Scope:** Per ADR-004 (Realtime selectivity) + legacy UI lines 5400–5535. See Resume Checklist for the breakdown.
 
 **Acceptance:**
-- [ ] All 7 tables loaded; row counts match `migration/transform/<table>.json` rowCount
-- [ ] `validate-phase3.ts` shows 0 field diffs and 0 orphan FKs
-- [ ] MIGRATION-LOG entries appended for each of the 5 source collections
-- [ ] Both views (`v_jc_op_status`, `v_jc_status`) return non-zero rows reflecting the loaded data, with sensible computed_status values
+- [ ] API `op-entry` module: routes/service/schema with role gating (operator/qc/manager/admin can insert; viewer cannot — same `requireWriteRole` pattern, but extended for the qc/operator split per `op_log` RLS)
+- [ ] Tests: service unit + routes integration; viewer-write returns clean 403
+- [ ] Web `op-entry` module: api.ts, components/, routes/ mirroring legacy screen layout
+- [ ] Realtime subscription wired to `op_log` and `running_ops` with `(company_id, jc_op_id)` row filters; teardown on unmount
+- [ ] Optimistic-update happy path verified manually (browser); pessimistic-rollback on server reject also verified
+- [ ] No N+1 queries surfaced via Drizzle (review the jc_ops list query before merge)
 
-## Phase 3 Sub-tasks
+## Phase 3 Sub-tasks (T-024 closed)
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
-- **T-024b — Drizzle schema + migration** [x] Done 2026-05-01 — 7 tables + 6 enums + 2 views + 5 BEFORE UPDATE triggers live in dev Supabase. Verified: 57/57 api tests pass; both views return 0 rows with sane EXPLAIN plans using indexed scans
-- **T-024c — Transform layer** [x] Done 2026-05-01 — 5 transforms + 33 new unit tests (71/71 migration suite green); real-data run produces 13 tables × 490 total rows × 72 anomalies. ITM-001 cascade finding surfaced (see Resume Checklist) — does NOT block transform layer; gates T-024d
-- **T-024d — Bulk-load + validation** [ ] Pending user decision on ITM-001 cascade
+- **T-024b — Drizzle schema + migration** [x] Done 2026-05-01 — 7 tables + 6 enums + 2 views + 5 BEFORE UPDATE triggers live in dev Supabase. 57/57 api tests pass; views return 0 rows with sane EXPLAIN plans
+- **T-024c — Transform layer** [x] Done 2026-05-01 — 5 transforms + 33 new unit tests (71/71 migration suite green); real-data run produces 13 tables × 490 total rows × 72 anomalies. ITM-001 cascade finding surfaced (option (a) accept-the-loss accepted by user)
+- **T-024d — Bulk-load + validation** [x] Done 2026-05-01 — 119 rows loaded; `validate-phase3.ts` PASS: 0 field diffs across 119 rows, 0 orphan FKs across 25 checks, both views return sensible computed_status. MIGRATION-LOG sign-off appended
 
 ## Phase 3 carry-over notes (open questions to resolve in T-024a schema design)
 
@@ -107,7 +104,8 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 | T-024a | Phase 3 schema design (SCHEMA.md + ADR-011) | [x] Done (2026-05-01) |
 | T-024b | Phase 3 Drizzle schema + migration to dev Supabase | [x] Done (2026-05-01) |
 | T-024c | Phase 3 transform layer (job-cards, jc-ops, op-log, route-cards, running-ops) | [x] Done (2026-05-01) |
-| T-024d | Phase 3 bulk-load + validation (`validate-phase3.ts`) | [ ] Gated on ITM-001 decision |
+| T-024d | Phase 3 bulk-load + validation (`validate-phase3.ts`) | [x] Done (2026-05-01) |
+| T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] Active |
 | T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
 | T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
 | T-027 | Run parallel mode (operators in BOTH systems, end-of-day reconciliation, 5 working days) | [ ] |
@@ -175,6 +173,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-024d | **Phase 3 sign-off — op-entry chain loaded + validated.** `migration/load.ts` extended with per-table conflict targets (`(company_id, code)` for masters/job_cards/route_cards; `(route_card_id, op_seq)` for child ops; `(id)` for op_log/running_ops) + audit shapes (`full` vs `created_only` for immutable tables). Generic bulk-loader refactored — Phase 2 behaviour preserved. New `migration/validate-phase3.ts` (read-only): 7-table field-level diff with jsonb canonical-JSON compare + HH:MM↔HH:MM:SS time normalisation + 25 orphan FK checks + view sanity. **Result:** 119 rows in dev Supabase; 0 field diffs; 0 orphan FKs; v_jc_op_status returns 15 rows with `waiting:5, available:2, running:1, qc_pending:2, complete:4, at_vendor:1`; v_jc_status returns 2 rows (open:1, qc_pending:1) — confirms calcEngine mirror works on real data. MIGRATION-LOG sign-off appended; postgres-js jsonb caveat (use `JSON.stringify` not raw array) noted in load.ts |
 | 2026-05-01 | T-024c | **Phase 3 transform layer shipped.** 5 new transforms in `migration/transforms/`: `route-cards.ts` (returns 3 results — cards + ops + revisions), `job-cards.ts`, `jc-ops.ts`, `op-log.ts`, `running-ops.ts`. New `LookupRegistry` in `transforms/types.ts` carries code → uuid maps incrementally; orchestrator updates it after each transform and pre-loads from disk for `--only` runs. `transforms/lookups.ts` provides the disk-fallback helpers. 33 new unit tests (71/71 total migration suite green). Real-data run produces 119 valid rows + 72 anomalies. **Surfaced data-integrity finding:** `ITM-001` referenced by IN-RC-00012 + IN-JC-00001 doesn't exist in production items master (only in legacy HTML seed). Cascade drops 69 rows total. User decision required before T-024d — see Resume Checklist for options (a)/(b)/(c) |
 | 2026-05-01 | T-024b | **Phase 3 storage layer live in dev Supabase.** 6 new shared enums (`OP_TYPES`, `OP_LOG_TYPES`, `OUTSOURCE_STATUSES`, `RUNNING_OP_STATUSES`, `SHIFTS`, `JC_PRIORITIES`); 7 new Drizzle tables in `apps/api/src/db/schema.ts` matching SCHEMA.md exactly. Three migration files: `0004_phase3_op_entry.sql` (drizzle-gen — tables, enums, FKs, indexes, RLS), `0005_phase3_triggers.sql` (hand-written — 5 BEFORE UPDATE triggers), `0006_phase3_views.sql` (hand-written — `v_jc_op_status` + `v_jc_status` mirroring legacy `calcEngine()` line 1626-1731). RLS policies tightened during review: `op_log_operator_insert` now requires `current_user_role() = 'operator'` (was missing the role check); added `op_log_manager_insert`; `running_ops_operator_write` now restricts to operator role. Generic `apps/api/src/db/apply-sql.ts` runner added for hand-written migrations going forward (statement-breakpoint split, idempotent). EXPLAIN plans on both views use indexed scans. Full api suite 57/57 green; typecheck + lint clean. T-024c (transform layer) is next |
 | 2026-05-01 | hardening | **Phase 2 viewer-write carry-over closed.** New `apps/api/src/lib/auth.ts:requireWriteRole` (admin/manager only) now called at top of `create`/`update`/`softDelete` across all 5 master modules (items, clients, vendors, machines, operators) — 15 call sites. Regression test in `items/routes.test.ts` asserts a viewer-role write returns clean 403 `{error: "forbidden"}` instead of leaked 500. Full api suite 57/57 green; typecheck + lint clean. Browser smoke no longer needed |

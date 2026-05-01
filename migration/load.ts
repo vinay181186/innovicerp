@@ -1,26 +1,30 @@
 // migration/load.ts
 //
-// T-015 — Bulk-load Phase 2 master data into Supabase Postgres.
+// T-015 (Phase 2) + T-024d (Phase 3) — Bulk-load transform output into
+// Supabase Postgres.
 //
-// Reads migration/transform/<table>.json (output of T-014), resolves the
-// runtime context (seed company id + admin user id), invokes the users
-// loader (special two-phase) and the generic bulk loader for the other 5
-// tables, then validates counts/samples and writes a load report.
+// Reads migration/transform/<table>.json (output of T-014 / T-024c), resolves
+// the runtime context (seed company id + admin user id), invokes the users
+// loader (special two-phase) and the generic bulk loader for everything else,
+// then validates counts/samples and writes a load report.
+//
+// Per-table config (mapper + conflict target + audit shape) lives in
+// TABLE_CONFIGS below. Phase 3 tables use deterministic (id) conflict targets
+// where they have no business unique key (op_log, running_ops); the rest mirror
+// the Phase 2 (company_id, code) WHERE deleted_at IS NULL pattern adapted to
+// their own composite uniques.
 //
 // Usage:
 //   pnpm --filter @innovic/migration load
 //   pnpm --filter @innovic/migration load -- --only=items
+//   pnpm --filter @innovic/migration load -- --only=route_cards,route_card_ops
 //   pnpm --filter @innovic/migration load -- --dry-run
-//
-// Or, if DLP intercepts the pnpm wrapper on this dev box:
-//   cd migration
-//   FIREBASE_*= ... DATABASE_URL=... SUPABASE_*=... node --import tsx load.ts
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { bulkLoad, type BulkLoadConfig } from './load/bulk-loader';
-import { rawSql, closeDb } from './load/db';
+import { type AuditShape, bulkLoad, type BulkLoadConfig } from './load/bulk-loader';
+import { closeDb, rawSql } from './load/db';
 import type { IdMapPersisted, LoadResult, UserLoadOutcome } from './load/types';
 import { loadUsers } from './load/users-loader';
 import { validateOne, type ValidationEntry } from './load/validate';
@@ -38,7 +42,236 @@ interface TransformedFile<T> {
   rows: T[];
 }
 
-const ALL_TABLES = ['users', 'clients', 'vendors', 'items', 'machines', 'operators'] as const;
+// ─── Per-table mappers ────────────────────────────────────────────────────
+
+type Mapper = BulkLoadConfig<TransformedRow>['toRow'];
+
+const ITEM_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  name: row['name'],
+  description: row['description'],
+  drawing_no: row['drawingNo'],
+  revision: row['revision'],
+  material: row['material'],
+  uom: row['uom'],
+  drawing_file_path: row['drawingFilePath'],
+});
+
+const CLIENT_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  name: row['name'],
+  contact_person: row['contactPerson'],
+  email: row['email'],
+  phone: row['phone'],
+  gst_number: row['gstNumber'],
+  address_line1: row['addressLine1'],
+  city: row['city'],
+  state: row['state'],
+  pincode: row['pincode'],
+  is_active: row['isActive'],
+});
+
+const VENDOR_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  name: row['name'],
+  contact_person: row['contactPerson'],
+  email: row['email'],
+  phone: row['phone'],
+  gst_number: row['gstNumber'],
+  address_line1: row['addressLine1'],
+  city: row['city'],
+  state: row['state'],
+  pincode: row['pincode'],
+  materials_supplied: row['materialsSupplied'],
+  rating: row['rating'],
+  is_active: row['isActive'],
+});
+
+const MACHINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  name: row['name'],
+  machine_type: row['machineType'],
+  capacity_per_shift: row['capacityPerShift'],
+  shifts_per_day: row['shiftsPerDay'],
+  status: row['status'],
+});
+
+const OPERATOR_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  name: row['name'],
+  department: row['department'],
+  skills: row['skills'],
+  is_active: row['isActive'],
+  user_id: row['userId'],
+});
+
+const ROUTE_CARD_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  item_id: row['itemId'],
+  current_revision: row['currentRevision'],
+  notes: row['notes'],
+});
+
+const ROUTE_CARD_OP_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  route_card_id: row['routeCardId'],
+  op_seq: row['opSeq'],
+  machine_id: row['machineId'],
+  machine_code_text: row['machineCodeText'],
+  operation: row['operation'],
+  op_type: row['opType'],
+  cycle_time_min: row['cycleTimeMin'],
+  program: row['program'],
+  tool_no: row['toolNo'],
+  tool_details: row['toolDetails'],
+  qc_required: row['qcRequired'],
+});
+
+const ROUTE_CARD_REVISION_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  route_card_id: row['routeCardId'],
+  revision_no: row['revisionNo'],
+  notes: row['notes'],
+  // postgres-js sends a JS array as a Postgres array literal, not jsonb.
+  // Stringify here so Postgres receives text and casts to jsonb on the column.
+  ops_snapshot: JSON.stringify(row['opsSnapshot'] ?? []),
+});
+
+const JOB_CARD_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  jc_date: row['jcDate'],
+  item_id: row['itemId'],
+  order_qty: row['orderQty'],
+  priority: row['priority'],
+  due_date: row['dueDate'],
+  drawing_file_path: row['drawingFilePath'],
+  source_legacy_ref: row['sourceLegacyRef'],
+});
+
+const JC_OP_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  job_card_id: row['jobCardId'],
+  op_seq: row['opSeq'],
+  machine_id: row['machineId'],
+  machine_code_text: row['machineCodeText'],
+  operation: row['operation'],
+  op_type: row['opType'],
+  cycle_time_min: row['cycleTimeMin'],
+  program: row['program'],
+  tool_no: row['toolNo'],
+  tool_details: row['toolDetails'],
+  qc_required: row['qcRequired'],
+  qc_call_date: row['qcCallDate'],
+  qc_attended_date: row['qcAttendedDate'],
+  rework_qty: row['reworkQty'],
+  outsource_vendor_id: row['outsourceVendorId'],
+  outsource_vendor_text: row['outsourceVendorText'],
+  outsource_cost: row['outsourceCost'],
+  outsource_status: row['outsourceStatus'],
+  outsource_pr_no: row['outsourcePrNo'],
+  outsource_po_no: row['outsourcePoNo'],
+  outsource_dc_no: row['outsourceDcNo'],
+  outsource_sent_qty: row['outsourceSentQty'],
+  outsource_sent_date: row['outsourceSentDate'],
+  outsource_returned_qty: row['outsourceReturnedQty'],
+});
+
+const OP_LOG_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  jc_op_id: row['jcOpId'],
+  log_no: row['logNo'],
+  log_type: row['logType'],
+  log_date: row['logDate'],
+  shift: row['shift'],
+  qty: row['qty'],
+  reject_qty: row['rejectQty'],
+  operator_id: row['operatorId'],
+  operator_name: row['operatorName'],
+  start_time: row['startTime'],
+  remarks: row['remarks'],
+});
+
+const RUNNING_OP_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  jc_op_id: row['jcOpId'],
+  machine_id: row['machineId'],
+  is_osp: row['isOsp'],
+  operator_id: row['operatorId'],
+  operator_name: row['operatorName'],
+  start_date: row['startDate'],
+  start_time: row['startTime'],
+  shift: row['shift'],
+  status: row['status'],
+});
+
+// ─── Per-table config (mapper + conflict + audit) ─────────────────────────
+
+interface TableLoadConfig {
+  mapper: Mapper;
+  conflictTarget?: string;
+  auditColumns?: AuditShape;
+}
+
+const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
+  // Phase 2 master data — defaults: 'full' audit + (company_id, code) WHERE deleted_at IS NULL
+  items: { mapper: ITEM_MAPPER },
+  clients: { mapper: CLIENT_MAPPER },
+  vendors: { mapper: VENDOR_MAPPER },
+  machines: { mapper: MACHINE_MAPPER },
+  operators: { mapper: OPERATOR_MAPPER },
+  // Phase 3 op-entry chain
+  route_cards: { mapper: ROUTE_CARD_MAPPER },
+  route_card_ops: {
+    mapper: ROUTE_CARD_OP_MAPPER,
+    conflictTarget: '(route_card_id, op_seq) WHERE deleted_at IS NULL',
+  },
+  route_card_revisions: {
+    mapper: ROUTE_CARD_REVISION_MAPPER,
+    conflictTarget: '(route_card_id, revision_no)',
+    auditColumns: 'created_only',
+  },
+  job_cards: { mapper: JOB_CARD_MAPPER },
+  jc_ops: {
+    mapper: JC_OP_MAPPER,
+    conflictTarget: '(job_card_id, op_seq) WHERE deleted_at IS NULL',
+  },
+  op_log: {
+    mapper: OP_LOG_MAPPER,
+    conflictTarget: '(id)',
+    auditColumns: 'created_only',
+  },
+  running_ops: {
+    mapper: RUNNING_OP_MAPPER,
+    conflictTarget: '(id)',
+  },
+};
+
+// FK-dependency order. users first (special path); then masters; then Phase 3
+// in the order route_cards/job_cards (siblings, both depend on items) → jc_ops
+// (depends on job_cards + machines + vendors) → op_log (depends on jc_ops +
+// operators) → running_ops (depends on jc_ops + machines + operators).
+const ALL_TABLES = [
+  'users',
+  'clients',
+  'vendors',
+  'items',
+  'machines',
+  'operators',
+  'route_cards',
+  'route_card_ops',
+  'route_card_revisions',
+  'job_cards',
+  'jc_ops',
+  'op_log',
+  'running_ops',
+] as const;
 type TableName = (typeof ALL_TABLES)[number];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {
@@ -68,84 +301,6 @@ async function resolveSeedContext(): Promise<{ companyId: string; adminUserId: s
   }
   return { companyId, adminUserId };
 }
-
-// Per-table row mappers — strip transform-only fields and rename camelCase
-// to snake_case columns.
-
-const ITEM_MAPPER: BulkLoadConfig<TransformedRow>['toRow'] = (row) => ({
-  id: row['id'],
-  code: row['code'],
-  name: row['name'],
-  description: row['description'],
-  drawing_no: row['drawingNo'],
-  revision: row['revision'],
-  material: row['material'],
-  uom: row['uom'],
-  drawing_file_path: row['drawingFilePath'],
-});
-
-const CLIENT_MAPPER: BulkLoadConfig<TransformedRow>['toRow'] = (row) => ({
-  id: row['id'],
-  code: row['code'],
-  name: row['name'],
-  contact_person: row['contactPerson'],
-  email: row['email'],
-  phone: row['phone'],
-  gst_number: row['gstNumber'],
-  address_line1: row['addressLine1'],
-  city: row['city'],
-  state: row['state'],
-  pincode: row['pincode'],
-  is_active: row['isActive'],
-});
-
-const VENDOR_MAPPER: BulkLoadConfig<TransformedRow>['toRow'] = (row) => ({
-  id: row['id'],
-  code: row['code'],
-  name: row['name'],
-  contact_person: row['contactPerson'],
-  email: row['email'],
-  phone: row['phone'],
-  gst_number: row['gstNumber'],
-  address_line1: row['addressLine1'],
-  city: row['city'],
-  state: row['state'],
-  pincode: row['pincode'],
-  materials_supplied: row['materialsSupplied'],
-  rating: row['rating'],
-  is_active: row['isActive'],
-});
-
-const MACHINE_MAPPER: BulkLoadConfig<TransformedRow>['toRow'] = (row) => ({
-  id: row['id'],
-  code: row['code'],
-  name: row['name'],
-  machine_type: row['machineType'],
-  capacity_per_shift: row['capacityPerShift'],
-  shifts_per_day: row['shiftsPerDay'],
-  status: row['status'],
-});
-
-const OPERATOR_MAPPER: BulkLoadConfig<TransformedRow>['toRow'] = (row) => ({
-  id: row['id'],
-  code: row['code'],
-  name: row['name'],
-  department: row['department'],
-  skills: row['skills'],
-  is_active: row['isActive'],
-  user_id: row['userId'],
-});
-
-const MAPPERS: Record<
-  Exclude<TableName, 'users'>,
-  BulkLoadConfig<TransformedRow>['toRow']
-> = {
-  items: ITEM_MAPPER,
-  clients: CLIENT_MAPPER,
-  vendors: VENDOR_MAPPER,
-  machines: MACHINE_MAPPER,
-  operators: OPERATOR_MAPPER,
-};
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -178,11 +333,9 @@ async function main(): Promise<void> {
 
   log('info', 'load_starting', { dryRun, targets });
 
-  // Resolve runtime context.
   const seed = await resolveSeedContext();
   log('info', 'seed_context_resolved', { companyId: seed.companyId, adminUserId: seed.adminUserId });
 
-  // Load id_map (carry forward from transform; we'll mutate users).
   const idMapPath = join(transformDir, '_id_map.json');
   const idMap = JSON.parse(readFileSync(idMapPath, 'utf8')) as IdMapPersisted;
 
@@ -216,17 +369,24 @@ async function main(): Promise<void> {
     writeFileSync(join(loadDir, 'users-loaded.json'), JSON.stringify(outcomes, null, 2));
   }
 
-  // Phase B — bulk-loadable master data.
+  // Phase B — bulk-loadable tables (Phase 2 master data + Phase 3 op-entry chain).
   for (const table of targets) {
     if (table === 'users') continue;
     const file = readTransform<TransformedRow>(table, transformDir);
+    const cfg = TABLE_CONFIGS[table];
+    if (!cfg) {
+      log('warn', 'no_config_skipping', { table });
+      continue;
+    }
     const result = await bulkLoad(
       {
         table,
         rows: file.rows,
         companyId: seed.companyId,
         adminUserId: seed.adminUserId,
-        toRow: MAPPERS[table],
+        toRow: cfg.mapper,
+        ...(cfg.conflictTarget !== undefined ? { conflictTarget: cfg.conflictTarget } : {}),
+        ...(cfg.auditColumns !== undefined ? { auditColumns: cfg.auditColumns } : {}),
       },
       dryRun,
     );
@@ -234,7 +394,6 @@ async function main(): Promise<void> {
     log('info', 'table_loaded', { ...result });
   }
 
-  // Persist updated id_map (users now have UUIDs).
   if (!dryRun) {
     writeFileSync(
       idMapPath,
@@ -246,7 +405,7 @@ async function main(): Promise<void> {
     );
   }
 
-  // Phase C — validation.
+  // Phase C — count-only validation. Field-level diff comes from validate-phaseN.
   const validation: ValidationEntry[] = [];
   if (!dryRun) {
     for (const table of targets) {

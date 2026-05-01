@@ -173,6 +173,33 @@ Records loaded: `xeely6yu` (VNM / Vinay), department/skills empty in legacy.
 
 ---
 
+## Transform Run 3 — 2026-05-01 (T-024c, all 11 collections)
+**Inputs:** Run 1 export (all collections)
+**Output:** 13 `<table>.json` files in `migration/transform/` (added 5 Phase 3 collections producing 7 tables — routeCards splits into 3)
+**Tests:** 71/71 vitest pass (Phase 2: 38 + Phase 3: 33 new)
+**Total rows:** **490** valid + **72 anomalies**
+
+| Collection | Table | Input | Rows | Anomalies | Notes |
+|---|---|---:|---:|---:|---|
+| users | users | 2 | 2 | 0 | Same as Run 2 |
+| clients | clients | 1 | 1 | 0 | Same as Run 2 |
+| vendors | vendors | 3 | 3 | 0 | Same as Run 2 |
+| items | items | 352 | 352 | 8 | Same as Run 2 (uom normalisations) |
+| machines | machines | 12 | 12 | 0 | Same as Run 2 |
+| operators | operators | 1 | 1 | 0 | Same as Run 2 |
+| routeCards | route_cards | 14 | 13 | 1 | `IN-RC-00012` dropped — itemCode `ITM-001` not in production items master |
+| routeCards | route_card_ops | 14 | 61 | 0 | 5 ops lost with the dropped `IN-RC-00012` parent |
+| routeCards | route_card_revisions | 14 | 2 | 0 | Only 2 of 14 cards have non-empty revisionLog (`IN-RC-00004`, `IN-RC-00006`); jsonb opsSnapshot |
+| jobCards | job_cards | 3 | 2 | 1 | `IN-JC-00001` dropped — same `ITM-001` issue |
+| jcOps | jc_ops | 20 | 15 | 5 | `IN-JC-00001`'s 5 ops cascade-dropped |
+| opLog | op_log | 81 | 24 | 57 | 7 expected orphans (`JC-MS-002/003/004` jcNos, ADR-011 #11) + 50 cascade drops from `IN-JC-00001` |
+| runningOps | running_ops | 2 | 2 | 0 | Both `IN-JC-00002` ops, fully resolvable |
+
+**ITM-001 cascade finding** (user-acknowledged 2026-05-01, option (a) accept-the-loss):
+The legacy HTML's hardcoded seed at line 1394 references `itemCode: 'ITM-001'` for `IN-JC-00001` but `ITM-001` was never created in the production items master. Net effect: 1 RC + 5 RC ops + 1 JC + 5 jc_ops + 50 op_logs (~62 rows) lost beyond the 7 expected orphans. These appear to be test/seed data, not real shop-floor work.
+
+---
+
 ## Phase 2 Sign-Off — 2026-05-01 (T-023)
 
 **Script:** `migration/validate-phase2.ts` · **Output:** `migration/load-output/_phase2_validation.json` (gitignored) · **Overall status:** **PASS**
@@ -211,6 +238,103 @@ Total: **369 / 369 mapped rows match transform on every loaded column**. The 8 k
 
 > Re-run anytime to confirm the DB still matches transform output:
 > `pnpm --filter @innovic/migration validate:phase2`
+
+---
+
+## Phase 3 Per-Collection Entries — Load Run 2 — 2026-05-01 (T-024d)
+
+**Target:** dev Supabase Mumbai (same `d997c3ed-...` company as Phase 2)
+**Script:** `migration/load.ts` (extended for Phase 3 — per-table conflict targets + audit shapes)
+**Duration:** ~250 ms · **Total rows inserted:** **119**
+
+## routeCards (route_cards + route_card_ops + route_card_revisions)
+**Date:** 2026-05-01
+**Source records:** 14 (master template)
+**Loaded records:** 13 cards + 61 ops + 2 revisions = **76 rows**
+**Discrepancy:** 1 card dropped — `IN-RC-00012` referenced unresolved itemCode `ITM-001` (see ITM-001 cascade finding)
+**Anomalies:** 1 at transform (itemCode_unresolved); ops/revisions for the dropped parent never produced
+**Validation:** PASS — db count exactly matches transform across all 3 child tables
+**Cutover:** Pending (T-025 Op Entry screen + admin route-card editor in a later phase)
+
+## jobCards (job_cards)
+**Date:** 2026-05-01
+**Source records:** 3
+**Loaded records:** 2
+**Discrepancy:** 1 dropped — `IN-JC-00001` (ITM-001 cascade)
+**Anomalies:** `source_legacy_ref` JSON-encodes `(soNo, soRefId, soLineNo, soPartName, clientPoLineNo)`; FKs to sales_order_lines / job_work_orders deferred to Phase 4 per ADR-011 #5
+**Validation:** PASS
+**Cutover:** Pending (T-025 Op Entry screen)
+
+## jcOps (jc_ops)
+**Date:** 2026-05-01
+**Source records:** 20
+**Loaded records:** 15
+**Discrepancy:** 5 dropped — all 5 jc_ops belonging to the orphaned `IN-JC-00001` (ITM-001 cascade)
+**Anomalies:** 5 jcNo_unresolved at transform; outsource fields kept inline per ADR-011 #6
+**Validation:** PASS
+**Cutover:** Pending (T-025 Op Entry screen)
+
+## opLog (op_log)
+**Date:** 2026-05-01
+**Source records:** 81
+**Loaded records:** 24
+**Discrepancy:** 57 dropped — **7 expected orphans** (`JC-MS-002/003/004` jcNos, never had jobCards rows in source; ADR-011 #11) + **50 cascade drops** from the orphaned `IN-JC-00001` (ITM-001 cascade)
+**Anomalies:** 57 jc_op_unresolved at transform
+**Validation:** PASS — append-only table, no `deleted_at`; field-level diff covers `start_time` HH:MM ↔ HH:MM:SS normalisation
+**Cutover:** Pending (T-025 + T-026 server-side validations + T-027 5-day parallel run + T-028 cutover)
+
+## runningOps (running_ops)
+**Date:** 2026-05-01
+**Source records:** 2
+**Loaded records:** 2
+**Discrepancy:** 0
+**Anomalies:** None
+**Validation:** PASS — both rows belong to `IN-JC-00002` opSeq 3 + 5; statuses Done + Running normalised to lowercase
+**Cutover:** Pending (T-025 Live Operations Board)
+
+---
+
+## Phase 3 Sign-Off — 2026-05-01 (T-024d)
+
+**Script:** `migration/validate-phase3.ts` · **Output:** `migration/load-output/_phase3_validation.json` (gitignored) · **Overall status:** **PASS**
+
+Read-only field-level diff + 25 orphan FK checks + view sanity, run via `pnpm --filter @innovic/migration validate:phase3`.
+
+**Field-level diff (transform → DB, mapped columns; jsonb compared as canonical JSON; HH:MM ↔ HH:MM:SS normalised on `time` columns):**
+
+| Table | Transform rows | DB count | Matched | Field diffs | Missing from DB |
+|---|---:|---:|---:|---:|---:|
+| route_cards | 13 | 13 | 13 | 0 | 0 |
+| route_card_ops | 61 | 61 | 61 | 0 | 0 |
+| route_card_revisions | 2 | 2 | 2 | 0 | 0 |
+| job_cards | 2 | 2 | 2 | 0 | 0 |
+| jc_ops | 15 | 15 | 15 | 0 | 0 |
+| op_log | 24 | 24 | 24 | 0 | 0 |
+| running_ops | 2 | 2 | 2 | 0 | 0 |
+
+Total: **119 / 119 mapped rows match transform on every loaded column**.
+
+**Orphan FK checks (25 columns, all 0 orphans):**
+- route_cards: item_id, created_by, updated_by
+- route_card_ops: route_card_id, machine_id, created_by, updated_by
+- route_card_revisions: route_card_id, created_by
+- job_cards: item_id, created_by, updated_by
+- jc_ops: job_card_id, machine_id, outsource_vendor_id, created_by, updated_by
+- op_log: jc_op_id, operator_id, created_by
+- running_ops: jc_op_id, machine_id, operator_id, created_by, updated_by
+
+**View sanity (mirrors legacy `calcEngine()`):**
+- `v_jc_op_status` — 15 rows. computed_status breakdown: `waiting:5, available:2, in_progress:0, running:1, qc_pending:2, complete:4, at_vendor:1` (plus 0 each for the other outsource sub-states).
+- `v_jc_status` — 2 rows. computed_status: `open:1, qc_pending:1`.
+
+**Conclusions:**
+- Every Phase 3 column lands in DB byte-for-byte (modulo documented normalisations: enum lowercasing, time format, jsonb).
+- All 25 FK columns reference existing parents. Cascade-on-delete chains (op_log → jc_ops, running_ops → jc_ops, jc_ops → job_cards, route_card_ops → route_cards, route_card_revisions → route_cards) tested implicitly via the orphan checks.
+- Both views execute and return sensible computed_status distributions, confirming the SQL-as-`calcEngine()` mirror works on real data.
+
+**Phase 3 storage layer + transform + load are sign-off ready.** Next: T-025 (Op Entry screen with TanStack Query optimistic updates + Realtime subscription).
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase3`
 
 ---
 

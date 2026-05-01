@@ -34,21 +34,38 @@ interface ValidateInput {
   sampleSize?: number;
 }
 
+// op_log, route_card_revisions, running_ops are append-only/immutable and
+// don't carry a deleted_at column — count and sample without that filter.
+const TABLES_WITHOUT_DELETED_AT = new Set(['op_log', 'route_card_revisions', 'running_ops']);
+
 export async function validateOne(input: ValidateInput): Promise<ValidationEntry> {
   const sampleSize = input.sampleSize ?? 3;
+  const filterDeleted = !TABLES_WITHOUT_DELETED_AT.has(input.table);
 
-  const countRows = await rawSql<Array<{ c: number }>>`
-    SELECT count(*)::int AS c FROM ${rawSql(input.table)}
-    WHERE company_id = ${input.companyId}::uuid AND deleted_at IS NULL
-  `;
+  const countRows = filterDeleted
+    ? await rawSql<Array<{ c: number }>>`
+        SELECT count(*)::int AS c FROM ${rawSql(input.table)}
+        WHERE company_id = ${input.companyId}::uuid AND deleted_at IS NULL
+      `
+    : await rawSql<Array<{ c: number }>>`
+        SELECT count(*)::int AS c FROM ${rawSql(input.table)}
+        WHERE company_id = ${input.companyId}::uuid
+      `;
   const dbCount = countRows[0]?.c ?? 0;
 
-  const sample = await rawSql<Record<string, unknown>[]>`
-    SELECT * FROM ${rawSql(input.table)}
-    WHERE company_id = ${input.companyId}::uuid AND deleted_at IS NULL
-    ORDER BY random()
-    LIMIT ${sampleSize}
-  `;
+  const sample = filterDeleted
+    ? await rawSql<Record<string, unknown>[]>`
+        SELECT * FROM ${rawSql(input.table)}
+        WHERE company_id = ${input.companyId}::uuid AND deleted_at IS NULL
+        ORDER BY random()
+        LIMIT ${sampleSize}
+      `
+    : await rawSql<Record<string, unknown>[]>`
+        SELECT * FROM ${rawSql(input.table)}
+        WHERE company_id = ${input.companyId}::uuid
+        ORDER BY random()
+        LIMIT ${sampleSize}
+      `;
 
   const diff = input.transformRowCount - dbCount;
   return {
