@@ -626,6 +626,184 @@ Realtime: enable; client subscribes filtered by `(company_id = X)` for the Live 
 
 ---
 
+## Phase 4 Tables — Sales Chain (T-029a draft, awaiting approval)
+
+> **Status:** design draft from T-029a. No code generated yet. Decisions surfaced inline below for explicit user sign-off; once approved, recorded as ADR-012 and implemented in T-029b.
+
+Replaces legacy collections: `salesOrders` (9 records — 1 demo Equipment SO + 8 lines of SO-436), `jobWorkOrders` (2 records — JW-001, JW-002 each with 1 line). Plus the deferred FK backfill on `job_cards` from ADR-011 #5.
+
+Spec source: `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. Key references: SO/JW seed data lines 1425–1432, `_autoCloseSO()` line 1355–1369, `checkSoAutoClose()` line 5368–5396, status filters line 19308–19310, dispatched/closed/completed grouping line 19542.
+
+### Phase 4 Design Decisions (for user approval)
+
+Eleven binding sub-decisions; the most consequential first.
+
+1. **Both `salesOrders` and `jobWorkOrders` get header + lines normalisation.** Legacy stores each LINE as a separate doc with header fields repeated (8 of 9 SO docs share `soNo='SO-436'`; both JW docs are single-line). Postgres: `sales_orders` (header) + `sales_order_lines` (children); `job_work_orders` (header) + `job_work_order_lines` (children). Symmetry simplifies the SO/JW link on `job_cards` (always `*_line_id`) and matches the legacy mental model where each LINE is a separately-tracked unit.
+
+2. **Rename `job_cards.source_jw_id` → `job_cards.source_jw_line_id`** for symmetry with `source_so_line_id`. Legacy `jcRef.soRefId` always points to the per-line doc (line 5371); the line is the JC's actual source. Safe rename — the column is null in all current rows (T-024c didn't backfill).
+
+3. **Backfill `job_cards.source_so_line_id` and `source_jw_line_id` from `source_legacy_ref` text.** The 2 surviving migrated JCs (IN-JC-00002, IN-JC-00003) both reference SO-436 lines via legacy `soRefId` (`4n7tmo9u`, `mmrfp7d3`). Backfill resolves these via the new `_id_map.json` (Phase 4 sales_order_lines entries by legacy id). After verification, **keep `source_legacy_ref` for one phase as audit trail; drop in Phase 5 cleanup commit.**
+
+4. **Add `check (num_nonnulls(source_so_line_id, source_jw_line_id) <= 1)` on `job_cards`.** ADR-011 #5 originally said `= 1` (every JC has a source). Relaxed to `<= 1` to allow source-less JCs going forward (e.g. internal stock builds). All current data is `= 1`.
+
+5. **`so_status` enum: `open | closed | dispatched | cancelled`.** Locked from `_autoCloseSO()` line 1367 (`'Closed'`), filter line 19308–19310 (`'Open'`, `'Completed'` is treated as alias of Closed in filter; we collapse to one), dispatch line 19542 (`'Dispatched'`). **Drop `'Completed'` and `'Hold'` — neither is set by legacy code on actual SOs/JWs.** Both SO and JW use this enum (status semantics are identical).
+
+6. **`so_type` enum: `component_manufacturing | equipment | with_material`.** Three values seen in data + legacy seed. **Drop `'Job Work'`** — JWs are a separate table, not a type variant of SO. Equipment SOs (1 of 9 records) have a `bom_master_id` for BOM expansion; the other 8 are line-level orders.
+
+7. **`bomMasters` collection deferred.** Equipment SOs reference a BOM master that expands into multiple JCs. Out of scope for Phase 4 (1 record exposed, complex expansion logic). Store `bom_master_id text` and `bom_status text` on `sales_orders` header as forward fields. When BOM module ships (later phase), those become FK references.
+
+8. **`milestones[]` deferred.** All migrated records have empty arrays. Capture in `_legacyExtras` only; later phase adds `sales_order_milestones` table when needed.
+
+9. **`customer_name text` fallback alongside `client_id` FK.** The demo Equipment SO has no `clientId` (just `customer: 'Demo Customer Pvt Ltd'`). Same pattern as Phase 3's operator FK + name fallback (ADR-011 #8). Service layer prefers `client_id`; falls back to `customer_name` for display.
+
+10. **`item_code_text` fallback on lines alongside `item_id` FK.** Same pattern. Lines whose `itemCode` doesn't resolve to the items master (the ITM-001 cascade risk) get loaded with `item_id=null` and the original `itemCode` preserved in `item_code_text`. Service-layer rendering shows whichever is present.
+
+11. **`gst_percent` is header-level on `sales_orders`** (matches legacy data — same value across all lines of SO-436). If a future SO has per-line GST, we promote to lines; current data doesn't need it.
+
+### Phase 4 Enums
+
+```sql
+create type so_type   as enum ('component_manufacturing', 'equipment', 'with_material');
+create type so_status as enum ('open', 'closed', 'dispatched', 'cancelled');
+```
+
+(Lowercase values; transform normalises legacy mixed-case to lowercase. `so_status` shared between SO and JW since semantics are identical.)
+
+### `sales_orders`
+
+Header table for sales orders. Each header has 1+ lines.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `soNo`, e.g. `SO-436`) |
+| `so_date` | `date` | not null |
+| `client_id` | `uuid` | nullable, FK → `clients(id)`. Resolved from legacy `clientId`/`clientCode` |
+| `customer_name` | `text` | nullable. Free-text fallback (used when `client_id` is null) |
+| `client_po_no` | `text` | nullable. Header-level PO ref (legacy `clientPoNo` on the SO header) |
+| `type` | `so_type` | not null |
+| `status` | `so_status` | not null, default `'open'` |
+| `gst_percent` | `numeric(5,2)` | not null, default `18.00` |
+| `bom_master_id` | `text` | nullable. Forward ref to BOM master (deferred to a later phase as FK) |
+| `bom_status` | `text` | nullable. Equipment SOs only (e.g. `'BOM Pending'`) |
+| `cost_center` | `text` | nullable |
+| `remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, client_id) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+- `(company_id, so_date desc) where deleted_at is null`
+
+RLS: `sales_orders_company_read` (any role) + `sales_orders_manager_write` (admin/manager only — sales team has manager role).
+
+### `sales_order_lines`
+
+Per-line items on a sales order.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `sales_order_id` | `uuid` | not null, FK → `sales_orders(id) on delete cascade` |
+| `line_no` | `integer` | not null |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Preserves legacy `itemCode` when item_id can't resolve |
+| `part_name` | `text` | not null. Legacy `partName` |
+| `material` | `text` | nullable |
+| `drawing_no` | `text` | nullable |
+| `uom` | `uom` | not null, default `'NOS'` |
+| `order_qty` | `integer` | not null, check `> 0` |
+| `rate` | `numeric(12,2)` | not null, default `0` |
+| `due_date` | `date` | nullable |
+| `client_po_line_no` | `text` | nullable |
+| `status` | `so_status` | not null, default `'open'`. Per-line status (auto-closed when JCs satisfy line) |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (sales_order_id, line_no) where deleted_at is null`
+- `(item_id) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+
+RLS: same pattern as parent.
+
+### `job_work_orders`
+
+Header table for outsourced job work — customer supplies raw material, we manufacture.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `jwNo`, e.g. `JW-001`) |
+| `jw_date` | `date` | not null |
+| `client_id` | `uuid` | nullable, FK → `clients(id)`. Both current JWs have empty `clientId` — load null, use customer_name |
+| `customer_name` | `text` | nullable. Fallback |
+| `client_po_no` | `text` | nullable |
+| `status` | `so_status` | not null, default `'open'` |
+| `remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, client_id) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+
+RLS: same pattern as `sales_orders`.
+
+### `job_work_order_lines`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `job_work_order_id` | `uuid` | not null, FK → `job_work_orders(id) on delete cascade` |
+| `line_no` | `integer` | not null |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Same fallback pattern as SO lines |
+| `part_name` | `text` | not null |
+| `material` | `text` | nullable |
+| `drawing_no` | `text` | nullable |
+| `uom` | `uom` | not null, default `'NOS'` |
+| `order_qty` | `integer` | not null, check `> 0` |
+| `due_date` | `date` | nullable |
+| `client_material` | `text` | nullable. Raw material spec from client (e.g. `'SS 304 Round Bar 80mm'`) |
+| `client_material_qty` | `numeric(12,2)` | nullable |
+| `material_received_date` | `date` | nullable |
+| `material_received_qty` | `numeric(12,2)` | nullable |
+| `status` | `so_status` | not null, default `'open'` |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (job_work_order_id, line_no) where deleted_at is null`
+- `(item_id) where deleted_at is null`
+
+RLS: same pattern as parent.
+
+### `job_cards` — Phase 4 ALTERS
+
+Three changes, applied as a single Drizzle-generated migration:
+
+1. **Rename column** `source_jw_id` → `source_jw_line_id` (decision #2).
+2. **Add FK constraints:** `source_so_line_id` → `sales_order_lines(id)`, `source_jw_line_id` → `job_work_order_lines(id)`. Both nullable; FK is enforced when set.
+3. **Add CHECK** `num_nonnulls(source_so_line_id, source_jw_line_id) <= 1` (decision #4).
+
+Pre-migration data state: both surviving job_cards (IN-JC-00002, IN-JC-00003) currently have NULL FKs and a populated `source_legacy_ref`. Backfill SQL runs in the same migration (`UPDATE job_cards SET source_so_line_id = (SELECT id FROM sales_order_lines WHERE legacy_id = (source_legacy_ref::jsonb->>'soRefId') ...)`). The lookup uses the `_id_map.json` produced by Phase 4 transforms.
+
+Wait — `legacy_id` isn't a column on `sales_order_lines`. Backfill happens via the migration LOADER, not in SQL: Phase 4 load script reads `_id_map.json`, fetches each job_card's `source_legacy_ref`, looks up the new UUID, issues an UPDATE. Cleaner than embedding the mapping in migration SQL.
+
+### Phase 4 Triggers
+
+`before update` on each new table → `set_updated_at()`. No status-maintenance triggers — auto-close cascade lives in the service layer (T-033) where it's testable.
+
+### Phase 4 Views (deferred to T-033 unless a measurement says otherwise)
+
+`v_so_status` — projects per-SO summary (total lines, closed lines, dispatched lines, etc.) for the SO list/detail screens. Will be useful for UI but not required for T-029b storage layer. Defer to T-030 when the UI needs it.
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:
