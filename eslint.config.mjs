@@ -32,6 +32,7 @@ export default tseslint.config(
   {
     files: [
       '**/db/seed.ts',
+      '**/db/apply-sql.ts',
       '**/scripts/**/*.{ts,tsx}',
       'migration/**/*.{ts,tsx}',
     ],

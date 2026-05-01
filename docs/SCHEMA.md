@@ -642,4 +642,5 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | Date | Migration | Notes |
 |---|---|---|
 | 2026-04-30 | `0000_initial.sql` + `0001_post_init.sql` | Phase 1 — companies, users, items + helpers + auth.users triggers (T-005) |
-| 2026-04-30 | `0002_phase2_master.sql` (this commit) | Phase 2 storage layer — clients, vendors, machines, operators tables, indexes, RLS, BEFORE UPDATE triggers |
+| 2026-04-30 | `0002_tricky_fallen_one.sql` + `0003_phase2_triggers.sql` | Phase 2 storage layer — clients, vendors, machines, operators tables, indexes, RLS, BEFORE UPDATE triggers (T-014; 0003 hand-written, applied out-of-band) |
+| 2026-05-01 | `0004_phase3_op_entry.sql` (drizzle-gen) + `0005_phase3_triggers.sql` (hand-written) + `0006_phase3_views.sql` (hand-written) | Phase 3 op-entry chain (T-024b) — 7 tables (route_cards, route_card_ops, route_card_revisions, job_cards, jc_ops, op_log, running_ops), 6 enums, BEFORE UPDATE triggers, derived-status views (`v_jc_op_status`, `v_jc_status` mirroring legacy calcEngine). Hand-written migrations applied via `apps/api/src/db/apply-sql.ts` |

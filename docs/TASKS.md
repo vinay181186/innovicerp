@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-024a done + Phase 2 carry-over hardening done — viewer-role writes now return clean 403; T-024b is next: Drizzle schema + migration to dev Supabase)
+> Last updated: 2026-05-01 (T-024b done — Phase 3 storage layer live in dev Supabase; T-024c is next: transform layer)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -14,35 +14,35 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-024b.
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-024c.
 
-1. **T-024b: Drizzle schema + migration to dev Supabase.** Per ADR-011 action items: 7 new tables, 6 new enums, hand-written views (`v_jc_op_status`, `v_jc_status`) in a separate migration file. Apply, run `EXPLAIN` on the two views, update SCHEMA.md "Migration History" with the migration filenames.
+1. **T-024c: Phase 3 transform layer.** Build 5 transforms in `migration/transforms/`:
+   - `route-cards.ts` (14 rows → `route_cards` parent + `route_card_ops` children + `route_card_revisions` jsonb history)
+   - `job-cards.ts` (3 rows → `job_cards`; `source_legacy_ref` JSON-encodes `(soNo, soRefId, soLineNo, soPartName, clientPoLineNo)`)
+   - `jc-ops.ts` (20 rows → `jc_ops`; FK-resolve machine via `_id_map.json`; outsource fields inline)
+   - `op-log.ts` (81 rows → `op_log`; expect 7 anomalies — orphan `JC-MS-002/003/004` rows; resolve operator by name match against operators master)
+   - `running-ops.ts` (2 rows → `running_ops`; map operator/machine by code)
+   Wire orchestrator in `migration/transform.ts`. Anomalies append to `_anomalies.json`. Tests in `*.test.ts` next to each.
 
-(Phase 2 carry-over closed 2026-05-01: `requireWriteRole` helper in `apps/api/src/lib/auth.ts` now gates `create`/`update`/`softDelete` on all 5 master modules. Regression test in `items/routes.test.ts` asserts viewer → 403 with `{error: "forbidden"}`. Browser smoke no longer needed.)
+2. **T-024d: Bulk-load + validate-phase3.** Extend `migration/load.ts` to load Phase 3 in FK order (route_cards → route_card_ops → route_card_revisions → job_cards → jc_ops → op_log → running_ops). Build `migration/validate-phase3.ts` mirroring `validate-phase2.ts` (per-table field-level diff + orphan FK checks).
 
 ## Active Task
-**ID:** T-024b
-**Title:** Phase 3 — Drizzle schema + migration to dev Supabase
+**ID:** T-024c
+**Title:** Phase 3 — Transform layer (5 collections)
 **Status:** [ ] Not started
-**Scope:** Per ADR-011. SCHEMA.md §"Phase 3 Tables" is the spec.
-- Drizzle schema in `apps/api/src/db/schema.ts` — 7 tables: `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`
-- 5 new pg enums: `op_type`, `op_log_type`, `outsource_status`, `running_op_status`, `shift`, `jc_priority` (6 actually — `shift` is the 6th)
-- RLS policies per table (read = any role; writes per role rules in SCHEMA.md)
-- Migrations: `0004_phase3_op_entry.sql` (drizzle-kit autogen) + `0005_phase3_views.sql` (hand-written for the two views) + `0006_phase3_triggers.sql` if needed for `set_updated_at` on the new tables
-- Apply to dev Supabase; run `EXPLAIN` on the two views to baseline plan shape
-- Update SCHEMA.md "Migration History" table
+**Scope:** Per ADR-011 + the existing Phase 2 transform pattern (`migration/transforms/*.ts` + `_id_map.json`). Five new transforms — see Resume Checklist above for the per-collection details.
 
 **Acceptance:**
-- [ ] Drizzle schema typechecks (`pnpm --filter api typecheck`)
-- [ ] `drizzle-kit generate` produces a clean SQL migration with no surprises (review before apply)
-- [ ] Migrations apply cleanly to dev Supabase
-- [ ] Both views return rows for the existing Phase 2 data (no JC data yet, so views should return 0 rows but execute without error)
-- [ ] SCHEMA.md "Migration History" table updated with the migration filenames
+- [ ] Five transform files in `migration/transforms/` with co-located unit tests
+- [ ] `migration/transform.ts` orchestrator wires them in
+- [ ] Real-data run produces 5 JSON outputs in `migration/transform/`: `route-cards.json` (14 rows), `route-card-ops.json` (~46 rows from the embedded ops arrays), `route-card-revisions.json` (~3 rows from non-empty revisionLogs), `job-cards.json` (3), `jc-ops.json` (20), `op-log.json` (~74 = 81 − 7 orphans), `running-ops.json` (2)
+- [ ] `_anomalies.json` contains 7 orphan `op_log` rows (JC-MS-002/003/004 jcNos)
+- [ ] All transform tests pass
 
 ## Phase 3 Sub-tasks
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
-- **T-024b — Drizzle schema + migration** [ ] Active
-- **T-024c — Transform layer** [ ] Pending — 3 transforms (`job-cards.ts`, `jc-ops.ts`, `op-log.ts` + supporting `route-cards.ts` + `running-ops.ts`), FK resolution via `_id_map.json`, anomaly capture (per decision #11: 7 orphan opLog rows expected)
+- **T-024b — Drizzle schema + migration** [x] Done 2026-05-01 — 7 tables + 6 enums + 2 views + 5 BEFORE UPDATE triggers live in dev Supabase. Verified: 57/57 api tests pass; both views return 0 rows (no JC data yet) with sane EXPLAIN plans using indexed scans
+- **T-024c — Transform layer** [ ] Active
 - **T-024d — Bulk-load + validation** [ ] Pending — extend `migration/load.ts` for the 5 new collections in FK-dependency order; extend `validate-phase2.ts` to a `validate-phase3.ts` covering the new tables
 
 ## Phase 3 carry-over notes (open questions to resolve in T-024a schema design)
@@ -100,8 +100,8 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 | ID | Task | Status |
 |---|---|---|
 | T-024a | Phase 3 schema design (SCHEMA.md + ADR-011) | [x] Done (2026-05-01) |
-| T-024b | Phase 3 Drizzle schema + migration to dev Supabase | [ ] Active |
-| T-024c | Phase 3 transform layer (job-cards, jc-ops, op-log, route-cards, running-ops) | [ ] |
+| T-024b | Phase 3 Drizzle schema + migration to dev Supabase | [x] Done (2026-05-01) |
+| T-024c | Phase 3 transform layer (job-cards, jc-ops, op-log, route-cards, running-ops) | [ ] Active |
 | T-024d | Phase 3 bulk-load + validation (`validate-phase3.ts`) | [ ] |
 | T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
 | T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
@@ -170,6 +170,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-024b | **Phase 3 storage layer live in dev Supabase.** 6 new shared enums (`OP_TYPES`, `OP_LOG_TYPES`, `OUTSOURCE_STATUSES`, `RUNNING_OP_STATUSES`, `SHIFTS`, `JC_PRIORITIES`); 7 new Drizzle tables in `apps/api/src/db/schema.ts` matching SCHEMA.md exactly. Three migration files: `0004_phase3_op_entry.sql` (drizzle-gen — tables, enums, FKs, indexes, RLS), `0005_phase3_triggers.sql` (hand-written — 5 BEFORE UPDATE triggers), `0006_phase3_views.sql` (hand-written — `v_jc_op_status` + `v_jc_status` mirroring legacy `calcEngine()` line 1626-1731). RLS policies tightened during review: `op_log_operator_insert` now requires `current_user_role() = 'operator'` (was missing the role check); added `op_log_manager_insert`; `running_ops_operator_write` now restricts to operator role. Generic `apps/api/src/db/apply-sql.ts` runner added for hand-written migrations going forward (statement-breakpoint split, idempotent). EXPLAIN plans on both views use indexed scans. Full api suite 57/57 green; typecheck + lint clean. T-024c (transform layer) is next |
 | 2026-05-01 | hardening | **Phase 2 viewer-write carry-over closed.** New `apps/api/src/lib/auth.ts:requireWriteRole` (admin/manager only) now called at top of `create`/`update`/`softDelete` across all 5 master modules (items, clients, vendors, machines, operators) — 15 call sites. Regression test in `items/routes.test.ts` asserts a viewer-role write returns clean 403 `{error: "forbidden"}` instead of leaked 500. Full api suite 57/57 green; typecheck + lint clean. Browser smoke no longer needed |
 | 2026-05-01 | T-024a | **Phase 3 schema design approved (ADR-011).** `docs/SCHEMA.md` §"Phase 3 Tables — Op Entry Chain" added (lines 359–614): 7 tables (`route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`), 6 enums, 2 SQL views (`v_jc_op_status`, `v_jc_status` mirroring legacy `calcEngine()` line 1626–1731). 11 explicit decisions surfaced for sign-off. Five most consequential: route_cards as separate master, statuses derived via views (not stored), running_ops as real table with partial unique indexes for "one op per machine" + "one running per op", op_log append-only with `(start|complete|qc)` enum, SO/JW link on job_cards via two nullable FKs deferred to Phase 4. ADR-011 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-012/013). T-024b (Drizzle schema + migration) is next |
 | 2026-05-01 | T-023 | **Phase 2 sign-off.** New `migration/validate-phase2.ts` (read-only): per-table field-level diff between transform output and DB rows, plus 14 orphan-FK checks. Result: **369/369 mapped rows** match transform on every column (items 352, clients 1, vendors 3, machines 12, operators 1); users count matches `transformRowCount + 1` (T-012 smoke leftover, expected); 0 orphan FKs across `created_by` / `updated_by` for all 5 master tables + `operators.user_id` + users audit + `users.company_id`. Output `migration/load-output/_phase2_validation.json` (gitignored). Reproducible via `pnpm --filter @innovic/migration validate:phase2`. Sign-off section appended to MIGRATION-LOG; T-024 (Phase 3 op-entry migration) is next |

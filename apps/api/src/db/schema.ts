@@ -1,14 +1,29 @@
-import { ITEM_TYPES, UOMS, USER_ROLES } from '@innovic/shared';
+import {
+  ITEM_TYPES,
+  JC_PRIORITIES,
+  OP_LOG_TYPES,
+  OP_TYPES,
+  OUTSOURCE_STATUSES,
+  RUNNING_OP_STATUSES,
+  SHIFTS,
+  UOMS,
+  USER_ROLES,
+} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  check,
+  date,
   index,
   integer,
+  jsonb,
+  numeric,
   pgEnum,
   pgPolicy,
   pgTable,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -17,6 +32,14 @@ import {
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
 export const uomEnum = pgEnum('uom', UOMS);
 export const itemTypeEnum = pgEnum('item_type', ITEM_TYPES);
+
+// ─── Phase 3 enums (T-024b) ───────────────────────────────────────────────
+export const opTypeEnum = pgEnum('op_type', OP_TYPES);
+export const opLogTypeEnum = pgEnum('op_log_type', OP_LOG_TYPES);
+export const outsourceStatusEnum = pgEnum('outsource_status', OUTSOURCE_STATUSES);
+export const runningOpStatusEnum = pgEnum('running_op_status', RUNNING_OP_STATUSES);
+export const shiftEnum = pgEnum('shift', SHIFTS);
+export const jcPriorityEnum = pgEnum('jc_priority', JC_PRIORITIES);
 
 export const companies = pgTable(
   'companies',
@@ -335,6 +358,380 @@ export const operators = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 3 tables — Op Entry Chain (T-024b) ─────────────────────────────
+// Per ADR-011 and SCHEMA.md §"Phase 3 Tables".
+// Status columns deliberately absent from job_cards / jc_ops — derived via
+// SQL views v_jc_op_status / v_jc_status (defined in 0005_phase3_views.sql).
+
+export const routeCards = pgTable(
+  'route_cards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    currentRevision: integer('current_revision').notNull().default(1),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('route_cards_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('route_cards_company_item_uniq')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('route_cards_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('route_cards_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('route_cards_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const routeCardOps = pgTable(
+  'route_card_ops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    routeCardId: uuid('route_card_id')
+      .notNull()
+      .references(() => routeCards.id, { onDelete: 'cascade' }),
+    opSeq: integer('op_seq').notNull(),
+    machineId: uuid('machine_id').references(() => machines.id),
+    machineCodeText: text('machine_code_text'),
+    operation: text('operation').notNull(),
+    opType: opTypeEnum('op_type').notNull().default('process'),
+    cycleTimeMin: numeric('cycle_time_min', { precision: 10, scale: 2 }).notNull().default('0'),
+    program: text('program'),
+    toolNo: text('tool_no'),
+    toolDetails: text('tool_details'),
+    qcRequired: boolean('qc_required').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('route_card_ops_card_seq_uniq')
+      .on(t.routeCardId, t.opSeq)
+      .where(sql`${t.deletedAt} is null`),
+    index('route_card_ops_machine_idx').on(t.machineId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('route_card_ops_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('route_card_ops_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const routeCardRevisions = pgTable(
+  'route_card_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    routeCardId: uuid('route_card_id')
+      .notNull()
+      .references(() => routeCards.id, { onDelete: 'cascade' }),
+    revisionNo: integer('revision_no').notNull(),
+    notes: text('notes'),
+    opsSnapshot: jsonb('ops_snapshot').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('route_card_revisions_card_rev_uniq').on(t.routeCardId, t.revisionNo),
+    index('route_card_revisions_card_created_idx').on(t.routeCardId, t.createdAt),
+    pgPolicy('route_card_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('route_card_revisions_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jobCards = pgTable(
+  'job_cards',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    jcDate: date('jc_date').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    orderQty: integer('order_qty').notNull(),
+    priority: jcPriorityEnum('priority').notNull().default('normal'),
+    dueDate: date('due_date'),
+    drawingFilePath: text('drawing_file_path'),
+    // Source SO/JW link — FKs deferred to Phase 4 per ADR-011 #5
+    sourceSoLineId: uuid('source_so_line_id'),
+    sourceJwId: uuid('source_jw_id'),
+    sourceLegacyRef: text('source_legacy_ref'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('job_cards_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('job_cards_company_item_idx')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('job_cards_company_due_idx')
+      .on(t.companyId, t.dueDate)
+      .where(sql`${t.deletedAt} is null AND ${t.closedAt} is null`),
+    index('job_cards_company_date_idx')
+      .on(t.companyId, t.jcDate)
+      .where(sql`${t.deletedAt} is null`),
+    check('job_cards_order_qty_positive', sql`${t.orderQty} > 0`),
+    pgPolicy('job_cards_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('job_cards_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jcOps = pgTable(
+  'jc_ops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jobCardId: uuid('job_card_id')
+      .notNull()
+      .references(() => jobCards.id, { onDelete: 'cascade' }),
+    opSeq: integer('op_seq').notNull(),
+    machineId: uuid('machine_id').references(() => machines.id),
+    machineCodeText: text('machine_code_text'),
+    operation: text('operation').notNull(),
+    opType: opTypeEnum('op_type').notNull().default('process'),
+    cycleTimeMin: numeric('cycle_time_min', { precision: 10, scale: 2 }).notNull().default('0'),
+    program: text('program'),
+    toolNo: text('tool_no'),
+    toolDetails: text('tool_details'),
+    qcRequired: boolean('qc_required').notNull().default(false),
+    qcCallDate: date('qc_call_date'),
+    qcAttendedDate: date('qc_attended_date'),
+    reworkQty: integer('rework_qty').notNull().default(0),
+    outsourceVendorId: uuid('outsource_vendor_id').references(() => vendors.id),
+    outsourceVendorText: text('outsource_vendor_text'),
+    outsourceCost: numeric('outsource_cost', { precision: 12, scale: 2 }).notNull().default('0'),
+    outsourceStatus: outsourceStatusEnum('outsource_status'),
+    outsourcePrNo: text('outsource_pr_no'),
+    outsourcePoNo: text('outsource_po_no'),
+    outsourceDcNo: text('outsource_dc_no'),
+    outsourceSentQty: integer('outsource_sent_qty').notNull().default(0),
+    outsourceSentDate: date('outsource_sent_date'),
+    outsourceReturnedQty: integer('outsource_returned_qty').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('jc_ops_card_seq_uniq')
+      .on(t.jobCardId, t.opSeq)
+      .where(sql`${t.deletedAt} is null`),
+    index('jc_ops_machine_idx').on(t.machineId).where(sql`${t.deletedAt} is null`),
+    index('jc_ops_company_type_idx')
+      .on(t.companyId, t.opType)
+      .where(sql`${t.deletedAt} is null`),
+    index('jc_ops_outsource_vendor_idx')
+      .on(t.outsourceVendorId)
+      .where(sql`${t.deletedAt} is null AND ${t.opType} = 'outsource'`),
+    pgPolicy('jc_ops_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jc_ops_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const opLog = pgTable(
+  'op_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jcOpId: uuid('jc_op_id')
+      .notNull()
+      .references(() => jcOps.id, { onDelete: 'cascade' }),
+    logNo: text('log_no').notNull(),
+    logType: opLogTypeEnum('log_type').notNull(),
+    logDate: date('log_date').notNull(),
+    shift: shiftEnum('shift').notNull(),
+    qty: integer('qty').notNull().default(0),
+    rejectQty: integer('reject_qty').notNull().default(0),
+    operatorId: uuid('operator_id').references(() => operators.id),
+    operatorName: text('operator_name'),
+    startTime: time('start_time'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('op_log_company_op_date_idx').on(t.companyId, t.jcOpId, t.logDate),
+    index('op_log_company_date_complete_idx')
+      .on(t.companyId, t.logDate)
+      .where(sql`${t.logType} = 'complete'`),
+    index('op_log_operator_date_idx')
+      .on(t.operatorId, t.logDate)
+      .where(sql`${t.operatorId} is not null`),
+    check('op_log_qty_nonneg', sql`${t.qty} >= 0`),
+    check('op_log_reject_qty_nonneg', sql`${t.rejectQty} >= 0`),
+    pgPolicy('op_log_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('op_log_operator_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() = 'operator' AND company_id = current_company_id() AND log_type IN ('start', 'complete')`,
+    }),
+    pgPolicy('op_log_qc_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() = 'qc' AND company_id = current_company_id() AND log_type = 'qc'`,
+    }),
+    pgPolicy('op_log_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const runningOps = pgTable(
+  'running_ops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jcOpId: uuid('jc_op_id')
+      .notNull()
+      .references(() => jcOps.id, { onDelete: 'cascade' }),
+    machineId: uuid('machine_id').references(() => machines.id),
+    isOsp: boolean('is_osp').notNull().default(false),
+    operatorId: uuid('operator_id').references(() => operators.id),
+    operatorName: text('operator_name'),
+    startDate: date('start_date').notNull(),
+    startTime: time('start_time').notNull(),
+    shift: shiftEnum('shift').notNull(),
+    status: runningOpStatusEnum('status').notNull().default('running'),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('running_ops_op_running_uniq')
+      .on(t.companyId, t.jcOpId)
+      .where(sql`${t.status} = 'running'`),
+    uniqueIndex('running_ops_machine_running_uniq')
+      .on(t.machineId)
+      .where(sql`${t.status} = 'running' AND ${t.isOsp} = false`),
+    index('running_ops_company_status_date_idx').on(t.companyId, t.status, t.startDate),
+    pgPolicy('running_ops_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('running_ops_operator_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'operator' AND company_id = current_company_id() AND created_by = (current_setting('request.jwt.claims', true)::jsonb->>'sub')::uuid`,
+      withCheck: sql`current_user_role() = 'operator' AND company_id = current_company_id()`,
+    }),
+    pgPolicy('running_ops_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -349,3 +746,17 @@ export type Machine = typeof machines.$inferSelect;
 export type NewMachine = typeof machines.$inferInsert;
 export type Operator = typeof operators.$inferSelect;
 export type NewOperator = typeof operators.$inferInsert;
+export type RouteCard = typeof routeCards.$inferSelect;
+export type NewRouteCard = typeof routeCards.$inferInsert;
+export type RouteCardOp = typeof routeCardOps.$inferSelect;
+export type NewRouteCardOp = typeof routeCardOps.$inferInsert;
+export type RouteCardRevision = typeof routeCardRevisions.$inferSelect;
+export type NewRouteCardRevision = typeof routeCardRevisions.$inferInsert;
+export type JobCard = typeof jobCards.$inferSelect;
+export type NewJobCard = typeof jobCards.$inferInsert;
+export type JcOp = typeof jcOps.$inferSelect;
+export type NewJcOp = typeof jcOps.$inferInsert;
+export type OpLog = typeof opLog.$inferSelect;
+export type NewOpLog = typeof opLog.$inferInsert;
+export type RunningOp = typeof runningOps.$inferSelect;
+export type NewRunningOp = typeof runningOps.$inferInsert;
