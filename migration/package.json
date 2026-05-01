@@ -9,6 +9,7 @@
     "load": "dotenv -e ../.env.local -- tsx load.ts",
     "validate:phase2": "dotenv -e ../.env.local -- tsx validate-phase2.ts",
     "validate:phase3": "dotenv -e ../.env.local -- tsx validate-phase3.ts",
+    "reconcile": "dotenv -e ../.env.local -- tsx reconcile-op-log.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"

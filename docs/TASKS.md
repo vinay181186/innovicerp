@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-01 (T-026 done — operator required on Start + auto-set qc_call_date. 73/73 api tests green × 3 stability runs. T-025c manual smoke still gated on user.)
+> Last updated: 2026-05-01 (T-027 reconciliation script ready — `migration/reconcile-op-log.ts` compares legacy opLog vs new op_log per-day; smoke run on historic 2026-03-07 correctly flagged the 3 ITM-001 cascade divergences. T-027 daily runs gated on T-025c manual smoke + start of parallel period.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -31,13 +31,16 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Active Task
 **ID:** T-027
 **Title:** Phase 3 parallel run (5 working days, operators in BOTH systems, end-of-day reconciliation)
-**Status:** [ ] Not started — gated on T-025c manual smoke
-**Scope:** Per CLAUDE.md §1 Phase 3 plan. Operators continue using legacy HTML AND start using new Op Entry. End of each day: dump opLog from legacy, dump op_log from new system filtered by today's date, diff. Investigate any divergence before next day. After 5 clean days, T-028 cuts operators over.
+**Status:** [~] Tooling ready — daily runs pending start of parallel period
+**Scope:** Per CLAUDE.md §1 Phase 3 plan. Operators continue using legacy HTML AND start using new Op Entry. Each evening:
+1. Re-export legacy opLog: `pnpm --filter @innovic/migration export` (rewrites `migration/export/opLog.json`)
+2. Reconcile against new system: `pnpm --filter @innovic/migration reconcile` (defaults to today IST)
+3. Investigate any divergence before next morning. After 5 clean days, T-028 cuts operators over.
 
 **Acceptance:**
-- [ ] Day-1 reconciliation script (`migration/reconcile-op-log.ts`) compares per-day legacy vs new opLog rows by `(jcNo, opSeq, date, qty)`
+- [x] Reconciliation script (`migration/reconcile-op-log.ts`) — done 2026-05-01; categorises per `(jcNo, opSeq)` as MATCH / QTY_MISMATCH / LEGACY_ONLY / NEW_ONLY; exit 0 on PASS, 1 on FAIL; writes `_reconcile_<date>.json`
 - [ ] 5 consecutive working days with 0 divergence
-- [ ] Daily reconciliation log appended to MIGRATION-LOG
+- [ ] Daily reconciliation logs appended to MIGRATION-LOG (paste the totals block per day)
 
 ## Phase 3 Sub-tasks (T-024 closed)
 - **T-024a — Schema design** [x] Done 2026-05-01 — `docs/SCHEMA.md` §"Phase 3 Tables" + ADR-011 approved
@@ -108,6 +111,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 | T-025b' | Machine Op Entry view (machine-first picker, mirrors legacy renderMachOpEntry) | [x] Done (2026-05-01) |
 | T-025c | Manual browser smoke (admin happy path + viewer 403 + Realtime visible) | [ ] Gated on user |
 | T-026 | Server-side validations — operator-required-on-Start + qc_call_date auto-set | [x] Done (2026-05-01) |
+| T-027 | Phase 3 parallel run — reconciliation script + 5-day clean window | [~] Tooling ready, daily runs pending |
 | T-025 | Build Op Entry screen (TanStack Query optimistic updates + Realtime subscription) | [ ] |
 | T-026 | Implement server-side validations (cannot exceed planned qty, cannot skip required QC, etc.) | [ ] |
 | T-027 | Run parallel mode (operators in BOTH systems, end-of-day reconciliation, 5 working days) | [ ] |
@@ -175,6 +179,7 @@ Goal: Migrate the op-entry chain (jobCards → jcOps → opLog), build the Op En
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-01 | T-027 (tooling) | **Reconciliation script for Phase 3 parallel run.** New `migration/reconcile-op-log.ts` compares legacy `opLog` (re-exported daily from Firestore) vs new `op_log` table for a given date (default = today IST). Match key `(jcNo, opSeq, log_date)`; sums production qty per group, excluding `'start'` and `'qc'` types on legacy and filtering to `log_type='complete'` on new — mirrors the legacy line 2595 "today's completed qty" filter. Per-key categorisation: MATCH / QTY_MISMATCH / LEGACY_ONLY / NEW_ONLY. Output to `migration/load-output/_reconcile_<date>.json` (gitignored) plus stdout summary. Exit 0 on PASS, 1 on FAIL — usable from cron. New `pnpm --filter @innovic/migration reconcile` script. Smoke-run on historic 2026-03-07 correctly flagged the 3 ITM-001 cascade divergences (15 pcs of legacy-only work that we already accepted as lost in T-024c) |
 | 2026-05-01 | T-026 | **Op Entry server-side validations — gap closure beyond T-025a.** (1) `startOpInputSchema` Zod refine now requires `operatorId` OR `operatorName` (mirrors legacy line 5497 hard-block on "Select or enter operator name"). (2) `submitOpLog` post-insert: when an op transitions to `available=0` (fully done), the next op (op_seq+1) on the same JC, if it's a QC op without a `qc_call_date`, gets it set to the log_date — matches legacy line 5471-5479 ("operators rely on this to know which QC ops are now ready to inspect"). All other CLAUDE.md §1 validations were already implicit via `v_jc_op_status` (sequencing — input_avail of op N+1 = output of op N; cannot-skip-QC — qcRequired ops gate output via getOutput legacy line 1647-1651). 2 new tests; full api suite **73/73 green ×3 stability runs**. Test fixture teardown made more defensive (sweep all jc_ops on test JC, not just the seed op). Deferred to later phases: rework decrement (Phase 6 NC), stock update on last op (Phase 5 procurement), OSP auto-PR (Phase 5) |
 | 2026-05-01 | T-025b' | **Machine Op Entry view added** (legacy `renderMachOpEntry` line 5540–5666 mirror). New `/op-entry/machines` route with grid of machine cards (running shows JC + op, idle shows pending-jobs table with Start buttons). Required extending `listJcOpsEnriched` API to accept `machineId` filter — schema + service + service test added; Zod refine enforces "provide jobCardId, jobCardCode, OR machineId". Pending ops filtered client-side to `available + waiting` (legacy line 5625-5627 subset). Home nav now lists three op-entry entry points: JC-wise / machine-first / live board. Web typecheck + lint clean; api 71/71 green |
 | 2026-05-01 | T-025b | **Op Entry Web shipped — TanStack Query + Supabase Realtime + optimistic updates.** New `apps/web/src/modules/op-entry/`: api.ts (6 hooks + 2 Realtime helpers `useRealtimeOpLog`/`useRealtimeRunningOps`), 5 components (status badges, jc-ops table, op-entry form, op-log history, running-ops board), 2 routes (`/op-entry` JC-wise picker + `/op-entry/running` live board). Optimistic update on `useSubmitOpLog` decrements `available` and bumps `completedQty` in the cached jc_ops list before the server round-trip; rollback via snapshot on error; Realtime INSERT on op_log invalidates to reconcile. Realtime channels filter by `jc_op_id` (per-op view) and rely on RLS for company isolation (running_ops board). Home nav extended with op-entry + live-board cards. Web typecheck + lint clean. **Manual browser smoke pending user (T-025c)** — happy path + viewer 403 + Realtime propagation; runs in 5–10 min, blocks T-026 |
