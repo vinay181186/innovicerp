@@ -13,3 +13,4 @@ export * from './schemas/client';
 export * from './schemas/vendor';
 export * from './schemas/machine';
 export * from './schemas/operator';
+export * from './schemas/op-entry';

@@ -9,6 +9,7 @@ import { logger } from './lib/logger';
 import { clientsRoutes } from './modules/clients/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { machinesRoutes } from './modules/machines/routes';
+import { opEntryRoutes } from './modules/op-entry/routes';
 import { operatorsRoutes } from './modules/operators/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
@@ -44,6 +45,7 @@ await app.register(clientsRoutes);
 await app.register(vendorsRoutes);
 await app.register(machinesRoutes);
 await app.register(operatorsRoutes);
+await app.register(opEntryRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });
