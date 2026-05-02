@@ -804,6 +804,265 @@ Wait — `legacy_id` isn't a column on `sales_order_lines`. Backfill happens via
 
 ---
 
+## Phase 5 Tables — Procurement (T-035a draft, awaiting approval)
+
+> **Status:** design draft from T-035a. Approved by user; ADR-015 captures the decisions. Implementation in T-035b.
+
+Replaces legacy collections: `purchaseRequests` (1 record — `PR-00001`), `purchaseOrders` (1 record — `IN-JWPO-00001`, single line), `grn` (3 records under one `IN-GRN-00001` header), `storeTransactions` (2 records — both `IN` from GRN QC). Plus the deferred FK upgrade on `jc_ops` from ADR-011 #6 (text outsource_pr_no / outsource_po_no → real FKs).
+
+Spec source: `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. Key references: `_getPoBaseData()` line 25717, `addPO()` line 25728, `renderGRN()` line 26444, `addGRN()` line 26515, status filters at lines 2815-2817 + 3806, store-transaction inserts at lines 3933-3934 + 5449-5450.
+
+### Phase 5 Enums
+
+```sql
+create type po_status       as enum ('draft', 'open', 'partial', 'qc_pending', 'closed', 'cancelled');
+create type pr_status       as enum ('open', 'approved', 'po_created', 'cancelled');
+create type po_type         as enum ('standard', 'job_work', 'outsource', 'service');
+create type grn_qc_status   as enum ('pending', 'in_progress', 'completed');
+create type store_txn_type  as enum ('in', 'out', 'adjust');
+create type store_txn_source_type as enum ('grn_qc', 'manual_adjust', 'dispatch', 'jw_in', 'jw_out', 'other');
+```
+
+### `purchase_requests`
+
+Bridges plan / op-entry → PO. Single-table (no separate lines) since current data is single-line per PR; promote to header+lines if multi-line PRs become a real workflow.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `prNo`, e.g. `PR-00001`) |
+| `pr_date` | `date` | not null |
+| `status` | `pr_status` | not null, default `'open'` |
+| `vendor_id` | `uuid` | nullable, FK → `vendors(id)` |
+| `vendor_code_text` | `text` | nullable. Free-text fallback when `vendor_id` can't resolve (ADR-012 #10 pattern). Legacy data uses `vendorCode='VND-001'` strings |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Same fallback pattern |
+| `item_name` | `text` | nullable. Snapshot at PR creation |
+| `qty` | `integer` | not null, check `> 0` |
+| `est_cost` | `numeric(12,2)` | not null, default `0` |
+| `required_date` | `date` | nullable |
+| `source_jc_op_id` | `uuid` | nullable, FK → `jc_ops(id) on delete set null`. Set when PR raised from outsource workflow |
+| `source_so_line_id` | `uuid` | nullable, FK → `sales_order_lines(id) on delete set null`. Forward link for cost rollup; legacy carries `soRefId` on PR |
+| `operation` | `text` | nullable. Snapshot for outsource PRs (legacy `operation='COATING'`) |
+| `remarks` | `text` | nullable |
+| `approved_by` | `uuid` | nullable, FK → `users(id)`. Null until status=approved |
+| `approved_at` | `timestamptz` | nullable |
+| `po_id` | `uuid` | nullable, FK → `purchase_orders(id) on delete set null`. Set when PO is generated from PR (legacy `prNo` → `poNo` link) |
+| `po_created_at` | `timestamptz` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+- `(company_id, vendor_id) where deleted_at is null`
+- `(source_jc_op_id) where source_jc_op_id is not null and deleted_at is null`
+
+CHECK: `num_nonnulls(vendor_id, vendor_code_text) >= 1` — every PR must reference a vendor somehow.
+CHECK: `num_nonnulls(item_id, item_code_text) >= 1` — every PR has an item ref.
+
+RLS: `purchase_requests_company_read` (any role) + `purchase_requests_manager_write` (admin/manager).
+
+### `purchase_orders`
+
+Header table for purchase orders. Each header has 1+ lines (current data: 1 PO, 1 line — but design supports many).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `poNo`, e.g. `IN-JWPO-00001`) |
+| `po_date` | `date` | not null |
+| `po_type` | `po_type` | not null, default `'standard'` |
+| `vendor_id` | `uuid` | nullable, FK → `vendors(id)` |
+| `vendor_code_text` | `text` | nullable. Fallback (legacy `vendorCode`) |
+| `status` | `po_status` | not null, default `'draft'` |
+| `due_date` | `date` | nullable. Header-level default; lines may override |
+| `tax_type` | `text` | nullable. Legacy values: `'sgst_cgst'`, `'igst'`, `'none'`. Free-text for now; promote to enum if a third value emerges |
+| `sgst_pct` | `numeric(5,2)` | not null, default `0` |
+| `cgst_pct` | `numeric(5,2)` | not null, default `0` |
+| `igst_pct` | `numeric(5,2)` | not null, default `0` |
+| `pr_code_text` | `text` | nullable. Snapshot of legacy `prNo` for audit. Future: drop in favour of `purchase_requests.po_id` back-reference |
+| `approved_by` | `uuid` | nullable, FK → `users(id)` |
+| `approved_at` | `timestamptz` | nullable |
+| `approval_remarks` | `text` | nullable |
+| `remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, vendor_id) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+- `(company_id, po_date desc) where deleted_at is null`
+
+RLS: same pattern as `purchase_requests`.
+
+### `purchase_order_lines`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `purchase_order_id` | `uuid` | not null, FK → `purchase_orders(id) on delete cascade` |
+| `line_no` | `integer` | not null |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Fallback per ADR-012 #10 |
+| `item_name` | `text` | not null. Snapshot at PO creation |
+| `qty` | `integer` | not null, check `> 0` |
+| `rate` | `numeric(12,2)` | not null, default `0` |
+| `received_qty` | `integer` | not null, default `0`. Maintained by GRN cascade (T-035c+) |
+| `due_date` | `date` | nullable |
+| `source_so_line_id` | `uuid` | nullable, FK → `sales_order_lines(id) on delete set null`. Cost-rollup link; legacy carries `soRefId` on PO line |
+| `source_jc_op_id` | `uuid` | nullable, FK → `jc_ops(id) on delete set null`. Outsource workflow link; replaces legacy `outsource_po_no` text on jc_ops |
+| `line_remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (purchase_order_id, line_no) where deleted_at is null`
+- `(item_id) where deleted_at is null`
+- `(source_so_line_id) where source_so_line_id is not null`
+- `(source_jc_op_id) where source_jc_op_id is not null`
+
+CHECK: `received_qty >= 0` and `received_qty <= qty + (qty * 0.1)` — allow 10% over-receipt to handle legitimate vendor over-shipments without blocking GRN; tighten later if needed.
+
+RLS: same pattern as parent.
+
+### `goods_receipt_notes`
+
+Header table for GRNs. Records material received against a PO. Current data: 3 lines all under one GRN.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `grnNo`, e.g. `IN-GRN-00001`) |
+| `grn_date` | `date` | not null |
+| `purchase_order_id` | `uuid` | nullable, FK → `purchase_orders(id) on delete set null`. Resolved from legacy `poNo` text on load |
+| `po_code_text` | `text` | nullable. Audit snapshot |
+| `vendor_id` | `uuid` | nullable, FK → `vendors(id)` |
+| `vendor_code_text` | `text` | nullable. Fallback |
+| `dc_no` | `text` | nullable. Vendor's DC reference |
+| `invoice_no` | `text` | nullable |
+| `remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, purchase_order_id) where deleted_at is null`
+- `(company_id, vendor_id) where deleted_at is null`
+- `(company_id, grn_date desc) where deleted_at is null`
+
+RLS: same pattern as `purchase_orders`.
+
+### `goods_receipt_note_lines`
+
+QC fields are inline per ADR-015 #8 — legacy data co-locates them on the GRN line.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `goods_receipt_note_id` | `uuid` | not null, FK → `goods_receipt_notes(id) on delete cascade` |
+| `line_no` | `integer` | not null |
+| `purchase_order_line_id` | `uuid` | nullable, FK → `purchase_order_lines(id) on delete set null`. Resolved by loader via `(po code, item code)` tuple; null + anomaly when not resolvable |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Fallback |
+| `item_name` | `text` | not null |
+| `received_qty` | `integer` | not null, check `>= 0` |
+| `dc_ref_no` | `text` | nullable. Per-line DC ref (legacy `dcRefNo` differs from header `dcNo` when split shipments) |
+| `qc_status` | `grn_qc_status` | not null, default `'pending'` |
+| `qc_accepted_qty` | `integer` | not null, default `0`, check `>= 0` |
+| `qc_rejected_qty` | `integer` | not null, default `0`, check `>= 0` |
+| `qc_date` | `date` | nullable |
+| `qc_remarks` | `text` | nullable |
+| `qc_inspected_by` | `uuid` | nullable, FK → `users(id)` |
+| `remarks` | `text` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (goods_receipt_note_id, line_no) where deleted_at is null`
+- `(purchase_order_line_id) where purchase_order_line_id is not null`
+- `(item_id) where deleted_at is null`
+- `(company_id, qc_status) where deleted_at is null` — drives the QC pending dashboard
+
+CHECK: `qc_accepted_qty + qc_rejected_qty <= received_qty` — QC outcome can't exceed what was received.
+
+RLS:
+- `goods_receipt_note_lines_company_read` (any role)
+- `goods_receipt_note_lines_manager_write` for INSERT/DELETE (admin/manager)
+- `goods_receipt_note_lines_qc_update` — special policy: QC role may UPDATE only the QC fields (`qc_status`, `qc_accepted_qty`, `qc_rejected_qty`, `qc_date`, `qc_remarks`, `qc_inspected_by`). Enforced via column-level GRANT + a CHECK policy that no other column changes vs OLD row. Defined now for forward-compat with Phase 6 QC role; no qc-role user exists today.
+
+### `store_transactions`
+
+Stock-movement ledger. Polymorphic source via `source_type` enum + `source_ref text`. Append-only — corrections happen via reversing entries (same pattern as op_log per ADR-011 #4).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `txn_date` | `date` | not null |
+| `item_id` | `uuid` | nullable, FK → `items(id)` |
+| `item_code_text` | `text` | nullable. Fallback |
+| `txn_type` | `store_txn_type` | not null. `in` / `out` / `adjust` |
+| `qty` | `integer` | not null. Always positive — sign comes from `txn_type` |
+| `source_type` | `store_txn_source_type` | not null. `grn_qc` / `manual_adjust` / `dispatch` / `jw_in` / `jw_out` / `other` |
+| `source_ref` | `text` | not null. Polymorphic ref (e.g. `IN-GRN-00001`); FK columns added in later phases when types stabilise |
+| `stock_before` | `integer` | not null. Snapshot at txn time (legacy carries this) |
+| `stock_after` | `integer` | not null. = stock_before ± qty |
+| `remarks` | `text` | nullable |
+| audit (created_only) | (audit pattern) | created_by + created_at; no updated_*, no deleted_at |
+
+Indexes:
+- `(company_id, item_id, txn_date desc)` — drives stock-history queries on item detail
+- `(company_id, source_type, source_ref)` — find all txns from a given GRN / dispatch / etc.
+- `(company_id, txn_date desc)` — daily ledger view
+
+CHECK: `qty > 0`, `stock_after = stock_before + (case txn_type when 'in' then qty when 'adjust' then qty - 2*stock_before /* placeholder */ else -qty end)` — actually simpler: trust the writer to compute stock_before/stock_after correctly; revisit if drift surfaces. (Legacy maintained these client-side.)
+
+RLS: read for any role; write only via service-layer paths (no direct UPDATE/DELETE allowed from app code).
+
+### `v_item_stock` view
+
+Per-item stock balance derived from `store_transactions`. Used by stock checks during BOM expansion / SO creation / etc.
+
+```sql
+CREATE VIEW public.v_item_stock AS
+SELECT
+  st.company_id,
+  st.item_id,
+  SUM(CASE WHEN st.txn_type = 'in'  THEN st.qty
+           WHEN st.txn_type = 'out' THEN -st.qty
+           ELSE st.qty END)::integer AS on_hand_qty
+FROM public.store_transactions st
+WHERE st.item_id IS NOT NULL
+GROUP BY st.company_id, st.item_id;
+```
+
+(Note: `adjust` rows can be either + or − depending on the adjustment direction; legacy data has none. The CASE above treats `adjust` as positive — confirm against the first real adjustment we see.)
+
+### `jc_ops` — Phase 5 ALTERS
+
+Per ADR-015 #5:
+1. **Drop columns** `outsource_pr_no` (text) and `outsource_po_no` (text). Backfill before drop into the new FK columns below.
+2. **Add columns:** `outsource_pr_id uuid nullable references purchase_requests(id) on delete set null` and `outsource_po_line_id uuid nullable references purchase_order_lines(id) on delete set null`.
+3. **Add index** on each new FK column where non-null.
+4. **Backfill** during T-035c load: for each jc_op with `outsource_pr_no` / `outsource_po_no` text, look up the corresponding new row by code → set the FK. Anomaly + null on miss (matching ADR-012 #10 fallback semantics; the text columns are dropped after backfill since the FK is the source of truth going forward).
+
+`outsource_pr_id` is also referenced as the inverse of `purchase_requests.source_jc_op_id` — the two FKs co-exist for query convenience (PR → JC op when looking from procurement; JC op → PR when looking from shop floor). They MUST stay in sync (set both at PR creation; both null after PR cancellation). Service layer enforces — no DB CHECK because cross-table CHECKs are unwieldy in Postgres without triggers.
+
+### Phase 5 Triggers
+
+`before update` on each new table → `set_updated_at()`. No status-maintenance triggers in T-035b — auto-close PO header (when all lines fully received + QC complete) lives in the service layer (T-035c+) where it's testable.
+
+### Phase 5 Action items (T-035b implementation)
+
+- [ ] Drizzle schema in `apps/api/src/db/schema.ts` — 5 new tables + 6 new enums + `jc_ops` ALTER (drop 2 text cols, add 2 FK cols)
+- [ ] Migration: `0010_phase5_procurement.sql` (drizzle-gen — tables + enums + FKs + indexes + RLS) + `0011_phase5_jc_ops_alters.sql` (hand-written — drop legacy text cols, add FK cols, add indexes) + `0012_phase5_triggers.sql` (set_updated_at on the 5 new tables) + `0013_phase5_views.sql` (v_item_stock)
+- [ ] Apply via the existing `apply-sql.ts` runner for the hand-written migrations
+- [ ] Update SCHEMA.md "Migration History" with the four migration filenames
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:

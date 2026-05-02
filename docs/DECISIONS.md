@@ -366,7 +366,89 @@ The remaining six (BOM defer, milestones defer, customer_name fallback, item_cod
 - [ ] Apply via the existing `apply-sql.ts` runner for the hand-written migrations
 - [ ] Update SCHEMA.md "Migration History" with the three migration filenames
 
+## ADR-015: Phase 5 schema — Procurement (PR / PO / GRN / store ledger)
+
+**Date:** 2026-05-02
+**Status:** Accepted — implementation in T-035b/c
+
+### Context
+
+Phase 5 migrates legacy procurement collections: `purchaseRequests` (1 record), `purchaseOrders` (1 record, denormalised line-per-doc), `grn` (3 records under one header), `storeTransactions` (2 records). Plus the deferred FK upgrade on `jc_ops` from ADR-011 #6: replace `outsource_pr_no` / `outsource_po_no` text columns with real FKs to the new tables.
+
+The migration effort is dominated by schema design — current data is 7 records total. Decisions taken now lock in the shape we'll grow into as procurement volume scales.
+
+### Decision (12 sub-decisions)
+
+1. **Header+lines split for PO and GRN.** `purchase_orders` (header) + `purchase_order_lines` (children) + `goods_receipt_notes` (header) + `goods_receipt_note_lines` (children). Same pattern as ADR-012 #1 for SO/JW.
+
+2. **`purchase_requests` as a top-level table** (not just a view of pending PR data on jc_ops or a child of POs). The PR workflow — raise → approve → PO created — is a first-class entity even at 1 record. Single-table for now (no separate lines) since current data is single-line per PR; promote to header+lines if multi-line PRs become a real workflow.
+
+3. **PO line → SO line link** via `purchase_order_lines.source_so_line_id` (nullable FK to `sales_order_lines`). Forward link for cost rollup; legacy carries `soRefId` on PO line.
+
+4. **PO line → JC op link** via `purchase_order_lines.source_jc_op_id` (nullable FK to `jc_ops`). Symmetric with the SO/JW source link on `job_cards`. Replaces the text `outsource_po_no` on jc_ops.
+
+5. **Replace `jc_ops.outsource_pr_no` / `outsource_po_no` text columns with FKs** (`outsource_pr_id` → `purchase_requests`; `outsource_po_line_id` → `purchase_order_lines`). Same migration commit as the new tables; backfill during T-035c load by string match. The two FKs (PR ↔ JC-op, PO line ↔ JC-op) are denormalised inverses — both populated for query convenience; service layer keeps them in sync.
+
+6. **Enums (lowercase, normalise from legacy mixed-case):**
+   - `po_status`: `draft | open | partial | qc_pending | closed | cancelled`
+   - `pr_status`: `open | approved | po_created | cancelled`
+   - `po_type`: `standard | job_work | outsource | service` (legacy seen: `'Job Work'`)
+   - `grn_qc_status`: `pending | in_progress | completed`
+   - `store_txn_type`: `in | out | adjust`
+   - `store_txn_source_type`: `grn_qc | manual_adjust | dispatch | jw_in | jw_out | other`
+
+7. **Tax fields header-level on `purchase_orders`** (`tax_type`, `sgst_pct`, `cgst_pct`, `igst_pct`). Matches current data; promote to lines if a future PO needs per-line GST. `tax_type` left as `text` (not enum) until a third value beyond `'sgst_cgst'` and `'igst'` shows up.
+
+8. **GRN QC fields inline on `goods_receipt_note_lines`** (not a separate `qc_inspections` table). Legacy data co-locates `qcStatus`, `qcAcceptedQty`, `qcRejectedQty`, `qcDate`, `qcRemarks` on each GRN line; that's the natural shape. Phase 6 (`qc_inspections` for shop-floor QC after machining) is a different table — GRN-receipt QC and op-completion QC are different workflows.
+
+9. **`grn_lines.purchase_order_line_id` is nullable.** Legacy `poLineId` is empty in current data; loader resolves by `(po code, item code)` tuple, leaves null + logs anomaly on miss. Better than dropping rows (matching ADR-012 #10 fallback philosophy).
+
+10. **`store_transactions` polymorphic** via `source_type` enum + `source_ref text` string. No FK columns — the source domain stabilises across phases (dispatch/JW DC arrive in Phase 6; refactor to typed FKs in a Phase 7 cleanup if any source needs strong consistency).
+
+11. **Stock balance: derived `v_item_stock` view, not denormalised on items.** Avoids drift; legacy's `items.stockQty` is exactly the kind of denormalisation we're escaping. At <500 items × <10k txns the aggregate scan is cheap. Promote to materialised view (or a per-item cached column maintained by a trigger) only if read latency surfaces in profiling.
+
+12. **PO/PR/GRN auto-close cascades — schema-only in T-035; logic deferred to a follow-on task** (likely T-035d). Same shape as T-033's SO/JW cascade. Pin the schema first and get one cycle of UI feedback before piling on the cascade — easier to revise the trigger conditions when we know what users actually click.
+
+### RLS notes
+
+- Standard `company_isolation` on all 5 tables.
+- `manager_write` (admin/manager) for INSERT/UPDATE/DELETE on PR/PO/GRN/store_txn.
+- **Special: `goods_receipt_note_lines_qc_update`** policy lets the `qc` role UPDATE only the QC fields (`qc_status`, `qc_accepted_qty`, `qc_rejected_qty`, `qc_date`, `qc_remarks`, `qc_inspected_by`). Defined now even though no qc-role user exists yet — Phase 6 adds them and we don't want to revisit Phase 5 migrations.
+
+### Alternatives Considered
+
+- **Single `purchases` table with type discriminator (PR vs PO).** Rejected: the workflows diverge significantly (approval flow, line counts, tax, vendor commitment); a discriminated union would force half-empty rows.
+- **`store_transactions` with typed FK columns per source.** Rejected for now: 6 source types, sparse FKs everywhere; polymorphic text refs match legacy and let us see which source types actually need strong consistency before designing the FK layout.
+- **Maintain `items.stock_qty` denormalised.** Rejected: drift risk + the very pattern Phase 1 was meant to escape. Will revisit if a measurement says the view is too slow.
+- **Defer `purchase_requests` to a future phase.** Rejected: at 1 record, the schema work is the same regardless of when we do it; deferring means re-touching `jc_ops` (because outsource_pr_no FK depends on it).
+
+### Consequences
+
+- **Positive:**
+  - Cost rollup gets real (PO line → SO line FK chain) — Phase 7 reports can `JOIN` cleanly.
+  - Outsource workflow gets real FKs — eliminates a class of "stale text reference" bugs from legacy.
+  - QC role is forward-defined, no Phase-6 schema churn.
+  - Stock ledger is canonical — every txn is a row with full audit, vs legacy's inline `stockQty` mutations.
+
+- **Negative:**
+  - 5 new tables in one phase. Bigger Drizzle migration than Phase 4 (4 new tables).
+  - `v_item_stock` aggregate scan on every stock check. Mitigated by item count being small (<500); upgrade path is clear.
+  - Two denormalised inverse FKs (jc_ops.outsource_pr_id ↔ purchase_requests.source_jc_op_id, jc_ops.outsource_po_line_id ↔ purchase_order_lines.source_jc_op_id) need service-layer sync. CHECK constraint not feasible cross-table without triggers.
+
+- **Risks:**
+  - **Backfill miss on jc_ops outsource text → FK.** If the legacy `outsource_po_no` doesn't match a PO code in the new table (e.g. typo), backfill leaves the FK null. Mitigated: validate-phase5 will flag any jc_op that previously had a non-null text but ends up with null FK.
+  - **`store_txn_source_type` enum drift.** New source types (e.g. `assembly_consume`) emerge in later phases. ALTER TYPE add value is cheap; not a blocker.
+
+### Action items (T-035b implementation)
+
+- [ ] Drizzle schema in `apps/api/src/db/schema.ts` — 5 new tables + 6 new enums + `jc_ops` ALTER (drop 2 text cols, add 2 FK cols)
+- [ ] Migration: `0010_phase5_procurement.sql` (drizzle-gen — tables + enums + FKs + indexes + RLS) + `0011_phase5_jc_ops_alters.sql` (hand-written — drop legacy text cols, add FK cols, add indexes) + `0012_phase5_triggers.sql` (set_updated_at on the 5 new tables) + `0013_phase5_views.sql` (v_item_stock)
+- [ ] Apply via the existing `apply-sql.ts` runner for the hand-written migrations
+- [ ] Update SCHEMA.md "Migration History" with the four migration filenames
+
+---
+
 ## Pending Decisions
 
-- **ADR-013 (pending):** Domain name and transactional email-from address.
-- **ADR-014 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-016 (pending):** Domain name and transactional email-from address.
+- **ADR-017 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
