@@ -16,6 +16,7 @@ import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
 import { operatorsRoutes } from './modules/operators/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
+import { storeTransactionsRoutes } from './modules/store-transactions/routes';
 import { salesOrdersRoutes } from './modules/sales-orders/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
@@ -58,6 +59,7 @@ await app.register(jobCardsRoutes);
 await app.register(purchaseRequestsRoutes);
 await app.register(purchaseOrdersRoutes);
 await app.register(goodsReceiptNotesRoutes);
+await app.register(storeTransactionsRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

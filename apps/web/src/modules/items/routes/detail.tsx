@@ -1,6 +1,6 @@
 import type { Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,6 +10,20 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  useItemBalance,
+  useStoreTransactionsList,
+} from '@/modules/store-transactions/api';
+import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
 
@@ -125,15 +139,123 @@ function ItemDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardDescription className="font-mono">{item.code}</CardDescription>
-            <CardTitle>{item.name}</CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardDescription className="font-mono">{item.code}</CardDescription>
+                <CardTitle className="flex items-center gap-3">
+                  {item.name}
+                  <OnHandBadge itemId={item.id} />
+                </CardTitle>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <DetailGrid item={item} />
           </CardContent>
         </Card>
+
+        <StockHistoryCard itemId={item.id} />
       </div>
     </main>
+  );
+}
+
+function OnHandBadge(props: { itemId: string }) {
+  const { data, isLoading } = useItemBalance(props.itemId);
+  if (isLoading) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" /> stock…
+      </span>
+    );
+  }
+  const onHand = data?.onHand ?? 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${
+        onHand > 0
+          ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+          : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+      }`}
+      title="On-hand from v_item_stock — sum of in/out/adjust txns"
+    >
+      <Package className="h-3 w-3" />
+      On hand: <span className="font-mono">{onHand}</span>
+    </span>
+  );
+}
+
+function StockHistoryCard(props: { itemId: string }) {
+  const { data, isLoading, isError } = useStoreTransactionsList({
+    itemId: props.itemId,
+    limit: 20,
+    offset: 0,
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Stock history</CardTitle>
+        <CardDescription>
+          Last 20 ledger entries for this item.{' '}
+          <Link
+            to="/store-transactions"
+            search={(prev) => ({ ...prev })}
+            className="underline-offset-4 hover:underline"
+          >
+            View full ledger →
+          </Link>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>Ref</TableHead>
+              <TableHead>Stock before → after</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableEmpty colSpan={6}>
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading stock history…
+                </span>
+              </TableEmpty>
+            ) : isError ? (
+              <TableEmpty colSpan={6}>
+                <span className="text-destructive">Failed to load stock history.</span>
+              </TableEmpty>
+            ) : (data?.items.length ?? 0) === 0 ? (
+              <TableEmpty colSpan={6}>
+                No stock transactions for this item yet.
+              </TableEmpty>
+            ) : (
+              data!.items.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="text-sm">{r.txnDate}</TableCell>
+                  <TableCell>
+                    <TxnTypeBadge type={r.txnType} />
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{r.qty}</TableCell>
+                  <TableCell className="text-xs uppercase text-muted-foreground">
+                    {r.sourceType.replaceAll('_', ' ')}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{r.sourceRef}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {r.stockBefore} → <b>{r.stockAfter}</b>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

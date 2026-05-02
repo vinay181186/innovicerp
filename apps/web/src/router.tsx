@@ -35,6 +35,7 @@ import {
 } from './modules/purchase-orders/routes/edit';
 import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-pr';
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
+import { storeTransactionsListRoute } from './modules/store-transactions/routes/list';
 import { purchaseRequestDetailRoute } from './modules/purchase-requests/routes/detail';
 import {
   purchaseRequestEditRoute,
@@ -104,6 +105,7 @@ const routeTree = rootRoute.addChildren([
     goodsReceiptNotesListRoute,
     goodsReceiptNoteDetailRoute,
     goodsReceiptNoteEditRoute,
+    storeTransactionsListRoute,
   ]),
 ]);
 
