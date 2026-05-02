@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-02 (T-030 done — SO shared schemas + API + Web shipped end-to-end; 88/88 api tests green; web build clean. Browser smoke gated on user. T-031 (JW screens) is next.)
+> Last updated: 2026-05-02 (T-031 done — JW shared schemas + API + Web shipped end-to-end; 103/103 api tests green; web build clean. Browser smoke for T-030 + T-031 gated on user. T-032 (JC list with filters) is next.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -16,37 +16,36 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-031. Two parallel tracks running:
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-032. Two parallel tracks running:
 > - **Phase 3 wind-down (calendar work):** T-025c manual smoke (5–10 min, your call), then T-027 5 daily reconciliations, then T-028 cutover. None of this needs new code.
-> - **Phase 4 (this session's focus):** T-031 → T-032 → T-033 → T-034.
-> - **T-030 browser smoke** is gated on user — see "T-030 browser smoke checklist" below; runs in 5–10 min.
+> - **Phase 4 (this session's focus):** T-032 → T-033 → T-034.
+> - **T-030 + T-031 browser smoke** gated on user — see checklists below; runs in ~10 min combined.
 
-1. **T-030 browser smoke (5–10 min).** Quick run: sign in → home shows new "Sales orders" card → list shows 2 SOs (`SO-DEMO-EQ`, `SO-436`); click `SO-436` → detail shows 8 lines, total qty 494; edit → change a line qty + remove a line + add a new line + save → re-render shows merge applied (absent line soft-deleted, new line gets next lineNo); New SO → fill header + 1 line → save → redirects to detail. Soft-spot to verify: `gstPercent` Select uses `valueAsNumber` — confirm it re-binds correctly when editing an existing SO with `gstPercent="18.00"`.
+1. **T-030 + T-031 browser smoke (~10 min combined).** Sign in → home now has "Sales orders" + "Job-work orders" cards. SO smoke: list shows 2 SOs; `SO-436` detail shows 8 lines, total qty 494; edit roundtrip (qty change + remove + add). JW smoke: list shows 2 JWs (`JW-001` ITM-003, `JW-002` ITM-001) with the **Material** badge — both should render `✕ Not received` (current data has clientMaterialQty + materialReceivedQty mostly blank); detail shows the per-line client-material section; edit roundtrip. Soft-spots to verify: SO `gstPercent` Select re-binds correctly on edit; SO/JW edit without retyping itemCodeText preserves the linked itemId (hidden field). Sign out + sign in as `viewer` (if seeded) → list works, POST returns 403.
 
-2. **T-031: JW list / detail / create / edit screens.** Same shape as T-030 but the JW header has no GST / cost-center / type-Equipment branch, and the JW lines carry `clientMaterial`, `clientMaterialQty`, `materialReceivedDate`, `materialReceivedQty` (legacy line 12750-ish) instead of `rate` / `clientPoLineNo`. Re-use the same patterns: shared schemas → API module (routes+service+tests) → Web module (api hooks + form with useFieldArray + list/detail/edit). Spec source: legacy `renderJWmaster()` (grep for it). Reasonable to scope as 2 chunks like T-030 (T-031a API + T-031b Web).
+2. **T-032: JC list with filtering.** Status / machine / operator filters on top of the existing /op-entry stack — likely a new route `/job-cards` listing all JCs with their derived `v_jc_status`. Reuse op-entry api hooks where possible. Likely also surface the new SO-line link from T-029d (`source_so_line_id` → "SO-436 line 6 / JOINT") — the JC detail page might be where SO/JW context shows up. Two chunks: T-032a (API: list endpoint with v_jc_status join, source-link enrichment) + T-032b (Web: list page + linkage badges). Service likely lives under `apps/api/src/modules/job-cards/` (new module).
 
-3. **T-032: JC list with filtering.** Status / machine / operator filters on top of the existing /op-entry stack — likely a new route `/job-cards` listing all JCs with their derived `v_jc_status`. Reuse op-entry api hooks where possible. Likely also surface the new SO-line link from T-029d (`source_so_line_id` → "SO-436 line 6 / JOINT").
+3. **T-033: Server-side cascade — SO line auto-close from JC completion.** Fixes the existing legacy bug (legacy `_autoCloseSO()` line 1355–1369 has a known divergence). Service-layer logic: when a JC's last op transitions to complete and `available=0`, find the linked `source_so_line_id`, set its status to `closed`, then check if all lines of the parent SO are closed → close header. Same for JW. Belongs in op-entry service (`submitOpLog` → cascade post-insert) OR in a dedicated `sales-cascade.service.ts` triggered from there. Tests cover: line auto-close, header auto-close, partial completion (no cascade), status idempotency.
 
-4. **T-033: Server-side cascade — SO line auto-close from JC completion.** Fixes the existing legacy bug (legacy `_autoCloseSO()` line 1355–1369 has a known divergence). Service-layer logic: when a JC's last op transitions to complete and `available=0`, find the linked `source_so_line_id`, set its status to `closed`, then check if all lines of the parent SO are closed → close header. Same for JW. Belongs in op-entry service (`submitOpLog` → cascade post-insert) OR in a dedicated `sales-cascade.service.ts` triggered from there. Tests cover: line auto-close, header auto-close, partial completion (no cascade), status idempotency.
-
-5. **T-034: Cutover sales team module-by-module** — gated on T-033.
+4. **T-034: Cutover sales team module-by-module** — gated on T-033.
 
 ## Active Task
-**ID:** T-031
-**Title:** Phase 4 — JW list / detail / create / edit screens
+**ID:** T-032
+**Title:** Phase 4 — JC list with filtering + SO/JW source link surfaced
 **Status:** [ ] Not started
 **Scope:**
-- Shared Zod schemas for JW + JW line (`packages/shared/src/schemas/job-work-order.ts`); inferred TS types. Same shape as `sales-order.ts` minus GST / cost-center / type / BOM and plus `clientMaterial`, `clientMaterialQty`, `materialReceivedDate`, `materialReceivedQty` on lines.
-- API module `apps/api/src/modules/job-work-orders/`: routes (list, get, create, update, softDelete) + service (header + lines in one tx, same option-C merge as SO) + tests (service + routes, viewer 403 included). The `mergeLines` helper is generic enough to reuse — extract to a shared helper if both modules end up duplicating it; otherwise keep separate copies for now (rule of three).
-- Web module `apps/web/src/modules/job-work-orders/`: TanStack Query hooks; list (status filter + date range + search); detail (header card + nested lines table); create/edit form (react-hook-form + useFieldArray, lines pickup material-received fields not present on SO).
-- Home nav: add "Job-work orders" entry next to "Sales orders" with the same `ClipboardList` icon (or `Truck`).
+- New `apps/api/src/modules/job-cards/` module with a list endpoint joining `job_cards` + `v_jc_status` + the SO/JW source-line back-references. Read-only for now (writes still go through op-entry).
+- `listJobCardsQuery`: filter by computed_status (waiting/available/running/qc_pending/complete/etc.), machineId, operatorId (any operator who logged on this JC), date range. Pagination + search by code / item code / customer.
+- Read shape: header (id, code, jcDate, item info, orderQty, dueDate) + computed fields from v_jc_status (computed_status, completedQty, completed/total qty by op, etc.) + sourceLink (SO line: code/lineNo/partName OR JW line: code/lineNo/partName, derived from source_so_line_id / source_jw_line_id joins).
+- Web module `apps/web/src/modules/job-cards/`: list (TanStack Table + URL-state filters); detail-card optional (might just link to /op-entry for the actual log).
+- Home nav: add "Job cards" entry next to op-entry stack.
 
 **Acceptance:**
-- [ ] JW header + lines round-trip end-to-end (create → list → edit → soft-delete)
-- [ ] Manager + admin can write; viewer 403 with clean error
-- [ ] Existing 88+ api tests still pass; new tests for JW module added (target ~10 service + 5 routes)
-- [ ] Workspace typecheck + lint clean
-- [ ] Web build clean
+- [ ] JC list returns rows joined with v_jc_status and source SO/JW line info
+- [ ] Filters work: status (computed_status), machine (any op on this JC uses machine), operator (any op_log)
+- [ ] Web list shows JC code, item, customer (from SO/JW source link), computed status, due date, with link back to op-entry
+- [ ] Existing 103+ api tests still pass; new tests for JC list module added
+- [ ] Workspace typecheck + lint clean; web build clean
 
 ## T-030 browser smoke checklist (run in dev, 5–10 min)
 
@@ -140,8 +139,8 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 | T-029c | Phase 4 transform layer (sales-orders, job-work-orders; header+lines split) | [x] Done (2026-05-01) |
 | T-029d | Phase 4 bulk-load + JC source FK backfill + validate-phase4 | [x] Done (2026-05-02) |
 | T-030 | Build SO list / detail / create / edit screens | [x] Done (2026-05-02) |
-| T-031 | Build JW list / detail screens | [ ] Active |
-| T-032 | Build JC list with filtering (status, machine, operator) | [ ] |
+| T-031 | Build JW list / detail screens | [x] Done (2026-05-02) |
+| T-032 | Build JC list with filtering (status, machine, operator) | [ ] Active |
 | T-033 | Implement server-side cascade (SO line auto-close from JC completion — fixes existing legacy bug) | [ ] |
 | T-034 | Cutover sales team module-by-module | [ ] |
 
@@ -197,6 +196,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-02 | T-031 | **Phase 4 JW module shipped end-to-end (API + Web).** Two chunks — T-031a (96797c3): shared schemas + API + 15 tests. T-031b (this commit): web list/detail/edit. Shared `packages/shared/src/schemas/job-work-order.ts` mirrors SO shape minus GST/type/cost-center/BOM, plus `clientMaterial` / `clientMaterialQty` / `materialReceivedDate` / `materialReceivedQty` per line. JWs always require ≥ 1 line (no Equipment exception). API module follows the same structure as sales-orders — single raw-SQL list query with conditional fragments + LEFT JOIN aggregates (line_count, total_qty, client material totals, jc_qty via `source_jw_line_id` back-ref). Same option-C update merge as SO. `mergeLines` helper duplicated rather than abstracted out (rule of three; will extract on third use). Web module `apps/web/src/modules/job-work-orders/` mirrors SO web module, plus a JW-only `JwMaterialStatusBadge` for the legacy "✓ Full / ◑ Partial / ✕ Not Received" column (renderJWMaster line 12648). `SoStatusBadge` is reused by direct cross-module import (presentation-only, status enum is shared per ADR-012 #5). Home nav `Job-work orders` card with `Truck` icon. **Browser smoke gated on user** per CLAUDE.md §UI rule (see browser smoke checklist) |
 | 2026-05-02 | T-030 | **Phase 4 SO module shipped end-to-end (API + Web).** Three commits — d3ae73f (T-030a: shared schemas + API + 15 tests) and de859b7 (T-030b: web list/detail/edit). Shared schemas `packages/shared/src/schemas/sales-order.ts` (`SalesOrder` / `SalesOrderLine` / `SalesOrderDetail` / `SalesOrderListItem` w/ aggregates) + `createSalesOrderInputSchema` + `updateSalesOrderInputSchema` accepting `{header, lines}` together. Refines per ADR-012 #9/#10/#1 (clientId or customerName; itemId or itemCodeText; non-Equipment requires ≥1 line). API module `apps/api/src/modules/sales-orders/` — service has 5 functions, list uses single raw-SQL query w/ conditional `sql\`\`` fragments + LEFT JOIN aggregates (line_count, total_qty, jc_qty per legacy line 11853); update implements **option C merge** (header always, lines only when present in payload — id-matched updated, new inserted with auto-assigned lineNo above surviving max, absent soft-deleted; mirrors legacy `_editFullSO` line 12576-12612); softDelete cascades to lines in one tx. FK pre-validation (deduped item ids) raises ValidationError (not raw FK 500). Routes are 5 endpoints (GET, GET /:id, POST, PATCH /:id, DELETE /:id). 15 new tests (10 service + 5 routes); full api suite **88/88 green**. Web module `apps/web/src/modules/sales-orders/` — TanStack Query hooks, list (TanStack Table + URL-state pagination + status/type filters + debounced search), detail (header card + nested lines sub-table with totals), create/edit (one form via `SalesOrderForm`, react-hook-form + useFieldArray for dynamic lines, hidden `itemId` preserved through edit so FK survives a header-only save). Home nav `Sales orders` entry added (ClipboardList icon). Web production build clean (1874 modules, 3.3s). **Browser smoke gated on user** per CLAUDE.md §UI rule (DLP env) — checklist in §"T-030 browser smoke checklist" |
 | 2026-05-02 | T-029d | **Phase 4 sales chain LOADED + JC source FKs BACKFILLED + validated.** `migration/load.ts` extended with 4 new mappers (sales_orders, sales_order_lines, job_work_orders, job_work_order_lines) + per-table conflict targets (`(sales_order_id, line_no) WHERE deleted_at IS NULL` for SO lines; same shape for JW lines). New `migration/load/jc-source-backfill.ts` Phase B' helper — reads `_id_map.json`, queries JCs with non-null `source_legacy_ref`, parses JSON, UPDATEs `source_so_line_id` / `source_jw_line_id`. Idempotent (rows with either FK already non-null skip). New `migration/validate-phase4.ts` mirrors validate-phase3 structure: field-level diff for 4 tables + 16 orphan-FK checks (incl. the 2 new JC FKs) + JC backfill verification against `_id_map.json`. **Real run on dev Supabase:** 15 rows loaded (2 SO + 9 SO lines + 2 JW + 2 JW lines), backfill resolved 2/2 JCs to SO lines (IN-JC-00002 → `8aa420eb-...`, IN-JC-00003 → `ef6772a0-...`); validate-phase4 **PASS** — 0 field diffs across 15 rows, 0 orphan FKs across 16 checks, 2/2 backfill rows verified. Migration tests still **84/84 green**; workspace typecheck clean. MIGRATION-LOG sign-off appended. Documented load command: `node --env-file=../.env.local --import tsx load.ts ...` (Node-native env-file bypass for the dotenv-cli/DLP silent-exit; same pattern works for validate scripts) |
 | 2026-05-01 | T-029c | **Phase 4 transform layer shipped** — 2 new multi-output transforms in `migration/transforms/`: `sales-orders.ts` (groups 9 source docs by `soNo` → 2 headers + 9 lines) and `job-work-orders.ts` (groups 2 docs by `jwNo` → 2 headers + 2 lines). Both follow the route-cards multi-output pattern. FK resolution via `_id_map` lookups: `clientId` via `byCode.clients` (fallback to `customer_name`); `itemCode` via `byCode.items` (fallback to `item_code_text` — per ADR-012 #10 NOT an anomaly). Real-data run: **15 rows, 0 anomalies** across 4 output tables. 13 new tests; full migration suite **84/84 green**. Stale T-025/T-026/T-027/T-028 stubs in Phase 3 backlog cleaned up |

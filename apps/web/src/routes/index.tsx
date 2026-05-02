@@ -22,6 +22,7 @@ const MASTER_LINKS = [
   { to: '/op-entry/machines', icon: Cog, title: 'Op Entry (machine-first)', subtitle: 'Pick a machine, see what runs there' },
   { to: '/op-entry/running', icon: Activity, title: 'Live operations board', subtitle: 'Sessions running right now' },
   { to: '/sales-orders', icon: ClipboardList, title: 'Sales orders', subtitle: 'Customer orders, lines, and status' },
+  { to: '/job-work-orders', icon: Truck, title: 'Job-work orders', subtitle: 'Customer-supplied material → finished parts' },
   { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
   { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },
   { to: '/vendors', icon: Truck, title: 'Vendors master', subtitle: 'Suppliers we buy from' },
