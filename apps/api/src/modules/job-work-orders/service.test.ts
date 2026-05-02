@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
@@ -30,10 +30,20 @@ beforeAll(async () => {
     role: u.role,
     isActive: u.isActive,
   };
+  // Oldest non-test-prefixed item — sidesteps cross-test pollution where
+  // op-entry's afterAll would delete a test item still referenced by a JW
+  // line. Migrated seed items predate any test-created item.
   const itemRow = await db
     .select({ id: items.id })
     .from(items)
-    .where(eq(items.companyId, u.companyId))
+    .where(
+      and(
+        eq(items.companyId, u.companyId),
+        isNull(items.deletedAt),
+        notLike(items.code, 'T%-%'),
+      ),
+    )
+    .orderBy(asc(items.createdAt))
     .limit(1);
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');

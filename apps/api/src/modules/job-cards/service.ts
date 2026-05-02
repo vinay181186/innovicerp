@@ -1,0 +1,299 @@
+// Job Cards service (T-032). Read-only at this phase — JC writes still go
+// through op-entry per Phase 3.
+//
+// One canonical query joins:
+//   job_cards
+//   ⨝ items (LEFT — drawing/code/name)
+//   ⨝ v_jc_status (LEFT — computed_status + ops counts)
+//   ⨝ sales_order_lines + sales_orders (LEFT — SO source link)
+//   ⨝ job_work_order_lines + job_work_orders (LEFT — JW source link)
+//   ⨝ clients (LEFT — fallback customer name)
+//
+// Filters live as conditional `sql\`\`` fragments. machineId / operatorId use
+// EXISTS sub-selects on jc_ops / op_log so we don't blow up the row set.
+
+import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { jobCards } from '../../db/schema';
+import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import type {
+  JobCardListItem,
+  JobCardSourceLink,
+  ListJobCardsQuery,
+  ListJobCardsResponse,
+} from './schema';
+
+const requireCompany = (user: AuthContext): string => {
+  if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
+  return user.companyId;
+};
+
+// ─── Reads ────────────────────────────────────────────────────────────────
+
+export async function listJobCards(
+  input: ListJobCardsQuery,
+  user: AuthContext,
+): Promise<ListJobCardsResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const term = input.search ? `%${input.search}%` : null;
+    const searchFrag = term
+      ? sql`AND (
+          jc.code ILIKE ${term}
+          OR i.code ILIKE ${term}
+          OR i.name ILIKE ${term}
+          OR so.code ILIKE ${term}
+          OR jw.code ILIKE ${term}
+          OR so.customer_name ILIKE ${term}
+          OR jw.customer_name ILIKE ${term}
+          OR cli_so.name ILIKE ${term}
+          OR cli_jw.name ILIKE ${term}
+        )`
+      : sql``;
+    const statusFrag = input.status
+      ? sql`AND COALESCE(s.computed_status, 'no_ops') = ${input.status}`
+      : sql``;
+    const fromFrag = input.fromDate
+      ? sql`AND jc.jc_date >= ${input.fromDate}::date`
+      : sql``;
+    const toFrag = input.toDate ? sql`AND jc.jc_date <= ${input.toDate}::date` : sql``;
+    // Machine filter: JC has at least one op assigned to this machine.
+    const machineFrag = input.machineId
+      ? sql`AND EXISTS (
+          SELECT 1 FROM public.jc_ops jo
+          WHERE jo.job_card_id = jc.id
+            AND jo.machine_id = ${input.machineId}::uuid
+            AND jo.deleted_at IS NULL
+        )`
+      : sql``;
+    // Operator filter: JC has at least one op_log entry by this operator
+    // (joined via jc_ops).
+    const operatorFrag = input.operatorId
+      ? sql`AND EXISTS (
+          SELECT 1 FROM public.op_log ol
+          JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
+          WHERE jo.job_card_id = jc.id
+            AND ol.operator_id = ${input.operatorId}::uuid
+        )`
+      : sql``;
+
+    const result = await tx.execute(sql`
+      SELECT
+        jc.id, jc.company_id AS "companyId", jc.code,
+        jc.jc_date AS "jcDate", jc.item_id AS "itemId",
+        jc.order_qty AS "orderQty", jc.priority,
+        jc.due_date AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
+        jc.closed_at AS "closedAt",
+        jc.created_at AS "createdAt", jc.created_by AS "createdBy",
+        jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
+        i.code AS "itemCode", i.name AS "itemName",
+        COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
+        COALESCE(s.total_ops, 0)::int        AS "totalOps",
+        COALESCE(s.done_ops, 0)::int         AS "doneOps",
+        COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
+        sol.id   AS "soLineId",   so.id  AS "soId",
+        so.code  AS "soCode",     sol.line_no AS "soLineNo",
+        sol.part_name AS "soPartName",
+        jwl.id   AS "jwLineId",   jw.id  AS "jwId",
+        jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
+        jwl.part_name AS "jwPartName",
+        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName"
+      FROM public.job_cards jc
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.clients cli_so
+        ON cli_so.id = so.client_id AND cli_so.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jw
+        ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.clients cli_jw
+        ON cli_jw.id = jw.client_id AND cli_jw.deleted_at IS NULL
+      WHERE jc.company_id = ${companyId}::uuid
+        AND jc.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${fromFrag}
+        ${toFrag}
+        ${machineFrag}
+        ${operatorFrag}
+      ORDER BY jc.jc_date DESC, jc.code DESC
+      LIMIT ${input.limit} OFFSET ${input.offset}
+    `);
+
+    // Total count uses the same WHERE clauses minus pagination. Drizzle ORM
+    // doesn't help here because of the v_jc_status join; reuse the raw query.
+    const countResult = await tx.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM public.job_cards jc
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.clients cli_so
+        ON cli_so.id = so.client_id AND cli_so.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jw
+        ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.clients cli_jw
+        ON cli_jw.id = jw.client_id AND cli_jw.deleted_at IS NULL
+      WHERE jc.company_id = ${companyId}::uuid
+        AND jc.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${fromFrag}
+        ${toFrag}
+        ${machineFrag}
+        ${operatorFrag}
+    `);
+    const total = Number((countResult as unknown as Array<{ count: number }>)[0]?.count ?? 0);
+
+    const items = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    return { items, total, limit: input.limit, offset: input.offset };
+  });
+}
+
+export async function getJobCard(id: string, user: AuthContext): Promise<JobCardListItem> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Cheap exists-check first so we surface 404 (not "no rows" silent empty)
+    // before running the heavy join.
+    const exists = await tx
+      .select({ id: jobCards.id })
+      .from(jobCards)
+      .where(
+        and(
+          eq(jobCards.id, id),
+          eq(jobCards.companyId, companyId),
+          isNull(jobCards.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (exists.length === 0) throw new NotFoundError(`Job card ${id} not found`);
+
+    const result = await tx.execute(sql`
+      SELECT
+        jc.id, jc.company_id AS "companyId", jc.code,
+        jc.jc_date AS "jcDate", jc.item_id AS "itemId",
+        jc.order_qty AS "orderQty", jc.priority,
+        jc.due_date AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
+        jc.closed_at AS "closedAt",
+        jc.created_at AS "createdAt", jc.created_by AS "createdBy",
+        jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
+        i.code AS "itemCode", i.name AS "itemName",
+        COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
+        COALESCE(s.total_ops, 0)::int        AS "totalOps",
+        COALESCE(s.done_ops, 0)::int         AS "doneOps",
+        COALESCE(s.qc_pending_ops, 0)::int   AS "qcPendingOps",
+        sol.id   AS "soLineId",   so.id  AS "soId",
+        so.code  AS "soCode",     sol.line_no AS "soLineNo",
+        sol.part_name AS "soPartName",
+        jwl.id   AS "jwLineId",   jw.id  AS "jwId",
+        jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
+        jwl.part_name AS "jwPartName",
+        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName"
+      FROM public.job_cards jc
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.clients cli_so
+        ON cli_so.id = so.client_id AND cli_so.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jw
+        ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.clients cli_jw
+        ON cli_jw.id = jw.client_id AND cli_jw.deleted_at IS NULL
+      WHERE jc.id = ${id}::uuid
+    `);
+    const row = (result as unknown as Array<Record<string, unknown>>)[0];
+    if (!row) throw new NotFoundError(`Job card ${id} not found`);
+    return toListItem(row);
+  });
+}
+
+// ─── Mappers ──────────────────────────────────────────────────────────────
+
+function dateLike(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
+function tsLike(v: unknown): string {
+  if (v instanceof Date) return v.toISOString();
+  return String(v);
+}
+
+function buildSourceLink(r: Record<string, unknown>): JobCardSourceLink | null {
+  if (r['soLineId']) {
+    return {
+      type: 'so',
+      salesOrderId: r['soId'] as string,
+      salesOrderLineId: r['soLineId'] as string,
+      code: r['soCode'] as string,
+      lineNo: Number(r['soLineNo']),
+      partName: (r['soPartName'] as string | null) ?? null,
+    };
+  }
+  if (r['jwLineId']) {
+    return {
+      type: 'jw',
+      jobWorkOrderId: r['jwId'] as string,
+      jobWorkOrderLineId: r['jwLineId'] as string,
+      code: r['jwCode'] as string,
+      lineNo: Number(r['jwLineNo']),
+      partName: (r['jwPartName'] as string | null) ?? null,
+    };
+  }
+  return null;
+}
+
+function toListItem(r: Record<string, unknown>): JobCardListItem {
+  return {
+    id: r['id'] as string,
+    companyId: r['companyId'] as string,
+    code: r['code'] as string,
+    jcDate: dateLike(r['jcDate']),
+    itemId: r['itemId'] as string,
+    itemCode: (r['itemCode'] as string | null) ?? '',
+    itemName: (r['itemName'] as string | null) ?? '',
+    orderQty: Number(r['orderQty']),
+    priority: r['priority'] as JobCardListItem['priority'],
+    dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
+    drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
+    computedStatus: r['computedStatus'] as JobCardListItem['computedStatus'],
+    totalOps: Number(r['totalOps'] ?? 0),
+    doneOps: Number(r['doneOps'] ?? 0),
+    qcPendingOps: Number(r['qcPendingOps'] ?? 0),
+    sourceLink: buildSourceLink(r),
+    customerName: (r['customerName'] as string | null) ?? null,
+    createdAt: tsLike(r['createdAt']),
+    createdBy: r['createdBy'] as string,
+    updatedAt: tsLike(r['updatedAt']),
+    updatedBy: r['updatedBy'] as string,
+  };
+}
+
+// ─── Convenience: total count alone (currently only used for tests) ───────
+
+export async function countJobCards(user: AuthContext): Promise<number> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({ value: count() })
+      .from(jobCards)
+      .where(and(eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)));
+    return rows[0]?.value ?? 0;
+  });
+}

@@ -8,6 +8,7 @@ import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
 import { clientsRoutes } from './modules/clients/routes';
 import { itemsRoutes } from './modules/items/routes';
+import { jobCardsRoutes } from './modules/job-cards/routes';
 import { jobWorkOrdersRoutes } from './modules/job-work-orders/routes';
 import { machinesRoutes } from './modules/machines/routes';
 import { opEntryRoutes } from './modules/op-entry/routes';
@@ -50,6 +51,7 @@ await app.register(operatorsRoutes);
 await app.register(opEntryRoutes);
 await app.register(salesOrdersRoutes);
 await app.register(jobWorkOrdersRoutes);
+await app.register(jobCardsRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

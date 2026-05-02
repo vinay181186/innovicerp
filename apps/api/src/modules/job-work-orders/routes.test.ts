@@ -1,4 +1,4 @@
-import { eq, like } from 'drizzle-orm';
+import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
@@ -34,10 +34,18 @@ beforeAll(async () => {
     role: u.role,
     isActive: u.isActive,
   };
+  // Oldest non-test-prefixed item — see note in service.test.ts.
   const itemRow = await db
     .select({ id: items.id })
     .from(items)
-    .where(eq(items.companyId, u.companyId))
+    .where(
+      and(
+        eq(items.companyId, u.companyId),
+        isNull(items.deletedAt),
+        notLike(items.code, 'T%-%'),
+      ),
+    )
+    .orderBy(asc(items.createdAt))
     .limit(1);
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');
