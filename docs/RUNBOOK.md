@@ -122,6 +122,90 @@ Repeat Part A in Firefox. Optional: Edge / Safari if any user is on those.
 ### Sign-off
 Record date + browsers + roles tested + result in `docs/TASKS.md` recently-completed table, with a one-line note. Phase cutovers also get an entry in `docs/MIGRATION-LOG.md`.
 
+## Phase Cutover — Module-by-Module User Migration
+
+The Phase 5 procurement cutover (T-037) is the first time we use this. Phase 4 sales cutover (T-034) and future phase cutovers follow the same shape — substitute the module list and the per-user smoke checks.
+
+### Pre-cutover (do once, before the first user)
+
+1. **Re-run the phase validator** to confirm dev DB still matches transform:
+   ```
+   pnpm --filter @innovic/migration validate:phase5
+   ```
+   Must end with `overallStatus: PASS`. If it FAILs on a transient pooler issue (rows visible in one run but not the next), re-run; if still failing, investigate before cutting anyone over. Output lands in `migration/load-output/_phase5_validation.json` (gitignored).
+
+2. **Snapshot the pre-cutover state** for post-cutover diffing. Quick ad-hoc:
+   ```
+   pnpm --filter @innovic/migration tsx -e "
+     import('./load/db.ts').then(async ({rawSql, closeDb}) => {
+       const c = (await rawSql\`SELECT id FROM public.companies LIMIT 1\`)[0].id;
+       for (const t of ['purchase_requests','purchase_orders','purchase_order_lines','goods_receipt_notes','goods_receipt_note_lines','store_transactions']) {
+         const r = await rawSql\`SELECT count(*)::int AS c FROM public.\${rawSql(t)} WHERE company_id = \${c}::uuid\`;
+         console.log(t, r[0].c);
+       }
+       const stock = await rawSql\`SELECT item_id, on_hand_qty FROM public.v_item_stock WHERE company_id = \${c}::uuid ORDER BY item_id\`;
+       console.log('v_item_stock rows:', stock.length, '· total on_hand:', stock.reduce((s,r)=>s+r.on_hand_qty,0));
+       await closeDb();
+     });
+   "
+   ```
+   Save the output as the pre-cutover baseline (paste into a session note or commit to a `cutover-snapshots/` folder if you want history).
+
+3. **Confirm the legacy HTML is still reachable** as the safety net (CLAUDE.md §Phase 9 turns it off later). Procurement users should be able to flip back to it if anything breaks during cutover.
+
+4. **Pick the first user** — usually an admin or a comfortable senior procurement person. Avoid the busiest hour; pick a quiet window (early morning or end-of-day IST).
+
+### Per-user cutover steps
+
+For each user being cut over:
+
+1. **Pre-flight (with user, ~5 min):**
+   - Sign in as the user in the new system.
+   - Open their key procurement screens. For Phase 5 that's: Purchase requests · Purchase orders · Goods receipt notes · Store transactions.
+   - Confirm everything they own is visible (filter by `vendorId` or scroll the list).
+   - On a single live PR / PO they recognise, click through to detail. Confirm vendor / item / qty / status all match what they see in the legacy system.
+
+2. **Workflow smoke (~10 min, with the user driving):**
+   - **PR**: list shows their open PRs; create a fresh test PR (e.g. vendor + item + qty=1 + estCost=1) → save → confirm status `open`.
+   - **PR → PO**: open the test PR → "Create PO" button → fill code (e.g. `CUTOVER-TEST-<initials>-001`) + date + GST → save. Confirm: PR status flips to `po_created`; PO appears in /purchase-orders with status `open`; "Open linked PO" button on the PR works.
+   - **PO → GRN**: from the new PO detail → "Receive (new GRN)" button → form pre-fills vendor + 1 line received=1 + qcStatus=pending → save GRN. Confirm: PO status flips to `qc_pending` (received qty matches order qty, but QC not yet complete); PO line received_qty = 1.
+   - **GRN QC accept (the cascade test)**: edit the GRN line → qcStatus=`completed` + qcAcceptedQty=1 + qcDate=today → save. Confirm: PO status flips to `closed`; the item's master detail page now shows On hand bumped by 1 and a new row in Stock history (type=`in`, source=`grn_qc`, source_ref starts with the GRN code).
+   - **Locks**: try to edit the QC-completed line again (qcAcceptedQty back to 0) → expect 409 ConflictError surfaced as a toast; "create reversing GRN line instead" message. Try to delete the GRN → button disabled with hover title.
+
+3. **Hand-off:**
+   - User keeps the new system open; legacy stays reachable as the safety net.
+   - They use the new system for all their next procurement actions during the soak.
+   - Capture any gaps surfaced as new tasks in `docs/TASKS.md` — do NOT extend T-037 with rolling fixes.
+
+4. **Soak (1–2 days):**
+   - Watch for: items master on_hand drifting from legacy stock counts (unexpected), PO header status not flipping when expected, store_transactions rows missing for QC accepts, viewer/role users seeing things they shouldn't.
+   - Daily during soak: re-run `validate:phase5` and re-snapshot counts; per-table count must equal `pre_cutover_count + new_writes_today`.
+
+5. **Cut next user** once first user has soaked clean.
+
+### Rollback (if cutover goes sideways for one user)
+
+The new system writes are durable but additive — rolling a single user back means:
+
+1. Tell the user to use legacy only for their next actions.
+2. Identify writes the user made in the new system during the cutover. Tag them with `remarks` so they're easy to spot, OR query by `created_by = <user.id> AND created_at > <cutover_start_ts>`.
+3. Decide for each: (a) re-enter into legacy (most common — duplicate write), (b) leave in new only (if the user is willing to consult the new system for those records), or (c) soft-delete from new (`PATCH … status=cancelled` for PRs/POs; for GRN lines that have already QC-accepted, see below).
+4. **GRN QC-completed rollback is special**: those wrote `store_transactions` rows that the new on-hand depends on. Don't soft-delete the GRN — instead create a reversing GRN line on the same PO with type=`adjust` (T-036c product call). If you need a clean rollback that erases the on-hand bump, fall through to a manual SQL adjustment in coordination with the user — document in `docs/MIGRATION-LOG.md` and apply the inverse `store_transactions` row by hand.
+
+### Soft-delete vs cancel in cutover noise
+
+During cutover, prefer **cancel** (status='cancelled' on PR / PO) over **soft-delete** for any test or duplicate records — leaves the audit trail intact and avoids the "PR has linked PO" deletion guard. Reserve soft-delete for genuine mistakes.
+
+### Sign-off
+
+When the last procurement user is cut over and has soaked clean for ≥1 day:
+
+1. Append a row to `docs/MIGRATION-LOG.md` under "Phase 5 cutover sign-off": date, users + dates each cut over, count of writes during cutover, any incidents.
+2. Update `docs/TASKS.md`: mark T-037 done; recently-completed entry summarises any gaps captured.
+3. Mention in the ADR or at minimum the TASKS.md entry whether legacy HTML stays reachable or has been retired for procurement (Phase 9 turns it off globally).
+
+---
+
 ## Monthly Restore Drill (T-058)
 First Monday of every month:
 1. Pull latest backup.
