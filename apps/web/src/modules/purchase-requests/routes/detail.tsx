@@ -1,6 +1,6 @@
 import type { PurchaseRequest } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -84,6 +84,22 @@ function PurchaseRequestDetailPage() {
             </Link>
           </Button>
           <div className="flex items-center gap-2">
+            {detail.status === 'open' || detail.status === 'approved' ? (
+              <Button asChild variant="default" size="sm">
+                <Link to="/purchase-orders/from-pr" search={{ prId: detail.id }}>
+                  <FileText />
+                  Create PO
+                </Link>
+              </Button>
+            ) : null}
+            {detail.poId ? (
+              <Button asChild variant="outline" size="sm">
+                <Link to="/purchase-orders/$id" params={{ id: detail.poId }}>
+                  <FileText />
+                  Open linked PO
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm">
               <Link to="/purchase-requests/$id/edit" params={{ id: detail.id }}>
                 <Pencil />

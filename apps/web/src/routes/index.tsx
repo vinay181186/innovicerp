@@ -27,6 +27,7 @@ const MASTER_LINKS = [
   { to: '/job-work-orders', icon: Truck, title: 'Job-work orders', subtitle: 'Customer-supplied material → finished parts' },
   { to: '/job-cards', icon: Factory, title: 'Job cards', subtitle: 'Production batches with computed status + source link' },
   { to: '/purchase-requests', icon: FileText, title: 'Purchase requests', subtitle: 'Procurement intent — bridges plan / outsource to a PO' },
+  { to: '/purchase-orders', icon: ClipboardList, title: 'Purchase orders', subtitle: 'Vendor orders with line-level receipt + QC tracking' },
   { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
   { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },
   { to: '/vendors', icon: Truck, title: 'Vendors master', subtitle: 'Suppliers we buy from' },

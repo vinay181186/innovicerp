@@ -27,3 +27,4 @@ export * from './schemas/sales-order';
 export * from './schemas/job-work-order';
 export * from './schemas/job-card';
 export * from './schemas/purchase-request';
+export * from './schemas/purchase-order';

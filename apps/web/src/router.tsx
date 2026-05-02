@@ -21,6 +21,13 @@ import { runningOpsRoute } from './modules/op-entry/routes/running';
 import { operatorsListRoute } from './modules/operators/routes/list';
 import { operatorDetailRoute } from './modules/operators/routes/detail';
 import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
+import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
+import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
+import {
+  purchaseOrderEditRoute,
+  purchaseOrderNewRoute,
+} from './modules/purchase-orders/routes/edit';
+import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-pr';
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { purchaseRequestDetailRoute } from './modules/purchase-requests/routes/detail';
 import {
@@ -80,6 +87,13 @@ const routeTree = rootRoute.addChildren([
     purchaseRequestNewRoute,
     purchaseRequestDetailRoute,
     purchaseRequestEditRoute,
+    // Order matters: more-specific paths first so /purchase-orders/from-pr +
+    // /purchase-orders/new beat /purchase-orders/$id.
+    purchaseOrderFromPrRoute,
+    purchaseOrderNewRoute,
+    purchaseOrdersListRoute,
+    purchaseOrderDetailRoute,
+    purchaseOrderEditRoute,
   ]),
 ]);
 
