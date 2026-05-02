@@ -1,0 +1,304 @@
+import { eq, like } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db } from '../../db/client';
+import { items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
+import type { AuthContext } from '../../db/with-user-context';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
+import * as service from './service';
+
+const TEST_PREFIX = 'T031-';
+const ADMIN_EMAIL = 'innovic.technology@gmail.com';
+
+let admin: AuthContext;
+let firstItemId: string;
+
+beforeAll(async () => {
+  const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
+  const u = rows[0];
+  if (!u || !u.companyId) {
+    throw new Error('Seed admin missing — run pnpm --filter api seed');
+  }
+  admin = {
+    id: u.id,
+    email: u.email,
+    companyId: u.companyId,
+    role: u.role,
+    isActive: u.isActive,
+  };
+  const itemRow = await db
+    .select({ id: items.id })
+    .from(items)
+    .where(eq(items.companyId, u.companyId))
+    .limit(1);
+  const it = itemRow[0];
+  if (!it) throw new Error('No items in seed company — run migration load first');
+  firstItemId = it.id;
+});
+
+afterAll(async () => {
+  const testHeaders = await db
+    .select({ id: jobWorkOrders.id })
+    .from(jobWorkOrders)
+    .where(like(jobWorkOrders.code, `${TEST_PREFIX}%`));
+  const ids = testHeaders.map((h) => h.id);
+  if (ids.length > 0) {
+    for (const id of ids) {
+      await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, id));
+    }
+    await db.delete(jobWorkOrders).where(like(jobWorkOrders.code, `${TEST_PREFIX}%`));
+  }
+});
+
+describe('job-work-orders service', () => {
+  it('createJobWorkOrder inserts header + lines with audit columns + numeric formatting', async () => {
+    const code = `${TEST_PREFIX}A1`;
+    const detail = await service.createJobWorkOrder(
+      {
+        header: {
+          code,
+          jwDate: '2026-05-02',
+          customerName: 'JW Acme',
+          status: 'open',
+        },
+        lines: [
+          {
+            partName: 'Machined Shaft',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 10,
+            clientMaterial: 'EN8 Round Bar 50mm',
+            clientMaterialQty: 12.5,
+            materialReceivedDate: '2026-05-01',
+            materialReceivedQty: 10,
+          },
+          {
+            partName: 'Bracket',
+            itemCodeText: 'NONEXISTENT-BRK',
+            uom: 'NOS',
+            orderQty: 5,
+          },
+        ],
+      },
+      admin,
+    );
+    expect(detail.code).toBe(code);
+    expect(detail.companyId).toBe(admin.companyId);
+    expect(detail.createdBy).toBe(admin.id);
+    expect(detail.lines).toHaveLength(2);
+    expect(detail.lines[0]?.lineNo).toBe(1);
+    expect(detail.lines[0]?.itemId).toBe(firstItemId);
+    expect(detail.lines[0]?.itemCodeText).toBeNull();
+    // numeric formatting
+    expect(detail.lines[0]?.clientMaterialQty).toBe('12.50');
+    expect(detail.lines[0]?.materialReceivedQty).toBe('10.00');
+    expect(detail.lines[0]?.materialReceivedDate).toBe('2026-05-01');
+    // ADR-012 #10 fallback
+    expect(detail.lines[1]?.itemId).toBeNull();
+    expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-BRK');
+    expect(detail.lines[1]?.lineNo).toBe(2);
+  });
+
+  it('createJobWorkOrder rejects duplicate code in same company', async () => {
+    const code = `${TEST_PREFIX}DUP`;
+    await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', status: 'open' },
+        lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+      },
+      admin,
+    );
+    await expect(
+      service.createJobWorkOrder(
+        {
+          header: { code, jwDate: '2026-05-02', customerName: 'Dup Co', status: 'open' },
+          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('createJobWorkOrder rejects invalid clientId with ValidationError', async () => {
+    await expect(
+      service.createJobWorkOrder(
+        {
+          header: {
+            code: `${TEST_PREFIX}BADCLI`,
+            jwDate: '2026-05-02',
+            clientId: '00000000-0000-0000-0000-000000000000',
+            status: 'open',
+          },
+          lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('getJobWorkOrder returns header + lines ordered by lineNo', async () => {
+    const code = `${TEST_PREFIX}G1`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Gettable', status: 'open' },
+        lines: [
+          { partName: 'Line One', itemId: firstItemId, uom: 'NOS', orderQty: 3 },
+          { partName: 'Line Two', itemId: firstItemId, uom: 'NOS', orderQty: 7 },
+        ],
+      },
+      admin,
+    );
+    const fetched = await service.getJobWorkOrder(created.id, admin);
+    expect(fetched.id).toBe(created.id);
+    expect(fetched.lines.map((l) => l.lineNo)).toEqual([1, 2]);
+    expect(fetched.lines[0]?.partName).toBe('Line One');
+  });
+
+  it('getJobWorkOrder throws NotFoundError for unknown id', async () => {
+    await expect(
+      service.getJobWorkOrder('00000000-0000-0000-0000-000000000000', admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('listJobWorkOrders returns aggregates incl. material totals + status filter', async () => {
+    const code = `${TEST_PREFIX}LST`;
+    await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Listable', status: 'open' },
+        lines: [
+          {
+            partName: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 4,
+            clientMaterialQty: 5,
+            materialReceivedQty: 4,
+          },
+          {
+            partName: 'B',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 6,
+            clientMaterialQty: 7,
+            materialReceivedQty: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    const result = await service.listJobWorkOrders(
+      { search: 'T031-LST', status: 'open', limit: 50, offset: 0 },
+      admin,
+    );
+    expect(result.items.length).toBeGreaterThanOrEqual(1);
+    const found = result.items.find((j) => j.code === code);
+    expect(found?.lineCount).toBe(2);
+    expect(found?.totalQty).toBe(10);
+    // numeric → string aggregation
+    expect(Number(found?.clientMaterialQtyTotal)).toBe(12);
+    expect(Number(found?.materialReceivedQtyTotal)).toBe(4);
+    expect(found?.jcQty).toBe(0);
+  });
+
+  it('updateJobWorkOrder header-only does NOT touch lines', async () => {
+    const code = `${TEST_PREFIX}UH1`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Before', status: 'open' },
+        lines: [{ partName: 'Stay', itemId: firstItemId, uom: 'NOS', orderQty: 9 }],
+      },
+      admin,
+    );
+    const updated = await service.updateJobWorkOrder(
+      created.id,
+      { header: { customerName: 'After', remarks: 'changed' } },
+      admin,
+    );
+    expect(updated.customerName).toBe('After');
+    expect(updated.remarks).toBe('changed');
+    expect(updated.lines).toHaveLength(1);
+    expect(updated.lines[0]?.id).toBe(created.lines[0]?.id);
+    expect(updated.lines[0]?.partName).toBe('Stay');
+  });
+
+  it('updateJobWorkOrder merges lines: id-matched updated, new inserted, absent soft-deleted', async () => {
+    const code = `${TEST_PREFIX}UM1`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Merge', status: 'open' },
+        lines: [
+          { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10 },
+          { partName: 'Drop Me',     itemId: firstItemId, uom: 'NOS', orderQty: 20 },
+        ],
+      },
+      admin,
+    );
+    const keptId = created.lines[0]!.id;
+
+    const updated = await service.updateJobWorkOrder(
+      created.id,
+      {
+        header: {},
+        lines: [
+          { id: keptId, partName: 'Keep+Updated', itemId: firstItemId, uom: 'NOS', orderQty: 11 },
+          { partName: 'Brand New', itemId: firstItemId, uom: 'NOS', orderQty: 30 },
+          // "Drop Me" is omitted → soft-deleted
+        ],
+      },
+      admin,
+    );
+    expect(updated.lines).toHaveLength(2);
+    const kept = updated.lines.find((l) => l.id === keptId);
+    const fresh = updated.lines.find((l) => l.id !== keptId);
+    expect(kept?.partName).toBe('Keep+Updated');
+    expect(kept?.orderQty).toBe(11);
+    expect(fresh?.partName).toBe('Brand New');
+    expect(fresh?.lineNo).toBe(2);
+
+    const allRows = await db
+      .select()
+      .from(jobWorkOrderLines)
+      .where(eq(jobWorkOrderLines.jobWorkOrderId, created.id));
+    const dropped = allRows.find((l) => l.partName === 'Drop Me');
+    expect(dropped).toBeDefined();
+    expect(dropped?.deletedAt).not.toBeNull();
+  });
+
+  it('softDeleteJobWorkOrder soft-deletes header + all lines', async () => {
+    const code = `${TEST_PREFIX}DEL`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Goner', status: 'open' },
+        lines: [
+          { partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 },
+          { partName: 'L2', itemId: firstItemId, uom: 'NOS', orderQty: 2 },
+        ],
+      },
+      admin,
+    );
+    await service.softDeleteJobWorkOrder(created.id, admin);
+    await expect(service.getJobWorkOrder(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+    const lines = await db
+      .select()
+      .from(jobWorkOrderLines)
+      .where(eq(jobWorkOrderLines.jobWorkOrderId, created.id));
+    expect(lines.every((l) => l.deletedAt !== null)).toBe(true);
+  });
+
+  it('throws AuthorizationError when user has no company assignment', async () => {
+    const noCompanyUser: AuthContext = { ...admin, companyId: null };
+    await expect(
+      service.createJobWorkOrder(
+        {
+          header: { code: `${TEST_PREFIX}NOC`, jwDate: '2026-05-02', customerName: 'X', status: 'open' },
+          lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        },
+        noCompanyUser,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
