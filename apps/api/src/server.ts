@@ -12,6 +12,7 @@ import { jobCardsRoutes } from './modules/job-cards/routes';
 import { jobWorkOrdersRoutes } from './modules/job-work-orders/routes';
 import { machinesRoutes } from './modules/machines/routes';
 import { opEntryRoutes } from './modules/op-entry/routes';
+import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
 import { operatorsRoutes } from './modules/operators/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
@@ -56,6 +57,7 @@ await app.register(jobWorkOrdersRoutes);
 await app.register(jobCardsRoutes);
 await app.register(purchaseRequestsRoutes);
 await app.register(purchaseOrdersRoutes);
+await app.register(goodsReceiptNotesRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

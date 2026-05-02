@@ -5,6 +5,12 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
+import { goodsReceiptNotesListRoute } from './modules/goods-receipt-notes/routes/list';
+import { goodsReceiptNoteDetailRoute } from './modules/goods-receipt-notes/routes/detail';
+import {
+  goodsReceiptNoteEditRoute,
+  goodsReceiptNoteNewRoute,
+} from './modules/goods-receipt-notes/routes/edit';
 import { jobCardsListRoute } from './modules/job-cards/routes/list';
 import { jobWorkOrdersListRoute } from './modules/job-work-orders/routes/list';
 import { jobWorkOrderDetailRoute } from './modules/job-work-orders/routes/detail';
@@ -94,6 +100,10 @@ const routeTree = rootRoute.addChildren([
     purchaseOrdersListRoute,
     purchaseOrderDetailRoute,
     purchaseOrderEditRoute,
+    goodsReceiptNoteNewRoute,
+    goodsReceiptNotesListRoute,
+    goodsReceiptNoteDetailRoute,
+    goodsReceiptNoteEditRoute,
   ]),
 ]);
 
