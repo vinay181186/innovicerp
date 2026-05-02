@@ -1,13 +1,19 @@
 import {
+  GRN_QC_STATUSES,
   ITEM_TYPES,
   JC_PRIORITIES,
   OP_LOG_TYPES,
   OP_TYPES,
   OUTSOURCE_STATUSES,
+  PO_STATUSES,
+  PO_TYPES,
+  PR_STATUSES,
   RUNNING_OP_STATUSES,
   SHIFTS,
   SO_STATUSES,
   SO_TYPES,
+  STORE_TXN_SOURCE_TYPES,
+  STORE_TXN_TYPES,
   UOMS,
   USER_ROLES,
 } from '@innovic/shared';
@@ -46,6 +52,14 @@ export const jcPriorityEnum = pgEnum('jc_priority', JC_PRIORITIES);
 // ─── Phase 4 enums (T-029b) ───────────────────────────────────────────────
 export const soTypeEnum = pgEnum('so_type', SO_TYPES);
 export const soStatusEnum = pgEnum('so_status', SO_STATUSES);
+
+// ─── Phase 5 enums (T-035b) ───────────────────────────────────────────────
+export const poStatusEnum = pgEnum('po_status', PO_STATUSES);
+export const prStatusEnum = pgEnum('pr_status', PR_STATUSES);
+export const poTypeEnum = pgEnum('po_type', PO_TYPES);
+export const grnQcStatusEnum = pgEnum('grn_qc_status', GRN_QC_STATUSES);
+export const storeTxnTypeEnum = pgEnum('store_txn_type', STORE_TXN_TYPES);
+export const storeTxnSourceTypeEnum = pgEnum('store_txn_source_type', STORE_TXN_SOURCE_TYPES);
 
 export const companies = pgTable(
   'companies',
@@ -596,8 +610,20 @@ export const jcOps = pgTable(
     outsourceVendorText: text('outsource_vendor_text'),
     outsourceCost: numeric('outsource_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     outsourceStatus: outsourceStatusEnum('outsource_status'),
+    // Legacy text refs (pre-Phase-5). Will be backfilled into the FK
+    // columns below in T-035c, then dropped in a Phase 5 cleanup migration.
     outsourcePrNo: text('outsource_pr_no'),
     outsourcePoNo: text('outsource_po_no'),
+    // Phase 5 FK upgrade per ADR-015 #5. Forward-ref to the procurement
+    // tables defined later in this file. These coexist with the text
+    // columns above until T-035c finishes the backfill.
+    outsourcePrId: uuid('outsource_pr_id').references((): AnyPgColumn => purchaseRequests.id, {
+      onDelete: 'set null',
+    }),
+    outsourcePoLineId: uuid('outsource_po_line_id').references(
+      (): AnyPgColumn => purchaseOrderLines.id,
+      { onDelete: 'set null' },
+    ),
     outsourceDcNo: text('outsource_dc_no'),
     outsourceSentQty: integer('outsource_sent_qty').notNull().default(0),
     outsourceSentDate: date('outsource_sent_date'),
@@ -623,6 +649,12 @@ export const jcOps = pgTable(
     index('jc_ops_outsource_vendor_idx')
       .on(t.outsourceVendorId)
       .where(sql`${t.deletedAt} is null AND ${t.opType} = 'outsource'`),
+    index('jc_ops_outsource_pr_id_idx')
+      .on(t.outsourcePrId)
+      .where(sql`${t.outsourcePrId} is not null`),
+    index('jc_ops_outsource_po_line_id_idx')
+      .on(t.outsourcePoLineId)
+      .where(sql`${t.outsourcePoLineId} is not null`),
     pgPolicy('jc_ops_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -970,6 +1002,402 @@ export const jobWorkOrderLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 5 tables — Procurement (T-035b) ────────────────────────────────
+//
+// 5 new tables: purchase_requests, purchase_orders, purchase_order_lines,
+// goods_receipt_notes, goods_receipt_note_lines, store_transactions.
+// Plus jc_ops gets two new FK columns (outsource_pr_id,
+// outsource_po_line_id) defined inline above; the legacy text columns
+// (outsource_pr_no, outsource_po_no) stay until T-035c backfill validates,
+// then dropped in a follow-on cleanup migration. Forward references via
+// AnyPgColumn handle the circular dep between jc_ops and PR/PO_line.
+
+export const purchaseRequests = pgTable(
+  'purchase_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    prDate: date('pr_date').notNull(),
+    status: prStatusEnum('status').notNull().default('open'),
+    vendorId: uuid('vendor_id').references(() => vendors.id),
+    vendorCodeText: text('vendor_code_text'),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name'),
+    qty: integer('qty').notNull(),
+    estCost: numeric('est_cost', { precision: 12, scale: 2 }).notNull().default('0'),
+    requiredDate: date('required_date'),
+    sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
+      onDelete: 'set null',
+    }),
+    sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    operation: text('operation'),
+    remarks: text('remarks'),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    poId: uuid('po_id').references((): AnyPgColumn => purchaseOrders.id, {
+      onDelete: 'set null',
+    }),
+    poCreatedAt: timestamp('po_created_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('purchase_requests_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_requests_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_requests_company_vendor_idx')
+      .on(t.companyId, t.vendorId)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_requests_source_jc_op_idx')
+      .on(t.sourceJcOpId)
+      .where(sql`${t.sourceJcOpId} is not null AND ${t.deletedAt} is null`),
+    check('purchase_requests_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'purchase_requests_vendor_check',
+      sql`num_nonnulls(${t.vendorId}, ${t.vendorCodeText}) >= 1`,
+    ),
+    check(
+      'purchase_requests_item_check',
+      sql`num_nonnulls(${t.itemId}, ${t.itemCodeText}) >= 1`,
+    ),
+    pgPolicy('purchase_requests_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('purchase_requests_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const purchaseOrders = pgTable(
+  'purchase_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    poDate: date('po_date').notNull(),
+    poType: poTypeEnum('po_type').notNull().default('standard'),
+    vendorId: uuid('vendor_id').references(() => vendors.id),
+    vendorCodeText: text('vendor_code_text'),
+    status: poStatusEnum('status').notNull().default('draft'),
+    dueDate: date('due_date'),
+    taxType: text('tax_type'),
+    sgstPct: numeric('sgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
+    cgstPct: numeric('cgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
+    igstPct: numeric('igst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
+    prCodeText: text('pr_code_text'),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvalRemarks: text('approval_remarks'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('purchase_orders_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_orders_company_vendor_idx')
+      .on(t.companyId, t.vendorId)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_orders_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_orders_company_date_idx')
+      .on(t.companyId, t.poDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('purchase_orders_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('purchase_orders_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const purchaseOrderLines = pgTable(
+  'purchase_order_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    purchaseOrderId: uuid('purchase_order_id')
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    qty: integer('qty').notNull(),
+    rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    receivedQty: integer('received_qty').notNull().default(0),
+    dueDate: date('due_date'),
+    sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
+      onDelete: 'set null',
+    }),
+    lineRemarks: text('line_remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('purchase_order_lines_po_line_uniq')
+      .on(t.purchaseOrderId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_order_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('purchase_order_lines_so_line_idx')
+      .on(t.sourceSoLineId)
+      .where(sql`${t.sourceSoLineId} is not null`),
+    index('purchase_order_lines_jc_op_idx')
+      .on(t.sourceJcOpId)
+      .where(sql`${t.sourceJcOpId} is not null`),
+    check('purchase_order_lines_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'purchase_order_lines_received_qty_check',
+      // Allow up to 10% over-receipt (legitimate vendor over-shipments).
+      sql`${t.receivedQty} >= 0 AND ${t.receivedQty} <= ${t.qty} + (${t.qty} * 0.1)::int`,
+    ),
+    pgPolicy('purchase_order_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('purchase_order_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const goodsReceiptNotes = pgTable(
+  'goods_receipt_notes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    grnDate: date('grn_date').notNull(),
+    purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id, {
+      onDelete: 'set null',
+    }),
+    poCodeText: text('po_code_text'),
+    vendorId: uuid('vendor_id').references(() => vendors.id),
+    vendorCodeText: text('vendor_code_text'),
+    dcNo: text('dc_no'),
+    invoiceNo: text('invoice_no'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('goods_receipt_notes_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('goods_receipt_notes_company_po_idx')
+      .on(t.companyId, t.purchaseOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('goods_receipt_notes_company_vendor_idx')
+      .on(t.companyId, t.vendorId)
+      .where(sql`${t.deletedAt} is null`),
+    index('goods_receipt_notes_company_date_idx')
+      .on(t.companyId, t.grnDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('goods_receipt_notes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('goods_receipt_notes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const goodsReceiptNoteLines = pgTable(
+  'goods_receipt_note_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    goodsReceiptNoteId: uuid('goods_receipt_note_id')
+      .notNull()
+      .references(() => goodsReceiptNotes.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    purchaseOrderLineId: uuid('purchase_order_line_id').references(
+      () => purchaseOrderLines.id,
+      { onDelete: 'set null' },
+    ),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    receivedQty: integer('received_qty').notNull(),
+    dcRefNo: text('dc_ref_no'),
+    qcStatus: grnQcStatusEnum('qc_status').notNull().default('pending'),
+    qcAcceptedQty: integer('qc_accepted_qty').notNull().default(0),
+    qcRejectedQty: integer('qc_rejected_qty').notNull().default(0),
+    qcDate: date('qc_date'),
+    qcRemarks: text('qc_remarks'),
+    qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('goods_receipt_note_lines_grn_line_uniq')
+      .on(t.goodsReceiptNoteId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('goods_receipt_note_lines_po_line_idx')
+      .on(t.purchaseOrderLineId)
+      .where(sql`${t.purchaseOrderLineId} is not null`),
+    index('goods_receipt_note_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('goods_receipt_note_lines_qc_status_idx')
+      .on(t.companyId, t.qcStatus)
+      .where(sql`${t.deletedAt} is null`),
+    check('goods_receipt_note_lines_received_qty_nonneg', sql`${t.receivedQty} >= 0`),
+    check('goods_receipt_note_lines_qc_accepted_qty_nonneg', sql`${t.qcAcceptedQty} >= 0`),
+    check('goods_receipt_note_lines_qc_rejected_qty_nonneg', sql`${t.qcRejectedQty} >= 0`),
+    check(
+      'goods_receipt_note_lines_qc_total_check',
+      sql`${t.qcAcceptedQty} + ${t.qcRejectedQty} <= ${t.receivedQty}`,
+    ),
+    pgPolicy('goods_receipt_note_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('goods_receipt_note_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+    // QC role may UPDATE only the QC fields. Forward-defined for Phase 6.
+    // Drizzle's pgPolicy doesn't support column-level GRANT — we declare the
+    // intent here and the hand-written 0011_phase5_qc_grants.sql migration
+    // pins down the exact GRANT UPDATE (qc_status, ...) ON TABLE.
+    pgPolicy('goods_receipt_note_lines_qc_update', {
+      for: 'update',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'qc' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() = 'qc' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const storeTransactions = pgTable(
+  'store_transactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    txnDate: date('txn_date').notNull(),
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    txnType: storeTxnTypeEnum('txn_type').notNull(),
+    qty: integer('qty').notNull(),
+    sourceType: storeTxnSourceTypeEnum('source_type').notNull(),
+    sourceRef: text('source_ref').notNull(),
+    stockBefore: integer('stock_before').notNull(),
+    stockAfter: integer('stock_after').notNull(),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('store_transactions_company_item_date_idx')
+      .on(t.companyId, t.itemId, t.txnDate),
+    index('store_transactions_company_source_idx')
+      .on(t.companyId, t.sourceType, t.sourceRef),
+    index('store_transactions_company_date_idx')
+      .on(t.companyId, t.txnDate),
+    check('store_transactions_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('store_transactions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('store_transactions_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+    // No UPDATE/DELETE policies — append-only, like op_log per ADR-011 #4.
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1006,3 +1434,15 @@ export type JobWorkOrder = typeof jobWorkOrders.$inferSelect;
 export type NewJobWorkOrder = typeof jobWorkOrders.$inferInsert;
 export type JobWorkOrderLine = typeof jobWorkOrderLines.$inferSelect;
 export type NewJobWorkOrderLine = typeof jobWorkOrderLines.$inferInsert;
+export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
+export type NewPurchaseRequest = typeof purchaseRequests.$inferInsert;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert;
+export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
+export type NewPurchaseOrderLine = typeof purchaseOrderLines.$inferInsert;
+export type GoodsReceiptNote = typeof goodsReceiptNotes.$inferSelect;
+export type NewGoodsReceiptNote = typeof goodsReceiptNotes.$inferInsert;
+export type GoodsReceiptNoteLine = typeof goodsReceiptNoteLines.$inferSelect;
+export type NewGoodsReceiptNoteLine = typeof goodsReceiptNoteLines.$inferInsert;
+export type StoreTransaction = typeof storeTransactions.$inferSelect;
+export type NewStoreTransaction = typeof storeTransactions.$inferInsert;
