@@ -11,6 +11,7 @@ import { itemsRoutes } from './modules/items/routes';
 import { machinesRoutes } from './modules/machines/routes';
 import { opEntryRoutes } from './modules/op-entry/routes';
 import { operatorsRoutes } from './modules/operators/routes';
+import { salesOrdersRoutes } from './modules/sales-orders/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
@@ -46,6 +47,7 @@ await app.register(vendorsRoutes);
 await app.register(machinesRoutes);
 await app.register(operatorsRoutes);
 await app.register(opEntryRoutes);
+await app.register(salesOrdersRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });
