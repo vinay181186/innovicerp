@@ -414,6 +414,105 @@ Total: **15 / 15 mapped rows match transform on every loaded column**.
 
 ---
 
+## Phase 5 Per-Collection Entries — Load Run 4 — 2026-05-02 (T-035c)
+
+**Target:** dev Supabase Mumbai (same `d997c3ed-...` company as Phase 2 + 3 + 4)
+**Script:** `migration/load.ts` (extended for Phase 5 — 6 new mappers + jc_op outsource backfill phase)
+**Duration:** ~500 ms incl. backfill + count validation · **Total rows inserted:** **9** + **1 jc_op FK UPDATE**
+
+## purchaseRequests (purchase_requests)
+**Date:** 2026-05-02
+**Source records:** 1 (PR-00001 — outsource COATING for IN-JC-00002 op_seq=7)
+**Loaded records:** 1
+**Discrepancy:** 0
+**Anomalies:** 1 at transform — `approved_by_text_only` (legacy carries `approvedBy: 'Japan'` as free text; loader sets `approved_by=null` per ADR-015 design and preserves the date as `approved_at`)
+**Validation:** PASS — field-level diff matches; vendor_id, item_id, source_jc_op_id, source_so_line_id, po_id all FK-clean
+**Cutover:** Pending (T-036 PR/PO/GRN screens, then T-037 procurement-team cutover)
+
+Resolved links: `vendor_id` → VND-001 (Mehta Steel); `item_id` → 554117302000 (JOINT); `source_jc_op_id` → IN-JC-00002 op_seq=7; `source_so_line_id` → SO-436 line 6 (`8aa420eb-…`); `po_id` → IN-JWPO-00001 (deterministic uuidv5).
+
+## purchaseOrders (purchase_orders + purchase_order_lines)
+**Date:** 2026-05-02
+**Source records:** 1 (IN-JWPO-00001, single line for JOINT)
+**Loaded records:** 1 header + 1 line = **2 rows**
+**Discrepancy:** 0 — header+lines split per ADR-015 #1 (group by `poNo`)
+**Anomalies:** 1 header-level `approved_by_text_only` (same pattern as PR); 0 line-level
+**Validation:** PASS — line.source_so_line_id resolved (`8aa420eb-…`); line.source_jc_op_id resolved via PR bridge (PR-00001 → IN-JC-00002 op_seq=7)
+**Cutover:** Pending (T-036)
+
+## grn (goods_receipt_notes + goods_receipt_note_lines)
+**Date:** 2026-05-02
+**Source records:** 3 (all under IN-GRN-00001 — 1 BLOCK + 2 JOINT receipts)
+**Loaded records:** 1 header + 3 lines = **4 rows**
+**Discrepancy:** 0 — header+lines split per ADR-015 #1 (auto-numbered lines 1–3 in source order, since legacy has no GRN line numbers)
+**Anomalies:** 1 line-level `po_line_unresolved` for the BLOCK line (itemCode `60346519`) — PO IN-JWPO-00001 only has a JOINT line; receiving BLOCK against the PO is legacy data drift (loaded with `purchase_order_line_id=null` + `item_code_text=60346519` per ADR-012 #10 fallback)
+**Validation:** PASS — 4/4 field-level matches; goods_receipt_note_id, purchase_order_line_id (where non-null), item_id all FK-clean; QC clamping CHECK satisfied
+**Cutover:** Pending (T-036)
+
+## storeTransactions (store_transactions)
+**Date:** 2026-05-02
+**Source records:** 2 (both `IN` from GRN QC accept on JOINT — 25 + 20 = 45 total)
+**Loaded records:** 2
+**Discrepancy:** 0
+**Anomalies:** 0 (both rows arithmetic-clean: 0→25→45 stockBefore/After progression)
+**Validation:** PASS — append-only ledger (created_only audit, no `deleted_at`); item_id resolved on both
+**Cutover:** Pending (T-036 + ledger viewer in Phase 7 reports)
+
+## jc_ops outsource backfill (T-035c Phase B'')
+**Date:** 2026-05-02
+**Source:** Each jc_op's legacy text columns `outsource_pr_no` / `outsource_po_no` (T-024d carry-over per ADR-011 #6)
+**Backfilled:** 1 / 1 — the single jc_op carrying outsource refs (IN-JC-00002 op_seq=7, COATING) maps both ways:
+  - `outsource_pr_id` ← lookup PR by `code='PR-00001'` → resolved
+  - `outsource_po_line_id` ← lookup PO line via inverse pointer (`source_jc_op_id = jc_op.id`, set by the PO transform via PR bridge) → resolved
+**Validation:** PASS — both FKs verified via `validate-phase5.ts` (resolved PR.code = legacy `outsource_pr_no`; resolved PO.code = legacy `outsource_po_no`)
+**Notes:** Helper is idempotent (rows whose target FK is already non-null skip). Legacy text columns retained for audit; drop in a follow-on cleanup commit per ADR-015 #5.
+
+---
+
+## Phase 5 Sign-Off — 2026-05-02 (T-035c)
+
+**Script:** `migration/validate-phase5.ts` · **Output:** `migration/load-output/_phase5_validation.json` (gitignored) · **Overall status:** **PASS**
+
+Read-only field-level diff + 32 orphan FK checks + jc_op outsource backfill verification, run via `pnpm --filter @innovic/migration validate:phase5`.
+
+**Field-level diff (transform → DB, mapped columns; timestamps normalised via `Date.toISOString()` to compare ISO ↔ Postgres canonical):**
+
+| Table | Transform rows | DB count | Matched | Field diffs | Missing from DB |
+|---|---:|---:|---:|---:|---:|
+| purchase_requests | 1 | 1 | 1 | 0 | 0 |
+| purchase_orders | 1 | 1 | 1 | 0 | 0 |
+| purchase_order_lines | 1 | 1 | 1 | 0 | 0 |
+| goods_receipt_notes | 1 | 1 | 1 | 0 | 0 |
+| goods_receipt_note_lines | 3 | 3 | 3 | 0 | 0 |
+| store_transactions | 2 | 2 | 2 | 0 | 0 |
+
+Total: **9 / 9 mapped rows match transform on every loaded column**.
+
+**Orphan FK checks (32 columns, all 0 orphans):**
+- purchase_requests: vendor_id, item_id, source_jc_op_id, source_so_line_id, po_id, approved_by, created_by, updated_by
+- purchase_orders: vendor_id, approved_by, created_by, updated_by
+- purchase_order_lines: purchase_order_id, item_id, source_so_line_id, source_jc_op_id, created_by, updated_by
+- goods_receipt_notes: purchase_order_id, vendor_id, created_by, updated_by
+- goods_receipt_note_lines: goods_receipt_note_id, purchase_order_line_id, item_id, qc_inspected_by, created_by, updated_by
+- store_transactions: item_id, created_by
+- **jc_ops (Phase 5 ALTERS):** outsource_pr_id, outsource_po_line_id
+
+**Backfill verification (jc_ops outsource FKs):**
+- jc_ops examined: 1 · verified: **1/1** · FK issues: 0
+- The single outsource jc_op (IN-JC-00002 op_seq=7) has both new FK columns populated; resolved PR.code = `PR-00001` and resolved PO.code = `IN-JWPO-00001` both match the legacy text refs.
+
+**Conclusions:**
+- Every Phase 5 column lands in DB byte-for-byte (modulo documented normalisations: enum lowercasing, NUMERIC `.toFixed(2)` strings, ISO ↔ Postgres timestamptz format).
+- All 32 FK columns reference existing parents, including the 2 new jc_ops FKs added in `0009_phase5_procurement.sql` (T-035b).
+- The deferred outsource backfill from ADR-011 #6 is now complete and verified — the inverse-pointer strategy (PO line `source_jc_op_id` → jc_op) avoids parsing PO header text and works regardless of how many lines the PO has.
+- The 1 GRN po_line_unresolved (BLOCK received against a JOINT-only PO) is legacy data drift, not a migration bug — `item_code_text` fallback preserves the audit trail per ADR-012 #10.
+
+**Phase 5 procurement transform + load + jc_op outsource backfill are sign-off ready.** Next: T-036 (PR/PO/GRN screens with vendor cascade, line-item matching, QC inline on GRN).
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase5`
+
+---
+
 ## Template
 
 ```
@@ -431,7 +530,7 @@ Total: **15 / 15 mapped rows match transform on every loaded column**.
 - **Phase 2:** users, clients, vendors, items, machines, operators
 - **Phase 3:** jobCards, jcOps, opLog
 - ~~**Phase 4:** salesOrders, jobWorkOrders~~ — migrated 2026-05-02 (T-029d)
-- **Phase 5:** purchaseOrders, grn, storeTransactions
+- ~~**Phase 5:** purchaseOrders, grn, storeTransactions~~ — migrated 2026-05-02 (T-035c)
 - **Phase 6:** qcProcesses, qcAssignments, qcDocUploads, ncRegister, capaRecords; jwDCOutward, jwDCInward, challans, dispatchLog
 - **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
 - **Phase 9:** activityLog

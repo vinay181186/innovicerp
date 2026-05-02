@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-02 (T-035b done — Phase 5 procurement storage live in dev Supabase: 5 new tables + 6 enums + jc_ops FK additions + triggers + v_item_stock view. 120/120 api tests still green; no schema drift. T-035c (transform + load + validate-phase5 incl jc_ops outsource backfill) is next.)
+> Last updated: 2026-05-02 (T-035c done — Phase 5 procurement migrated end-to-end: 9 rows loaded across 6 tables + 1 jc_op outsource FK backfilled (PR-00001 + PO line for IN-JC-00002 op_seq=7). validate-phase5 PASS — 0 field diffs across 9 rows, 0 orphan FKs across 32 checks, 1/1 outsource backfill verified. 116/116 migration tests green (84 → 116, +32 for Phase 5). T-036 (PR/PO/GRN screens) is next.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -16,33 +16,36 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-034 (cutover, gated on user) OR start Phase 5. Two parallel tracks running:
-> - **Phase 3 wind-down (calendar work):** T-025c manual smoke (5–10 min, your call), then T-027 5 daily reconciliations, then T-028 cutover. None of this needs new code.
-> - **Phase 4 (this session's focus):** T-034 → cutover, calendar work.
-> - **T-030 + T-031 + T-032 + T-033 browser smoke** gated on user — see checklist #1 below; runs in ~20 min combined.
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with **T-036 (PR/PO/GRN screens — first big chunk of Phase 5 web)**. Several parallel tracks gated on user:
+> - **Phase 3 wind-down (calendar work):** T-025c manual smoke (5–10 min), then T-027 5 daily reconciliations, then T-028 cutover. No new code.
+> - **Phase 4 wind-down:** T-034 sales-team cutover, calendar work.
+> - **T-030 + T-031 + T-032 + T-033 browser smoke** gated on user (~20 min combined) — see checklist #1.
+> - **Phase 5 follow-on cleanup (small, gated on user):** drop legacy `jc_ops.outsource_pr_no` / `outsource_po_no` text columns once T-035c backfill is comfortably in place (per ADR-015 #5). Single hand-written migration `0012_phase5_jc_ops_drop_legacy.sql` + JC_OP_MAPPER cleanup in `migration/load.ts` (drop the two `outsourcePrNo` / `outsourcePoNo` keys). Test impact: api re-runs 120/120; migration `validate-phase3` should still PASS once those columns vanish from the field-diff (current PASS already excludes them).
 
 1. **T-030 + T-031 + T-032 + T-033 browser smoke (~20 min combined).** Sign in → home now has "Sales orders" / "Job-work orders" / "Job cards" cards. SO smoke: list shows 2 SOs; `SO-436` detail shows 8 lines, total qty 494; edit roundtrip (qty change + remove + add). JW smoke: list shows 2 JWs (`JW-001` ITM-003, `JW-002` ITM-001) with the **Material** badge (likely `✕ Not received` for both since current data has empty material qty); detail shows the per-line client-material section; edit roundtrip. JC smoke: list shows the migrated JCs (IN-JC-00002 / IN-JC-00003) with status badge, ops progress, source-link clickable to SO-436 detail; click JC code → opens `/op-entry?jc=IN-JC-00002` directly. Filters: pick `status=open`, pick a machine, pick a date range — the list narrows. **Cascade smoke (T-033):** in /op-entry, complete the last remaining op of any JC linked to an SO line; navigate to SO detail and verify that line's status flipped to `closed`. If it was the last open line on that SO, the SO header status should also be `closed`. Soft-spots to verify: SO `gstPercent` Select re-binds on edit; SO/JW edit without retyping itemCodeText preserves itemId; JC source-link `<a>` doesn't bubble to the row's "open op-entry" link. Sign out + sign in as `viewer` → all 3 lists read-only.
 
 2. **T-034: Cutover sales team module-by-module** — gated on T-033 ship + browser smoke. Plan with the user before running: which sales user goes first, what's the rollback if a request fails, how long until JW + remaining users follow. No new code expected unless rollback reveals a gap.
 
 ## Active Task
-**ID:** T-034
-**Title:** Phase 4 — Cutover sales team module-by-module
-**Status:** [ ] Gated on user — calendar/operational work, no new code
+**ID:** T-036
+**Title:** Phase 5 — Build PR / PO / GRN screens (vendor cascade, line-item matching, QC inline on GRN)
+**Status:** [ ] Not started
 **Scope:**
-- Coordinate with the user to pick a first sales user (likely an admin who's comfortable with rollback) and a quiet window.
-- Pre-cutover checklist (each user):
-  - Confirm all open SOs/JWs they own are visible and edit-able in the new UI
-  - Confirm computed JC status on their orders matches what they expect from the legacy view
-  - Confirm cascade behaviour: completing the last op on a JC closes the SO line (and header if last)
-  - Confirm dashboards / reports they rely on are at least accessible (not all reports are migrated yet — Phase 7)
-- Cut over user 1; soak 1–2 days; cut over remaining sales users.
-- Capture any gaps surfaced during cutover as new tasks; do NOT extend T-034 with rolling fixes.
+- Per CLAUDE.md §8 module-creation protocol: build api modules + web modules for `purchase-requests`, `purchase-orders` (header+lines), `goods-receipt-notes` (header+lines + QC fields inline), `store-transactions` (read-only ledger view; writes only via service from GRN QC).
+- Read-only `v_item_stock` view drives the items-master "On hand" badge and BOM expansion stock checks.
+- Vendor cascade on PO/GRN forms: pick vendor → autosuggest items they supply (legacy `vendors.materialsSupplied` already migrated).
+- Line-item matching on GRN: when PO is selected, lines auto-populate from PO with editable received_qty + qc fields; resolution by `(po code, item code)` tuple per ADR-015 #9.
+- QC inline on GRN line: `qc_status`/`qc_accepted_qty`/`qc_rejected_qty`/`qc_date`/`qc_remarks`/`qc_inspected_by` editable on each GRN line per ADR-015 #8.
+- **Triggers a store_transactions write:** on GRN QC accept (status → `completed`), service-layer code inserts `(in, qty=qc_accepted_qty, source=grn_qc, source_ref=GRN.code)` and recomputes stock_before/stock_after from `v_item_stock`. Mirrors legacy lines 3933-3934 + 5449-5450.
+- **Auto-close cascade:** when all PO lines are fully received + QC complete, flip PO header status `open → closed` (and `partial` mid-state). Service-layer logic, transactional with the GRN write — same pattern as T-033 SO cascade.
+- 4 modules → 4 list screens + 4 detail/edit screens + nav cards on home. Re-use the line-table sub-component pattern from T-030/T-031.
 
 **Acceptance:**
-- [ ] All sales users are using the new system end-to-end
-- [ ] Legacy HTML is still accessible read-only as a safety net (Phase 9 turns it off)
-- [ ] No data lost during cutover (verified via re-running validate-phase4 + comparing JC counts)
+- [ ] All 4 api modules pass tests (each: list/get/create/update/softDelete + auth role checks; PR + PO need source-link resolution; GRN needs QC sub-validation + store_txn cascade)
+- [ ] All 4 web modules render list + detail + edit; vendor cascade + line-item matching + QC inline working
+- [ ] PO auto-close cascade + store_transactions GRN-QC-write covered by service-layer tests
+- [ ] Home nav has Purchase requests / Purchase orders / GRN cards
+- [ ] Workspace typecheck + lint clean; api suite green; browser smoke gated on user before T-037 cutover
 
 ## T-030 browser smoke checklist (run in dev, 5–10 min)
 
@@ -146,8 +149,8 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 |---|---|---|
 | T-035a | Phase 5 schema design (SCHEMA.md + ADR-015) | [x] Done (2026-05-02) |
 | T-035b | Phase 5 Drizzle schema + migrations to dev Supabase (3 migration files; jc_ops adds FKs, legacy text retained for T-035c backfill) | [x] Done (2026-05-02) |
-| T-035c | Phase 5 transform + load + validate-phase5 (incl. jc_ops outsource_*_id backfill from legacy text) | [ ] Active |
-| T-036 | Build PR / PO / GRN screens (vendor cascade, line-item matching, QC inline on GRN) | [ ] |
+| T-035c | Phase 5 transform + load + validate-phase5 (incl. jc_ops outsource_*_id backfill from legacy text) | [x] Done (2026-05-02) |
+| T-036 | Build PR / PO / GRN screens (vendor cascade, line-item matching, QC inline on GRN) | [ ] Active |
 | T-037 | Cutover procurement team | [ ] |
 
 ## Phase 6 Backlog — Quality + Dispatch (Week 9)
@@ -195,6 +198,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-02 | T-035c | **Phase 5 procurement migrated end-to-end + jc_op outsource backfill verified.** Transform layer: 4 new transforms (`purchase-requests`, `purchase-orders` header+lines, `grn` header+lines, `store-transactions`) producing 6 output tables × 9 valid rows total + 3 expected anomalies (2 `approved_by_text_only` for legacy "Japan" free-text on PR/PO; 1 `po_line_unresolved` on GRN BLOCK line that received material against a JOINT-only PO — drift, not a bug). 32 new unit tests; full migration suite **116/116 green** (84 → 116). Lookup chain extended in `transform.ts`: `byCode['purchase_orders']`/`['purchase_requests']` and `byCompositeKey['purchase_order_lines']` (poCode::itemCode) + `['purchase_requests_to_jc_op_id']` (PR→JC-op bridge so PO lines inherit `source_jc_op_id`). Load: `load.ts` extended with 6 mappers + per-table conflict targets (`(purchase_order_id, line_no) WHERE deleted_at IS NULL` for PO lines; same shape for GRN lines; `(id)` + `created_only` audit for store_transactions per ADR-015 #4); 9/9 rows loaded in dependency order (PO → PR → PO line → GRN → GRN line → store_txns) and idempotent on re-run (9 conflicts, 0 inserts on second pass). New `migration/load/jc-op-outsource-backfill.ts` Phase B'' helper — strategy: PR FK by `code` lookup; PO line FK via inverse pointer (`purchase_order_lines.source_jc_op_id = jc_op.id`, set by the PO transform via the PR bridge — cleaner than parsing PO text and works regardless of how many lines the PO has). 1/1 jc_op (IN-JC-00002 op_seq=7 / COATING) backfilled both ways; idempotent re-run sees `alreadyBackfilled:1`. Two small carry-overs fixed inside this task: (1) `migration/load/validate.ts` skip `deleted_at IS NULL` for `store_transactions` (mirrors the existing carve-outs for op_log / route_card_revisions / running_ops); (2) `validate-phase5.ts` normaliser parses both `YYYY-MM-DDTHH:MM:SSZ` and Postgres' `YYYY-MM-DD HH:MM:SS+TZ` to `Date.toISOString()` so timestamptz string-formatting differences don't surface as field diffs. New `migration/validate-phase5.ts`: field-level diff for 6 tables + 32 orphan-FK checks (incl. the 2 new jc_ops FKs from T-035b) + jc_op outsource backfill verification (resolved PR.code = legacy `outsource_pr_no`; resolved PO.code = legacy `outsource_po_no`). Real run on dev Supabase: **PASS** — 9/9 field-level matches, 0 orphan FKs across 32 checks, 1/1 outsource backfill verified. Workspace typecheck + lint clean. MIGRATION-LOG sign-off appended. Deferred to a follow-on cleanup commit (gated on user — see Resume Checklist): drop legacy `jc_ops.outsource_pr_no` / `outsource_po_no` text columns + JC_OP_MAPPER cleanup |
 | 2026-05-02 | T-035b | **Phase 5 procurement storage layer live in dev Supabase.** 6 new shared enums (`PO_STATUSES`, `PR_STATUSES`, `PO_TYPES`, `GRN_QC_STATUSES`, `STORE_TXN_TYPES`, `STORE_TXN_SOURCE_TYPES`); 5 new Drizzle tables in `apps/api/src/db/schema.ts` matching SCHEMA.md exactly. Three migration files: `0009_phase5_procurement.sql` (drizzle-gen — tables, enums, FKs, indexes, RLS, plus jc_ops adds `outsource_pr_id` + `outsource_po_line_id` FK columns), `0010_phase5_triggers.sql` (hand-written — set_updated_at on 5 new tables; store_transactions append-only per ADR-011 #4 so no trigger), `0011_phase5_views.sql` (hand-written — v_item_stock aggregating per-item on-hand qty). Forward-ref pattern (AnyPgColumn) handles the circular dep between jc_ops and PR/PO_line. Legacy `jc_ops.outsource_pr_no` / `outsource_po_no` text columns retained for T-035c backfill, dropped in a follow-on cleanup. Applied via `apply-sql.ts` runner — `drizzle-kit migrate` blocked by an orphan `0008_verify_no_drift` journal entry without matching SQL file (pre-existing condition). No schema drift on re-run of `drizzle-kit generate`. **All 120 api tests still green** after the schema change. SCHEMA.md migration history updated. T-035c (transform + load + jc_ops outsource backfill) is next |
 | 2026-05-02 | T-035a | **Phase 5 procurement schema design approved (ADR-015).** `docs/SCHEMA.md` §"Phase 5 Tables — Procurement" added: 5 new tables (`purchase_requests`, `purchase_orders` + `purchase_order_lines`, `goods_receipt_notes` + `goods_receipt_note_lines`, `store_transactions`) + 6 new enums (`po_status`, `pr_status`, `po_type`, `grn_qc_status`, `store_txn_type`, `store_txn_source_type`) + ALTER on `jc_ops` (drop legacy text `outsource_pr_no` / `outsource_po_no` columns, replace with FKs `outsource_pr_id` → `purchase_requests` and `outsource_po_line_id` → `purchase_order_lines`). 12 explicit decisions surfaced for sign-off; all approved. Most consequential: header+lines split for PO + GRN (mirrors ADR-012 #1); GRN QC fields inline on `grn_lines` (legacy data co-locates them); `purchase_requests` as a top-level table even at 1 record; `store_transactions` polymorphic via `source_type` enum + `source_ref` text (FK columns deferred); stock balance via `v_item_stock` view (no `items.stock_qty` denormalisation); cost-rollup link `purchase_order_lines.source_so_line_id`; outsource link `purchase_order_lines.source_jc_op_id` replaces text-only legacy refs; `goods_receipt_note_lines_qc_update` RLS policy reserved for the QC role even though no qc-role user exists yet (forward-defined for Phase 6); cascades schema-only — auto-close logic deferred to T-035d. ADR-015 captured in DECISIONS.md (existing pending placeholders renumbered to ADR-016/017). T-035b (Drizzle + migration) is next |
 | 2026-05-02 | T-033 | **SO/JW line + header auto-close cascade live.** New `apps/api/src/modules/op-entry/sales-cascade.ts` with `tryCascadeJcComplete(tx, jobCardId, user)`. Trigger: keyed off `v_jc_status.computed_status === 'complete'` (the canonical signal — fires on EVERY completion path that brings the JC to fully done, fixing the legacy `_autoCloseSO()` line 1355 bug where it only fired on the explicit Submit-Complete path). Wired into `submitOpLog` after the existing `available === 0` block (running_op auto-close + qcCallDate auto-set), inside the same Drizzle transaction. Logic: if JC is `complete` AND has source_so_line_id → flip line `open → closed`; if all sibling lines on the SO are now terminal (`closed` or `cancelled`), flip SO header `open → closed`. Same path for JW. Idempotent: rows already in `closed` or `cancelled` short-circuit with `{skipped: 'so_line_already_terminal'}` and don't re-write `updated_at`. **7 new cascade tests** (`sales-cascade.test.ts`): SO single-line line+header close, SO multi-line gradual close (line 1 closes alone → line 2 also closes → header), partial completion (2 ops, only op 1 done) doesn't cascade, idempotency (direct re-call is no-op), cancelled sibling (counts as terminal but isn't re-flipped), JW path parity, source-less JC (no error). Full api suite **120/120 green** (was 113, +7). Workspace typecheck + lint clean. Cascade smoke gated on user — see browser smoke checklist |

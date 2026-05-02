@@ -34,9 +34,15 @@ interface ValidateInput {
   sampleSize?: number;
 }
 
-// op_log, route_card_revisions, running_ops are append-only/immutable and
-// don't carry a deleted_at column — count and sample without that filter.
-const TABLES_WITHOUT_DELETED_AT = new Set(['op_log', 'route_card_revisions', 'running_ops']);
+// op_log, route_card_revisions, running_ops, store_transactions are
+// append-only/immutable and don't carry a deleted_at column — count and
+// sample without that filter.
+const TABLES_WITHOUT_DELETED_AT = new Set([
+  'op_log',
+  'route_card_revisions',
+  'running_ops',
+  'store_transactions',
+]);
 
 export async function validateOne(input: ValidateInput): Promise<ValidationEntry> {
   const sampleSize = input.sampleSize ?? 3;

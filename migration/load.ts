@@ -1,12 +1,13 @@
 // migration/load.ts
 //
-// T-015 (Phase 2) + T-024d (Phase 3) + T-029d (Phase 4) — Bulk-load transform
-// output into Supabase Postgres.
+// T-015 (Phase 2) + T-024d (Phase 3) + T-029d (Phase 4) + T-035c (Phase 5) —
+// Bulk-load transform output into Supabase Postgres.
 //
-// Reads migration/transform/<table>.json (output of T-014 / T-024c / T-029c),
-// resolves the runtime context (seed company id + admin user id), invokes the
-// users loader (special two-phase) and the generic bulk loader for everything
-// else, then runs the JC source FK backfill (Phase 4) and writes a load report.
+// Reads migration/transform/<table>.json (output of T-014 / T-024c / T-029c /
+// T-035c), resolves the runtime context (seed company id + admin user id),
+// invokes the users loader (special two-phase) and the generic bulk loader
+// for everything else, then runs the JC source FK backfill (Phase 4) and the
+// jc_op outsource backfill (Phase 5) and writes a load report.
 //
 // Per-table config (mapper + conflict target + audit shape) lives in
 // TABLE_CONFIGS below. Phase 3 tables use deterministic (id) conflict targets
@@ -26,6 +27,10 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type AuditShape, bulkLoad, type BulkLoadConfig } from './load/bulk-loader';
 import { closeDb, rawSql } from './load/db';
+import {
+  type OutsourceBackfillResult,
+  runJcOpOutsourceBackfill,
+} from './load/jc-op-outsource-backfill';
 import { type BackfillResult, runJcSourceBackfill } from './load/jc-source-backfill';
 import type { IdMapPersisted, LoadResult, UserLoadOutcome } from './load/types';
 import { loadUsers } from './load/users-loader';
@@ -276,6 +281,111 @@ const JOB_WORK_ORDER_LINE_MAPPER: Mapper = (row) => ({
   status: row['status'],
 });
 
+const PURCHASE_REQUEST_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  pr_date: row['prDate'],
+  status: row['status'],
+  vendor_id: row['vendorId'],
+  vendor_code_text: row['vendorCodeText'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name: row['itemName'],
+  qty: row['qty'],
+  est_cost: row['estCost'],
+  required_date: row['requiredDate'],
+  source_jc_op_id: row['sourceJcOpId'],
+  source_so_line_id: row['sourceSoLineId'],
+  operation: row['operation'],
+  remarks: row['remarks'],
+  approved_by: row['approvedBy'],
+  approved_at: row['approvedAt'],
+  po_id: row['poId'],
+  po_created_at: row['poCreatedAt'],
+});
+
+const PURCHASE_ORDER_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  po_date: row['poDate'],
+  po_type: row['poType'],
+  vendor_id: row['vendorId'],
+  vendor_code_text: row['vendorCodeText'],
+  status: row['status'],
+  due_date: row['dueDate'],
+  tax_type: row['taxType'],
+  sgst_pct: row['sgstPct'],
+  cgst_pct: row['cgstPct'],
+  igst_pct: row['igstPct'],
+  pr_code_text: row['prCodeText'],
+  approved_by: row['approvedBy'],
+  approved_at: row['approvedAt'],
+  approval_remarks: row['approvalRemarks'],
+  remarks: row['remarks'],
+});
+
+const PURCHASE_ORDER_LINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  purchase_order_id: row['purchaseOrderId'],
+  line_no: row['lineNo'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name: row['itemName'],
+  qty: row['qty'],
+  rate: row['rate'],
+  received_qty: row['receivedQty'],
+  due_date: row['dueDate'],
+  source_so_line_id: row['sourceSoLineId'],
+  source_jc_op_id: row['sourceJcOpId'],
+  line_remarks: row['lineRemarks'],
+});
+
+const GOODS_RECEIPT_NOTE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  grn_date: row['grnDate'],
+  purchase_order_id: row['purchaseOrderId'],
+  po_code_text: row['poCodeText'],
+  vendor_id: row['vendorId'],
+  vendor_code_text: row['vendorCodeText'],
+  dc_no: row['dcNo'],
+  invoice_no: row['invoiceNo'],
+  remarks: row['remarks'],
+});
+
+const GOODS_RECEIPT_NOTE_LINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  goods_receipt_note_id: row['goodsReceiptNoteId'],
+  line_no: row['lineNo'],
+  purchase_order_line_id: row['purchaseOrderLineId'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name: row['itemName'],
+  received_qty: row['receivedQty'],
+  dc_ref_no: row['dcRefNo'],
+  qc_status: row['qcStatus'],
+  qc_accepted_qty: row['qcAcceptedQty'],
+  qc_rejected_qty: row['qcRejectedQty'],
+  qc_date: row['qcDate'],
+  qc_remarks: row['qcRemarks'],
+  qc_inspected_by: row['qcInspectedBy'],
+  remarks: row['remarks'],
+});
+
+const STORE_TRANSACTION_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  txn_date: row['txnDate'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  txn_type: row['txnType'],
+  qty: row['qty'],
+  source_type: row['sourceType'],
+  source_ref: row['sourceRef'],
+  stock_before: row['stockBefore'],
+  stock_after: row['stockAfter'],
+  remarks: row['remarks'],
+});
+
 // ─── Per-table config (mapper + conflict + audit) ─────────────────────────
 
 interface TableLoadConfig {
@@ -327,6 +437,25 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
     mapper: JOB_WORK_ORDER_LINE_MAPPER,
     conflictTarget: '(job_work_order_id, line_no) WHERE deleted_at IS NULL',
   },
+  // Phase 5 procurement
+  purchase_orders: { mapper: PURCHASE_ORDER_MAPPER },
+  purchase_requests: { mapper: PURCHASE_REQUEST_MAPPER },
+  purchase_order_lines: {
+    mapper: PURCHASE_ORDER_LINE_MAPPER,
+    conflictTarget: '(purchase_order_id, line_no) WHERE deleted_at IS NULL',
+  },
+  goods_receipt_notes: { mapper: GOODS_RECEIPT_NOTE_MAPPER },
+  goods_receipt_note_lines: {
+    mapper: GOODS_RECEIPT_NOTE_LINE_MAPPER,
+    conflictTarget: '(goods_receipt_note_id, line_no) WHERE deleted_at IS NULL',
+  },
+  // store_transactions: append-only ledger; no business unique key + no
+  // updated_*/deleted_at columns. Per ADR-015 #4 (matches op_log).
+  store_transactions: {
+    mapper: STORE_TRANSACTION_MAPPER,
+    conflictTarget: '(id)',
+    auditColumns: 'created_only',
+  },
 };
 
 // FK-dependency order. users first (special path); then masters; then Phase 3
@@ -335,8 +464,14 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
 // operators) → running_ops (depends on jc_ops + machines + operators); then
 // Phase 4: sales_orders (depends on clients) → sales_order_lines (depends on
 // sales_orders + items) → job_work_orders (depends on clients) →
-// job_work_order_lines (depends on job_work_orders + items). The JC source FK
-// backfill runs after the line tables are loaded — see runJcSourceBackfill.
+// job_work_order_lines (depends on job_work_orders + items); then Phase 5:
+// purchase_orders (depends on vendors) → purchase_requests (depends on PO
+// header via po_id) → purchase_order_lines (depends on PO + items) →
+// goods_receipt_notes (depends on PO) → goods_receipt_note_lines (depends on
+// GRN + PO_lines) → store_transactions (depends on items). The JC source FK
+// backfill runs after the SO/JW line tables are loaded — see
+// runJcSourceBackfill. The jc_op outsource backfill runs after the PO + PO
+// line tables are loaded — see runJcOpOutsourceBackfill.
 const ALL_TABLES = [
   'users',
   'clients',
@@ -355,6 +490,12 @@ const ALL_TABLES = [
   'sales_order_lines',
   'job_work_orders',
   'job_work_order_lines',
+  'purchase_orders',
+  'purchase_requests',
+  'purchase_order_lines',
+  'goods_receipt_notes',
+  'goods_receipt_note_lines',
+  'store_transactions',
 ] as const;
 type TableName = (typeof ALL_TABLES)[number];
 
@@ -515,6 +656,31 @@ async function main(): Promise<void> {
     );
   }
 
+  // Phase B'' — jc_op outsource FK backfill (T-035c). Runs only when the
+  // procurement tables are in the target set; idempotent on re-runs.
+  let outsourceBackfill: OutsourceBackfillResult | null = null;
+  const outsourceTrigger =
+    targets.includes('purchase_requests') || targets.includes('purchase_order_lines');
+  if (outsourceTrigger) {
+    outsourceBackfill = await runJcOpOutsourceBackfill({
+      companyId: seed.companyId,
+      adminUserId: seed.adminUserId,
+      dryRun,
+    });
+    log('info', 'jc_op_outsource_backfill', {
+      examined: outsourceBackfill.jcOpsExamined,
+      alreadyBackfilled: outsourceBackfill.jcOpsAlreadyBackfilled,
+      backfilledPr: outsourceBackfill.backfilledPr,
+      backfilledPoLine: outsourceBackfill.backfilledPoLine,
+      unresolved: outsourceBackfill.unresolved.length,
+      dryRun,
+    });
+    writeFileSync(
+      join(loadDir, '_jc_op_outsource_backfill.json'),
+      JSON.stringify(outsourceBackfill, null, 2),
+    );
+  }
+
   // Phase C — count-only validation. Field-level diff comes from validate-phaseN.
   const validation: ValidationEntry[] = [];
   if (!dryRun) {
@@ -556,6 +722,7 @@ async function main(): Promise<void> {
         results: loadResults,
         userOutcomes: userOutcomes.length > 0 ? userOutcomes : undefined,
         jcSourceBackfill: backfill,
+        jcOpOutsourceBackfill: outsourceBackfill,
       },
       null,
       2,

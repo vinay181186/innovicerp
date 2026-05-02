@@ -24,6 +24,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { transformClients } from './transforms/clients';
+import { transformGrn } from './transforms/grn';
 import { transformItems } from './transforms/items';
 import { transformJcOps } from './transforms/jc-ops';
 import { transformJobCards } from './transforms/job-cards';
@@ -31,9 +32,12 @@ import { transformJobWorkOrders } from './transforms/job-work-orders';
 import { transformMachines } from './transforms/machines';
 import { transformOperators } from './transforms/operators';
 import { transformOpLog } from './transforms/op-log';
+import { transformPurchaseOrders } from './transforms/purchase-orders';
+import { transformPurchaseRequests } from './transforms/purchase-requests';
 import { transformRouteCards } from './transforms/route-cards';
 import { transformRunningOps } from './transforms/running-ops';
 import { transformSalesOrders } from './transforms/sales-orders';
+import { transformStoreTransactions } from './transforms/store-transactions';
 import {
   emptyRegistry,
   ensureLookup,
@@ -72,6 +76,17 @@ const TRANSFORMS: Record<string, TransformFn> = {
     transformSalesOrders(rs as Parameters<typeof transformSalesOrders>[0], ctx),
   jobWorkOrders: (rs, ctx) =>
     transformJobWorkOrders(rs as Parameters<typeof transformJobWorkOrders>[0], ctx),
+  // Phase 5 (T-035c) — procurement
+  purchaseRequests: (rs, ctx) =>
+    transformPurchaseRequests(rs as Parameters<typeof transformPurchaseRequests>[0], ctx),
+  purchaseOrders: (rs, ctx) =>
+    transformPurchaseOrders(rs as Parameters<typeof transformPurchaseOrders>[0], ctx),
+  grn: (rs, ctx) => transformGrn(rs as Parameters<typeof transformGrn>[0], ctx),
+  storeTransactions: (rs, ctx) =>
+    transformStoreTransactions(
+      rs as Parameters<typeof transformStoreTransactions>[0],
+      ctx,
+    ),
 };
 
 type CollectionName = keyof typeof TRANSFORMS;
@@ -95,6 +110,12 @@ const WIRED_COLLECTIONS: CollectionName[] = [
   'runningOps',
   'salesOrders',
   'jobWorkOrders',
+  // Phase 5 — PR before PO so PO can use PR-built byCompositeKey
+  // ['purchase_requests_to_jc_op_id'] for source_jc_op_id resolution.
+  'purchaseRequests',
+  'purchaseOrders',
+  'grn',
+  'storeTransactions',
 ];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {
@@ -172,6 +193,48 @@ function updateLookupsFromResult(
     }
     ctx.lookups.byName['operators'] = m;
   }
+
+  // Phase 5: byCode for purchase_orders + purchase_requests so downstream
+  // transforms (GRN header, PO line, jc_ops backfill) can resolve.
+  if (result.table === 'purchase_orders' || result.table === 'purchase_requests') {
+    const m = new Map<string, string>();
+    for (const r of rows) {
+      const code = r['code'];
+      const id = r['id'];
+      if (typeof code === 'string' && typeof id === 'string') m.set(code, id);
+    }
+    ctx.lookups.byCode[result.table] = m;
+  }
+
+  // Phase 5: byCompositeKey for purchase_order_lines keyed by
+  // `${poCode}::${itemCode}` so GRN line resolution works.
+  if (result.table === 'purchase_order_lines') {
+    const m = new Map<string, string>();
+    for (const r of rows) {
+      const poCode = r['_legacyPoCode'];
+      const itemCode = r['_legacyItemCode'];
+      const id = r['id'];
+      if (typeof poCode === 'string' && typeof itemCode === 'string' && typeof id === 'string') {
+        m.set(`${poCode}::${itemCode}`, id);
+      }
+    }
+    ctx.lookups.byCompositeKey['purchase_order_lines'] = m;
+  }
+
+  // Phase 5: byCompositeKey['purchase_requests_to_jc_op_id'] keyed by
+  // PR code → resolved jc_op_id (or empty), so the PO transform can inherit
+  // the JC link via PR's jcNo+opSeq.
+  if (result.table === 'purchase_requests') {
+    const m = new Map<string, string>();
+    for (const r of rows) {
+      const prCode = r['_legacyPrCode'];
+      const jcOpId = r['_resolvedJcOpId'];
+      if (typeof prCode === 'string' && typeof jcOpId === 'string') {
+        m.set(prCode, jcOpId);
+      }
+    }
+    ctx.lookups.byCompositeKey['purchase_requests_to_jc_op_id'] = m;
+  }
 }
 
 // Pre-load lookups from on-disk transform output for tables not in this run.
@@ -214,6 +277,27 @@ function prefetchDependencyLookups(
   if (targets.includes('salesOrders') || targets.includes('jobWorkOrders')) {
     need('items', 'code');
     need('clients', 'code');
+  }
+  if (
+    targets.includes('purchaseRequests') ||
+    targets.includes('purchaseOrders') ||
+    targets.includes('grn')
+  ) {
+    need('items', 'code');
+    need('vendors', 'code');
+    // jc_ops composite-key lookup must come from in-memory run; can't reload
+    // from disk. If running these standalone, ensure jcOps is also in the run.
+  }
+  if (targets.includes('grn')) {
+    // PO + PO line lookups needed for GRN. PO is normally produced in-run
+    // (purchaseOrders precedes grn in WIRED_COLLECTIONS); the byCompositeKey
+    // for purchase_order_lines also requires in-memory output. If a partial
+    // run runs grn standalone, it'll surface po_unresolved + po_line_unresolved
+    // anomalies — that's the correct signal.
+    need('purchase_orders', 'code');
+  }
+  if (targets.includes('storeTransactions')) {
+    need('items', 'code');
   }
 }
 

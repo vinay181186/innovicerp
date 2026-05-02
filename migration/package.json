@@ -10,6 +10,7 @@
     "validate:phase2": "dotenv -e ../.env.local -- tsx validate-phase2.ts",
     "validate:phase3": "dotenv -e ../.env.local -- tsx validate-phase3.ts",
     "validate:phase4": "dotenv -e ../.env.local -- tsx validate-phase4.ts",
+    "validate:phase5": "dotenv -e ../.env.local -- tsx validate-phase5.ts",
     "reconcile": "dotenv -e ../.env.local -- tsx reconcile-op-log.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
