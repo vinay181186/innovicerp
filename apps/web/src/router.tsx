@@ -5,6 +5,7 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
+import { jobCardsListRoute } from './modules/job-cards/routes/list';
 import { jobWorkOrdersListRoute } from './modules/job-work-orders/routes/list';
 import { jobWorkOrderDetailRoute } from './modules/job-work-orders/routes/detail';
 import {
@@ -68,6 +69,7 @@ const routeTree = rootRoute.addChildren([
     jobWorkOrderNewRoute,
     jobWorkOrderDetailRoute,
     jobWorkOrderEditRoute,
+    jobCardsListRoute,
   ]),
 ]);
 
