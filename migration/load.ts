@@ -1,12 +1,12 @@
 // migration/load.ts
 //
-// T-015 (Phase 2) + T-024d (Phase 3) — Bulk-load transform output into
-// Supabase Postgres.
+// T-015 (Phase 2) + T-024d (Phase 3) + T-029d (Phase 4) — Bulk-load transform
+// output into Supabase Postgres.
 //
-// Reads migration/transform/<table>.json (output of T-014 / T-024c), resolves
-// the runtime context (seed company id + admin user id), invokes the users
-// loader (special two-phase) and the generic bulk loader for everything else,
-// then validates counts/samples and writes a load report.
+// Reads migration/transform/<table>.json (output of T-014 / T-024c / T-029c),
+// resolves the runtime context (seed company id + admin user id), invokes the
+// users loader (special two-phase) and the generic bulk loader for everything
+// else, then runs the JC source FK backfill (Phase 4) and writes a load report.
 //
 // Per-table config (mapper + conflict target + audit shape) lives in
 // TABLE_CONFIGS below. Phase 3 tables use deterministic (id) conflict targets
@@ -18,6 +18,7 @@
 //   pnpm --filter @innovic/migration load
 //   pnpm --filter @innovic/migration load -- --only=items
 //   pnpm --filter @innovic/migration load -- --only=route_cards,route_card_ops
+//   pnpm --filter @innovic/migration load -- --only=sales_orders,sales_order_lines,job_work_orders,job_work_order_lines
 //   pnpm --filter @innovic/migration load -- --dry-run
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -25,6 +26,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type AuditShape, bulkLoad, type BulkLoadConfig } from './load/bulk-loader';
 import { closeDb, rawSql } from './load/db';
+import { type BackfillResult, runJcSourceBackfill } from './load/jc-source-backfill';
 import type { IdMapPersisted, LoadResult, UserLoadOutcome } from './load/types';
 import { loadUsers } from './load/users-loader';
 import { validateOne, type ValidationEntry } from './load/validate';
@@ -211,6 +213,69 @@ const RUNNING_OP_MAPPER: Mapper = (row) => ({
   status: row['status'],
 });
 
+const SALES_ORDER_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  so_date: row['soDate'],
+  client_id: row['clientId'],
+  customer_name: row['customerName'],
+  client_po_no: row['clientPoNo'],
+  type: row['type'],
+  status: row['status'],
+  gst_percent: row['gstPercent'],
+  bom_master_id: row['bomMasterId'],
+  bom_status: row['bomStatus'],
+  cost_center: row['costCenter'],
+  remarks: row['remarks'],
+});
+
+const SALES_ORDER_LINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  sales_order_id: row['salesOrderId'],
+  line_no: row['lineNo'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  part_name: row['partName'],
+  material: row['material'],
+  drawing_no: row['drawingNo'],
+  uom: row['uom'],
+  order_qty: row['orderQty'],
+  rate: row['rate'],
+  due_date: row['dueDate'],
+  client_po_line_no: row['clientPoLineNo'],
+  status: row['status'],
+});
+
+const JOB_WORK_ORDER_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  jw_date: row['jwDate'],
+  client_id: row['clientId'],
+  customer_name: row['customerName'],
+  client_po_no: row['clientPoNo'],
+  status: row['status'],
+  remarks: row['remarks'],
+});
+
+const JOB_WORK_ORDER_LINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  job_work_order_id: row['jobWorkOrderId'],
+  line_no: row['lineNo'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  part_name: row['partName'],
+  material: row['material'],
+  drawing_no: row['drawingNo'],
+  uom: row['uom'],
+  order_qty: row['orderQty'],
+  due_date: row['dueDate'],
+  client_material: row['clientMaterial'],
+  client_material_qty: row['clientMaterialQty'],
+  material_received_date: row['materialReceivedDate'],
+  material_received_qty: row['materialReceivedQty'],
+  status: row['status'],
+});
+
 // ─── Per-table config (mapper + conflict + audit) ─────────────────────────
 
 interface TableLoadConfig {
@@ -251,12 +316,27 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
     mapper: RUNNING_OP_MAPPER,
     conflictTarget: '(id)',
   },
+  // Phase 4 sales chain
+  sales_orders: { mapper: SALES_ORDER_MAPPER },
+  sales_order_lines: {
+    mapper: SALES_ORDER_LINE_MAPPER,
+    conflictTarget: '(sales_order_id, line_no) WHERE deleted_at IS NULL',
+  },
+  job_work_orders: { mapper: JOB_WORK_ORDER_MAPPER },
+  job_work_order_lines: {
+    mapper: JOB_WORK_ORDER_LINE_MAPPER,
+    conflictTarget: '(job_work_order_id, line_no) WHERE deleted_at IS NULL',
+  },
 };
 
 // FK-dependency order. users first (special path); then masters; then Phase 3
 // in the order route_cards/job_cards (siblings, both depend on items) → jc_ops
 // (depends on job_cards + machines + vendors) → op_log (depends on jc_ops +
-// operators) → running_ops (depends on jc_ops + machines + operators).
+// operators) → running_ops (depends on jc_ops + machines + operators); then
+// Phase 4: sales_orders (depends on clients) → sales_order_lines (depends on
+// sales_orders + items) → job_work_orders (depends on clients) →
+// job_work_order_lines (depends on job_work_orders + items). The JC source FK
+// backfill runs after the line tables are loaded — see runJcSourceBackfill.
 const ALL_TABLES = [
   'users',
   'clients',
@@ -271,6 +351,10 @@ const ALL_TABLES = [
   'jc_ops',
   'op_log',
   'running_ops',
+  'sales_orders',
+  'sales_order_lines',
+  'job_work_orders',
+  'job_work_order_lines',
 ] as const;
 type TableName = (typeof ALL_TABLES)[number];
 
@@ -405,6 +489,32 @@ async function main(): Promise<void> {
     );
   }
 
+  // Phase B' — JC source FK backfill (T-029d). Runs only when the line tables
+  // are in the target set; idempotent on re-runs.
+  let backfill: BackfillResult | null = null;
+  const backfillTrigger =
+    targets.includes('sales_order_lines') || targets.includes('job_work_order_lines');
+  if (backfillTrigger) {
+    backfill = await runJcSourceBackfill({
+      companyId: seed.companyId,
+      adminUserId: seed.adminUserId,
+      transformDir,
+      dryRun,
+    });
+    log('info', 'jc_source_backfill', {
+      examined: backfill.jcsExamined,
+      alreadyBackfilled: backfill.jcsAlreadyBackfilled,
+      backfilledSo: backfill.backfilledSo,
+      backfilledJw: backfill.backfilledJw,
+      unresolved: backfill.unresolved.length,
+      dryRun,
+    });
+    writeFileSync(
+      join(loadDir, '_jc_source_backfill.json'),
+      JSON.stringify(backfill, null, 2),
+    );
+  }
+
   // Phase C — count-only validation. Field-level diff comes from validate-phaseN.
   const validation: ValidationEntry[] = [];
   if (!dryRun) {
@@ -445,6 +555,7 @@ async function main(): Promise<void> {
         targets,
         results: loadResults,
         userOutcomes: userOutcomes.length > 0 ? userOutcomes : undefined,
+        jcSourceBackfill: backfill,
       },
       null,
       2,

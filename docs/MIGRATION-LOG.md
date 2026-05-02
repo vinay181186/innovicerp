@@ -338,6 +338,82 @@ Total: **119 / 119 mapped rows match transform on every loaded column**.
 
 ---
 
+## Phase 4 Per-Collection Entries — Load Run 3 — 2026-05-02 (T-029d)
+
+**Target:** dev Supabase Mumbai (same `d997c3ed-...` company as Phase 2 + 3)
+**Script:** `migration/load.ts` (extended for Phase 4 — 4 new mappers + JC source FK backfill phase)
+**Duration:** ~2.5 s incl. backfill + count validation · **Total rows inserted:** **15** + **2 JC FK UPDATEs**
+
+## salesOrders (sales_orders + sales_order_lines)
+**Date:** 2026-05-02
+**Source records:** 9 (1 demo Equipment SO line + 8 lines of SO-436)
+**Loaded records:** 2 headers + 9 lines = **11 rows**
+**Discrepancy:** 0 — header+lines split per ADR-012 #1 (group by `soNo`); both headers + every line round-tripped
+**Anomalies:** 1 line at transform (`SO-DEMO-EQ` line 1 has no resolvable itemCode `HYD-PRESS-100T` → `item_id=null` + `item_code_text='HYD-PRESS-100T'` per ADR-012 #10; NOT skipped)
+**Validation:** PASS — 11/11 field-level matches; 0 orphan FKs across `client_id`, `sales_order_id`, `item_id`, audit cols
+**Cutover:** Pending (T-030 SO list/detail/create/edit screens, then T-034 sales-team module-by-module cutover)
+
+## jobWorkOrders (job_work_orders + job_work_order_lines)
+**Date:** 2026-05-02
+**Source records:** 2 (JW-001, JW-002, each with 1 line)
+**Loaded records:** 2 headers + 2 lines = **4 rows**
+**Discrepancy:** 0
+**Anomalies:** 2 line-level itemCode unresolved (`ITM-003`, `ITM-001`) — both loaded with `item_id=null` + `item_code_text` preserved per ADR-012 #10. Both current JWs have empty legacy `clientId` → loaded with `client_id=null` + `customer_name` populated.
+**Validation:** PASS — 4/4 field-level matches; 0 orphan FKs across `client_id`, `job_work_order_id`, `item_id`, audit cols
+**Cutover:** Pending (T-031 JW list/detail screens)
+
+## job_cards source FK backfill (T-029d Phase B')
+**Date:** 2026-05-02
+**Source:** Each JC's `source_legacy_ref` text column (Phase 3 carry-over per ADR-011 #5)
+**Backfilled:** 2 / 2 — both surviving JCs map to SO-436 lines via legacy `soRefId`:
+  - `IN-JC-00002` (`2e10fbda-…`) → `source_so_line_id = 8aa420eb-4215-5d07-8d5e-647fc8f72fcd` (SO-436 line 6 / legacy `4n7tmo9u` / partName `JOINT`)
+  - `IN-JC-00003` (`80c31859-…`) → `source_so_line_id = ef6772a0-d139-5e63-9d0d-89f75be37d1d` (SO-436 line 4 / legacy `mmrfp7d3` / partName `SPACER`)
+**JW backfill:** 0 — no current JCs reference JWs
+**Validation:** PASS — both FKs verified via `validate-phase4.ts` against `_id_map.json`; CHECK `num_nonnulls(source_so_line_id, source_jw_line_id) <= 1` holds
+**Notes:** Helper is idempotent (rows with either FK already non-null skip). `source_legacy_ref` text retained one phase per ADR-012 #3; drop in Phase 5 cleanup commit.
+
+---
+
+## Phase 4 Sign-Off — 2026-05-02 (T-029d)
+
+**Script:** `migration/validate-phase4.ts` · **Output:** `migration/load-output/_phase4_validation.json` (gitignored) · **Overall status:** **PASS**
+
+Read-only field-level diff + 16 orphan FK checks + JC backfill verification, run via `pnpm --filter @innovic/migration validate:phase4`.
+
+**Field-level diff (transform → DB, mapped columns):**
+
+| Table | Transform rows | DB count | Matched | Field diffs | Missing from DB |
+|---|---:|---:|---:|---:|---:|
+| sales_orders | 2 | 2 | 2 | 0 | 0 |
+| sales_order_lines | 9 | 9 | 9 | 0 | 0 |
+| job_work_orders | 2 | 2 | 2 | 0 | 0 |
+| job_work_order_lines | 2 | 2 | 2 | 0 | 0 |
+
+Total: **15 / 15 mapped rows match transform on every loaded column**.
+
+**Orphan FK checks (16 columns, all 0 orphans):**
+- sales_orders: client_id, created_by, updated_by
+- sales_order_lines: sales_order_id, item_id, created_by, updated_by
+- job_work_orders: client_id, created_by, updated_by
+- job_work_order_lines: job_work_order_id, item_id, created_by, updated_by
+- **job_cards (Phase 4 ALTERS):** source_so_line_id, source_jw_line_id
+
+**Backfill verification (job_cards source FK):**
+- JCs examined: 2 · verified: **2/2** · FK issues: 0 · audit-only legacy unresolved: 0
+- Both surviving JCs (IN-JC-00002 → `4n7tmo9u`, IN-JC-00003 → `mmrfp7d3`) resolved against `_id_map.json` and the actual DB FK matches expected target.
+
+**Conclusions:**
+- Every Phase 4 column lands in DB byte-for-byte (modulo documented normalisations: enum lowercasing, type → so_type, status → so_status, NUMERIC `.toFixed(2)` strings).
+- All 16 FK columns reference existing parents, including the 2 new JC FKs added in `0008_phase4_jc_alters.sql`.
+- The deferred sales-link backfill from ADR-011 #5 is now complete and verified.
+- `customer_name` + `item_code_text` fallbacks (ADR-012 #9, #10) prevented any row drops on master-data gaps — unlike Phase 3's ITM-001 cascade.
+
+**Phase 4 storage layer + transform + load + JC backfill are sign-off ready.** Next: T-030 (SO list / detail / create / edit screens).
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase4`
+
+---
+
 ## Template
 
 ```
@@ -354,7 +430,7 @@ Total: **119 / 119 mapped rows match transform on every loaded column**.
 ## Pending Collections
 - **Phase 2:** users, clients, vendors, items, machines, operators
 - **Phase 3:** jobCards, jcOps, opLog
-- **Phase 4:** salesOrders, jobWorkOrders
+- ~~**Phase 4:** salesOrders, jobWorkOrders~~ — migrated 2026-05-02 (T-029d)
 - **Phase 5:** purchaseOrders, grn, storeTransactions
 - **Phase 6:** qcProcesses, qcAssignments, qcDocUploads, ncRegister, capaRecords; jwDCOutward, jwDCInward, challans, dispatchLog
 - **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
