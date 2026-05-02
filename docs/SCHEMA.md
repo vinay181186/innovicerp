@@ -1063,6 +1063,51 @@ Per ADR-015 #5:
 
 ---
 
+## Phase 6 Tables — Quality + Dispatch (T-038 partial: qc_processes master only)
+
+> **Status:** T-038 design from 2026-05-03. Approved by user; ADR-016 captures the decisions. Per-inspection records, NC register, and dispatch tables are out of T-038 scope — see "T-038 reframe" in ADR-016. T-039 brings `nc_register` + `delivery_challans` (legacy `dispatch_log` is doc_missing in the export).
+
+Replaces legacy collection: `qcProcesses` (5 records — MIR / MCR / DIR / Coating Inspection / TPI). Legacy `qcAssignments` and `qcDocUploads` are doc_missing (collections were never written by the legacy app — see Run 1 export anomalies in `docs/MIGRATION-LOG.md`).
+
+Spec source: `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. Key references: `_selQCProcesses(...)` helper rendered on JC ops form (line 5877), Plan ops form (line 9548), Route Card ops form (line 10215). Selection writes the picked process `name` as a text snapshot into `op.operation`; the picked `defaultCycleTime` is copied to the op's `cycleTime`.
+
+### `qc_processes`
+
+Master-data lookup of QC step types. Used by JC-op / route-card-op / plan-op forms as a dropdown source. Operations themselves still store `op.operation` as text (no FK alter on `jc_ops` — see ADR-016 #3).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business key (legacy `name` field, e.g. `MIR`, `MCR`, `DIR`, `Coating Inspection`, `TPI`). Functions as both unique key and display label per ADR-016 #2 |
+| `description` | `text` | nullable. Long-form (e.g. `Material Identification Report`) |
+| `default_cycle_time_min` | `numeric(8,2)` | not null, default `0`. Legacy `defaultCycleTime` (currently 0 for all 5; future ops can set non-zero defaults) |
+| `is_active` | `boolean` | not null, default `true`. Legacy `status='Active'` → true; anything else → false |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, is_active) where deleted_at is null` — drives the "active processes only" dropdown
+
+RLS:
+- `qc_processes_company_read` (any role)
+- `qc_processes_manager_write` (admin/manager only)
+
+### Phase 6 Triggers
+
+`before update` on `qc_processes` → `set_updated_at()`. Same pattern as Phase 2/3/4/5 master/transactional tables.
+
+### Phase 6 Action items (T-038 implementation, single chunk)
+
+- [x] Drizzle schema in `apps/api/src/db/schema.ts` — 1 new master table
+- [x] Migration: drizzle-gen tables + indexes + RLS + hand-written `set_updated_at` trigger (apply via `apply-sql.ts` per the Phase 5 pattern around the journal-orphan workaround)
+- [x] Transform layer: 1 new transform (`migration/transforms/qc-processes.ts`) with status normalisation + numeric coercion
+- [x] Load: extend `migration/load.ts` with QC_PROCESS_MAPPER + ALL_TABLES entry
+- [x] Validate: minimal `migration/validate-phase6.ts` (extended in T-039 with NC + dispatch tables)
+- [x] Update SCHEMA.md "Migration History" with the new migration filenames
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:
@@ -1083,3 +1128,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-05-01 | `0004_phase3_op_entry.sql` (drizzle-gen) + `0005_phase3_triggers.sql` (hand-written) + `0006_phase3_views.sql` (hand-written) | Phase 3 op-entry chain (T-024b) — 7 tables (route_cards, route_card_ops, route_card_revisions, job_cards, jc_ops, op_log, running_ops), 6 enums, BEFORE UPDATE triggers, derived-status views (`v_jc_op_status`, `v_jc_status` mirroring legacy calcEngine). Hand-written migrations applied via `apps/api/src/db/apply-sql.ts` |
 | 2026-05-01 | `0007_phase4_sales_chain.sql` (drizzle-gen) + `0008_phase4_jc_alters.sql` (hand-written) + `0009_phase4_triggers.sql` (hand-written) | Phase 4 sales chain (T-029b) — 4 tables (sales_orders, sales_order_lines, job_work_orders, job_work_order_lines), 2 enums (so_type, so_status — shared between SO and JW), BEFORE UPDATE triggers. Plus job_cards alters: rename `source_jw_id`→`source_jw_line_id`, add 2 FKs (ON DELETE SET NULL), add CHECK `num_nonnulls(...) <= 1`. FK names initially custom; renamed in-place to Drizzle convention via one-shot SQL; snapshot patched to match. No drift on `drizzle-kit generate`. 73/73 api tests still green |
 | 2026-05-02 | `0009_phase5_procurement.sql` (drizzle-gen) + `0010_phase5_triggers.sql` (hand-written) + `0011_phase5_views.sql` (hand-written) | Phase 5 procurement storage (T-035b) — 5 new tables (purchase_requests, purchase_orders, purchase_order_lines, goods_receipt_notes, goods_receipt_note_lines, store_transactions), 6 new enums (po_status, pr_status, po_type, grn_qc_status, store_txn_type, store_txn_source_type). Plus jc_ops adds 2 FK columns (outsource_pr_id → purchase_requests, outsource_po_line_id → purchase_order_lines) — legacy text columns (outsource_pr_no, outsource_po_no) kept until T-035c backfills then drops. BEFORE UPDATE triggers on the 5 new tables (store_transactions is append-only — no trigger). v_item_stock view aggregates per-item on-hand qty from store_transactions (ADR-015 #11). RLS: standard company-isolation + manager-write on all 5 tables; reserved goods_receipt_note_lines_qc_update policy for the QC role (no qc-role user yet — forward-defined for Phase 6). Applied via `apply-sql.ts` runner because the journal has an orphan `0008_verify_no_drift` entry from a stale run that breaks `drizzle-kit migrate`. No drift on `drizzle-kit generate`. 120/120 api tests still green |
+| 2026-05-03 | `0010_phase6_qc_processes.sql` (drizzle-gen) + `0011_phase6_qc_processes_trigger.sql` (hand-written) | Phase 6 quality master (T-038) — 1 new master table (qc_processes), 0 new enums. BEFORE UPDATE trigger via the standard `set_updated_at()` helper. RLS standard pair (company_read + manager_write). Applied via `apply-sql.ts` per the Phase 5 journal-orphan workaround. No FK alter on jc_ops per ADR-016 #3 (existing JC ops keep their text snapshot in `op.operation`). Per-inspection record table deferred to T-040. 175/175 api tests still green |

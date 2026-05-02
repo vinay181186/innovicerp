@@ -386,6 +386,14 @@ const STORE_TRANSACTION_MAPPER: Mapper = (row) => ({
   remarks: row['remarks'],
 });
 
+const QC_PROCESS_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  description: row['description'],
+  default_cycle_time_min: row['defaultCycleTimeMin'],
+  is_active: row['isActive'],
+});
+
 // ─── Per-table config (mapper + conflict + audit) ─────────────────────────
 
 interface TableLoadConfig {
@@ -456,6 +464,8 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
     conflictTarget: '(id)',
     auditColumns: 'created_only',
   },
+  // Phase 6 master (T-038)
+  qc_processes: { mapper: QC_PROCESS_MAPPER },
 };
 
 // FK-dependency order. users first (special path); then masters; then Phase 3
@@ -496,6 +506,9 @@ const ALL_TABLES = [
   'goods_receipt_notes',
   'goods_receipt_note_lines',
   'store_transactions',
+  // Phase 6 master — no FK dependencies on Phase 2-5 tables (per ADR-016 #3
+  // jc_ops.operation stays text, no FK to qc_processes).
+  'qc_processes',
 ] as const;
 type TableName = (typeof ALL_TABLES)[number];
 

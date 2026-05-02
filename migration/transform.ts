@@ -34,6 +34,7 @@ import { transformOperators } from './transforms/operators';
 import { transformOpLog } from './transforms/op-log';
 import { transformPurchaseOrders } from './transforms/purchase-orders';
 import { transformPurchaseRequests } from './transforms/purchase-requests';
+import { transformQcProcesses } from './transforms/qc-processes';
 import { transformRouteCards } from './transforms/route-cards';
 import { transformRunningOps } from './transforms/running-ops';
 import { transformSalesOrders } from './transforms/sales-orders';
@@ -87,6 +88,8 @@ const TRANSFORMS: Record<string, TransformFn> = {
       rs as Parameters<typeof transformStoreTransactions>[0],
       ctx,
     ),
+  // Phase 6 (T-038) — quality master only; per-inspection events deferred to T-040
+  qcProcesses: (rs) => transformQcProcesses(rs as Parameters<typeof transformQcProcesses>[0]),
 };
 
 type CollectionName = keyof typeof TRANSFORMS;
@@ -116,6 +119,8 @@ const WIRED_COLLECTIONS: CollectionName[] = [
   'purchaseOrders',
   'grn',
   'storeTransactions',
+  // Phase 6 — qc_processes is a master, no FK dependencies on Phase 2-5
+  'qcProcesses',
 ];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {

@@ -513,6 +513,63 @@ Total: **9 / 9 mapped rows match transform on every loaded column**.
 
 ---
 
+## Phase 6 Per-Collection Entries — Load Run 5 — 2026-05-03 (T-038)
+
+**Target:** dev Supabase Mumbai (same `d997c3ed-...` company)
+**Script:** `migration/load.ts` (extended for Phase 6 — 1 new mapper)
+**Duration:** ~50 ms · **Total rows inserted:** **5**
+
+## qcProcesses (qc_processes)
+**Date:** 2026-05-03
+**Source records:** 5 (MIR / MCR / DIR / Coating Inspection / TPI)
+**Loaded records:** 5
+**Discrepancy:** 0
+**Anomalies:** 0 at transform — all 5 are `status: 'Active'` with `defaultCycleTime: 0`. Description blank only for `Coating Inspection` (loaded as null).
+**Validation:** PASS — `validate:phase6` script: 5/5 field-level matches, 0 orphan FKs across 2 checks (created_by + updated_by). Deterministic UUIDv5 ids stable across re-runs.
+**Cutover:** Pending (T-040 builds the QC inspection workflow + admin CRUD for the master)
+
+Records loaded: `1olhiafn` MIR, `l3hbf23s` MCR, `5ksvw3uz` DIR, `i56kaxzs` Coating Inspection (description blank in legacy), `4p3re6a7` TPI.
+
+## qcAssignments — NOT MIGRATED (per ADR-016)
+**Date:** 2026-05-03
+**Source records:** 0 (collection doc_missing in Run 1 export — never written by legacy app)
+**Decision:** No table migration. Per-inspection assignments will be designed fresh in T-040 with the QC inspection workflow UX. ADR-016 #1 captures the reframe.
+
+## qcDocUploads — NOT MIGRATED (per ADR-016)
+**Date:** 2026-05-03
+**Source records:** 0 (collection doc_missing in Run 1 export)
+**Decision:** No table migration. File uploads land via Supabase Storage in T-040, not as a legacy resurrection. ADR-016 #4.
+
+---
+
+## Phase 6 Sign-Off — 2026-05-03 (T-038)
+
+**Script:** `migration/validate-phase6.ts` · **Output:** `migration/load-output/_phase6_validation.json` (gitignored) · **Overall status:** **PASS**
+
+Read-only field-level diff + 2 orphan FK checks, run via `pnpm --filter @innovic/migration validate:phase6`.
+
+**Field-level diff (transform → DB, mapped columns):**
+
+| Table | Transform rows | DB count | Matched | Field diffs | Missing from DB |
+|---|---:|---:|---:|---:|---:|
+| qc_processes | 5 | 5 | 5 | 0 | 0 |
+
+Total: **5 / 5 mapped rows match transform on every loaded column**.
+
+**Orphan FK checks (2 columns, all 0 orphans):**
+- qc_processes: created_by, updated_by
+
+**Conclusions:**
+- All 5 QC process master rows land byte-for-byte (modulo documented normalisations: empty description → null, defaultCycleTime numeric coerced to `'0.00'`).
+- No FK alter on `jc_ops` per ADR-016 #3 — existing migrated JC-op QC steps still carry their picked operation as text snapshot.
+- T-039 will extend `validate-phase6.ts` with `nc_register` + `delivery_challans` rows.
+
+**Phase 6 storage layer + transform + load + validate are sign-off ready for the qc_processes slice.** Next: T-039 (NC + dispatch migration) — `ncRegister` (3 rows) + `challans` (4 rows). Legacy `dispatch_log` doc_missing.
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase6`
+
+---
+
 ## Template
 
 ```
@@ -531,6 +588,7 @@ Total: **9 / 9 mapped rows match transform on every loaded column**.
 - **Phase 3:** jobCards, jcOps, opLog
 - ~~**Phase 4:** salesOrders, jobWorkOrders~~ — migrated 2026-05-02 (T-029d)
 - ~~**Phase 5:** purchaseOrders, grn, storeTransactions~~ — migrated 2026-05-02 (T-035c)
-- **Phase 6:** qcProcesses, qcAssignments, qcDocUploads, ncRegister, capaRecords; jwDCOutward, jwDCInward, challans, dispatchLog
+- ~~**Phase 6 (qc master):** qcProcesses~~ — migrated 2026-05-03 (T-038); `qcAssignments` + `qcDocUploads` deliberately NOT migrated per ADR-016
+- **Phase 6 (remaining):** ncRegister, capaRecords; jwDCOutward, jwDCInward, challans, dispatchLog
 - **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
 - **Phase 9:** activityLog

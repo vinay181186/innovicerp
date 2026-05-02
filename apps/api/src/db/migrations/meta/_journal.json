@@ -50,6 +50,13 @@
       "when": 1777738565960,
       "tag": "0009_phase5_procurement",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777757934273,
+      "tag": "0010_phase6_qc_processes",
+      "breakpoints": true
     }
   ]
 }

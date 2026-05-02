@@ -378,6 +378,54 @@ export const operators = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 6 tables — Quality + Dispatch (T-038, qc_processes only) ──────
+// Per ADR-016. Master-data lookup only — per-inspection record table is
+// deferred to T-040 (where the workflow UX drives the schema).
+
+export const qcProcesses = pgTable(
+  'qc_processes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    description: text('description'),
+    defaultCycleTimeMin: numeric('default_cycle_time_min', { precision: 8, scale: 2 })
+      .notNull()
+      .default('0'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('qc_processes_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_processes_company_active_idx')
+      .on(t.companyId, t.isActive)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('qc_processes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('qc_processes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 3 tables — Op Entry Chain (T-024b) ─────────────────────────────
 // Per ADR-011 and SCHEMA.md §"Phase 3 Tables".
 // Status columns deliberately absent from job_cards / jc_ops — derived via

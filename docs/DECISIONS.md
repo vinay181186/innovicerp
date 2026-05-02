@@ -446,9 +446,63 @@ The migration effort is dominated by schema design — current data is 7 records
 - [ ] Apply via the existing `apply-sql.ts` runner for the hand-written migrations
 - [ ] Update SCHEMA.md "Migration History" with the four migration filenames
 
+## ADR-016: Phase 6 schema — qc_processes master only; per-inspection records deferred to T-040
+
+**Date:** 2026-05-03
+**Status:** Accepted
+
+### Context
+
+T-038 was originally framed as "migrate `qc_inspections` (consolidated from `qcProcesses` / `qcAssignments` / `qcDocUploads`)" — implying a per-inspection event table built from three legacy collections. Real-data inspection of the Run 1 export contradicts that:
+
+- `qcProcesses`: 5 records — but they are **master-data lookups** (MIR / MCR / DIR / Coating Inspection / TPI), not per-inspection events. Each has `name`, `description`, `defaultCycleTime`, `status`. Legacy uses these as a dropdown source on JC-op / route-card-op / plan-op forms (see SCHEMA.md §"Phase 6 Tables — Quality + Dispatch" for the line refs).
+- `qcAssignments`: doc_missing — collection was never written by the legacy app.
+- `qcDocUploads`: doc_missing — same.
+
+Per-inspection state we already have, fully migrated:
+- `goods_receipt_note_lines` QC fields (T-035c) — incoming-material QC.
+- `jc_ops.qc_required` / `qc_call_date` / `qc_attended_date` (T-024) — shop-floor QC steps.
+
+So the migration scope of T-038 collapses to: **one master table, 5 rows.**
+
+### Decision
+
+1. **T-038 reframe** — migrate only `qcProcesses` to a new `qc_processes` master table. Drop the "consolidated qc_inspections" framing. Per-inspection record table (with file uploads, sign-off, etc.) is deferred to **T-040** (build QC inspection workflow), where the UX requirements will drive the schema.
+2. **Use `code` as the business key**, mapping legacy `name` → `code`. Legacy `name` functions as both unique key (form selects by name string) AND display label, and the values are short uppercase identifiers (`MIR`, `MCR`, etc.). Adding a separate `display_name` would be premature — if a longer display name emerges, alter the table then.
+3. **No FK from `jc_ops.operation` to `qc_processes`.** Existing migrated JC-op QC steps already carry the right operation text. New JC-op writes via the future T-040 UX will pick from the master via dropdown but persist as text snapshot — same pattern as `purchase_orders.pr_code_text` (ADR-015 #3) where the audit text + dropdown pattern is preferred over a hard FK alter on a transactional table that's already shipped.
+4. **Mark legacy `qcAssignments` + `qcDocUploads` as never-migrated** in MIGRATION-LOG. T-040 will design fresh structures (likely Supabase Storage URLs on per-inspection rows), not resurrect these.
+
+### Alternatives Considered
+
+- **A — original "consolidated qc_inspections" plan.** Rejected: zero per-inspection data exists in legacy, so there's nothing to consolidate. Building the table now would be designing in a vacuum; T-040 has the UX requirements that will drive the right shape.
+- **B — separate `code` + `display_name` columns.** Rejected: legacy data treats name as both. Adding a column with no distinct values is premature abstraction (CLAUDE.md §6 #6).
+- **C — add `jc_ops.qc_process_id` FK now.** Rejected: every shipped JC op already has the picked text in `op.operation`, so a FK alter would force a backfill that adds zero query power for existing data; better to leave the text snapshot pattern in place and let T-040 decide whether the per-inspection record needs a FK to the master.
+
+### Consequences
+
+- **Positive:**
+  - Smallest viable T-038 — 1 table, 5 rows, ~200 LOC across schema + transform + load + validate + tests. Ships in one commit.
+  - T-040 retains design freedom for the per-inspection record (file uploads, inspector roles, attachments).
+  - Status field defaults to `is_active=true`; matches the operators / clients / vendors master pattern.
+
+- **Negative:**
+  - Until T-040 ships, there's no UI for QC inspection events themselves — only the master types are CRUD-able (and admin CRUD lands in a follow-on after T-038 since this is migration-only).
+
+- **Risks:**
+  - **Naming clash** — any new "qc_inspections" table T-040 designs needs to live next to `qc_processes`. Naming is `qc_processes` (master) + future `qc_inspections` (events) — clear separation.
+
+### Action items (T-038)
+
+- [ ] Drizzle schema: 1 new master table (`qc_processes`)
+- [ ] Migration: drizzle-gen + hand-written `set_updated_at` trigger
+- [ ] Transform layer: `migration/transforms/qc-processes.ts` (~50 LOC)
+- [ ] Load: extend `migration/load.ts` with QC_PROCESS_MAPPER
+- [ ] Validate: minimal `migration/validate-phase6.ts`
+- [ ] Update TASKS.md + MIGRATION-LOG.md
+
 ---
 
 ## Pending Decisions
 
-- **ADR-016 (pending):** Domain name and transactional email-from address.
-- **ADR-017 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-017 (pending):** Domain name and transactional email-from address.
+- **ADR-018 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
