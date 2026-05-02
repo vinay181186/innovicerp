@@ -33,6 +33,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { tryCascadeJcComplete } from './sales-cascade';
 import type {
   JcOpEnriched,
   ListJcOpsQuery,
@@ -341,6 +342,11 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
           .set({ qcCallDate: input.logDate, updatedBy: user.id })
           .where(eq(jcOps.id, nextOp.id));
       }
+
+      // T-033: cascade SO/JW line + header auto-close when this insert
+      // brings the JC to v_jc_status.computed_status='complete'. Idempotent;
+      // no-op for source-less JCs or already-closed lines.
+      await tryCascadeJcComplete(tx, op.jobCardId, user);
     }
 
     const row = inserted[0]!;

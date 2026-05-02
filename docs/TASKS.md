@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-02 (T-032 done — JC list API + Web shipped end-to-end; 113/113 api tests green; web build clean. Browser smoke for T-030 + T-031 + T-032 gated on user. T-033 (SO/JW auto-close cascade) is next.)
+> Last updated: 2026-05-02 (T-033 done — SO/JW line + header auto-close cascade live in op-entry submitOpLog; 120/120 api tests green incl. 7 cascade tests. T-034 (sales team cutover) is next; gated on user.)
 
 ## Status Legend
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
@@ -16,43 +16,33 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Resume Checklist (next session)
 
-> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-033. Two parallel tracks running:
+> Boot order: read CLAUDE.md §0–15, then this file, then proceed with T-034 (cutover, gated on user) OR start Phase 5. Two parallel tracks running:
 > - **Phase 3 wind-down (calendar work):** T-025c manual smoke (5–10 min, your call), then T-027 5 daily reconciliations, then T-028 cutover. None of this needs new code.
-> - **Phase 4 (this session's focus):** T-033 → T-034.
-> - **T-030 + T-031 + T-032 browser smoke** gated on user — see checklist #1 below; runs in ~15 min combined.
+> - **Phase 4 (this session's focus):** T-034 → cutover, calendar work.
+> - **T-030 + T-031 + T-032 + T-033 browser smoke** gated on user — see checklist #1 below; runs in ~20 min combined.
 
-1. **T-030 + T-031 + T-032 browser smoke (~15 min combined).** Sign in → home now has "Sales orders" / "Job-work orders" / "Job cards" cards. SO smoke: list shows 2 SOs; `SO-436` detail shows 8 lines, total qty 494; edit roundtrip (qty change + remove + add). JW smoke: list shows 2 JWs (`JW-001` ITM-003, `JW-002` ITM-001) with the **Material** badge (likely `✕ Not received` for both since current data has empty material qty); detail shows the per-line client-material section; edit roundtrip. JC smoke: list shows the migrated JCs (IN-JC-00002 / IN-JC-00003) with status badge, ops progress (e.g., 2/5), source-link clickable to SO-436 detail; click JC code → opens `/op-entry?jc=IN-JC-00002` directly. Filters: pick `status=open`, pick a machine, pick a date range — the list narrows. Soft-spots to verify: SO `gstPercent` Select re-binds on edit; SO/JW edit without retyping itemCodeText preserves itemId; JC source-link `<a>` doesn't bubble to the row's "open op-entry" link. Sign out + sign in as `viewer` → all 3 lists read-only.
+1. **T-030 + T-031 + T-032 + T-033 browser smoke (~20 min combined).** Sign in → home now has "Sales orders" / "Job-work orders" / "Job cards" cards. SO smoke: list shows 2 SOs; `SO-436` detail shows 8 lines, total qty 494; edit roundtrip (qty change + remove + add). JW smoke: list shows 2 JWs (`JW-001` ITM-003, `JW-002` ITM-001) with the **Material** badge (likely `✕ Not received` for both since current data has empty material qty); detail shows the per-line client-material section; edit roundtrip. JC smoke: list shows the migrated JCs (IN-JC-00002 / IN-JC-00003) with status badge, ops progress, source-link clickable to SO-436 detail; click JC code → opens `/op-entry?jc=IN-JC-00002` directly. Filters: pick `status=open`, pick a machine, pick a date range — the list narrows. **Cascade smoke (T-033):** in /op-entry, complete the last remaining op of any JC linked to an SO line; navigate to SO detail and verify that line's status flipped to `closed`. If it was the last open line on that SO, the SO header status should also be `closed`. Soft-spots to verify: SO `gstPercent` Select re-binds on edit; SO/JW edit without retyping itemCodeText preserves itemId; JC source-link `<a>` doesn't bubble to the row's "open op-entry" link. Sign out + sign in as `viewer` → all 3 lists read-only.
 
-2. **T-033: Server-side cascade — SO line auto-close from JC completion.** Fixes the existing legacy bug (legacy `_autoCloseSO()` line 1355–1369 has a known divergence). Service-layer logic: when a JC's last op transitions to complete and `available=0`, find the linked `source_so_line_id`, set its status to `closed`, then check if all lines of the parent SO are closed → close header. Same for JW. Belongs in op-entry service (`submitOpLog` → cascade post-insert) OR in a dedicated `sales-cascade.service.ts` triggered from there. Tests cover: line auto-close, header auto-close, partial completion (no cascade), status idempotency.
-
-3. **T-034: Cutover sales team module-by-module** — gated on T-033.
+2. **T-034: Cutover sales team module-by-module** — gated on T-033 ship + browser smoke. Plan with the user before running: which sales user goes first, what's the rollback if a request fails, how long until JW + remaining users follow. No new code expected unless rollback reveals a gap.
 
 ## Active Task
-**ID:** T-033
-**Title:** Phase 4 — Server-side cascade (SO/JW line + header auto-close)
-**Status:** [ ] Not started
+**ID:** T-034
+**Title:** Phase 4 — Cutover sales team module-by-module
+**Status:** [ ] Gated on user — calendar/operational work, no new code
 **Scope:**
-- New helper (likely `apps/api/src/modules/op-entry/sales-cascade.ts` or a method on a new service) called from `submitOpLog` after the post-insert availability re-check. Trigger condition: the JC's last op (highest `op_seq` on the JC) just transitioned to `available=0` (fully done, mirroring the existing T-026 `available === 0` check at op-entry service.ts:303-344).
-- When triggered:
-  - If JC has `source_so_line_id`: load the SO line; set its `status='closed'`. Then check sibling lines on same `sales_order_id` — if all `status='closed'`, set the SO header `status='closed'`.
-  - Same logic for `source_jw_line_id` → JW line + JW header.
-  - Idempotent: if line/header is already `closed` (or `cancelled`), no-op (don't re-write).
-  - All within the same Drizzle transaction as the op_log insert.
-- Tests in op-entry/service.test.ts (new tests, NOT in sales-orders test file — keep cascade tests with the trigger):
-  * line auto-close: completing the last op of a JC linked to an SO line transitions that line to `closed`
-  * header auto-close: completing the last JC linked to the LAST open line of an SO transitions the SO header to `closed`
-  * partial completion: completing one of several JCs doesn't close the line yet
-  * idempotency: re-running with an already-closed line is a no-op
-  * cancelled line short-circuit: doesn't get re-flipped to `closed`
-- Spec: legacy `_autoCloseSO()` line 1355-1369 + `checkSoAutoClose()` line 5368-5396. The legacy bug is that auto-close doesn't fire reliably on every completion path (only on the explicit Submit-Complete path, not on Stop+Complete). New impl should fire on EVERY transition that brings `available` to 0.
+- Coordinate with the user to pick a first sales user (likely an admin who's comfortable with rollback) and a quiet window.
+- Pre-cutover checklist (each user):
+  - Confirm all open SOs/JWs they own are visible and edit-able in the new UI
+  - Confirm computed JC status on their orders matches what they expect from the legacy view
+  - Confirm cascade behaviour: completing the last op on a JC closes the SO line (and header if last)
+  - Confirm dashboards / reports they rely on are at least accessible (not all reports are migrated yet — Phase 7)
+- Cut over user 1; soak 1–2 days; cut over remaining sales users.
+- Capture any gaps surfaced during cutover as new tasks; do NOT extend T-034 with rolling fixes.
 
 **Acceptance:**
-- [ ] submitOpLog triggers cascade only on the LAST jc_op of the JC reaching `available=0`
-- [ ] Closing the last open line of an SO closes the SO header; same for JW
-- [ ] Re-running cascade is idempotent (no thrash on `updated_at`)
-- [ ] All in one transaction (rollback on cascade failure)
-- [ ] Existing 113+ api tests still pass; ~5 new cascade tests added
-- [ ] Workspace typecheck + lint clean
+- [ ] All sales users are using the new system end-to-end
+- [ ] Legacy HTML is still accessible read-only as a safety net (Phase 9 turns it off)
+- [ ] No data lost during cutover (verified via re-running validate-phase4 + comparing JC counts)
 
 ## T-030 browser smoke checklist (run in dev, 5–10 min)
 
@@ -148,8 +138,8 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 | T-030 | Build SO list / detail / create / edit screens | [x] Done (2026-05-02) |
 | T-031 | Build JW list / detail screens | [x] Done (2026-05-02) |
 | T-032 | Build JC list with filtering (status, machine, operator) | [x] Done (2026-05-02) |
-| T-033 | Implement server-side cascade (SO line auto-close from JC completion — fixes existing legacy bug) | [ ] Active |
-| T-034 | Cutover sales team module-by-module | [ ] |
+| T-033 | Implement server-side cascade (SO line auto-close from JC completion — fixes existing legacy bug) | [x] Done (2026-05-02) |
+| T-034 | Cutover sales team module-by-module | [ ] Active (calendar work) |
 
 ## Phase 5 Backlog — Procurement (Week 8)
 | ID | Task | Status |
@@ -203,6 +193,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 ## Recently Completed (last 10)
 | Date | ID | Task |
 |---|---|---|
+| 2026-05-02 | T-033 | **SO/JW line + header auto-close cascade live.** New `apps/api/src/modules/op-entry/sales-cascade.ts` with `tryCascadeJcComplete(tx, jobCardId, user)`. Trigger: keyed off `v_jc_status.computed_status === 'complete'` (the canonical signal — fires on EVERY completion path that brings the JC to fully done, fixing the legacy `_autoCloseSO()` line 1355 bug where it only fired on the explicit Submit-Complete path). Wired into `submitOpLog` after the existing `available === 0` block (running_op auto-close + qcCallDate auto-set), inside the same Drizzle transaction. Logic: if JC is `complete` AND has source_so_line_id → flip line `open → closed`; if all sibling lines on the SO are now terminal (`closed` or `cancelled`), flip SO header `open → closed`. Same path for JW. Idempotent: rows already in `closed` or `cancelled` short-circuit with `{skipped: 'so_line_already_terminal'}` and don't re-write `updated_at`. **7 new cascade tests** (`sales-cascade.test.ts`): SO single-line line+header close, SO multi-line gradual close (line 1 closes alone → line 2 also closes → header), partial completion (2 ops, only op 1 done) doesn't cascade, idempotency (direct re-call is no-op), cancelled sibling (counts as terminal but isn't re-flipped), JW path parity, source-less JC (no error). Full api suite **120/120 green** (was 113, +7). Workspace typecheck + lint clean. Cascade smoke gated on user — see browser smoke checklist |
 | 2026-05-02 | T-032 | **Phase 4 JC list shipped end-to-end (API + Web).** Two chunks — T-032a (d3547ae): shared schemas + API + 10 tests + cross-file pollution fix. T-032b (this commit): web list page. New `apps/api/src/modules/job-cards/` module (read-only — JC writes still go through op-entry). One canonical SQL join: job_cards ⨝ items ⨝ v_jc_status ⨝ sales_order_lines/sales_orders/clients (SO source) ⨝ job_work_order_lines/job_work_orders/clients (JW source). Filters via conditional `sql\`\`` fragments: status, machineId (EXISTS jc_ops), operatorId (EXISTS op_log via jc_ops), date range, search across jc/item/SO/JW codes + customer names. `JobCardSourceLink` is a discriminated union (so | jw) with `code` / `lineNo` / `partName` / parent ids. **Test isolation hardening:** SO + JW test files (4 files) now pick the OLDEST non-test-prefixed item for `firstItemId`, not "first by undefined order" — this killed an FK-violation flake where op-entry's afterAll deleted a test item that JW lines from a parallel suite still referenced. Web module `apps/web/src/modules/job-cards/`: TanStack Query hooks, `JcStatusBadge` (5 colors), `JcSourceLink` (clickable inline "SO-436 ▸ line 6 / JOINT" → /sales-orders/:id), list page with TanStack Table + URL-state status/machine/operator/dateRange filters + debounced search. **No detail page** — clicking a JC code routes to `/op-entry?jc=IN-JC-00002` directly per the read-only-list design. Home nav `Job cards` card with `Factory` icon. Workspace typecheck + lint clean; web build clean (1338 kB main); full api suite 113/113 green |
 | 2026-05-02 | T-031 | **Phase 4 JW module shipped end-to-end (API + Web).** Two chunks — T-031a (96797c3): shared schemas + API + 15 tests. T-031b (this commit): web list/detail/edit. Shared `packages/shared/src/schemas/job-work-order.ts` mirrors SO shape minus GST/type/cost-center/BOM, plus `clientMaterial` / `clientMaterialQty` / `materialReceivedDate` / `materialReceivedQty` per line. JWs always require ≥ 1 line (no Equipment exception). API module follows the same structure as sales-orders — single raw-SQL list query with conditional fragments + LEFT JOIN aggregates (line_count, total_qty, client material totals, jc_qty via `source_jw_line_id` back-ref). Same option-C update merge as SO. `mergeLines` helper duplicated rather than abstracted out (rule of three; will extract on third use). Web module `apps/web/src/modules/job-work-orders/` mirrors SO web module, plus a JW-only `JwMaterialStatusBadge` for the legacy "✓ Full / ◑ Partial / ✕ Not Received" column (renderJWMaster line 12648). `SoStatusBadge` is reused by direct cross-module import (presentation-only, status enum is shared per ADR-012 #5). Home nav `Job-work orders` card with `Truck` icon. **Browser smoke gated on user** per CLAUDE.md §UI rule (see browser smoke checklist) |
 | 2026-05-02 | T-030 | **Phase 4 SO module shipped end-to-end (API + Web).** Three commits — d3ae73f (T-030a: shared schemas + API + 15 tests) and de859b7 (T-030b: web list/detail/edit). Shared schemas `packages/shared/src/schemas/sales-order.ts` (`SalesOrder` / `SalesOrderLine` / `SalesOrderDetail` / `SalesOrderListItem` w/ aggregates) + `createSalesOrderInputSchema` + `updateSalesOrderInputSchema` accepting `{header, lines}` together. Refines per ADR-012 #9/#10/#1 (clientId or customerName; itemId or itemCodeText; non-Equipment requires ≥1 line). API module `apps/api/src/modules/sales-orders/` — service has 5 functions, list uses single raw-SQL query w/ conditional `sql\`\`` fragments + LEFT JOIN aggregates (line_count, total_qty, jc_qty per legacy line 11853); update implements **option C merge** (header always, lines only when present in payload — id-matched updated, new inserted with auto-assigned lineNo above surviving max, absent soft-deleted; mirrors legacy `_editFullSO` line 12576-12612); softDelete cascades to lines in one tx. FK pre-validation (deduped item ids) raises ValidationError (not raw FK 500). Routes are 5 endpoints (GET, GET /:id, POST, PATCH /:id, DELETE /:id). 15 new tests (10 service + 5 routes); full api suite **88/88 green**. Web module `apps/web/src/modules/sales-orders/` — TanStack Query hooks, list (TanStack Table + URL-state pagination + status/type filters + debounced search), detail (header card + nested lines sub-table with totals), create/edit (one form via `SalesOrderForm`, react-hook-form + useFieldArray for dynamic lines, hidden `itemId` preserved through edit so FK survives a header-only save). Home nav `Sales orders` entry added (ClipboardList icon). Web production build clean (1874 modules, 3.3s). **Browser smoke gated on user** per CLAUDE.md §UI rule (DLP env) — checklist in §"T-030 browser smoke checklist" |
