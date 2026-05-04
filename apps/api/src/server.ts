@@ -7,6 +7,7 @@ import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
 import { clientsRoutes } from './modules/clients/routes';
+import { dashboardRoutes } from './modules/dashboard/routes';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
@@ -64,6 +65,7 @@ await app.register(goodsReceiptNotesRoutes);
 await app.register(storeTransactionsRoutes);
 await app.register(ncRegisterRoutes);
 await app.register(deliveryChallansRoutes);
+await app.register(dashboardRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

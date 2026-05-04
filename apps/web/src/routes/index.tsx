@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowRight,
   Building2,
-  CheckCircle2,
   ClipboardList,
   Cog,
   Factory,
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signOut, useSession } from '@/lib/session';
+import { DashboardTilesGrid } from '@/modules/dashboard/components/dashboard-tiles-grid';
 import { authenticatedRoute } from './_authenticated';
 
 const MASTER_LINKS = [
@@ -118,8 +118,8 @@ function IndexPage() {
   const { data: me, isLoading } = useSession();
 
   return (
-    <main className="container max-w-2xl py-16">
-      <div className="space-y-6">
+    <main className="container max-w-6xl py-10">
+      <div className="space-y-8">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-tight">Innovic ERP</h1>
@@ -141,39 +141,31 @@ function IndexPage() {
           </Button>
         </div>
 
-        <div className="rounded-lg border bg-card p-6 text-card-foreground space-y-3">
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="text-green-600" />
-            <span>API /me round-trip working</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="text-green-600" />
-            <span>Auth guard active (unauthenticated → /login)</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="text-green-600" />
-            <span>Token attached to API requests</span>
-          </div>
-        </div>
+        <DashboardTilesGrid />
 
-        <nav className="grid gap-3">
-          {MASTER_LINKS.map(({ to, icon: Icon, title, subtitle }) => (
-            <Link
-              key={to}
-              to={to}
-              className="group flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent"
-            >
-              <span className="flex items-center gap-3">
-                <Icon className="h-5 w-5 text-muted-foreground" />
-                <span>
-                  <span className="block font-medium">{title}</span>
-                  <span className="block text-xs text-muted-foreground">{subtitle}</span>
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Modules
+          </h2>
+          <nav className="grid gap-3 md:grid-cols-2">
+            {MASTER_LINKS.map(({ to, icon: Icon, title, subtitle }) => (
+              <Link
+                key={to}
+                to={to}
+                className="group flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent"
+              >
+                <span className="flex items-center gap-3">
+                  <Icon className="h-5 w-5 text-muted-foreground" />
+                  <span>
+                    <span className="block font-medium">{title}</span>
+                    <span className="block text-xs text-muted-foreground">{subtitle}</span>
+                  </span>
                 </span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          ))}
-        </nav>
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            ))}
+          </nav>
+        </div>
       </div>
     </main>
   );
