@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Pencil, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useCloseNcRework,
@@ -73,8 +67,7 @@ function NcRegisterDetailPage() {
   }
 
   const isPending = detail.status === 'pending';
-  const isReworkDisposed =
-    detail.status === 'disposed' && detail.disposition === 'rework';
+  const isReworkDisposed = detail.status === 'disposed' && detail.disposition === 'rework';
   const onDelete = () => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
@@ -192,9 +185,7 @@ function NcRegisterDetailPage() {
 
         {softDelete.isError ? (
           <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete NC.'}
+            {softDelete.error instanceof Error ? softDelete.error.message : 'Failed to delete NC.'}
           </p>
         ) : null}
 
@@ -267,20 +258,11 @@ function DetailGrid(props: { detail: NcRegister }) {
       <Pair label="Item name" value={detail.itemNameText ?? '—'} />
       <Pair label="Job card" value={detail.jobCardId ? '— linked —' : '—'} />
       <Pair label="Op seq" value={detail.opSeq != null ? String(detail.opSeq) : '—'} />
-      <Pair
-        label="Operation"
-        value={detail.operationText ?? detail.qcOperationText ?? '—'}
-      />
+      <Pair label="Operation" value={detail.operationText ?? detail.qcOperationText ?? '—'} />
       <Pair label="Machine" value={detail.machineCodeText ?? '—'} />
       <Pair label="SO No." value={detail.soCodeText ?? '—'} />
-      <Pair
-        label="Rejected qty"
-        value={Number(detail.rejectedQty).toFixed(2)}
-      />
-      <Pair
-        label="Reason category"
-        value={detail.reasonCategory.replaceAll('_', ' ')}
-      />
+      <Pair label="Rejected qty" value={Number(detail.rejectedQty).toFixed(2)} />
+      <Pair label="Reason category" value={detail.reasonCategory.replaceAll('_', ' ')} />
       <Pair label="Reported by" value={detail.reportedByText ?? '—'} />
       <Pair label="Time logged" value={detail.timeLogged ?? '—'} />
       <div className="md:col-span-3">

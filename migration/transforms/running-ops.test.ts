@@ -33,7 +33,11 @@ describe('transformRunningOps', () => {
           status: 'Running',
         },
       ],
-      ctxWith([['IN-JC-00002::5', 'jc-op-uuid-5']], [['CNC-02', 'mach-uuid-2']], [['japan', 'op-uuid-japan']]),
+      ctxWith(
+        [['IN-JC-00002::5', 'jc-op-uuid-5']],
+        [['CNC-02', 'mach-uuid-2']],
+        [['japan', 'op-uuid-japan']],
+      ),
     );
     expect(result.rows).toHaveLength(1);
     const row = result.rows[0]!;

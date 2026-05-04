@@ -75,7 +75,13 @@ function CreateOperatorForm(props: CreateMode) {
     >
       <FieldRow>
         <Field label="Operator ID" htmlFor="code" error={errors.code?.message} required>
-          <Input id="code" autoFocus autoComplete="off" placeholder="OP-001" {...register('code')} />
+          <Input
+            id="code"
+            autoFocus
+            autoComplete="off"
+            placeholder="OP-001"
+            {...register('code')}
+          />
         </Field>
         <Field label="Name" htmlFor="name" error={errors.name?.message} required>
           <Input id="name" autoComplete="off" placeholder="Full name" {...register('name')} />

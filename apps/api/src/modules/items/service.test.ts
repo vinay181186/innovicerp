@@ -87,10 +87,7 @@ describe('items service', () => {
       { code, name: 'Searchable Widget', revision: 'A', uom: 'NOS', itemType: 'component' },
       admin,
     );
-    const result = await service.listItems(
-      { search: 'SRCH-X', limit: 50, offset: 0 },
-      admin,
-    );
+    const result = await service.listItems({ search: 'SRCH-X', limit: 50, offset: 0 }, admin);
     expect(result.items.length).toBeGreaterThanOrEqual(1);
     expect(result.items.every((i) => i.companyId === admin.companyId)).toBe(true);
     expect(result.total).toBeGreaterThanOrEqual(1);
@@ -102,11 +99,7 @@ describe('items service', () => {
       { code, name: 'Before', revision: 'A', uom: 'NOS', itemType: 'component' },
       admin,
     );
-    const updated = await service.updateItem(
-      created.id,
-      { name: 'After', revision: 'B' },
-      admin,
-    );
+    const updated = await service.updateItem(created.id, { name: 'After', revision: 'B' }, admin);
     expect(updated.name).toBe('After');
     expect(updated.revision).toBe('B');
     expect(updated.updatedBy).toBe(admin.id);

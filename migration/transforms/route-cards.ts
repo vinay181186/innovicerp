@@ -103,7 +103,10 @@ function emptyToNull(s: string | undefined): string | null {
 // whose name contains 'COATING' / outsource keywords → 'outsource'. The
 // legacy code also has _isOspOperation() but for route templates we keep
 // it light; jc_ops will resolve outsource based on op_type from the JC.
-function inferOpType(machineId: string | undefined, operation: string): 'process' | 'qc' | 'outsource' {
+function inferOpType(
+  machineId: string | undefined,
+  operation: string,
+): 'process' | 'qc' | 'outsource' {
   if (machineId?.trim().toUpperCase() === 'QC') return 'qc';
   const opUpper = operation.toUpperCase();
   if (/\b(COATING|PLATING|HEAT TREATMENT|ANODIZING|GALVAN)/.test(opUpper)) return 'outsource';
@@ -172,9 +175,10 @@ export function transformRouteCards(
       }
 
       const machineCodeRaw = op.machineId?.trim() ?? '';
-      const machineId = machineCodeRaw && machineCodeRaw !== 'QC'
-        ? machinesByCode?.get(machineCodeRaw) ?? null
-        : null;
+      const machineId =
+        machineCodeRaw && machineCodeRaw !== 'QC'
+          ? (machinesByCode?.get(machineCodeRaw) ?? null)
+          : null;
       const machineCodeText = machineCodeRaw && !machineId ? machineCodeRaw : null;
 
       const opType = inferOpType(op.machineId, operation);

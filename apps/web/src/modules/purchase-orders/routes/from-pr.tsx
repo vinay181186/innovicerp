@@ -4,11 +4,7 @@
 // then on submit calls POST /purchase-orders/from-pr which creates the PO +
 // stamps the PR atomically.
 
-import {
-  type CreatePurchaseOrderFromPrInput,
-  PO_TYPES,
-  type PoType,
-} from '@innovic/shared';
+import { type CreatePurchaseOrderFromPrInput, PO_TYPES, type PoType } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -16,13 +12,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
@@ -266,9 +256,7 @@ function PurchaseOrderFromPrPage() {
                   />
                 </Field>
 
-                {submitError ? (
-                  <p className="text-sm text-destructive">{submitError}</p>
-                ) : null}
+                {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
 
                 <div className="flex items-center gap-2">
                   <Button type="submit" disabled={formState.isSubmitting}>
@@ -278,7 +266,9 @@ function PurchaseOrderFromPrPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })}
+                    onClick={() =>
+                      void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
+                    }
                   >
                     Cancel
                   </Button>
@@ -296,12 +286,7 @@ function FieldRow(props: { children: ReactNode }) {
   return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
 }
 
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  required?: boolean;
-  children: ReactNode;
-}) {
+function Field(props: { label: string; htmlFor: string; required?: boolean; children: ReactNode }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={props.htmlFor}>

@@ -154,11 +154,11 @@ export function transformPurchaseRequests(
     }
 
     const vendorCode = r.vendorCode?.trim();
-    const vendorId = vendorCode ? vendorsByCode?.get(vendorCode) ?? null : null;
+    const vendorId = vendorCode ? (vendorsByCode?.get(vendorCode) ?? null) : null;
     const vendorCodeText = vendorCode && !vendorId ? vendorCode : null;
 
     const itemCode = r.itemCode?.trim();
-    const itemId = itemCode ? itemsByCode?.get(itemCode) ?? null : null;
+    const itemId = itemCode ? (itemsByCode?.get(itemCode) ?? null) : null;
     const itemCodeText = itemCode && !itemId ? itemCode : null;
 
     if (!vendorId && !vendorCodeText) {

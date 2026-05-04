@@ -15,8 +15,13 @@ class ApiError extends Error {
 
 type RequestInitWithJson = Omit<RequestInit, 'body'> & { json?: unknown };
 
-export async function apiFetch<T = unknown>(path: string, init: RequestInitWithJson = {}): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession();
+export async function apiFetch<T = unknown>(
+  path: string,
+  init: RequestInitWithJson = {},
+): Promise<T> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   const headers = new Headers(init.headers);
   if (session?.access_token) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.json !== undefined) headers.set('content-type', 'application/json');
@@ -24,7 +29,8 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInitWithJ
   const res = await fetch(new URL(path, env.VITE_API_URL), {
     ...init,
     headers,
-    body: init.json !== undefined ? JSON.stringify(init.json) : (init as RequestInit).body ?? null,
+    body:
+      init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
   });
 
   const text = await res.text();
@@ -32,7 +38,12 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInitWithJ
 
   if (!res.ok) {
     const e = (body ?? {}) as { error?: string; message?: string; details?: unknown };
-    throw new ApiError(res.status, e.error ?? 'http_error', e.message ?? `HTTP ${res.status}`, e.details);
+    throw new ApiError(
+      res.status,
+      e.error ?? 'http_error',
+      e.message ?? `HTTP ${res.status}`,
+      e.details,
+    );
   }
   return body as T;
 }

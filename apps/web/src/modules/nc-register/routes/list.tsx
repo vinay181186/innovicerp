@@ -5,12 +5,7 @@ import {
   type NcStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -238,9 +233,7 @@ function NcRegisterListPage() {
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>
-                  No NCs match these filters.
-                </TableEmpty>
+                <TableEmpty colSpan={columns.length}>No NCs match these filters.</TableEmpty>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>

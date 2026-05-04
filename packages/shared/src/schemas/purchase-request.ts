@@ -96,14 +96,12 @@ const _prInputBase = z.object({
 /** CREATE — vendor and item each need at least one of (id, codeText) per
  *  ADR-012 #10 fallback pattern; same DB CHECK constraints back this up. */
 export const createPurchaseRequestInputSchema = _prInputBase
-  .refine(
-    (i) => Boolean(i.vendorId) || Boolean(i.vendorCodeText?.trim()),
-    { message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)' },
-  )
-  .refine(
-    (i) => Boolean(i.itemId) || Boolean(i.itemCodeText?.trim()),
-    { message: 'itemId or itemCodeText is required (per ADR-012 #10)' },
-  );
+  .refine((i) => Boolean(i.vendorId) || Boolean(i.vendorCodeText?.trim()), {
+    message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)',
+  })
+  .refine((i) => Boolean(i.itemId) || Boolean(i.itemCodeText?.trim()), {
+    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+  });
 export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInputSchema>;
 
 /** UPDATE — every field optional. `code` is omitted (immutable business key,
@@ -123,9 +121,15 @@ export const listPurchaseRequestsQuerySchema = z.object({
   /** Filter to PRs originating from a specific JC op (outsource workflow). */
   sourceJcOpId: z.string().uuid().optional(),
   /** Inclusive lower bound on pr_date (YYYY-MM-DD). */
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   /** Inclusive upper bound on pr_date (YYYY-MM-DD). */
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

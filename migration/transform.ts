@@ -86,10 +86,7 @@ const TRANSFORMS: Record<string, TransformFn> = {
     transformPurchaseOrders(rs as Parameters<typeof transformPurchaseOrders>[0], ctx),
   grn: (rs, ctx) => transformGrn(rs as Parameters<typeof transformGrn>[0], ctx),
   storeTransactions: (rs, ctx) =>
-    transformStoreTransactions(
-      rs as Parameters<typeof transformStoreTransactions>[0],
-      ctx,
-    ),
+    transformStoreTransactions(rs as Parameters<typeof transformStoreTransactions>[0], ctx),
   // Phase 6 (T-038) — quality master only; per-inspection events deferred to T-040
   qcProcesses: (rs) => transformQcProcesses(rs as Parameters<typeof transformQcProcesses>[0]),
   // Phase 6 (T-039) — NC + delivery challans (legacy dispatch_log doc_missing)
@@ -156,14 +153,13 @@ interface PerTableSummary {
 // Update lookup registry from a transform result. Knows which tables produce
 // which kinds of lookups (byCode for masters, byCompositeKey for jc_ops,
 // byName for operators).
-function updateLookupsFromResult(
-  ctx: TransformContext,
-  result: TransformResult<unknown>,
-): void {
+function updateLookupsFromResult(ctx: TransformContext, result: TransformResult<unknown>): void {
   const rows = result.rows as Array<Record<string, unknown>>;
 
   // byCode lookups for master tables and Phase 3 parent tables
-  if (['items', 'machines', 'vendors', 'clients', 'operators', 'route_cards'].includes(result.table)) {
+  if (
+    ['items', 'machines', 'vendors', 'clients', 'operators', 'route_cards'].includes(result.table)
+  ) {
     const m = new Map<string, string>();
     for (const r of rows) {
       const code = r['code'];
@@ -363,9 +359,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const targets: CollectionName[] = filter
-    ? (filter as CollectionName[])
-    : WIRED_COLLECTIONS;
+  const targets: CollectionName[] = filter ? (filter as CollectionName[]) : WIRED_COLLECTIONS;
 
   const ctx: TransformContext = {
     idMap: {},

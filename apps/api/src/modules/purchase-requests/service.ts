@@ -49,11 +49,7 @@ async function assertVendorExists(
     .select({ id: vendors.id })
     .from(vendors)
     .where(
-      and(
-        eq(vendors.id, vendorId),
-        eq(vendors.companyId, companyId),
-        isNull(vendors.deletedAt),
-      ),
+      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
     )
     .limit(1);
   if (rows.length === 0) {
@@ -69,13 +65,7 @@ async function assertItemExists(
   const rows = await tx
     .select({ id: items.id })
     .from(items)
-    .where(
-      and(
-        eq(items.id, itemId),
-        eq(items.companyId, companyId),
-        isNull(items.deletedAt),
-      ),
-    )
+    .where(and(eq(items.id, itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
     throw new ValidationError(`Item ${itemId} not found in this company`);
@@ -90,9 +80,7 @@ async function assertJcOpExists(
   const rows = await tx
     .select({ id: jcOps.id })
     .from(jcOps)
-    .where(
-      and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)),
-    )
+    .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
     .limit(1);
   if (rows.length === 0) {
     throw new ValidationError(`JC op ${jcOpId} not found in this company`);
@@ -187,12 +175,8 @@ export async function listPurchaseRequests(
     const searchFrag = term
       ? sql`AND (pr.code ILIKE ${term} OR pr.operation ILIKE ${term} OR pr.item_name ILIKE ${term})`
       : sql``;
-    const statusFrag = input.status
-      ? sql`AND pr.status = ${input.status}::pr_status`
-      : sql``;
-    const vendorFrag = input.vendorId
-      ? sql`AND pr.vendor_id = ${input.vendorId}::uuid`
-      : sql``;
+    const statusFrag = input.status ? sql`AND pr.status = ${input.status}::pr_status` : sql``;
+    const vendorFrag = input.vendorId ? sql`AND pr.vendor_id = ${input.vendorId}::uuid` : sql``;
     const jcOpFrag = input.sourceJcOpId
       ? sql`AND pr.source_jc_op_id = ${input.sourceJcOpId}::uuid`
       : sql``;
@@ -244,11 +228,13 @@ export async function listPurchaseRequests(
     `);
 
     // Total — same fast count pattern as sales-orders.
-    const conditions = [eq(purchaseRequests.companyId, companyId), isNull(purchaseRequests.deletedAt)];
+    const conditions = [
+      eq(purchaseRequests.companyId, companyId),
+      isNull(purchaseRequests.deletedAt),
+    ];
     if (input.status) conditions.push(eq(purchaseRequests.status, input.status));
     if (input.vendorId) conditions.push(eq(purchaseRequests.vendorId, input.vendorId));
-    if (input.sourceJcOpId)
-      conditions.push(eq(purchaseRequests.sourceJcOpId, input.sourceJcOpId));
+    if (input.sourceJcOpId) conditions.push(eq(purchaseRequests.sourceJcOpId, input.sourceJcOpId));
     const totalRows = await tx
       .select({ value: count() })
       .from(purchaseRequests)
@@ -296,10 +282,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
   };
 }
 
-export async function getPurchaseRequest(
-  id: string,
-  user: AuthContext,
-): Promise<PurchaseRequest> {
+export async function getPurchaseRequest(id: string, user: AuthContext): Promise<PurchaseRequest> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
@@ -452,7 +435,11 @@ export async function softDeletePurchaseRequest(
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: purchaseRequests.id, status: purchaseRequests.status, poId: purchaseRequests.poId })
+      .select({
+        id: purchaseRequests.id,
+        status: purchaseRequests.status,
+        poId: purchaseRequests.poId,
+      })
       .from(purchaseRequests)
       .where(
         and(

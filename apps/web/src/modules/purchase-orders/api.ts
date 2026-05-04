@@ -6,12 +6,7 @@ import type {
   PurchaseOrderDetail,
   UpdatePurchaseOrderInput,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 
@@ -42,8 +37,7 @@ export function usePurchaseOrdersList(
 ) {
   return useQuery<ListPurchaseOrdersResponse>({
     queryKey: purchaseOrdersKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListPurchaseOrdersResponse>(`/purchase-orders?${toQueryString(query)}`),
+    queryFn: () => apiFetch<ListPurchaseOrdersResponse>(`/purchase-orders?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });

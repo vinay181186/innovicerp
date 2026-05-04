@@ -109,7 +109,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
     : {
         header: {
           ...HEADER_DEFAULTS,
-          ...(props.initialPurchaseOrderId ? { purchaseOrderId: props.initialPurchaseOrderId } : {}),
+          ...(props.initialPurchaseOrderId
+            ? { purchaseOrderId: props.initialPurchaseOrderId }
+            : {}),
         },
         lines: [{ ...NEW_LINE }],
       };
@@ -141,8 +143,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
     if (!selectedPoDetail) return;
     // Only auto-populate when the lines look pristine (one blank line).
     const cur = getValues('lines');
-    const isPristine =
-      cur.length === 1 && cur[0]!.itemCodeText === '' && cur[0]!.itemName === '';
+    const isPristine = cur.length === 1 && cur[0]!.itemCodeText === '' && cur[0]!.itemName === '';
     if (!isPristine) return;
     // Inherit vendor from PO if not already set.
     if (!getValues('header.vendorId') && selectedPoDetail.vendorId) {
@@ -240,11 +241,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
             />
           </Field>
           <Field label="Purchase order" htmlFor="purchaseOrderId">
-            <Select
-              id="purchaseOrderId"
-              {...register('header.purchaseOrderId')}
-              disabled={isEdit}
-            >
+            <Select id="purchaseOrderId" {...register('header.purchaseOrderId')} disabled={isEdit}>
               <option value="">— Free-text PO ref below —</option>
               {pos.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -294,12 +291,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Line items
           </h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => append({ ...NEW_LINE })}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
             <Plus />
             Add line
           </Button>
@@ -453,9 +445,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
         )}
       </section>
 
-      {props.submitError ? (
-        <p className="text-sm text-destructive">{props.submitError}</p>
-      ) : null}
+      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
 
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={formState.isSubmitting}>
@@ -485,22 +475,24 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
       ...(detail.invoiceNo ? { invoiceNo: detail.invoiceNo } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
-    lines: detail.lines.map((l): LineFormValue => ({
-      id: l.id,
-      existingQcStatus: l.qcStatus,
-      ...(l.purchaseOrderLineId ? { purchaseOrderLineId: l.purchaseOrderLineId } : {}),
-      ...(l.itemId ? { itemId: l.itemId } : {}),
-      itemCodeText: l.itemCodeText ?? '',
-      itemName: l.itemName,
-      receivedQty: l.receivedQty,
-      ...(l.dcRefNo ? { dcRefNo: l.dcRefNo } : {}),
-      qcStatus: l.qcStatus,
-      qcAcceptedQty: l.qcAcceptedQty,
-      qcRejectedQty: l.qcRejectedQty,
-      ...(l.qcDate ? { qcDate: l.qcDate } : {}),
-      ...(l.qcRemarks ? { qcRemarks: l.qcRemarks } : {}),
-      ...(l.remarks ? { remarks: l.remarks } : {}),
-    })),
+    lines: detail.lines.map(
+      (l): LineFormValue => ({
+        id: l.id,
+        existingQcStatus: l.qcStatus,
+        ...(l.purchaseOrderLineId ? { purchaseOrderLineId: l.purchaseOrderLineId } : {}),
+        ...(l.itemId ? { itemId: l.itemId } : {}),
+        itemCodeText: l.itemCodeText ?? '',
+        itemName: l.itemName,
+        receivedQty: l.receivedQty,
+        ...(l.dcRefNo ? { dcRefNo: l.dcRefNo } : {}),
+        qcStatus: l.qcStatus,
+        qcAcceptedQty: l.qcAcceptedQty,
+        qcRejectedQty: l.qcRejectedQty,
+        ...(l.qcDate ? { qcDate: l.qcDate } : {}),
+        ...(l.qcRemarks ? { qcRemarks: l.qcRemarks } : {}),
+        ...(l.remarks ? { remarks: l.remarks } : {}),
+      }),
+    ),
   };
 }
 

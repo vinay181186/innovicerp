@@ -135,10 +135,9 @@ export const startOpInputSchema = z
     operatorName: z.string().min(1).max(120).optional(),
     remarks: z.string().max(500).optional(),
   })
-  .refine(
-    (i) => Boolean(i.operatorId) || Boolean(i.operatorName?.trim()),
-    { message: 'operatorId or operatorName is required to start an op (legacy line 5497)' },
-  );
+  .refine((i) => Boolean(i.operatorId) || Boolean(i.operatorName?.trim()), {
+    message: 'operatorId or operatorName is required to start an op (legacy line 5497)',
+  });
 export type StartOpInput = z.infer<typeof startOpInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
@@ -149,10 +148,9 @@ export const listJcOpsQuerySchema = z
     jobCardCode: z.string().min(1).max(64).optional(),
     machineId: z.string().uuid().optional(),
   })
-  .refine(
-    (q) => Boolean(q.jobCardId || q.jobCardCode || q.machineId),
-    { message: 'Provide jobCardId, jobCardCode, or machineId' },
-  );
+  .refine((q) => Boolean(q.jobCardId || q.jobCardCode || q.machineId), {
+    message: 'Provide jobCardId, jobCardCode, or machineId',
+  });
 export type ListJcOpsQuery = z.infer<typeof listJcOpsQuerySchema>;
 
 export const listOpLogQuerySchema = z.object({

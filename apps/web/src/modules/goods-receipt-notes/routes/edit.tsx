@@ -1,25 +1,12 @@
-import type {
-  CreateGoodsReceiptNoteInput,
-  UpdateGoodsReceiptNoteInput,
-} from '@innovic/shared';
+import type { CreateGoodsReceiptNoteInput, UpdateGoodsReceiptNoteInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useCreateGoodsReceiptNote,
-  useGoodsReceiptNote,
-  useUpdateGoodsReceiptNote,
-} from '../api';
+import { useCreateGoodsReceiptNote, useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
 
 const newSearchSchema = z.object({

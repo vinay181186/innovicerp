@@ -225,9 +225,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps) {
         <Textarea id="remarks" rows={3} {...register('remarks')} />
       </Field>
 
-      {props.submitError ? (
-        <p className="text-sm text-destructive">{props.submitError}</p>
-      ) : null}
+      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
 
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={formState.isSubmitting}>

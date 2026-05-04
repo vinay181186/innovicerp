@@ -117,7 +117,14 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Dup Co', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Dup Co',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
       },
       admin,
@@ -125,7 +132,14 @@ describe('sales-orders service', () => {
     await expect(
       service.createSalesOrder(
         {
-          header: { code, soDate: '2026-05-02', customerName: 'Dup Co', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+          header: {
+            code,
+            soDate: '2026-05-02',
+            customerName: 'Dup Co',
+            type: 'component_manufacturing',
+            status: 'open',
+            gstPercent: 18,
+          },
           lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
         },
         admin,
@@ -156,7 +170,14 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Gettable', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Gettable',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [
           { partName: 'Line One', itemId: firstItemId, uom: 'NOS', orderQty: 3, rate: 0 },
           { partName: 'Line Two', itemId: firstItemId, uom: 'NOS', orderQty: 7, rate: 0 },
@@ -180,7 +201,14 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}LST`;
     await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Listable', type: 'equipment', status: 'open', gstPercent: 12 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Listable',
+          type: 'equipment',
+          status: 'open',
+          gstPercent: 12,
+        },
         lines: [
           { partName: 'Equip', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 0 },
           { partName: 'Spare', itemId: firstItemId, uom: 'NOS', orderQty: 6, rate: 0 },
@@ -204,7 +232,14 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}UH1`;
     const created = await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Before', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Before',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [{ partName: 'Stay', itemId: firstItemId, uom: 'NOS', orderQty: 9, rate: 0 }],
       },
       admin,
@@ -225,10 +260,17 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}UM1`;
     const created = await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Merge', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Merge',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [
           { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10, rate: 0 },
-          { partName: 'Drop Me',     itemId: firstItemId, uom: 'NOS', orderQty: 20, rate: 0 },
+          { partName: 'Drop Me', itemId: firstItemId, uom: 'NOS', orderQty: 20, rate: 0 },
         ],
       },
       admin,
@@ -241,7 +283,14 @@ describe('sales-orders service', () => {
         header: {},
         lines: [
           // Update the kept line — new partName, new qty
-          { id: keptId, partName: 'Keep+Updated', itemId: firstItemId, uom: 'NOS', orderQty: 11, rate: 0 },
+          {
+            id: keptId,
+            partName: 'Keep+Updated',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 11,
+            rate: 0,
+          },
           // New line — should get auto-assigned lineNo above the surviving max
           { partName: 'Brand New', itemId: firstItemId, uom: 'NOS', orderQty: 30, rate: 0 },
           // The "Drop Me" line above is omitted — should be soft-deleted
@@ -272,7 +321,14 @@ describe('sales-orders service', () => {
     const code = `${TEST_PREFIX}DEL`;
     const created = await service.createSalesOrder(
       {
-        header: { code, soDate: '2026-05-02', customerName: 'Goner', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Goner',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [
           { partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 },
           { partName: 'L2', itemId: firstItemId, uom: 'NOS', orderQty: 2, rate: 0 },
@@ -294,7 +350,14 @@ describe('sales-orders service', () => {
     await expect(
       service.createSalesOrder(
         {
-          header: { code: `${TEST_PREFIX}NOC`, soDate: '2026-05-02', customerName: 'X', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+          header: {
+            code: `${TEST_PREFIX}NOC`,
+            soDate: '2026-05-02',
+            customerName: 'X',
+            type: 'component_manufacturing',
+            status: 'open',
+            gstPercent: 18,
+          },
           lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
         },
         noCompanyUser,

@@ -102,7 +102,14 @@ describe('transformDeliveryChallans', () => {
           soRefId: '4n7tmo9u',
           transport: '',
           lines: [
-            { itemCode: '554117302000', itemName: 'JOINT', qty: 25, uom: 'NOS', material: '', dcRemarks: '' },
+            {
+              itemCode: '554117302000',
+              itemName: 'JOINT',
+              qty: 25,
+              uom: 'NOS',
+              material: '',
+              dcRemarks: '',
+            },
           ],
           status: 'Issued',
         },
@@ -136,7 +143,10 @@ describe('transformDeliveryChallans', () => {
     expect(dc00002['vendorId']).toBe('vendor-uuid');
     expect(dc00002['status']).toBe('issued');
 
-    const dc00001_02 = headerRows.find((h) => h['code'] === 'DC-00001-02') as Record<string, unknown>;
+    const dc00001_02 = headerRows.find((h) => h['code'] === 'DC-00001-02') as Record<
+      string,
+      unknown
+    >;
     expect(dc00001_02['purchaseOrderId']).toBe('po-jw-001');
     expect(dc00001_02['salesOrderLineId']).toBe('sol-uuid-4n7tmo9u');
 

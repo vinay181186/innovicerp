@@ -38,11 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import {
-  recalcPoHeaderStatus,
-  recalcPoLineReceivedQty,
-  writeStoreTxnOnQcAccept,
-} from './cascades';
+import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
 import type {
   CreateGoodsReceiptNoteInput,
   GoodsReceiptNote,
@@ -71,11 +67,7 @@ async function assertVendorExists(
     .select({ id: vendors.id })
     .from(vendors)
     .where(
-      and(
-        eq(vendors.id, vendorId),
-        eq(vendors.companyId, companyId),
-        isNull(vendors.deletedAt),
-      ),
+      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
     )
     .limit(1);
   if (rows.length === 0) throw new ValidationError(`Vendor ${vendorId} not found in this company`);
@@ -112,13 +104,7 @@ async function assertItemIdsExist(
   const rows = await tx
     .select({ id: items.id })
     .from(items)
-    .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.id, unique),
-        isNull(items.deletedAt),
-      ),
-    );
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     const found = new Set(rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
@@ -160,11 +146,7 @@ async function resolveItemCodes(
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.code, codes),
-        isNull(items.deletedAt),
-      ),
+      and(eq(items.companyId, companyId), inArray(items.code, codes), isNull(items.deletedAt)),
     );
   const map = new Map<string, string>();
   for (const r of rows) map.set(r.code, r.id);
@@ -231,9 +213,7 @@ export async function listGoodsReceiptNotes(
     const searchFrag = term
       ? sql`AND (grn.code ILIKE ${term} OR grn.po_code_text ILIKE ${term} OR grn.dc_no ILIKE ${term} OR grn.invoice_no ILIKE ${term})`
       : sql``;
-    const vendorFrag = input.vendorId
-      ? sql`AND grn.vendor_id = ${input.vendorId}::uuid`
-      : sql``;
+    const vendorFrag = input.vendorId ? sql`AND grn.vendor_id = ${input.vendorId}::uuid` : sql``;
     const poFrag = input.purchaseOrderId
       ? sql`AND grn.purchase_order_id = ${input.purchaseOrderId}::uuid`
       : sql``;
@@ -503,17 +483,13 @@ export async function createGoodsReceiptNote(
         qcRejectedQty: l.qcRejectedQty,
         qcDate: l.qcDate ?? null,
         qcRemarks: l.qcRemarks ?? null,
-        qcInspectedBy:
-          l.qcStatus === 'completed' ? user.id : null,
+        qcInspectedBy: l.qcStatus === 'completed' ? user.id : null,
         remarks: l.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       };
     });
-    const insertedLines = await tx
-      .insert(goodsReceiptNoteLines)
-      .values(lineValues)
-      .returning();
+    const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
 
     // Fire cascades for every newly-inserted line.
     await runCascades(tx, companyId, user.id, insertedLines, []);
@@ -733,11 +709,7 @@ async function mergeLines(
     const after = reread[0]!;
     cascadeQcUpdates.push(after);
 
-    if (
-      u.data.qcStatus === 'completed' &&
-      u.prev.qcStatus !== 'completed' &&
-      after.itemId
-    ) {
+    if (u.data.qcStatus === 'completed' && u.prev.qcStatus !== 'completed' && after.itemId) {
       await writeStoreTxnOnQcAccept({
         tx,
         companyId,

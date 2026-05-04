@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOperator, useSoftDeleteOperator } from '../api';
 
@@ -145,9 +139,7 @@ function DetailGrid(props: { operator: Operator }) {
       <Pair label="Department" value={operator.department ?? '—'} />
       <Pair label="Linked user" value={operator.userId ?? '—'} />
       <div className="md:col-span-2">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-          Skills / Machines
-        </dt>
+        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Skills / Machines</dt>
         <dd className="mt-1 whitespace-pre-wrap">{operator.skills ?? '—'}</dd>
       </div>
     </dl>

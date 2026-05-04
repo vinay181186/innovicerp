@@ -16,12 +16,7 @@ import type {
   StartOpInput,
   SubmitOpLogInput,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
@@ -134,7 +129,9 @@ export function useSubmitOpLog() {
     onSettled: (_data, _err, input) => {
       // Always reconcile against the server.
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-      void qc.invalidateQueries({ queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }) });
+      void qc.invalidateQueries({
+        queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }),
+      });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
     },
   });
@@ -154,8 +151,7 @@ export function useStartOp() {
 export function useStopOp() {
   const qc = useQueryClient();
   return useMutation<RunningOp, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<RunningOp>(`/op-entry/running-ops/${id}/stop`, { method: 'POST' }),
+    mutationFn: (id) => apiFetch<RunningOp>(`/op-entry/running-ops/${id}/stop`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
@@ -196,14 +192,10 @@ export function useRealtimeRunningOps(): void {
   useEffect(() => {
     const channel = supabase
       .channel('running-ops')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'running_ops' },
-        () => {
-          void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
-          void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-        },
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'running_ops' }, () => {
+        void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+        void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
+      })
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);

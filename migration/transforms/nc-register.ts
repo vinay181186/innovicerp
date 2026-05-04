@@ -101,13 +101,7 @@ export interface TransformedNc {
     | 'machine_fault'
     | 'other';
   reason: string | null;
-  disposition:
-    | 'rework'
-    | 'scrap'
-    | 'use_as_is'
-    | 'return_to_vendor'
-    | 'make_fresh'
-    | null;
+  disposition: 'rework' | 'scrap' | 'use_as_is' | 'return_to_vendor' | 'make_fresh' | null;
   dispositionDate: string | null;
   dispositionByText: string | null;
   dispositionRemarks: string | null;
@@ -199,9 +193,7 @@ function normaliseStatus(raw: string | undefined): {
     return { value: 'rework_done' };
   }
   if (trimmed === 'closed') return { value: 'closed' };
-  return raw === undefined
-    ? { value: 'pending' }
-    : { value: 'pending', unrecognised: raw };
+  return raw === undefined ? { value: 'pending' } : { value: 'pending', unrecognised: raw };
 }
 
 function normaliseTimeLogged(raw: string | undefined): string | null {
@@ -254,8 +246,7 @@ export function transformNcRegister(
     }
 
     const opSeq = coerceInt(r.opSeq);
-    const jcOpId =
-      opSeq !== null ? jcOpsByKey?.get(`${jcNo}::${opSeq}`) ?? null : null;
+    const jcOpId = opSeq !== null ? (jcOpsByKey?.get(`${jcNo}::${opSeq}`) ?? null) : null;
     if (opSeq !== null && !jcOpId) {
       anomalies.push({
         legacyId: r.id,
@@ -279,7 +270,11 @@ export function transformNcRegister(
       continue;
     }
 
-    if (typeof r.rejectedQty !== 'number' || !Number.isFinite(r.rejectedQty) || r.rejectedQty <= 0) {
+    if (
+      typeof r.rejectedQty !== 'number' ||
+      !Number.isFinite(r.rejectedQty) ||
+      r.rejectedQty <= 0
+    ) {
       anomalies.push({
         legacyId: r.id,
         type: 'rejectedQty_invalid',
@@ -321,7 +316,9 @@ export function transformNcRegister(
 
     const reworkOpSeq = coerceInt(r.reworkOpSeq);
     const reworkDoneQtyRaw =
-      typeof r.reworkDoneQty === 'number' && Number.isFinite(r.reworkDoneQty) && r.reworkDoneQty >= 0
+      typeof r.reworkDoneQty === 'number' &&
+      Number.isFinite(r.reworkDoneQty) &&
+      r.reworkDoneQty >= 0
         ? r.reworkDoneQty
         : null;
     const scrapCostRaw =

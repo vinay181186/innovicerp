@@ -53,9 +53,7 @@ export async function listJobCards(
     const statusFrag = input.status
       ? sql`AND COALESCE(s.computed_status, 'no_ops') = ${input.status}`
       : sql``;
-    const fromFrag = input.fromDate
-      ? sql`AND jc.jc_date >= ${input.fromDate}::date`
-      : sql``;
+    const fromFrag = input.fromDate ? sql`AND jc.jc_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jc.jc_date <= ${input.toDate}::date` : sql``;
     // Machine filter: JC has at least one op assigned to this machine.
     const machineFrag = input.machineId
@@ -169,11 +167,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       .select({ id: jobCards.id })
       .from(jobCards)
       .where(
-        and(
-          eq(jobCards.id, id),
-          eq(jobCards.companyId, companyId),
-          isNull(jobCards.deletedAt),
-        ),
+        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
       )
       .limit(1);
     if (exists.length === 0) throw new NotFoundError(`Job card ${id} not found`);

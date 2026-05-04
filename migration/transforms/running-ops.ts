@@ -64,9 +64,7 @@ function normaliseShift(raw: string | undefined): 'day' | 'night' {
   return v === 'night' ? 'night' : 'day';
 }
 
-function normaliseStatus(
-  raw: string | undefined,
-): 'running' | 'done' | 'stopped' | null {
+function normaliseStatus(raw: string | undefined): 'running' | 'done' | 'stopped' | null {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'running') return 'running';
   if (v === 'done' || v === 'completed') return 'done';
@@ -139,18 +137,16 @@ export function transformRunningOps(
 
     const machineCodeRaw = r.machineId?.trim() ?? '';
     const isOsp = r.isOSP === true || machineCodeRaw.toUpperCase() === 'OSP';
-    const machineId = !isOsp && machineCodeRaw && machineCodeRaw !== 'QC'
-      ? machinesByCode?.get(machineCodeRaw) ?? null
-      : null;
+    const machineId =
+      !isOsp && machineCodeRaw && machineCodeRaw !== 'QC'
+        ? (machinesByCode?.get(machineCodeRaw) ?? null)
+        : null;
 
     let operatorId: string | null = null;
     const operatorRaw = (r.operator ?? '').trim();
     if (operatorRaw) {
       const byNameKey = operatorRaw.toLowerCase();
-      operatorId =
-        operatorsByName?.get(byNameKey) ??
-        operatorsByCode?.get(operatorRaw) ??
-        null;
+      operatorId = operatorsByName?.get(byNameKey) ?? operatorsByCode?.get(operatorRaw) ?? null;
     }
 
     rows.push({

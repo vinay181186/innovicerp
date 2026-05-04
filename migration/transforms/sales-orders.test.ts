@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { transformSalesOrders } from './sales-orders';
 import type { TransformContext } from './types';
 
-function ctxWith(items: Array<[string, string]> = [], clients: Array<[string, string]> = []): TransformContext {
+function ctxWith(
+  items: Array<[string, string]> = [],
+  clients: Array<[string, string]> = [],
+): TransformContext {
   return {
     idMap: {},
     lookups: {

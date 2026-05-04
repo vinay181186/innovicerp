@@ -6,14 +6,7 @@
 import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import {
-  items,
-  jcOps,
-  jobCards,
-  ncRegister,
-  opLog,
-  users,
-} from '../../db/schema';
+import { items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import * as service from './service';
@@ -221,20 +214,12 @@ describe('nc-register dispose cascades (T-040b)', () => {
       rejectedQty: 4,
       ncOpSeq: 1,
     });
-    const { result, nc } = await service.disposeNcRegister(
-      f.ncId,
-      { action: 'use_as_is' },
-      admin,
-    );
+    const { result, nc } = await service.disposeNcRegister(f.ncId, { action: 'use_as_is' }, admin);
     expect(nc.status).toBe('closed');
     expect(nc.disposition).toBe('use_as_is');
     expect(result.opLogId).toBeDefined();
 
-    const log = await db
-      .select()
-      .from(opLog)
-      .where(eq(opLog.id, result.opLogId!))
-      .limit(1);
+    const log = await db.select().from(opLog).where(eq(opLog.id, result.opLogId!)).limit(1);
     expect(log[0]!.qty).toBe(4);
     expect(log[0]!.logType).toBe('qc');
     expect(log[0]!.remarks).toContain(f.ncCode);
@@ -250,11 +235,7 @@ describe('nc-register dispose cascades (T-040b)', () => {
       .select({ id: opLog.id })
       .from(opLog)
       .where(eq(opLog.jcOpId, f.jcOpIds[0]!.jcOpId));
-    const { nc } = await service.disposeNcRegister(
-      f.ncId,
-      { action: 'return_to_vendor' },
-      admin,
-    );
+    const { nc } = await service.disposeNcRegister(f.ncId, { action: 'return_to_vendor' }, admin);
     expect(nc.status).toBe('closed');
     expect(nc.disposition).toBe('return_to_vendor');
     const afterOpLogs = await db
@@ -270,11 +251,7 @@ describe('nc-register dispose cascades (T-040b)', () => {
       ncCode: `${TEST_PREFIX}MF-NC`,
       rejectedQty: 6,
     });
-    const { result, nc } = await service.disposeNcRegister(
-      f.ncId,
-      { action: 'make_fresh' },
-      admin,
-    );
+    const { result, nc } = await service.disposeNcRegister(f.ncId, { action: 'make_fresh' }, admin);
     expect(nc.status).toBe('closed');
     expect(nc.disposition).toBe('make_fresh');
     expect(result.newJcCode).toBe(`${f.jcCode}-S1`);
@@ -294,10 +271,7 @@ describe('nc-register dispose cascades (T-040b)', () => {
     });
     // Force the second NC to point at the first JC so the supplementary
     // numbering increments cleanly.
-    await db
-      .update(ncRegister)
-      .set({ jobCardId: f.jcId })
-      .where(eq(ncRegister.id, f2.ncId));
+    await db.update(ncRegister).set({ jobCardId: f.jcId }).where(eq(ncRegister.id, f2.ncId));
     const { result: r2 } = await service.disposeNcRegister(
       f2.ncId,
       { action: 'make_fresh' },
@@ -337,10 +311,7 @@ describe('nc-register dispose cascades (T-040b)', () => {
       rejectedQty: 1,
     });
     // Strip op_seq + jc_op_id to simulate a manual NC without op picked.
-    await db
-      .update(ncRegister)
-      .set({ opSeq: null, jcOpId: null })
-      .where(eq(ncRegister.id, f.ncId));
+    await db.update(ncRegister).set({ opSeq: null, jcOpId: null }).where(eq(ncRegister.id, f.ncId));
     await expect(
       service.disposeNcRegister(f.ncId, { action: 'use_as_is' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);
@@ -367,9 +338,7 @@ describe('nc-register close-rework (T-040b)', () => {
       rejectedQty: 1,
     });
     await service.disposeNcRegister(f.ncId, { action: 'scrap', scrapCost: 0 }, admin);
-    await expect(
-      service.closeNcRework(f.ncId, {}, admin),
-    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.closeNcRework(f.ncId, {}, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 });
 

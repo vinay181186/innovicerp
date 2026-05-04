@@ -15,12 +15,7 @@ import {
 } from '@/components/ui/table';
 import { useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useJcOpsEnriched,
-  useRealtimeRunningOps,
-  useRunningOps,
-  useStartOp,
-} from '../api';
+import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
 import { MachineCard } from '../components/machine-card';
 import { OpEntryForm } from '../components/op-entry-form';
 
@@ -55,7 +50,9 @@ function MachineOpEntryPage() {
     }
     return map;
   }, [running.data]);
-  const selectedRunning = selectedMachineId ? runningByMachine.get(selectedMachineId) ?? null : null;
+  const selectedRunning = selectedMachineId
+    ? (runningByMachine.get(selectedMachineId) ?? null)
+    : null;
 
   // Pending ops for the selected machine when idle. Fetch all jc_ops for the
   // machine, filter client-side to "available" + "waiting" (the legacy
@@ -67,7 +64,8 @@ function MachineOpEntryPage() {
   const pendingOps = useMemo<JcOpEnriched[]>(
     () =>
       (machineOps.data ?? []).filter(
-        (o) => o.available > 0 && (o.computedStatus === 'available' || o.computedStatus === 'waiting'),
+        (o) =>
+          o.available > 0 && (o.computedStatus === 'available' || o.computedStatus === 'waiting'),
       ),
     [machineOps.data],
   );
@@ -80,11 +78,7 @@ function MachineOpEntryPage() {
   );
   const runningOpRow = useMemo<JcOpEnriched | null>(() => {
     if (!selectedRunning || !runningOpEnriched.data) return null;
-    return (
-      runningOpEnriched.data.find(
-        (o) => o.id === selectedRunning.jcOpId,
-      ) ?? null
-    );
+    return runningOpEnriched.data.find((o) => o.id === selectedRunning.jcOpId) ?? null;
   }, [selectedRunning, runningOpEnriched.data]);
 
   function selectMachine(id: string | null) {
@@ -212,11 +206,7 @@ function PendingOpsSection({ machineCode, ops, isLoading }: PendingOpsSectionPro
                     {op.available}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      size="sm"
-                      onClick={() => handleStart(op.id)}
-                      disabled={start.isPending}
-                    >
+                    <Button size="sm" onClick={() => handleStart(op.id)} disabled={start.isPending}>
                       <Play />
                       Start
                     </Button>

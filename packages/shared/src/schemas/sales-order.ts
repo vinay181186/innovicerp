@@ -123,10 +123,9 @@ export const salesOrderLineInputSchema = z
     clientPoLineNo: z.string().max(64).optional(),
     status: soStatusSchema.optional(),
   })
-  .refine(
-    (l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()),
-    { message: 'itemId or itemCodeText is required (per ADR-012 #10)' },
-  );
+  .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
+    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+  });
 export type SalesOrderLineInput = z.infer<typeof salesOrderLineInputSchema>;
 
 const _soHeaderInputBase = z.object({
@@ -155,17 +154,15 @@ const _soHeaderInputBase = z.object({
  *  is allowed; non-Equipment requires ≥ 1 line). */
 export const createSalesOrderInputSchema = z
   .object({
-    header: _soHeaderInputBase
-      .refine(
-        (h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()),
-        { message: 'clientId or customerName is required (per ADR-012 #9)' },
-      ),
+    header: _soHeaderInputBase.refine(
+      (h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()),
+      { message: 'clientId or customerName is required (per ADR-012 #9)' },
+    ),
     lines: z.array(salesOrderLineInputSchema).default([]),
   })
-  .refine(
-    (i) => i.header.type === 'equipment' || i.lines.length > 0,
-    { message: 'At least one line is required for non-Equipment SOs (legacy line 12442)' },
-  );
+  .refine((i) => i.header.type === 'equipment' || i.lines.length > 0, {
+    message: 'At least one line is required for non-Equipment SOs (legacy line 12442)',
+  });
 export type CreateSalesOrderInput = z.infer<typeof createSalesOrderInputSchema>;
 
 /** UPDATE — same shape as create. `code` is omitted from header (immutable
@@ -182,7 +179,9 @@ export const updateSalesOrderInputSchema = z.object({
       // both to empty/null in one shot.
       (h) =>
         h.clientId !== '' &&
-        (h.customerName === undefined || h.customerName.trim().length > 0 || h.clientId !== undefined),
+        (h.customerName === undefined ||
+          h.customerName.trim().length > 0 ||
+          h.clientId !== undefined),
       { message: 'clientId or customerName must remain populated' },
     ),
   lines: z.array(salesOrderLineInputSchema).optional(),
@@ -197,9 +196,15 @@ export const listSalesOrdersQuerySchema = z.object({
   type: soTypeSchema.optional(),
   clientId: z.string().uuid().optional(),
   /** Inclusive lower bound on so_date (YYYY-MM-DD). */
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   /** Inclusive upper bound on so_date (YYYY-MM-DD). */
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

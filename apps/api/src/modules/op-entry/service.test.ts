@@ -77,7 +77,10 @@ async function teardownFixture(): Promise<void> {
   // Sweep ALL jc_ops on the test JC (covers the extra QC op the T-026 test
   // creates if it crashed before its own cleanup ran).
   if (testJcId) {
-    const opsOnJc = await db.select({ id: jcOps.id }).from(jcOps).where(eq(jcOps.jobCardId, testJcId));
+    const opsOnJc = await db
+      .select({ id: jcOps.id })
+      .from(jcOps)
+      .where(eq(jcOps.jobCardId, testJcId));
     for (const o of opsOnJc) {
       await db.delete(opLog).where(eq(opLog.jcOpId, o.id));
       await db.delete(runningOps).where(eq(runningOps.jcOpId, o.id));

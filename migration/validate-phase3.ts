@@ -262,7 +262,8 @@ function canonicalJson(v: unknown): string {
   return JSON.stringify(v, (_, val) => {
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
       const sorted: Record<string, unknown> = {};
-      for (const key of Object.keys(val).sort()) sorted[key] = (val as Record<string, unknown>)[key];
+      for (const key of Object.keys(val).sort())
+        sorted[key] = (val as Record<string, unknown>)[key];
       return sorted;
     }
     return val;

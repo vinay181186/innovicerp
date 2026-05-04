@@ -288,12 +288,7 @@ export function SalesOrderForm(props: SalesOrderFormProps) {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Line items
           </h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => append({ ...NEW_LINE })}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
             <Plus />
             Add line
           </Button>
@@ -391,10 +386,7 @@ export function SalesOrderForm(props: SalesOrderFormProps) {
                 </div>
                 <div className="col-span-6 md:col-span-2">
                   <Label className="text-xs">Client PO line</Label>
-                  <Input
-                    autoComplete="off"
-                    {...register(`lines.${idx}.clientPoLineNo` as const)}
-                  />
+                  <Input autoComplete="off" {...register(`lines.${idx}.clientPoLineNo` as const)} />
                 </div>
               </div>
             ))}
@@ -433,20 +425,22 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
     // Preserve `itemId` so the FK survives a header-only edit. Display field
     // (`itemCodeText`) shows the raw text fallback when the FK didn't resolve
     // at migration time; otherwise blank — user can retype to reassign.
-    lines: detail.lines.map((l): LineFormValue => ({
-      id: l.id,
-      ...(l.itemId ? { itemId: l.itemId } : {}),
-      itemCodeText: l.itemCodeText ?? '',
-      partName: l.partName,
-      ...(l.material ? { material: l.material } : {}),
-      ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-      uom: l.uom,
-      orderQty: l.orderQty,
-      rate: Number(l.rate),
-      ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-      ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
-      status: l.status,
-    })),
+    lines: detail.lines.map(
+      (l): LineFormValue => ({
+        id: l.id,
+        ...(l.itemId ? { itemId: l.itemId } : {}),
+        itemCodeText: l.itemCodeText ?? '',
+        partName: l.partName,
+        ...(l.material ? { material: l.material } : {}),
+        ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+        uom: l.uom,
+        orderQty: l.orderQty,
+        rate: Number(l.rate),
+        ...(l.dueDate ? { dueDate: l.dueDate } : {}),
+        ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
+        status: l.status,
+      }),
+    ),
   };
 }
 

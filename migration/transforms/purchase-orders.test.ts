@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { transformPurchaseOrders } from './purchase-orders';
 import type { TransformContext } from './types';
 
-function ctxWith(opts: {
-  items?: Array<[string, string]>;
-  vendors?: Array<[string, string]>;
-  prToJcOp?: Array<[string, string]>; // prCode → jcOpId
-  soLines?: Record<string, string>;
-} = {}): TransformContext {
+function ctxWith(
+  opts: {
+    items?: Array<[string, string]>;
+    vendors?: Array<[string, string]>;
+    prToJcOp?: Array<[string, string]>; // prCode → jcOpId
+    soLines?: Record<string, string>;
+  } = {},
+): TransformContext {
   return {
     idMap: { sales_order_lines: opts.soLines ?? {} },
     lookups: {
@@ -81,7 +83,13 @@ describe('transformPurchaseOrders', () => {
           rate: 200,
         },
       ],
-      ctxWith({ items: [['I1', 'iu1'], ['I2', 'iu2']], vendors: [['V1', 'vu']] }),
+      ctxWith({
+        items: [
+          ['I1', 'iu1'],
+          ['I2', 'iu2'],
+        ],
+        vendors: [['V1', 'vu']],
+      }),
     );
     expect(result[0]?.rows).toHaveLength(1);
     expect(result[1]?.rows).toHaveLength(2);

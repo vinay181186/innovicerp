@@ -74,9 +74,7 @@ function normaliseLogType(raw: string | undefined): 'start' | 'complete' | 'qc' 
   return 'complete';
 }
 
-function normaliseShift(
-  raw: string | undefined,
-): { shift: 'day' | 'night'; from?: string } {
+function normaliseShift(raw: string | undefined): { shift: 'day' | 'night'; from?: string } {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'day') return { shift: 'day' };
   if (v === 'night') return { shift: 'night' };
@@ -152,10 +150,7 @@ export function transformOpLog(
     const operatorRaw = (r.operator ?? '').trim();
     if (operatorRaw) {
       const byNameKey = operatorRaw.toLowerCase();
-      operatorId =
-        operatorsByName?.get(byNameKey) ??
-        operatorsByCode?.get(operatorRaw) ??
-        null;
+      operatorId = operatorsByName?.get(byNameKey) ?? operatorsByCode?.get(operatorRaw) ?? null;
     }
 
     rows.push({

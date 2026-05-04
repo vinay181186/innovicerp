@@ -24,7 +24,16 @@ function ctxWith(
 describe('transformJcOps', () => {
   it('resolves jcNo to job_card_id and machineId to machine_id', () => {
     const result = transformJcOps(
-      [{ id: 'op1', jcNo: 'IN-JC-00001', opSeq: 1, machineId: 'CNC-01', operation: 'turn', opType: 'process' }],
+      [
+        {
+          id: 'op1',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          machineId: 'CNC-01',
+          operation: 'turn',
+          opType: 'process',
+        },
+      ],
       ctxWith([['IN-JC-00001', 'jc-uuid-1']], [['CNC-01', 'mach-uuid-1']]),
     );
     expect(result.rows).toHaveLength(1);
@@ -44,7 +53,16 @@ describe('transformJcOps', () => {
 
   it('falls back to machineCodeText for QC sentinel', () => {
     const result = transformJcOps(
-      [{ id: 'op1', jcNo: 'IN-JC-00001', opSeq: 1, machineId: 'QC', operation: 'DIR', opType: 'QC' }],
+      [
+        {
+          id: 'op1',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          machineId: 'QC',
+          operation: 'DIR',
+          opType: 'QC',
+        },
+      ],
       ctxWith([['IN-JC-00001', 'jc-uuid-1']]),
     );
     expect(result.rows[0]?.machineId).toBeNull();
@@ -68,7 +86,11 @@ describe('transformJcOps', () => {
           sentQty: 50,
         },
       ],
-      ctxWith([['IN-JC-00002', 'jc-uuid-2']], [['CNC-01', 'mach-uuid-1']], [['VND-001', 'vend-uuid-1']]),
+      ctxWith(
+        [['IN-JC-00002', 'jc-uuid-2']],
+        [['CNC-01', 'mach-uuid-1']],
+        [['VND-001', 'vend-uuid-1']],
+      ),
     );
     expect(result.rows[0]?.outsourceVendorId).toBe('vend-uuid-1');
     expect(result.rows[0]?.outsourceStatus).toBe('sent');
@@ -77,7 +99,16 @@ describe('transformJcOps', () => {
 
   it('outsource_status is null for non-outsource ops', () => {
     const result = transformJcOps(
-      [{ id: 'op1', jcNo: 'IN-JC-00001', opSeq: 1, machineId: 'CNC-01', operation: 'turn', opType: 'process' }],
+      [
+        {
+          id: 'op1',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          machineId: 'CNC-01',
+          operation: 'turn',
+          opType: 'process',
+        },
+      ],
       ctxWith([['IN-JC-00001', 'jc-uuid-1']]),
     );
     expect(result.rows[0]?.outsourceStatus).toBeNull();

@@ -3,19 +3,9 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useCreateJobWorkOrder,
-  useJobWorkOrder,
-  useUpdateJobWorkOrder,
-} from '../api';
+import { useCreateJobWorkOrder, useJobWorkOrder, useUpdateJobWorkOrder } from '../api';
 import { JobWorkOrderForm } from '../components/job-work-order-form';
 
 export const jobWorkOrderNewRoute = createRoute({
@@ -115,9 +105,7 @@ function JobWorkOrderEditPage() {
           <CardHeader>
             <CardTitle>Job-work order not found</CardTitle>
             <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This job-work order could not be loaded.'}
+              {error instanceof Error ? error.message : 'This job-work order could not be loaded.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -154,9 +142,7 @@ function JobWorkOrderEditPage() {
               detail={detail}
               onSubmit={onSubmit}
               submitError={submitError}
-              onCancel={() =>
-                void navigate({ to: '/job-work-orders/$id', params: { id } })
-              }
+              onCancel={() => void navigate({ to: '/job-work-orders/$id', params: { id } })}
             />
           </CardContent>
         </Card>

@@ -5,12 +5,7 @@ import type {
   ListJobWorkOrdersResponse,
   UpdateJobWorkOrderInput,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const jobWorkOrdersKeys = {
@@ -39,8 +34,7 @@ export function useJobWorkOrdersList(
 ) {
   return useQuery<ListJobWorkOrdersResponse>({
     queryKey: jobWorkOrdersKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListJobWorkOrdersResponse>(`/job-work-orders?${toQueryString(query)}`),
+    queryFn: () => apiFetch<ListJobWorkOrdersResponse>(`/job-work-orders?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });

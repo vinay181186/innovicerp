@@ -7,12 +7,7 @@ import {
   type SoType,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -105,9 +100,7 @@ function SalesOrdersListPage() {
       },
       {
         header: 'Customer',
-        cell: ({ row }) => (
-          <span className="text-sm">{row.original.customerName ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm">{row.original.customerName ?? '—'}</span>,
       },
       {
         header: 'Type',
@@ -120,15 +113,11 @@ function SalesOrdersListPage() {
       },
       {
         header: 'Lines',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.lineCount}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.lineCount}</span>,
       },
       {
         header: 'Total Qty',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.totalQty}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.totalQty}</span>,
       },
       {
         header: 'JC Qty',
@@ -174,9 +163,7 @@ function SalesOrdersListPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Sales Orders</h1>
-            <p className="text-sm text-muted-foreground">
-              Customer orders and job-work orders.
-            </p>
+            <p className="text-sm text-muted-foreground">Customer orders and job-work orders.</p>
           </div>
           <Button asChild>
             <Link to="/sales-orders/new">

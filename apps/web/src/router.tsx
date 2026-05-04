@@ -20,10 +20,7 @@ import {
 import { jobCardsListRoute } from './modules/job-cards/routes/list';
 import { jobWorkOrdersListRoute } from './modules/job-work-orders/routes/list';
 import { jobWorkOrderDetailRoute } from './modules/job-work-orders/routes/detail';
-import {
-  jobWorkOrderEditRoute,
-  jobWorkOrderNewRoute,
-} from './modules/job-work-orders/routes/edit';
+import { jobWorkOrderEditRoute, jobWorkOrderNewRoute } from './modules/job-work-orders/routes/edit';
 import { machinesListRoute } from './modules/machines/routes/list';
 import { machineDetailRoute } from './modules/machines/routes/detail';
 import { machineEditRoute, machineNewRoute } from './modules/machines/routes/edit';

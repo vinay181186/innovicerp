@@ -33,10 +33,7 @@ afterAll(async () => {
 describe('vendors service', () => {
   it('createVendor inserts a row with audit columns + soft-delete null', async () => {
     const code = `${TEST_PREFIX}A1`;
-    const v = await service.createVendor(
-      { code, name: 'Alpha Suppliers', isActive: true },
-      admin,
-    );
+    const v = await service.createVendor({ code, name: 'Alpha Suppliers', isActive: true }, admin);
     expect(v.code).toBe(code);
     expect(v.companyId).toBe(admin.companyId);
     expect(v.createdBy).toBe(admin.id);
@@ -84,10 +81,7 @@ describe('vendors service', () => {
       { code: `${TEST_PREFIX}SEARCH-B`, name: 'Other B', isActive: true },
       admin,
     );
-    const result = await service.listVendors(
-      { search: 'Searchable', limit: 50, offset: 0 },
-      admin,
-    );
+    const result = await service.listVendors({ search: 'Searchable', limit: 50, offset: 0 }, admin);
     expect(result.vendors.some((v) => v.code === `${TEST_PREFIX}SEARCH-A`)).toBe(true);
     expect(result.vendors.every((v) => v.companyId === admin.companyId)).toBe(true);
   });
@@ -97,11 +91,7 @@ describe('vendors service', () => {
       { code: `${TEST_PREFIX}U1`, name: 'Original', isActive: true },
       admin,
     );
-    const updated = await service.updateVendor(
-      created.id,
-      { name: 'Renamed', rating: 'B' },
-      admin,
-    );
+    const updated = await service.updateVendor(created.id, { name: 'Renamed', rating: 'B' }, admin);
     expect(updated.name).toBe('Renamed');
     expect(updated.rating).toBe('B');
     expect(updated.code).toBe(`${TEST_PREFIX}U1`);

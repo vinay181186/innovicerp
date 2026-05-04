@@ -22,4 +22,5 @@ pnpm dev
 ```
 
 ## Conventions
+
 See `docs/CONVENTIONS.md`. Schema lives in `docs/SCHEMA.md`. Tasks tracker is `docs/TASKS.md`. Architectural decisions are in `docs/DECISIONS.md`.

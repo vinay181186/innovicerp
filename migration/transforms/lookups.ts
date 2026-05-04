@@ -28,7 +28,9 @@ export function loadCodeLookupFromDisk(
 ): Map<string, string> | null {
   try {
     const path = join(transformDir, `${table}.json`);
-    const data = JSON.parse(readFileSync(path, 'utf8')) as { rows?: Array<Record<string, unknown>> };
+    const data = JSON.parse(readFileSync(path, 'utf8')) as {
+      rows?: Array<Record<string, unknown>>;
+    };
     const rows = data.rows ?? [];
     const map = new Map<string, string>();
     for (const r of rows) {
@@ -52,7 +54,9 @@ export function loadNameLookupFromDisk(
 ): Map<string, string> | null {
   try {
     const path = join(transformDir, `${table}.json`);
-    const data = JSON.parse(readFileSync(path, 'utf8')) as { rows?: Array<Record<string, unknown>> };
+    const data = JSON.parse(readFileSync(path, 'utf8')) as {
+      rows?: Array<Record<string, unknown>>;
+    };
     const rows = data.rows ?? [];
     const map = new Map<string, string>();
     for (const r of rows) {

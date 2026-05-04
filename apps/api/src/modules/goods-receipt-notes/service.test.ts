@@ -12,11 +12,7 @@ import {
   vendors,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-} from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import * as poService from '../purchase-orders/service';
 import * as service from './service';
 
@@ -27,7 +23,10 @@ let admin: AuthContext;
 let firstItemId: string;
 let firstVendorId: string;
 
-async function freshPo(suffix: string, qty = 10): Promise<{ id: string; lineId: string; itemId: string }> {
+async function freshPo(
+  suffix: string,
+  qty = 10,
+): Promise<{ id: string; lineId: string; itemId: string }> {
   const code = `${TEST_PREFIX}PO-${suffix}-${Date.now()}`;
   const detail = await poService.createPurchaseOrder(
     {
@@ -49,7 +48,11 @@ async function freshPo(suffix: string, qty = 10): Promise<{ id: string; lineId: 
 }
 
 async function readPoStatus(id: string): Promise<string> {
-  const r = await db.select({ status: purchaseOrders.status }).from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1);
+  const r = await db
+    .select({ status: purchaseOrders.status })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, id))
+    .limit(1);
   return r[0]!.status;
 }
 
@@ -77,11 +80,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -115,7 +114,9 @@ afterAll(async () => {
     .from(goodsReceiptNotes)
     .where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
   for (const h of grnHeaders) {
-    await db.delete(goodsReceiptNoteLines).where(eq(goodsReceiptNoteLines.goodsReceiptNoteId, h.id));
+    await db
+      .delete(goodsReceiptNoteLines)
+      .where(eq(goodsReceiptNoteLines.goodsReceiptNoteId, h.id));
   }
   await db.delete(goodsReceiptNotes).where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
 
@@ -170,7 +171,12 @@ describe('goods-receipt-notes service', () => {
     // GRN 1 — receive everything but leave QC pending.
     await service.createGoodsReceiptNote(
       {
-        header: { code: `${TEST_PREFIX}A2-G1`, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: `${TEST_PREFIX}A2-G1`,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -237,7 +243,12 @@ describe('goods-receipt-notes service', () => {
     const grnCode = `${TEST_PREFIX}A3`;
     await service.createGoodsReceiptNote(
       {
-        header: { code: grnCode, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -272,7 +283,12 @@ describe('goods-receipt-notes service', () => {
     const grnCode = `${TEST_PREFIX}A4`;
     await service.createGoodsReceiptNote(
       {
-        header: { code: grnCode, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -302,7 +318,12 @@ describe('goods-receipt-notes service', () => {
     const grnCode = `${TEST_PREFIX}A5`;
     const detail = await service.createGoodsReceiptNote(
       {
-        header: { code: grnCode, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -346,7 +367,12 @@ describe('goods-receipt-notes service', () => {
     const po = await freshPo('A6', 5);
     const detail = await service.createGoodsReceiptNote(
       {
-        header: { code: `${TEST_PREFIX}A6`, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: `${TEST_PREFIX}A6`,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -362,16 +388,21 @@ describe('goods-receipt-notes service', () => {
       },
       admin,
     );
-    await expect(
-      service.softDeleteGoodsReceiptNote(detail.id, admin),
-    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.softDeleteGoodsReceiptNote(detail.id, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
   });
 
   it('softDelete on a pending GRN reverses received_qty + flips PO header back to open', async () => {
     const po = await freshPo('A7', 8);
     const detail = await service.createGoodsReceiptNote(
       {
-        header: { code: `${TEST_PREFIX}A7`, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: `${TEST_PREFIX}A7`,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -399,7 +430,12 @@ describe('goods-receipt-notes service', () => {
     const grnCode = `${TEST_PREFIX}A8`;
     await service.createGoodsReceiptNote(
       {
-        header: { code: grnCode, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -434,7 +470,16 @@ describe('goods-receipt-notes service', () => {
       service.createGoodsReceiptNote(
         {
           header: { code: `${TEST_PREFIX}NOC`, grnDate: '2026-05-03' },
-          lines: [{ itemId: firstItemId, itemName: 'X', receivedQty: 1, qcStatus: 'pending', qcAcceptedQty: 0, qcRejectedQty: 0 }],
+          lines: [
+            {
+              itemId: firstItemId,
+              itemName: 'X',
+              receivedQty: 1,
+              qcStatus: 'pending',
+              qcAcceptedQty: 0,
+              qcRejectedQty: 0,
+            },
+          ],
         },
         { ...admin, companyId: null },
       ),

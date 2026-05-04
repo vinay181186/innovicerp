@@ -107,8 +107,7 @@ export function transformItems(records: LegacyItem[]): TransformResult<Transform
       });
     }
 
-    const drawingFilePath =
-      r.drawingFile && r.drawingFile.trim().length > 0 ? r.drawingFile : null;
+    const drawingFilePath = r.drawingFile && r.drawingFile.trim().length > 0 ? r.drawingFile : null;
     if (r.drawingData && r.drawingData.length > 0) {
       anomalies.push({ legacyId: r.id, type: 'drawing_data_present_dropped' });
     }

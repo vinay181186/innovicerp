@@ -50,7 +50,11 @@ async function assertJobCardExists(
     .select({ id: jobCards.id })
     .from(jobCards)
     .where(
-      and(eq(jobCards.id, jobCardId), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      and(
+        eq(jobCards.id, jobCardId),
+        eq(jobCards.companyId, companyId),
+        isNull(jobCards.deletedAt),
+      ),
     )
     .limit(1);
   if (rows.length === 0) {
@@ -234,7 +238,10 @@ export async function listNcRegister(
     if (input.status) conditions.push(eq(ncRegister.status, input.status));
     if (input.reasonCategory) conditions.push(eq(ncRegister.reasonCategory, input.reasonCategory));
     if (input.jobCardId) conditions.push(eq(ncRegister.jobCardId, input.jobCardId));
-    const totalRows = await tx.select({ value: count() }).from(ncRegister).where(and(...conditions));
+    const totalRows = await tx
+      .select({ value: count() })
+      .from(ncRegister)
+      .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
     const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
@@ -414,10 +421,7 @@ export async function updateNcRegister(
 
 // ─── T-040b: dispose + close-rework actions ──────────────────────────────
 
-async function resolveUserName(
-  tx: DbTransaction,
-  userId: string,
-): Promise<string> {
+async function resolveUserName(tx: DbTransaction, userId: string): Promise<string> {
   const rows = await tx
     .select({ email: users.email })
     .from(users)
@@ -470,10 +474,7 @@ export async function closeNcRework(
   });
 }
 
-export async function softDeleteNcRegister(
-  id: string,
-  user: AuthContext,
-): Promise<{ ok: true }> {
+export async function softDeleteNcRegister(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireOpEntryRole(user);
   const companyId = requireCompany(user);
 

@@ -42,9 +42,7 @@ export function useDeliveryChallansList(
 
 export function useDeliveryChallan(id: string | undefined) {
   return useQuery<DeliveryChallanWithLines>({
-    queryKey: id
-      ? deliveryChallansKeys.detail(id)
-      : deliveryChallansKeys.detail('__missing__'),
+    queryKey: id ? deliveryChallansKeys.detail(id) : deliveryChallansKeys.detail('__missing__'),
     queryFn: () => apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}`),
     enabled: Boolean(id),
   });

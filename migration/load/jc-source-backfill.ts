@@ -104,8 +104,7 @@ export async function runJcSourceBackfill(args: BackfillArgs): Promise<BackfillR
         jcCode: jc.code,
         legacyRef: jc.source_legacy_ref,
         status: 'already_backfilled',
-        resolvedColumn:
-          jc.source_so_line_id !== null ? 'source_so_line_id' : 'source_jw_line_id',
+        resolvedColumn: jc.source_so_line_id !== null ? 'source_so_line_id' : 'source_jw_line_id',
         resolvedTarget: (jc.source_so_line_id ?? jc.source_jw_line_id) as string,
       });
       continue;

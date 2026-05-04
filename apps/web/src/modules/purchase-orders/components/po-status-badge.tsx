@@ -6,8 +6,7 @@ const STYLES: Record<PoStatus, string> = {
   partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
   qc_pending: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   closed: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  cancelled:
-    'bg-zinc-100 text-zinc-600 line-through dark:bg-zinc-800 dark:text-zinc-400',
+  cancelled: 'bg-zinc-100 text-zinc-600 line-through dark:bg-zinc-800 dark:text-zinc-400',
 };
 
 export function PoStatusBadge(props: { status: PoStatus }) {

@@ -40,11 +40,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -125,7 +121,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
       },
       admin,
@@ -133,7 +138,16 @@ describe('purchase-orders service', () => {
     await expect(
       service.createPurchaseOrder(
         {
-          header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+          header: {
+            code,
+            poDate: '2026-05-03',
+            poType: 'standard',
+            vendorId: firstVendorId,
+            status: 'draft',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
           lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
         },
         admin,
@@ -145,7 +159,16 @@ describe('purchase-orders service', () => {
     await expect(
       service.createPurchaseOrder(
         {
-          header: { code: `${TEST_PREFIX}BADV`, poDate: '2026-05-03', poType: 'standard', vendorId: '00000000-0000-0000-0000-000000000000', status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+          header: {
+            code: `${TEST_PREFIX}BADV`,
+            poDate: '2026-05-03',
+            poType: 'standard',
+            vendorId: '00000000-0000-0000-0000-000000000000',
+            status: 'draft',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
           lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
         },
         admin,
@@ -154,8 +177,19 @@ describe('purchase-orders service', () => {
     await expect(
       service.createPurchaseOrder(
         {
-          header: { code: `${TEST_PREFIX}BADI`, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
-          lines: [{ itemId: '00000000-0000-0000-0000-000000000000', itemName: 'X', qty: 1, rate: 0 }],
+          header: {
+            code: `${TEST_PREFIX}BADI`,
+            poDate: '2026-05-03',
+            poType: 'standard',
+            vendorId: firstVendorId,
+            status: 'draft',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
+          lines: [
+            { itemId: '00000000-0000-0000-0000-000000000000', itemName: 'X', qty: 1, rate: 0 },
+          ],
         },
         admin,
       ),
@@ -166,7 +200,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}LST`;
     await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'job_work', vendorId: firstVendorId, status: 'open', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'job_work',
+          vendorId: firstVendorId,
+          status: 'open',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [
           { itemId: firstItemId, itemName: 'A', qty: 4, rate: 0 },
           { itemId: firstItemId, itemName: 'B', qty: 6, rate: 0 },
@@ -189,7 +232,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}UH1`;
     const created = await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'Stay', qty: 9, rate: 0 }],
       },
       admin,
@@ -210,7 +262,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}UM1`;
     const created = await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'open', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'open',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [
           { itemId: firstItemId, itemName: 'Keep+Update', qty: 10, rate: 0 },
           { itemId: firstItemId, itemName: 'Drop Me', qty: 20, rate: 0 },
@@ -243,7 +304,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}URQ`;
     const created = await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'open', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'open',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'X', qty: 10, rate: 0 }],
       },
       admin,
@@ -253,7 +323,9 @@ describe('purchase-orders service', () => {
       created.id,
       {
         header: {},
-        lines: [{ id: lineId, itemId: firstItemId, itemName: 'X', qty: 12, rate: 0, receivedQty: 999 }],
+        lines: [
+          { id: lineId, itemId: firstItemId, itemName: 'X', qty: 12, rate: 0, receivedQty: 999 },
+        ],
       },
       admin,
     );
@@ -341,7 +413,14 @@ describe('purchase-orders service', () => {
       service.createPurchaseOrderFromPr(
         {
           prId: prRow[0]!.id,
-          header: { code: `${TEST_PREFIX}NOPE`, poDate: '2026-05-03', poType: 'job_work', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+          header: {
+            code: `${TEST_PREFIX}NOPE`,
+            poDate: '2026-05-03',
+            poType: 'job_work',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
         },
         admin,
       ),
@@ -369,7 +448,14 @@ describe('purchase-orders service', () => {
       service.createPurchaseOrderFromPr(
         {
           prId: prRow[0]!.id,
-          header: { code: `${TEST_PREFIX}NOPE2`, poDate: '2026-05-03', poType: 'job_work', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+          header: {
+            code: `${TEST_PREFIX}NOPE2`,
+            poDate: '2026-05-03',
+            poType: 'job_work',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
         },
         admin,
       ),
@@ -380,7 +466,16 @@ describe('purchase-orders service', () => {
     const code = `${TEST_PREFIX}DEL`;
     const created = await service.createPurchaseOrder(
       {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'open', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'open',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'L1', qty: 1, rate: 0 }],
       },
       admin,
@@ -399,7 +494,16 @@ describe('purchase-orders service', () => {
     await expect(
       service.createPurchaseOrder(
         {
-          header: { code: `${TEST_PREFIX}NOC`, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+          header: {
+            code: `${TEST_PREFIX}NOC`,
+            poDate: '2026-05-03',
+            poType: 'standard',
+            vendorId: firstVendorId,
+            status: 'draft',
+            sgstPct: 0,
+            cgstPct: 0,
+            igstPct: 0,
+          },
           lines: [{ itemId: firstItemId, itemName: 'L', qty: 1, rate: 0 }],
         },
         noCompanyUser,

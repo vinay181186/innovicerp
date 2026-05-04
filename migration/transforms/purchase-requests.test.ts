@@ -3,12 +3,14 @@ import { transformPurchaseRequests } from './purchase-requests';
 import { legacyPurchaseOrderUuid } from './purchase-orders';
 import type { TransformContext } from './types';
 
-function ctxWith(opts: {
-  items?: Array<[string, string]>;
-  vendors?: Array<[string, string]>;
-  jcOps?: Array<[string, string]>; // key: `${jcNo}::${opSeq}` → uuid
-  soLines?: Record<string, string>; // legacyId → uuid
-} = {}): TransformContext {
+function ctxWith(
+  opts: {
+    items?: Array<[string, string]>;
+    vendors?: Array<[string, string]>;
+    jcOps?: Array<[string, string]>; // key: `${jcNo}::${opSeq}` → uuid
+    soLines?: Record<string, string>; // legacyId → uuid
+  } = {},
+): TransformContext {
   return {
     idMap: { sales_order_lines: opts.soLines ?? {} },
     lookups: {
@@ -175,7 +177,13 @@ describe('transformPurchaseRequests', () => {
         { id: 'd1' /* no prNo */ },
         { id: 'd2', prNo: 'PR-A' /* no prDate */ },
         { id: 'd3', prNo: 'PR-B', prDate: '2026-04-18', vendorCode: 'V1', itemCode: 'I1', qty: 0 },
-        { id: 'd4', prNo: 'PR-C', prDate: '2026-04-18', itemCode: 'I1', qty: 1 /* no vendorCode at all */ },
+        {
+          id: 'd4',
+          prNo: 'PR-C',
+          prDate: '2026-04-18',
+          itemCode: 'I1',
+          qty: 1 /* no vendorCode at all */,
+        },
       ],
       ctxWith({ items: [['I1', 'iu']], vendors: [['V1', 'vu']] }),
     );

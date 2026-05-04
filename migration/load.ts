@@ -638,7 +638,10 @@ async function main(): Promise<void> {
   log('info', 'load_starting', { dryRun, targets });
 
   const seed = await resolveSeedContext();
-  log('info', 'seed_context_resolved', { companyId: seed.companyId, adminUserId: seed.adminUserId });
+  log('info', 'seed_context_resolved', {
+    companyId: seed.companyId,
+    adminUserId: seed.adminUserId,
+  });
 
   const idMapPath = join(transformDir, '_id_map.json');
   const idMap = JSON.parse(readFileSync(idMapPath, 'utf8')) as IdMapPersisted;
@@ -701,11 +704,7 @@ async function main(): Promise<void> {
   if (!dryRun) {
     writeFileSync(
       idMapPath,
-      JSON.stringify(
-        { ...idMap, generatedAt: new Date().toISOString() },
-        null,
-        2,
-      ),
+      JSON.stringify({ ...idMap, generatedAt: new Date().toISOString() }, null, 2),
     );
   }
 
@@ -729,10 +728,7 @@ async function main(): Promise<void> {
       unresolved: backfill.unresolved.length,
       dryRun,
     });
-    writeFileSync(
-      join(loadDir, '_jc_source_backfill.json'),
-      JSON.stringify(backfill, null, 2),
-    );
+    writeFileSync(join(loadDir, '_jc_source_backfill.json'), JSON.stringify(backfill, null, 2));
   }
 
   // Phase B'' deleted — the legacy jc_op outsource FK backfill (T-035c) ran

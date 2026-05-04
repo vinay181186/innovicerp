@@ -161,7 +161,9 @@ function EditItemForm(props: EditMode) {
       <FieldRow>
         <Field label="Code" htmlFor="code">
           <Input id="code" value={props.item.code} disabled readOnly />
-          <p className="mt-1 text-xs text-muted-foreground">Code cannot be changed after creation.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Code cannot be changed after creation.
+          </p>
         </Field>
         <Field label="Name" htmlFor="name" error={errors.name?.message} required>
           <Input id="name" autoComplete="off" {...register('name')} />
@@ -249,9 +251,7 @@ function FormFooter(props: {
 }) {
   return (
     <div className="space-y-3">
-      {props.submitError ? (
-        <p className="text-sm text-destructive">{props.submitError}</p>
-      ) : null}
+      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={props.isSubmitting}>
           {props.isSubmitting ? <Loader2 className="animate-spin" /> : null}

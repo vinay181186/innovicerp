@@ -65,9 +65,7 @@ describe('transformClients', () => {
   });
 
   it('captures unknown legacy keys', () => {
-    const result = transformClients([
-      { id: 'x', code: 'C', name: 'X', credit: 100000 } as never,
-    ]);
+    const result = transformClients([{ id: 'x', code: 'C', name: 'X', credit: 100000 } as never]);
     expect(result.rows[0]?._legacyExtras).toEqual({ credit: 100000 });
   });
 });

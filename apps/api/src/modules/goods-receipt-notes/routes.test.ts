@@ -70,11 +70,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -100,7 +96,9 @@ afterAll(async () => {
     .from(goodsReceiptNotes)
     .where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
   for (const h of grnHeaders) {
-    await db.delete(goodsReceiptNoteLines).where(eq(goodsReceiptNoteLines.goodsReceiptNoteId, h.id));
+    await db
+      .delete(goodsReceiptNoteLines)
+      .where(eq(goodsReceiptNoteLines.goodsReceiptNoteId, h.id));
   }
   await db.delete(goodsReceiptNotes).where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
   await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
@@ -170,7 +168,12 @@ describe('goods-receipt-notes routes', () => {
       url: '/goods-receipt-notes',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}R2`, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: `${TEST_PREFIX}R2`,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,
@@ -198,7 +201,12 @@ describe('goods-receipt-notes routes', () => {
       url: '/goods-receipt-notes',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}R3`, grnDate: '2026-05-03', purchaseOrderId: po.id, vendorId: firstVendorId },
+        header: {
+          code: `${TEST_PREFIX}R3`,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
         lines: [
           {
             purchaseOrderLineId: po.lineId,

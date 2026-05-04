@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -19,10 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  useItemBalance,
-  useStoreTransactionsList,
-} from '@/modules/store-transactions/api';
+import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
@@ -231,9 +222,7 @@ function StockHistoryCard(props: { itemId: string }) {
                 <span className="text-destructive">Failed to load stock history.</span>
               </TableEmpty>
             ) : (data?.items.length ?? 0) === 0 ? (
-              <TableEmpty colSpan={6}>
-                No stock transactions for this item yet.
-              </TableEmpty>
+              <TableEmpty colSpan={6}>No stock transactions for this item yet.</TableEmpty>
             ) : (
               data!.items.map((r) => (
                 <TableRow key={r.id}>

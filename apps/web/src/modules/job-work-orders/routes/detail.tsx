@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -55,9 +49,7 @@ function JobWorkOrderDetailPage() {
           <CardHeader>
             <CardTitle>Job-work order not found</CardTitle>
             <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This job-work order could not be loaded.'}
+              {error instanceof Error ? error.message : 'This job-work order could not be loaded.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -146,10 +138,7 @@ function JobWorkOrderDetailPage() {
             <CardTitle className="flex items-center gap-3">
               {detail.customerName ?? 'Untitled customer'}
               <SoStatusBadge status={detail.status} />
-              <JwMaterialStatusBadge
-                receivedQty={matRecvTotal}
-                expectedQty={clientMatTotal}
-              />
+              <JwMaterialStatusBadge receivedQty={matRecvTotal} expectedQty={clientMatTotal} />
             </CardTitle>
           </CardHeader>
           <CardContent>

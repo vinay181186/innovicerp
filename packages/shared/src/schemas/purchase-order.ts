@@ -119,10 +119,9 @@ export const purchaseOrderLineInputSchema = z
     sourceJcOpId: z.string().uuid().optional(),
     lineRemarks: z.string().max(2000).optional(),
   })
-  .refine(
-    (l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()),
-    { message: 'itemId or itemCodeText is required (per ADR-012 #10)' },
-  );
+  .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
+    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+  });
 export type PurchaseOrderLineInput = z.infer<typeof purchaseOrderLineInputSchema>;
 
 const _poHeaderInputBase = z.object({
@@ -151,11 +150,10 @@ const _poHeaderInputBase = z.object({
 
 /** CREATE — `{header, lines}`. Header + ≥ 1 line; service runs both in tx. */
 export const createPurchaseOrderInputSchema = z.object({
-  header: _poHeaderInputBase
-    .refine(
-      (h) => Boolean(h.vendorId) || Boolean(h.vendorCodeText?.trim()),
-      { message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)' },
-    ),
+  header: _poHeaderInputBase.refine(
+    (h) => Boolean(h.vendorId) || Boolean(h.vendorCodeText?.trim()),
+    { message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)' },
+  ),
   lines: z.array(purchaseOrderLineInputSchema).min(1, 'At least one line is required'),
 });
 export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderInputSchema>;
@@ -177,11 +175,7 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
   /** Header overrides — caller supplies the PO code (auto-suggested from
    *  legacy `IN-JWPO-NNNNN` series in UI) and any tax/date adjustments. */
   header: z.object({
-    code: z
-      .string()
-      .min(1)
-      .max(64)
-      .regex(codeRegex),
+    code: z.string().min(1).max(64).regex(codeRegex),
     poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
     poType: poTypeSchema.default('job_work'), // outsource PRs default to job_work
     dueDate: z
@@ -204,8 +198,14 @@ export const listPurchaseOrdersQuerySchema = z.object({
   status: poStatusSchema.optional(),
   poType: poTypeSchema.optional(),
   vendorId: z.string().uuid().optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

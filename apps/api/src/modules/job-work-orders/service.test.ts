@@ -37,11 +37,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -242,7 +238,7 @@ describe('job-work-orders service', () => {
         header: { code, jwDate: '2026-05-02', customerName: 'Merge', status: 'open' },
         lines: [
           { partName: 'Keep+Update', itemId: firstItemId, uom: 'NOS', orderQty: 10 },
-          { partName: 'Drop Me',     itemId: firstItemId, uom: 'NOS', orderQty: 20 },
+          { partName: 'Drop Me', itemId: firstItemId, uom: 'NOS', orderQty: 20 },
         ],
       },
       admin,
@@ -304,7 +300,12 @@ describe('job-work-orders service', () => {
     await expect(
       service.createJobWorkOrder(
         {
-          header: { code: `${TEST_PREFIX}NOC`, jwDate: '2026-05-02', customerName: 'X', status: 'open' },
+          header: {
+            code: `${TEST_PREFIX}NOC`,
+            jwDate: '2026-05-02',
+            customerName: 'X',
+            status: 'open',
+          },
           lines: [{ partName: 'L', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
         },
         noCompanyUser,

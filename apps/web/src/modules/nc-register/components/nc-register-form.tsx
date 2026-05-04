@@ -118,7 +118,9 @@ export function NcRegisterForm(props: NcRegisterFormProps) {
         ncDate: values.ncDate,
         jobCardId: values.jobCardId,
         ...(values.jcOpId ? { jcOpId: values.jcOpId } : {}),
-        ...(values.opSeq != null && !Number.isNaN(values.opSeq) ? { opSeq: Number(values.opSeq) } : {}),
+        ...(values.opSeq != null && !Number.isNaN(values.opSeq)
+          ? { opSeq: Number(values.opSeq) }
+          : {}),
         ...(values.operationText?.trim() ? { operationText: values.operationText.trim() } : {}),
         ...(values.qcOperationText?.trim()
           ? { qcOperationText: values.qcOperationText.trim() }
@@ -132,9 +134,7 @@ export function NcRegisterForm(props: NcRegisterFormProps) {
         rejectedQty: Number(values.rejectedQty),
         reasonCategory: values.reasonCategory,
         ...(values.reason?.trim() ? { reason: values.reason.trim() } : {}),
-        ...(values.reportedByText?.trim()
-          ? { reportedByText: values.reportedByText.trim() }
-          : {}),
+        ...(values.reportedByText?.trim() ? { reportedByText: values.reportedByText.trim() } : {}),
       };
       await props.onSubmit(payload);
     }
@@ -179,10 +179,7 @@ export function NcRegisterForm(props: NcRegisterFormProps) {
       {!isEdit ? (
         <FieldRow>
           <Field label="Job card" htmlFor="jobCardId" required>
-            <Select
-              id="jobCardId"
-              {...register('jobCardId', { required: 'Job card is required' })}
-            >
+            <Select id="jobCardId" {...register('jobCardId', { required: 'Job card is required' })}>
               <option value="">— Pick a JC —</option>
               {jcs.map((jc) => (
                 <option key={jc.id} value={jc.id}>
@@ -195,10 +192,7 @@ export function NcRegisterForm(props: NcRegisterFormProps) {
             ) : null}
           </Field>
           <Field label="Item" htmlFor="itemId" required>
-            <Select
-              id="itemId"
-              {...register('itemId', { required: 'Item is required' })}
-            >
+            <Select id="itemId" {...register('itemId', { required: 'Item is required' })}>
               <option value="">— Auto-fills from JC —</option>
               {items.map((it) => (
                 <option key={it.id} value={it.id}>
@@ -288,9 +282,7 @@ export function NcRegisterForm(props: NcRegisterFormProps) {
         />
       </Field>
 
-      {props.submitError ? (
-        <p className="text-sm text-destructive">{props.submitError}</p>
-      ) : null}
+      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
 
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={formState.isSubmitting}>

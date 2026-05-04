@@ -122,14 +122,12 @@ export const goodsReceiptNoteLineInputSchema = z
     qcRemarks: z.string().max(2000).optional(),
     remarks: z.string().max(2000).optional(),
   })
-  .refine(
-    (l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()),
-    { message: 'itemId or itemCodeText is required (per ADR-012 #10)' },
-  )
-  .refine(
-    (l) => l.qcAcceptedQty + l.qcRejectedQty <= l.receivedQty,
-    { message: 'qcAcceptedQty + qcRejectedQty cannot exceed receivedQty' },
-  );
+  .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
+    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+  })
+  .refine((l) => l.qcAcceptedQty + l.qcRejectedQty <= l.receivedQty, {
+    message: 'qcAcceptedQty + qcRejectedQty cannot exceed receivedQty',
+  });
 export type GoodsReceiptNoteLineInput = z.infer<typeof goodsReceiptNoteLineInputSchema>;
 
 const _grnHeaderInputBase = z.object({
@@ -172,8 +170,14 @@ export const listGoodsReceiptNotesQuerySchema = z.object({
   purchaseOrderId: z.string().uuid().optional(),
   /** Filter to GRNs with at least one line in this QC status. */
   qcStatus: grnQcStatusSchema.optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

@@ -118,9 +118,7 @@ function normaliseUom(raw: string | undefined): Uom {
   return (UOMS as readonly string[]).includes(upper) ? (upper as Uom) : 'NOS';
 }
 
-function normaliseStatus(
-  raw: string | undefined,
-): 'open' | 'closed' | 'dispatched' | 'cancelled' {
+function normaliseStatus(raw: string | undefined): 'open' | 'closed' | 'dispatched' | 'cancelled' {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'closed' || v === 'completed') return 'closed';
   if (v === 'dispatched') return 'dispatched';
@@ -153,7 +151,7 @@ export function transformJobWorkOrders(
         continue;
       }
       const clientCode = r.clientCode?.trim();
-      const clientId = clientCode ? clientsByCode?.get(clientCode) ?? null : null;
+      const clientId = clientCode ? (clientsByCode?.get(clientCode) ?? null) : null;
 
       headerRows.set(jwNo, {
         _legacyId: `jw::${jwNo}`,
@@ -204,7 +202,7 @@ export function transformJobWorkOrders(
     }
 
     const itemCodeRaw = r.itemCode?.trim() ?? r.partNo?.trim() ?? '';
-    const itemId = itemCodeRaw ? itemsByCode?.get(itemCodeRaw) ?? null : null;
+    const itemId = itemCodeRaw ? (itemsByCode?.get(itemCodeRaw) ?? null) : null;
     const itemCodeText = itemCodeRaw && !itemId ? itemCodeRaw : null;
 
     lineRows.push({

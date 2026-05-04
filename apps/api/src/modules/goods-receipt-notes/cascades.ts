@@ -144,7 +144,17 @@ interface QcAcceptCascadeArgs {
 }
 
 export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promise<void> {
-  const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qcAcceptedQty, prevQcStatus, nextQcStatus } = args;
+  const {
+    tx,
+    companyId,
+    adminUserId,
+    grnId,
+    grnLineId,
+    itemId,
+    qcAcceptedQty,
+    prevQcStatus,
+    nextQcStatus,
+  } = args;
   // Trigger conditions:
   //   - status transitioned non-completed → completed
   //   - qcAcceptedQty > 0 (rejecting everything writes no ledger row)

@@ -39,11 +39,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -98,9 +94,7 @@ describe('job-work-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: { code, jwDate: '2026-05-02', customerName: 'Routes JW', status: 'open' },
-        lines: [
-          { partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5 },
-        ],
+        lines: [{ partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5 }],
       },
     });
     expect(res.statusCode).toBe(201);
@@ -132,7 +126,12 @@ describe('job-work-orders routes', () => {
       url: '/job-work-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}V`, jwDate: '2026-05-02', customerName: 'Viewer', status: 'open' },
+        header: {
+          code: `${TEST_PREFIX}V`,
+          jwDate: '2026-05-02',
+          customerName: 'Viewer',
+          status: 'open',
+        },
         lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
       },
     });

@@ -67,10 +67,7 @@ describe('job-cards service', () => {
     // Use the migrated JCs (IN-JC-00002, IN-JC-00003) as a stable
     // population — other test files create + tear down JCs which would
     // race against an unscoped query.
-    const all = await service.listJobCards(
-      { search: 'IN-JC-0000', limit: 200, offset: 0 },
-      admin,
-    );
+    const all = await service.listJobCards({ search: 'IN-JC-0000', limit: 200, offset: 0 }, admin);
     expect(all.items.length).toBeGreaterThanOrEqual(2);
     const jc02 = all.items.find((j) => j.code === 'IN-JC-00002');
     expect(jc02).toBeDefined();
@@ -84,10 +81,7 @@ describe('job-cards service', () => {
   });
 
   it('listJobCards search matches against jc code, item code, and SO source code', async () => {
-    const bySoCode = await service.listJobCards(
-      { search: 'SO-436', limit: 50, offset: 0 },
-      admin,
-    );
+    const bySoCode = await service.listJobCards({ search: 'SO-436', limit: 50, offset: 0 }, admin);
     // Both surviving JCs are linked to SO-436
     expect(bySoCode.items.length).toBeGreaterThanOrEqual(2);
     expect(

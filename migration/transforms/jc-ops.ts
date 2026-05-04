@@ -165,20 +165,20 @@ export function transformJcOps(
     }
 
     const machineCodeRaw = r.machineId?.trim() ?? '';
-    const machineId = machineCodeRaw && machineCodeRaw !== 'QC'
-      ? machinesByCode?.get(machineCodeRaw) ?? null
-      : null;
+    const machineId =
+      machineCodeRaw && machineCodeRaw !== 'QC'
+        ? (machinesByCode?.get(machineCodeRaw) ?? null)
+        : null;
     const machineCodeText = machineCodeRaw && !machineId ? machineCodeRaw : null;
 
     const opType = normaliseOpType(r.opType);
 
     const vendorCodeRaw = r.outsourceVendor?.trim() ?? '';
-    const vendorId = vendorCodeRaw ? vendorsByCode?.get(vendorCodeRaw) ?? null : null;
+    const vendorId = vendorCodeRaw ? (vendorsByCode?.get(vendorCodeRaw) ?? null) : null;
     const vendorText = vendorCodeRaw && !vendorId ? vendorCodeRaw : null;
 
-    const outsourceStatus = opType === 'outsource'
-      ? normaliseOutsourceStatus(r.outsourceStatus) ?? 'pending'
-      : null;
+    const outsourceStatus =
+      opType === 'outsource' ? (normaliseOutsourceStatus(r.outsourceStatus) ?? 'pending') : null;
 
     const extras: Record<string, unknown> = {};
     if (typeof r.qcAccepted === 'number') extras['qcAccepted_legacy'] = r.qcAccepted;

@@ -99,7 +99,9 @@ export type PurchaseOrderFormProps = CreateMode | EditMode;
 
 export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
+  const defaults: FormValues = isEdit
+    ? detailToFormValues(props.detail)
+    : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, control, handleSubmit, formState } = form;
@@ -283,12 +285,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Line items
           </h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => append({ ...NEW_LINE })}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
             <Plus />
             Add line
           </Button>
@@ -379,10 +376,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
                 </div>
                 <div className="col-span-12">
                   <Label className="text-xs">Line remarks</Label>
-                  <Input
-                    autoComplete="off"
-                    {...register(`lines.${idx}.lineRemarks` as const)}
-                  />
+                  <Input autoComplete="off" {...register(`lines.${idx}.lineRemarks` as const)} />
                 </div>
               </div>
             ))}
@@ -390,9 +384,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
         )}
       </section>
 
-      {props.submitError ? (
-        <p className="text-sm text-destructive">{props.submitError}</p>
-      ) : null}
+      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
 
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={formState.isSubmitting}>
@@ -427,17 +419,19 @@ function detailToFormValues(detail: PurchaseOrderDetail): FormValues {
       ...(detail.approvalRemarks ? { approvalRemarks: detail.approvalRemarks } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
-    lines: detail.lines.map((l): LineFormValue => ({
-      id: l.id,
-      ...(l.itemId ? { itemId: l.itemId } : {}),
-      itemCodeText: l.itemCodeText ?? '',
-      itemName: l.itemName,
-      qty: l.qty,
-      rate: Number(l.rate),
-      receivedQty: l.receivedQty,
-      ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-      ...(l.lineRemarks ? { lineRemarks: l.lineRemarks } : {}),
-    })),
+    lines: detail.lines.map(
+      (l): LineFormValue => ({
+        id: l.id,
+        ...(l.itemId ? { itemId: l.itemId } : {}),
+        itemCodeText: l.itemCodeText ?? '',
+        itemName: l.itemName,
+        qty: l.qty,
+        rate: Number(l.rate),
+        receivedQty: l.receivedQty,
+        ...(l.dueDate ? { dueDate: l.dueDate } : {}),
+        ...(l.lineRemarks ? { lineRemarks: l.lineRemarks } : {}),
+      }),
+    ),
   };
 }
 

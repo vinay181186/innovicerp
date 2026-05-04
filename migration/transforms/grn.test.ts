@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { transformGrn } from './grn';
 import type { TransformContext } from './types';
 
-function ctxWith(opts: {
-  items?: Array<[string, string]>;
-  vendors?: Array<[string, string]>;
-  pos?: Array<[string, string]>;
-  poLines?: Array<[string, string]>; // key: `${poCode}::${itemCode}`
-} = {}): TransformContext {
+function ctxWith(
+  opts: {
+    items?: Array<[string, string]>;
+    vendors?: Array<[string, string]>;
+    pos?: Array<[string, string]>;
+    poLines?: Array<[string, string]>; // key: `${poCode}::${itemCode}`
+  } = {},
+): TransformContext {
   return {
     idMap: {},
     lookups: {
@@ -81,7 +83,12 @@ describe('transformGrn', () => {
           receivedQty: 20,
         },
       ],
-      ctxWith({ items: [['I1', 'iu1'], ['I2', 'iu2']] }),
+      ctxWith({
+        items: [
+          ['I1', 'iu1'],
+          ['I2', 'iu2'],
+        ],
+      }),
     );
     expect(result[0]?.rows).toHaveLength(1);
     const lines = result[1]?.rows as Array<Record<string, unknown>>;

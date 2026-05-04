@@ -46,13 +46,7 @@ export interface TransformedStoreTransaction {
   itemCodeText: string | null;
   txnType: 'in' | 'out' | 'adjust';
   qty: number;
-  sourceType:
-    | 'grn_qc'
-    | 'manual_adjust'
-    | 'dispatch'
-    | 'jw_in'
-    | 'jw_out'
-    | 'other';
+  sourceType: 'grn_qc' | 'manual_adjust' | 'dispatch' | 'jw_in' | 'jw_out' | 'other';
   sourceRef: string;
   stockBefore: number;
   stockAfter: number;
@@ -69,9 +63,10 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function normaliseTxnType(
-  raw: string | undefined,
-): { type: 'in' | 'out' | 'adjust'; unrecognised?: string } {
+function normaliseTxnType(raw: string | undefined): {
+  type: 'in' | 'out' | 'adjust';
+  unrecognised?: string;
+} {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'in') return { type: 'in' };
   if (v === 'out') return { type: 'out' };
@@ -80,9 +75,7 @@ function normaliseTxnType(
   return { type: 'in', unrecognised: raw };
 }
 
-function normaliseSourceType(
-  raw: string | undefined,
-): {
+function normaliseSourceType(raw: string | undefined): {
   type: 'grn_qc' | 'manual_adjust' | 'dispatch' | 'jw_in' | 'jw_out' | 'other';
   unrecognised?: string;
 } {
@@ -149,7 +142,7 @@ export function transformStoreTransactions(
     }
 
     const itemCodeRaw = r.itemCode?.trim() ?? '';
-    const itemId = itemCodeRaw ? itemsByCode?.get(itemCodeRaw) ?? null : null;
+    const itemId = itemCodeRaw ? (itemsByCode?.get(itemCodeRaw) ?? null) : null;
     const itemCodeText = itemCodeRaw && !itemId ? itemCodeRaw : null;
 
     const stockBefore = typeof r.stockBefore === 'number' ? r.stockBefore : 0;
@@ -161,7 +154,13 @@ export function transformStoreTransactions(
       anomalies.push({
         legacyId: r.id,
         type: 'stock_arithmetic_mismatch',
-        details: { stockBefore, qty: r.qty, txnType, stockAfter, expected: stockBefore + expectedDelta },
+        details: {
+          stockBefore,
+          qty: r.qty,
+          txnType,
+          stockAfter,
+          expected: stockBefore + expectedDelta,
+        },
       });
     }
 

@@ -121,10 +121,9 @@ export const jobWorkOrderLineInputSchema = z
     materialReceivedQty: z.coerce.number().nonnegative().optional(),
     status: jwStatusSchema.optional(),
   })
-  .refine(
-    (l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()),
-    { message: 'itemId or itemCodeText is required (per ADR-012 #10)' },
-  );
+  .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
+    message: 'itemId or itemCodeText is required (per ADR-012 #10)',
+  });
 export type JobWorkOrderLineInput = z.infer<typeof jobWorkOrderLineInputSchema>;
 
 const _jwHeaderInputBase = z.object({
@@ -144,11 +143,9 @@ const _jwHeaderInputBase = z.object({
 /** CREATE — `{header, lines}`. Header + ≥ 1 line (no Equipment exception
  *  on JWs); service runs both inserts in one transaction. */
 export const createJobWorkOrderInputSchema = z.object({
-  header: _jwHeaderInputBase
-    .refine(
-      (h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()),
-      { message: 'clientId or customerName is required (per ADR-012 #9)' },
-    ),
+  header: _jwHeaderInputBase.refine((h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()), {
+    message: 'clientId or customerName is required (per ADR-012 #9)',
+  }),
   lines: z.array(jobWorkOrderLineInputSchema).min(1, 'At least one line is required'),
 });
 export type CreateJobWorkOrderInput = z.infer<typeof createJobWorkOrderInputSchema>;
@@ -166,8 +163,14 @@ export const listJobWorkOrdersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   status: jwStatusSchema.optional(),
   clientId: z.string().uuid().optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

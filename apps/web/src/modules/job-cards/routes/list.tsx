@@ -5,12 +5,7 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -40,8 +35,14 @@ const listSearchSchema = z.object({
   status: z.enum(JC_COMPUTED_STATUSES).optional(),
   machineId: z.string().uuid().optional(),
   operatorId: z.string().uuid().optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -136,9 +137,7 @@ function JobCardsListPage() {
       },
       {
         header: 'Customer',
-        cell: ({ row }) => (
-          <span className="text-sm">{row.original.customerName ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm">{row.original.customerName ?? '—'}</span>,
       },
       {
         header: 'Source',
@@ -146,9 +145,7 @@ function JobCardsListPage() {
       },
       {
         header: 'Qty',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.orderQty}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.orderQty}</span>,
       },
       {
         header: 'Ops',
@@ -170,9 +167,7 @@ function JobCardsListPage() {
       },
       {
         header: 'Due',
-        cell: ({ row }) => (
-          <span className="text-sm">{row.original.dueDate ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm">{row.original.dueDate ?? '—'}</span>,
       },
       {
         header: 'Priority',
@@ -205,7 +200,9 @@ function JobCardsListPage() {
   const currentPage = search.page;
 
   const setNav = (
-    update: Partial<Pick<typeof search, 'status' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>>,
+    update: Partial<
+      Pick<typeof search, 'status' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
+    >,
   ) => {
     void navigate({
       search: (prev) => ({ ...prev, ...update, page: 1 }),
@@ -220,8 +217,8 @@ function JobCardsListPage() {
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Job cards</h1>
             <p className="text-sm text-muted-foreground">
-              Production batches with computed status, ops progress, and source SO/JW link.
-              Click a code to open in Op Entry.
+              Production batches with computed status, ops progress, and source SO/JW link. Click a
+              code to open in Op Entry.
             </p>
           </div>
         </div>
@@ -323,9 +320,7 @@ function JobCardsListPage() {
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>
-                  No job cards match these filters.
-                </TableEmpty>
+                <TableEmpty colSpan={columns.length}>No job cards match these filters.</TableEmpty>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>

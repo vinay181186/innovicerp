@@ -51,11 +51,7 @@ async function assertClientExists(
     .select({ id: clients.id })
     .from(clients)
     .where(
-      and(
-        eq(clients.id, clientId),
-        eq(clients.companyId, companyId),
-        isNull(clients.deletedAt),
-      ),
+      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
     )
     .limit(1);
   if (rows.length === 0) {
@@ -77,11 +73,7 @@ async function resolveItemCodes(
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.code, codes),
-        isNull(items.deletedAt),
-      ),
+      and(eq(items.companyId, companyId), inArray(items.code, codes), isNull(items.deletedAt)),
     );
   const map = new Map<string, string>();
   for (const r of rows) map.set(r.code, r.id);
@@ -101,13 +93,7 @@ async function assertItemIdsExist(
   const rows = await tx
     .select({ id: items.id })
     .from(items)
-    .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.id, unique),
-        isNull(items.deletedAt),
-      ),
-    );
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     const found = new Set(rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
@@ -137,10 +123,7 @@ function resolveLineItemRefs(
 
 /** Auto-assign / validate lineNo across an array of lines. Mirrors the
  *  legacy `nextLine` counter behaviour. Returns lineNo per index. */
-function assignLineNos(
-  lines: SalesOrderLineInput[],
-  startFrom: number,
-): number[] {
+function assignLineNos(lines: SalesOrderLineInput[], startFrom: number): number[] {
   // If any line has lineNo, all must — otherwise reject (mixing is ambiguous).
   const provided = lines.filter((l) => l.lineNo !== undefined);
   if (provided.length > 0 && provided.length !== lines.length) {
@@ -185,13 +168,9 @@ export async function listSalesOrders(
     const searchFrag = term
       ? sql`AND (so.code ILIKE ${term} OR so.customer_name ILIKE ${term} OR so.client_po_no ILIKE ${term})`
       : sql``;
-    const statusFrag = input.status
-      ? sql`AND so.status = ${input.status}::so_status`
-      : sql``;
+    const statusFrag = input.status ? sql`AND so.status = ${input.status}::so_status` : sql``;
     const typeFrag = input.type ? sql`AND so.type = ${input.type}::so_type` : sql``;
-    const clientFrag = input.clientId
-      ? sql`AND so.client_id = ${input.clientId}::uuid`
-      : sql``;
+    const clientFrag = input.clientId ? sql`AND so.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND so.so_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND so.so_date <= ${input.toDate}::date` : sql``;
 
@@ -315,16 +294,11 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     const lineRows = await tx
       .select()
       .from(salesOrderLines)
-      .where(
-        and(
-          eq(salesOrderLines.salesOrderId, id),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
 
     return {
-      ...(toSalesOrder(header)),
+      ...toSalesOrder(header),
       lines: lineRows.map(toSalesOrderLine),
     };
   });
@@ -543,12 +517,7 @@ export async function updateSalesOrder(
     const lineRows = await tx
       .select()
       .from(salesOrderLines)
-      .where(
-        and(
-          eq(salesOrderLines.salesOrderId, id),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
 
     return {
@@ -571,12 +540,7 @@ async function mergeLines(
       lineNo: salesOrderLines.lineNo,
     })
     .from(salesOrderLines)
-    .where(
-      and(
-        eq(salesOrderLines.salesOrderId, salesOrderId),
-        isNull(salesOrderLines.deletedAt),
-      ),
-    );
+    .where(and(eq(salesOrderLines.salesOrderId, salesOrderId), isNull(salesOrderLines.deletedAt)));
   const existingById = new Map(existing.map((e) => [e.id, e]));
 
   // Pre-validate FKs in one shot.
@@ -665,10 +629,7 @@ async function mergeLines(
   }
 }
 
-export async function softDeleteSalesOrder(
-  id: string,
-  user: AuthContext,
-): Promise<{ ok: true }> {
+export async function softDeleteSalesOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
 
@@ -691,12 +652,7 @@ export async function softDeleteSalesOrder(
     await tx
       .update(salesOrderLines)
       .set({ deletedAt: now, updatedBy: user.id })
-      .where(
-        and(
-          eq(salesOrderLines.salesOrderId, id),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      );
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
     await tx
       .update(salesOrders)
       .set({ deletedAt: now, updatedBy: user.id })

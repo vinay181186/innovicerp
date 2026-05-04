@@ -5,12 +5,7 @@ import type {
   Operator,
   UpdateOperatorInput,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const operatorsKeys = {

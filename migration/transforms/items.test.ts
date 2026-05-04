@@ -130,9 +130,7 @@ describe('transformItems', () => {
   });
 
   it('captures unknown legacy keys in _legacyExtras', () => {
-    const result = transformItems([
-      { id: 'x', code: 'C', name: 'X', mysteryField: 42 } as never,
-    ]);
+    const result = transformItems([{ id: 'x', code: 'C', name: 'X', mysteryField: 42 } as never]);
     expect(result.rows[0]?._legacyExtras).toMatchObject({ mysteryField: 42 });
   });
 });

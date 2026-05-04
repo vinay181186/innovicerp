@@ -101,7 +101,10 @@ export async function listDeliveryChallans(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(deliveryChallans.companyId, companyId), isNull(deliveryChallans.deletedAt)];
+    const conditions = [
+      eq(deliveryChallans.companyId, companyId),
+      isNull(deliveryChallans.deletedAt),
+    ];
     if (input.status) conditions.push(eq(deliveryChallans.status, input.status));
     if (input.vendorId) conditions.push(eq(deliveryChallans.vendorId, input.vendorId));
     if (input.purchaseOrderId)

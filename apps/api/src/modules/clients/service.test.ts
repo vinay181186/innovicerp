@@ -33,10 +33,7 @@ afterAll(async () => {
 describe('clients service', () => {
   it('createClient inserts a row with audit columns + soft-delete null', async () => {
     const code = `${TEST_PREFIX}A1`;
-    const c = await service.createClient(
-      { code, name: 'Alpha Industries', isActive: true },
-      admin,
-    );
+    const c = await service.createClient({ code, name: 'Alpha Industries', isActive: true }, admin);
     expect(c.code).toBe(code);
     expect(c.companyId).toBe(admin.companyId);
     expect(c.createdBy).toBe(admin.id);
@@ -55,10 +52,7 @@ describe('clients service', () => {
 
   it('getClient returns the row by id', async () => {
     const code = `${TEST_PREFIX}G1`;
-    const created = await service.createClient(
-      { code, name: 'Get Me', isActive: true },
-      admin,
-    );
+    const created = await service.createClient({ code, name: 'Get Me', isActive: true }, admin);
     const fetched = await service.getClient(created.id, admin);
     expect(fetched.id).toBe(created.id);
     expect(fetched.code).toBe(code);
@@ -79,10 +73,7 @@ describe('clients service', () => {
       { code: `${TEST_PREFIX}SEARCH-B`, name: 'Other B', isActive: true },
       admin,
     );
-    const result = await service.listClients(
-      { search: 'Searchable', limit: 50, offset: 0 },
-      admin,
-    );
+    const result = await service.listClients({ search: 'Searchable', limit: 50, offset: 0 }, admin);
     expect(result.clients.some((c) => c.code === `${TEST_PREFIX}SEARCH-A`)).toBe(true);
     expect(result.clients.every((c) => c.companyId === admin.companyId)).toBe(true);
   });

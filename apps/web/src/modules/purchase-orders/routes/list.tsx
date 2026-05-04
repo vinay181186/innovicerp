@@ -7,12 +7,7 @@ import {
   type PurchaseOrderListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -122,15 +117,11 @@ function PurchaseOrdersListPage() {
       },
       {
         header: 'Lines',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.lineCount}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.lineCount}</span>,
       },
       {
         header: 'Total Qty',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.totalQty}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.totalQty}</span>,
       },
       {
         header: 'Received',
@@ -138,11 +129,7 @@ function PurchaseOrdersListPage() {
           const r = row.original.receivedQty;
           const t = row.original.totalQty;
           const cls =
-            r >= t && t > 0
-              ? 'text-green-600'
-              : r > 0
-                ? 'text-amber-600'
-                : 'text-muted-foreground';
+            r >= t && t > 0 ? 'text-green-600' : r > 0 ? 'text-amber-600' : 'text-muted-foreground';
           return (
             <span className={`font-mono text-sm ${cls}`}>
               {r}
@@ -271,9 +258,7 @@ function PurchaseOrdersListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load purchase orders'}
+                    {error instanceof Error ? error.message : 'Failed to load purchase orders'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

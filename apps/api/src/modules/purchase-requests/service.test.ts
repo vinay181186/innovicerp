@@ -37,11 +37,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -118,12 +114,28 @@ describe('purchase-requests service', () => {
   it('createPurchaseRequest rejects duplicate code with ConflictError', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createPurchaseRequest(
-      { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open' },
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'open',
+      },
       admin,
     );
     await expect(
       service.createPurchaseRequest(
-        { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open' },
+        {
+          code,
+          prDate: '2026-05-02',
+          vendorId: firstVendorId,
+          itemId: firstItemId,
+          qty: 1,
+          estCost: 0,
+          status: 'open',
+        },
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -163,7 +175,15 @@ describe('purchase-requests service', () => {
   it('getPurchaseRequest returns the row by id; throws NotFoundError when missing', async () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createPurchaseRequest(
-      { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 7, estCost: 0, status: 'open' },
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 7,
+        estCost: 0,
+        status: 'open',
+      },
       admin,
     );
     const fetched = await service.getPurchaseRequest(created.id, admin);
@@ -177,7 +197,16 @@ describe('purchase-requests service', () => {
   it('listPurchaseRequests filters by status + search + returns vendorName join', async () => {
     const code = `${TEST_PREFIX}LST`;
     await service.createPurchaseRequest(
-      { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open', operation: 'TURN' },
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'open',
+        operation: 'TURN',
+      },
       admin,
     );
     const result = await service.listPurchaseRequests(
@@ -193,7 +222,15 @@ describe('purchase-requests service', () => {
   it('updatePurchaseRequest only writes fields present in input + bumps updatedBy', async () => {
     const code = `${TEST_PREFIX}U1`;
     const created = await service.createPurchaseRequest(
-      { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open' },
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'open',
+      },
       admin,
     );
     const updated = await service.updatePurchaseRequest(
@@ -211,16 +248,34 @@ describe('purchase-requests service', () => {
   it('softDeletePurchaseRequest soft-deletes when no PO; blocks with ConflictError when poId is set', async () => {
     const code = `${TEST_PREFIX}DEL`;
     const created = await service.createPurchaseRequest(
-      { code, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open' },
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'open',
+      },
       admin,
     );
     await service.softDeletePurchaseRequest(created.id, admin);
-    await expect(service.getPurchaseRequest(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(service.getPurchaseRequest(created.id, admin)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
 
     // Now the blocked path: hand-set po_id then attempt delete → ConflictError.
     const code2 = `${TEST_PREFIX}DEL2`;
     const created2 = await service.createPurchaseRequest(
-      { code: code2, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'po_created' },
+      {
+        code: code2,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'po_created',
+      },
       admin,
     );
     // Use a deterministic dummy uuid; FK is set null on PO delete so even an
@@ -243,7 +298,15 @@ describe('purchase-requests service', () => {
     const noCompanyUser: AuthContext = { ...admin, companyId: null };
     await expect(
       service.createPurchaseRequest(
-        { code: `${TEST_PREFIX}NOC`, prDate: '2026-05-02', vendorId: firstVendorId, itemId: firstItemId, qty: 1, estCost: 0, status: 'open' },
+        {
+          code: `${TEST_PREFIX}NOC`,
+          prDate: '2026-05-02',
+          vendorId: firstVendorId,
+          itemId: firstItemId,
+          qty: 1,
+          estCost: 0,
+          status: 'open',
+        },
         noCompanyUser,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);

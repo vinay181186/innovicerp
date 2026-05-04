@@ -43,9 +43,13 @@ export async function listVendors(
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
-      tx.select().from(vendors).where(where).orderBy(asc(vendors.code)).limit(input.limit).offset(
-        input.offset,
-      ),
+      tx
+        .select()
+        .from(vendors)
+        .where(where)
+        .orderBy(asc(vendors.code))
+        .limit(input.limit)
+        .offset(input.offset),
       tx.select({ value: count() }).from(vendors).where(where),
     ]);
 
@@ -72,10 +76,7 @@ export async function getVendor(id: string, user: AuthContext): Promise<Vendor> 
   });
 }
 
-export async function createVendor(
-  input: CreateVendorInput,
-  user: AuthContext,
-): Promise<Vendor> {
+export async function createVendor(input: CreateVendorInput, user: AuthContext): Promise<Vendor> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -83,7 +84,11 @@ export async function createVendor(
       .select({ id: vendors.id })
       .from(vendors)
       .where(
-        and(eq(vendors.companyId, companyId), eq(vendors.code, input.code), isNull(vendors.deletedAt)),
+        and(
+          eq(vendors.companyId, companyId),
+          eq(vendors.code, input.code),
+          isNull(vendors.deletedAt),
+        ),
       )
       .limit(1);
     if (existing.length > 0) {
@@ -145,11 +150,7 @@ export async function updateVendor(
     if (input.rating !== undefined) updates.rating = emptyToNull(input.rating);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
-    const updated = await tx
-      .update(vendors)
-      .set(updates)
-      .where(eq(vendors.id, id))
-      .returning();
+    const updated = await tx.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
     return updated[0] as unknown as Vendor;
   });
 }

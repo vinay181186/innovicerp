@@ -260,8 +260,7 @@ async function validateUsers(transformDir: string, companyId: string): Promise<U
   return {
     transformRowCount: file.rowCount,
     dbCount,
-    knownDelta:
-      'expected dbCount = transformRowCount + 1 (viewer@innovic.test from T-012 smoke)',
+    knownDelta: 'expected dbCount = transformRowCount + 1 (viewer@innovic.test from T-012 smoke)',
     status,
   };
 }

@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
@@ -54,9 +48,7 @@ function ItemNewPage() {
         <Card>
           <CardHeader>
             <CardTitle>New item</CardTitle>
-            <CardDescription>
-              Create a master record for a component or assembly.
-            </CardDescription>
+            <CardDescription>Create a master record for a component or assembly.</CardDescription>
           </CardHeader>
           <CardContent>
             <ItemForm

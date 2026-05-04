@@ -143,11 +143,7 @@ export async function updateOperator(
       updates.userId = input.userId && input.userId.length > 0 ? input.userId : null;
     }
 
-    const updated = await tx
-      .update(operators)
-      .set(updates)
-      .where(eq(operators.id, id))
-      .returning();
+    const updated = await tx.update(operators).set(updates).where(eq(operators.id, id)).returning();
     return updated[0] as unknown as Operator;
   });
 }

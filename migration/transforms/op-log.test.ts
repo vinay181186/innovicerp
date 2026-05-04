@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { transformOpLog } from './op-log';
 import type { TransformContext } from './types';
 
-function ctxWith(jcOps: Array<[string, string]>, operatorsByName: Array<[string, string]> = []): TransformContext {
+function ctxWith(
+  jcOps: Array<[string, string]>,
+  operatorsByName: Array<[string, string]> = [],
+): TransformContext {
   return {
     idMap: {},
     lookups: {
@@ -16,7 +19,17 @@ function ctxWith(jcOps: Array<[string, string]>, operatorsByName: Array<[string,
 describe('transformOpLog', () => {
   it('resolves jcNo+opSeq to jc_op_id', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-001', jcNo: 'IN-JC-00001', opSeq: 1, date: '2026-03-07', shift: 'Day', qty: 5 }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-001',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          date: '2026-03-07',
+          shift: 'Day',
+          qty: 5,
+        },
+      ],
       ctxWith([['IN-JC-00001::1', 'jc-op-uuid-1']]),
     );
     expect(result.rows).toHaveLength(1);
@@ -27,17 +40,41 @@ describe('transformOpLog', () => {
 
   it('captures orphan rows as jc_op_unresolved (the JC-MS-002/003/004 case)', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-002', jcNo: 'JC-MS-002', opSeq: 1, date: '2026-03-03', shift: 'Day', qty: 30 }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-002',
+          jcNo: 'JC-MS-002',
+          opSeq: 1,
+          date: '2026-03-03',
+          shift: 'Day',
+          qty: 30,
+        },
+      ],
       ctxWith([]),
     );
     expect(result.rows).toHaveLength(0);
     expect(result.anomalies[0]?.type).toBe('jc_op_unresolved');
-    expect(result.anomalies[0]?.details).toMatchObject({ jcNo: 'JC-MS-002', opSeq: 1, logNo: 'LOG-002' });
+    expect(result.anomalies[0]?.details).toMatchObject({
+      jcNo: 'JC-MS-002',
+      opSeq: 1,
+      logNo: 'LOG-002',
+    });
   });
 
   it('defaults missing log_type to "complete"', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-001', jcNo: 'IN-JC-00001', opSeq: 1, date: '2026-03-07', shift: 'Day', qty: 5 }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-001',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          date: '2026-03-07',
+          shift: 'Day',
+          qty: 5,
+        },
+      ],
       ctxWith([['IN-JC-00001::1', 'jc-op-uuid-1']]),
     );
     expect(result.rows[0]?.logType).toBe('complete');
@@ -85,7 +122,18 @@ describe('transformOpLog', () => {
 
   it('best-effort matches operator by name (case-insensitive)', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-001', jcNo: 'IN-JC-00001', opSeq: 1, date: '2026-03-07', shift: 'Day', qty: 5, operator: 'Vinay' }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-001',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          date: '2026-03-07',
+          shift: 'Day',
+          qty: 5,
+          operator: 'Vinay',
+        },
+      ],
       ctxWith([['IN-JC-00001::1', 'jc-op-uuid-1']], [['vinay', 'op-uuid-1']]),
     );
     expect(result.rows[0]?.operatorId).toBe('op-uuid-1');
@@ -94,7 +142,18 @@ describe('transformOpLog', () => {
 
   it('falls back to text-only operator when no match', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-001', jcNo: 'IN-JC-00001', opSeq: 1, date: '2026-03-07', shift: 'Day', qty: 5, operator: 'Suresh P.' }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-001',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          date: '2026-03-07',
+          shift: 'Day',
+          qty: 5,
+          operator: 'Suresh P.',
+        },
+      ],
       ctxWith([['IN-JC-00001::1', 'jc-op-uuid-1']], []),
     );
     expect(result.rows[0]?.operatorId).toBeNull();
@@ -103,7 +162,17 @@ describe('transformOpLog', () => {
 
   it('lowercases shift and captures unrecognised values as anomaly', () => {
     const result = transformOpLog(
-      [{ id: 'l1', logNo: 'LOG-001', jcNo: 'IN-JC-00001', opSeq: 1, date: '2026-03-07', shift: 'Evening', qty: 5 }],
+      [
+        {
+          id: 'l1',
+          logNo: 'LOG-001',
+          jcNo: 'IN-JC-00001',
+          opSeq: 1,
+          date: '2026-03-07',
+          shift: 'Evening',
+          qty: 5,
+        },
+      ],
       ctxWith([['IN-JC-00001::1', 'jc-op-uuid-1']]),
     );
     expect(result.rows[0]?.shift).toBe('day');

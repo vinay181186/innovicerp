@@ -31,10 +31,7 @@ afterAll(async () => {
 describe('operators service', () => {
   it('createOperator inserts a row with audit columns + soft-delete null', async () => {
     const code = `${TEST_PREFIX}A1`;
-    const o = await service.createOperator(
-      { code, name: 'Ramesh K.', isActive: true },
-      admin,
-    );
+    const o = await service.createOperator({ code, name: 'Ramesh K.', isActive: true }, admin);
     expect(o.code).toBe(code);
     expect(o.companyId).toBe(admin.companyId);
     expect(o.createdBy).toBe(admin.id);

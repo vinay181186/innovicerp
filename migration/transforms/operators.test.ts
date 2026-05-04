@@ -33,9 +33,7 @@ describe('transformOperators', () => {
   });
 
   it('flags non-Active status', () => {
-    const result = transformOperators([
-      { id: 'x', opId: 'OP1', name: 'A', status: 'Resigned' },
-    ]);
+    const result = transformOperators([{ id: 'x', opId: 'OP1', name: 'A', status: 'Resigned' }]);
     expect(result.rows[0]?.isActive).toBe(false);
     expect(result.anomalies).toContainEqual({
       legacyId: 'x',

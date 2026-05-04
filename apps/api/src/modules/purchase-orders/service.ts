@@ -59,11 +59,7 @@ async function assertVendorExists(
     .select({ id: vendors.id })
     .from(vendors)
     .where(
-      and(
-        eq(vendors.id, vendorId),
-        eq(vendors.companyId, companyId),
-        isNull(vendors.deletedAt),
-      ),
+      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
     )
     .limit(1);
   if (rows.length === 0) {
@@ -81,13 +77,7 @@ async function assertItemIdsExist(
   const rows = await tx
     .select({ id: items.id })
     .from(items)
-    .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.id, unique),
-        isNull(items.deletedAt),
-      ),
-    );
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     const found = new Set(rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
@@ -105,11 +95,7 @@ async function resolveItemCodes(
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.code, codes),
-        isNull(items.deletedAt),
-      ),
+      and(eq(items.companyId, companyId), inArray(items.code, codes), isNull(items.deletedAt)),
     );
   const map = new Map<string, string>();
   for (const r of rows) map.set(r.code, r.id);
@@ -194,9 +180,7 @@ export async function listPurchaseOrders(
       : sql``;
     const statusFrag = input.status ? sql`AND po.status = ${input.status}::po_status` : sql``;
     const typeFrag = input.poType ? sql`AND po.po_type = ${input.poType}::po_type` : sql``;
-    const vendorFrag = input.vendorId
-      ? sql`AND po.vendor_id = ${input.vendorId}::uuid`
-      : sql``;
+    const vendorFrag = input.vendorId ? sql`AND po.vendor_id = ${input.vendorId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND po.po_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND po.po_date <= ${input.toDate}::date` : sql``;
 
@@ -313,12 +297,7 @@ export async function getPurchaseOrder(
     const lineRows = await tx
       .select()
       .from(purchaseOrderLines)
-      .where(
-        and(
-          eq(purchaseOrderLines.purchaseOrderId, id),
-          isNull(purchaseOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
     return {
@@ -529,12 +508,7 @@ export async function updatePurchaseOrder(
     const lineRows = await tx
       .select()
       .from(purchaseOrderLines)
-      .where(
-        and(
-          eq(purchaseOrderLines.purchaseOrderId, id),
-          isNull(purchaseOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
     return {
@@ -606,8 +580,7 @@ async function mergeLines(
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
     if (u.data.sourceSoLineId !== undefined)
       lineUpdate['sourceSoLineId'] = u.data.sourceSoLineId ?? null;
-    if (u.data.sourceJcOpId !== undefined)
-      lineUpdate['sourceJcOpId'] = u.data.sourceJcOpId ?? null;
+    if (u.data.sourceJcOpId !== undefined) lineUpdate['sourceJcOpId'] = u.data.sourceJcOpId ?? null;
     if (u.data.lineRemarks !== undefined) lineUpdate['lineRemarks'] = u.data.lineRemarks ?? null;
 
     await tx.update(purchaseOrderLines).set(lineUpdate).where(eq(purchaseOrderLines.id, u.id));
@@ -672,12 +645,7 @@ export async function softDeletePurchaseOrder(
     await tx
       .update(purchaseOrderLines)
       .set({ deletedAt: now, updatedBy: user.id })
-      .where(
-        and(
-          eq(purchaseOrderLines.purchaseOrderId, id),
-          isNull(purchaseOrderLines.deletedAt),
-        ),
-      );
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
     await tx
       .update(purchaseOrders)
       .set({ deletedAt: now, updatedBy: user.id })
@@ -754,9 +722,7 @@ export async function createPurchaseOrderFromPr(
         prCodeText: pr.code,
         remarks:
           input.header.remarks ??
-          (pr.operation
-            ? `From PR ${pr.code} — ${pr.operation}`
-            : `From PR ${pr.code}`),
+          (pr.operation ? `From PR ${pr.code} — ${pr.operation}` : `From PR ${pr.code}`),
         createdBy: user.id,
         updatedBy: user.id,
       })

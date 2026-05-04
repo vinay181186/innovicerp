@@ -151,9 +151,7 @@ function normaliseType(raw: string | undefined): {
   return { type: 'component_manufacturing', unrecognised: raw };
 }
 
-function normaliseStatus(
-  raw: string | undefined,
-): 'open' | 'closed' | 'dispatched' | 'cancelled' {
+function normaliseStatus(raw: string | undefined): 'open' | 'closed' | 'dispatched' | 'cancelled' {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'closed' || v === 'completed') return 'closed'; // legacy 'Completed' is filter alias
   if (v === 'dispatched') return 'dispatched';
@@ -199,7 +197,7 @@ export function transformSalesOrders(
 
       // Resolve client by legacy clientCode (clientsByCode); fall back to text.
       const clientCode = r.clientCode?.trim();
-      const clientId = clientCode ? clientsById?.get(clientCode) ?? null : null;
+      const clientId = clientCode ? (clientsById?.get(clientCode) ?? null) : null;
 
       const extras: Record<string, unknown> = {};
       if (Array.isArray(r.milestones) && r.milestones.length > 0) {
@@ -217,8 +215,7 @@ export function transformSalesOrders(
         clientPoNo: emptyToNull(r.clientPoNo),
         type,
         status: normaliseStatus(r.status),
-        gstPercent:
-          typeof r.gstPercent === 'number' ? r.gstPercent.toFixed(2) : '18.00',
+        gstPercent: typeof r.gstPercent === 'number' ? r.gstPercent.toFixed(2) : '18.00',
         bomMasterId: emptyToNull(r.bomMasterId),
         bomStatus: emptyToNull(r.bomStatus),
         costCenter: emptyToNull(r.costCenter),
@@ -264,7 +261,7 @@ export function transformSalesOrders(
     }
 
     const itemCodeRaw = r.itemCode?.trim() ?? r.partNo?.trim() ?? '';
-    const itemId = itemCodeRaw ? itemsByCode?.get(itemCodeRaw) ?? null : null;
+    const itemId = itemCodeRaw ? (itemsByCode?.get(itemCodeRaw) ?? null) : null;
     const itemCodeText = itemCodeRaw && !itemId ? itemCodeRaw : null;
 
     lineRows.push({

@@ -290,10 +290,12 @@ async function main(): Promise<void> {
   let settingsHash = '';
   let companyHash = '';
   if (!filter) {
-    settingsHash = (await exportSingleDoc(db, COMPANY_ID, '_settings', '_settings.json', outDir, exportedAt))
-      .hash;
-    companyHash = (await exportSingleDoc(db, 'companies', COMPANY_ID, '_company.json', outDir, exportedAt))
-      .hash;
+    settingsHash = (
+      await exportSingleDoc(db, COMPANY_ID, '_settings', '_settings.json', outDir, exportedAt)
+    ).hash;
+    companyHash = (
+      await exportSingleDoc(db, 'companies', COMPANY_ID, '_company.json', outDir, exportedAt)
+    ).hash;
   }
 
   const manifest = {

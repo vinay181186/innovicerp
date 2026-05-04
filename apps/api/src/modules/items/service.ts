@@ -78,11 +78,7 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
       .select({ id: items.id })
       .from(items)
       .where(
-        and(
-          eq(items.companyId, companyId),
-          eq(items.code, input.code),
-          isNull(items.deletedAt),
-        ),
+        and(eq(items.companyId, companyId), eq(items.code, input.code), isNull(items.deletedAt)),
       )
       .limit(1);
     if (existing.length > 0) {
@@ -140,11 +136,7 @@ export async function updateItem(
     if (input.drawingFilePath !== undefined)
       updates.drawingFilePath = input.drawingFilePath ?? null;
 
-    const updated = await tx
-      .update(items)
-      .set(updates)
-      .where(eq(items.id, id))
-      .returning();
+    const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
     return updated[0] as unknown as Item;
   });
 }

@@ -1,11 +1,6 @@
 import type { ListOperatorsQuery, Operator } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -139,9 +134,7 @@ function OperatorsListPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Operators</h1>
-            <p className="text-sm text-muted-foreground">
-              Shop-floor worker master.
-            </p>
+            <p className="text-sm text-muted-foreground">Shop-floor worker master.</p>
           </div>
           <Button asChild>
             <Link to="/operators/new">
@@ -213,9 +206,7 @@ function OperatorsListPage() {
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>
-                  No operators match these filters.
-                </TableEmpty>
+                <TableEmpty colSpan={columns.length}>No operators match these filters.</TableEmpty>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>

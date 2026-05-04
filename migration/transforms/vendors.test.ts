@@ -36,17 +36,13 @@ describe('transformVendors', () => {
   });
 
   it('treats absent status as active', () => {
-    const result = transformVendors([
-      { id: 'v', code: 'C', name: 'Acme' },
-    ]);
+    const result = transformVendors([{ id: 'v', code: 'C', name: 'Acme' }]);
     expect(result.rows[0]?.isActive).toBe(true);
     expect(result.anomalies).toEqual([]);
   });
 
   it('flags non-Active status', () => {
-    const result = transformVendors([
-      { id: 'v', code: 'C', name: 'Acme', status: 'Suspended' },
-    ]);
+    const result = transformVendors([{ id: 'v', code: 'C', name: 'Acme', status: 'Suspended' }]);
     expect(result.rows[0]?.isActive).toBe(false);
     expect(result.anomalies).toContainEqual({
       legacyId: 'v',

@@ -10,8 +10,7 @@ export const storeTransactionsKeys = {
   all: ['store-transactions'] as const,
   lists: () => [...storeTransactionsKeys.all, 'list'] as const,
   list: (q: ListStoreTransactionsQuery) => [...storeTransactionsKeys.lists(), q] as const,
-  itemBalance: (itemId: string) =>
-    [...storeTransactionsKeys.all, 'item-balance', itemId] as const,
+  itemBalance: (itemId: string) => [...storeTransactionsKeys.all, 'item-balance', itemId] as const,
 };
 
 function toQueryString(q: ListStoreTransactionsQuery): string {

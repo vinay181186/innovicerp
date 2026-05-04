@@ -106,8 +106,8 @@ afterAll(async () => {
 interface CascadeFixture {
   soId: string;
   soLineIds: string[]; // length === lineCount
-  jcIds: string[];     // one per line, indexed in same order
-  jcOpIds: string[];   // one op per JC
+  jcIds: string[]; // one per line, indexed in same order
+  jcOpIds: string[]; // one op per JC
 }
 
 async function makeSoCascadeFixture(opts: {
@@ -214,10 +214,7 @@ async function makeSoCascadeFixture(opts: {
   return { soId: so.id, soLineIds, jcIds, jcOpIds };
 }
 
-async function makeJwCascadeFixture(opts: {
-  jwCode: string;
-  jcCode: string;
-}): Promise<{
+async function makeJwCascadeFixture(opts: { jwCode: string; jcCode: string }): Promise<{
   jwId: string;
   jwLineId: string;
   jcId: string;

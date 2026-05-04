@@ -49,7 +49,16 @@ describe('transformJobCards', () => {
 
   it('lowercases priority and accepts High', () => {
     const result = transformJobCards(
-      [{ id: 'jc1', jcNo: 'IN-JC-00001', date: '2026-04-16', itemCode: 'ITM-001', orderQty: 5, priority: 'High' }],
+      [
+        {
+          id: 'jc1',
+          jcNo: 'IN-JC-00001',
+          date: '2026-04-16',
+          itemCode: 'ITM-001',
+          orderQty: 5,
+          priority: 'High',
+        },
+      ],
       ctxWithItems([['ITM-001', 'item-uuid-1']]),
     );
     expect(result.rows[0]?.priority).toBe('high');
@@ -58,7 +67,16 @@ describe('transformJobCards', () => {
 
   it('defaults unknown priority to normal with anomaly', () => {
     const result = transformJobCards(
-      [{ id: 'jc1', jcNo: 'IN-JC-00001', date: '2026-04-16', itemCode: 'ITM-001', orderQty: 5, priority: 'Critical' }],
+      [
+        {
+          id: 'jc1',
+          jcNo: 'IN-JC-00001',
+          date: '2026-04-16',
+          itemCode: 'ITM-001',
+          orderQty: 5,
+          priority: 'Critical',
+        },
+      ],
       ctxWithItems([['ITM-001', 'item-uuid-1']]),
     );
     expect(result.rows[0]?.priority).toBe('normal');
@@ -88,7 +106,17 @@ describe('transformJobCards', () => {
 
   it('treats empty dueDate and drawingFile as null', () => {
     const result = transformJobCards(
-      [{ id: 'jc1', jcNo: 'IN-JC-1', date: '2026-04-16', itemCode: 'ITM-001', orderQty: 5, dueDate: '', drawingFile: '' }],
+      [
+        {
+          id: 'jc1',
+          jcNo: 'IN-JC-1',
+          date: '2026-04-16',
+          itemCode: 'ITM-001',
+          orderQty: 5,
+          dueDate: '',
+          drawingFile: '',
+        },
+      ],
       ctxWithItems([['ITM-001', 'item-uuid-1']]),
     );
     expect(result.rows[0]?.dueDate).toBeNull();

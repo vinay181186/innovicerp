@@ -125,9 +125,7 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function normaliseQcStatus(
-  raw: string | undefined,
-): {
+function normaliseQcStatus(raw: string | undefined): {
   status: 'pending' | 'in_progress' | 'completed';
   unrecognised?: string;
 } {
@@ -170,7 +168,7 @@ export function transformGrn(
       }
 
       const poCode = r.poNo?.trim();
-      const purchaseOrderId = poCode ? posByCode?.get(poCode) ?? null : null;
+      const purchaseOrderId = poCode ? (posByCode?.get(poCode) ?? null) : null;
       const poCodeText = poCode && !purchaseOrderId ? poCode : null;
       if (poCode && !purchaseOrderId) {
         headerAnomalies.push({
@@ -181,7 +179,7 @@ export function transformGrn(
       }
 
       const vendorCode = r.vendorCode?.trim();
-      const vendorId = vendorCode ? vendorsByCode?.get(vendorCode) ?? null : null;
+      const vendorId = vendorCode ? (vendorsByCode?.get(vendorCode) ?? null) : null;
       const vendorCodeText = vendorCode && !vendorId ? vendorCode : null;
 
       headerRows.set(grnNo, {
@@ -222,7 +220,7 @@ export function transformGrn(
     }
 
     const itemCodeRaw = r.itemCode?.trim() ?? '';
-    const itemId = itemCodeRaw ? itemsByCode?.get(itemCodeRaw) ?? null : null;
+    const itemId = itemCodeRaw ? (itemsByCode?.get(itemCodeRaw) ?? null) : null;
     const itemCodeText = itemCodeRaw && !itemId ? itemCodeRaw : null;
 
     // Resolve PO line by (po code, item code) tuple per ADR-015 #9.

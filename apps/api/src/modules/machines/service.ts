@@ -41,9 +41,13 @@ export async function listMachines(
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
-      tx.select().from(machines).where(where).orderBy(asc(machines.code)).limit(input.limit).offset(
-        input.offset,
-      ),
+      tx
+        .select()
+        .from(machines)
+        .where(where)
+        .orderBy(asc(machines.code))
+        .limit(input.limit)
+        .offset(input.offset),
       tx.select({ value: count() }).from(machines).where(where),
     ]);
 
@@ -133,11 +137,7 @@ export async function updateMachine(
     if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
     if (input.status !== undefined) updates.status = input.status;
 
-    const updated = await tx
-      .update(machines)
-      .set(updates)
-      .where(eq(machines.id, id))
-      .returning();
+    const updated = await tx.update(machines).set(updates).where(eq(machines.id, id)).returning();
     return updated[0] as unknown as Machine;
   });
 }

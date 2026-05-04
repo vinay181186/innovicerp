@@ -61,14 +61,12 @@ export function DisposeNcPanel(props: Props) {
   };
 
   return (
-    <form
-      onSubmit={submit}
-      className="space-y-4 rounded-md border bg-muted/30 p-4"
-    >
+    <form onSubmit={submit} className="space-y-4 rounded-md border bg-muted/30 p-4">
       <div className="flex items-baseline justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wide">Dispose</h3>
         <span className="text-xs text-muted-foreground">
-          Rejected qty: <span className="font-mono font-semibold">{Number(nc.rejectedQty).toFixed(0)}</span>
+          Rejected qty:{' '}
+          <span className="font-mono font-semibold">{Number(nc.rejectedQty).toFixed(0)}</span>
         </span>
       </div>
 
@@ -139,9 +137,7 @@ export function DisposeNcPanel(props: Props) {
               min={0}
               step="0.01"
               value={scrapCost === '' ? '' : scrapCost}
-              onChange={(e) =>
-                setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setScrapCost(e.target.value === '' ? '' : Number(e.target.value))}
             />
           </div>
         ) : null}
@@ -149,15 +145,16 @@ export function DisposeNcPanel(props: Props) {
 
       {action === 'use_as_is' && (nc.opSeq == null || nc.jcOpId == null) ? (
         <p className="text-sm text-amber-700 dark:text-amber-300">
-          ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none —
-          server will reject.
+          ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none — server
+          will reject.
         </p>
       ) : null}
 
       {action === 'make_fresh' ? (
         <p className="text-sm text-blue-700 dark:text-blue-300">
-          A supplementary JC will be created with qty {Number(nc.rejectedQty).toFixed(0)} and
-          the origin's source SO/JW link inherited. Code: <span className="font-mono">&lt;origin&gt;-S&lt;n&gt;</span>.
+          A supplementary JC will be created with qty {Number(nc.rejectedQty).toFixed(0)} and the
+          origin's source SO/JW link inherited. Code:{' '}
+          <span className="font-mono">&lt;origin&gt;-S&lt;n&gt;</span>.
         </p>
       ) : null}
 

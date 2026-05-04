@@ -336,13 +336,9 @@ interface IdMap {
 }
 
 async function checkBackfill(transformDir: string, companyId: string): Promise<BackfillCheck> {
-  const idMap = JSON.parse(
-    readFileSync(join(transformDir, '_id_map.json'), 'utf8'),
-  ) as IdMap;
+  const idMap = JSON.parse(readFileSync(join(transformDir, '_id_map.json'), 'utf8')) as IdMap;
   const soByLegacy = new Map<string, string>(Object.entries(idMap.sales_order_lines ?? {}));
-  const jwByLegacy = new Map<string, string>(
-    Object.entries(idMap.job_work_order_lines ?? {}),
-  );
+  const jwByLegacy = new Map<string, string>(Object.entries(idMap.job_work_order_lines ?? {}));
 
   const jcs = (await rawSql`
     SELECT id, code, source_legacy_ref, source_so_line_id, source_jw_line_id

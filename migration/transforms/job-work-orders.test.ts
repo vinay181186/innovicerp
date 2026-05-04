@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { transformJobWorkOrders } from './job-work-orders';
 import type { TransformContext } from './types';
 
-function ctxWith(items: Array<[string, string]> = [], clients: Array<[string, string]> = []): TransformContext {
+function ctxWith(
+  items: Array<[string, string]> = [],
+  clients: Array<[string, string]> = [],
+): TransformContext {
   return {
     idMap: {},
     lookups: {
@@ -103,9 +106,7 @@ describe('transformJobWorkOrders', () => {
 
   it('skips header when jwNo missing', () => {
     const result = transformJobWorkOrders(
-      [
-        { id: 'd1', lineNo: 1, partName: 'X', orderQty: 5 },
-      ],
+      [{ id: 'd1', lineNo: 1, partName: 'X', orderQty: 5 }],
       ctxWith(),
     );
     expect(result[0]?.rows).toHaveLength(0);

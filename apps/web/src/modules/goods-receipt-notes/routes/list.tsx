@@ -5,12 +5,7 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -104,9 +99,7 @@ function GoodsReceiptNotesListPage() {
           row.original.poCode ? (
             <span className="font-mono text-xs">{row.original.poCode}</span>
           ) : (
-            <span className="text-xs text-muted-foreground">
-              {row.original.poCodeText ?? '—'}
-            </span>
+            <span className="text-xs text-muted-foreground">{row.original.poCodeText ?? '—'}</span>
           ),
       },
       {
@@ -119,9 +112,7 @@ function GoodsReceiptNotesListPage() {
       },
       {
         header: 'DC',
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.dcNo ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-xs">{row.original.dcNo ?? '—'}</span>,
       },
       {
         header: 'Lines',
@@ -138,9 +129,7 @@ function GoodsReceiptNotesListPage() {
         cell: ({ row }) => {
           const p = row.original.qcPendingCount;
           return (
-            <span
-              className={`font-mono text-sm ${p === 0 ? 'text-green-600' : 'text-amber-600'}`}
-            >
+            <span className={`font-mono text-sm ${p === 0 ? 'text-green-600' : 'text-amber-600'}`}>
               {p}
             </span>
           );
@@ -235,9 +224,7 @@ function GoodsReceiptNotesListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load goods receipt notes'}
+                    {error instanceof Error ? error.message : 'Failed to load goods receipt notes'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

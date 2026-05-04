@@ -237,12 +237,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps) {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Line items
           </h3>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => append({ ...NEW_LINE })}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
             <Plus />
             Add line
           </Button>
@@ -407,26 +402,26 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
       ...(detail.clientPoNo ? { clientPoNo: detail.clientPoNo } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
-    lines: detail.lines.map((l): LineFormValue => ({
-      id: l.id,
-      ...(l.itemId ? { itemId: l.itemId } : {}),
-      itemCodeText: l.itemCodeText ?? '',
-      partName: l.partName,
-      ...(l.material ? { material: l.material } : {}),
-      ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-      uom: l.uom,
-      orderQty: l.orderQty,
-      ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-      ...(l.clientMaterial ? { clientMaterial: l.clientMaterial } : {}),
-      ...(l.clientMaterialQty !== null
-        ? { clientMaterialQty: Number(l.clientMaterialQty) }
-        : {}),
-      ...(l.materialReceivedDate ? { materialReceivedDate: l.materialReceivedDate } : {}),
-      ...(l.materialReceivedQty !== null
-        ? { materialReceivedQty: Number(l.materialReceivedQty) }
-        : {}),
-      status: l.status,
-    })),
+    lines: detail.lines.map(
+      (l): LineFormValue => ({
+        id: l.id,
+        ...(l.itemId ? { itemId: l.itemId } : {}),
+        itemCodeText: l.itemCodeText ?? '',
+        partName: l.partName,
+        ...(l.material ? { material: l.material } : {}),
+        ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+        uom: l.uom,
+        orderQty: l.orderQty,
+        ...(l.dueDate ? { dueDate: l.dueDate } : {}),
+        ...(l.clientMaterial ? { clientMaterial: l.clientMaterial } : {}),
+        ...(l.clientMaterialQty !== null ? { clientMaterialQty: Number(l.clientMaterialQty) } : {}),
+        ...(l.materialReceivedDate ? { materialReceivedDate: l.materialReceivedDate } : {}),
+        ...(l.materialReceivedQty !== null
+          ? { materialReceivedQty: Number(l.materialReceivedQty) }
+          : {}),
+        status: l.status,
+      }),
+    ),
   };
 }
 

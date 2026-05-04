@@ -1,8 +1,4 @@
-import type {
-  JobCardListItem,
-  ListJobCardsQuery,
-  ListJobCardsResponse,
-} from '@innovic/shared';
+import type { JobCardListItem, ListJobCardsQuery, ListJobCardsResponse } from '@innovic/shared';
 import { type UseQueryOptions, useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 

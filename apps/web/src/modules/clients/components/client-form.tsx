@@ -167,7 +167,9 @@ function EditClientForm(props: EditMode) {
       <FieldRow>
         <Field label="Code" htmlFor="code">
           <Input id="code" value={props.client.code} disabled readOnly />
-          <p className="mt-1 text-xs text-muted-foreground">Code cannot be changed after creation.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Code cannot be changed after creation.
+          </p>
         </Field>
         <Field label="Name" htmlFor="name" error={errors.name?.message} required>
           <Input id="name" autoComplete="off" {...register('name')} />

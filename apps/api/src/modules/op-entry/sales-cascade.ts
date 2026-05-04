@@ -118,10 +118,7 @@ async function cascadeSo(
     .select({ id: salesOrderLines.id, status: salesOrderLines.status })
     .from(salesOrderLines)
     .where(
-      and(
-        eq(salesOrderLines.salesOrderId, line.salesOrderId),
-        isNull(salesOrderLines.deletedAt),
-      ),
+      and(eq(salesOrderLines.salesOrderId, line.salesOrderId), isNull(salesOrderLines.deletedAt)),
     );
 
   const allTerminal = siblingRows.every((s) => TERMINAL_STATUSES.has(s.status));

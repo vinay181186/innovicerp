@@ -43,9 +43,13 @@ export async function listClients(
     const where = and(...conditions);
 
     const [rows, totals] = await Promise.all([
-      tx.select().from(clients).where(where).orderBy(asc(clients.code)).limit(input.limit).offset(
-        input.offset,
-      ),
+      tx
+        .select()
+        .from(clients)
+        .where(where)
+        .orderBy(asc(clients.code))
+        .limit(input.limit)
+        .offset(input.offset),
       tx.select({ value: count() }).from(clients).where(where),
     ]);
 
@@ -72,10 +76,7 @@ export async function getClient(id: string, user: AuthContext): Promise<Client> 
   });
 }
 
-export async function createClient(
-  input: CreateClientInput,
-  user: AuthContext,
-): Promise<Client> {
+export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -83,7 +84,11 @@ export async function createClient(
       .select({ id: clients.id })
       .from(clients)
       .where(
-        and(eq(clients.companyId, companyId), eq(clients.code, input.code), isNull(clients.deletedAt)),
+        and(
+          eq(clients.companyId, companyId),
+          eq(clients.code, input.code),
+          isNull(clients.deletedAt),
+        ),
       )
       .limit(1);
     if (existing.length > 0) {
@@ -140,11 +145,7 @@ export async function updateClient(
     if (input.pincode !== undefined) updates.pincode = emptyToNull(input.pincode);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
 
-    const updated = await tx
-      .update(clients)
-      .set(updates)
-      .where(eq(clients.id, id))
-      .returning();
+    const updated = await tx.update(clients).set(updates).where(eq(clients.id, id)).returning();
     return updated[0] as unknown as Client;
   });
 }

@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -160,9 +154,7 @@ function SalesOrderDetailPage() {
                   <>
                     {' '}
                     · value{' '}
-                    <span className="font-mono text-foreground">
-                      ₹{totalValue.toFixed(2)}
-                    </span>
+                    <span className="font-mono text-foreground">₹{totalValue.toFixed(2)}</span>
                   </>
                 ) : null}
               </span>

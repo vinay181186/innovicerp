@@ -39,11 +39,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -105,9 +101,7 @@ describe('sales-orders routes', () => {
           status: 'open',
           gstPercent: 18,
         },
-        lines: [
-          { partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5, rate: 0 },
-        ],
+        lines: [{ partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5, rate: 0 }],
       },
     });
     expect(res.statusCode).toBe(201);
@@ -123,7 +117,13 @@ describe('sales-orders routes', () => {
       url: '/sales-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}BAD`, soDate: '2026-05-02', type: 'component_manufacturing', status: 'open', gstPercent: 18 },
+        header: {
+          code: `${TEST_PREFIX}BAD`,
+          soDate: '2026-05-02',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
         lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
       },
     });

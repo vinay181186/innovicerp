@@ -5,12 +5,7 @@ import {
   type ListDeliveryChallansQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -102,9 +97,7 @@ function DeliveryChallansListPage() {
       {
         header: 'Vendor',
         cell: ({ row }) => (
-          <span className="text-sm">
-            {row.original.vendorName ?? row.original.vendorCodeText}
-          </span>
+          <span className="text-sm">{row.original.vendorName ?? row.original.vendorCodeText}</span>
         ),
       },
       {
@@ -141,16 +134,12 @@ function DeliveryChallansListPage() {
       },
       {
         header: 'Lines',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.lineCount}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.lineCount}</span>,
       },
       {
         header: 'Total qty',
         cell: ({ row }) => (
-          <span className="font-mono text-sm">
-            {Number(row.original.totalQty).toFixed(0)}
-          </span>
+          <span className="font-mono text-sm">{Number(row.original.totalQty).toFixed(0)}</span>
         ),
       },
       {
@@ -240,9 +229,7 @@ function DeliveryChallansListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load delivery challans'}
+                    {error instanceof Error ? error.message : 'Failed to load delivery challans'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

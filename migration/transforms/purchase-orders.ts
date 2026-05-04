@@ -122,9 +122,7 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function normaliseType(
-  raw: string | undefined,
-): {
+function normaliseType(raw: string | undefined): {
   type: 'standard' | 'job_work' | 'outsource' | 'service';
   unrecognised?: string;
 } {
@@ -139,13 +137,7 @@ function normaliseType(
 
 function normaliseStatus(
   raw: string | undefined,
-):
-  | 'draft'
-  | 'open'
-  | 'partial'
-  | 'qc_pending'
-  | 'closed'
-  | 'cancelled' {
+): 'draft' | 'open' | 'partial' | 'qc_pending' | 'closed' | 'cancelled' {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'draft') return 'draft';
   if (v === 'partial') return 'partial';
@@ -177,8 +169,7 @@ export function transformPurchaseOrders(
   const soLinesById = ctx.idMap['sales_order_lines'] ?? {};
   // Built by purchase-requests transform via updateLookupsFromResult:
   // prCode → resolved jc_op_id (or empty string if PR didn't resolve a JC link).
-  const prToJcOp =
-    ctx.lookups.byCompositeKey['purchase_requests_to_jc_op_id'];
+  const prToJcOp = ctx.lookups.byCompositeKey['purchase_requests_to_jc_op_id'];
 
   for (const r of records) {
     if (!r.poNo) {
@@ -202,7 +193,7 @@ export function transformPurchaseOrders(
       }
 
       const vendorCode = r.vendorCode?.trim();
-      const vendorId = vendorCode ? vendorsByCode?.get(vendorCode) ?? null : null;
+      const vendorId = vendorCode ? (vendorsByCode?.get(vendorCode) ?? null) : null;
       const vendorCodeText = vendorCode && !vendorId ? vendorCode : null;
 
       if (r.approvedBy) {
@@ -271,7 +262,7 @@ export function transformPurchaseOrders(
     }
 
     const itemCodeRaw = r.itemCode?.trim() ?? '';
-    const itemId = itemCodeRaw ? itemsByCode?.get(itemCodeRaw) ?? null : null;
+    const itemId = itemCodeRaw ? (itemsByCode?.get(itemCodeRaw) ?? null) : null;
     const itemCodeText = itemCodeRaw && !itemId ? itemCodeRaw : null;
 
     // SO line link via direct idMap.

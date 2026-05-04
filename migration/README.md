@@ -25,6 +25,7 @@ Each "collection name" is a single doc under that root with this shape:
 ```
 
 Plus two singletons:
+
 - `innovic/_settings` — settings + meta blobs (similar shape)
 - `companies/innovic` — company metadata
 
@@ -70,6 +71,7 @@ pnpm migrate:export
 ```
 
 Output → `migration/export/`:
+
 - `<collection>.json` × 65
 - `_settings.json`, `_company.json`
 - `_manifest.json` (hashes, record counts, anomalies)
@@ -77,6 +79,7 @@ Output → `migration/export/`:
 The export directory is gitignored.
 
 ### Note on this dev box (Seclore/eScan DLP)
+
 On the workstation where this repo lives, DLP intercepts the `pnpm → dotenv-cli → tsx` chain when invoked from non-interactive shells (Bash tool, CI-style runners) — it exits silently with no output. The pnpm script works in a normal foreground terminal (Windows Terminal tab). If the silent-exit signature appears, run direct:
 
 ```
@@ -112,6 +115,7 @@ Each collection file:
 ```
 
 `anomalies` may include:
+
 - `doc_missing` — Firestore doc didn't exist (collection never written by the legacy app)
 - `records_field_absent` — doc exists but no `records` field
 - `records_not_string` — `records` is some other type (shouldn't happen under the JSON-blob convention)

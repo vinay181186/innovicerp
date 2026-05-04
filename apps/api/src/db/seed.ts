@@ -53,7 +53,9 @@ try {
     console.log(`      invited; user id=${adminUserId}`);
   }
 
-  console.log('[2/3] ensuring public.users row exists (defensive insert; trigger should have run)...');
+  console.log(
+    '[2/3] ensuring public.users row exists (defensive insert; trigger should have run)...',
+  );
   await sql`
     insert into public.users (id, email, full_name, role, is_active, created_by, updated_by)
     values (${adminUserId}, ${ADMIN_EMAIL}, ${ADMIN_FULL_NAME}, 'viewer', false, ${adminUserId}, ${adminUserId})
@@ -95,7 +97,9 @@ try {
       (select count(*)::int from users where deleted_at is null) as users,
       (select count(*)::int from users where role = 'admin' and is_active = true and deleted_at is null) as admins
   `;
-  console.log(`      companies=${cnt[0]!.companies} users=${cnt[0]!.users} active_admins=${cnt[0]!.admins}`);
+  console.log(
+    `      companies=${cnt[0]!.companies} users=${cnt[0]!.users} active_admins=${cnt[0]!.admins}`,
+  );
 
   console.log('');
   console.log('=== seed complete ===');

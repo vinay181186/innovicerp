@@ -1,11 +1,6 @@
 import type { ListMachinesQuery, Machine } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -104,9 +99,7 @@ function MachinesListPage() {
       {
         header: 'Status',
         accessorKey: 'status',
-        cell: ({ row }) => (
-          <span className="text-xs uppercase">{row.original.status}</span>
-        ),
+        cell: ({ row }) => <span className="text-xs uppercase">{row.original.status}</span>,
       },
     ],
     [],
@@ -128,9 +121,7 @@ function MachinesListPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Machines</h1>
-            <p className="text-sm text-muted-foreground">
-              Shop-floor equipment master.
-            </p>
+            <p className="text-sm text-muted-foreground">Shop-floor equipment master.</p>
           </div>
           <Button asChild>
             <Link to="/machines/new">
@@ -205,9 +196,7 @@ function MachinesListPage() {
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>
-                  No machines match these filters.
-                </TableEmpty>
+                <TableEmpty colSpan={columns.length}>No machines match these filters.</TableEmpty>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>

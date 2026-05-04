@@ -42,9 +42,7 @@ export async function listStoreTransactions(
     const searchFrag = term
       ? sql`AND (st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term})`
       : sql``;
-    const itemFrag = input.itemId
-      ? sql`AND st.item_id = ${input.itemId}::uuid`
-      : sql``;
+    const itemFrag = input.itemId ? sql`AND st.item_id = ${input.itemId}::uuid` : sql``;
     const txnTypeFrag = input.txnType
       ? sql`AND st.txn_type = ${input.txnType}::store_txn_type`
       : sql``;

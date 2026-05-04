@@ -46,11 +46,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -119,7 +115,16 @@ describe('purchase-orders routes', () => {
       url: '/purchase-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'Routed', qty: 5, rate: 0 }],
       },
     });
@@ -134,7 +139,15 @@ describe('purchase-orders routes', () => {
       url: '/purchase-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}BAD`, poDate: '2026-05-03', poType: 'standard', status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code: `${TEST_PREFIX}BAD`,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
       },
     });
@@ -149,7 +162,16 @@ describe('purchase-orders routes', () => {
       url: '/purchase-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}NL`, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code: `${TEST_PREFIX}NL`,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [],
       },
     });
@@ -182,7 +204,14 @@ describe('purchase-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         prId: prRow[0]!.id,
-        header: { code: poCode, poDate: '2026-05-03', poType: 'job_work', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code: poCode,
+          poDate: '2026-05-03',
+          poType: 'job_work',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
       },
     });
     expect(res.statusCode).toBe(201);
@@ -200,7 +229,16 @@ describe('purchase-orders routes', () => {
       url: '/purchase-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code: `${TEST_PREFIX}V`, poDate: '2026-05-03', poType: 'standard', vendorId: firstVendorId, status: 'draft', sgstPct: 0, cgstPct: 0, igstPct: 0 },
+        header: {
+          code: `${TEST_PREFIX}V`,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
         lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
       },
     });

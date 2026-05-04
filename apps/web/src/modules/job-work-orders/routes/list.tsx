@@ -5,12 +5,7 @@ import {
   type SoStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -102,21 +97,15 @@ function JobWorkOrdersListPage() {
       },
       {
         header: 'Customer',
-        cell: ({ row }) => (
-          <span className="text-sm">{row.original.customerName ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span className="text-sm">{row.original.customerName ?? '—'}</span>,
       },
       {
         header: 'Lines',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.lineCount}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.lineCount}</span>,
       },
       {
         header: 'Total Qty',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.totalQty}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.totalQty}</span>,
       },
       {
         header: 'JC Qty',
@@ -240,9 +229,7 @@ function JobWorkOrdersListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load job-work orders'}
+                    {error instanceof Error ? error.message : 'Failed to load job-work orders'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

@@ -29,6 +29,7 @@
 6. **Show a diff summary** before any git commit. Never auto-commit.
 
 ### If you skip any of these steps:
+
 The user has explicitly asked you to be reminded. They will say "follow CLAUDE.md" and you must restart from Section 0.
 
 ---
@@ -50,16 +51,16 @@ The user has explicitly asked you to be reminded. They will say "follow CLAUDE.m
 
 These files are part of your project memory. You create them on the first session, then keep them updated.
 
-| File | Purpose | When to update |
-|---|---|---|
-| `CLAUDE.md` | THIS FILE — the master spec. | Only when the user explicitly approves a change to project-wide rules. |
-| `docs/ARCHITECTURE.md` | System design, component diagram, deployment topology. | When the architecture changes. |
-| `docs/SCHEMA.md` | Living database schema — every table, column, index, RLS policy. Mirror of `apps/api/src/db/schema.ts`. | On every schema change, in the same commit. |
-| `docs/TASKS.md` | Running task tracker: done, in-progress, blocked, next. | At the start AND end of every work session. |
-| `docs/DECISIONS.md` | Append-only ADR log of architectural decisions. | When making any non-trivial technical choice. |
-| `docs/CONVENTIONS.md` | Coding standards — naming, structure, error handling, etc. | When establishing or changing a convention. |
-| `docs/RUNBOOK.md` | Operational procedures — deploy, restore, debug. | When you create or change an ops process. |
-| `docs/MIGRATION-LOG.md` | Per-collection Firebase → Supabase migration record (row counts, anomalies, validation reports). | After each collection is migrated. |
+| File                    | Purpose                                                                                                 | When to update                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `CLAUDE.md`             | THIS FILE — the master spec.                                                                            | Only when the user explicitly approves a change to project-wide rules. |
+| `docs/ARCHITECTURE.md`  | System design, component diagram, deployment topology.                                                  | When the architecture changes.                                         |
+| `docs/SCHEMA.md`        | Living database schema — every table, column, index, RLS policy. Mirror of `apps/api/src/db/schema.ts`. | On every schema change, in the same commit.                            |
+| `docs/TASKS.md`         | Running task tracker: done, in-progress, blocked, next.                                                 | At the start AND end of every work session.                            |
+| `docs/DECISIONS.md`     | Append-only ADR log of architectural decisions.                                                         | When making any non-trivial technical choice.                          |
+| `docs/CONVENTIONS.md`   | Coding standards — naming, structure, error handling, etc.                                              | When establishing or changing a convention.                            |
+| `docs/RUNBOOK.md`       | Operational procedures — deploy, restore, debug.                                                        | When you create or change an ops process.                              |
+| `docs/MIGRATION-LOG.md` | Per-collection Firebase → Supabase migration record (row counts, anomalies, validation reports).        | After each collection is migrated.                                     |
 
 **Rule:** any time you write something the user (or future-you) will need to remember, it goes in one of these files. Do not rely on the chat context.
 
@@ -70,6 +71,7 @@ These files are part of your project memory. You create them on the first sessio
 If `docs/TASKS.md` does not exist, this is your first session. Execute these steps in order. Show progress to the user, ask before destructive actions.
 
 ### Step 1 — Initialize repository
+
 ```bash
 # In the project root
 git init
@@ -77,20 +79,26 @@ echo "node_modules/\ndist/\n.env*\n!.env.example\n.DS_Store\ncoverage/\n*.log" >
 ```
 
 ### Step 2 — Create the directory structure (Section 4)
+
 Create every folder and placeholder file listed in Section 4. Use `mkdir -p` and `touch`.
 
 ### Step 3 — Move the legacy HTML file
+
 If a file matching `InnovicERP_*.html` is in the project root, move it:
+
 ```bash
 mkdir -p legacy
 mv InnovicERP_*.html legacy/
 ```
+
 If not present, ask the user where it is. Do not proceed without it — it's the spec source.
 
 ### Step 4 — Create the supporting reference docs
+
 Create `docs/ARCHITECTURE.md`, `docs/SCHEMA.md`, `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/CONVENTIONS.md`, `docs/RUNBOOK.md`, `docs/MIGRATION-LOG.md` with the **starter content templates in Section 14** of this file. Don't leave them empty.
 
 ### Step 5 — Initialize the monorepo
+
 ```bash
 # Root package.json
 pnpm init
@@ -99,14 +107,17 @@ echo 'packages:\n  - "apps/*"\n  - "packages/*"' > pnpm-workspace.yaml
 ```
 
 ### Step 6 — Create the first three tasks in TASKS.md
+
 - T-001: Initialize repository structure (mark done after this bootstrap)
 - T-002: Provision Supabase project (dev + staging + prod)
 - T-003: Apply complete schema to Supabase dev
 
 ### Step 7 — Append the bootstrap decision to DECISIONS.md
+
 Use ADR-001 template from Section 14.
 
 ### Step 8 — First commit
+
 ```bash
 git add .
 git status   # show user
@@ -115,6 +126,7 @@ git commit -m "chore: initial project bootstrap per CLAUDE.md"
 ```
 
 ### Step 9 — Confirm with the user
+
 "Bootstrap complete. Repository initialized. Reference docs created in `docs/`. Ready to start T-002 (provision Supabase). Proceed?"
 
 ---
@@ -213,6 +225,7 @@ innovic-erp/
 These choices are NOT up for debate. Do not suggest alternatives. Do not "improve" them mid-project. If something seems wrong, ask first.
 
 ### Backend
+
 - **Language:** TypeScript (strict mode, no `any` without comment justification)
 - **Runtime:** Node.js 24 (current). Originally specified as Node 20 LTS; upgraded to 24 by user decision — see ADR-008 in `docs/DECISIONS.md`.
 - **Framework:** Fastify 5 (originally specified as 4.x; upgraded by ADR-009)
@@ -224,6 +237,7 @@ These choices are NOT up for debate. Do not suggest alternatives. Do not "improv
 - **Testing:** Vitest + Supertest
 
 ### Frontend
+
 - **Framework:** React 18 + Vite 5 + TypeScript
 - **Routing:** TanStack Router (NOT React Router)
 - **Data fetching:** TanStack Query v5 (NOT SWR, NOT raw fetch)
@@ -234,6 +248,7 @@ These choices are NOT up for debate. Do not suggest alternatives. Do not "improv
 - **Testing:** Vitest + React Testing Library + Playwright (e2e on critical flows only)
 
 ### Database & Infrastructure
+
 - **Database:** Supabase Postgres 15 (Mumbai region, `ap-south-1`)
 - **File storage:** Supabase Storage (S3-compatible)
 - **Realtime:** Supabase Realtime (selective use, not everywhere)
@@ -245,6 +260,7 @@ These choices are NOT up for debate. Do not suggest alternatives. Do not "improv
 - **Offsite backup:** Backblaze B2 (daily `pg_dump`)
 
 ### Tooling
+
 - **Monorepo:** pnpm workspaces (NOT npm workspaces, NOT Yarn)
 - **Linting:** ESLint + Prettier
 - **Type checking:** `tsc --noEmit` runs in CI
@@ -332,6 +348,7 @@ When asked to build a new ERP module, follow this exact sequence:
 ## Section 9 — Testing Requirements
 
 ### What MUST have tests
+
 - **Service layer functions** — unit tests for every public function. Cover: success, validation failure, authorization failure, edge cases.
 - **API routes** — integration test for each route hitting a test database (Supabase test schema or local Postgres).
 - **Validation schemas** — at least one positive and one negative case per Zod schema.
@@ -339,17 +356,20 @@ When asked to build a new ERP module, follow this exact sequence:
 - **Critical user flows** — Playwright e2e for: login, create a Job Card, log an Operation, generate a Sales Order.
 
 ### What does NOT need tests
+
 - Pure UI components without logic
 - Auto-generated code (Drizzle types)
 - Trivial getters/setters
 - shadcn/ui copied components
 
 ### Coverage minimums
+
 - Service layer: **70% statement coverage** (enforced in CI)
 - API routes: every route has at least one happy-path and one error-path integration test
 - Migration scripts: 100% branch coverage on the transform function
 
 ### How to run tests
+
 ```bash
 pnpm test               # All packages, run once
 pnpm test --watch       # Watch mode (use during active dev)
@@ -360,13 +380,16 @@ pnpm lint               # ESLint across all packages
 ```
 
 ### Test database
+
 - Use a separate Supabase project for tests, OR a local Postgres container.
 - Tests run migrations against it before each suite.
 - **NEVER run tests against production.**
 - Test data: deterministic fixtures in `apps/api/test/fixtures/`. Reset DB between test suites.
 
 ### Test file location
+
 Tests live next to the code they test:
+
 - `service.ts` → `service.test.ts`
 - `routes.ts` → `routes.test.ts`
 
@@ -449,38 +472,44 @@ When you create the reference files in `docs/` during First Session Bootstrap, u
 > Last updated: <date> by <session>
 
 ## Status Legend
+
 - [ ] Not started · [~] In progress · [x] Done · [!] Blocked · [-] Cancelled
 
 ## Current Phase
+
 **Phase 1 — Foundation (Week 1–2)**
 Goal: Working dev environment, schema deployed, auth working, Items master end-to-end as the reference template.
 
 ## Active Task
+
 **ID:** T-002
 **Title:** Provision Supabase project (dev + staging + prod)
 **Status:** [ ] Not started
 **Acceptance:**
+
 - [ ] Three Supabase projects created in Mumbai region
 - [ ] Connection strings stored in .env.example with placeholders
 - [ ] User has logged into each project once
 
 ## Phase 1 Backlog
-| ID | Task | Status |
-|---|---|---|
-| T-001 | Initialize repository structure | [x] Done |
-| T-002 | Provision Supabase project (dev + staging + prod) | [ ] |
-| T-003 | Apply complete schema to Supabase dev | [ ] |
-| T-004 | Build Drizzle schema definitions matching SCHEMA.md | [ ] |
-| T-005 | Configure Drizzle migrations + seeding | [ ] |
-| T-006 | Bootstrap Fastify API (server, auth plugin, error handler, logger) | [ ] |
-| T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, Router) | [ ] |
-| T-008 | Implement auth flow end-to-end (login, JWT, protected routes) | [ ] |
-| T-009 | Build Items master module — API | [ ] |
-| T-010 | Build Items master module — Web | [ ] |
-| T-011 | Set up CI/CD via GitHub Actions | [ ] |
-| T-012 | Phase 1 sign-off: Items master fully working with RLS | [ ] |
+
+| ID    | Task                                                                    | Status   |
+| ----- | ----------------------------------------------------------------------- | -------- |
+| T-001 | Initialize repository structure                                         | [x] Done |
+| T-002 | Provision Supabase project (dev + staging + prod)                       | [ ]      |
+| T-003 | Apply complete schema to Supabase dev                                   | [ ]      |
+| T-004 | Build Drizzle schema definitions matching SCHEMA.md                     | [ ]      |
+| T-005 | Configure Drizzle migrations + seeding                                  | [ ]      |
+| T-006 | Bootstrap Fastify API (server, auth plugin, error handler, logger)      | [ ]      |
+| T-007 | Bootstrap React app (Vite, Tailwind, shadcn/ui, TanStack Query, Router) | [ ]      |
+| T-008 | Implement auth flow end-to-end (login, JWT, protected routes)           | [ ]      |
+| T-009 | Build Items master module — API                                         | [ ]      |
+| T-010 | Build Items master module — Web                                         | [ ]      |
+| T-011 | Set up CI/CD via GitHub Actions                                         | [ ]      |
+| T-012 | Phase 1 sign-off: Items master fully working with RLS                   | [ ]      |
 
 ## Future Phases
+
 - Phase 2 (Week 3): Master data migration
 - Phase 3 (Week 4–5): Op Entry module — critical
 - Phase 4 (Week 6–7): Sales chain (SO → JW → JC)
@@ -491,13 +520,15 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 - Phase 9 (Week 12): Final cutover
 
 ## Blockers
-| ID | Task | Blocker | Needs |
-|---|---|---|---|
-| — | — | — | — |
+
+| ID  | Task | Blocker | Needs |
+| --- | ---- | ------- | ----- |
+| —   | —    | —       | —     |
 
 ## Recently Completed (last 10)
-| Date | ID | Task |
-|---|---|---|
+
+| Date    | ID    | Task                 |
+| ------- | ----- | -------------------- |
 | <today> | T-001 | Repository bootstrap |
 ```
 
@@ -510,24 +541,31 @@ Goal: Working dev environment, schema deployed, auth working, Items master end-t
 
 ## Template
 ```
+
 ## ADR-NNN: <Title>
+
 **Date:** YYYY-MM-DD
 **Status:** Proposed / Accepted / Superseded by ADR-XXX / Deprecated
 
 ### Context
+
 What is the problem? Why does this need a decision?
 
 ### Decision
+
 What did we decide?
 
 ### Alternatives Considered
+
 - Option A — rejected because <reason>
 - Option B — rejected because <reason>
 
 ### Consequences
+
 - Positive: <what we gain>
 - Negative: <what we give up>
 - Risks: <what could go wrong>
+
 ```
 
 ## ADR-001: Use Supabase over self-hosted or AWS
@@ -605,7 +643,7 @@ pnpm workspaces. Fast, disk-efficient, strict module boundaries.
 
 ### `docs/SCHEMA.md` (starter content)
 
-```markdown
+````markdown
 # SCHEMA.md — Living Database Schema
 
 > MUST mirror `apps/api/src/db/schema.ts` exactly. Update in same commit as schema changes.
@@ -613,6 +651,7 @@ pnpm workspaces. Fast, disk-efficient, strict module boundaries.
 ## Conventions
 
 Every table has:
+
 - `id uuid primary key default gen_random_uuid()`
 - `company_id uuid not null references companies(id)`
 - `created_at timestamptz not null default now()`
@@ -623,6 +662,7 @@ Every table has:
 - RLS enabled with `company_isolation` policy at minimum
 
 ## Modules
+
 - Master Data: companies, users, clients, vendors, items, machines, operators
 - Sales & Production: sales_orders, sales_order_lines, job_work_orders, job_cards, jc_ops, op_log
 - Procurement: purchase_orders, po_lines, grn, grn_lines, store_transactions
@@ -642,22 +682,26 @@ alter table <table_name> enable row level security;
 create policy company_isolation on <table_name>
   for all using (company_id = current_company_id());
 ```
+````
 
 Tables with role-restricted writes get additional policies (admin/manager only for inserts, etc.).
 
 ## Index Discipline
 
 MUST have indexes:
+
 - Every foreign key column (Postgres does NOT auto-index FKs)
 - `(company_id, status) where deleted_at is null` on transaction tables
 - Time-range columns used in reports
 - Unique business keys (so_number, jc_number, etc.)
 
 ## Migration History
-| Date | Migration | Notes |
-|---|---|---|
+
+| Date   | Migration           | Notes          |
+| ------ | ------------------- | -------------- |
 | <date> | 0001_initial_schema | Initial schema |
-```
+
+````
 
 ### `docs/CONVENTIONS.md` (starter content)
 
@@ -728,22 +772,25 @@ Examples:
 - `feat(job-cards): add op-entry endpoint`
 - `fix(grn): correct quantity rollup on partial receipt`
 - `chore: bump drizzle to 0.30.0`
-```
+````
 
 ### `docs/RUNBOOK.md` (starter content)
 
-```markdown
+````markdown
 # RUNBOOK.md — Operational Procedures
 
 ## Deploy to Staging
+
 ```bash
 git checkout staging
 git merge main
 git push origin staging
 # GitHub Actions handles the rest
 ```
+````
 
 ## Deploy to Production
+
 1. Merge to `main` after staging verification.
 2. GitHub Actions runs CI; manual approval gate triggers.
 3. Approve in GitHub Actions UI.
@@ -751,6 +798,7 @@ git push origin staging
 5. Verify health: `curl https://api.<domain>/health`.
 
 ## Restore from Backup
+
 1. Pull latest dump from Backblaze B2:
    ```bash
    b2 download-file innovic-backups innovic-<date>.sql.gz ./
@@ -764,6 +812,7 @@ git push origin staging
 4. Promote: cut over via DNS.
 
 ## Rotate Secrets
+
 1. Generate new value (Supabase service key, JWT secret, etc.).
 2. Update Railway environment variable.
 3. Redeploy API.
@@ -772,27 +821,33 @@ git push origin staging
 ## Common Issues
 
 ### "Connection pool exhausted"
+
 - Check Supabase dashboard → Database → Connection Pooler usage.
 - Increase pool size, or add PgBouncer between API and Postgres.
 
 ### "Realtime subscription drops"
+
 - Check WebSocket connection in browser dev tools.
 - Verify token hasn't expired.
 - Reconnect logic in TanStack Query handles this.
 
 ### "Migration fails on production"
+
 - DO NOT manually fix in Supabase Studio.
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
 ## Monthly Restore Drill
+
 First Monday of every month:
+
 1. Pull latest backup.
 2. Restore to test instance.
 3. Boot API against it.
 4. Run smoke test suite.
 5. Log result in MIGRATION-LOG.md (or a new DRILL-LOG.md if you create one).
-```
+
+````
 
 ### `docs/ARCHITECTURE.md` (starter content)
 
@@ -833,7 +888,7 @@ Polling elsewhere: 30s lists, 60s detail screens.
 - Offsite: pg_dump → B2 daily 02:00 IST, 30-day retention
 - RPO: 24h · RTO: 4h
 - Restore drill: first Monday of every month
-```
+````
 
 ### `docs/MIGRATION-LOG.md` (starter content)
 
@@ -844,7 +899,9 @@ Polling elsewhere: 30s lists, 60s detail screens.
 
 ## Template
 ```
+
 ## <collection_name>
+
 **Date:** YYYY-MM-DD
 **Source records:** <count from Firebase>
 **Loaded records:** <count in Supabase>
@@ -852,6 +909,7 @@ Polling elsewhere: 30s lists, 60s detail screens.
 **Anomalies:** <fields with missing/inconsistent data>
 **Validation:** <PASS / FAIL — what was checked>
 **Cutover:** <date users switched to new system for this module>
+
 ```
 
 ## Pending Collections

@@ -36,11 +36,7 @@ beforeAll(async () => {
     .select({ id: items.id })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, u.companyId),
-        isNull(items.deletedAt),
-        notLike(items.code, 'T%-%'),
-      ),
+      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
     .limit(1);
@@ -99,12 +95,26 @@ describe('nc-register service', () => {
   it('createNcRegister rejects duplicate code with ConflictError', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createNcRegister(
-      { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 1,
+        reasonCategory: 'other',
+      },
       admin,
     );
     await expect(
       service.createNcRegister(
-        { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+        {
+          code,
+          ncDate: '2026-05-04',
+          jobCardId: firstJobCardId,
+          itemId: firstItemId,
+          rejectedQty: 1,
+          reasonCategory: 'other',
+        },
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -177,7 +187,14 @@ describe('nc-register service', () => {
   it('getNcRegister returns the row by id; throws NotFoundError when missing', async () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createNcRegister(
-      { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 3, reasonCategory: 'process' },
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 3,
+        reasonCategory: 'process',
+      },
       admin,
     );
     const fetched = await service.getNcRegister(created.id, admin);
@@ -223,7 +240,14 @@ describe('nc-register service', () => {
   it('updateNcRegister only writes fields present in input + bumps updatedBy', async () => {
     const code = `${TEST_PREFIX}U1`;
     const created = await service.createNcRegister(
-      { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 1,
+        reasonCategory: 'other',
+      },
       admin,
     );
     const updated = await service.updateNcRegister(
@@ -241,7 +265,14 @@ describe('nc-register service', () => {
   it('updateNcRegister blocks once status leaves pending (ConflictError)', async () => {
     const code = `${TEST_PREFIX}LOCK`;
     const created = await service.createNcRegister(
-      { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 1,
+        reasonCategory: 'other',
+      },
       admin,
     );
     // Force a non-pending status via raw update to simulate T-040b having flipped it.
@@ -254,7 +285,14 @@ describe('nc-register service', () => {
   it('softDeleteNcRegister soft-deletes pending NCs; blocks closed NCs (ConflictError)', async () => {
     const code = `${TEST_PREFIX}DEL`;
     const created = await service.createNcRegister(
-      { code, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 1,
+        reasonCategory: 'other',
+      },
       admin,
     );
     await service.softDeleteNcRegister(created.id, admin);
@@ -262,10 +300,19 @@ describe('nc-register service', () => {
 
     const code2 = `${TEST_PREFIX}DEL2`;
     const created2 = await service.createNcRegister(
-      { code: code2, ncDate: '2026-05-04', jobCardId: firstJobCardId, itemId: firstItemId, rejectedQty: 1, reasonCategory: 'other' },
+      {
+        code: code2,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 1,
+        reasonCategory: 'other',
+      },
       admin,
     );
     await db.update(ncRegister).set({ status: 'closed' }).where(eq(ncRegister.id, created2.id));
-    await expect(service.softDeleteNcRegister(created2.id, admin)).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.softDeleteNcRegister(created2.id, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
   });
 });

@@ -7,12 +7,7 @@ import {
   type StoreTxnType,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -122,9 +117,7 @@ function StoreTransactionsListPage() {
       },
       {
         header: 'Ref',
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.sourceRef}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-xs">{row.original.sourceRef}</span>,
       },
       {
         header: 'Stock before → after',
@@ -154,8 +147,8 @@ function StoreTransactionsListPage() {
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Store Transactions</h1>
           <p className="text-sm text-muted-foreground">
-            Append-only stock-movement ledger. Rows land here via service-layer cascades —
-            today, GRN QC accept; soon, dispatch and JW in/out.
+            Append-only stock-movement ledger. Rows land here via service-layer cascades — today,
+            GRN QC accept; soon, dispatch and JW in/out.
           </p>
         </div>
 
@@ -234,9 +227,7 @@ function StoreTransactionsListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load store transactions'}
+                    {error instanceof Error ? error.message : 'Failed to load store transactions'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

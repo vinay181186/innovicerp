@@ -63,15 +63,7 @@ export function transformMachines(records: LegacyMachine[]): TransformResult<Tra
       continue;
     }
 
-    const known = new Set([
-      'id',
-      'machineId',
-      'name',
-      'type',
-      'capPerShift',
-      'shifts',
-      'status',
-    ]);
+    const known = new Set(['id', 'machineId', 'name', 'type', 'capPerShift', 'shifts', 'status']);
     const extras: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(r)) {
       if (!known.has(k)) extras[k] = v;

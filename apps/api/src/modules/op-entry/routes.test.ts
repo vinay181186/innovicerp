@@ -112,7 +112,10 @@ describe('op-entry routes', () => {
 
   it('GET /op-entry/jc-ops returns 401 without auth', async () => {
     app = await buildApp(null);
-    const res = await app.inject({ method: 'GET', url: `/op-entry/jc-ops?jobCardCode=${testJcCode}` });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/op-entry/jc-ops?jobCardCode=${testJcCode}`,
+    });
     expect(res.statusCode).toBe(401);
   });
 

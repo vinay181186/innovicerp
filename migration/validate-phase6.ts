@@ -261,7 +261,11 @@ const FK_CHECKS: Array<{ table: string; column: string; parentTable: string }> =
   { table: 'delivery_challans', column: 'sales_order_line_id', parentTable: 'sales_order_lines' },
   { table: 'delivery_challans', column: 'created_by', parentTable: 'users' },
   { table: 'delivery_challans', column: 'updated_by', parentTable: 'users' },
-  { table: 'delivery_challan_lines', column: 'delivery_challan_id', parentTable: 'delivery_challans' },
+  {
+    table: 'delivery_challan_lines',
+    column: 'delivery_challan_id',
+    parentTable: 'delivery_challans',
+  },
   { table: 'delivery_challan_lines', column: 'item_id', parentTable: 'items' },
   { table: 'delivery_challan_lines', column: 'created_by', parentTable: 'users' },
   { table: 'delivery_challan_lines', column: 'updated_by', parentTable: 'users' },

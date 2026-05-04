@@ -3,19 +3,9 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import {
-  useCreatePurchaseOrder,
-  usePurchaseOrder,
-  useUpdatePurchaseOrder,
-} from '../api';
+import { useCreatePurchaseOrder, usePurchaseOrder, useUpdatePurchaseOrder } from '../api';
 import { PurchaseOrderForm } from '../components/purchase-order-form';
 
 export const purchaseOrderNewRoute = createRoute({
@@ -113,9 +103,7 @@ function PurchaseOrderEditPage() {
           <CardHeader>
             <CardTitle>Purchase order not found</CardTitle>
             <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This purchase order could not be loaded.'}
+              {error instanceof Error ? error.message : 'This purchase order could not be loaded.'}
             </CardDescription>
           </CardHeader>
           <CardContent>

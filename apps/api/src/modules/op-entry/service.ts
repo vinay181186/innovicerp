@@ -18,13 +18,7 @@
 // the resulting unique-violation and returns a typed ConflictError.
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import {
-  jcOps,
-  jobCards,
-  machines,
-  opLog,
-  runningOps,
-} from '../../db/schema';
+import { jcOps, jobCards, machines, opLog, runningOps } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireOpEntryRole } from '../../lib/auth';
 import {
@@ -221,12 +215,7 @@ async function loadJcOp(
       machineId: jcOps.machineId,
     })
     .from(jcOps)
-    .where(
-      and(
-        eq(jcOps.id, jcOpId),
-        eq(jcOps.companyId, companyId),
-      ),
-    )
+    .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId)))
     .limit(1);
   const op = rows[0];
   if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
@@ -252,7 +241,10 @@ function nextLogNo(): string {
   // Simple monotonic-ish marker; not unique by spec (ADR-011 #4 acknowledges
   // legacy log_no duplicates). UUID PK is the addressable id.
   const now = new Date();
-  const stamp = now.toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+  const stamp = now
+    .toISOString()
+    .replace(/[-:T.Z]/g, '')
+    .slice(0, 14);
   return `LOG-${stamp}`;
 }
 
@@ -324,19 +316,10 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
           qcCallDate: jcOps.qcCallDate,
         })
         .from(jcOps)
-        .where(
-          and(
-            eq(jcOps.jobCardId, op.jobCardId),
-            eq(jcOps.opSeq, op.opSeq + 1),
-          ),
-        )
+        .where(and(eq(jcOps.jobCardId, op.jobCardId), eq(jcOps.opSeq, op.opSeq + 1)))
         .limit(1);
       const nextOp = next[0];
-      if (
-        nextOp &&
-        (nextOp.opType === 'qc' || nextOp.qcRequired) &&
-        !nextOp.qcCallDate
-      ) {
+      if (nextOp && (nextOp.opType === 'qc' || nextOp.qcRequired) && !nextOp.qcCallDate) {
         await tx
           .update(jcOps)
           .set({ qcCallDate: input.logDate, updatedBy: user.id })
@@ -363,7 +346,8 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       operatorName: row.operatorName,
       startTime: row.startTime,
       remarks: row.remarks,
-      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+      createdAt:
+        row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       createdBy: row.createdBy,
     } as OpLog;
   });
@@ -416,9 +400,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       // Both partial unique indexes (one running per op; one running per
       // non-OSP machine) raise unique_violation = SQLSTATE 23505.
       if ((e as { code?: string }).code === '23505') {
-        throw new ConflictError(
-          'Operation already running OR machine busy with another op',
-        );
+        throw new ConflictError('Operation already running OR machine busy with another op');
       }
       throw e;
     }
@@ -478,9 +460,7 @@ export async function stopOp(runningOpId: string, user: AuthContext): Promise<Ru
     const existing = await tx
       .select()
       .from(runningOps)
-      .where(
-        and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)),
-      )
+      .where(and(eq(runningOps.id, runningOpId), eq(runningOps.companyId, companyId)))
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError(`Running op ${runningOpId} not found`);

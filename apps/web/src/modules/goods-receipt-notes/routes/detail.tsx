@@ -3,13 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -54,9 +48,7 @@ function GoodsReceiptNoteDetailPage() {
           <CardHeader>
             <CardTitle>Goods receipt note not found</CardTitle>
             <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This GRN could not be loaded.'}
+              {error instanceof Error ? error.message : 'This GRN could not be loaded.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -151,16 +143,16 @@ function GoodsReceiptNoteDetailPage() {
 
         {softDelete.isError ? (
           <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete GRN.'}
+            {softDelete.error instanceof Error ? softDelete.error.message : 'Failed to delete GRN.'}
           </p>
         ) : null}
 
         <Card>
           <CardHeader>
             <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle>{detail.vendorCodeText ?? (detail.vendorId ? '— linked vendor —' : '—')}</CardTitle>
+            <CardTitle>
+              {detail.vendorCodeText ?? (detail.vendorId ? '— linked vendor —' : '—')}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <DetailGrid detail={detail} />
@@ -174,9 +166,13 @@ function GoodsReceiptNoteDetailPage() {
               <span className="text-sm text-muted-foreground">
                 {detail.lines.length} line{detail.lines.length === 1 ? '' : 's'} · received{' '}
                 <span className="font-mono text-foreground">{totalReceived}</span> · accepted{' '}
-                <span className="font-mono text-green-700 dark:text-green-300">{totalAccepted}</span>{' '}
+                <span className="font-mono text-green-700 dark:text-green-300">
+                  {totalAccepted}
+                </span>{' '}
                 · rejected{' '}
-                <span className="font-mono text-amber-700 dark:text-amber-300">{totalRejected}</span>
+                <span className="font-mono text-amber-700 dark:text-amber-300">
+                  {totalRejected}
+                </span>
               </span>
             </div>
           </CardHeader>
@@ -196,10 +192,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }) {
       <Pair label="Date" value={detail.grnDate} />
       <Pair label="DC No." value={detail.dcNo ?? '—'} />
       <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
-      <Pair
-        label="PO"
-        value={detail.purchaseOrderId ? '— linked —' : (detail.poCodeText ?? '—')}
-      />
+      <Pair label="PO" value={detail.purchaseOrderId ? '— linked —' : (detail.poCodeText ?? '—')} />
       <Pair
         label="Vendor"
         value={detail.vendorId ? '— linked —' : (detail.vendorCodeText ?? '—')}

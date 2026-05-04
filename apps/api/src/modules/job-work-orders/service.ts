@@ -48,11 +48,7 @@ async function assertClientExists(
     .select({ id: clients.id })
     .from(clients)
     .where(
-      and(
-        eq(clients.id, clientId),
-        eq(clients.companyId, companyId),
-        isNull(clients.deletedAt),
-      ),
+      and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
     )
     .limit(1);
   if (rows.length === 0) {
@@ -70,11 +66,7 @@ async function resolveItemCodes(
     .select({ id: items.id, code: items.code })
     .from(items)
     .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.code, codes),
-        isNull(items.deletedAt),
-      ),
+      and(eq(items.companyId, companyId), inArray(items.code, codes), isNull(items.deletedAt)),
     );
   const map = new Map<string, string>();
   for (const r of rows) map.set(r.code, r.id);
@@ -91,13 +83,7 @@ async function assertItemIdsExist(
   const rows = await tx
     .select({ id: items.id })
     .from(items)
-    .where(
-      and(
-        eq(items.companyId, companyId),
-        inArray(items.id, unique),
-        isNull(items.deletedAt),
-      ),
-    );
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
   if (rows.length !== unique.length) {
     const found = new Set(rows.map((r) => r.id));
     const missing = unique.filter((id) => !found.has(id));
@@ -157,12 +143,8 @@ export async function listJobWorkOrders(
     const searchFrag = term
       ? sql`AND (jw.code ILIKE ${term} OR jw.customer_name ILIKE ${term} OR jw.client_po_no ILIKE ${term})`
       : sql``;
-    const statusFrag = input.status
-      ? sql`AND jw.status = ${input.status}::so_status`
-      : sql``;
-    const clientFrag = input.clientId
-      ? sql`AND jw.client_id = ${input.clientId}::uuid`
-      : sql``;
+    const statusFrag = input.status ? sql`AND jw.status = ${input.status}::so_status` : sql``;
+    const clientFrag = input.clientId ? sql`AND jw.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND jw.jw_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
 
@@ -279,12 +261,7 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
     const lineRows = await tx
       .select()
       .from(jobWorkOrderLines)
-      .where(
-        and(
-          eq(jobWorkOrderLines.jobWorkOrderId, id),
-          isNull(jobWorkOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
     return {
@@ -485,12 +462,7 @@ export async function updateJobWorkOrder(
     const lineRows = await tx
       .select()
       .from(jobWorkOrderLines)
-      .where(
-        and(
-          eq(jobWorkOrderLines.jobWorkOrderId, id),
-          isNull(jobWorkOrderLines.deletedAt),
-        ),
-      )
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
     return {
@@ -573,10 +545,7 @@ async function mergeLines(
       lineUpdate['materialReceivedQty'] = numToStringOrNull(u.data.materialReceivedQty);
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
 
-    await tx
-      .update(jobWorkOrderLines)
-      .set(lineUpdate)
-      .where(eq(jobWorkOrderLines.id, u.id));
+    await tx.update(jobWorkOrderLines).set(lineUpdate).where(eq(jobWorkOrderLines.id, u.id));
   }
 
   if (toInsert.length > 0) {
@@ -612,10 +581,7 @@ async function mergeLines(
   }
 }
 
-export async function softDeleteJobWorkOrder(
-  id: string,
-  user: AuthContext,
-): Promise<{ ok: true }> {
+export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
 
@@ -638,12 +604,7 @@ export async function softDeleteJobWorkOrder(
     await tx
       .update(jobWorkOrderLines)
       .set({ deletedAt: now, updatedBy: user.id })
-      .where(
-        and(
-          eq(jobWorkOrderLines.jobWorkOrderId, id),
-          isNull(jobWorkOrderLines.deletedAt),
-        ),
-      );
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
     await tx
       .update(jobWorkOrders)
       .set({ deletedAt: now, updatedBy: user.id })

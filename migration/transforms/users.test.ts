@@ -41,9 +41,7 @@ describe('transformUsers', () => {
   });
 
   it('lowercases and trims the email', () => {
-    const result = transformUsers([
-      { id: 'a', email: '  Foo@Example.COM  ', role: 'admin' },
-    ]);
+    const result = transformUsers([{ id: 'a', email: '  Foo@Example.COM  ', role: 'admin' }]);
     expect(result.rows[0]?.email).toBe('foo@example.com');
   });
 

@@ -5,12 +5,7 @@ import {
   type PurchaseRequestListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -125,9 +120,7 @@ function PurchaseRequestsListPage() {
       },
       {
         header: 'Qty',
-        cell: ({ row }) => (
-          <span className="font-mono text-sm">{row.original.qty}</span>
-        ),
+        cell: ({ row }) => <span className="font-mono text-sm">{row.original.qty}</span>,
       },
       {
         header: 'Source JC',
@@ -245,9 +238,7 @@ function PurchaseRequestsListPage() {
               ) : isError ? (
                 <TableEmpty colSpan={columns.length}>
                   <span className="text-destructive">
-                    {error instanceof Error
-                      ? error.message
-                      : 'Failed to load purchase requests'}
+                    {error instanceof Error ? error.message : 'Failed to load purchase requests'}
                   </span>
                 </TableEmpty>
               ) : table.getRowModel().rows.length === 0 ? (

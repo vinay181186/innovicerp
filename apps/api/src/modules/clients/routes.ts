@@ -1,11 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import {
-  createClientInputSchema,
-  listClientsQuerySchema,
-  updateClientInputSchema,
-} from './schema';
+import { createClientInputSchema, listClientsQuerySchema, updateClientInputSchema } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });

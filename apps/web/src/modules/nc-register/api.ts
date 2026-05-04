@@ -7,12 +7,7 @@ import type {
   NcRegister,
   UpdateNcRegisterInput,
 } from '@innovic/shared';
-import {
-  type UseQueryOptions,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const ncRegisterKeys = {
@@ -42,8 +37,7 @@ export function useNcRegisterList(
 ) {
   return useQuery<ListNcRegisterResponse>({
     queryKey: ncRegisterKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListNcRegisterResponse>(`/nc-register?${toQueryString(query)}`),
+    queryFn: () => apiFetch<ListNcRegisterResponse>(`/nc-register?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -60,8 +54,7 @@ export function useNcRegister(id: string | undefined) {
 export function useCreateNcRegister() {
   const qc = useQueryClient();
   return useMutation<NcRegister, Error, CreateNcRegisterInput>({
-    mutationFn: (input) =>
-      apiFetch<NcRegister>('/nc-register', { method: 'POST', json: input }),
+    mutationFn: (input) => apiFetch<NcRegister>('/nc-register', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       qc.setQueryData(ncRegisterKeys.detail(created.id), created);

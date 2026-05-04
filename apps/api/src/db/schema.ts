@@ -95,7 +95,9 @@ export const companies = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex('companies_slug_uniq').on(t.slug).where(sql`${t.deletedAt} is null`),
+    uniqueIndex('companies_slug_uniq')
+      .on(t.slug)
+      .where(sql`${t.deletedAt} is null`),
     index('companies_deleted_at_idx').on(t.deletedAt),
     pgPolicy('companies_company_self_read', {
       for: 'select',
@@ -132,8 +134,12 @@ export const users = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    index('users_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
-    uniqueIndex('users_email_uniq').on(t.email).where(sql`${t.deletedAt} is null`),
+    index('users_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('users_email_uniq')
+      .on(t.email)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('users_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -179,7 +185,9 @@ export const items = pgTable(
     uniqueIndex('items_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    index('items_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    index('items_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     index('items_company_type_idx')
       .on(t.companyId, t.itemType)
       .where(sql`${t.deletedAt} is null`),
@@ -236,7 +244,9 @@ export const clients = pgTable(
     uniqueIndex('clients_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    index('clients_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    index('clients_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('clients_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -285,7 +295,9 @@ export const vendors = pgTable(
     uniqueIndex('vendors_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    index('vendors_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    index('vendors_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('vendors_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -327,7 +339,9 @@ export const machines = pgTable(
     uniqueIndex('machines_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    index('machines_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    index('machines_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
     index('machines_company_status_idx')
       .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
@@ -372,8 +386,12 @@ export const operators = pgTable(
     uniqueIndex('operators_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    index('operators_company_id_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
-    index('operators_user_id_idx').on(t.userId).where(sql`${t.deletedAt} is null`),
+    index('operators_company_id_idx')
+      .on(t.companyId)
+      .where(sql`${t.deletedAt} is null`),
+    index('operators_user_id_idx')
+      .on(t.userId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('operators_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -471,7 +489,9 @@ export const routeCards = pgTable(
     uniqueIndex('route_cards_company_item_uniq')
       .on(t.companyId, t.itemId)
       .where(sql`${t.deletedAt} is null`),
-    index('route_cards_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    index('route_cards_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('route_cards_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -520,7 +540,9 @@ export const routeCardOps = pgTable(
     uniqueIndex('route_card_ops_card_seq_uniq')
       .on(t.routeCardId, t.opSeq)
       .where(sql`${t.deletedAt} is null`),
-    index('route_card_ops_machine_idx').on(t.machineId).where(sql`${t.deletedAt} is null`),
+    index('route_card_ops_machine_idx')
+      .on(t.machineId)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('route_card_ops_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -589,14 +611,12 @@ export const jobCards = pgTable(
     // per ADR-012 #2-#4. source_jw_id renamed to source_jw_line_id; both
     // columns now FK-enforced (ON DELETE SET NULL — drop the SO/JW without
     // cascade-deleting JCs) + CHECK num_nonnulls(...) <= 1.
-    sourceSoLineId: uuid('source_so_line_id').references(
-      (): AnyPgColumn => salesOrderLines.id,
-      { onDelete: 'set null' },
-    ),
-    sourceJwLineId: uuid('source_jw_line_id').references(
-      (): AnyPgColumn => jobWorkOrderLines.id,
-      { onDelete: 'set null' },
-    ),
+    sourceSoLineId: uuid('source_so_line_id').references((): AnyPgColumn => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    sourceJwLineId: uuid('source_jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
     sourceLegacyRef: text('source_legacy_ref'),
     // T-040b — supplementary JC traceability. Set when this JC was created
     // by an NC `make_fresh` disposition. Inherits the original JC's source
@@ -706,7 +726,9 @@ export const jcOps = pgTable(
     uniqueIndex('jc_ops_card_seq_uniq')
       .on(t.jobCardId, t.opSeq)
       .where(sql`${t.deletedAt} is null`),
-    index('jc_ops_machine_idx').on(t.machineId).where(sql`${t.deletedAt} is null`),
+    index('jc_ops_machine_idx')
+      .on(t.machineId)
+      .where(sql`${t.deletedAt} is null`),
     index('jc_ops_company_type_idx')
       .on(t.companyId, t.opType)
       .where(sql`${t.deletedAt} is null`),
@@ -945,7 +967,9 @@ export const salesOrderLines = pgTable(
     uniqueIndex('sales_order_lines_so_line_uniq')
       .on(t.salesOrderId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
-    index('sales_order_lines_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    index('sales_order_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
     index('sales_order_lines_company_status_idx')
       .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
@@ -1050,7 +1074,9 @@ export const jobWorkOrderLines = pgTable(
     uniqueIndex('job_work_order_lines_jw_line_uniq')
       .on(t.jobWorkOrderId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
-    index('job_work_order_lines_item_idx').on(t.itemId).where(sql`${t.deletedAt} is null`),
+    index('job_work_order_lines_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.deletedAt} is null`),
     check('job_work_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
     pgPolicy('job_work_order_lines_company_read', {
       for: 'select',
@@ -1136,10 +1162,7 @@ export const purchaseRequests = pgTable(
       'purchase_requests_vendor_check',
       sql`num_nonnulls(${t.vendorId}, ${t.vendorCodeText}) >= 1`,
     ),
-    check(
-      'purchase_requests_item_check',
-      sql`num_nonnulls(${t.itemId}, ${t.itemCodeText}) >= 1`,
-    ),
+    check('purchase_requests_item_check', sql`num_nonnulls(${t.itemId}, ${t.itemCodeText}) >= 1`),
     pgPolicy('purchase_requests_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -1348,10 +1371,9 @@ export const goodsReceiptNoteLines = pgTable(
       .notNull()
       .references(() => goodsReceiptNotes.id, { onDelete: 'cascade' }),
     lineNo: integer('line_no').notNull(),
-    purchaseOrderLineId: uuid('purchase_order_line_id').references(
-      () => purchaseOrderLines.id,
-      { onDelete: 'set null' },
-    ),
+    purchaseOrderLineId: uuid('purchase_order_line_id').references(() => purchaseOrderLines.id, {
+      onDelete: 'set null',
+    }),
     itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text'),
     itemName: text('item_name').notNull(),
@@ -1441,12 +1463,9 @@ export const storeTransactions = pgTable(
       .references(() => users.id),
   },
   (t) => [
-    index('store_transactions_company_item_date_idx')
-      .on(t.companyId, t.itemId, t.txnDate),
-    index('store_transactions_company_source_idx')
-      .on(t.companyId, t.sourceType, t.sourceRef),
-    index('store_transactions_company_date_idx')
-      .on(t.companyId, t.txnDate),
+    index('store_transactions_company_item_date_idx').on(t.companyId, t.itemId, t.txnDate),
+    index('store_transactions_company_source_idx').on(t.companyId, t.sourceType, t.sourceRef),
+    index('store_transactions_company_date_idx').on(t.companyId, t.txnDate),
     check('store_transactions_qty_positive', sql`${t.qty} > 0`),
     pgPolicy('store_transactions_company_read', {
       for: 'select',

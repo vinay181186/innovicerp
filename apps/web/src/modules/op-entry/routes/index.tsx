@@ -88,9 +88,7 @@ function OpEntryPage() {
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Op Entry</h1>
-            <p className="text-sm text-muted-foreground">
-              Log shop-floor work against a job card.
-            </p>
+            <p className="text-sm text-muted-foreground">Log shop-floor work against a job card.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>

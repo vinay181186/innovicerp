@@ -28,21 +28,26 @@ What did we decide?
 ---
 
 ## ADR-001: Use Supabase over self-hosted or AWS
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Context
+
 Existing system uses Firebase Firestore with a JSON-blob anti-pattern (every collection stored as a single serialized document, rewritten on every save). Need a relational database supporting concurrency, transactions, reporting at the target scale of 15–100 users with ~50 GB ultimate data volume.
 
 ### Decision
+
 Supabase Pro (Mumbai region, `ap-south-1`) for Postgres + Auth + Storage + Realtime. Separate Fastify API on Railway or Hetzner (ADR-008 pending).
 
 ### Alternatives Considered
+
 - **AWS RDS + Cognito + S3** — rejected: ~$60/mo vs $26/mo Supabase at our scale, plus 5–10 hr/mo of ops overhead (VPC, IAM, RDS config, backups).
 - **Self-hosted Postgres on Hetzner** — rejected: operational burden too high.
 - **Stay on Firebase with per-record fix** — rejected: doesn't solve authorization, reporting, or relational integrity. User explicitly rejected as a temp solution.
 
 ### Consequences
+
 - Positive: lowest TCO, fastest setup, includes auth/storage/realtime, standard Postgres = portable.
 - Negative: PgBouncer kills long queries; Edge Functions have cold starts (we don't use them).
 - Risks: Supabase pricing/pivot — mitigated by `pg_dump` portability (1-day migration to AWS RDS if ever needed).
@@ -50,102 +55,126 @@ Supabase Pro (Mumbai region, `ap-south-1`) for Postgres + Auth + Storage + Realt
 ---
 
 ## ADR-002: Drizzle ORM over Prisma
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Context
+
 ORM choice for the API layer.
 
 ### Decision
+
 Use Drizzle ORM. Lighter, transparent SQL, raw SQL escape hatch, no codegen step.
 
 ### Alternatives Considered
+
 - **Prisma** — rejected: heavy, hides too much, codegen step, slower cold starts.
 - **Knex** — rejected: not type-safe enough.
 - **Raw `pg`** — rejected: too much boilerplate.
 
 ### Consequences
+
 - Positive: SQL stays inspectable; types are inferred from schema; migrations are diffs of TS schema.
 - Negative: smaller community than Prisma; some advanced features still maturing.
 
 ---
 
 ## ADR-003: TanStack Query over manual fetch / SWR / RTK Query
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Decision
+
 Use TanStack Query v5. Replaces ~2,000 lines of hand-rolled cache/sync logic from the legacy Firestore HTML system.
 
 ### Consequences
+
 - Positive: declarative, optimistic updates, retries, dedup, stale-while-revalidate built in.
 - Negative: another concept to learn for devs new to it.
 
 ---
 
 ## ADR-004: Selective Realtime, not Realtime everywhere
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Decision
+
 Realtime ONLY on Op Entry, Live Operations Board, Machine Status, Task Allocation. Everything else uses TanStack Query polling (30s lists, 60s detail).
 
 ### Rationale
+
 WebSocket connections cost server memory (~50 KB each). 100 users × 5 tabs = 500 connections. Polling scales linearly with simple HTTP, easier to debug, no reconnect logic on most screens.
 
 ---
 
 ## ADR-005: RLS for multi-tenancy and authorization
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Decision
+
 Every table has RLS enabled. Every table has at minimum a `company_isolation` policy. JWT claims (`company_id`, `role`) propagated to Postgres session via `current_company_id()` and `current_user_role()` SQL helpers.
 
 ### Consequences
+
 - Positive: even a buggy API cannot leak data across companies. Database is authoritative.
 - Negative: requires every dev to understand RLS; query plans need EXPLAIN review when policies change.
 
 ---
 
 ## ADR-006: Soft delete via `deleted_at`, no hard deletes from app
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Decision
+
 Every table has `deleted_at timestamptz`. App never executes `DELETE`. To "delete" → set `deleted_at = now()`. Standard queries filter `where deleted_at is null`. Hard deletes only via documented admin scripts after a backup is taken.
 
 ---
 
 ## ADR-007: pnpm workspaces over npm/yarn
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Decision
+
 pnpm workspaces. Fast, disk-efficient, strict module boundaries (no phantom dependencies).
 
 ---
 
 ## ADR-008: Node.js 24 instead of Node 20 LTS
+
 **Date:** 2026-04-29
 **Status:** Accepted
 
 ### Context
+
 CLAUDE.md §5 originally specified Node.js 20 LTS as the locked runtime. The dev workstation came with Node v24.15.0 already installed. Rather than downgrade, evaluated keeping Node 24.
 
 ### Decision
+
 Use Node.js 24 across local development, CI, and production. CLAUDE.md §5 amended to reflect this.
 
 ### Alternatives Considered
+
 - **Downgrade to Node 20 LTS** (Option A) — rejected by user. Avoids one MSI uninstall + reinstall on the dev box; no functional benefit at this stage of the project.
 - **nvm-windows side-by-side** (Option B) — rejected. Adds an additional tool to manage; no need for multiple versions on this project.
 
 ### Consequences
+
 - Positive: latest Node features (e.g., built-in test runner, native fetch is mature); no dev-environment churn.
 - Negative: Node 24 is "Current" not "LTS" until October 2026; we accept the stability risk. CI must pin to 24.x explicitly.
 - Risks: some libraries may lag in supporting Node 24 native features. Mitigated by sticking to mainstream versions (Fastify 4.x, Drizzle, Vite 5) which all support Node 22+.
 
 ### Action items
+
 - `package.json` engines: `node": ">=24.0.0"`
 - `.github/workflows/ci.yml`: `node-version: 24`
 - Re-evaluate when Node 24 enters Active LTS (October 2026) or if a project blocker emerges.
@@ -153,19 +182,24 @@ Use Node.js 24 across local development, CI, and production. CLAUDE.md §5 amend
 ---
 
 ## ADR-009: Fastify 5 instead of Fastify 4
+
 **Date:** 2026-04-30
 **Status:** Accepted
 
 ### Context
+
 CLAUDE.md §5 originally pinned Fastify 4.x — the current stable when the migration proposal was written (mid-2024). Fastify 5 shipped in late 2024 and the plugin ecosystem (`@fastify/cors` 10, `@fastify/helmet` 12, `@fastify/sensible` 6) now targets Fastify 5 by default. The T-001 bootstrap inadvertently pinned the plugins at their Fastify-5 line without bumping Fastify itself, which surfaced as `FST_ERR_PLUGIN_VERSION_MISMATCH` during T-006 server boot.
 
 ### Decision
+
 Upgrade `fastify` from 4.x to 5.x. Plugins stay at their current versions. CLAUDE.md §5 amended.
 
 ### Alternatives Considered
+
 - **Downgrade plugins to Fastify-4-compatible versions** (`@fastify/cors` 9, `@fastify/helmet` 11, `@fastify/sensible` 5) — rejected: a 2026 greenfield project should not start on the previous Fastify generation. Fastify 4 receives only maintenance backports; 5 has the active feature track.
 
 ### Consequences
+
 - Positive: latest Fastify, current plugin ecosystem, better type inference, longer support runway.
 - Negative: small API tweak in `server.ts` (`logger` option → `loggerInstance` keyword for passing a Pino instance).
 - Risks: low; Fastify 5 is mature by now.
@@ -173,6 +207,7 @@ Upgrade `fastify` from 4.x to 5.x. Plugins stay at their current versions. CLAUD
 ---
 
 ## ADR-010: API hosting — Railway (Singapore) accepted; Fly.io Mumbai considered
+
 **Date:** 2026-04-30
 **Status:** Accepted
 
@@ -184,15 +219,16 @@ The original migration proposal listed Railway and Hetzner CCX13 as candidates. 
 
 Round-trip latency from each candidate to Supabase Mumbai (`aws-1-ap-south-1`):
 
-| Host | Region | RTT to Supabase Mumbai |
-|---|---|---|
-| Fly.io | `bom` (Mumbai) | <5 ms (same metro) |
-| Railway | `asia-southeast1` (Singapore) | ~50 ms |
-| Hetzner CCX13 | Helsinki / Falkenstein | ~140–180 ms |
-| AWS App Runner / ECS | `ap-south-1` (Mumbai) | <5 ms (same region) |
-| DigitalOcean | `BLR1` (Bangalore) | ~10 ms |
+| Host                 | Region                        | RTT to Supabase Mumbai |
+| -------------------- | ----------------------------- | ---------------------- |
+| Fly.io               | `bom` (Mumbai)                | <5 ms (same metro)     |
+| Railway              | `asia-southeast1` (Singapore) | ~50 ms                 |
+| Hetzner CCX13        | Helsinki / Falkenstein        | ~140–180 ms            |
+| AWS App Runner / ECS | `ap-south-1` (Mumbai)         | <5 ms (same region)    |
+| DigitalOcean         | `BLR1` (Bangalore)            | ~10 ms                 |
 
 For a typical API request that issues 1 write + 2 SELECTs against Postgres, the round-trips alone:
+
 - Fly.io: ~15 ms baseline overhead
 - Railway: ~150 ms baseline (3× round-trips × 50 ms)
 - Hetzner: ~450–540 ms baseline — would blow the p95 < 300 ms target in `docs/ARCHITECTURE.md` before any application time is added.
@@ -212,7 +248,7 @@ We run **`tsx` directly at the entrypoint** rather than compiling to `dist/` fir
 - **AWS App Runner / Fargate / EC2** in `ap-south-1` — rejected: solves the region problem but reintroduces AWS ops overhead that ADR-001 specifically rejected vs Supabase. ~$25/mo minimum for sized memory + CloudWatch + ALB; not enough advantage to justify.
 - **DigitalOcean App Platform / Droplet** in BLR1 (Bangalore, ~10 ms RTT) — rejected: viable; kept as fallback if Railway Singapore degrades for an extended period.
 - **Vercel / Cloudflare Workers / Edge Functions** — rejected: cold starts on a Postgres-bound API are a known foot-gun (the pooled connection from a freshly-cold function adds 200+ ms). The API is a long-running stateful Fastify process by design (auth plugin caches, in-memory rate limits), not a serverless handler.
-- **Self-host on user's existing on-prem hardware** — not seriously considered. We're explicitly migrating *off* a single-machine setup.
+- **Self-host on user's existing on-prem hardware** — not seriously considered. We're explicitly migrating _off_ a single-machine setup.
 
 ### Build pipeline — `tsx` in production (deferred compile)
 
@@ -250,10 +286,12 @@ Cost: ~50 ms tsx loader startup overhead per cold start, ~20 MB extra resident m
 (Append new decisions below as ADR-012, ADR-013, ...)
 
 ## ADR-011: Phase 3 schema — derived statuses, real `running_ops`, separate `route_cards` master
+
 **Date:** 2026-05-01
 **Status:** Accepted
 
 ### Context
+
 Phase 3 (T-024) migrates the op-entry chain (`jobCards` 3, `jcOps` 20, `opLog` 81) plus two adjacent legacy collections (`routeCards` 14, `runningOps` 2) that the legacy `calcEngine()` (legacy line 1626–1731) ties together. These five collections drive the heart of the system — operators run them every shift — so the schema choices have outsized leverage on Phases 3, 6, 7. Source data is small (104 op-chain rows + 16 supporting), so a schema that fits the export but breaks on a status the data didn't exhibit is a real risk.
 
 T-024a was a deliberate stop point per CLAUDE.md §1: schema design first, user approval, then code.
@@ -307,10 +345,12 @@ The remaining six (outsource fields kept inline on `jc_ops`, operator-FK-plus-te
 - [ ] Update SCHEMA.md "Migration History" table with the three migration filenames
 
 ## ADR-012: Phase 4 schema — header+lines split for SO and JW; backfill JC source FKs
+
 **Date:** 2026-05-01
 **Status:** Accepted
 
 ### Context
+
 Phase 4 (T-029) migrates the sales chain (`salesOrders` 9 records, `jobWorkOrders` 2 records) and fulfils the deferred FK contract from ADR-011 #5 by backfilling `job_cards.source_so_line_id` / `source_jw_line_id`. Legacy stores each LINE as a separate doc with header fields repeated — 8 of 9 SO docs share `soNo='SO-436'`. Same shape for JWs (each JW currently has 1 line). Schema must support header-level data (customer, status, milestones) AND per-line tracking (qty, due date, status).
 
 T-029a was the deliberate stop point per CLAUDE.md §1: design first, user approval, then code.
@@ -460,6 +500,7 @@ T-038 was originally framed as "migrate `qc_inspections` (consolidated from `qcP
 - `qcDocUploads`: doc_missing — same.
 
 Per-inspection state we already have, fully migrated:
+
 - `goods_receipt_note_lines` QC fields (T-035c) — incoming-material QC.
 - `jc_ops.qc_required` / `qc_call_date` / `qc_attended_date` (T-024) — shop-floor QC steps.
 

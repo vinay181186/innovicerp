@@ -2,13 +2,7 @@ import type { DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -145,9 +139,7 @@ function HeaderGrid(props: { detail: DeliveryChallanWithLines }) {
       <Pair
         label="Purchase order"
         value={
-          detail.poCode
-            ? detail.poCode
-            : `${detail.poCodeText} (text snapshot — PO not in DB)`
+          detail.poCode ? detail.poCode : `${detail.poCodeText} (text snapshot — PO not in DB)`
         }
       />
       <Pair
@@ -160,10 +152,7 @@ function HeaderGrid(props: { detail: DeliveryChallanWithLines }) {
               : '—'
         }
       />
-      <Pair
-        label="Vendor"
-        value={detail.vendorName ?? detail.vendorCodeText}
-      />
+      <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText} />
       <Pair label="Transport" value={detail.transport ?? '—'} />
     </dl>
   );

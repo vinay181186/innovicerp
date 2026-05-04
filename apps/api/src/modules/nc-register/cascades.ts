@@ -21,13 +21,7 @@
 // re-routed through rework_qty until shop-floor reports an actual issue.
 
 import { and, eq, isNull, like, or, sql } from 'drizzle-orm';
-import {
-  jcOps,
-  jobCards,
-  ncRegister,
-  opLog,
-  operators,
-} from '../../db/schema';
+import { jcOps, jobCards, ncRegister, opLog, operators } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
 
@@ -39,12 +33,7 @@ const DISPOSITION_DATE_NOT_NULL_ACTIONS = new Set([
   'make_fresh',
 ] as const);
 
-type DispositionAction =
-  | 'rework'
-  | 'scrap'
-  | 'use_as_is'
-  | 'return_to_vendor'
-  | 'make_fresh';
+type DispositionAction = 'rework' | 'scrap' | 'use_as_is' | 'return_to_vendor' | 'make_fresh';
 
 export interface DisposeNcInput {
   action: DispositionAction;
@@ -102,9 +91,7 @@ export async function disposeNcCascade(
     throw new ValidationError(`NC ${ncId} not found`);
   }
   if (nc.status !== 'pending') {
-    throw new ConflictError(
-      `NC ${nc.code} is already ${nc.status} — cannot re-dispose`,
-    );
+    throw new ConflictError(`NC ${nc.code} is already ${nc.status} — cannot re-dispose`);
   }
 
   if (!DISPOSITION_DATE_NOT_NULL_ACTIONS.has(input.action)) {
@@ -136,9 +123,7 @@ export async function disposeNcCascade(
       .limit(1);
     const reworkOp = reworkOpRows[0];
     if (!reworkOp) {
-      throw new ValidationError(
-        `Rework op_seq ${reworkOpSeq} not found on JC ${nc.jobCardId}`,
-      );
+      throw new ValidationError(`Rework op_seq ${reworkOpSeq} not found on JC ${nc.jobCardId}`);
     }
     const rejectedQtyInt = Math.round(Number(nc.rejectedQty));
     await tx
@@ -407,9 +392,7 @@ export async function closeNcReworkCascade(
     );
   }
   if (nc.status !== 'disposed' && nc.status !== 'rework_done') {
-    throw new ConflictError(
-      `NC ${nc.code} cannot be rework-closed (status=${nc.status})`,
-    );
+    throw new ConflictError(`NC ${nc.code} cannot be rework-closed (status=${nc.status})`);
   }
 
   const updates: Record<string, unknown> = {
