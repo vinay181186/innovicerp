@@ -1,6 +1,6 @@
 import type { NcRegister } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Pencil, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useNcRegister, useSoftDeleteNcRegister } from '../api';
+import {
+  useCloseNcRework,
+  useDisposeNcRegister,
+  useNcRegister,
+  useSoftDeleteNcRegister,
+} from '../api';
+import { DisposeNcPanel } from '../components/dispose-nc-panel';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcStatusBadge } from '../components/nc-status-badge';
 
@@ -26,7 +32,12 @@ function NcRegisterDetailPage() {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
   const softDelete = useSoftDeleteNcRegister();
+  const dispose = useDisposeNcRegister(id);
+  const closeRework = useCloseNcRework(id);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showDispose, setShowDispose] = useState(false);
+  const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -62,12 +73,26 @@ function NcRegisterDetailPage() {
   }
 
   const isPending = detail.status === 'pending';
+  const isReworkDisposed =
+    detail.status === 'disposed' && detail.disposition === 'rework';
   const onDelete = () => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
         void navigate({ to: '/nc-register', replace: true });
       },
     });
+  };
+
+  const onCloseRework = async () => {
+    setCloseError(null);
+    try {
+      await closeRework.mutateAsync(
+        reworkDoneQty === '' ? {} : { reworkDoneQty: Number(reworkDoneQty) },
+      );
+      setReworkDoneQty('');
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : 'Failed to close rework.');
+    }
   };
 
   return (
@@ -81,6 +106,42 @@ function NcRegisterDetailPage() {
             </Link>
           </Button>
           <div className="flex items-center gap-2">
+            {isPending ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowDispose(true)}
+                disabled={showDispose}
+              >
+                <Stamp />
+                Dispose
+              </Button>
+            ) : null}
+            {isReworkDisposed ? (
+              <>
+                <span className="text-xs text-muted-foreground">Rework done qty</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="h-8 w-24 rounded border bg-background px-2 text-sm"
+                  placeholder="(opt)"
+                  value={reworkDoneQty === '' ? '' : reworkDoneQty}
+                  onChange={(e) =>
+                    setReworkDoneQty(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                />
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onCloseRework}
+                  disabled={closeRework.isPending}
+                >
+                  {closeRework.isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
+                  Close rework
+                </Button>
+              </>
+            ) : null}
             <Button
               asChild
               variant="outline"
@@ -135,6 +196,35 @@ function NcRegisterDetailPage() {
               ? softDelete.error.message
               : 'Failed to delete NC.'}
           </p>
+        ) : null}
+
+        {closeError ? <p className="text-sm text-destructive">{closeError}</p> : null}
+
+        {showDispose ? (
+          <DisposeNcPanel
+            nc={detail}
+            jcOpSeqs={[]}
+            pending={dispose.isPending}
+            error={
+              dispose.isError
+                ? dispose.error instanceof Error
+                  ? dispose.error.message
+                  : 'Failed to dispose NC'
+                : null
+            }
+            onCancel={() => {
+              setShowDispose(false);
+              dispose.reset();
+            }}
+            onSubmit={async (input) => {
+              try {
+                await dispose.mutateAsync(input);
+                setShowDispose(false);
+              } catch {
+                // error rendered inline by the panel via the dispose.isError state.
+              }
+            }}
+          />
         ) : null}
 
         <Card>

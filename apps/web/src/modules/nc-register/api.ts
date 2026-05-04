@@ -1,5 +1,7 @@
 import type {
+  CloseNcReworkInput,
   CreateNcRegisterInput,
+  DisposeNcInput,
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
@@ -88,6 +90,54 @@ export function useSoftDeleteNcRegister() {
     onSuccess: (_, id) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
       qc.removeQueries({ queryKey: ncRegisterKeys.detail(id) });
+    },
+  });
+}
+
+interface DisposeResponse {
+  result: {
+    ncId: string;
+    status: 'disposed' | 'closed';
+    reworkOpId?: string;
+    reworkOpSeqApplied?: number;
+    newJcCode?: string;
+    newJcId?: string;
+    opLogId?: string;
+  };
+  nc: NcRegister;
+}
+
+export function useDisposeNcRegister(id: string) {
+  const qc = useQueryClient();
+  return useMutation<DisposeResponse, Error, DisposeNcInput>({
+    mutationFn: (input) =>
+      apiFetch<DisposeResponse>(`/nc-register/${id}/dispose`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (resp) => {
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      qc.setQueryData(ncRegisterKeys.detail(id), resp.nc);
+      // Cascade fanout: rework bumps jc_ops.rework_qty (op-entry caches);
+      // make_fresh creates a new JC (job-cards caches); use_as_is appends
+      // an op_log row.
+      void qc.invalidateQueries({ queryKey: ['op-entry'] });
+      void qc.invalidateQueries({ queryKey: ['job-cards'] });
+    },
+  });
+}
+
+export function useCloseNcRework(id: string) {
+  const qc = useQueryClient();
+  return useMutation<NcRegister, Error, CloseNcReworkInput>({
+    mutationFn: (input) =>
+      apiFetch<NcRegister>(`/nc-register/${id}/close-rework`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });
 }

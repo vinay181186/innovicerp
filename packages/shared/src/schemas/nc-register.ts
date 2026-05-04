@@ -100,7 +100,7 @@ export const createNcRegisterInputSchema = z.object({
 export type CreateNcRegisterInput = z.infer<typeof createNcRegisterInputSchema>;
 
 // UPDATE — narrow set. Disposition + cascade fields are NOT here per ADR-017
-// #7; T-040b owns that path. `code` is immutable.
+// #7; T-040b owns that path via disposeNcInputSchema. `code` is immutable.
 export const updateNcRegisterInputSchema = z.object({
   ncDate: z
     .string()
@@ -111,6 +111,25 @@ export const updateNcRegisterInputSchema = z.object({
   reportedByText: z.string().max(255).optional(),
 });
 export type UpdateNcRegisterInput = z.infer<typeof updateNcRegisterInputSchema>;
+
+// DISPOSE (T-040b) — service-layer action with cascades. Mirrors the legacy
+// `_disposeNC` modal options (line 22633). Per-action constraints enforced
+// by the service: `rework` needs reworkOpSeq present (or NC.opSeq set),
+// `scrap` accepts scrapCost, others ignore the optional fields.
+export const disposeNcInputSchema = z.object({
+  action: ncDispositionSchema,
+  remarks: z.string().max(2000).optional(),
+  reworkOpSeq: z.number().int().positive().optional(),
+  scrapCost: z.coerce.number().nonnegative().optional(),
+});
+export type DisposeNcInput = z.infer<typeof disposeNcInputSchema>;
+
+// CLOSE-REWORK (T-040b) — flips `disposed`+rework → `closed` after rework
+// is complete. Optionally captures rework_done_qty for the audit record.
+export const closeNcReworkInputSchema = z.object({
+  reworkDoneQty: z.coerce.number().nonnegative().optional(),
+});
+export type CloseNcReworkInput = z.infer<typeof closeNcReworkInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

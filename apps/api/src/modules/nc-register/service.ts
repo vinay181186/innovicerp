@@ -8,7 +8,7 @@
 // once status leaves 'pending' — disposed/closed NCs are permanent records.
 
 import { and, count, eq, isNull, sql } from 'drizzle-orm';
-import { items, jcOps, jobCards, ncRegister } from '../../db/schema';
+import { items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireOpEntryRole } from '../../lib/auth';
 import {
@@ -17,8 +17,16 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import {
+  closeNcReworkCascade,
+  type DisposeNcContext,
+  type DisposeNcResult,
+  disposeNcCascade,
+} from './cascades';
 import type {
+  CloseNcReworkInput,
   CreateNcRegisterInput,
+  DisposeNcInput,
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
@@ -401,6 +409,64 @@ export async function updateNcRegister(
 
     const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
     return toNcRegister(reread[0]!);
+  });
+}
+
+// ─── T-040b: dispose + close-rework actions ──────────────────────────────
+
+async function resolveUserName(
+  tx: DbTransaction,
+  userId: string,
+): Promise<string> {
+  const rows = await tx
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  // users table has email but no name field — use email's local part as the
+  // user-facing name (matches the existing seed admin pattern).
+  const email = rows[0]?.email ?? '';
+  const localPart = email.split('@')[0];
+  return localPart && localPart.length > 0 ? localPart : email;
+}
+
+export async function disposeNcRegister(
+  id: string,
+  input: DisposeNcInput,
+  user: AuthContext,
+): Promise<{ result: DisposeNcResult; nc: NcRegister }> {
+  requireOpEntryRole(user);
+  const companyId = (() => {
+    if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
+    return user.companyId;
+  })();
+
+  return withUserContext(user, async (tx) => {
+    const userName = await resolveUserName(tx, user.id);
+    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
+    const result = await disposeNcCascade(tx, id, input, ctx);
+    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
+    return { result, nc: toNcRegister(nc[0]!) };
+  });
+}
+
+export async function closeNcRework(
+  id: string,
+  input: CloseNcReworkInput,
+  user: AuthContext,
+): Promise<NcRegister> {
+  requireOpEntryRole(user);
+  const companyId = (() => {
+    if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
+    return user.companyId;
+  })();
+
+  return withUserContext(user, async (tx) => {
+    const userName = await resolveUserName(tx, user.id);
+    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
+    await closeNcReworkCascade(tx, id, input.reworkDoneQty, ctx);
+    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
+    return toNcRegister(nc[0]!);
   });
 }
 

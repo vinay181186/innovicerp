@@ -598,6 +598,13 @@ export const jobCards = pgTable(
       { onDelete: 'set null' },
     ),
     sourceLegacyRef: text('source_legacy_ref'),
+    // T-040b — supplementary JC traceability. Set when this JC was created
+    // by an NC `make_fresh` disposition. Inherits the original JC's source
+    // SO/JW link separately so the T-033 close cascade still works on the
+    // supplementary; this column just records the NC origin for reports.
+    parentNcId: uuid('parent_nc_id').references((): AnyPgColumn => ncRegister.id, {
+      onDelete: 'set null',
+    }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -622,6 +629,9 @@ export const jobCards = pgTable(
     index('job_cards_company_date_idx')
       .on(t.companyId, t.jcDate)
       .where(sql`${t.deletedAt} is null`),
+    index('job_cards_parent_nc_idx')
+      .on(t.parentNcId)
+      .where(sql`${t.parentNcId} is not null`),
     check('job_cards_order_qty_positive', sql`${t.orderQty} > 0`),
     check(
       'job_cards_source_check',

@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  closeNcReworkInputSchema,
   createNcRegisterInputSchema,
+  disposeNcInputSchema,
   listNcRegisterQuerySchema,
   updateNcRegisterInputSchema,
 } from './schema';
@@ -44,5 +46,19 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     await service.softDeleteNcRegister(id, req.user);
     reply.code(204);
     return null;
+  });
+
+  app.post('/nc-register/:id/dispose', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = disposeNcInputSchema.parse(req.body);
+    return service.disposeNcRegister(id, body, req.user);
+  });
+
+  app.post('/nc-register/:id/close-rework', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = closeNcReworkInputSchema.parse(req.body);
+    return service.closeNcRework(id, body, req.user);
   });
 }
