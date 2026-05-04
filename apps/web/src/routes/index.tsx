@@ -1,6 +1,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -14,6 +15,7 @@ import {
   type LucideIcon,
   LogOut,
   Package,
+  Send,
   Truck,
   Wrench,
 } from 'lucide-react';
@@ -32,6 +34,8 @@ const MASTER_LINKS = [
   { to: '/purchase-orders', icon: ClipboardList, title: 'Purchase orders', subtitle: 'Vendor orders with line-level receipt + QC tracking' },
   { to: '/goods-receipt-notes', icon: Inbox, title: 'Goods receipt notes', subtitle: 'Material received against POs · QC accept writes stock-in' },
   { to: '/store-transactions', icon: ListOrdered, title: 'Store transactions', subtitle: 'Append-only stock-movement ledger · per-item on-hand from v_item_stock' },
+  { to: '/nc-register', icon: AlertTriangle, title: 'NC register', subtitle: 'Non-conformance log — QC rejections by JC + op (disposition workflow in T-040b)' },
+  { to: '/delivery-challans', icon: Send, title: 'Delivery challans', subtitle: 'Outbound DCs against JW POs — read-only in T-040a' },
   { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
   { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },
   { to: '/vendors', icon: Truck, title: 'Vendors master', subtitle: 'Suppliers we buy from' },

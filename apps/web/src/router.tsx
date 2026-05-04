@@ -2,6 +2,12 @@ import { createRouter } from '@tanstack/react-router';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
+import { deliveryChallansListRoute } from './modules/delivery-challans/routes/list';
+import { deliveryChallanDetailRoute } from './modules/delivery-challans/routes/detail';
+import { ncRegisterListRoute } from './modules/nc-register/routes/list';
+import { ncRegisterDetailRoute } from './modules/nc-register/routes/detail';
+import { ncRegisterEditRoute } from './modules/nc-register/routes/edit';
+import { ncRegisterNewRoute } from './modules/nc-register/routes/new';
 import { itemsListRoute } from './modules/items/routes/list';
 import { itemDetailRoute } from './modules/items/routes/detail';
 import { itemEditRoute, itemNewRoute } from './modules/items/routes/edit';
@@ -106,6 +112,13 @@ const routeTree = rootRoute.addChildren([
     goodsReceiptNoteDetailRoute,
     goodsReceiptNoteEditRoute,
     storeTransactionsListRoute,
+    // Order matters: /nc-register/new + /nc-register/$id/edit win against /$id.
+    ncRegisterNewRoute,
+    ncRegisterListRoute,
+    ncRegisterEditRoute,
+    ncRegisterDetailRoute,
+    deliveryChallansListRoute,
+    deliveryChallanDetailRoute,
   ]),
 ]);
 

@@ -34,3 +34,5 @@ export * from './schemas/purchase-request';
 export * from './schemas/purchase-order';
 export * from './schemas/goods-receipt-note';
 export * from './schemas/store-transaction';
+export * from './schemas/nc-register';
+export * from './schemas/delivery-challan';

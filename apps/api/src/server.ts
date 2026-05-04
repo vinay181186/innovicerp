@@ -7,10 +7,12 @@ import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
 import { clientsRoutes } from './modules/clients/routes';
+import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
 import { jobWorkOrdersRoutes } from './modules/job-work-orders/routes';
 import { machinesRoutes } from './modules/machines/routes';
+import { ncRegisterRoutes } from './modules/nc-register/routes';
 import { opEntryRoutes } from './modules/op-entry/routes';
 import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
 import { operatorsRoutes } from './modules/operators/routes';
@@ -60,6 +62,8 @@ await app.register(purchaseRequestsRoutes);
 await app.register(purchaseOrdersRoutes);
 await app.register(goodsReceiptNotesRoutes);
 await app.register(storeTransactionsRoutes);
+await app.register(ncRegisterRoutes);
+await app.register(deliveryChallansRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

@@ -1539,11 +1539,11 @@ export const ncRegister = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
-    pgPolicy('nc_register_manager_write', {
+    pgPolicy('nc_register_entry_write', {
       for: 'all',
       to: 'authenticated',
-      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
-      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      using: sql`current_user_role() IN ('admin', 'manager', 'operator') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager', 'operator') AND company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();

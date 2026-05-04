@@ -3824,15 +3824,15 @@
           ],
           "using": "company_id = current_company_id()"
         },
-        "nc_register_manager_write": {
-          "name": "nc_register_manager_write",
+        "nc_register_entry_write": {
+          "name": "nc_register_entry_write",
           "as": "PERMISSIVE",
           "for": "ALL",
           "to": [
             "authenticated"
           ],
-          "using": "current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()",
-          "withCheck": "current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()"
+          "using": "current_user_role() IN ('admin', 'manager', 'operator') AND company_id = current_company_id()",
+          "withCheck": "current_user_role() IN ('admin', 'manager', 'operator') AND company_id = current_company_id()"
         }
       },
       "checkConstraints": {
