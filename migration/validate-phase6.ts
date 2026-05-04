@@ -1,15 +1,20 @@
 // migration/validate-phase6.ts
 //
-// T-038 — Phase 6 sign-off validation (qc_processes only for now).
+// T-038 + T-039 — Phase 6 sign-off validation.
 //
 // What this script verifies:
-//   1. Field-level diff: for every transform row of qc_processes, the
-//      corresponding DB row matches on every mapped column.
-//   2. Orphan FK checks: created_by + updated_by point at existing users.
-//   3. Row counts match transform output (5).
+//   1. Field-level diff: for every transform row, the corresponding DB row
+//      matches on every mapped column. Tables: qc_processes (T-038),
+//      nc_register, delivery_challans, delivery_challan_lines (T-039).
+//   2. Orphan FK checks: business FKs (job_card_id, item_id, vendor_id,
+//      delivery_challan_id) and audit FKs (created_by, updated_by) point at
+//      existing rows.
+//   3. Row counts match transform output (5 + 3 + 4 + 4 = 16).
 //
-// T-039 will extend this with `nc_register` + `delivery_challans` (legacy
-// `dispatch_log` is doc_missing — not migrated, recorded in MIGRATION-LOG).
+// Legacy `dispatch_log`, `jwDCOutward`, `jwDCInward`, `partyMaterials`,
+// `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues` are all doc_missing —
+// not migrated, recorded in MIGRATION-LOG. Per-inspection record table is
+// deferred to T-040 (ADR-016).
 //
 // Read-only. Output to migration/load-output/_phase6_validation.json.
 //
@@ -48,11 +53,78 @@ const QC_PROCESS_MAPPER: Mapper<BaseRow> = (row) => ({
   is_active: row['isActive'],
 });
 
-const TABLES = ['qc_processes'] as const;
+const NC_REGISTER_MAPPER: Mapper<BaseRow> = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  nc_date: row['ncDate'],
+  job_card_id: row['jobCardId'],
+  jc_op_id: row['jcOpId'],
+  op_seq: row['opSeq'],
+  operation_text: row['operationText'],
+  qc_operation_text: row['qcOperationText'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name_text: row['itemNameText'],
+  so_code_text: row['soCodeText'],
+  machine_code_text: row['machineCodeText'],
+  rejected_qty: row['rejectedQty'],
+  reason_category: row['reasonCategory'],
+  reason: row['reason'],
+  disposition: row['disposition'],
+  disposition_date: row['dispositionDate'],
+  disposition_by_text: row['dispositionByText'],
+  disposition_remarks: row['dispositionRemarks'],
+  rework_jc_code_text: row['reworkJcCodeText'],
+  rework_op_seq: row['reworkOpSeq'],
+  rework_done_qty: row['reworkDoneQty'],
+  scrap_cost: row['scrapCost'],
+  status: row['status'],
+  reported_by_text: row['reportedByText'],
+  // time_logged is timestamptz; transform serialises to ISO string. The
+  // diff comparison only kicks in when both sides are non-null.
+  time_logged: row['timeLogged'],
+});
+
+const DELIVERY_CHALLAN_MAPPER: Mapper<BaseRow> = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  dc_date: row['dcDate'],
+  purchase_order_id: row['purchaseOrderId'],
+  po_code_text: row['poCodeText'],
+  vendor_id: row['vendorId'],
+  vendor_code_text: row['vendorCodeText'],
+  sales_order_line_id: row['salesOrderLineId'],
+  so_ref_text: row['soRefText'],
+  transport: row['transport'],
+  status: row['status'],
+});
+
+const DELIVERY_CHALLAN_LINE_MAPPER: Mapper<BaseRow> = (row) => ({
+  id: row['id'],
+  delivery_challan_id: row['deliveryChallanId'],
+  line_no: row['lineNo'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name_text: row['itemNameText'],
+  qty: row['qty'],
+  uom: row['uom'],
+  material_text: row['materialText'],
+  dc_remarks: row['dcRemarks'],
+});
+
+const TABLES = [
+  'qc_processes',
+  'nc_register',
+  'delivery_challans',
+  'delivery_challan_lines',
+] as const;
 type TableName = (typeof TABLES)[number];
 
 const MAPPERS: Record<TableName, Mapper<BaseRow>> = {
   qc_processes: QC_PROCESS_MAPPER,
+  nc_register: NC_REGISTER_MAPPER,
+  delivery_challans: DELIVERY_CHALLAN_MAPPER,
+  delivery_challan_lines: DELIVERY_CHALLAN_LINE_MAPPER,
 };
 
 interface FieldDiff {
@@ -179,6 +251,20 @@ async function validateTable(
 const FK_CHECKS: Array<{ table: string; column: string; parentTable: string }> = [
   { table: 'qc_processes', column: 'created_by', parentTable: 'users' },
   { table: 'qc_processes', column: 'updated_by', parentTable: 'users' },
+  { table: 'nc_register', column: 'job_card_id', parentTable: 'job_cards' },
+  { table: 'nc_register', column: 'jc_op_id', parentTable: 'jc_ops' },
+  { table: 'nc_register', column: 'item_id', parentTable: 'items' },
+  { table: 'nc_register', column: 'created_by', parentTable: 'users' },
+  { table: 'nc_register', column: 'updated_by', parentTable: 'users' },
+  { table: 'delivery_challans', column: 'purchase_order_id', parentTable: 'purchase_orders' },
+  { table: 'delivery_challans', column: 'vendor_id', parentTable: 'vendors' },
+  { table: 'delivery_challans', column: 'sales_order_line_id', parentTable: 'sales_order_lines' },
+  { table: 'delivery_challans', column: 'created_by', parentTable: 'users' },
+  { table: 'delivery_challans', column: 'updated_by', parentTable: 'users' },
+  { table: 'delivery_challan_lines', column: 'delivery_challan_id', parentTable: 'delivery_challans' },
+  { table: 'delivery_challan_lines', column: 'item_id', parentTable: 'items' },
+  { table: 'delivery_challan_lines', column: 'created_by', parentTable: 'users' },
+  { table: 'delivery_challan_lines', column: 'updated_by', parentTable: 'users' },
 ];
 
 async function checkOrphans(): Promise<OrphanCheck[]> {
@@ -243,7 +329,7 @@ async function main(): Promise<void> {
 
   const summary =
     overall === 'PASS'
-      ? `Phase 6 quality master validated: ${TABLES.length}/${TABLES.length} tables match transform; 0 orphan FKs across ${FK_CHECKS.length} checks. T-039 (NC + dispatch) extends this validator.`
+      ? `Phase 6 validated end-to-end: ${TABLES.length}/${TABLES.length} tables match transform (qc_processes + nc_register + delivery_challans + delivery_challan_lines); 0 orphan FKs across ${FK_CHECKS.length} checks. Legacy dispatch_log + JW DC + party_grn collections were doc_missing in the export and are intentionally not migrated (ADR-017 #1).`
       : `Phase 6 validation FAILED: ${tableFails.length} table mismatch(es), ${orphanFails.length} orphan FK group(s)`;
 
   const report: ValidationReport = {

@@ -1,7 +1,11 @@
 import {
+  DC_STATUSES,
   GRN_QC_STATUSES,
   ITEM_TYPES,
   JC_PRIORITIES,
+  NC_DISPOSITIONS,
+  NC_REASON_CATEGORIES,
+  NC_STATUSES,
   OP_LOG_TYPES,
   OP_TYPES,
   OUTSOURCE_STATUSES,
@@ -60,6 +64,12 @@ export const poTypeEnum = pgEnum('po_type', PO_TYPES);
 export const grnQcStatusEnum = pgEnum('grn_qc_status', GRN_QC_STATUSES);
 export const storeTxnTypeEnum = pgEnum('store_txn_type', STORE_TXN_TYPES);
 export const storeTxnSourceTypeEnum = pgEnum('store_txn_source_type', STORE_TXN_SOURCE_TYPES);
+
+// ─── Phase 6 enums (T-039) ────────────────────────────────────────────────
+export const ncStatusEnum = pgEnum('nc_status', NC_STATUSES);
+export const ncDispositionEnum = pgEnum('nc_disposition', NC_DISPOSITIONS);
+export const ncReasonCategoryEnum = pgEnum('nc_reason_category', NC_REASON_CATEGORIES);
+export const dcStatusEnum = pgEnum('dc_status', DC_STATUSES);
 
 export const companies = pgTable(
   'companies',
@@ -1446,6 +1456,211 @@ export const storeTransactions = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 6 tables — NC + Dispatch (T-039) ───────────────────────────────
+// Per ADR-017. Three transactional tables. Legacy `dispatchLog`,
+// `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`,
+// `outsourceJobs`, `storeIssues` are all doc_missing and intentionally not
+// migrated — T-040+ workflows will design fresh tables when UX requirements
+// are clear (matches the qcAssignments / qcDocUploads carve-out from ADR-016).
+
+export const ncRegister = pgTable(
+  'nc_register',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    ncDate: date('nc_date').notNull(),
+    jobCardId: uuid('job_card_id')
+      .notNull()
+      .references((): AnyPgColumn => jobCards.id),
+    jcOpId: uuid('jc_op_id').references((): AnyPgColumn => jcOps.id, {
+      onDelete: 'set null',
+    }),
+    opSeq: integer('op_seq'),
+    operationText: text('operation_text'),
+    qcOperationText: text('qc_operation_text'),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    itemNameText: text('item_name_text'),
+    soCodeText: text('so_code_text'),
+    machineCodeText: text('machine_code_text'),
+    rejectedQty: numeric('rejected_qty', { precision: 12, scale: 2 }).notNull(),
+    reasonCategory: ncReasonCategoryEnum('reason_category').notNull().default('other'),
+    reason: text('reason'),
+    disposition: ncDispositionEnum('disposition'),
+    dispositionDate: date('disposition_date'),
+    dispositionByText: text('disposition_by_text'),
+    dispositionRemarks: text('disposition_remarks'),
+    reworkJcCodeText: text('rework_jc_code_text'),
+    reworkOpSeq: integer('rework_op_seq'),
+    reworkDoneQty: numeric('rework_done_qty', { precision: 12, scale: 2 }),
+    scrapCost: numeric('scrap_cost', { precision: 12, scale: 2 }).notNull().default('0'),
+    status: ncStatusEnum('status').notNull().default('pending'),
+    reportedByText: text('reported_by_text'),
+    timeLogged: timestamp('time_logged', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('nc_register_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('nc_register_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('nc_register_company_jc_idx')
+      .on(t.companyId, t.jobCardId)
+      .where(sql`${t.deletedAt} is null`),
+    index('nc_register_company_date_idx')
+      .on(t.companyId, t.ncDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('nc_register_jc_op_idx')
+      .on(t.jcOpId)
+      .where(sql`${t.jcOpId} is not null`),
+    index('nc_register_item_idx').on(t.itemId),
+    check('nc_register_rejected_qty_positive', sql`${t.rejectedQty} > 0`),
+    check(
+      'nc_register_rework_done_qty_check',
+      sql`${t.reworkDoneQty} is null OR ${t.reworkDoneQty} >= 0`,
+    ),
+    pgPolicy('nc_register_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('nc_register_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const deliveryChallans = pgTable(
+  'delivery_challans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    dcDate: date('dc_date').notNull(),
+    purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id, {
+      onDelete: 'set null',
+    }),
+    poCodeText: text('po_code_text').notNull(),
+    vendorId: uuid('vendor_id')
+      .notNull()
+      .references(() => vendors.id),
+    vendorCodeText: text('vendor_code_text').notNull(),
+    salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    soRefText: text('so_ref_text'),
+    transport: text('transport'),
+    status: dcStatusEnum('status').notNull().default('issued'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('delivery_challans_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challans_company_date_idx')
+      .on(t.companyId, t.dcDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challans_company_po_idx')
+      .on(t.companyId, t.purchaseOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challans_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challans_so_line_idx')
+      .on(t.salesOrderLineId)
+      .where(sql`${t.salesOrderLineId} is not null`),
+    pgPolicy('delivery_challans_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('delivery_challans_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const deliveryChallanLines = pgTable(
+  'delivery_challan_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    deliveryChallanId: uuid('delivery_challan_id')
+      .notNull()
+      .references(() => deliveryChallans.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text').notNull(),
+    itemNameText: text('item_name_text'),
+    qty: numeric('qty', { precision: 12, scale: 2 }).notNull(),
+    uom: uomEnum('uom').notNull(),
+    materialText: text('material_text'),
+    dcRemarks: text('dc_remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('delivery_challan_lines_dc_line_uniq')
+      .on(t.deliveryChallanId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challan_lines_item_idx').on(t.itemId),
+    check('delivery_challan_lines_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('delivery_challan_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('delivery_challan_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1494,3 +1709,9 @@ export type GoodsReceiptNoteLine = typeof goodsReceiptNoteLines.$inferSelect;
 export type NewGoodsReceiptNoteLine = typeof goodsReceiptNoteLines.$inferInsert;
 export type StoreTransaction = typeof storeTransactions.$inferSelect;
 export type NewStoreTransaction = typeof storeTransactions.$inferInsert;
+export type NcRegister = typeof ncRegister.$inferSelect;
+export type NewNcRegister = typeof ncRegister.$inferInsert;
+export type DeliveryChallan = typeof deliveryChallans.$inferSelect;
+export type NewDeliveryChallan = typeof deliveryChallans.$inferInsert;
+export type DeliveryChallanLine = typeof deliveryChallanLines.$inferSelect;
+export type NewDeliveryChallanLine = typeof deliveryChallanLines.$inferInsert;

@@ -570,6 +570,100 @@ Total: **5 / 5 mapped rows match transform on every loaded column**.
 
 ---
 
+## Phase 6 Per-Collection Entries — Load Run 6 — 2026-05-04 (T-039)
+
+Load run reads `migration/transform/<table>.json` and inserts rows in FK-dependency order: `nc_register` → `delivery_challans` → `delivery_challan_lines`. Audit columns set to seed company_id + admin user_id (vinay.makwana24@gmail.com → `e9c9ed51-7aa0-4d4f-95ab-f6c3ee9e2320`). Conflict targets: `(company_id, code) WHERE deleted_at IS NULL` for nc_register and delivery_challans; `(delivery_challan_id, line_no) WHERE deleted_at IS NULL` for the line table. All run via the standard `bulkLoad` helper.
+
+## ncRegister (nc_register)
+**Date:** 2026-05-04
+**Source records:** 3 (NC-0001, NC-0002, NC-0003)
+**Loaded records:** 3
+**Discrepancy:** 0
+**Anomalies:** 0
+**Validation:** PASS — 3 field-level matches in field-diff sweep; 5 FK orphan checks clean (`job_card_id`, `jc_op_id`, `item_id`, `created_by`, `updated_by`).
+**Notes:**
+- All 3 rows reference the same JC (`IN-JC-00002`, item `554117302000` JOINT, SO `SO-436`); op_seqs 4 + 4 + 6 — all resolve clean to `jc_ops` via composite `(jcNo, opSeq)` lookup.
+- All 3 rows are `Closed` (matching legacy `status='Closed'`); 1 disposition is `rework` (NC-0001 with `reworkDoneQty=35` despite `rejectedQty=5` — preserved as-is from legacy data, no clamp); 2 are `use_as_is` (NC-0002, NC-0003).
+- All 3 use `reasonCategory: 'Dimensional'` — the dominant reason in current data; the 6 other enum values (`surface`, `material`, `process`, `operator_error`, `machine_fault`, `other`) are pre-defined per ADR-017 #2 for forward state coverage.
+- `disposition_by_text='Japan'` preserved as text snapshot per ADR-017 #3 (no FK to operators or users).
+- `machine_code_text='QC'` preserved as snapshot — `'QC'` is the legacy QC station label, not a real machine code, so no FK lookup attempted.
+**Cutover:** Pending T-040 (NC entry web flow). Migrated rows are read-only at the DB layer until then.
+
+## challans (delivery_challans)
+**Date:** 2026-05-04
+**Source records:** 4 (DC-00001, DC-00001-02, DC-00001-03, DC-00002)
+**Loaded records:** 4
+**Discrepancy:** 0
+**Anomalies:** 3
+- `po_unresolved` for DC-00002: `poNo='IN-PO-00002'` was never written to the legacy DB (only `IN-JWPO-00001` made it to the export per Phase 5 sign-off). `purchase_order_id` is NULL on this row; `po_code_text='IN-PO-00002'` preserves the audit trail per ADR-017 #5.
+- `so_line_unresolved` for DC-00002 and DC-00001: legacy soRefIds `574se7ev` and `9is8kb7f` are not in the migrated `sales_order_lines` (`_legacyId` lookup fails). DC-00001-02 and DC-00001-03 both reference `4n7tmo9u` which resolves clean. `sales_order_line_id` is NULL on the 2 unresolved headers; `so_ref_text` preserves the original short-id.
+**Validation:** PASS — 4 field-level matches; 5 FK orphan checks clean (`purchase_order_id`, `vendor_id`, `sales_order_line_id`, `created_by`, `updated_by`).
+**Notes:**
+- All 4 rows have `vendor_id` resolving to `VND-001` and `status='issued'` (the only DC status exhibited in legacy data).
+- 3 of 4 rows reference `IN-JWPO-00001` (the migrated JW PO); 1 references the unmigrated `IN-PO-00002` — text-snapshot pattern keeps the audit trail durable.
+**Cutover:** Pending T-040 (DC entry web flow).
+
+## delivery_challan_lines
+**Date:** 2026-05-04
+**Source records:** 4 line entries embedded in 4 challan headers (each header has exactly 1 line in current data)
+**Loaded records:** 4
+**Discrepancy:** 0
+**Anomalies:** 0
+**Validation:** PASS — 4 field-level matches; 4 FK orphan checks clean (`delivery_challan_id`, `item_id`, `created_by`, `updated_by`).
+**Notes:**
+- Item codes `60346569` (BLOCK), `60346519` (BLOCK), `554117302000` (JOINT × 2) all resolve clean.
+- `lineNo` auto-assigned 1 per header (legacy doesn't number DC lines).
+- All 4 rows use `uom='NOS'` matching the existing `uom` enum.
+- `material_text` preserved on 2 lines (`'1018'`, `'MS'`); blank → null on the 2 JOINT lines.
+- `dc_remarks` preserved on 3 lines (e.g. `'Machining Only, 32od round bar given.'`, `'Outsource: drill for IN-JC-00004 (PR: PR-00002)'`, `'COATING PROCESS'`); blank → null on DC-00001-03.
+**Cutover:** Pending T-040.
+
+## dispatchLog — NOT MIGRATED (per ADR-017)
+**Date:** 2026-05-04
+**Source records:** 0 (collection `doc_missing` in the export — never written by the legacy app)
+**Loaded records:** 0
+**Notes:** Per ADR-017 #1, the `dispatch_log` table is not built. T-040+ workflows will design the right schema when the dispatch UX has actual requirements driving shape. Same call as the qcAssignments / qcDocUploads carve-out from ADR-016.
+
+## jwDCOutward / jwDCInward / partyMaterials / partyGrn / ospDC / outsourceJobs / storeIssues — NOT MIGRATED (per ADR-017)
+**Date:** 2026-05-04
+**Source records:** 0 each (all `doc_missing`)
+**Loaded records:** 0
+**Notes:** All 7 collections never written by the legacy app. Skipped per ADR-017 #1; T-040+ workflows decide structure when UX requirements are clear.
+
+---
+
+## Phase 6 Sign-Off — 2026-05-04 (T-039)
+
+**Last updated: 2026-05-04**
+Run via: `pnpm --filter @innovic/migration validate:phase6`
+Output: `migration/load-output/_phase6_validation.json`
+Overall status: **PASS**
+Result summary: Phase 6 validated end-to-end: **4/4 tables match transform** (qc_processes + nc_register + delivery_challans + delivery_challan_lines); **0 orphan FKs across 16 checks**. Legacy dispatch_log + JW DC + party_grn collections were doc_missing in the export and are intentionally not migrated (ADR-017 #1).
+
+**Field-level checks (per table):**
+
+| Table | Transform rows | DB rows | Matched | Field diffs | Missing | Status |
+|---|---|---|---|---|---|---|
+| qc_processes | 5 | 5 | 5 | 0 | 0 | OK |
+| nc_register | 3 | 3 | 3 | 0 | 0 | OK |
+| delivery_challans | 4 | 4 | 4 | 0 | 0 | OK |
+| delivery_challan_lines | 4 | 4 | 4 | 0 | 0 | OK |
+
+**Orphan FK checks (16/16 clean):**
+- qc_processes: created_by, updated_by
+- nc_register: job_card_id, jc_op_id, item_id, created_by, updated_by
+- delivery_challans: purchase_order_id, vendor_id, sales_order_line_id, created_by, updated_by
+- delivery_challan_lines: delivery_challan_id, item_id, created_by, updated_by
+
+**Conclusions:**
+- All 11 new rows (3 + 4 + 4) land byte-for-byte against the transform output (modulo documented normalisations: empty optional text → null, numeric stringification at `(12,2)`, UOM uppercase-match, status/disposition/reason enum mapping).
+- The 3 documented FK gaps (DC-00002 → unmigrated PO, 2-of-4 unresolvable soRefIds) are absorbed cleanly by nullable FK + text-snapshot pattern (ADR-017 #5). No orphans because the columns are nullable, not because they were dropped.
+- Phase 6 storage is **complete** for the migration scope. Per-inspection record table (with file uploads, sign-off, attachments) and the NC + DC web modules remain deferred to T-040 where workflow UX drives shape.
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase6`
+
+---
+
 ## Template
 
 ```
@@ -589,6 +683,7 @@ Total: **5 / 5 mapped rows match transform on every loaded column**.
 - ~~**Phase 4:** salesOrders, jobWorkOrders~~ — migrated 2026-05-02 (T-029d)
 - ~~**Phase 5:** purchaseOrders, grn, storeTransactions~~ — migrated 2026-05-02 (T-035c)
 - ~~**Phase 6 (qc master):** qcProcesses~~ — migrated 2026-05-03 (T-038); `qcAssignments` + `qcDocUploads` deliberately NOT migrated per ADR-016
-- **Phase 6 (remaining):** ncRegister, capaRecords; jwDCOutward, jwDCInward, challans, dispatchLog
+- ~~**Phase 6 (NC + dispatch):** ncRegister, challans~~ — migrated 2026-05-04 (T-039); `dispatchLog`, `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues` deliberately NOT migrated per ADR-017 (all `doc_missing`)
+- **Phase 6 (remaining):** capaRecords (CAPA records — see ADR-017 future scope; legacy `_createCAPAFromNC` cascade currently absent)
 - **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
 - **Phase 9:** activityLog

@@ -502,7 +502,73 @@ So the migration scope of T-038 collapses to: **one master table, 5 rows.**
 
 ---
 
+## ADR-017: Phase 6 schema part 2 — nc_register + delivery_challans (legacy dispatch_log + JW DC + party_grn doc_missing)
+
+**Date:** 2026-05-04
+**Status:** Accepted
+
+### Context
+
+T-039 was framed as "migrate `nc_register` (3 rows) + `delivery_challans` (4 rows from `challans`); legacy `dispatch_log` doc_missing." Real-data inspection of the export confirms a wider doc_missing footprint than the task title implied:
+
+- `ncRegister`: 3 records, all references resolve to migrated `IN-JC-00002` op-seqs 4 + 6 and item `554117302000`. Clean target migration set.
+- `challans`: 4 records, 3 of 4 reference `IN-JWPO-00001` (migrated); DC-00002 references `IN-PO-00002` which was never written to the legacy DB. Item codes all resolve. soRefIds: 1 of 4 distinct values resolves (`4n7tmo9u` → migrated SO line; `574se7ev` and `9is8kb7f` are not in the legacy SO line set).
+- `dispatchLog`: doc_missing — not migrated.
+- `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues`: all doc_missing — collections were never written by the legacy app.
+
+Status / disposition / reason enum values must reflect the **full** legacy form code, not just exhibited values: status filter dropdown enumerates 4 states (Pending / Disposed / Rework Complete / Closed — line 22555); disposition modal lists 5 (Rework / Scrap / Use As Is / Return to Vendor / Make Fresh — line 22633); reason modal lists 7 (Dimensional / Surface / Material / Process / Operator Error / Machine Fault / Other — line 22584).
+
+### Decision
+
+1. **Migrate only `ncRegister` (3 rows) + `challans` → `delivery_challans` (4 rows).** Skip the 8 doc_missing collections — T-040+ workflows will design fresh tables when UX requirements are clear (mirrors the qcAssignments / qcDocUploads carve-out from ADR-016).
+2. **Enum coverage from legacy form code, not exhibited values.** 3 NC enums + 1 DC enum capture the full UX-allowed sets so future writes don't blow up on legitimate values:
+   - `nc_status (pending, disposed, rework_done, closed)` — note `rework_done` covers both legacy `Rework Done` (action button line 22541) and `Rework Complete` (filter dropdown line 22555).
+   - `nc_disposition (rework, scrap, use_as_is, return_to_vendor, make_fresh)` — nullable on the row until disposition is picked.
+   - `nc_reason_category (dimensional, surface, material, process, operator_error, machine_fault, other)` — defaults to `other` since legacy auto-create path leaves the field blank.
+   - `dc_status (issued, received, cancelled)` — only `issued` exhibited; the other two are forward states for the future inward-DC + cancellation flows.
+3. **NC: hard FKs to `job_cards` + `items`; `jc_op_id` nullable.** All 3 legacy NC rows resolve clean on jcNo and itemCode. `jc_op_id` is nullable because legacy lets `opSeq=0` (or stale opSeq with deleted op) slip through the manual NC form. `disposition_by` / `reported_by` / `operator` are text-only — no FK to operators or users; the durable record is the name string snapshot. Same pattern as `op_log.operator_name` fallback (ADR-011).
+4. **NC: no FK to `sales_orders`.** `so_code_text` is denormalised; the indirect path JC → sales_order_line → sales_order is the truth, and the snapshot makes NC reports self-contained without forcing a join.
+5. **Delivery challan: `purchase_order_id` and `sales_order_line_id` nullable.** Required to absorb the DC-00002 case (poNo `IN-PO-00002` was never in the legacy export — only `IN-JWPO-00001` made it through migration) and the 2-of-4 unresolvable `soRefId` values. `po_code_text` is NOT NULL and `so_ref_text` preserves the original string, so the audit trail is durable even when FKs go null. Same forward-defaulting pattern as `purchase_order_lines.item_code_text` fallback (ADR-015 #10).
+6. **Single status enum `dc_status` even with one exhibited value.** Forward-defining `received` and `cancelled` matches `po_status` (ADR-015) and avoids a follow-up enum-extension migration when T-040+ implements the inward DC flow. Cost: zero — Postgres enums extend without table rewrite, but pre-defining is cleaner.
+7. **No view, no trigger beyond `set_updated_at()`.** NC has business-state cascades in legacy (`_disposeNC` line 22618 mutates `jc_ops.reworkQty` on Rework path, creates a supplementary JC on Make Fresh path, writes an `op_log` row on Use As Is path). All of those are application logic, not schema-level cascades — they belong in the future T-040 service layer, not in DB triggers. Phase 6 part 2 ships pure storage; no derived-state views like `v_jc_status`.
+
+### Alternatives Considered
+
+- **A — single combined `dispatch_movements` table holding both inbound and outbound DCs**, with a direction enum. Rejected: legacy `jwDCInward` is doc_missing, so we have nothing to populate the inbound rows with. T-040 can decide the right shape when the inward flow has actual UX. Building an empty side now is YAGNI.
+- **B — hard FK `nc_register.disposition_by` → `users.id`.** Rejected: legacy stores `dispositionBy` as a name string snapshot ("Japan") with no UID linkage. Backfilling would require fuzzy name → user matching on 3 rows; the snapshot column is the durable record. Same call as `op_log.operator_name` text snapshot.
+- **C — `dispatchLog` table now (even though doc_missing).** Rejected: building empty tables for collections that were never written is premature design; T-040+ workflows will design the right shape when UX requirements are clear.
+- **D — separate `delivery_challan_lines` and `delivery_challan_inward_lines` tables.** Rejected: same reasoning as A. Single line table; if T-040 needs inward-line-specific columns, a follow-on migration adds them.
+
+### Consequences
+
+- **Positive:**
+  - Total Phase 6 part 2 size: 3 tables, 11 rows (3 NC + 4 DC + 4 DC lines), ~700 LOC across schema + 2 transforms + load + tests + validate. Ships in one commit.
+  - All 16 FK orphan checks pass clean against the dev DB. Field-level diff is 0 across 11 rows (`validate-phase6` PASS).
+  - Forward-defined enums (`nc_status` 4 values, `dc_status` 3 values) absorb legitimate legacy state transitions that aren't in the exhibited 7-row sample, so future writes don't blow up.
+  - Delivery-challan nullable FKs + text-snapshot columns absorb the 3 documented FK gaps without losing any legacy audit data.
+
+- **Negative:**
+  - No NC-entry UI yet — only migration-only loaded rows are visible. T-040 will build the read+write flows.
+  - The text-snapshot pattern (`disposition_by_text`, `reported_by_text`, `so_code_text`) makes the NC table a snapshot store rather than a fully relational record. Reports that need user-aggregation must `LIKE`-match by name. Acceptable given 3 rows; revisit if NC volume grows.
+  - One DC has `purchase_order_id IS NULL` because the legacy PO was never written. The `po_code_text` column makes the audit trail durable but listing "all DCs for PO X" needs both an `id` filter AND a `code_text LIKE` filter. Documented soft spot.
+
+- **Risks:**
+  - **Enum extension** — if T-040+ surfaces a legitimate disposition or reason value not in the 5 + 7 enums, an enum-extension migration is needed before code can use it. Mitigation: forward-defined enums minimise the gap; `nc_register_rejected_qty_positive` CHECK gives a hard floor for data integrity.
+  - **Time-zone of `time_logged`** — legacy stores `new Date().toISOString()` in browser timezone (IST). Transform parses with `new Date()` then re-serialises to ISO; the round-trip preserves the absolute instant but assumes the legacy clients all wrote in IST. None of the 3 sample rows have `timeLogged` set, so this is theoretical until T-040 starts writing fresh rows with proper UTC.
+
+### Action items (T-039)
+
+- [x] 4 new enums in `packages/shared/src/enums/` + index wiring
+- [x] Drizzle schema: 3 new tables + 4 new pgEnum exports
+- [x] Migration: `0011_phase6_nc_dispatch.sql` (drizzle-gen) + `0012_phase6_nc_dispatch_triggers.sql` (hand-written), applied via `apply-sql.ts`
+- [x] Transform layer: `migration/transforms/nc-register.ts` + `migration/transforms/delivery-challans.ts` (~600 LOC) + 16 unit tests
+- [x] Load: 3 mappers + TABLE_CONFIGS + ALL_TABLES entries — 11 rows loaded
+- [x] Validate: `validate-phase6.ts` extended to 4 tables + 16 FK orphan checks. PASS
+- [x] Update TASKS.md + DECISIONS.md (ADR-017) + SCHEMA.md + MIGRATION-LOG.md
+
+---
+
 ## Pending Decisions
 
-- **ADR-017 (pending):** Domain name and transactional email-from address.
-- **ADR-018 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-018 (pending):** Domain name and transactional email-from address.
+- **ADR-019 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).

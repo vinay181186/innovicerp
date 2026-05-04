@@ -394,6 +394,63 @@ const QC_PROCESS_MAPPER: Mapper = (row) => ({
   is_active: row['isActive'],
 });
 
+const NC_REGISTER_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  nc_date: row['ncDate'],
+  job_card_id: row['jobCardId'],
+  jc_op_id: row['jcOpId'],
+  op_seq: row['opSeq'],
+  operation_text: row['operationText'],
+  qc_operation_text: row['qcOperationText'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name_text: row['itemNameText'],
+  so_code_text: row['soCodeText'],
+  machine_code_text: row['machineCodeText'],
+  rejected_qty: row['rejectedQty'],
+  reason_category: row['reasonCategory'],
+  reason: row['reason'],
+  disposition: row['disposition'],
+  disposition_date: row['dispositionDate'],
+  disposition_by_text: row['dispositionByText'],
+  disposition_remarks: row['dispositionRemarks'],
+  rework_jc_code_text: row['reworkJcCodeText'],
+  rework_op_seq: row['reworkOpSeq'],
+  rework_done_qty: row['reworkDoneQty'],
+  scrap_cost: row['scrapCost'],
+  status: row['status'],
+  reported_by_text: row['reportedByText'],
+  time_logged: row['timeLogged'],
+});
+
+const DELIVERY_CHALLAN_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  code: row['code'],
+  dc_date: row['dcDate'],
+  purchase_order_id: row['purchaseOrderId'],
+  po_code_text: row['poCodeText'],
+  vendor_id: row['vendorId'],
+  vendor_code_text: row['vendorCodeText'],
+  sales_order_line_id: row['salesOrderLineId'],
+  so_ref_text: row['soRefText'],
+  transport: row['transport'],
+  status: row['status'],
+});
+
+const DELIVERY_CHALLAN_LINE_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  delivery_challan_id: row['deliveryChallanId'],
+  line_no: row['lineNo'],
+  item_id: row['itemId'],
+  item_code_text: row['itemCodeText'],
+  item_name_text: row['itemNameText'],
+  qty: row['qty'],
+  uom: row['uom'],
+  material_text: row['materialText'],
+  dc_remarks: row['dcRemarks'],
+});
+
 // ─── Per-table config (mapper + conflict + audit) ─────────────────────────
 
 interface TableLoadConfig {
@@ -466,6 +523,13 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
   },
   // Phase 6 master (T-038)
   qc_processes: { mapper: QC_PROCESS_MAPPER },
+  // Phase 6 transactional (T-039) — NC register + delivery challans
+  nc_register: { mapper: NC_REGISTER_MAPPER },
+  delivery_challans: { mapper: DELIVERY_CHALLAN_MAPPER },
+  delivery_challan_lines: {
+    mapper: DELIVERY_CHALLAN_LINE_MAPPER,
+    conflictTarget: '(delivery_challan_id, line_no) WHERE deleted_at IS NULL',
+  },
 };
 
 // FK-dependency order. users first (special path); then masters; then Phase 3
@@ -509,6 +573,13 @@ const ALL_TABLES = [
   // Phase 6 master — no FK dependencies on Phase 2-5 tables (per ADR-016 #3
   // jc_ops.operation stays text, no FK to qc_processes).
   'qc_processes',
+  // Phase 6 transactional (T-039 / ADR-017) — nc_register depends on
+  // job_cards / jc_ops / items; delivery_challans on purchase_orders /
+  // vendors / sales_order_lines; delivery_challan_lines on delivery_challans
+  // / items.
+  'nc_register',
+  'delivery_challans',
+  'delivery_challan_lines',
 ] as const;
 type TableName = (typeof ALL_TABLES)[number];
 

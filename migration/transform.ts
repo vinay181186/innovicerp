@@ -24,12 +24,14 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { transformClients } from './transforms/clients';
+import { transformDeliveryChallans } from './transforms/delivery-challans';
 import { transformGrn } from './transforms/grn';
 import { transformItems } from './transforms/items';
 import { transformJcOps } from './transforms/jc-ops';
 import { transformJobCards } from './transforms/job-cards';
 import { transformJobWorkOrders } from './transforms/job-work-orders';
 import { transformMachines } from './transforms/machines';
+import { transformNcRegister } from './transforms/nc-register';
 import { transformOperators } from './transforms/operators';
 import { transformOpLog } from './transforms/op-log';
 import { transformPurchaseOrders } from './transforms/purchase-orders';
@@ -90,6 +92,11 @@ const TRANSFORMS: Record<string, TransformFn> = {
     ),
   // Phase 6 (T-038) — quality master only; per-inspection events deferred to T-040
   qcProcesses: (rs) => transformQcProcesses(rs as Parameters<typeof transformQcProcesses>[0]),
+  // Phase 6 (T-039) — NC + delivery challans (legacy dispatch_log doc_missing)
+  ncRegister: (rs, ctx) =>
+    transformNcRegister(rs as Parameters<typeof transformNcRegister>[0], ctx),
+  challans: (rs, ctx) =>
+    transformDeliveryChallans(rs as Parameters<typeof transformDeliveryChallans>[0], ctx),
 };
 
 type CollectionName = keyof typeof TRANSFORMS;
@@ -121,6 +128,11 @@ const WIRED_COLLECTIONS: CollectionName[] = [
   'storeTransactions',
   // Phase 6 — qc_processes is a master, no FK dependencies on Phase 2-5
   'qcProcesses',
+  // Phase 6 — ncRegister depends on items, job_cards, jc_ops (resolved in
+  // earlier Phase 2/3 transforms); challans depends on items, vendors,
+  // purchase_orders, sales_order_lines.
+  'ncRegister',
+  'challans',
 ];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {
@@ -303,6 +315,24 @@ function prefetchDependencyLookups(
   }
   if (targets.includes('storeTransactions')) {
     need('items', 'code');
+  }
+  if (targets.includes('ncRegister')) {
+    need('items', 'code');
+    need('job_cards', 'code');
+    // jc_ops composite-key lookup must come from in-memory run; can't reload
+    // from disk easily because it needs `_legacyJcNo` from each row. If
+    // running ncRegister standalone, ensure jcOps is also in the run, or
+    // accept that jc_op_id will resolve to null with a logged anomaly.
+  }
+  if (targets.includes('challans')) {
+    need('items', 'code');
+    need('vendors', 'code');
+    need('purchase_orders', 'code');
+    // sales_order_lines idMap is built in-run by the salesOrders transform;
+    // can't reload from disk easily. If running challans standalone, ensure
+    // salesOrders is also in the run, or accept null sales_order_line_id
+    // with logged anomaly (which is the legitimate signal for the 3-of-4
+    // unresolvable soRefIds in current data).
   }
 }
 

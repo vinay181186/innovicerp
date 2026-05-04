@@ -1063,9 +1063,9 @@ Per ADR-015 #5:
 
 ---
 
-## Phase 6 Tables — Quality + Dispatch (T-038 partial: qc_processes master only)
+## Phase 6 Tables — Quality + Dispatch
 
-> **Status:** T-038 design from 2026-05-03. Approved by user; ADR-016 captures the decisions. Per-inspection records, NC register, and dispatch tables are out of T-038 scope — see "T-038 reframe" in ADR-016. T-039 brings `nc_register` + `delivery_challans` (legacy `dispatch_log` is doc_missing in the export).
+> **Status:** T-038 + T-039 complete (2026-05-03 / 2026-05-04). ADR-016 (T-038 master-only reframe) and ADR-017 (T-039 NC + delivery challans + doc_missing carve-out) capture the design decisions. Per-inspection record table is still deferred to T-040 (where workflow UX drives schema).
 
 Replaces legacy collection: `qcProcesses` (5 records — MIR / MCR / DIR / Coating Inspection / TPI). Legacy `qcAssignments` and `qcDocUploads` are doc_missing (collections were never written by the legacy app — see Run 1 export anomalies in `docs/MIGRATION-LOG.md`).
 
@@ -1093,7 +1093,7 @@ RLS:
 - `qc_processes_company_read` (any role)
 - `qc_processes_manager_write` (admin/manager only)
 
-### Phase 6 Triggers
+### Phase 6 Triggers (T-038)
 
 `before update` on `qc_processes` → `set_updated_at()`. Same pattern as Phase 2/3/4/5 master/transactional tables.
 
@@ -1104,6 +1104,136 @@ RLS:
 - [x] Transform layer: 1 new transform (`migration/transforms/qc-processes.ts`) with status normalisation + numeric coercion
 - [x] Load: extend `migration/load.ts` with QC_PROCESS_MAPPER + ALL_TABLES entry
 - [x] Validate: minimal `migration/validate-phase6.ts` (extended in T-039 with NC + dispatch tables)
+- [x] Update SCHEMA.md "Migration History" with the new migration filenames
+
+### Phase 6 Tables — NC + Dispatch (T-039)
+
+Replaces legacy collections: `ncRegister` (3 records — NC-0001/0002/0003) + `challans` (4 records — DC-00001/00001-02/00001-03/00002). Legacy `dispatchLog`, `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues` are all `doc_missing` and intentionally not migrated per ADR-017 #1.
+
+Spec source: `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. Key references: NC create `_addManualNC` (line 22565), NC dispose `_disposeNC` (line 22618), NC filters / status enum (line 22555-22556), DC create `printChallan` (line 26133).
+
+#### `nc_register`
+
+Per-NC events. Auto-created when QC rejects parts (legacy `_autoCreateNC` line 22469) or manually filed via the Report NC button. Disposition workflow: `pending` → `disposed` → `closed` (Scrap / Use As Is / Return to Vendor / Make Fresh paths) OR `pending` → `disposed` (Rework picked) → `rework_done` → `closed`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business unique key — legacy `ncNo` (e.g. NC-0001) |
+| `nc_date` | `date` | not null |
+| `job_card_id` | `uuid` | not null, FK → `job_cards`. NC always links to a JC in legacy |
+| `jc_op_id` | `uuid` | nullable, FK → `jc_ops` (`on delete set null`). Resolved via composite `(jcNo, opSeq)` |
+| `op_seq` | `integer` | nullable. Denormalised from legacy `opSeq` for fast filter |
+| `operation_text` | `text` | text snapshot of `jc_ops.operation` (e.g. `DIR`) |
+| `qc_operation_text` | `text` | legacy `qcOperation` field |
+| `item_id` | `uuid` | not null, FK → `items` |
+| `item_code_text` | `text` | not null. Snapshot |
+| `item_name_text` | `text` | snapshot |
+| `so_code_text` | `text` | denormalised SO ref text. No FK — indirect path is JC → SO line |
+| `machine_code_text` | `text` | legacy `machineId` (often `QC` which isn't a real machine code) |
+| `rejected_qty` | `numeric(12,2)` | not null. CHECK > 0 |
+| `reason_category` | enum `nc_reason_category` | not null, default `other`. 7 values: dimensional / surface / material / process / operator_error / machine_fault / other |
+| `reason` | `text` | free-text problem description |
+| `disposition` | enum `nc_disposition` | nullable. 5 values: rework / scrap / use_as_is / return_to_vendor / make_fresh. NULL when status=`pending` |
+| `disposition_date` | `date` | nullable |
+| `disposition_by_text` | `text` | nullable. Name string snapshot (no operator FK per ADR-017 #3) |
+| `disposition_remarks` | `text` | nullable |
+| `rework_jc_code_text` | `text` | nullable. Legacy `reworkJcNo` — text snapshot only |
+| `rework_op_seq` | `integer` | nullable |
+| `rework_done_qty` | `numeric(12,2)` | nullable. CHECK >= 0 when set |
+| `scrap_cost` | `numeric(12,2)` | not null, default 0 |
+| `status` | enum `nc_status` | not null, default `pending`. 4 values: pending / disposed / rework_done / closed |
+| `reported_by_text` | `text` | nullable |
+| `time_logged` | `timestamptz` | nullable |
+| audit + `deleted_at` | (audit pattern) | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+- `(company_id, job_card_id) where deleted_at is null`
+- `(company_id, nc_date) where deleted_at is null`
+- `(jc_op_id) where jc_op_id is not null`
+- `(item_id)`
+
+CHECK constraints:
+- `nc_register_rejected_qty_positive` — `rejected_qty > 0`
+- `nc_register_rework_done_qty_check` — `rework_done_qty IS NULL OR rework_done_qty >= 0`
+
+RLS:
+- `nc_register_company_read` (any role)
+- `nc_register_manager_write` (admin/manager)
+
+#### `delivery_challans` (header)
+
+Outbound DC against a JW PO — material sent to vendor for outsource processing (returnable). Legacy `printChallan` (line 26133) creates these against `purchaseOrders` rows whose `poType='jw'`. Header→lines split mirrors PO/SO/JW pattern.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `code` | `text` | not null. Business unique key — legacy `dcNo` (e.g. DC-00001, DC-00001-02) |
+| `dc_date` | `date` | not null |
+| `purchase_order_id` | `uuid` | nullable, FK → `purchase_orders` (`on delete set null`). NULL when legacy `poNo` references a PO never migrated (DC-00002 → IN-PO-00002 is the current example) |
+| `po_code_text` | `text` | not null. Durable poNo snapshot |
+| `vendor_id` | `uuid` | not null, FK → `vendors` |
+| `vendor_code_text` | `text` | not null. Snapshot |
+| `sales_order_line_id` | `uuid` | nullable, FK → `sales_order_lines` (`on delete set null`). Resolves legacy short-id `soRefId` via the in-run `idMap['sales_order_lines']` |
+| `so_ref_text` | `text` | nullable. Original soRefId string preserved even when FK is NULL |
+| `transport` | `text` | nullable |
+| `status` | enum `dc_status` | not null, default `issued`. 3 values: issued / received / cancelled. Only `issued` is exhibited; the other two are forward states |
+| audit + `deleted_at` | | |
+
+Indexes:
+- `unique (company_id, code) where deleted_at is null`
+- `(company_id, dc_date) where deleted_at is null`
+- `(company_id, purchase_order_id) where deleted_at is null`
+- `(company_id, status) where deleted_at is null`
+- `(sales_order_line_id) where sales_order_line_id is not null`
+
+RLS:
+- `delivery_challans_company_read` (any role)
+- `delivery_challans_manager_write` (admin/manager)
+
+#### `delivery_challan_lines`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `uuid` | PK |
+| `company_id` | `uuid` | not null, FK |
+| `delivery_challan_id` | `uuid` | not null, FK → `delivery_challans` (`on delete cascade`) |
+| `line_no` | `integer` | not null. 1-indexed within DC, auto-assigned in source order |
+| `item_id` | `uuid` | not null, FK → `items` |
+| `item_code_text` | `text` | not null. Snapshot |
+| `item_name_text` | `text` | nullable. Snapshot |
+| `qty` | `numeric(12,2)` | not null. CHECK > 0 |
+| `uom` | enum `uom` | not null. All current rows are `NOS` |
+| `material_text` | `text` | nullable. Legacy line `material` field |
+| `dc_remarks` | `text` | nullable |
+| audit + `deleted_at` | | |
+
+Indexes:
+- `unique (delivery_challan_id, line_no) where deleted_at is null`
+- `(item_id)`
+
+CHECK: `delivery_challan_lines_qty_positive` — `qty > 0`.
+
+RLS:
+- `delivery_challan_lines_company_read` (any role)
+- `delivery_challan_lines_manager_write` (admin/manager)
+
+### Phase 6 Triggers (T-039)
+
+`before update` on `nc_register`, `delivery_challans`, `delivery_challan_lines` → `set_updated_at()`. Same helper as Phase 2/3/4/5.
+
+### Phase 6 Action items (T-039 implementation, single chunk)
+
+- [x] 4 new enums in `packages/shared/src/enums/` (`nc_status`, `nc_disposition`, `nc_reason_category`, `dc_status`) + index.ts wiring
+- [x] Drizzle schema in `apps/api/src/db/schema.ts` — 3 new tables + 4 new pgEnum exports
+- [x] Migration: `0011_phase6_nc_dispatch.sql` (drizzle-gen) + `0012_phase6_nc_dispatch_triggers.sql` (hand-written), applied via `apply-sql.ts`
+- [x] Transform layer: 2 new transforms (`migration/transforms/nc-register.ts` + `migration/transforms/delivery-challans.ts`) with 16 unit tests
+- [x] Load: extend `migration/load.ts` with 3 mappers + TABLE_CONFIGS + ALL_TABLES entries
+- [x] Validate: extend `migration/validate-phase6.ts` to cover 4 tables + 16 FK orphan checks
 - [x] Update SCHEMA.md "Migration History" with the new migration filenames
 
 ---
@@ -1129,3 +1259,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-05-01 | `0007_phase4_sales_chain.sql` (drizzle-gen) + `0008_phase4_jc_alters.sql` (hand-written) + `0009_phase4_triggers.sql` (hand-written) | Phase 4 sales chain (T-029b) — 4 tables (sales_orders, sales_order_lines, job_work_orders, job_work_order_lines), 2 enums (so_type, so_status — shared between SO and JW), BEFORE UPDATE triggers. Plus job_cards alters: rename `source_jw_id`→`source_jw_line_id`, add 2 FKs (ON DELETE SET NULL), add CHECK `num_nonnulls(...) <= 1`. FK names initially custom; renamed in-place to Drizzle convention via one-shot SQL; snapshot patched to match. No drift on `drizzle-kit generate`. 73/73 api tests still green |
 | 2026-05-02 | `0009_phase5_procurement.sql` (drizzle-gen) + `0010_phase5_triggers.sql` (hand-written) + `0011_phase5_views.sql` (hand-written) | Phase 5 procurement storage (T-035b) — 5 new tables (purchase_requests, purchase_orders, purchase_order_lines, goods_receipt_notes, goods_receipt_note_lines, store_transactions), 6 new enums (po_status, pr_status, po_type, grn_qc_status, store_txn_type, store_txn_source_type). Plus jc_ops adds 2 FK columns (outsource_pr_id → purchase_requests, outsource_po_line_id → purchase_order_lines) — legacy text columns (outsource_pr_no, outsource_po_no) kept until T-035c backfills then drops. BEFORE UPDATE triggers on the 5 new tables (store_transactions is append-only — no trigger). v_item_stock view aggregates per-item on-hand qty from store_transactions (ADR-015 #11). RLS: standard company-isolation + manager-write on all 5 tables; reserved goods_receipt_note_lines_qc_update policy for the QC role (no qc-role user yet — forward-defined for Phase 6). Applied via `apply-sql.ts` runner because the journal has an orphan `0008_verify_no_drift` entry from a stale run that breaks `drizzle-kit migrate`. No drift on `drizzle-kit generate`. 120/120 api tests still green |
 | 2026-05-03 | `0010_phase6_qc_processes.sql` (drizzle-gen) + `0011_phase6_qc_processes_trigger.sql` (hand-written) | Phase 6 quality master (T-038) — 1 new master table (qc_processes), 0 new enums. BEFORE UPDATE trigger via the standard `set_updated_at()` helper. RLS standard pair (company_read + manager_write). Applied via `apply-sql.ts` per the Phase 5 journal-orphan workaround. No FK alter on jc_ops per ADR-016 #3 (existing JC ops keep their text snapshot in `op.operation`). Per-inspection record table deferred to T-040. 175/175 api tests still green |
+| 2026-05-04 | `0011_phase6_nc_dispatch.sql` (drizzle-gen) + `0012_phase6_nc_dispatch_triggers.sql` (hand-written) | Phase 6 NC + dispatch (T-039) — 3 new tables (nc_register, delivery_challans, delivery_challan_lines), 4 new enums (nc_status, nc_disposition, nc_reason_category, dc_status). nc_register has hard FKs to job_cards + items + nullable jc_op_id; delivery_challans has nullable purchase_order_id + sales_order_line_id with text-snapshot durable columns to absorb legacy DC-00002 (poNo unmigrated) + 2-of-4 unresolvable soRefIds (ADR-017 #5). BEFORE UPDATE triggers on all 3 tables. Standard RLS pair (company_read + manager_write). Applied via `apply-sql.ts`. 175/175 api tests still green; migration suite 137/137 (was 121, +16 — 9 NC + 7 DC) |
