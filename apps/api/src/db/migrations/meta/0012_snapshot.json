@@ -2010,18 +2010,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "outsource_pr_no": {
-          "name": "outsource_pr_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outsource_po_no": {
-          "name": "outsource_po_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "outsource_pr_id": {
           "name": "outsource_pr_id",
           "type": "uuid",

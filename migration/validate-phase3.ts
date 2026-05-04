@@ -106,8 +106,6 @@ const JC_OP_MAPPER: Mapper<BaseRow> = (row) => ({
   outsource_vendor_text: row['outsourceVendorText'],
   outsource_cost: row['outsourceCost'],
   outsource_status: row['outsourceStatus'],
-  outsource_pr_no: row['outsourcePrNo'],
-  outsource_po_no: row['outsourcePoNo'],
   outsource_dc_no: row['outsourceDcNo'],
   outsource_sent_qty: row['outsourceSentQty'],
   outsource_sent_date: row['outsourceSentDate'],

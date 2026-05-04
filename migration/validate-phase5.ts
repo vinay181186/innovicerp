@@ -209,43 +209,17 @@ interface OrphanCheck {
   status: 'OK' | 'ORPHANS_FOUND';
 }
 
-type OutsourceJcOpStatus =
-  | 'verified_both'
-  | 'verified_pr_only'
-  | 'verified_po_only'
-  | 'pr_fk_missing'
-  | 'po_fk_missing'
-  | 'pr_code_mismatch'
-  | 'po_code_mismatch'
-  | 'no_legacy_refs';
-
-interface OutsourceJcOpRow {
-  jcOpId: string;
-  jcCode: string;
-  opSeq: number;
-  status: OutsourceJcOpStatus;
-  legacyPrNo?: string;
-  legacyPoNo?: string;
-  resolvedPrCode?: string;
-  resolvedPoCode?: string;
-  actualPrId?: string | null;
-  actualPoLineId?: string | null;
-}
-
-interface OutsourceBackfillCheck {
-  jcOpsExamined: number;
-  verified: number;
-  fkIssues: OutsourceJcOpRow[];
-  rows: OutsourceJcOpRow[];
-  status: 'OK' | 'FK_ISSUES_FOUND';
-}
+// jc_op outsource backfill cross-check removed in Phase 5 cleanup —
+// the legacy text columns it cross-checked against (outsource_pr_no /
+// outsource_po_no) were dropped by 0014_phase5_jc_ops_drop_legacy.sql.
+// The orphan FK checks on outsource_pr_id + outsource_po_line_id (in
+// FK_CHECKS) are the proper post-drop verification.
 
 interface ValidationReport {
   generatedAt: string;
   companyId: string;
   tables: TableValidation[];
   orphanChecks: OrphanCheck[];
-  outsourceBackfill: OutsourceBackfillCheck;
   overallStatus: 'PASS' | 'FAIL';
   summary: string;
 }
@@ -426,115 +400,6 @@ async function checkOrphans(): Promise<OrphanCheck[]> {
   return checks;
 }
 
-async function checkOutsourceBackfill(companyId: string): Promise<OutsourceBackfillCheck> {
-  const jcOps = (await rawSql`
-    SELECT
-      jo.id,
-      jc.code AS jc_code,
-      jo.op_seq,
-      jo.outsource_pr_no,
-      jo.outsource_po_no,
-      jo.outsource_pr_id,
-      jo.outsource_po_line_id,
-      pr.code AS resolved_pr_code,
-      po.code AS resolved_po_code
-    FROM public.jc_ops jo
-    JOIN public.job_cards jc ON jc.id = jo.job_card_id
-    LEFT JOIN public.purchase_requests pr ON pr.id = jo.outsource_pr_id
-    LEFT JOIN public.purchase_order_lines pol ON pol.id = jo.outsource_po_line_id
-    LEFT JOIN public.purchase_orders po ON po.id = pol.purchase_order_id
-    WHERE jo.company_id = ${companyId}::uuid AND jo.deleted_at IS NULL
-      AND (jo.outsource_pr_no IS NOT NULL OR jo.outsource_po_no IS NOT NULL)
-  `) as unknown as Array<{
-    id: string;
-    jc_code: string;
-    op_seq: number;
-    outsource_pr_no: string | null;
-    outsource_po_no: string | null;
-    outsource_pr_id: string | null;
-    outsource_po_line_id: string | null;
-    resolved_pr_code: string | null;
-    resolved_po_code: string | null;
-  }>;
-
-  const rows: OutsourceJcOpRow[] = [];
-  const fkIssues: OutsourceJcOpRow[] = [];
-  let verified = 0;
-
-  for (const jo of jcOps) {
-    const hasLegacyPr = jo.outsource_pr_no !== null;
-    const hasLegacyPo = jo.outsource_po_no !== null;
-
-    if (!hasLegacyPr && !hasLegacyPo) {
-      // Filtered by WHERE; defensive.
-      const r: OutsourceJcOpRow = {
-        jcOpId: jo.id,
-        jcCode: jo.jc_code,
-        opSeq: jo.op_seq,
-        status: 'no_legacy_refs',
-      };
-      rows.push(r);
-      continue;
-    }
-
-    const prFkOk = !hasLegacyPr || jo.outsource_pr_id !== null;
-    const poFkOk = !hasLegacyPo || jo.outsource_po_line_id !== null;
-    const prCodeOk =
-      !hasLegacyPr || (jo.resolved_pr_code !== null && jo.resolved_pr_code === jo.outsource_pr_no);
-    const poCodeOk =
-      !hasLegacyPo || (jo.resolved_po_code !== null && jo.resolved_po_code === jo.outsource_po_no);
-
-    if (prFkOk && poFkOk && prCodeOk && poCodeOk) {
-      verified++;
-      rows.push({
-        jcOpId: jo.id,
-        jcCode: jo.jc_code,
-        opSeq: jo.op_seq,
-        status:
-          hasLegacyPr && hasLegacyPo
-            ? 'verified_both'
-            : hasLegacyPr
-              ? 'verified_pr_only'
-              : 'verified_po_only',
-        ...(jo.outsource_pr_no !== null ? { legacyPrNo: jo.outsource_pr_no } : {}),
-        ...(jo.outsource_po_no !== null ? { legacyPoNo: jo.outsource_po_no } : {}),
-        ...(jo.resolved_pr_code !== null ? { resolvedPrCode: jo.resolved_pr_code } : {}),
-        ...(jo.resolved_po_code !== null ? { resolvedPoCode: jo.resolved_po_code } : {}),
-      });
-      continue;
-    }
-
-    let status: OutsourceJcOpStatus = 'verified_both';
-    if (!prFkOk) status = 'pr_fk_missing';
-    else if (!poFkOk) status = 'po_fk_missing';
-    else if (!prCodeOk) status = 'pr_code_mismatch';
-    else if (!poCodeOk) status = 'po_code_mismatch';
-
-    const r: OutsourceJcOpRow = {
-      jcOpId: jo.id,
-      jcCode: jo.jc_code,
-      opSeq: jo.op_seq,
-      status,
-      ...(jo.outsource_pr_no !== null ? { legacyPrNo: jo.outsource_pr_no } : {}),
-      ...(jo.outsource_po_no !== null ? { legacyPoNo: jo.outsource_po_no } : {}),
-      ...(jo.resolved_pr_code !== null ? { resolvedPrCode: jo.resolved_pr_code } : {}),
-      ...(jo.resolved_po_code !== null ? { resolvedPoCode: jo.resolved_po_code } : {}),
-      actualPrId: jo.outsource_pr_id,
-      actualPoLineId: jo.outsource_po_line_id,
-    };
-    rows.push(r);
-    fkIssues.push(r);
-  }
-
-  return {
-    jcOpsExamined: jcOps.length,
-    verified,
-    fkIssues,
-    rows,
-    status: fkIssues.length === 0 ? 'OK' : 'FK_ISSUES_FOUND',
-  };
-}
-
 async function main(): Promise<void> {
   const repoRoot = resolve(import.meta.dirname, '..');
   const transformDir = join(repoRoot, 'migration', 'transform');
@@ -567,33 +432,23 @@ async function main(): Promise<void> {
     log('info', 'orphan_check', { ...c });
   }
 
-  const outsourceBackfill = await checkOutsourceBackfill(companyId);
-  log('info', 'outsource_backfill_check', {
-    examined: outsourceBackfill.jcOpsExamined,
-    verified: outsourceBackfill.verified,
-    fkIssues: outsourceBackfill.fkIssues.length,
-    status: outsourceBackfill.status,
-  });
-
   const tableFails = tableResults.filter(
     (r) => r.diffStatus === 'MISMATCH' || r.countStatus === 'MISMATCH',
   );
   const orphanFails = orphanChecks.filter((c) => c.status === 'ORPHANS_FOUND');
-  const outsourceFail = outsourceBackfill.status !== 'OK';
   const overall: 'PASS' | 'FAIL' =
-    tableFails.length === 0 && orphanFails.length === 0 && !outsourceFail ? 'PASS' : 'FAIL';
+    tableFails.length === 0 && orphanFails.length === 0 ? 'PASS' : 'FAIL';
 
   const summary =
     overall === 'PASS'
-      ? `Phase 5 procurement validated: ${TABLES.length}/${TABLES.length} tables match transform; 0 orphan FKs across ${FK_CHECKS.length} checks; ${outsourceBackfill.verified}/${outsourceBackfill.jcOpsExamined} jc_op outsource FKs verified`
-      : `Phase 5 validation FAILED: ${tableFails.length} table mismatch(es), ${orphanFails.length} orphan FK group(s), ${outsourceBackfill.fkIssues.length} jc_op outsource FK issue(s)`;
+      ? `Phase 5 procurement validated: ${TABLES.length}/${TABLES.length} tables match transform; 0 orphan FKs across ${FK_CHECKS.length} checks (incl. outsource_pr_id + outsource_po_line_id post-drop)`
+      : `Phase 5 validation FAILED: ${tableFails.length} table mismatch(es), ${orphanFails.length} orphan FK group(s)`;
 
   const report: ValidationReport = {
     generatedAt: new Date().toISOString(),
     companyId,
     tables: tableResults,
     orphanChecks,
-    outsourceBackfill,
     overallStatus: overall,
     summary,
   };

@@ -678,10 +678,6 @@ export const jcOps = pgTable(
     outsourceVendorText: text('outsource_vendor_text'),
     outsourceCost: numeric('outsource_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     outsourceStatus: outsourceStatusEnum('outsource_status'),
-    // Legacy text refs (pre-Phase-5). Will be backfilled into the FK
-    // columns below in T-035c, then dropped in a Phase 5 cleanup migration.
-    outsourcePrNo: text('outsource_pr_no'),
-    outsourcePoNo: text('outsource_po_no'),
     // Phase 5 FK upgrade per ADR-015 #5. Forward-ref to the procurement
     // tables defined later in this file. These coexist with the text
     // columns above until T-035c finishes the backfill.

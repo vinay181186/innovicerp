@@ -27,10 +27,6 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type AuditShape, bulkLoad, type BulkLoadConfig } from './load/bulk-loader';
 import { closeDb, rawSql } from './load/db';
-import {
-  type OutsourceBackfillResult,
-  runJcOpOutsourceBackfill,
-} from './load/jc-op-outsource-backfill';
 import { type BackfillResult, runJcSourceBackfill } from './load/jc-source-backfill';
 import type { IdMapPersisted, LoadResult, UserLoadOutcome } from './load/types';
 import { loadUsers } from './load/users-loader';
@@ -182,8 +178,6 @@ const JC_OP_MAPPER: Mapper = (row) => ({
   outsource_vendor_text: row['outsourceVendorText'],
   outsource_cost: row['outsourceCost'],
   outsource_status: row['outsourceStatus'],
-  outsource_pr_no: row['outsourcePrNo'],
-  outsource_po_no: row['outsourcePoNo'],
   outsource_dc_no: row['outsourceDcNo'],
   outsource_sent_qty: row['outsourceSentQty'],
   outsource_sent_date: row['outsourceSentDate'],
@@ -544,8 +538,9 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
 // goods_receipt_notes (depends on PO) → goods_receipt_note_lines (depends on
 // GRN + PO_lines) → store_transactions (depends on items). The JC source FK
 // backfill runs after the SO/JW line tables are loaded — see
-// runJcSourceBackfill. The jc_op outsource backfill runs after the PO + PO
-// line tables are loaded — see runJcOpOutsourceBackfill.
+// runJcSourceBackfill. The legacy jc_op outsource backfill from T-035c
+// already wrote outsource_pr_id + outsource_po_line_id; the legacy text
+// columns it sourced from were dropped by 0014_phase5_jc_ops_drop_legacy.
 const ALL_TABLES = [
   'users',
   'clients',
@@ -740,30 +735,12 @@ async function main(): Promise<void> {
     );
   }
 
-  // Phase B'' — jc_op outsource FK backfill (T-035c). Runs only when the
-  // procurement tables are in the target set; idempotent on re-runs.
-  let outsourceBackfill: OutsourceBackfillResult | null = null;
-  const outsourceTrigger =
-    targets.includes('purchase_requests') || targets.includes('purchase_order_lines');
-  if (outsourceTrigger) {
-    outsourceBackfill = await runJcOpOutsourceBackfill({
-      companyId: seed.companyId,
-      adminUserId: seed.adminUserId,
-      dryRun,
-    });
-    log('info', 'jc_op_outsource_backfill', {
-      examined: outsourceBackfill.jcOpsExamined,
-      alreadyBackfilled: outsourceBackfill.jcOpsAlreadyBackfilled,
-      backfilledPr: outsourceBackfill.backfilledPr,
-      backfilledPoLine: outsourceBackfill.backfilledPoLine,
-      unresolved: outsourceBackfill.unresolved.length,
-      dryRun,
-    });
-    writeFileSync(
-      join(loadDir, '_jc_op_outsource_backfill.json'),
-      JSON.stringify(outsourceBackfill, null, 2),
-    );
-  }
+  // Phase B'' deleted — the legacy jc_op outsource FK backfill (T-035c) ran
+  // 2026-05-02, wrote outsource_pr_id + outsource_po_line_id, then the
+  // legacy text columns it sourced from were dropped by
+  // 0014_phase5_jc_ops_drop_legacy.sql. The backfill script lived at
+  // migration/load/jc-op-outsource-backfill.ts and is no longer in the tree.
+  // Historical record: migration/load-output/_jc_op_outsource_backfill.json.
 
   // Phase C — count-only validation. Field-level diff comes from validate-phaseN.
   const validation: ValidationEntry[] = [];
@@ -806,7 +783,6 @@ async function main(): Promise<void> {
         results: loadResults,
         userOutcomes: userOutcomes.length > 0 ? userOutcomes : undefined,
         jcSourceBackfill: backfill,
-        jcOpOutsourceBackfill: outsourceBackfill,
       },
       null,
       2,
