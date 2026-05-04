@@ -28,10 +28,17 @@ beforeAll(async () => {
 });
 
 describe('reports service', () => {
-  it('listReports returns 3 registered reports with stable shape', () => {
+  it('listReports returns 6 registered reports with stable shape', () => {
     const result = service.listReports();
     const slugs = result.reports.map((r) => r.slug).sort();
-    expect(slugs).toEqual(['daily-op-log', 'nc-summary-by-reason', 'open-po-ageing']);
+    expect(slugs).toEqual([
+      'daily-op-log',
+      'items-on-hand',
+      'jc-status-summary',
+      'nc-summary-by-reason',
+      'open-po-ageing',
+      'operator-productivity',
+    ]);
     for (const def of result.reports) {
       expect(def.title.length).toBeGreaterThan(0);
       expect(def.group.length).toBeGreaterThan(0);
@@ -98,6 +105,43 @@ describe('reports service', () => {
     // Invalid status value falls back to the default 4-status whitelist.
     const fallback = await service.runReport('open-po-ageing', { status: 'invalid' }, admin);
     expect(Array.isArray(fallback.rows)).toBe(true);
+  });
+
+  it('runReport "items-on-hand" returns one row per item incl. zero-stock items', async () => {
+    const result = await service.runReport('items-on-hand', {}, admin);
+    expect(result.slug).toBe('items-on-hand');
+    expect(result.rowCount).toBeGreaterThan(0);
+    // Items master has 352 migrated rows; LIMIT 1000 caps it.
+    expect(result.rowCount).toBeLessThanOrEqual(1000);
+    for (const row of result.rows) {
+      expect(typeof row['code']).toBe('string');
+      expect(typeof row['on_hand_qty']).toBe('number');
+      // COALESCE → 0 means no negative on_hand from missing ledger.
+      expect(Number(row['on_hand_qty'])).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('runReport "operator-productivity" aggregates per-operator + computes reject_pct', async () => {
+    const result = await service.runReport('operator-productivity', {}, admin);
+    expect(result.slug).toBe('operator-productivity');
+    for (const row of result.rows) {
+      expect(typeof row['operator_name']).toBe('string');
+      expect(Number(row['log_count'])).toBeGreaterThan(0);
+      const rejectPct = Number(row['reject_pct']);
+      expect(rejectPct).toBeGreaterThanOrEqual(0);
+      expect(rejectPct).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('runReport "jc-status-summary" pivots count by computed_status × item', async () => {
+    const result = await service.runReport('jc-status-summary', {}, admin);
+    expect(result.slug).toBe('jc-status-summary');
+    expect(result.rowCount).toBeGreaterThanOrEqual(0);
+    const validStatuses = ['open', 'qc_pending', 'complete', 'closed', 'no_ops'];
+    for (const row of result.rows) {
+      expect(validStatuses).toContain(row['computed_status']);
+      expect(Number(row['jc_count'])).toBeGreaterThan(0);
+    }
   });
 
   it('runReport throws NotFoundError for unknown slug', async () => {

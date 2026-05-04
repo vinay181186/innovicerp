@@ -10,8 +10,11 @@
 
 import type { DbTransaction } from '../../db/with-user-context';
 import { dailyOpLogReport } from './definitions/daily-op-log';
+import { itemsOnHandReport } from './definitions/items-on-hand';
+import { jcStatusSummaryReport } from './definitions/jc-status-summary';
 import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
+import { operatorProductivityReport } from './definitions/operator-productivity';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -34,6 +37,9 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [dailyOpLogReport.definition.slug]: dailyOpLogReport,
   [ncSummaryByReasonReport.definition.slug]: ncSummaryByReasonReport,
   [openPoAgeingReport.definition.slug]: openPoAgeingReport,
+  [itemsOnHandReport.definition.slug]: itemsOnHandReport,
+  [operatorProductivityReport.definition.slug]: operatorProductivityReport,
+  [jcStatusSummaryReport.definition.slug]: jcStatusSummaryReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {
