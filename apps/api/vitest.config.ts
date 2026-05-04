@@ -11,5 +11,12 @@ export default defineConfig({
     // signal of N+1 in the service code, not a reason to keep raising this.
     testTimeout: 20000,
     hookTimeout: 20000,
+    // Global setup wipes test-prefixed rows from the dev DB before any test
+    // runs. Killed test runs (Ctrl-C, vitest crashes) leave afterAll-managed
+    // cleanup unfired, accumulating cruft like `T018-A1` vendor codes that
+    // then collide with the next run's beforeAll inserts. Phase 2 carry-over
+    // notes a dedicated CI Supabase project as the real fix; until then this
+    // sweep keeps the dev-DB tests reliably runnable.
+    globalSetup: ['./test/global-setup.ts'],
   },
 });
