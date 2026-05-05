@@ -18,6 +18,8 @@ const ALL_KINDS = [
   'jc_ops_awaiting_qc',
   'ncs_pending_dispose',
   'grn_lines_pending_qc',
+  'prs_pending_conversion',
+  'ops_in_progress',
 ] as const;
 
 let admin: AuthContext;
@@ -36,10 +38,10 @@ beforeAll(async () => {
 });
 
 describe('dashboard service', () => {
-  it('admin gets all 5 tiles with the correct kinds + shape', async () => {
+  it('admin gets all 7 tiles with the correct kinds + shape', async () => {
     const result = await service.getDashboardKpis(admin);
     expect(result.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(result.tiles).toHaveLength(5);
+    expect(result.tiles).toHaveLength(7);
     const kinds = result.tiles.map((t) => t.kind).sort();
     expect(kinds).toEqual([...ALL_KINDS].sort());
 
@@ -51,7 +53,7 @@ describe('dashboard service', () => {
     }
   });
 
-  it('manager sees the same 5 tiles as admin', async () => {
+  it('manager sees the same 7 tiles as admin', async () => {
     const manager: AuthContext = { ...admin, role: 'manager' };
     const result = await service.getDashboardKpis(manager);
     expect(result.tiles.map((t) => t.kind).sort()).toEqual([...ALL_KINDS].sort());
@@ -60,28 +62,44 @@ describe('dashboard service', () => {
   it('viewer keeps full visibility (read-only audit role)', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     const result = await service.getDashboardKpis(viewer);
-    expect(result.tiles).toHaveLength(5);
+    expect(result.tiles).toHaveLength(7);
   });
 
-  it('operator only sees jc_ops_awaiting_qc + ncs_pending_dispose', async () => {
+  it('operator sees jc_ops + NCs + ops_in_progress (3 tiles)', async () => {
     const operator: AuthContext = { ...admin, role: 'operator' };
     const result = await service.getDashboardKpis(operator);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual(['jc_ops_awaiting_qc', 'ncs_pending_dispose']);
+    expect(kinds).toEqual(['jc_ops_awaiting_qc', 'ncs_pending_dispose', 'ops_in_progress']);
   });
 
-  it('qc sees QC-relevant tiles (jc-ops, NCs, GRN-lines)', async () => {
+  it('qc sees jc-ops + NCs + GRN-lines + ops_in_progress (4 tiles)', async () => {
     const qc: AuthContext = { ...admin, role: 'qc' };
     const result = await service.getDashboardKpis(qc);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual(['grn_lines_pending_qc', 'jc_ops_awaiting_qc', 'ncs_pending_dispose']);
+    expect(kinds).toEqual([
+      'grn_lines_pending_qc',
+      'jc_ops_awaiting_qc',
+      'ncs_pending_dispose',
+      'ops_in_progress',
+    ]);
   });
 
-  it('procurement sees PO + GRN lines pending QC only', async () => {
+  it('procurement sees POs + GRN-lines + PRs pending PO (3 tiles)', async () => {
     const proc: AuthContext = { ...admin, role: 'procurement' };
     const result = await service.getDashboardKpis(proc);
     const kinds = result.tiles.map((t) => t.kind).sort();
-    expect(kinds).toEqual(['grn_lines_pending_qc', 'open_purchase_orders']);
+    expect(kinds).toEqual([
+      'grn_lines_pending_qc',
+      'open_purchase_orders',
+      'prs_pending_conversion',
+    ]);
+  });
+
+  it('ops_in_progress tile severity stays at info or ok (state, not backlog)', async () => {
+    const result = await service.getDashboardKpis(admin);
+    const opsTile = result.tiles.find((t) => t.kind === 'ops_in_progress');
+    expect(opsTile).toBeDefined();
+    expect(['ok', 'info']).toContain(opsTile?.severity);
   });
 
   it('dispatch sees open sales orders only (until dispatch-specific tiles land)', async () => {

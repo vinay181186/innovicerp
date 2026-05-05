@@ -55,6 +55,6 @@ describe('dashboard routes', () => {
     expect(body).toHaveProperty('generatedAt');
     expect(body).toHaveProperty('tiles');
     expect(Array.isArray(body.tiles)).toBe(true);
-    expect(body.tiles).toHaveLength(5);
+    expect(body.tiles).toHaveLength(7);
   });
 });

@@ -14,6 +14,9 @@ export const dashboardTileKindSchema = z.enum([
   'jc_ops_awaiting_qc',
   'ncs_pending_dispose',
   'grn_lines_pending_qc',
+  // T-043 follow-on — role-coverage tiles for procurement + operator/qc.
+  'prs_pending_conversion',
+  'ops_in_progress',
 ]);
 export type DashboardTileKind = z.infer<typeof dashboardTileKindSchema>;
 

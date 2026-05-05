@@ -1,6 +1,6 @@
-// Dashboard KPIs service (T-041c + T-043 role filter).
+// Dashboard KPIs service (T-041c + T-043 role filter + 2 follow-on tiles).
 //
-// Runs 5 aggregate queries in parallel and assembles the tile response.
+// Runs 7 aggregate queries in parallel and assembles the tile response.
 // All queries are scoped to the user's company via withUserContext (RLS
 // enforces it at the DB layer; service-level scope is defensive).
 //
@@ -36,6 +36,8 @@ const TILE_VISIBILITY: Record<DashboardTileKind, readonly UserRole[]> = {
   jc_ops_awaiting_qc: ['admin', 'manager', 'viewer', 'operator', 'qc'],
   ncs_pending_dispose: ['admin', 'manager', 'viewer', 'operator', 'qc'],
   grn_lines_pending_qc: ['admin', 'manager', 'viewer', 'qc', 'procurement'],
+  prs_pending_conversion: ['admin', 'manager', 'viewer', 'procurement'],
+  ops_in_progress: ['admin', 'manager', 'viewer', 'operator', 'qc'],
 };
 
 function isTileVisible(kind: DashboardTileKind, role: UserRole): boolean {
@@ -63,25 +65,26 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const [openSos, openPos, jcQcAwait, ncsPending, grnQcPending] = await Promise.all([
-      // Open sales orders — status='open'
-      tx.execute(sql`
+    const [openSos, openPos, jcQcAwait, ncsPending, grnQcPending, prsPending, opsRunning] =
+      await Promise.all([
+        // Open sales orders — status='open'
+        tx.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM public.sales_orders
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
           AND status = 'open'
       `),
-      // Open purchase orders — anything not closed/cancelled
-      tx.execute(sql`
+        // Open purchase orders — anything not closed/cancelled
+        tx.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM public.purchase_orders
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
           AND status IN ('draft', 'open', 'partial', 'qc_pending')
       `),
-      // JC ops awaiting QC — qc_required + qc_call_date set + not yet attended
-      tx.execute(sql`
+        // JC ops awaiting QC — qc_required + qc_call_date set + not yet attended
+        tx.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM public.jc_ops
         WHERE company_id = ${companyId}::uuid
@@ -90,8 +93,8 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
           AND qc_call_date IS NOT NULL
           AND qc_attended_date IS NULL
       `),
-      // NCs pending dispose — status='pending'; sum rejected_qty as secondary
-      tx.execute(sql`
+        // NCs pending dispose — status='pending'; sum rejected_qty as secondary
+        tx.execute(sql`
         SELECT
           COUNT(*)::int AS count,
           COALESCE(SUM(rejected_qty), 0)::text AS sum
@@ -100,15 +103,32 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
           AND deleted_at IS NULL
           AND status = 'pending'
       `),
-      // GRN lines awaiting QC — qc_status not completed
-      tx.execute(sql`
+        // GRN lines awaiting QC — qc_status not completed
+        tx.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM public.goods_receipt_note_lines
         WHERE company_id = ${companyId}::uuid
           AND deleted_at IS NULL
           AND qc_status IN ('pending', 'in_progress')
       `),
-    ]);
+        // PRs approved but not yet converted to a PO — procurement-relevant
+        tx.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM public.purchase_requests
+        WHERE company_id = ${companyId}::uuid
+          AND deleted_at IS NULL
+          AND status = 'approved'
+          AND po_id IS NULL
+      `),
+        // Op sessions currently running — operator/qc-relevant. running_ops
+        // has no soft-delete column (append-only state per ADR-011).
+        tx.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM public.running_ops
+        WHERE company_id = ${companyId}::uuid
+          AND status = 'running'
+      `),
+      ]);
 
     const openSoCount = Number((openSos as unknown as Array<{ count: number }>)[0]?.count ?? 0);
     const openPoCount = Number((openPos as unknown as Array<{ count: number }>)[0]?.count ?? 0);
@@ -117,6 +137,12 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
     const ncCount = Number(ncRow?.count ?? 0);
     const ncSumRejected = ncRow?.sum ?? '0';
     const grnQcCount = Number((grnQcPending as unknown as Array<{ count: number }>)[0]?.count ?? 0);
+    const prsPendingCount = Number(
+      (prsPending as unknown as Array<{ count: number }>)[0]?.count ?? 0,
+    );
+    const opsRunningCount = Number(
+      (opsRunning as unknown as Array<{ count: number }>)[0]?.count ?? 0,
+    );
 
     const tiles: DashboardTile[] = [
       {
@@ -164,6 +190,26 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
         severity: severityForCount(grnQcCount, 3, 10),
         route: '/goods-receipt-notes',
         hint: null,
+      },
+      {
+        kind: 'prs_pending_conversion',
+        title: 'PRs pending PO',
+        count: prsPendingCount,
+        secondary: null,
+        severity: severityForCount(prsPendingCount, 3, 10),
+        route: '/purchase-requests',
+        hint: 'approved PRs without a PO yet',
+      },
+      {
+        kind: 'ops_in_progress',
+        title: 'Ops in progress',
+        count: opsRunningCount,
+        secondary: null,
+        // ops in progress is a state to monitor, not a backlog — info-only,
+        // never escalates to warning/danger by count.
+        severity: opsRunningCount === 0 ? 'ok' : 'info',
+        route: '/op-entry/running',
+        hint: 'live operator sessions',
       },
     ];
 
