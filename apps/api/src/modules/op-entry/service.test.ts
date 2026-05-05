@@ -2,7 +2,7 @@ import { startOpInputSchema } from '@innovic/shared';
 import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jcOps, jobCards, opLog, runningOps, users } from '../../db/schema';
+import { activityLog, items, jcOps, jobCards, opLog, runningOps, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
 import * as service from './service';
@@ -91,6 +91,8 @@ async function teardownFixture(): Promise<void> {
   if (testItemId) await db.delete(items).where(eq(items.id, testItemId));
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  // Wipe audit-log entries the op-entry emitter wrote for these test JCs.
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 }
 
 beforeAll(async () => {
@@ -361,5 +363,77 @@ describe('op-entry service', () => {
     const filtered = await service.listRunningOps({ status: 'running' }, admin);
     expect(filtered.every((r) => r.status === 'running')).toBe(true);
     await db.delete(runningOps).where(eq(runningOps.jcOpId, testJcOpId));
+  });
+
+  it('emits OP_START / OP_STOP / OP_COMPLETE activity_log rows atomic with the mutation', async () => {
+    // Wipe any earlier audit rows for this JC so the assertion is precise.
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+
+    // Use a brand-new JC op so the test is isolated from other tests'
+    // running_ops + op_log residue.
+    const opRows = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: testJcId,
+        opSeq: 99,
+        machineId: null,
+        machineCodeText: 'AUD-M1',
+        operation: 'audit-op',
+        opType: 'process',
+        cycleTimeMin: '0.00',
+        qcRequired: false,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const auditOpId = opRows[0]!.id;
+
+    const running = await service.startOp(
+      {
+        jcOpId: auditOpId,
+        operatorName: 'Audit Op',
+        startDate: '2026-05-02',
+        startTime: '08:00',
+        shift: 'day',
+      },
+      admin,
+    );
+    await service.stopOp(running.id, admin);
+    await service.submitOpLog(
+      {
+        jcOpId: auditOpId,
+        qty: 1,
+        rejectQty: 0,
+        operatorName: 'Audit Op',
+        logDate: '2026-05-02',
+        shift: 'day',
+      },
+      admin,
+    );
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, testJcCode)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['OP_COMPLETE', 'OP_START', 'OP_STOP']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('Op');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(testJcCode);
+      expect(r.detail).toContain('Op #99');
+    }
+
+    // Cleanup so subsequent tests don't see the residue.
+    await db.delete(opLog).where(eq(opLog.jcOpId, auditOpId));
+    await db.delete(runningOps).where(eq(runningOps.jcOpId, auditOpId));
+    await db.delete(jcOps).where(eq(jcOps.id, auditOpId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
   });
 });

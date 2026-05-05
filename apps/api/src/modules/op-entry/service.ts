@@ -27,6 +27,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
   JcOpEnriched,
@@ -333,6 +334,30 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
     }
 
     const row = inserted[0]!;
+
+    // Audit: emit OP_COMPLETE keyed by JC code (legacy line 5459).
+    const jcMeta = await tx
+      .select({ code: jobCards.code, operation: jcOps.operation })
+      .from(jcOps)
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .where(eq(jcOps.id, input.jcOpId))
+      .limit(1);
+    const meta = jcMeta[0];
+    if (meta) {
+      const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+      await emitActivityLog(
+        tx,
+        {
+          action: 'OP_COMPLETE',
+          entity: 'Op',
+          detail: `${meta.code} Op #${op.opSeq} — ${input.qty} pcs${operatorPart}`,
+          refId: meta.code,
+        },
+        companyId,
+        user,
+      );
+    }
+
     return {
       id: row.id,
       jcOpId: row.jcOpId,
@@ -432,6 +457,22 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       .limit(1);
     const meta = jc[0]!;
 
+    // Audit: OP_START (legacy line 5532). machineCode comes from the lookup
+    // above; falls back to op.machineId if no machine row resolved.
+    const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+    const machinePart = machineCode ? ` on ${machineCode}` : '';
+    await emitActivityLog(
+      tx,
+      {
+        action: 'OP_START',
+        entity: 'Op',
+        detail: `${meta.code} Op #${meta.opSeq} — Started${machinePart}${operatorPart}`,
+        refId: meta.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       id: row.id,
       jcOpId: row.jcOpId,
@@ -494,6 +535,20 @@ export async function stopOp(runningOpId: string, user: AuthContext): Promise<Ru
         .limit(1);
       machineCode = machineRow[0]?.code ?? null;
     }
+
+    // Audit: OP_STOP (legacy line 5704).
+    const machinePart = machineCode ? ` on ${machineCode}` : '';
+    await emitActivityLog(
+      tx,
+      {
+        action: 'OP_STOP',
+        entity: 'Op',
+        detail: `${m.code} Op #${m.opSeq} — Stopped${machinePart}`,
+        refId: m.code,
+      },
+      companyId,
+      user,
+    );
 
     return {
       id: r.id,
