@@ -3,6 +3,7 @@ import { items } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   CreateItemInput,
   Item,
@@ -103,7 +104,14 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
         updatedBy: user.id,
       })
       .returning();
-    return inserted[0] as unknown as Item;
+    const row = inserted[0] as unknown as Item;
+    await emitActivityLog(
+      tx,
+      { action: 'CREATE', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+      companyId,
+      user,
+    );
+    return row;
   });
 }
 
@@ -113,7 +121,7 @@ export async function updateItem(
   user: AuthContext,
 ): Promise<Item> {
   requireWriteRole(user);
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
       .select({ id: items.id })
@@ -137,26 +145,40 @@ export async function updateItem(
       updates.drawingFilePath = input.drawingFilePath ?? null;
 
     const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
-    return updated[0] as unknown as Item;
+    const row = updated[0] as unknown as Item;
+    await emitActivityLog(
+      tx,
+      { action: 'EDIT', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+      companyId,
+      user,
+    );
+    return row;
   });
 }
 
 export async function softDeleteItem(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: items.id })
+      .select({ id: items.id, code: items.code, name: items.name })
       .from(items)
       .where(and(eq(items.id, id), isNull(items.deletedAt)))
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`Item ${id} not found`);
     }
     await tx
       .update(items)
       .set({ deletedAt: new Date(), updatedBy: user.id })
       .where(eq(items.id, id));
+    await emitActivityLog(
+      tx,
+      { action: 'DELETE', entity: 'Item', detail: `${row.code} — ${row.name}`, refId: row.code },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

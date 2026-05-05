@@ -7,7 +7,7 @@
 
 import { and, count, desc, eq, gte, ilike, lte, or, type SQL } from 'drizzle-orm';
 import { activityLog } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import type { ActivityLogEntry, ListActivityLogQuery, ListActivityLogResponse } from './schema';
 
@@ -104,8 +104,8 @@ export async function listActivityLog(
   });
 }
 
-// Internal helper for future logActivity emitters from other modules.
-// Not exported via routes — append-only at the service boundary.
+// Standalone emitter — owns its own transaction. Use when there's no
+// caller-side tx already running.
 export async function appendActivityLog(
   input: {
     action: string;
@@ -117,16 +117,35 @@ export async function appendActivityLog(
 ): Promise<void> {
   const companyId = requireCompany(user);
   await withUserContext(user, async (tx) => {
-    await tx.insert(activityLog).values({
-      companyId,
-      ts: new Date(),
-      userId: user.id,
-      userName: user.email,
-      action: input.action,
-      entity: input.entity,
-      detail: input.detail ?? '',
-      refId: input.refId ?? null,
-      createdBy: user.id,
-    });
+    await emitActivityLog(tx, input, companyId, user);
+  });
+}
+
+// Low-level emitter — writes inside an existing transaction so the audit
+// row is atomic with the caller's mutation (rolled back together if the
+// outer tx fails). Used by items / sales-orders / nc-register / etc.
+// service modules that emit on create / update / softDelete inside their
+// existing withUserContext block.
+export async function emitActivityLog(
+  tx: DbTransaction,
+  input: {
+    action: string;
+    entity: string;
+    detail?: string;
+    refId?: string | null;
+  },
+  companyId: string,
+  user: AuthContext,
+): Promise<void> {
+  await tx.insert(activityLog).values({
+    companyId,
+    ts: new Date(),
+    userId: user.id,
+    userName: user.email,
+    action: input.action,
+    entity: input.entity,
+    detail: input.detail ?? '',
+    refId: input.refId ?? null,
+    createdBy: user.id,
   });
 }

@@ -1,7 +1,7 @@
-import { eq, like } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, users } from '../../db/schema';
+import { activityLog, items, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import * as service from './service';
@@ -32,6 +32,9 @@ afterAll(async () => {
   // Hard-delete every test item so reruns are clean.
   // postgres-role connection bypasses RLS.
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  // Wipe the audit-log entries the items emitter wrote for these test
+  // items so re-runs see a clean activity_log too.
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('items service', () => {
@@ -113,6 +116,29 @@ describe('items service', () => {
     );
     await service.softDeleteItem(created.id, admin);
     await expect(service.getItem(created.id, admin)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const code = `${TEST_PREFIX}AUD`;
+    const created = await service.createItem(
+      { code, name: 'Audit Test', revision: 'A', uom: 'NOS', itemType: 'component' },
+      admin,
+    );
+    await service.updateItem(created.id, { name: 'Audit Test (renamed)' }, admin);
+    await service.softDeleteItem(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('Item');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(code);
+    }
   });
 
   it('throws AuthorizationError when user has no company assignment', async () => {

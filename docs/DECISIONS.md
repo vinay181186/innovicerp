@@ -737,6 +737,28 @@ Web: `/activity-log` list page mirrors legacy renderer — Date / Time / colour-
 - [x] Home nav adds `History` icon Activity log card; router registers the new route
 - [x] api 291/291 green (was 279, +12); workspace typecheck + lint + format clean; web build clean
 
+### Follow-on (2026-05-05): in-tx `emitActivityLog` + first emitter wired (items)
+
+The original T-051 closure left `appendActivityLog` as a self-contained helper that opens its own `withUserContext` transaction. That works for one-off / out-of-band emission but is wrong for service-layer auditing: the audit row needs to be **atomic with the mutation** it audits — if the outer mutation rolls back, the audit row must roll back too, otherwise we get phantom audit entries for transactions that never happened.
+
+Split into two:
+
+- `appendActivityLog(input, user)` — standalone; owns its own tx. Use when there is no caller-side tx already running (e.g. ad-hoc admin tooling, future scheduled emitters).
+- `emitActivityLog(tx, input, companyId, user)` — low-level; writes inside a caller-provided transaction. **The standard for service modules** that mutate-and-emit inside their existing `withUserContext` block.
+
+Conventions for emitter callers:
+
+- `action`: `CREATE` / `EDIT` / `DELETE` for CRUD. Domain verbs (`DISPATCH`, `OP_START`, `QC_ACCEPT`, ...) for non-CRUD.
+- `entity`: PascalCase domain noun (`Item`, `SalesOrder`, `JobCard`, `PurchaseOrder`, ...).
+- `detail`: short human string. For master data: `<code> — <name>`. For transactions: `<code> — <verb> <qty> ... ` etc.
+- `refId`: business key (item `code`, SO `code`, JC `code`, ...) — NOT the uuid `id`. Matches legacy `_logActivity` usage. UI links use this for filter / drill-down.
+
+First emitter wired: **items** (`createItem` / `updateItem` / `softDeleteItem`). Test coverage adds one assertion that all three actions land with correct entity / userId / userName / refId / detail.
+
+Test isolation: pagination test for activity_log was previously assuming a stable table; the items emitter writing audit rows during parallel test runs broke offset stability. Fix: pin both pages to `toDate = new Date()` snapshot taken at test start (the service already supports `toDate`). Same pattern will apply to any future module that asserts pagination shape on a shared write target.
+
+Remaining modules to wire (in roughly the order of the legacy emitter density): sales-orders → job-work-orders → job-cards → purchase-requests → purchase-orders → goods-receipt-notes → nc-register → delivery-challans. Each is a small commit per CLAUDE.md §7.
+
 ---
 
 ## Pending Decisions

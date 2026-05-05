@@ -64,6 +64,13 @@ export default async function setup(): Promise<void> {
     //    `T041B-` name prefix so we can clean by name LIKE without
     //    touching real user-created reports.
     await sql`DELETE FROM public.saved_reports WHERE name LIKE 'T041B-%'`;
+
+    // 4. Activity log — append-only audit trail. Test entries land via:
+    //    (a) the T-051 service tests' explicit T051-prefixed entity, or
+    //    (b) the items module emitter (T-009 follow-on) which writes
+    //        activity rows referencing test items by ref_id = code.
+    //    Wipe both so audit cruft doesn't pile up across runs.
+    await sql`DELETE FROM public.activity_log WHERE entity LIKE 'T051-%' OR ref_id LIKE 'T%-%'`;
   } finally {
     await sql.end();
   }

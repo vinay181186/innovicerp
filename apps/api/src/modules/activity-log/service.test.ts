@@ -121,8 +121,12 @@ describe('activity-log service', () => {
   });
 
   it('limit + offset pagination works', async () => {
-    const page1 = await service.listActivityLog({ limit: 5, offset: 0 }, admin);
-    const page2 = await service.listActivityLog({ limit: 5, offset: 5 }, admin);
+    // Pin both pages to a snapshot timestamp so audit rows written by
+    // parallel test files (e.g. items emitter) don't shift offsets
+    // between page1 and page2.
+    const toDate = new Date().toISOString();
+    const page1 = await service.listActivityLog({ limit: 5, offset: 0, toDate }, admin);
+    const page2 = await service.listActivityLog({ limit: 5, offset: 5, toDate }, admin);
     if (page1.total > 5) {
       const ids1 = new Set(page1.entries.map((e) => e.id));
       for (const e of page2.entries) {
