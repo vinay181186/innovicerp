@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-05-05 (T-051a follow-on #8 — emitter wired into the **nc-register** module with full disposition workflow audit. 5 actions emitted: `createNcRegister` → CREATE, `updateNcRegister` → EDIT, `disposeNcRegister` → **NC_DISPOSE** (with disposition kind in detail: REWORK / SCRAP / USE_AS_IS / RETURN_TO_VENDOR / MAKE_FRESH; make_fresh path appends supplementary JC code, scrap path appends scrapCost), `closeNcRework` → **NC_CLOSE_REWORK** (with reworkDoneQty), `softDeleteNcRegister` → DELETE. `entity='NonConformance'`, `refId=nc.code`, detail format = `<code> — <itemCodeText> qty=<rejectedQty>` for CRUD via local `ncDetail()` helper. softDelete now selects `code, itemCodeText, rejectedQty, status` upfront. 2 new tests: 1 in service.test.ts (CREATE/EDIT/DELETE) using `T040A-NC-AUD`; 1 in cascades.test.ts asserting NC_DISPOSE + NC_CLOSE_REWORK roundtrip with REWORK action label + qty=4 detail. afterAll wipes activity_log by `refId LIKE 'T040A-NC-%'` and `T040B-%` respectively. **api 28/28 green** in NC; workspace typecheck + lint + format clean. 1 module remains: delivery-challans, then op-entry cascade audit.)
+> Last updated: 2026-05-05 (**T-051a CRUD-emitter sweep DONE** — 8 modules wired across 8 small commits (`7dc48a7` items → `b1bfbc2` SO → `aece8b8` JW → `37855f9` op-entry → `59e4584` PR → `4ba806a` PO → `b38d0f8` GRN → `7d4c5f5` NC). The 9th planned module **delivery-challans is read-only by design** (`apps/api/src/modules/delivery-challans/service.ts:1-7` — "List + detail only. No create/update/softDelete in T-040a — the legacy DC flow cascades into jc_ops.sentQty + outsourceStatus transitions and that workflow lands in a future task"), so there's nothing to wire there until the DC mutation surface ships. Activity-log entity vocabulary now covers: Item, SalesOrder, JobWorkOrder, Op, PurchaseRequest, PurchaseOrder, GoodsReceiptNote, NonConformance. Action vocabulary: CREATE / EDIT / DELETE (all CRUD modules) + OP_START / OP_STOP / OP_COMPLETE (op-entry) + PR_CONVERT (PO from PR shortcut) + NC_DISPOSE (with disposition kind in detail) + NC_CLOSE_REWORK. **Full api suite: 301 tests, +9 net new audit tests since T-051a started**; 1 transient per full-suite run (reports `stock-movement-log` filter race with parallel GRN ledger writes — RUNBOOK-documented baseline; reports re-run alone is 27/27 every time). Deferred follow-ons: (a) cascade audit emissions from `op-entry/sales-cascade.ts` (JC_COMPLETE / SO_LINE_CLOSED / SO_CLOSED / JW_LINE_CLOSED / JW_CLOSED) — design call about granularity needed first, (b) finer-grained QC_ACCEPT / QC_REJECT actions on GRN per-line transitions if the audit feed needs it, (c) DC emitter wiring once the DC mutation flow ships. T-051a row in queue flips from `[~] In progress` → `[x] Done`. Phase 8 emitter foundation is now in place — the activity_log viewer is no longer "frozen at migration date" for the 8 wired modules.)
 > Prior: 2026-05-05 (T-051a follow-on #7 — emitter wired into the **goods-receipt-notes** module. Same shape as PO: `createGoodsReceiptNote` → CREATE, `updateGoodsReceiptNote` → EDIT, `softDeleteGoodsReceiptNote` → DELETE; `entity='GoodsReceiptNote'`, `refId=code`, detail = `<code> — <vendorCodeText>` via local `grnDetail()` helper. softDelete now selects `code, vendorCodeText` upfront. Per-line QC accept/reject is folded into the EDIT path (one audit row per service call) — finer-grained QC_ACCEPT / QC_REJECT actions deferred until the user actually wants them in the audit feed (current single EDIT covers the audit need without exploding row count). 1 new GRN audit test (`emits CREATE / EDIT / DELETE`) using a fresh PO + `T036C-AUD` GRN code; afterAll wipes activity_log by `refId LIKE 'T036C-%'`. **api 15/15 green** in GRN; workspace typecheck + lint + format clean. 2 modules remain: nc-register → delivery-challans, then op-entry cascade audit.)
 > Prior: 2026-05-05 (T-051a follow-on #6 — emitter wired into the **purchase-orders** module + cross-module audit on PR conversion. `createPurchaseOrder` → CREATE, `updatePurchaseOrder` → EDIT, `softDeletePurchaseOrder` → DELETE; `entity='PurchaseOrder'`, `refId=code`, detail = `<code> — <vendorCodeText>` (or just `<code>` when null) via local `poDetail()` helper. softDelete now selects `code, vendorCodeText` upfront. **`createPurchaseOrderFromPr` emits TWO rows in the same tx** — one PO CREATE (refId=PO code, entity='PurchaseOrder') and one PR `PR_CONVERT` (refId=PR code, entity='PurchaseRequest', detail=`<prCode> → <poCode>`). Each entity gets its full audit trail visible from its own filter; both rows roll back together if the conversion fails. New action label `PR_CONVERT` added to the legacy-derived vocabulary (legacy line 6422 used `PR_APPROVE`; conversion was implicit there). 2 new PO tests (CRUD audit + PR_CONVERT atomic) using `T036B-AUD*` codes; afterAll wipes activity_log by `refId LIKE 'T036B-%'`. **api 21/21 green** in PO; workspace typecheck + lint + format clean (one prettier auto-fix on the test file). 3 modules remain: goods-receipt-notes → nc-register → delivery-challans, then op-entry cascade audit.)
 > Prior: 2026-05-05 (T-051a follow-on #5 — emitter wired into the **purchase-requests** module. Same shape as items / SO / JW: `createPurchaseRequest` → CREATE, `updatePurchaseRequest` → EDIT, `softDeletePurchaseRequest` → DELETE; `entity='PurchaseRequest'`, `refId=code`. detail format introduces a 4-arg `prDetail()` helper: `<code> — <itemName ?? itemCodeText ?? "—"> x <qty>` (PR semantics need item + qty more than just a name). softDelete now selects `code, itemName, itemCodeText, qty` upfront so it can emit before flipping deleted_at; existing poId-blocked-delete guard preserved. 1 new PR test (`emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation`) creates `T036A-AUD` with itemName "Audit Item" qty=5, edits qty to 6, soft-deletes; asserts entity/userId/userName + code in detail. afterAll wipes activity_log by `refId LIKE 'T036A-%'`. **api 15/15 green** in PR; workspace typecheck + lint + format clean. Note: PR status flip to `po_created` from `createPurchaseOrderFromPr` is a PO-side mutation — will emit a separate `PR_CONVERT` (or similar) action when the PO emitter lands. 4 modules remain: purchase-orders → goods-receipt-notes → nc-register → delivery-challans, then op-entry cascade audit.)
@@ -53,27 +53,32 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** T-051a (Phase 8 follow-on, in progress) OR T-041d / T-041e
-**Title:** Phase 8 — wire `emitActivityLog` into remaining service modules (CRUD + key transitions)
-**Status:** [~] In progress — items + SO + JW + op-entry + PR + PO + GRN + NC wired (2026-05-05); 1 module remains
-**Next emitters (in order):**
+**ID:** T-041d (Phase 7 alerts — needs BullMQ + Redis + Resend infra) OR T-041e (PDF — UX-deferred) OR cascade-audit follow-on
+**Title:** Phase 7/8 follow-ons — alerts, PDF templates, or op-entry cascade audit emissions
+**Status:** [ ] All three need a precondition (infra / UX / design call)
 
-1. ~~items~~ ✓ (commit `7dc48a7`)
-2. ~~sales-orders~~ ✓ (commit `b1bfbc2`)
-3. ~~job-work-orders~~ ✓ (commit `aece8b8`)
-4. ~~op-entry~~ ✓ (commit `37855f9`) — substitutes for "job-cards" since JC has no CRUD service path
-5. ~~purchase-requests~~ ✓ (commit `59e4584`)
-6. ~~purchase-orders~~ ✓ (commit `4ba806a`) — also emits PR_CONVERT
-7. ~~goods-receipt-notes~~ ✓ (commit `b38d0f8`)
-8. ~~nc-register~~ ✓ (in progress) — CREATE/EDIT/DELETE + NC_DISPOSE + NC_CLOSE_REWORK
-9. goods-receipt-notes (CREATE / QC_ACCEPT / QC_REJECT — ref the GRN code)
-10. nc-register (CREATE / DISPOSE / CLOSE_REWORK — entity='NC'; make_fresh cascade emits JC CREATE)
-11. delivery-challans (CREATE / EDIT / DELETE)
-12. **Final follow-on:** cascade audit emissions in `op-entry/sales-cascade.ts` (JC_COMPLETE + SO_CLOSED / SO_LINE_CLOSED / JW_CLOSED / JW_LINE_CLOSED) — design call about granularity needed first.
+## Closed Task — T-051a (Phase 8 emitter sweep)
 
-Each emitter is one small commit per CLAUDE.md §7. After all 8 land, the activity-log viewer becomes a live audit feed instead of a frozen-at-migration snapshot.
+**Status:** [x] Done (2026-05-05) — 8 modules wired across 8 small commits
 
-Parallel tracks (unchanged): T-041d (alerts — needs BullMQ+Redis+Resend), T-041e (PDF — UX-deferred).
+| #   | Module              | Commit    | Actions                                                                            |
+| --- | ------------------- | --------- | ---------------------------------------------------------------------------------- |
+| 1   | items               | `7dc48a7` | CREATE / EDIT / DELETE                                                             |
+| 2   | sales-orders        | `b1bfbc2` | CREATE / EDIT / DELETE                                                             |
+| 3   | job-work-orders     | `aece8b8` | CREATE / EDIT / DELETE                                                             |
+| 4   | op-entry            | `37855f9` | OP_START / OP_STOP / OP_COMPLETE (substitutes for job-cards — JC has no CRUD path) |
+| 5   | purchase-requests   | `59e4584` | CREATE / EDIT / DELETE                                                             |
+| 6   | purchase-orders     | `4ba806a` | CREATE / EDIT / DELETE + PR_CONVERT (cross-module)                                 |
+| 7   | goods-receipt-notes | `b38d0f8` | CREATE / EDIT / DELETE                                                             |
+| 8   | nc-register         | `7d4c5f5` | CREATE / EDIT / DELETE + NC_DISPOSE + NC_CLOSE_REWORK                              |
+
+**delivery-challans** is read-only by design — service has only `listDeliveryChallans` + `getDeliveryChallan`; no service-layer mutators exist yet, so emitter wiring deferred until the DC mutation surface ships in a future task.
+
+**Deferred follow-ons:**
+
+- **Cascade audit emissions** from `op-entry/sales-cascade.ts` (JC_COMPLETE / SO_LINE_CLOSED / SO_CLOSED / JW_LINE_CLOSED / JW_CLOSED) — design call about granularity needed first (one composite row vs one per entity touched).
+- **Finer-grained QC_ACCEPT / QC_REJECT** on GRN per-line state transitions (currently folded into EDIT) — only worth it if the audit feed actually needs that resolution.
+- **DC emitter** once the DC mutation flow ships.
 
 ## Closed Task — T-041b
 
