@@ -28,7 +28,7 @@ beforeAll(async () => {
 });
 
 describe('reports service', () => {
-  it('listReports returns 6 registered reports with stable shape', () => {
+  it('listReports returns 9 registered reports with stable shape', () => {
     const result = service.listReports();
     const slugs = result.reports.map((r) => r.slug).sort();
     expect(slugs).toEqual([
@@ -38,6 +38,9 @@ describe('reports service', () => {
       'nc-summary-by-reason',
       'open-po-ageing',
       'operator-productivity',
+      'so-open-backlog',
+      'stock-movement-log',
+      'vendor-po-summary',
     ]);
     for (const def of result.reports) {
       expect(def.title.length).toBeGreaterThan(0);
@@ -142,6 +145,61 @@ describe('reports service', () => {
       expect(validStatuses).toContain(row['computed_status']);
       expect(Number(row['jc_count'])).toBeGreaterThan(0);
     }
+  });
+
+  it('runReport "so-open-backlog" returns rows with computed pending_qty + line_value', async () => {
+    const result = await service.runReport('so-open-backlog', {}, admin);
+    expect(result.slug).toBe('so-open-backlog');
+    for (const row of result.rows) {
+      expect(typeof row['so_code']).toBe('string');
+      expect(Number(row['order_qty'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['pending_qty'])).toBeGreaterThanOrEqual(0);
+      // pending = order - completed (clamped at 0)
+      expect(Number(row['pending_qty'])).toBeLessThanOrEqual(Number(row['order_qty']));
+      expect(Number(row['line_value'])).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('runReport "so-open-backlog" with future-only due date returns 0 rows', async () => {
+    const result = await service.runReport('so-open-backlog', { fromDueDate: '2099-01-01' }, admin);
+    expect(result.rowCount).toBe(0);
+    expect(result.filters).toMatchObject({ fromDueDate: '2099-01-01' });
+  });
+
+  it('runReport "vendor-po-summary" aggregates per vendor with non-negative counts/values', async () => {
+    const result = await service.runReport('vendor-po-summary', {}, admin);
+    expect(result.slug).toBe('vendor-po-summary');
+    for (const row of result.rows) {
+      expect(typeof row['vendor_name']).toBe('string');
+      expect(Number(row['po_count'])).toBeGreaterThan(0);
+      expect(Number(row['open_count'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['closed_count'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['total_value'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['pending_value'])).toBeGreaterThanOrEqual(0);
+      // Pending value never exceeds total value.
+      expect(Number(row['pending_value'])).toBeLessThanOrEqual(Number(row['total_value']) + 0.01);
+    }
+  });
+
+  it('runReport "stock-movement-log" returns rows with valid txn_type + source_type', async () => {
+    const result = await service.runReport('stock-movement-log', {}, admin);
+    expect(result.slug).toBe('stock-movement-log');
+    const validTxnTypes = ['in', 'out', 'adjust'];
+    const validSourceTypes = ['grn_qc', 'manual_adjust', 'dispatch', 'jw_in', 'jw_out', 'other'];
+    for (const row of result.rows) {
+      expect(validTxnTypes).toContain(row['txn_type']);
+      expect(validSourceTypes).toContain(row['source_type']);
+      expect(Number(row['qty'])).toBeGreaterThan(0);
+    }
+  });
+
+  it('runReport "stock-movement-log" sourceType filter narrows the result', async () => {
+    const all = await service.runReport('stock-movement-log', {}, admin);
+    const filtered = await service.runReport('stock-movement-log', { sourceType: 'grn_qc' }, admin);
+    for (const row of filtered.rows) {
+      expect(row['source_type']).toBe('grn_qc');
+    }
+    expect(filtered.rowCount).toBeLessThanOrEqual(all.rowCount);
   });
 
   it('runReport throws NotFoundError for unknown slug', async () => {

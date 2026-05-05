@@ -15,6 +15,9 @@ import { jcStatusSummaryReport } from './definitions/jc-status-summary';
 import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
 import { operatorProductivityReport } from './definitions/operator-productivity';
+import { soOpenBacklogReport } from './definitions/so-open-backlog';
+import { stockMovementLogReport } from './definitions/stock-movement-log';
+import { vendorPoSummaryReport } from './definitions/vendor-po-summary';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -40,6 +43,9 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [itemsOnHandReport.definition.slug]: itemsOnHandReport,
   [operatorProductivityReport.definition.slug]: operatorProductivityReport,
   [jcStatusSummaryReport.definition.slug]: jcStatusSummaryReport,
+  [soOpenBacklogReport.definition.slug]: soOpenBacklogReport,
+  [vendorPoSummaryReport.definition.slug]: vendorPoSummaryReport,
+  [stockMovementLogReport.definition.slug]: stockMovementLogReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {
