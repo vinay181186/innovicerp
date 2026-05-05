@@ -264,6 +264,24 @@ describe('nc-register dispose cascades (T-040b)', () => {
     expect(newJc[0]!.orderQty).toBe(6);
     expect(newJc[0]!.sourceLegacyRef).toBe(`supp-of:${f.ncCode}`);
 
+    // Supplementary JC gets its own CREATE audit row keyed by the new JC code
+    // so the JC filter shows the creation event (NC_DISPOSE detail mentions
+    // the new code in passing but doesn't satisfy the JC's own audit trail).
+    const suppCreateRows = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.companyId, admin.companyId!),
+          eq(activityLog.refId, result.newJcCode!),
+          eq(activityLog.action, 'CREATE'),
+        ),
+      );
+    expect(suppCreateRows).toHaveLength(1);
+    expect(suppCreateRows[0]!.entity).toBe('JobCard');
+    expect(suppCreateRows[0]!.detail).toContain(f.ncCode);
+    expect(suppCreateRows[0]!.detail).toContain('Supplementary');
+
     // Second make_fresh on a different NC against same origin → -S2
     const f2 = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}MF2-NC-WRAPPER`, // unused, just to give a different ncCode

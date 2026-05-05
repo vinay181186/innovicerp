@@ -504,6 +504,24 @@ export async function disposeNcRegister(
       companyId,
       user,
     );
+    // make_fresh creates a supplementary JC inside the cascade — emit a
+    // JobCard CREATE row so the new JC's audit history starts at this
+    // moment instead of empty. NC_DISPOSE detail already mentions the
+    // supplementary code; this gives the new JC a row keyed by its own
+    // code so the JC filter shows the creation event.
+    if (input.action === 'make_fresh' && result.newJcCode) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'JobCard',
+          detail: `${result.newJcCode} — Supplementary for ${row.code} (${row.rejectedQty} pcs)`,
+          refId: result.newJcCode,
+        },
+        companyId,
+        user,
+      );
+    }
     return { result, nc: toNcRegister(row) };
   });
 }
