@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jobCards, ncRegister, users } from '../../db/schema';
+import { activityLog, items, jobCards, ncRegister, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -63,6 +63,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(ncRegister).where(like(ncRegister.code, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('nc-register service', () => {
@@ -314,5 +315,36 @@ describe('nc-register service', () => {
     await expect(service.softDeleteNcRegister(created2.id, admin)).rejects.toBeInstanceOf(
       ConflictError,
     );
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const code = `${TEST_PREFIX}AUD`;
+    const created = await service.createNcRegister(
+      {
+        code,
+        ncDate: '2026-05-04',
+        jobCardId: firstJobCardId,
+        itemId: firstItemId,
+        rejectedQty: 3,
+        reasonCategory: 'dimensional',
+        reason: 'Audit test',
+      },
+      admin,
+    );
+    await service.updateNcRegister(created.id, { reason: 'Audit test (renamed)' }, admin);
+    await service.softDeleteNcRegister(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('NonConformance');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(code);
+    }
   });
 });

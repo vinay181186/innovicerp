@@ -17,6 +17,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import {
   closeNcReworkCascade,
   type DisposeNcContext,
@@ -38,6 +39,15 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+function ncDetail(
+  code: string,
+  itemCodeText: string | null | undefined,
+  rejectedQty: string,
+): string {
+  const item = itemCodeText && itemCodeText.length > 0 ? itemCodeText : '—';
+  return `${code} — ${item} qty=${rejectedQty}`;
+}
 
 // ─── FK validation helpers ────────────────────────────────────────────────
 
@@ -372,7 +382,19 @@ export async function createNcRegister(
         updatedBy: user.id,
       })
       .returning();
-    return toNcRegister(inserted[0]!);
+    const row = inserted[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'NonConformance',
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toNcRegister(row);
   });
 }
 
@@ -415,7 +437,19 @@ export async function updateNcRegister(
     await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, id));
 
     const reread = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    return toNcRegister(reread[0]!);
+    const row = reread[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'NonConformance',
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toNcRegister(row);
   });
 }
 
@@ -450,7 +484,27 @@ export async function disposeNcRegister(
     const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
     const result = await disposeNcCascade(tx, id, input, ctx);
     const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    return { result, nc: toNcRegister(nc[0]!) };
+    const row = nc[0]!;
+    // Detail captures the disposition action + key result side-effect
+    // (supplementary JC code on make_fresh, scrap cost on scrap, etc.).
+    const sideEffect =
+      input.action === 'make_fresh' && result.newJcCode
+        ? `; supplementary JC ${result.newJcCode}`
+        : input.action === 'scrap' && input.scrapCost !== undefined
+          ? `; scrapCost=${input.scrapCost}`
+          : '';
+    await emitActivityLog(
+      tx,
+      {
+        action: 'NC_DISPOSE',
+        entity: 'NonConformance',
+        detail: `${row.code} — ${input.action.toUpperCase()} qty=${row.rejectedQty}${sideEffect}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return { result, nc: toNcRegister(row) };
   });
 }
 
@@ -470,7 +524,19 @@ export async function closeNcRework(
     const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
     await closeNcReworkCascade(tx, id, input.reworkDoneQty, ctx);
     const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
-    return toNcRegister(nc[0]!);
+    const row = nc[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'NC_CLOSE_REWORK',
+        entity: 'NonConformance',
+        detail: `${row.code} — REWORK CLOSED${input.reworkDoneQty !== undefined ? ` qty=${input.reworkDoneQty}` : ''}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toNcRegister(row);
   });
 }
 
@@ -480,7 +546,13 @@ export async function softDeleteNcRegister(id: string, user: AuthContext): Promi
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: ncRegister.id, status: ncRegister.status })
+      .select({
+        id: ncRegister.id,
+        code: ncRegister.code,
+        itemCodeText: ncRegister.itemCodeText,
+        rejectedQty: ncRegister.rejectedQty,
+        status: ncRegister.status,
+      })
       .from(ncRegister)
       .where(
         and(
@@ -490,18 +562,30 @@ export async function softDeleteNcRegister(id: string, user: AuthContext): Promi
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`NC ${id} not found`);
     }
-    if (existing[0]!.status !== 'pending') {
+    if (row.status !== 'pending') {
       throw new ConflictError(
-        `NC ${id} is ${existing[0]!.status} — disposed/closed NCs are permanent records and cannot be deleted`,
+        `NC ${id} is ${row.status} — disposed/closed NCs are permanent records and cannot be deleted`,
       );
     }
     await tx
       .update(ncRegister)
       .set({ deletedAt: new Date(), updatedBy: user.id })
       .where(eq(ncRegister.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'NonConformance',
+        detail: ncDetail(row.code, row.itemCodeText, row.rejectedQty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

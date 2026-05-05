@@ -6,7 +6,7 @@
 import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
+import { activityLog, items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import * as service from './service';
@@ -129,6 +129,7 @@ async function teardown(): Promise<void> {
   await db.delete(ncRegister).where(like(ncRegister.code, `${TEST_PREFIX}%`));
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 }
 
 beforeAll(async () => {
@@ -339,6 +340,33 @@ describe('nc-register close-rework (T-040b)', () => {
     });
     await service.disposeNcRegister(f.ncId, { action: 'scrap', scrapCost: 0 }, admin);
     await expect(service.closeNcRework(f.ncId, {}, admin)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('emits NC_DISPOSE + NC_CLOSE_REWORK activity_log rows atomic with the cascade', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}AUD-JC`,
+      ncCode: `${TEST_PREFIX}AUD-NC`,
+      rejectedQty: 4,
+    });
+    await service.disposeNcRegister(f.ncId, { action: 'rework' }, admin);
+    await service.closeNcRework(f.ncId, { reworkDoneQty: 4 }, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, f.ncCode)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['NC_CLOSE_REWORK', 'NC_DISPOSE']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('NonConformance');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(f.ncCode);
+    }
+    const dispose = auditRows.find((r) => r.action === 'NC_DISPOSE')!;
+    expect(dispose.detail).toContain('REWORK');
+    const closeRework = auditRows.find((r) => r.action === 'NC_CLOSE_REWORK')!;
+    expect(closeRework.detail).toContain('qty=4');
   });
 });
 
