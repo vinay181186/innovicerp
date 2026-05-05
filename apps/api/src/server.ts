@@ -20,6 +20,7 @@ import { operatorsRoutes } from './modules/operators/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
 import { reportsRoutes } from './modules/reports/routes';
+import { savedReportsRoutes } from './modules/saved-reports/routes';
 import { storeTransactionsRoutes } from './modules/store-transactions/routes';
 import { salesOrdersRoutes } from './modules/sales-orders/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
@@ -68,6 +69,7 @@ await app.register(ncRegisterRoutes);
 await app.register(deliveryChallansRoutes);
 await app.register(dashboardRoutes);
 await app.register(reportsRoutes);
+await app.register(savedReportsRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

@@ -16,6 +16,7 @@ import {
   LogOut,
   Package,
   Send,
+  Sparkles,
   Truck,
   Wrench,
 } from 'lucide-react';
@@ -102,6 +103,12 @@ const MASTER_LINKS = [
     icon: BarChart3,
     title: 'Reports',
     subtitle: 'Server-defined reports — daily op log, NC summary, PO ageing',
+  },
+  {
+    to: '/saved-reports',
+    icon: Sparkles,
+    title: 'Saved reports',
+    subtitle: 'Drag-and-drop ad-hoc builder — save & re-run custom reports',
   },
   { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
   { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },

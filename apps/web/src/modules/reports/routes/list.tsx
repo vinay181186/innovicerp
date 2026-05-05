@@ -1,7 +1,8 @@
 import type { ReportDefinition } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowRight, BarChart3, Loader2 } from 'lucide-react';
+import { ArrowRight, BarChart3, Loader2, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList } from '../api';
@@ -28,15 +29,22 @@ function ReportsListPage() {
   return (
     <main className="container max-w-5xl py-10">
       <div className="space-y-6">
-        <div className="flex items-start gap-3">
-          <BarChart3 className="mt-1 h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-            <p className="text-sm text-muted-foreground">
-              Server-defined reports — pick one, fill the filters, run. Drag-and-drop ad-hoc builder
-              lands in T-041b.
-            </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <BarChart3 className="mt-1 h-6 w-6 text-muted-foreground" />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
+              <p className="text-sm text-muted-foreground">
+                Server-defined reports — pick one, fill the filters, run.
+              </p>
+            </div>
           </div>
+          <Button asChild variant="outline">
+            <Link to="/saved-reports">
+              <Sparkles />
+              Saved reports
+            </Link>
+          </Button>
         </div>
 
         {isLoading ? (

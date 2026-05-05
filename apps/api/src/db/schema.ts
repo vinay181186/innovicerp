@@ -1686,6 +1686,69 @@ export const deliveryChallanLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 7: saved (ad-hoc) reports (T-041b) ─────────────────────────────
+// User-composed report definitions. The `spec` jsonb stores the AdHocSpec
+// (sourceKey + columns + filters + groupBy + sumCol + sumFn + sort) — see
+// packages/shared/src/schemas/saved-report.ts for the schema. The runner
+// validates each spec against a whitelisted source catalog before building
+// SQL with bind-vars only — values from `spec` are never interpolated.
+//
+// RLS:
+//   read   — anyone in the company (service filters by owner_id + is_shared)
+//   write  — admin/manager OR the owner via service-layer ownership check
+//
+// The service layer is responsible for filtering shared vs private and for
+// enforcing owner-only edits — RLS provides the company isolation floor.
+
+export const savedReports = pgTable(
+  'saved_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    sourceKey: text('source_key').notNull(),
+    spec: jsonb('spec').notNull(),
+    isShared: boolean('is_shared').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('saved_reports_company_owner_name_uniq')
+      .on(t.companyId, t.ownerId, t.name)
+      .where(sql`${t.deletedAt} is null`),
+    index('saved_reports_company_shared_idx')
+      .on(t.companyId, t.isShared)
+      .where(sql`${t.deletedAt} is null`),
+    index('saved_reports_owner_idx')
+      .on(t.ownerId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('saved_reports_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('saved_reports_company_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1740,3 +1803,5 @@ export type DeliveryChallan = typeof deliveryChallans.$inferSelect;
 export type NewDeliveryChallan = typeof deliveryChallans.$inferInsert;
 export type DeliveryChallanLine = typeof deliveryChallanLines.$inferSelect;
 export type NewDeliveryChallanLine = typeof deliveryChallanLines.$inferInsert;
+export type SavedReport = typeof savedReports.$inferSelect;
+export type NewSavedReport = typeof savedReports.$inferInsert;

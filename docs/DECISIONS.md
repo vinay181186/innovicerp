@@ -609,7 +609,76 @@ Status / disposition / reason enum values must reflect the **full** legacy form 
 
 ---
 
+## ADR-018: Phase 7 ad-hoc report builder — declarative spec over a whitelisted source catalog
+
+**Date:** 2026-05-05
+**Status:** Accepted
+
+### Context
+
+T-041a shipped a server-defined report registry (slug → {definition, run}). Hand-written SQL per report. Adding a report = drop a file in `definitions/`. That works for fixed analytics but doesn't let users compose their own. Legacy had a drag-and-drop "Excel Report Builder" (legacy HTML L17434+) that operated client-side on the in-memory firestore JSON blobs, with `db.reportTemplates` as the persisted spec. We need to bring this forward.
+
+The two tensions:
+
+1. **User flexibility vs. SQL injection.** Legacy was safe-by-luck because it operated on an in-memory JS array. With a real database, the backend has to translate user-composed specs to SQL. Naive interpolation = RCE.
+2. **Where does the catalog live.** The "Available fields" list (descriptors) is needed by both the Web (UI) and the API (validation + SQL templating). The SQL templates are server-only.
+
+### Decision
+
+Layer T-041b on the T-041a engine but treat user-composed specs differently:
+
+1. **One new table `saved_reports`** — id + company_id + owner_id + name + description + source_key + spec jsonb + is_shared + standard audit/soft-delete cols. Per-user uniqueness on `name`. RLS = standard company_isolation pair (read + write); the per-user shared/private gate is enforced at the service layer (simpler than an RLS policy that would need a `current_user_id()` SQL helper).
+
+2. **Whitelisted source catalog** — 5 sources for v1: `sales-orders`, `purchase-orders`, `job-cards`, `items-stock`, `nc-register`. Each pairs:
+   - A **SourceDescriptor** (sourceKey + label + group + fields[] {key,label,type,filterable,groupable}) — exported via `@innovic/shared` so api + web see the same shape, returned by `GET /saved-reports/sources`.
+   - A **baseSelect** SQL fragment (server-only, in `apps/api/src/modules/saved-reports/sources.ts`) that joins the underlying tables and aliases columns to descriptor field keys. Company isolation is applied here.
+
+3. **Spec shape** — `AdHocSpec` = `{sourceKey, columns[], filters[], groupBy?, sumCol?, sumFn, sort[]}`. Filters are `{field, op, value}` with op enum `equals | notEquals | contains | gt | lt | after | before`. Aggregator enum `SUM | COUNT | AVG | MIN | MAX`. Mirrors legacy verbatim.
+
+4. **Safety model** — the runner (`runner.ts`) validates every spec against the source's descriptor before touching SQL:
+   - column / filter / sort / groupBy keys must exist in `descriptor.fields`
+   - filter ops must be compatible with field type (text → equals/notEquals/contains; number → equals/notEquals/gt/lt; date → equals/after/before)
+   - sumCol must be numeric for SUM/AVG/MIN/MAX (COUNT works on anything)
+   - filter values are bound via Drizzle's `sql\`...${value}...\`` template (parameterised, never interpolated)
+   - column / sort identifiers go through `sql.identifier()`
+   - hard `LIMIT 5000` on rows + `LIMIT 200` on summary rows
+
+5. **Two run modes** — `GET /saved-reports/:id/run` (executes a saved report) + `POST /saved-reports/preview` (executes an unsaved spec, powers the builder live preview). Both run inside `withUserContext` so RLS company isolation + role claims propagate to Postgres.
+
+6. **Web UI mirrors legacy** — native HTML5 drag & drop (no `dnd-kit` / `react-dnd` dependency). 3 zones: Columns / Filters / Group By. Live preview button. Save panel with name + description + shared toggle. List page with own + shared reports.
+
+### Alternatives Considered
+
+- **Arbitrary user SQL** — rejected: user-composed SQL = injection risk + RLS bypass risk + no way to validate that the columns the UI expects actually exist.
+- **One-off saved report = a generated SQL file in `definitions/`** — rejected: every save needs a deploy, no per-user customisation, no obvious soft-delete story.
+- **Use a 3rd-party query DSL (e.g., GraphQL, PostgREST)** — rejected: overkill, adds a layer for problems we don't have.
+- **RLS-level user_id filter** — rejected for v1: would need a `current_user_id()` SQL helper sourced from JWT claims (we have `current_company_id()` and `current_user_role()` already, but no user-id helper). Adding one is a 3-line migration but pulls scope; service-layer enforcement is sufficient for "shared vs private" since RLS already gates company-isolation. Revisit if cross-company leakage ever surfaces.
+- **Use react-dnd / dnd-kit** — rejected: legacy uses native HTML5 drag-and-drop and a 50KB dependency for one screen is over-budget.
+
+### Consequences
+
+- **Positive:** users can compose their own reports without a deploy. The 5 sources cover the breadth of the legacy `_rbSources` (13 in legacy, 5 here for v1 — the 8 missing are either `doc_missing` per ADR-016/-017 or future-phase modules). Spec safety is enforced at one place (`runner.assertSpec`). Adding a new source = drop an entry in `sources.ts` + a test.
+- **Negative:** the source catalog is hand-maintained — there's no automatic pickup of new tables. That's fine for an ERP at 100-user scale; we don't need a metadata-driven generic query engine.
+- **Risks:** (a) jsonb spec drift between client + server zod schemas — mitigated by the shared `adHocSpecSchema` parsed on both sides + the runner re-parsing on read. (b) someone might inject a bind value that confuses Postgres (e.g. a number filter with a non-numeric string) — mitigated by per-type op validation. (c) the source catalog might grow into something unmaintainable — when that happens, refactor to a per-source file like `definitions/`.
+
+### Implementation checklist
+
+- [x] Shared schema `packages/shared/src/schemas/saved-report.ts` (FilterOp, AggFunction, AdHocSpec, SourceDescriptor, SavedReport, CRUD inputs, run response)
+- [x] Drizzle table `saved_reports` + migration `0013_phase7_saved_reports.sql` (drizzle-gen, applied via apply-sql) + trigger `0014_phase7_saved_reports_trigger.sql`
+- [x] API source catalog `sources.ts` (5 sources × baseSelect)
+- [x] API runner `runner.ts` — spec validation + safe SQL building + summary aggregation
+- [x] API service `service.ts` — list / get / create / update / softDelete / runSavedReport / previewAdHocSpec + ownership/visibility gate
+- [x] API routes `routes.ts` — 8 endpoints
+- [x] API tests (21 service + 7 routes = 28 new; api 259/259 green)
+- [x] Web hooks `api.ts` (TanStack Query: list / detail / run / sources + create/update/delete/preview mutations)
+- [x] Web `Builder.tsx` — drag-and-drop UI, live preview, save panel
+- [x] Web `ResultTable.tsx` — shared table+summary renderer, CSV export
+- [x] Web routes — list / new / edit / run + global-setup wipes T041B-prefixed test rows
+- [x] Home nav — `Sparkles` Saved reports card; cross-link from `/reports` list
+
+---
+
 ## Pending Decisions
 
-- **ADR-018 (pending):** Domain name and transactional email-from address.
-- **ADR-019 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-019 (pending):** Domain name and transactional email-from address.
+- **ADR-020 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).

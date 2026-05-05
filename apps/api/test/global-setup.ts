@@ -59,6 +59,11 @@ export default async function setup(): Promise<void> {
     await sql`DELETE FROM public.clients WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.machines WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.operators WHERE code LIKE 'T%-%'`;
+
+    // 3. Saved reports — keyed by `name`, not `code`. Test inserts use a
+    //    `T041B-` name prefix so we can clean by name LIKE without
+    //    touching real user-created reports.
+    await sql`DELETE FROM public.saved_reports WHERE name LIKE 'T041B-%'`;
   } finally {
     await sql.end();
   }

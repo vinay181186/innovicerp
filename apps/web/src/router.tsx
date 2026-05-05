@@ -40,6 +40,10 @@ import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
+import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
+import { savedReportNewRoute } from './modules/saved-reports/routes/new';
+import { savedReportRunRoute } from './modules/saved-reports/routes/run';
+import { savedReportsListRoute } from './modules/saved-reports/routes/list';
 import { storeTransactionsListRoute } from './modules/store-transactions/routes/list';
 import { purchaseRequestDetailRoute } from './modules/purchase-requests/routes/detail';
 import {
@@ -121,6 +125,11 @@ const routeTree = rootRoute.addChildren([
     // Order matters: /reports/$slug last so /reports beats it for the list view.
     reportsListRoute,
     reportRunRoute,
+    // Order matters: /saved-reports/new + /saved-reports/$id/edit win against /$id.
+    savedReportNewRoute,
+    savedReportsListRoute,
+    savedReportEditRoute,
+    savedReportRunRoute,
   ]),
 ]);
 
