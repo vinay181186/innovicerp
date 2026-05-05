@@ -37,16 +37,36 @@ export const activityLogListRoute = createRoute({
   component: ActivityLogListPage,
 });
 
+// Tailwind class map keyed by action label. Legacy entries (with spaces)
+// are kept alongside the new underscore-form actions emitted by the
+// service modules wired in T-051a #1-#9 so historical audit rows render
+// with the same colour they did in the legacy renderer.
 const ACTION_COLORS: Record<string, string> = {
+  // CRUD baseline
   CREATE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
   EDIT: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
   DELETE: 'text-rose-600 dark:text-rose-400 bg-rose-500/10',
   RESTORE: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
   IMPORT: 'text-violet-600 dark:text-violet-400 bg-violet-500/10',
-  'OP START': 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
-  'OP COMPLETE': 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
   DISPATCH: 'text-cyan-600 dark:text-cyan-400 bg-cyan-500/10',
   'PERM DELETE': 'text-rose-700 dark:text-rose-500 bg-rose-500/20',
+  // Op-entry (new — T-051a #4)
+  OP_START: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
+  OP_STOP: 'text-orange-600 dark:text-orange-400 bg-orange-500/10',
+  OP_COMPLETE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  // Legacy space-form variants (migrated rows render with the same colour)
+  'OP START': 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
+  'OP COMPLETE': 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  // Cross-module + NC dispositions (T-051a #6, #8)
+  PR_CONVERT: 'text-cyan-600 dark:text-cyan-400 bg-cyan-500/10',
+  NC_DISPOSE: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
+  NC_CLOSE_REWORK: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  // Auto-cascade (T-051a #9) — line-close intermediate, header-close terminal
+  JC_COMPLETE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  SO_LINE_CLOSED: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
+  SO_CLOSED: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  JW_LINE_CLOSED: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
+  JW_CLOSED: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
 };
 
 function ActivityLogListPage() {
