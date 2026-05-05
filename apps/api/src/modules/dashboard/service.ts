@@ -1,8 +1,12 @@
-// Dashboard KPIs service (T-041c).
+// Dashboard KPIs service (T-041c + T-043 role filter).
 //
 // Runs 5 aggregate queries in parallel and assembles the tile response.
 // All queries are scoped to the user's company via withUserContext (RLS
 // enforces it at the DB layer; service-level scope is defensive).
+//
+// T-043 — tiles are filtered to those visible to the caller's role
+// before returning. The visibility map is intentionally local to this
+// service (it's an authorization decision, not a wire shape).
 //
 // Severity rules:
 //   - count == 0  → 'ok' (caught up)
@@ -11,10 +15,32 @@
 //   - many        → 'danger'
 // Thresholds are conservative for the 15-20-user scale; tune per tile.
 
+import type { UserRole } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
-import type { DashboardKpisResponse, DashboardTile, DashboardTileSeverity } from './schema';
+import type {
+  DashboardKpisResponse,
+  DashboardTile,
+  DashboardTileKind,
+  DashboardTileSeverity,
+} from './schema';
+
+// Tile visibility per role. Admin/manager/viewer see everything;
+// function-specific roles see only what's relevant to their work.
+// `viewer` keeps full visibility because it's a read-only audit role —
+// it sees what an admin sees, just can't edit.
+const TILE_VISIBILITY: Record<DashboardTileKind, readonly UserRole[]> = {
+  open_sales_orders: ['admin', 'manager', 'viewer', 'dispatch', 'design'],
+  open_purchase_orders: ['admin', 'manager', 'viewer', 'procurement'],
+  jc_ops_awaiting_qc: ['admin', 'manager', 'viewer', 'operator', 'qc'],
+  ncs_pending_dispose: ['admin', 'manager', 'viewer', 'operator', 'qc'],
+  grn_lines_pending_qc: ['admin', 'manager', 'viewer', 'qc', 'procurement'],
+};
+
+function isTileVisible(kind: DashboardTileKind, role: UserRole): boolean {
+  return TILE_VISIBILITY[kind].includes(role);
+}
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -141,9 +167,11 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
       },
     ];
 
+    const visible = tiles.filter((t) => isTileVisible(t.kind, user.role));
+
     return {
       generatedAt: new Date().toISOString(),
-      tiles,
+      tiles: visible,
     };
   });
 }

@@ -36,7 +36,7 @@ beforeAll(async () => {
 });
 
 describe('dashboard service', () => {
-  it('returns the 5 expected tiles with the correct kinds + shape', async () => {
+  it('admin gets all 5 tiles with the correct kinds + shape', async () => {
     const result = await service.getDashboardKpis(admin);
     expect(result.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.tiles).toHaveLength(5);
@@ -49,6 +49,46 @@ describe('dashboard service', () => {
       expect(tile.route.startsWith('/')).toBe(true);
       expect(['ok', 'info', 'warning', 'danger']).toContain(tile.severity);
     }
+  });
+
+  it('manager sees the same 5 tiles as admin', async () => {
+    const manager: AuthContext = { ...admin, role: 'manager' };
+    const result = await service.getDashboardKpis(manager);
+    expect(result.tiles.map((t) => t.kind).sort()).toEqual([...ALL_KINDS].sort());
+  });
+
+  it('viewer keeps full visibility (read-only audit role)', async () => {
+    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    const result = await service.getDashboardKpis(viewer);
+    expect(result.tiles).toHaveLength(5);
+  });
+
+  it('operator only sees jc_ops_awaiting_qc + ncs_pending_dispose', async () => {
+    const operator: AuthContext = { ...admin, role: 'operator' };
+    const result = await service.getDashboardKpis(operator);
+    const kinds = result.tiles.map((t) => t.kind).sort();
+    expect(kinds).toEqual(['jc_ops_awaiting_qc', 'ncs_pending_dispose']);
+  });
+
+  it('qc sees QC-relevant tiles (jc-ops, NCs, GRN-lines)', async () => {
+    const qc: AuthContext = { ...admin, role: 'qc' };
+    const result = await service.getDashboardKpis(qc);
+    const kinds = result.tiles.map((t) => t.kind).sort();
+    expect(kinds).toEqual(['grn_lines_pending_qc', 'jc_ops_awaiting_qc', 'ncs_pending_dispose']);
+  });
+
+  it('procurement sees PO + GRN lines pending QC only', async () => {
+    const proc: AuthContext = { ...admin, role: 'procurement' };
+    const result = await service.getDashboardKpis(proc);
+    const kinds = result.tiles.map((t) => t.kind).sort();
+    expect(kinds).toEqual(['grn_lines_pending_qc', 'open_purchase_orders']);
+  });
+
+  it('dispatch sees open sales orders only (until dispatch-specific tiles land)', async () => {
+    const dispatch: AuthContext = { ...admin, role: 'dispatch' };
+    const result = await service.getDashboardKpis(dispatch);
+    const kinds = result.tiles.map((t) => t.kind).sort();
+    expect(kinds).toEqual(['open_sales_orders']);
   });
 
   it('NC tile reports `pending` count + sum of rejected_qty when non-zero', async () => {
