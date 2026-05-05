@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
+  activityLog,
   items,
   purchaseOrderLines,
   purchaseOrders,
@@ -79,6 +80,7 @@ afterAll(async () => {
     await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${TEST_PREFIX}%`));
   }
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('purchase-orders service', () => {
@@ -509,5 +511,93 @@ describe('purchase-orders service', () => {
         noCompanyUser,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const code = `${TEST_PREFIX}AUD`;
+    const created = await service.createPurchaseOrder(
+      {
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          vendorCodeText: 'AUDIT-VEN',
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+        lines: [{ itemId: firstItemId, itemName: 'Audit Item', qty: 1, rate: 0 }],
+      },
+      admin,
+    );
+    await service.updatePurchaseOrder(created.id, { header: { remarks: 'updated' } }, admin);
+    await service.softDeletePurchaseOrder(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('PurchaseOrder');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(code);
+    }
+  });
+
+  it('createPurchaseOrderFromPr emits PO CREATE + PR PR_CONVERT atomic with the conversion', async () => {
+    const prCode = `${TEST_PREFIX}AUD-PR`;
+    const poCode = `${TEST_PREFIX}AUD-FROM-PR`;
+    const pr = await db
+      .insert(purchaseRequests)
+      .values({
+        companyId: admin.companyId!,
+        code: prCode,
+        prDate: '2026-05-03',
+        status: 'open',
+        vendorId: firstVendorId,
+        vendorCodeText: 'PR-VEN',
+        itemId: firstItemId,
+        itemName: 'PR Item',
+        qty: 4,
+        estCost: '0.00',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    await service.createPurchaseOrderFromPr(
+      {
+        prId: pr[0]!.id,
+        header: {
+          code: poCode,
+          poDate: '2026-05-03',
+          poType: 'job_work',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+      },
+      admin,
+    );
+
+    const poAudit = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, poCode)));
+    expect(poAudit.map((r) => r.action)).toEqual(['CREATE']);
+    expect(poAudit[0]!.entity).toBe('PurchaseOrder');
+
+    const prAudit = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, prCode)));
+    expect(prAudit.map((r) => r.action)).toEqual(['PR_CONVERT']);
+    expect(prAudit[0]!.entity).toBe('PurchaseRequest');
+    expect(prAudit[0]!.detail).toContain(prCode);
+    expect(prAudit[0]!.detail).toContain(poCode);
   });
 });

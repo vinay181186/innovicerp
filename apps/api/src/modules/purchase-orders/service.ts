@@ -30,6 +30,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
@@ -47,6 +48,10 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+function poDetail(code: string, vendorCodeText: string | null | undefined): string {
+  return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -444,6 +449,18 @@ export async function createPurchaseOrder(
     });
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'PurchaseOrder',
+        detail: poDetail(header.code, header.vendorCodeText),
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       ...toPurchaseOrder(header),
       lines: insertedLines.map(toPurchaseOrderLine),
@@ -511,8 +528,21 @@ export async function updatePurchaseOrder(
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
+    const updatedHdr = updatedHdrRows[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'PurchaseOrder',
+        detail: poDetail(updatedHdr.code, updatedHdr.vendorCodeText),
+        refId: updatedHdr.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
-      ...toPurchaseOrder(updatedHdrRows[0]!),
+      ...toPurchaseOrder(updatedHdr),
       lines: lineRows.map(toPurchaseOrderLine),
     };
   });
@@ -625,7 +655,11 @@ export async function softDeletePurchaseOrder(
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: purchaseOrders.id })
+      .select({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        vendorCodeText: purchaseOrders.vendorCodeText,
+      })
       .from(purchaseOrders)
       .where(
         and(
@@ -635,7 +669,8 @@ export async function softDeletePurchaseOrder(
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`Purchase order ${id} not found`);
     }
     // T-036c will add a guard: block delete when GRN lines reference this PO's
@@ -650,6 +685,17 @@ export async function softDeletePurchaseOrder(
       .update(purchaseOrders)
       .set({ deletedAt: now, updatedBy: user.id })
       .where(eq(purchaseOrders.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'PurchaseOrder',
+        detail: poDetail(row.code, row.vendorCodeText),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }
@@ -762,6 +808,32 @@ export async function createPurchaseOrderFromPr(
         updatedBy: user.id,
       })
       .where(eq(purchaseRequests.id, pr.id));
+
+    // Audit: emit two rows in the same tx — one for the new PO (CREATE),
+    // one for the PR (PR_CONVERT, status flip from this side). Keeps both
+    // entities' audit trails complete from their own refId perspective.
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'PurchaseOrder',
+        detail: poDetail(header.code, header.vendorCodeText),
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+    await emitActivityLog(
+      tx,
+      {
+        action: 'PR_CONVERT',
+        entity: 'PurchaseRequest',
+        detail: `${pr.code} → ${header.code}`,
+        refId: pr.code,
+      },
+      companyId,
+      user,
+    );
 
     return {
       ...toPurchaseOrder(header),
