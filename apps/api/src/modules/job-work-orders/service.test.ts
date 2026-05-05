@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
+import { activityLog, items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -58,6 +58,7 @@ afterAll(async () => {
     }
     await db.delete(jobWorkOrders).where(like(jobWorkOrders.code, `${TEST_PREFIX}%`));
   }
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('job-work-orders service', () => {
@@ -293,6 +294,36 @@ describe('job-work-orders service', () => {
       .from(jobWorkOrderLines)
       .where(eq(jobWorkOrderLines.jobWorkOrderId, created.id));
     expect(lines.every((l) => l.deletedAt !== null)).toBe(true);
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const code = `${TEST_PREFIX}AUD`;
+    const created = await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-02', customerName: 'Audit Customer', status: 'open' },
+        lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+      },
+      admin,
+    );
+    await service.updateJobWorkOrder(
+      created.id,
+      { header: { customerName: 'Audit Customer (renamed)' } },
+      admin,
+    );
+    await service.softDeleteJobWorkOrder(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('JobWorkOrder');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(code);
+    }
   });
 
   it('throws AuthorizationError when user has no company assignment', async () => {

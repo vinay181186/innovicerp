@@ -20,6 +20,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   CreateJobWorkOrderInput,
   JobWorkOrder,
@@ -36,6 +37,10 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+function jwDetail(code: string, customerName: string | null | undefined): string {
+  return customerName ? `${code} — ${customerName}` : code;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -405,6 +410,18 @@ export async function createJobWorkOrder(
     });
     const insertedLines = await tx.insert(jobWorkOrderLines).values(lineValues).returning();
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'JobWorkOrder',
+        detail: jwDetail(header.code, header.customerName),
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       ...toJobWorkOrder(header),
       lines: insertedLines.map(toJobWorkOrderLine),
@@ -465,8 +482,21 @@ export async function updateJobWorkOrder(
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
+    const updatedHdr = updatedHdrRows[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'JobWorkOrder',
+        detail: jwDetail(updatedHdr.code, updatedHdr.customerName),
+        refId: updatedHdr.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
-      ...toJobWorkOrder(updatedHdrRows[0]!),
+      ...toJobWorkOrder(updatedHdr),
       lines: lineRows.map(toJobWorkOrderLine),
     };
   });
@@ -587,7 +617,11 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: jobWorkOrders.id })
+      .select({
+        id: jobWorkOrders.id,
+        code: jobWorkOrders.code,
+        customerName: jobWorkOrders.customerName,
+      })
       .from(jobWorkOrders)
       .where(
         and(
@@ -597,7 +631,8 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`Job work order ${id} not found`);
     }
     const now = new Date();
@@ -609,6 +644,17 @@ export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Pro
       .update(jobWorkOrders)
       .set({ deletedAt: now, updatedBy: user.id })
       .where(eq(jobWorkOrders.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'JobWorkOrder',
+        detail: jwDetail(row.code, row.customerName),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }
