@@ -21,6 +21,11 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
+
+function soDetail(code: string, customerName: string | null | undefined): string {
+  return customerName ? `${code} — ${customerName}` : code;
+}
 import type {
   CreateSalesOrderInput,
   ListSalesOrdersQuery,
@@ -452,6 +457,18 @@ export async function createSalesOrder(
       insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
     }
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'SalesOrder',
+        detail: soDetail(header.code, header.customerName),
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       ...toSalesOrder(header),
       lines: insertedLines.map(toSalesOrderLine),
@@ -520,8 +537,21 @@ export async function updateSalesOrder(
       .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
 
+    const updatedHdr = updatedHdrRows[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'SalesOrder',
+        detail: soDetail(updatedHdr.code, updatedHdr.customerName),
+        refId: updatedHdr.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
-      ...toSalesOrder(updatedHdrRows[0]!),
+      ...toSalesOrder(updatedHdr),
       lines: lineRows.map(toSalesOrderLine),
     };
   });
@@ -635,7 +665,11 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
 
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: salesOrders.id })
+      .select({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        customerName: salesOrders.customerName,
+      })
       .from(salesOrders)
       .where(
         and(
@@ -645,7 +679,8 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`Sales order ${id} not found`);
     }
     const now = new Date();
@@ -657,6 +692,17 @@ export async function softDeleteSalesOrder(id: string, user: AuthContext): Promi
       .update(salesOrders)
       .set({ deletedAt: now, updatedBy: user.id })
       .where(eq(salesOrders.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'SalesOrder',
+        detail: soDetail(row.code, row.customerName),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }
