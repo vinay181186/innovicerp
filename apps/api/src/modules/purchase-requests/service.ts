@@ -24,6 +24,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import type {
   CreatePurchaseRequestInput,
   ListPurchaseRequestsQuery,
@@ -37,6 +38,16 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+function prDetail(
+  code: string,
+  itemName: string | null | undefined,
+  itemCodeText: string | null | undefined,
+  qty: number,
+): string {
+  const label = itemName ?? itemCodeText ?? '—';
+  return `${code} — ${label} x ${qty}`;
+}
 
 // ─── FK validation helpers ────────────────────────────────────────────────
 
@@ -356,7 +367,19 @@ export async function createPurchaseRequest(
         updatedBy: user.id,
       })
       .returning();
-    return toPurchaseRequest(inserted[0]!);
+    const row = inserted[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'PurchaseRequest',
+        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toPurchaseRequest(row);
   });
 }
 
@@ -422,7 +445,19 @@ export async function updatePurchaseRequest(
       .from(purchaseRequests)
       .where(eq(purchaseRequests.id, id))
       .limit(1);
-    return toPurchaseRequest(reread[0]!);
+    const row = reread[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'PurchaseRequest',
+        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toPurchaseRequest(row);
   });
 }
 
@@ -437,6 +472,10 @@ export async function softDeletePurchaseRequest(
     const existing = await tx
       .select({
         id: purchaseRequests.id,
+        code: purchaseRequests.code,
+        itemName: purchaseRequests.itemName,
+        itemCodeText: purchaseRequests.itemCodeText,
+        qty: purchaseRequests.qty,
         status: purchaseRequests.status,
         poId: purchaseRequests.poId,
       })
@@ -449,13 +488,14 @@ export async function softDeletePurchaseRequest(
         ),
       )
       .limit(1);
-    if (existing.length === 0) {
+    const row = existing[0];
+    if (!row) {
       throw new NotFoundError(`Purchase request ${id} not found`);
     }
     // Block deletion when a PO has been generated — that PO carries the
     // procurement obligation. Cancel the PR instead (status='cancelled') if
     // needed; deletion is for mistakes pre-PO only.
-    if (existing[0]!.poId !== null) {
+    if (row.poId !== null) {
       throw new ConflictError(
         `Purchase request ${id} has a linked purchase order — cancel instead of delete`,
       );
@@ -464,6 +504,17 @@ export async function softDeletePurchaseRequest(
       .update(purchaseRequests)
       .set({ deletedAt: new Date(), updatedBy: user.id })
       .where(eq(purchaseRequests.id, id));
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'PurchaseRequest',
+        detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
     return { ok: true };
   });
 }

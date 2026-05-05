@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, purchaseRequests, users, vendors } from '../../db/schema';
+import { activityLog, items, purchaseRequests, users, vendors } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -64,6 +64,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('purchase-requests service', () => {
@@ -310,5 +311,37 @@ describe('purchase-requests service', () => {
         noCompanyUser,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const code = `${TEST_PREFIX}AUD`;
+    const created = await service.createPurchaseRequest(
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        itemName: 'Audit Item',
+        qty: 5,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    await service.updatePurchaseRequest(created.id, { qty: 6 }, admin);
+    await service.softDeletePurchaseRequest(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, code)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('PurchaseRequest');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(code);
+    }
   });
 });
