@@ -45,13 +45,13 @@ describe('reports routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET /reports returns the 9 registered report definitions for any role', async () => {
+  it('GET /reports returns the 11 registered report definitions for any role', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     app = await buildApp(viewer);
     const res = await app.inject({ method: 'GET', url: '/reports' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.reports).toHaveLength(9);
+    expect(body.reports).toHaveLength(11);
   });
 
   it('GET /reports/:slug runs and returns rows + columns + filters', async () => {

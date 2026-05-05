@@ -28,12 +28,14 @@ beforeAll(async () => {
 });
 
 describe('reports service', () => {
-  it('listReports returns 9 registered reports with stable shape', () => {
+  it('listReports returns 11 registered reports with stable shape', () => {
     const result = service.listReports();
     const slugs = result.reports.map((r) => r.slug).sort();
     expect(slugs).toEqual([
       'daily-op-log',
+      'grn-qc-log',
       'items-on-hand',
+      'jc-ageing',
       'jc-status-summary',
       'nc-summary-by-reason',
       'open-po-ageing',
@@ -190,6 +192,43 @@ describe('reports service', () => {
       expect(validTxnTypes).toContain(row['txn_type']);
       expect(validSourceTypes).toContain(row['source_type']);
       expect(Number(row['qty'])).toBeGreaterThan(0);
+    }
+  });
+
+  it('runReport "jc-ageing" returns only open/qc_pending/no_ops JCs with non-negative days_open', async () => {
+    const result = await service.runReport('jc-ageing', {}, admin);
+    expect(result.slug).toBe('jc-ageing');
+    const validStatuses = ['open', 'qc_pending', 'no_ops'];
+    for (const row of result.rows) {
+      expect(validStatuses).toContain(row['computed_status']);
+      expect(Number(row['days_open'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['qty'])).toBeGreaterThan(0);
+    }
+  });
+
+  it('runReport "jc-ageing" computedStatus filter narrows results', async () => {
+    const open = await service.runReport('jc-ageing', { computedStatus: 'open' }, admin);
+    for (const row of open.rows) {
+      expect(row['computed_status']).toBe('open');
+    }
+  });
+
+  it('runReport "grn-qc-log" returns rows with valid qc_status + accept/reject ≥ 0', async () => {
+    const result = await service.runReport('grn-qc-log', {}, admin);
+    expect(result.slug).toBe('grn-qc-log');
+    const validQc = ['pending', 'in_progress', 'completed'];
+    for (const row of result.rows) {
+      expect(validQc).toContain(row['qc_status']);
+      expect(Number(row['received_qty'])).toBeGreaterThan(0);
+      expect(Number(row['qc_accepted_qty'])).toBeGreaterThanOrEqual(0);
+      expect(Number(row['qc_rejected_qty'])).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('runReport "grn-qc-log" qcStatus filter narrows results', async () => {
+    const completed = await service.runReport('grn-qc-log', { qcStatus: 'completed' }, admin);
+    for (const row of completed.rows) {
+      expect(row['qc_status']).toBe('completed');
     }
   });
 

@@ -10,7 +10,9 @@
 
 import type { DbTransaction } from '../../db/with-user-context';
 import { dailyOpLogReport } from './definitions/daily-op-log';
+import { grnQcLogReport } from './definitions/grn-qc-log';
 import { itemsOnHandReport } from './definitions/items-on-hand';
+import { jcAgeingReport } from './definitions/jc-ageing';
 import { jcStatusSummaryReport } from './definitions/jc-status-summary';
 import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
@@ -46,6 +48,8 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [soOpenBacklogReport.definition.slug]: soOpenBacklogReport,
   [vendorPoSummaryReport.definition.slug]: vendorPoSummaryReport,
   [stockMovementLogReport.definition.slug]: stockMovementLogReport,
+  [jcAgeingReport.definition.slug]: jcAgeingReport,
+  [grnQcLogReport.definition.slug]: grnQcLogReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {
