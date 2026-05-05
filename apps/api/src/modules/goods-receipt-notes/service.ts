@@ -38,6 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
 import type {
   CreateGoodsReceiptNoteInput,
@@ -55,6 +56,10 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+function grnDetail(code: string, vendorCodeText: string | null | undefined): string {
+  return vendorCodeText ? `${code} — ${vendorCodeText}` : code;
+}
 
 // ─── FK helpers ───────────────────────────────────────────────────────────
 
@@ -494,6 +499,18 @@ export async function createGoodsReceiptNote(
     // Fire cascades for every newly-inserted line.
     await runCascades(tx, companyId, user.id, insertedLines, []);
 
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'GoodsReceiptNote',
+        detail: grnDetail(header.code, header.vendorCodeText),
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
       ...toGoodsReceiptNote(header),
       lines: insertedLines.map(toGoodsReceiptNoteLine),
@@ -565,8 +582,21 @@ export async function updateGoodsReceiptNote(
       )
       .orderBy(asc(goodsReceiptNoteLines.lineNo));
 
+    const updatedHdr = updatedHdrRows[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'GoodsReceiptNote',
+        detail: grnDetail(updatedHdr.code, updatedHdr.vendorCodeText),
+        refId: updatedHdr.code,
+      },
+      companyId,
+      user,
+    );
+
     return {
-      ...toGoodsReceiptNote(updatedHdrRows[0]!),
+      ...toGoodsReceiptNote(updatedHdr),
       lines: lineRows.map(toGoodsReceiptNoteLine),
     };
   });
@@ -839,7 +869,11 @@ export async function softDeleteGoodsReceiptNote(
 
   return withUserContext(user, async (tx) => {
     const existingHdr = await tx
-      .select({ id: goodsReceiptNotes.id })
+      .select({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        vendorCodeText: goodsReceiptNotes.vendorCodeText,
+      })
       .from(goodsReceiptNotes)
       .where(
         and(
@@ -849,7 +883,8 @@ export async function softDeleteGoodsReceiptNote(
         ),
       )
       .limit(1);
-    if (existingHdr.length === 0) {
+    const hdr = existingHdr[0];
+    if (!hdr) {
       throw new NotFoundError(`Goods receipt note ${id} not found`);
     }
 
@@ -904,6 +939,18 @@ export async function softDeleteGoodsReceiptNote(
     for (const poId of touchedPoHeaderIds) {
       await recalcPoHeaderStatus(tx, poId, user.id);
     }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DELETE',
+        entity: 'GoodsReceiptNote',
+        detail: grnDetail(hdr.code, hdr.vendorCodeText),
+        refId: hdr.code,
+      },
+      companyId,
+      user,
+    );
 
     return { ok: true };
   });

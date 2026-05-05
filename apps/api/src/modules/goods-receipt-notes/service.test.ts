@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, like, notLike, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
+  activityLog,
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
@@ -130,6 +131,7 @@ afterAll(async () => {
     await db.delete(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, h.id));
   }
   await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 });
 
 describe('goods-receipt-notes service', () => {
@@ -484,5 +486,48 @@ describe('goods-receipt-notes service', () => {
         { ...admin, companyId: null },
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('emits CREATE / EDIT / DELETE activity_log rows atomic with the mutation', async () => {
+    const po = await freshPo('AUD', 5);
+    const grnCode = `${TEST_PREFIX}AUD`;
+    const created = await service.createGoodsReceiptNote(
+      {
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+          vendorCodeText: 'AUDIT-VEN',
+        },
+        lines: [
+          {
+            itemId: firstItemId,
+            itemName: 'Audit Item',
+            receivedQty: 2,
+            purchaseOrderLineId: po.lineId,
+            qcStatus: 'pending',
+            qcAcceptedQty: 0,
+            qcRejectedQty: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    await service.updateGoodsReceiptNote(created.id, { header: { dcNo: 'DC-99' } }, admin);
+    await service.softDeleteGoodsReceiptNote(created.id, admin);
+
+    const auditRows = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, grnCode)));
+    const actions = auditRows.map((r) => r.action).sort();
+    expect(actions).toEqual(['CREATE', 'DELETE', 'EDIT']);
+    for (const r of auditRows) {
+      expect(r.entity).toBe('GoodsReceiptNote');
+      expect(r.userId).toBe(admin.id);
+      expect(r.userName).toBe(admin.email);
+      expect(r.detail).toContain(grnCode);
+    }
   });
 });
