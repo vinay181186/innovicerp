@@ -1,8 +1,10 @@
+import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePreviewSpec, useSavedReport, useSourceCatalog, useUpdateSavedReport } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
@@ -21,6 +23,16 @@ function SavedReportEditPage() {
   const previewMutation = usePreviewSpec();
   const updateMutation = useUpdateSavedReport(id);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const [excelLoading, setExcelLoading] = useState(false);
+
+  const onExcel = async (spec: AdHocSpec) => {
+    setExcelLoading(true);
+    try {
+      await apiDownload('/saved-reports/preview/export.xlsx', { method: 'POST', json: spec });
+    } finally {
+      setExcelLoading(false);
+    }
+  };
 
   const onSave = (input: SaveInput) => {
     setSaveError(undefined);
@@ -99,6 +111,8 @@ function SavedReportEditPage() {
             previewError={
               previewMutation.error instanceof Error ? previewMutation.error.message : undefined
             }
+            onExcel={onExcel}
+            excelLoading={excelLoading}
             saving={updateMutation.isPending}
             saveError={saveError}
             saveLabel="Save changes"

@@ -3,6 +3,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Download, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { apiDownload } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -63,6 +64,19 @@ function ReportRunPage() {
     const csv = rowsToCsv(data.columns, data.rows);
     const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
     downloadCsv(`${data.slug}-${stamp}.csv`, csv);
+  };
+
+  const [excelLoading, setExcelLoading] = useState(false);
+  const onExcel = async () => {
+    if (!slug) return;
+    const params = new URLSearchParams(appliedFilters);
+    const qs = params.toString();
+    setExcelLoading(true);
+    try {
+      await apiDownload(`/reports/${slug}/export.xlsx${qs ? `?${qs}` : ''}`, {}, `${slug}.xlsx`);
+    } finally {
+      setExcelLoading(false);
+    }
   };
 
   return (
@@ -137,16 +151,28 @@ function ReportRunPage() {
                         : 'No results yet.'}
                     </CardDescription>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={onCsv}
-                    disabled={!data || data.rowCount === 0}
-                  >
-                    <Download />
-                    Export CSV
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onCsv}
+                      disabled={!data || data.rowCount === 0}
+                    >
+                      <Download />
+                      Export CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={onExcel}
+                      disabled={!data || data.rowCount === 0 || excelLoading}
+                    >
+                      {excelLoading ? <Loader2 className="animate-spin" /> : <Download />}
+                      Export Excel
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>

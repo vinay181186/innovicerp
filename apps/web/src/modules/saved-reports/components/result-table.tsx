@@ -23,6 +23,11 @@ interface Props {
   isError: boolean;
   errorMessage?: string | undefined;
   filenamePrefix: string;
+  /** Optional Excel-export trigger. When provided, an "Export Excel"
+   *  button renders next to "Export CSV"; the parent owns the API call
+   *  (saved-report id vs preview spec) and the loading state. */
+  onExcel?: (() => void) | undefined;
+  excelLoading?: boolean | undefined;
 }
 
 export function ResultTable({
@@ -31,6 +36,8 @@ export function ResultTable({
   isError,
   errorMessage,
   filenamePrefix,
+  onExcel,
+  excelLoading,
 }: Props): JSX.Element {
   const onCsv = () => {
     if (!data) return;
@@ -98,16 +105,30 @@ export function ResultTable({
                   : 'No results yet.'}
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onCsv}
-              disabled={!data || data.rowCount === 0}
-            >
-              <Download />
-              Export CSV
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onCsv}
+                disabled={!data || data.rowCount === 0}
+              >
+                <Download />
+                Export CSV
+              </Button>
+              {onExcel ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onExcel}
+                  disabled={!data || data.rowCount === 0 || excelLoading}
+                >
+                  {excelLoading ? <Loader2 className="animate-spin" /> : <Download />}
+                  Export Excel
+                </Button>
+              ) : null}
+            </div>
           </div>
         </CardHeader>
         <CardContent>

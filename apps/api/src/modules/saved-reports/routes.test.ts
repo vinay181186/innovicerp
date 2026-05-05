@@ -167,6 +167,68 @@ describe('saved-reports routes', () => {
     expect(after.statusCode).toBe(404);
   });
 
+  it('GET /saved-reports/:id/export.xlsx returns an xlsx binary', async () => {
+    app = await buildApp(admin);
+    const create = await app.inject({
+      method: 'POST',
+      url: '/saved-reports',
+      payload: {
+        name: `${PREFIX}xlsx-export`,
+        description: '',
+        sourceKey: 'job-cards',
+        spec: {
+          sourceKey: 'job-cards',
+          columns: ['jc_code', 'qty'],
+          filters: [],
+          groupBy: null,
+          sumCol: null,
+          sumFn: 'SUM',
+          sort: [],
+        },
+        isShared: false,
+      },
+    });
+    const id = create.json().id;
+    const res = await app.inject({
+      method: 'GET',
+      url: `/saved-reports/${id}/export.xlsx`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(res.headers['content-disposition']).toContain('attachment;');
+    const body = res.rawPayload;
+    expect(body[0]).toBe(0x50);
+    expect(body[1]).toBe(0x4b);
+    expect(body.length).toBeGreaterThan(2000);
+  });
+
+  it('POST /saved-reports/preview/export.xlsx returns an xlsx binary', async () => {
+    app = await buildApp(admin);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/saved-reports/preview/export.xlsx',
+      payload: {
+        sourceKey: 'items-stock',
+        columns: ['code', 'name', 'on_hand'],
+        filters: [],
+        groupBy: null,
+        sumCol: null,
+        sumFn: 'SUM',
+        sort: [],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(res.headers['content-disposition']).toContain('preview');
+    const body = res.rawPayload;
+    expect(body[0]).toBe(0x50);
+    expect(body[1]).toBe(0x4b);
+  });
+
   it('POST /saved-reports rejects invalid spec with 400', async () => {
     app = await buildApp(admin);
     const res = await app.inject({

@@ -82,4 +82,35 @@ describe('reports routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().filters).toMatchObject({ fromDate: '2099-01-01' });
   });
+
+  it('GET /reports/:slug/export.xlsx returns an xlsx binary with correct headers', async () => {
+    app = await buildApp(admin);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/reports/daily-op-log/export.xlsx',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(res.headers['content-disposition']).toContain('attachment;');
+    expect(res.headers['content-disposition']).toContain('daily-op-log');
+    // xlsx files are zip archives — magic bytes "PK\x03\x04".
+    const body = res.rawPayload;
+    expect(body[0]).toBe(0x50); // P
+    expect(body[1]).toBe(0x4b); // K
+    expect(body[2]).toBe(0x03);
+    expect(body[3]).toBe(0x04);
+    // Sanity: a non-trivial xlsx is at least a few KB even when empty.
+    expect(body.length).toBeGreaterThan(2000);
+  });
+
+  it('GET /reports/:slug/export.xlsx returns 404 for unknown slug', async () => {
+    app = await buildApp(admin);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/reports/nope/export.xlsx',
+    });
+    expect(res.statusCode).toBe(404);
+  });
 });

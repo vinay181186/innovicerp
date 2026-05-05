@@ -1,7 +1,9 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Edit, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSavedReport, useSavedReportRun } from '../api';
 import { ResultTable } from '../components/result-table';
@@ -16,6 +18,20 @@ function SavedReportRunPage() {
   const { id } = savedReportRunRoute.useParams();
   const reportQ = useSavedReport(id);
   const runQ = useSavedReportRun(id);
+  const [excelLoading, setExcelLoading] = useState(false);
+
+  const onExcel = async () => {
+    setExcelLoading(true);
+    try {
+      await apiDownload(
+        `/saved-reports/${id}/export.xlsx`,
+        {},
+        `${reportQ.data?.name ?? 'report'}.xlsx`,
+      );
+    } finally {
+      setExcelLoading(false);
+    }
+  };
 
   return (
     <main className="container max-w-6xl py-10">
@@ -74,6 +90,8 @@ function SavedReportRunPage() {
               isError={runQ.isError}
               errorMessage={runQ.error instanceof Error ? runQ.error.message : undefined}
               filenamePrefix={reportQ.data.name.replace(/[^a-z0-9-]/gi, '_').toLowerCase()}
+              onExcel={onExcel}
+              excelLoading={excelLoading}
             />
           </>
         )}

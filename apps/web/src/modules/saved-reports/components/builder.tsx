@@ -37,6 +37,9 @@ interface Props {
   preview: RunAdHocResponse | undefined;
   previewLoading: boolean;
   previewError?: string | undefined;
+  /** Optional Excel export of the current spec (server runs + serialises). */
+  onExcel?: (spec: AdHocSpec) => void;
+  excelLoading?: boolean;
   saving: boolean;
   saveError?: string | undefined;
   saveLabel: string;
@@ -95,6 +98,8 @@ export function Builder(props: Props): JSX.Element {
     preview,
     previewLoading,
     previewError,
+    onExcel,
+    excelLoading,
     saving,
     saveError,
     saveLabel,
@@ -585,6 +590,8 @@ export function Builder(props: Props): JSX.Element {
             isError={Boolean(previewError)}
             errorMessage={previewError}
             filenamePrefix="preview"
+            onExcel={onExcel ? () => onExcel(buildSpec()) : undefined}
+            excelLoading={excelLoading}
           />
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { buildWorkbookBuffer, XLSX_CONTENT_TYPE, xlsxFilename } from '../../lib/excel';
 import { AuthenticationError } from '../../lib/errors';
 import {
   adHocSpecSchema,
@@ -58,5 +59,53 @@ export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const spec = adHocSpecSchema.parse(req.body);
     return service.previewAdHocSpec(spec, req.user);
+  });
+
+  app.get('/saved-reports/:id/export.xlsx', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const result = await service.runSavedReport(id, req.user);
+    const buf = await buildWorkbookBuffer({
+      id: result.id,
+      title: result.title,
+      columns: result.columns,
+      rows: result.rows,
+      summary: result.summary,
+      summaryFunction: result.summaryFunction,
+      summaryColumn: result.summaryColumn,
+      generatedBy: req.user.email,
+      generatedAt: result.generatedAt,
+    });
+    reply
+      .type(XLSX_CONTENT_TYPE)
+      .header(
+        'content-disposition',
+        `attachment; filename="${xlsxFilename(result.title, result.generatedAt)}"`,
+      );
+    return reply.send(buf);
+  });
+
+  app.post('/saved-reports/preview/export.xlsx', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const spec = adHocSpecSchema.parse(req.body);
+    const result = await service.previewAdHocSpec(spec, req.user);
+    const buf = await buildWorkbookBuffer({
+      id: result.id,
+      title: result.title,
+      columns: result.columns,
+      rows: result.rows,
+      summary: result.summary,
+      summaryFunction: result.summaryFunction,
+      summaryColumn: result.summaryColumn,
+      generatedBy: req.user.email,
+      generatedAt: result.generatedAt,
+    });
+    reply
+      .type(XLSX_CONTENT_TYPE)
+      .header(
+        'content-disposition',
+        `attachment; filename="${xlsxFilename('preview', result.generatedAt)}"`,
+      );
+    return reply.send(buf);
   });
 }
