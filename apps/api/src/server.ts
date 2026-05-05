@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
+import { activityLogRoutes } from './modules/activity-log/routes';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
@@ -70,6 +71,7 @@ await app.register(deliveryChallansRoutes);
 await app.register(dashboardRoutes);
 await app.register(reportsRoutes);
 await app.register(savedReportsRoutes);
+await app.register(activityLogRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

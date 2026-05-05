@@ -445,6 +445,17 @@ const DELIVERY_CHALLAN_LINE_MAPPER: Mapper = (row) => ({
   dc_remarks: row['dcRemarks'],
 });
 
+const ACTIVITY_LOG_MAPPER: Mapper = (row) => ({
+  id: row['id'],
+  ts: row['ts'],
+  user_id: row['userId'],
+  user_name: row['userName'],
+  action: row['action'],
+  entity: row['entity'],
+  detail: row['detail'],
+  ref_id: row['refId'],
+});
+
 // ─── Per-table config (mapper + conflict + audit) ─────────────────────────
 
 interface TableLoadConfig {
@@ -524,6 +535,14 @@ const TABLE_CONFIGS: Record<string, TableLoadConfig> = {
     mapper: DELIVERY_CHALLAN_LINE_MAPPER,
     conflictTarget: '(delivery_challan_id, line_no) WHERE deleted_at IS NULL',
   },
+  // Phase 8 — activity log (T-051). Append-only audit trail; no
+  // updated_*/deleted_at, no business unique key (id is the conflict
+  // target on re-runs).
+  activity_log: {
+    mapper: ACTIVITY_LOG_MAPPER,
+    conflictTarget: '(id)',
+    auditColumns: 'created_only',
+  },
 };
 
 // FK-dependency order. users first (special path); then masters; then Phase 3
@@ -575,6 +594,8 @@ const ALL_TABLES = [
   'nc_register',
   'delivery_challans',
   'delivery_challan_lines',
+  // Phase 8 (T-051) — activity_log depends on users only.
+  'activity_log',
 ] as const;
 type TableName = (typeof ALL_TABLES)[number];
 

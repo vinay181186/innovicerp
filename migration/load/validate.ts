@@ -42,6 +42,7 @@ const TABLES_WITHOUT_DELETED_AT = new Set([
   'route_card_revisions',
   'running_ops',
   'store_transactions',
+  'activity_log',
 ]);
 
 export async function validateOne(input: ValidateInput): Promise<ValidationEntry> {

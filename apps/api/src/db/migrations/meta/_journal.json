@@ -78,6 +78,13 @@
       "when": 1777971900583,
       "tag": "0013_phase7_saved_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777990978736,
+      "tag": "0015_phase8_activity_log",
+      "breakpoints": true
     }
   ]
 }

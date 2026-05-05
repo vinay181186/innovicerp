@@ -1,4 +1,5 @@
 import { createRouter } from '@tanstack/react-router';
+import { activityLogListRoute } from './modules/activity-log/routes/list';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -130,6 +131,7 @@ const routeTree = rootRoute.addChildren([
     savedReportsListRoute,
     savedReportEditRoute,
     savedReportRunRoute,
+    activityLogListRoute,
   ]),
 ]);
 

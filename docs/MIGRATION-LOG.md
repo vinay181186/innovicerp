@@ -720,6 +720,20 @@ Result summary: Phase 6 validated end-to-end: **4/4 tables match transform** (qc
 
 ---
 
+## activityLog (Phase 8 / T-051) — 2026-05-05
+
+**Date:** 2026-05-05
+**Source records:** 14 (Run 1 export)
+**Loaded records:** 14
+**Discrepancy:** 0
+**Anomalies:** 0
+**Validation:** PASS — 1/1 tables match transform (14/14 rows, 0 field diffs after timestamptz ISO normalisation), 0 orphan FKs across 2 checks (user_id + created_by). Per ADR-019, legacy "Japan" entries land with `user_id=null` because legacy user names don't reliably map to Supabase Auth uids; `user_name` snapshot preserves the audit trail.
+**Cutover:** N/A — read-only migration of historical entries; live emitters wired up incrementally as a Phase 8/9 follow-on.
+
+> Re-run anytime: `pnpm --filter @innovic/migration validate:phase8`
+
+---
+
 ## Template
 
 ```
@@ -743,4 +757,4 @@ Result summary: Phase 6 validated end-to-end: **4/4 tables match transform** (qc
 - ~~**Phase 6 (NC + dispatch):** ncRegister, challans~~ — migrated 2026-05-04 (T-039); `dispatchLog`, `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues` deliberately NOT migrated per ADR-017 (all `doc_missing`)
 - **Phase 6 (remaining):** capaRecords (CAPA records — see ADR-017 future scope; legacy `_createCAPAFromNC` cascade currently absent)
 - **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
-- **Phase 9:** activityLog
+- ~~**Phase 9 (early):** activityLog~~ — migrated 2026-05-05 (T-051; landed in Phase 8 since the table has no FK dependencies on still-pending modules)

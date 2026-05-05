@@ -1749,6 +1749,50 @@ export const savedReports = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 8: activity log (T-051) ────────────────────────────────────────
+// Append-only audit trail. Per ADR-019, no soft-delete + no updated_at —
+// rows are immutable once written. `action` is text not enum because the
+// legacy app emits ad-hoc strings (CREATE / EDIT / DELETE / OP START /
+// OP COMPLETE / DISPATCH / IMPORT / RESTORE / PERM DELETE / ...). user_id
+// is nullable so legacy "System" / unmapped-user-name rows can survive
+// migration; user_name snapshot keeps display intact even if the user is
+// hard-deleted later.
+
+export const activityLog = pgTable(
+  'activity_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    ts: timestamp('ts', { withTimezone: true }).notNull().defaultNow(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    userName: text('user_name').notNull(),
+    action: text('action').notNull(),
+    entity: text('entity').notNull(),
+    detail: text('detail').notNull().default(''),
+    refId: text('ref_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by').references(() => users.id),
+  },
+  (t) => [
+    index('activity_log_company_ts_idx').on(t.companyId, t.ts),
+    index('activity_log_company_action_idx').on(t.companyId, t.action),
+    index('activity_log_company_user_idx').on(t.companyId, t.userId),
+    pgPolicy('activity_log_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('activity_log_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+    // No UPDATE/DELETE policies — append-only.
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -1805,3 +1849,5 @@ export type DeliveryChallanLine = typeof deliveryChallanLines.$inferSelect;
 export type NewDeliveryChallanLine = typeof deliveryChallanLines.$inferInsert;
 export type SavedReport = typeof savedReports.$inferSelect;
 export type NewSavedReport = typeof savedReports.$inferInsert;
+export type ActivityLog = typeof activityLog.$inferSelect;
+export type NewActivityLog = typeof activityLog.$inferInsert;

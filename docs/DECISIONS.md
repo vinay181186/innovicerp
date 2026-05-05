@@ -678,7 +678,68 @@ Layer T-041b on the T-041a engine but treat user-composed specs differently:
 
 ---
 
+## ADR-019: Phase 8 — Activity log table + read-only viewer (T-051)
+
+**Date:** 2026-05-05
+**Status:** Accepted
+
+### Context
+
+Legacy `db.activityLog` (HTML L2126-2132 + L11270-11306) is an append-only audit trail capped at 2000 entries — `{id, ts, user, action, entity, detail, refId}`. 14 rows in Run 1 export. Renderer is a sortable, filterable table with action + user dropdowns + search. Migration is in Phase 9 backlog (final-cutover delta) but the table + viewer can land earlier as a Phase 8 starter — it has no FK dependencies on the still-pending modules.
+
+### Decision
+
+Single new table `activity_log` (T-051). Read-only viewer + filter UI for v1. Schema:
+
+```sql
+id uuid PK
+company_id uuid NOT NULL → companies
+ts timestamptz NOT NULL DEFAULT now()
+user_id uuid → users(id) ON DELETE SET NULL  -- nullable
+user_name text NOT NULL                      -- snapshot
+action text NOT NULL                         -- text, not enum
+entity text NOT NULL
+detail text NOT NULL DEFAULT ''
+ref_id text
+created_at + created_by (audit)
+-- NO updated_at + NO deleted_at — append-only
+```
+
+Indexes: `(company_id, ts)`, `(company_id, action)`, `(company_id, user_id)`. RLS: standard `company_read` for SELECT + `manager_insert` for INSERT only — no UPDATE / DELETE policies (append-only is enforced at the policy level, not just by convention).
+
+API: `GET /activity-log?search=...&action=...&userId=...&fromDate=...&toDate=...&limit=...&offset=...` returns entries + total + distinct actions[] + distinct users[] (drives the filter dropdowns without separate endpoints). No POST / PUT / DELETE routes — append-only at the route boundary.
+
+Web: `/activity-log` list page mirrors legacy renderer — Date / Time / colour-coded Action / Entity / Detail / Ref / User columns; search + action + user + date-range filters URL-persisted; "snapshot" badge on rows where `user_id` is null (legacy "Japan" / "System" entries).
+
+### Alternatives Considered
+
+- **`action` as Postgres enum** — rejected: legacy emits dozens of ad-hoc strings (CREATE / EDIT / DELETE / OP START / OP COMPLETE / DISPATCH / IMPORT / RESTORE / PERM DELETE / TEST / ...). Enum would force an `ALTER TYPE` every time a new emitter ships. Text + index is fine for the cardinality we expect (~30 distinct values).
+- **Hard FK on `user_id` (NOT NULL)** — rejected: legacy "System" / "Japan" entries don't map to seeded Supabase users. Nullable + `user_name` snapshot is the standard pattern in the rest of the migration (matches NC `disposition_by_text`, op_log `operator_name`, etc.).
+- **UPDATE / DELETE policies on the table** — rejected: append-only audit means no SQL-level mutation. Future "Clear log" admin action (legacy) is not migrated; if needed later, ship as a service function that uses a service-role connection bypassing RLS.
+- **Wire up `logActivity` emitters from existing service modules in this commit** — rejected: that's a lot of plumbing across every module (items / SO / PO / GRN / NC / JC / op-entry / etc.). Out of scope for v1; deferred to Phase 8/9 follow-on. The table + viewer + `appendActivityLog` helper are the foundation; emitters land incrementally.
+- **User id resolution in the transform layer** — rejected: legacy user names don't reliably map to Supabase Auth uids (legacy uses 8-char short ids + email). Resolving at transform time would couple the offline transform to live Supabase state. Simpler: leave `user_id` null at migration time + populate `user_name` snapshot. Live data going forward gets `user_id` from the active session.
+
+### Consequences
+
+- **Positive:** the audit trail surfaces in the UI immediately for the 14 historical rows. Future emitters drop activity entries via `appendActivityLog(input, user)` in their service path. The viewer's filter dropdowns are auto-populated from the data so adding a new action label requires zero UI changes.
+- **Negative:** no in-flight write logging until emitters are wired up — the trail will look "frozen at migration date" in the early phase 8 weeks. Mitigation: ship the first emitter (e.g. on `softDeleteItem`) within a follow-on task.
+- **Risks:** (a) the distinct-actions / distinct-users queries on the list endpoint scan the table — at 100k+ rows this becomes slow; mitigation is a follow-on materialised-view refresh. (b) `user_name` snapshot drifts from `users.full_name` if a user is renamed — by design (audit trail captures the name at event time).
+
+### Implementation checklist
+
+- [x] Drizzle table `activity_log` + migration `0015_phase8_activity_log.sql` (drizzle-gen, applied via apply-sql per Phase 5 journal-orphan workaround)
+- [x] Shared zod schemas (ActivityLogEntry, ListActivityLogQuery, ListActivityLogResponse)
+- [x] Migration transform `migration/transforms/activity-log.ts` (8 unit tests; deterministic uuidv5 from legacy id; null user_id + user_name snapshot)
+- [x] Load mapper + ALL_TABLES entry; validate `migration/load/validate.ts` extended to include activity_log in TABLES_WITHOUT_DELETED_AT
+- [x] `migration/validate-phase8.ts` script + `pnpm validate:phase8` — PASS (14/14 rows match, 0 orphan FKs across user_id + created_by)
+- [x] API module `apps/api/src/modules/activity-log/` (service.listActivityLog with search/action/userId/date-range filters + distinct dropdown sources; service.appendActivityLog helper for future emitters; single GET route; 12 tests covering shape + filters + pagination + auth + append round-trip)
+- [x] Web module `apps/web/src/modules/activity-log/` (list page with URL-persisted filters + paginated table mirroring legacy renderer; "snapshot" badge for null user_id rows)
+- [x] Home nav adds `History` icon Activity log card; router registers the new route
+- [x] api 291/291 green (was 279, +12); workspace typecheck + lint + format clean; web build clean
+
+---
+
 ## Pending Decisions
 
-- **ADR-019 (pending):** Domain name and transactional email-from address.
-- **ADR-020 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+- **ADR-020 (pending):** Domain name and transactional email-from address.
+- **ADR-021 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).

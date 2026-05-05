@@ -23,6 +23,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { transformActivityLog } from './transforms/activity-log';
 import { transformClients } from './transforms/clients';
 import { transformDeliveryChallans } from './transforms/delivery-challans';
 import { transformGrn } from './transforms/grn';
@@ -94,6 +95,10 @@ const TRANSFORMS: Record<string, TransformFn> = {
     transformNcRegister(rs as Parameters<typeof transformNcRegister>[0], ctx),
   challans: (rs, ctx) =>
     transformDeliveryChallans(rs as Parameters<typeof transformDeliveryChallans>[0], ctx),
+  // Phase 8 (T-051) — activity log; user_id resolution is deferred to load
+  // since legacy user names map to seeded Supabase users only after the
+  // users transform + load completes.
+  activityLog: (rs) => transformActivityLog(rs as Parameters<typeof transformActivityLog>[0]),
 };
 
 type CollectionName = keyof typeof TRANSFORMS;
@@ -130,6 +135,8 @@ const WIRED_COLLECTIONS: CollectionName[] = [
   // purchase_orders, sales_order_lines.
   'ncRegister',
   'challans',
+  // Phase 8 — activity log is FK-only on users (already loaded via T-016).
+  'activityLog',
 ];
 
 function log(level: 'info' | 'warn' | 'error', msg: string, ctx?: Record<string, unknown>): void {

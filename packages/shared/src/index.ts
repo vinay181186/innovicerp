@@ -39,3 +39,4 @@ export * from './schemas/delivery-challan';
 export * from './schemas/dashboard';
 export * from './schemas/report';
 export * from './schemas/saved-report';
+export * from './schemas/activity-log';
