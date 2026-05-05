@@ -26,6 +26,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { emitActivityLog } from '../activity-log/service';
 
 export interface CascadeResult {
   /** SO line id whose status was flipped from open → closed. */
@@ -67,6 +68,7 @@ export async function tryCascadeJcComplete(
   // source_jw_line_id can be set per ADR-012 #4 CHECK num_nonnulls(...) <= 1).
   const jcRows = await tx
     .select({
+      code: jobCards.code,
       sourceSoLineId: jobCards.sourceSoLineId,
       sourceJwLineId: jobCards.sourceJwLineId,
     })
@@ -79,15 +81,33 @@ export async function tryCascadeJcComplete(
     return { skipped: 'jc_has_no_source_link' };
   }
 
-  if (jc.sourceSoLineId) {
-    return cascadeSo(tx, jc.sourceSoLineId, user);
+  const result = jc.sourceSoLineId
+    ? await cascadeSo(tx, jc.sourceSoLineId, jc.code, user)
+    : await cascadeJw(tx, jc.sourceJwLineId!, jc.code, user);
+
+  // Emit JC_COMPLETE only when the inner cascade actually closed a line
+  // (not on idempotent re-runs against an already-terminal line). Pairs
+  // with the SO_LINE_CLOSED / JW_LINE_CLOSED row for the same tx.
+  if ((result.closedSoLineId || result.closedJwLineId) && user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'JC_COMPLETE',
+        entity: 'JobCard',
+        detail: `${jc.code} — All ops complete`,
+        refId: jc.code,
+      },
+      user.companyId,
+      user,
+    );
   }
-  return cascadeJw(tx, jc.sourceJwLineId!, user);
+  return result;
 }
 
 async function cascadeSo(
   tx: DbTransaction,
   soLineId: string,
+  jcCode: string,
   user: AuthContext,
 ): Promise<CascadeResult> {
   const lineRows = await tx
@@ -111,6 +131,29 @@ async function cascadeSo(
     .set({ status: 'closed', updatedBy: user.id })
     .where(eq(salesOrderLines.id, soLineId));
 
+  // Resolve SO header code once for emit refId/detail (also used below for
+  // the header-close path). One SELECT covers both emissions.
+  const soRows = await tx
+    .select({ code: salesOrders.code, status: salesOrders.status })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, line.salesOrderId))
+    .limit(1);
+  const soHeader = soRows[0];
+
+  if (soHeader && user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SO_LINE_CLOSED',
+        entity: 'SalesOrder',
+        detail: `${soHeader.code} — Line auto-closed (JC ${jcCode})`,
+        refId: soHeader.code,
+      },
+      user.companyId,
+      user,
+    );
+  }
+
   // Cascade to header: if every non-deleted, non-cancelled sibling line is
   // now closed, close the header. Cancelled lines don't block closure
   // (they're terminal too).
@@ -125,26 +168,35 @@ async function cascadeSo(
   const result: CascadeResult = { closedSoLineId: soLineId };
   if (!allTerminal) return result;
 
-  const headerRows = await tx
-    .select({ id: salesOrders.id, status: salesOrders.status })
-    .from(salesOrders)
-    .where(eq(salesOrders.id, line.salesOrderId))
-    .limit(1);
-  const header = headerRows[0];
-  if (!header) return result;
-  if (TERMINAL_STATUSES.has(header.status)) return result;
+  if (!soHeader) return result;
+  if (TERMINAL_STATUSES.has(soHeader.status)) return result;
 
   await tx
     .update(salesOrders)
     .set({ status: 'closed', updatedBy: user.id })
-    .where(eq(salesOrders.id, header.id));
-  result.closedSoHeaderId = header.id;
+    .where(eq(salesOrders.id, line.salesOrderId));
+  result.closedSoHeaderId = line.salesOrderId;
+
+  if (user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'SO_CLOSED',
+        entity: 'SalesOrder',
+        detail: `${soHeader.code} — All lines closed`,
+        refId: soHeader.code,
+      },
+      user.companyId,
+      user,
+    );
+  }
   return result;
 }
 
 async function cascadeJw(
   tx: DbTransaction,
   jwLineId: string,
+  jcCode: string,
   user: AuthContext,
 ): Promise<CascadeResult> {
   const lineRows = await tx
@@ -167,6 +219,27 @@ async function cascadeJw(
     .set({ status: 'closed', updatedBy: user.id })
     .where(eq(jobWorkOrderLines.id, jwLineId));
 
+  const jwRows = await tx
+    .select({ code: jobWorkOrders.code, status: jobWorkOrders.status })
+    .from(jobWorkOrders)
+    .where(eq(jobWorkOrders.id, line.jobWorkOrderId))
+    .limit(1);
+  const jwHeader = jwRows[0];
+
+  if (jwHeader && user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'JW_LINE_CLOSED',
+        entity: 'JobWorkOrder',
+        detail: `${jwHeader.code} — Line auto-closed (JC ${jcCode})`,
+        refId: jwHeader.code,
+      },
+      user.companyId,
+      user,
+    );
+  }
+
   const siblingRows = await tx
     .select({ id: jobWorkOrderLines.id, status: jobWorkOrderLines.status })
     .from(jobWorkOrderLines)
@@ -181,19 +254,27 @@ async function cascadeJw(
   const result: CascadeResult = { closedJwLineId: jwLineId };
   if (!allTerminal) return result;
 
-  const headerRows = await tx
-    .select({ id: jobWorkOrders.id, status: jobWorkOrders.status })
-    .from(jobWorkOrders)
-    .where(eq(jobWorkOrders.id, line.jobWorkOrderId))
-    .limit(1);
-  const header = headerRows[0];
-  if (!header) return result;
-  if (TERMINAL_STATUSES.has(header.status)) return result;
+  if (!jwHeader) return result;
+  if (TERMINAL_STATUSES.has(jwHeader.status)) return result;
 
   await tx
     .update(jobWorkOrders)
     .set({ status: 'closed', updatedBy: user.id })
-    .where(eq(jobWorkOrders.id, header.id));
-  result.closedJwHeaderId = header.id;
+    .where(eq(jobWorkOrders.id, line.jobWorkOrderId));
+  result.closedJwHeaderId = line.jobWorkOrderId;
+
+  if (user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'JW_CLOSED',
+        entity: 'JobWorkOrder',
+        detail: `${jwHeader.code} — All lines closed`,
+        refId: jwHeader.code,
+      },
+      user.companyId,
+      user,
+    );
+  }
   return result;
 }

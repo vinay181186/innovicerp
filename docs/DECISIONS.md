@@ -759,6 +759,32 @@ Test isolation: pagination test for activity_log was previously assuming a stabl
 
 Remaining modules to wire (in roughly the order of the legacy emitter density): sales-orders → job-work-orders → job-cards → purchase-requests → purchase-orders → goods-receipt-notes → nc-register → delivery-challans. Each is a small commit per CLAUDE.md §7.
 
+### Follow-on #2 (2026-05-05): cascade audit emissions in op-entry/sales-cascade.ts
+
+CRUD emitter sweep landed in 8 commits (T-051a #1 → #8). With CRUD covered, the remaining gap was **auto-cascade events** that fire from `op-entry/sales-cascade.ts` when the last op of a JC closes — these flip SO line + SO header (or JW line + JW header) status via direct SQL, bypassing `service.update*`, so they didn't surface in the audit feed.
+
+**Granularity decision: per-entity rows** (matches the precedent set by `createPurchaseOrderFromPr` which emits PO CREATE + PR PR_CONVERT in one tx).
+
+5 new actions emitted from the cascade:
+
+- `JC_COMPLETE` (entity='JobCard', refId=jc.code) — fires once when the JC reaches `complete` status AND the inner cascade actually closed a line
+- `SO_LINE_CLOSED` (entity='SalesOrder', refId=so.code) — detail mentions the JC code: `<so.code> — Line auto-closed (JC <jc.code>)`
+- `SO_CLOSED` (entity='SalesOrder', refId=so.code) — fires when the header auto-closes after the last line
+- `JW_LINE_CLOSED` (entity='JobWorkOrder', refId=jw.code) — same shape as SO line
+- `JW_CLOSED` (entity='JobWorkOrder', refId=jw.code) — same shape as SO header
+
+**Idempotency guard:** JC_COMPLETE is emitted only when `cascadeSo` / `cascadeJw` returned a non-skipped result (i.e. it actually closed a line, not just observed it was already terminal). Re-running `tryCascadeJcComplete` against an already-closed line is a no-op AND emits no audit row. Test asserts this with a direct cascade re-run after the initial `submitOpLog` that drove the close.
+
+**Signature change:** `cascadeSo` and `cascadeJw` now take `jcCode` as their second arg so the emit can include it in the line-close detail. The arg is loaded once in `tryCascadeJcComplete` from the same JC SELECT that already pulled the source link.
+
+**Audit row order on a single complete-cascade flow** (newest first by ts/id desc): OP_COMPLETE → JC_COMPLETE → SO_LINE_CLOSED → SO_CLOSED. Reading top to bottom narrates the chain: operator completed final op → JC complete → line closed → header closed.
+
+3 new tests in `sales-cascade.test.ts` (24 → 27 op-entry tests): SO single-line audit shape, JW path audit shape, idempotent re-run does NOT duplicate JC_COMPLETE. teardownAll wipes activity_log by `refId LIKE 'T033-%'`.
+
+**Final activity-log entity vocabulary:** Item, SalesOrder, JobWorkOrder, JobCard, Op, PurchaseRequest, PurchaseOrder, GoodsReceiptNote, NonConformance.
+
+**Final action vocabulary:** CREATE / EDIT / DELETE (all CRUD modules) + OP_START / OP_STOP / OP_COMPLETE (op-entry) + PR_CONVERT (PO from PR shortcut) + NC_DISPOSE / NC_CLOSE_REWORK (NC dispositions) + JC_COMPLETE / SO_LINE_CLOSED / SO_CLOSED / JW_LINE_CLOSED / JW_CLOSED (cascade).
+
 ---
 
 ## Pending Decisions

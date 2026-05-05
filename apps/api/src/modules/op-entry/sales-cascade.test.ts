@@ -3,10 +3,11 @@
 // optional cancelled-sibling setup) and the test JC churn doesn't pollute
 // the existing fixture-shared tests.
 
-import { eq, like } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
+  activityLog,
   items,
   jcOps,
   jobCards,
@@ -86,6 +87,8 @@ async function teardownAll(): Promise<void> {
 
   // Test item last.
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  // Wipe audit-log entries the cascade emitter wrote for these test rows.
+  await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
 }
 
 beforeAll(async () => {
@@ -626,5 +629,199 @@ describe('op-entry sales-cascade (T-033)', () => {
         admin,
       ),
     ).resolves.toBeDefined();
+  });
+
+  it('SO single-line: cascade emits JC_COMPLETE + SO_LINE_CLOSED + SO_CLOSED audit rows', async () => {
+    const f = await makeSoCascadeFixture({
+      soCode: `${TEST_PREFIX}SO-AUD`,
+      jcCodePrefix: `${TEST_PREFIX}JC-AUD`,
+      lineCount: 1,
+    });
+    const jcCode = `${TEST_PREFIX}JC-AUD-1`;
+
+    await service.submitOpLog(
+      {
+        jcOpId: f.jcOpIds[0]!,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'Audit Op',
+      },
+      admin,
+    );
+
+    const jcAudit = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, jcCode)));
+    expect(jcAudit.map((r) => r.action)).toContain('JC_COMPLETE');
+    const jcRow = jcAudit.find((r) => r.action === 'JC_COMPLETE')!;
+    expect(jcRow.entity).toBe('JobCard');
+
+    const soAudit = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.companyId, admin.companyId!),
+          eq(activityLog.refId, `${TEST_PREFIX}SO-AUD`),
+        ),
+      );
+    const soActions = soAudit.map((r) => r.action).sort();
+    expect(soActions).toEqual(['SO_CLOSED', 'SO_LINE_CLOSED']);
+    for (const r of soAudit) {
+      expect(r.entity).toBe('SalesOrder');
+      expect(r.userId).toBe(admin.id);
+    }
+    const lineRow = soAudit.find((r) => r.action === 'SO_LINE_CLOSED')!;
+    expect(lineRow.detail).toContain(jcCode);
+  });
+
+  it('JW path: cascade emits JC_COMPLETE + JW_LINE_CLOSED + JW_CLOSED audit rows', async () => {
+    // Build a single-line JW + JC fixture inline — the existing JW test
+    // (line 541) doesn't return ids in a struct we can reuse.
+    const jw = (
+      await db
+        .insert(jobWorkOrders)
+        .values({
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}JW-AUD`,
+          jwDate: '2026-05-02',
+          customerName: 'JW Audit',
+          status: 'open',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+    const jwLine = (
+      await db
+        .insert(jobWorkOrderLines)
+        .values({
+          companyId: admin.companyId!,
+          jobWorkOrderId: jw.id,
+          lineNo: 1,
+          itemId: testItemId,
+          partName: 'L',
+          uom: 'NOS',
+          orderQty: 5,
+          status: 'open',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+    const jcCode = `${TEST_PREFIX}JC-JW-AUD`;
+    const jc = (
+      await db
+        .insert(jobCards)
+        .values({
+          companyId: admin.companyId!,
+          code: jcCode,
+          jcDate: '2026-05-02',
+          itemId: testItemId,
+          orderQty: 5,
+          priority: 'normal',
+          sourceJwLineId: jwLine.id,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+    const op = (
+      await db
+        .insert(jcOps)
+        .values({
+          companyId: admin.companyId!,
+          jobCardId: jc.id,
+          opSeq: 1,
+          operation: 'op-1',
+          opType: 'process',
+          cycleTimeMin: '0.00',
+          qcRequired: false,
+          reworkQty: 0,
+          outsourceCost: '0.00',
+          outsourceSentQty: 0,
+          outsourceReturnedQty: 0,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+
+    await service.submitOpLog(
+      {
+        jcOpId: op.id,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'Audit Op',
+      },
+      admin,
+    );
+
+    const jcAudit = await db
+      .select()
+      .from(activityLog)
+      .where(and(eq(activityLog.companyId, admin.companyId!), eq(activityLog.refId, jcCode)));
+    expect(jcAudit.map((r) => r.action)).toContain('JC_COMPLETE');
+
+    const jwAudit = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.companyId, admin.companyId!),
+          eq(activityLog.refId, `${TEST_PREFIX}JW-AUD`),
+        ),
+      );
+    const jwActions = jwAudit.map((r) => r.action).sort();
+    expect(jwActions).toEqual(['JW_CLOSED', 'JW_LINE_CLOSED']);
+    for (const r of jwAudit) {
+      expect(r.entity).toBe('JobWorkOrder');
+    }
+  });
+
+  it('idempotent re-run: cascade does NOT emit duplicate JC_COMPLETE on already-closed line', async () => {
+    const f = await makeSoCascadeFixture({
+      soCode: `${TEST_PREFIX}SO-IDEMP`,
+      jcCodePrefix: `${TEST_PREFIX}JC-IDEMP`,
+      lineCount: 1,
+    });
+    const jcCode = `${TEST_PREFIX}JC-IDEMP-1`;
+
+    await service.submitOpLog(
+      {
+        jcOpId: f.jcOpIds[0]!,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'Audit Op',
+      },
+      admin,
+    );
+
+    // First run wrote JC_COMPLETE + SO_LINE_CLOSED + SO_CLOSED. Re-running
+    // the cascade directly on the same JC must be a no-op (line already
+    // terminal) — and must NOT emit another JC_COMPLETE.
+    await withUserContext(admin, async (tx) => {
+      const result = await tryCascadeJcComplete(tx, f.jcIds[0]!, admin);
+      expect(result.skipped).toBe('so_line_already_terminal');
+    });
+
+    const jcRows = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.companyId, admin.companyId!),
+          eq(activityLog.refId, jcCode),
+          eq(activityLog.action, 'JC_COMPLETE'),
+        ),
+      );
+    expect(jcRows.length).toBe(1);
   });
 });
