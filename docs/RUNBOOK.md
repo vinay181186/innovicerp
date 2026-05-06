@@ -182,14 +182,14 @@ For partial-failure cases (migration applied to half a multi-statement transacti
 
 Each migration phase ships a validator script that does a read-only field-level diff between transform output and DB state plus FK orphan checks. Run after any load, after any schema/data change touching a phase's tables, and before any cutover.
 
-| Script             | Phase                                | Tables covered                                                                                                    | Notes                                                                                                |
-| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `validate:phase2`  | Master data                          | `users`, `clients`, `vendors`, `items`, `machines`, `operators`                                                   | 14 FK columns; users count can show +1 from leftover smoke users (documented in MIGRATION-LOG)       |
-| `validate:phase3`  | Op-entry chain                       | `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`           | 25 FK columns; checks `v_jc_op_status` + `v_jc_status` view sanity; HH:MM ↔ HH:MM:SS time normaliser |
-| `validate:phase4`  | Sales chain                          | `sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`                                    | 16 FK columns; verifies job_cards source FK backfill (2/2 — IN-JC-00002 + IN-JC-00003)               |
-| `validate:phase5`  | Procurement                          | `purchase_requests`, `purchase_orders`, `purchase_order_lines`, `goods_receipt_notes`, `goods_receipt_note_lines`, `store_transactions` | 32 FK columns; verifies jc_ops outsource backfill (1/1)                                              |
-| `validate:phase6`  | QC + dispatch                        | `qc_processes`, `nc_register`, `delivery_challans`, `delivery_challan_lines`                                      | 16 FK columns; legacy dispatch_log + JW DC + party collections deliberately NOT migrated (ADR-017)   |
-| `validate:phase8`  | Activity log                         | `activity_log`                                                                                                    | 2 FK columns; legacy "Japan" entries land with `user_id=null` + `user_name` snapshot (ADR-019)       |
+| Script            | Phase          | Tables covered                                                                                                                          | Notes                                                                                                |
+| ----------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `validate:phase2` | Master data    | `users`, `clients`, `vendors`, `items`, `machines`, `operators`                                                                         | 14 FK columns; users count can show +1 from leftover smoke users (documented in MIGRATION-LOG)       |
+| `validate:phase3` | Op-entry chain | `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`                                 | 25 FK columns; checks `v_jc_op_status` + `v_jc_status` view sanity; HH:MM ↔ HH:MM:SS time normaliser |
+| `validate:phase4` | Sales chain    | `sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`                                                          | 16 FK columns; verifies job_cards source FK backfill (2/2 — IN-JC-00002 + IN-JC-00003)               |
+| `validate:phase5` | Procurement    | `purchase_requests`, `purchase_orders`, `purchase_order_lines`, `goods_receipt_notes`, `goods_receipt_note_lines`, `store_transactions` | 32 FK columns; verifies jc_ops outsource backfill (1/1)                                              |
+| `validate:phase6` | QC + dispatch  | `qc_processes`, `nc_register`, `delivery_challans`, `delivery_challan_lines`                                                            | 16 FK columns; legacy dispatch_log + JW DC + party collections deliberately NOT migrated (ADR-017)   |
+| `validate:phase8` | Activity log   | `activity_log`                                                                                                                          | 2 FK columns; legacy "Japan" entries land with `user_id=null` + `user_name` snapshot (ADR-019)       |
 
 ### Run a validator
 
@@ -547,7 +547,7 @@ There is currently one Supabase project — dev. Tests run against the same DB t
 
 - Every test file inserts rows with a code prefix (`T<phase>R?-`, e.g. `T018-A1`, `T036C-LST`, `T051-AUD`).
 - Tests `afterAll`-clean their prefixed rows. CASCADE handles child rows.
-- Vitest's `globalSetup` (`apps/api/test/global-setup.ts`) wipes any leftover test cruft *before* the first test runs.
+- Vitest's `globalSetup` (`apps/api/test/global-setup.ts`) wipes any leftover test cruft _before_ the first test runs.
 
 ### What `globalSetup` does
 
@@ -592,11 +592,11 @@ When tests have left the DB in a state that `globalSetup` doesn't recover (e.g. 
 
 These are documented baselines, not bugs. They surface ~1× per full-suite run; isolated module re-runs are always green.
 
-| Race                                                        | Phase                | Symptom                                                                                                          | Recovery                                                                                                                  |
-| ----------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `v_jc_status` snapshot vs concurrent `op_log` write         | Phase 3 / op-entry   | A test asserting `v_jc_status` row count or computed_status sees a mid-flight value                              | Re-run the affected file (`pnpm --filter @innovic/api test op-entry`). If still failing, investigate.                     |
-| `store_transactions` ledger write race in GRN-QC cascade    | Phase 5 / GRN module | Test reading store_transactions counts sees +/-1 vs expected during parallel GRN write                           | Re-run the GRN module file alone (always 15/15).                                                                          |
-| Reports `stock-movement-log` filter race vs GRN ledger writes | Phase 7 / reports    | Reports test sees a transaction row that wasn't there at filter eval time                                        | Re-run reports module alone (always 27/27).                                                                               |
+| Race                                                          | Phase                | Symptom                                                                                | Recovery                                                                                              |
+| ------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `v_jc_status` snapshot vs concurrent `op_log` write           | Phase 3 / op-entry   | A test asserting `v_jc_status` row count or computed_status sees a mid-flight value    | Re-run the affected file (`pnpm --filter @innovic/api test op-entry`). If still failing, investigate. |
+| `store_transactions` ledger write race in GRN-QC cascade      | Phase 5 / GRN module | Test reading store_transactions counts sees +/-1 vs expected during parallel GRN write | Re-run the GRN module file alone (always 15/15).                                                      |
+| Reports `stock-movement-log` filter race vs GRN ledger writes | Phase 7 / reports    | Reports test sees a transaction row that wasn't there at filter eval time              | Re-run reports module alone (always 27/27).                                                           |
 
 If a race surfaces twice in a row in the same module file run alone, treat as a real regression — investigate, don't retry.
 

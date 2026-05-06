@@ -328,26 +328,26 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 
 ## Phase 8 Backlog — Peripheral Modules (Week 11)
 
-| ID    | Task                                                  | Status                                                                                                                                   |
-| ----- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| ID    | Task                                                  | Status                                                                                                                                                               |
+| ----- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | T-046 | Design tracker (consolidate 7 collections → 4 tables) | [-] Deferred 2026-05-06 per ADR-022 — all 8 source collections `doc_missing`; design fresh against UX requirements when design tracking becomes a real workflow need |
-| T-047 | CRM: leads, communications, reminders                 | [-] Deferred 2026-05-06 per ADR-023 — all 3 source collections `doc_missing`                                                             |
-| T-048 | Tool issues, store issues, party materials, party GRN | [-] Deferred 2026-05-06 per ADR-023 — `toolIssues` doc_missing; `storeIssues`/`partyMaterials`/`partyGrn` already in ADR-017 carve-out   |
-| T-049 | CAPA records                                          | [-] Deferred 2026-05-06 per ADR-023 — `capaRecords` doc_missing                                                                          |
-| T-050 | Print template editor + revisions                     | [-] Deferred 2026-05-06 per ADR-023 — `printTemplates` + `printTemplateRevisions` both doc_missing                                       |
-| T-051 | Activity log viewer + admin trash recovery            | [~] Activity log table + read-only viewer done (2026-05-05); admin trash recovery deferred — legacy `db.trash` is a separate sub-feature |
+| T-047 | CRM: leads, communications, reminders                 | [-] Deferred 2026-05-06 per ADR-023 — all 3 source collections `doc_missing`                                                                                         |
+| T-048 | Tool issues, store issues, party materials, party GRN | [-] Deferred 2026-05-06 per ADR-023 — `toolIssues` doc_missing; `storeIssues`/`partyMaterials`/`partyGrn` already in ADR-017 carve-out                               |
+| T-049 | CAPA records                                          | [-] Deferred 2026-05-06 per ADR-023 — `capaRecords` doc_missing                                                                                                      |
+| T-050 | Print template editor + revisions                     | [-] Deferred 2026-05-06 per ADR-023 — `printTemplates` + `printTemplateRevisions` both doc_missing                                                                   |
+| T-051 | Activity log viewer + admin trash recovery            | [~] Activity log table + read-only viewer done (2026-05-05); admin trash recovery deferred — legacy `db.trash` is a separate sub-feature                             |
 
 ## Phase 9 Backlog — Final Cutover (Week 12)
 
-| ID    | Task                                                                    | Status |
-| ----- | ----------------------------------------------------------------------- | ------ |
-| T-052 | Final delta migration from Firebase (capture last week's data)          | [ ]    |
-| T-053 | Make HTML system read-only, then archive offline                        | [ ]    |
-| T-054 | Set up monitoring (Better Stack uptime, Supabase metrics, Sentry)       | [ ]    |
-| T-055 | Verify backups: restore `pg_dump` to test instance, boot app against it | [ ]    |
+| ID    | Task                                                                    | Status                                                                                                                                                                                                                                                             |
+| ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| T-052 | Final delta migration from Firebase (capture last week's data)          | [ ]                                                                                                                                                                                                                                                                |
+| T-053 | Make HTML system read-only, then archive offline                        | [ ]                                                                                                                                                                                                                                                                |
+| T-054 | Set up monitoring (Better Stack uptime, Supabase metrics, Sentry)       | [ ]                                                                                                                                                                                                                                                                |
+| T-055 | Verify backups: restore `pg_dump` to test instance, boot app against it | [ ]                                                                                                                                                                                                                                                                |
 | T-056 | Document runbook for common operational issues (`docs/RUNBOOK.md`)      | [~] Partial 2026-05-06 — 4 sections added (Database Migrations + Phase Validators + Test Hygiene/Recovery + Phase 9 Cutoff Readiness); remaining gaps: backup setup procedure (Backblaze B2 cron), performance triage without monitoring, common API error decoder |
-| T-057 | Train all users on the new system                                       | [ ]    |
-| T-058 | First Monday restore drill (recurring monthly)                          | [ ]    |
+| T-057 | Train all users on the new system                                       | [ ]                                                                                                                                                                                                                                                                |
+| T-058 | First Monday restore drill (recurring monthly)                          | [ ]                                                                                                                                                                                                                                                                |
 
 ## Blockers
 
