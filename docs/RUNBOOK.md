@@ -53,6 +53,135 @@ Railway auto-redeploys when variables are edited. To force without changing valu
 
 Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.yml`) when the Cloudflare account is set up. Until then, the web app runs only locally.
 
+## Backup — Daily pg_dump to Backblaze B2
+
+CLAUDE.md §6 rule #4 mandates a daily automated `pg_dump` to a second provider, plus a restore drill on the first Monday of every month. Supabase's native daily backups + 7-day PITR are insufficient — they don't survive a Supabase outage / billing dispute / pivot. This section documents the offsite chain.
+
+**Status (2026-05-06):** Backblaze B2 account + bucket NOT yet provisioned. The procedure below is the design; the workflow file is pending T-055 commit. T-053 (turn off legacy HTML) requires this chain to be live and verified — see "Phase 9 Cutoff" §"Readiness gate 4."
+
+### Why Backblaze B2
+
+- ~3× cheaper than S3 at our retention scale (~50 GB ultimate)
+- Same S3-compatible API surface; the `b2` CLI works alongside `aws s3`
+- Mumbai egress to B2 is acceptable (~80-150 ms; pg_dump streaming over a single TCP connection)
+- Independent provider from Supabase — outage on one ≠ outage on the other
+
+### One-time provisioning
+
+1. **Create the B2 account.** [www.backblaze.com/b2](https://www.backblaze.com/b2). Use a project-dedicated email, not a personal Gmail (rotation hygiene).
+2. **Create the bucket** `innovic-backups`:
+   - Type: Private (NOT public)
+   - Default encryption: SSE-B2 (AES-256)
+   - Lifecycle rules:
+     - Files matching `daily/*.sql.gz` → keep 30 days, then delete
+     - Files matching `monthly/*.sql.gz` → keep 12 months, then delete
+3. **Create an application key** scoped to the bucket:
+   - Name: `innovic-backups-writer`
+   - Bucket access: `innovic-backups` only
+   - Capabilities: `listFiles`, `readFiles`, `writeFiles` (NOT `deleteFiles` — lifecycle handles deletion)
+   - Save `keyId` + `applicationKey` securely; you only see them once.
+4. **Add secrets to GitHub repo settings** → Secrets and variables → Actions:
+   - `B2_KEY_ID` — the application key id
+   - `B2_APPLICATION_KEY` — the secret
+   - `B2_BUCKET` — `innovic-backups`
+   - `BACKUP_DATABASE_URL` — pooler URL of the source Supabase project (start with dev; switch to prod after T-053)
+5. **Add a Better Stack heartbeat monitor** for the workflow:
+   - Type: Heartbeat
+   - Expected interval: 24h
+   - Grace period: 12h (so a delayed backup doesn't immediately page)
+   - Save the ping URL as GitHub secret `BACKUP_HEARTBEAT_URL`
+
+### The workflow file (`.github/workflows/backup.yml`)
+
+```yaml
+name: Daily backup
+on:
+  schedule:
+    # 20:00 UTC = 01:30 IST — past the daily op-entry rush, before morning shift
+    - cron: '30 20 * * *'
+  workflow_dispatch: # manual trigger from Actions tab if needed
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install postgresql-client + b2 cli
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          pip install --user b2
+
+      - name: Dump + compress
+        env:
+          PG_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M)
+          pg_dump --no-owner --no-acl --format=custom "$PG_URL" \
+            | gzip -9 > "innovic-${STAMP}.sql.gz"
+          ls -lh "innovic-${STAMP}.sql.gz"
+          echo "STAMP=$STAMP" >> $GITHUB_ENV
+
+      - name: Upload to B2
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          ~/.local/bin/b2 authorize-account "$B2_APPLICATION_KEY_ID" "$B2_APPLICATION_KEY"
+          ~/.local/bin/b2 file upload "${{ secrets.B2_BUCKET }}" \
+            "innovic-${STAMP}.sql.gz" \
+            "daily/innovic-${STAMP}.sql.gz"
+
+      - name: Promote to monthly on 1st of month
+        if: ${{ github.event.schedule != '' }}
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          DAY=$(date -u +%d)
+          if [ "$DAY" = "01" ]; then
+            ~/.local/bin/b2 file copy-by-id \
+              $(~/.local/bin/b2 file get-info "${{ secrets.B2_BUCKET }}" "daily/innovic-${STAMP}.sql.gz" | jq -r .fileId) \
+              "${{ secrets.B2_BUCKET }}" "monthly/innovic-${STAMP}.sql.gz"
+          fi
+
+      - name: Heartbeat ping
+        if: ${{ success() }}
+        run: curl -fsS "${{ secrets.BACKUP_HEARTBEAT_URL }}" || true
+```
+
+Notes:
+
+- `--format=custom` (`-Fc`) writes a compressed binary that `pg_restore` consumes more selectively than plain SQL. `gzip` adds another ~30% reduction.
+- `--no-owner --no-acl` strips role assignments so `pg_restore` works against any target Supabase project (roles differ).
+- The job times out at 30 min — a clean dump of a 5–10 GB Postgres takes <5 min over fast network. If it ever creeps past 25 min, investigate; `pg_dump` shouldn't be slow.
+- Monthly promotion runs only on day 01 of each UTC month; the daily file is copied (not moved) to `monthly/`, then the daily lifecycle deletes the daily copy after 30 days.
+
+### Verifying the chain is healthy (do this after every change)
+
+1. **Manual run:** Actions tab → Daily backup → Run workflow. Should complete in <10 min.
+2. **B2 listing:** verify the new `daily/innovic-YYYYMMDD-HHMM.sql.gz` exists:
+   ```
+   b2 ls innovic-backups daily/ | head -5
+   ```
+3. **Heartbeat:** Better Stack dashboard should show the ping landed within the last hour.
+4. **Restore drill:** see "Restore from Backup" below — confirms the dump is valid, not just present.
+
+### Cost estimate (as of 2026)
+
+- Storage: $0.005/GB/month → 30 daily × 5 GB + 12 monthly × 5 GB = 210 GB-months = **~$1/month**
+- Egress (only when restoring): $0.01/GB → a 5 GB dump pulled for a drill = **$0.05/drill**
+- Total: under $20/year
+
+### Common failure modes
+
+- **`pg_dump: error: connection to server at "..." failed: timeout`** — Supavisor pooler dropped a long-running session. Switch the workflow to use port 5432 (direct/session pooler), not 6543 (transaction pooler). Transaction pooler doesn't support session-level SET that pg_dump uses.
+- **`b2: command not found`** — `pip install b2` puts the binary at `~/.local/bin/`; confirm the Install step + invocation path.
+- **Heartbeat never pings** — workflow failed before the heartbeat step. Check Actions logs; common cause is bucket name typo or wrong key permissions.
+- **B2 returns `unauthorized` despite valid key** — application key was revoked OR scoped to the wrong bucket. Check the key's bucket restriction in the B2 dashboard.
+
+---
+
 ## Restore from Backup
 
 1. Pull latest dump from Backblaze B2:
