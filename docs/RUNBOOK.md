@@ -105,6 +105,68 @@ Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.y
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
+## API Error Codes — Decoder
+
+Every error response from the Fastify API has the shape `{ error: <code>, message: <msg>, details?: <obj> }`. The frontend surfaces these via TanStack Query `onError` → toast notifications; `details` is logged to the console but not shown to users.
+
+Domain errors live in `apps/api/src/lib/errors.ts`; the mapping is wired in `apps/api/src/plugins/error-handler.ts`.
+
+### Reference table
+
+| HTTP | `error` code       | Domain class            | Likely cause                                                                                                 | Recovery action                                                                                              |
+| ---- | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 400  | `validation_error` | `ValidationError` / Zod | Request body / params failed schema validation, OR a service-level rule rejected input (qty < 0, etc.)       | Inspect `details.fieldErrors` (Zod) or the `message` (domain). Fix client input; never silently retry.       |
+| 401  | `unauthorized`     | `AuthenticationError`   | Bearer token missing, expired, or rejected by Supabase Auth                                                  | Re-login. The web client's auth refresh should auto-handle near-expiry; outright 401 = sign back in.         |
+| 403  | `forbidden`        | `AuthorizationError`    | User has a role but lacks write privilege for this route (e.g. viewer trying to POST)                        | Either the user is using the wrong account (sign in as the right role) or the role mapping is wrong (T-022). |
+| 404  | `not_found`        | `NotFoundError`         | Resource id doesn't exist OR is soft-deleted OR belongs to a different `company_id` (RLS makes it invisible) | Check the id; then check RLS scope.                                                                          |
+| 409  | `conflict`         | `ConflictError`         | Business-rule conflict — see "ConflictError patterns" below                                                  | Read the `message`. Most are intentional locks; re-design the flow rather than retry.                        |
+| 4xx  | (varies)           | Fastify client error    | Routing / parsing layer rejected before reaching the service (e.g. malformed JSON, unknown content-type)     | Fix the request shape.                                                                                       |
+| 500  | `internal_error`   | _unhandled_             | An exception leaked past the service layer's typed errors. Always logged at `error` level with `err` field.  | This is a bug. Check Pino output (Railway logs) for the full stack; file an issue.                           |
+
+### ConflictError patterns
+
+`ConflictError` is the most domain-rich code in the system. Common subtypes (read the `message` to disambiguate):
+
+- **Duplicate code** — `code already exists in this company`. Hit when creating a row whose `code` collides with an existing non-deleted row in the same company. Fix: pick a different code OR (if you intend to overwrite) restore the soft-deleted row instead.
+- **Linked-PR delete block** — `Cannot delete PR — has linked PO`. PR softDelete is blocked when a PO references it (`po_id IS NOT NULL`). Fix: cancel the PO first, then soft-delete the PR. Or just leave the PR (status='cancelled' is the usual pattern during cutover noise).
+- **GRN QC-completed line lock** — `Cannot edit qc-completed line — create reversing GRN line instead`. Once a GRN line is QC-accepted (writes a `store_transactions` ledger row + bumps item on-hand), it's locked from edits. Fix: create a reversing GRN line on the same PO with type=`adjust` (T-036c product call). Never hand-edit the locked line.
+- **GRN QC-completed softDelete block** — `Cannot soft-delete GRN — line is QC-completed`. Same shape: the ledger row makes the GRN immutable. Fix: same reversal pattern.
+- **NC concurrent dispose** — `NC already disposed (status=<x>)`. Two users tried to dispose the same NC simultaneously. Fix: refresh the NC detail page; one of the dispositions won. If the other user intended a different disposition, raise a follow-up NC.
+- **Saved-report duplicate name** — `Saved report name already exists for this owner`. Per-user uniqueness on `(company_id, owner_id, name)`. Fix: pick a different name.
+- **Saved-report sourceKey mismatch** — `Cannot change sourceKey on update`. Once saved, the source is locked (the spec is rooted in source field metadata). Fix: delete and re-create.
+
+### Validation error wire shape
+
+Zod validation errors flatten via `err.flatten()` so `details` looks like:
+
+```json
+{
+  "error": "validation_error",
+  "message": "Request validation failed",
+  "details": {
+    "formErrors": [],
+    "fieldErrors": {
+      "qty": ["Number must be greater than 0"],
+      "uom": ["Invalid enum value. Expected 'NOS' | 'KG' | ...]"]
+    }
+  }
+}
+```
+
+Service-level `ValidationError`s (thrown directly with custom `details`) do not use Zod's flatten shape — they pass `details` through verbatim. Frontend code that surfaces `details` field-by-field needs to handle both: check for `fieldErrors` (Zod) before falling back to a generic toast.
+
+### What 500s actually look like
+
+When a 500 fires, the response body is intentionally generic (`{ error: 'internal_error', message: 'Internal server error' }`) — leaking stack traces to the browser is a security smell. The full error lives in Pino logs:
+
+```
+railway logs --tail 200 | grep '"level":50'    # 50 = error level in Pino
+```
+
+The log entry has `err.message`, `err.stack`, `req.id`, `req.method`, `req.url`, and `req.user.id` (if present). That's what an incident investigation starts from.
+
+---
+
 ## Database — Migrations
 
 Schema is owned by Drizzle. Two migration paths run side-by-side:
