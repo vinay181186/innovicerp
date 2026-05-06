@@ -105,6 +105,119 @@ Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.y
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
+## Database — Migrations
+
+Schema is owned by Drizzle. Two migration paths run side-by-side:
+
+- **drizzle-kit-generated migrations** — file pattern `apps/api/src/db/migrations/NNNN_<name>.sql`, generated from `apps/api/src/db/schema.ts`. Applied by `drizzle-kit migrate`. Used for tables, columns, FKs, indexes, RLS policies expressed in the schema graph.
+- **Hand-written migrations** — same folder, same numbering convention, but anything outside the drizzle schema graph: triggers, views, CHECK constraints not in schema.ts, RLS policies referencing custom helpers, one-off DDL like dropping legacy text columns. Applied by `apps/api/src/db/apply-sql.ts` (statement-by-statement runner that splits on `--> statement-breakpoint` markers).
+
+### Generating a drizzle migration
+
+```
+pnpm --filter @innovic/api drizzle-kit generate
+```
+
+Creates the next-numbered SQL file in `apps/api/src/db/migrations/` plus a journal entry. Inspect the generated SQL before applying — drizzle-kit can suggest unnecessary diffs (column re-orders, default value changes); reject those by reverting the schema.ts wobble that triggered them.
+
+### Applying drizzle-generated migrations (standard path)
+
+```
+pnpm --filter @innovic/api drizzle-kit migrate
+```
+
+Executes any unapplied migrations in journal order against `DATABASE_URL`. Idempotent — already-applied entries skip.
+
+### Applying hand-written migrations (`apply-sql.ts`)
+
+```
+pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts <path1.sql> [path2.sql ...]
+```
+
+Runs each `--> statement-breakpoint`-separated statement sequentially in a single connection. Use `CREATE OR REPLACE` / `CREATE … IF NOT EXISTS` so re-runs are safe. Hand-written files do NOT get journaled — re-running is your responsibility.
+
+Concrete past invocations (search commit history for shape):
+
+- Phase 5 triggers + views: `0010_phase5_triggers.sql` + `0011_phase5_views.sql`
+- Phase 6 NC + dispatch triggers: `0012_phase6_nc_dispatch_triggers.sql`
+- Phase 7 saved-reports trigger: `0014_phase7_saved_reports_trigger.sql`
+- Phase 8 activity-log: `0015_phase8_activity_log.sql` (drizzle-gen file applied via apply-sql to bypass the journal-orphan blocker — see below)
+
+### The journal-orphan workaround
+
+**Symptom:** `drizzle-kit migrate` fails with a message about a journal entry referencing a SQL file that doesn't exist (e.g. `0008_verify_no_drift` in this repo).
+
+**Root cause:** Pre-existing journal corruption from an early migration that was rolled back before the file was created or after the file was deleted. The journal table thinks the migration ran; the file is missing; drizzle-kit refuses to proceed.
+
+**Workaround (in use since Phase 5):**
+
+1. Generate the migration normally with `drizzle-kit generate` — produces an `NNNN_*.sql` file.
+2. Skip `drizzle-kit migrate`. Apply the new file directly via `apply-sql.ts`:
+   ```
+   pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_<name>.sql
+   ```
+3. Verify in Supabase Studio (or via `psql`) that the new objects exist.
+4. Manually upsert a row in the drizzle journal table so future drizzle-kit drift checks see the migration as "applied" if needed (rarely required — drizzle-kit drift detection compares schema.ts to DB state, not journal contents).
+
+**Permanent fix (deferred):** clean up the orphan journal entry. Requires identifying which legacy migration the orphan refers to + reconstructing or replaying it. Not blocking — apply-sql is the working path. Track in a follow-on task if the journal corruption ever expands beyond the single orphan.
+
+### Rolling back a bad migration
+
+drizzle has no "down" path. To roll back:
+
+1. Write a new migration that inverts the change — drop columns added, recreate columns dropped, etc.
+2. Apply via the same path (drizzle-kit migrate or apply-sql).
+3. Production rollback path is "deploy a fixed migration", not "undo the last migration."
+
+For partial-failure cases (migration applied to half a multi-statement transaction): hand-investigate the DB state, write a corrective migration, and document the incident in `docs/MIGRATION-LOG.md`.
+
+### Forbidden
+
+- **Never modify production schema in Supabase Studio** (CLAUDE.md §6 rule 9). Studio edits don't journal and break the next deploy.
+- **Never delete a migration file once applied to any environment.** Even on local dev, you'll lose the ability to bootstrap a fresh DB.
+
+---
+
+## Database — Phase Validators
+
+Each migration phase ships a validator script that does a read-only field-level diff between transform output and DB state plus FK orphan checks. Run after any load, after any schema/data change touching a phase's tables, and before any cutover.
+
+| Script            | Phase          | Tables covered                                                                                                                          | Notes                                                                                                |
+| ----------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `validate:phase2` | Master data    | `users`, `clients`, `vendors`, `items`, `machines`, `operators`                                                                         | 14 FK columns; users count can show +1 from leftover smoke users (documented in MIGRATION-LOG)       |
+| `validate:phase3` | Op-entry chain | `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`                                 | 25 FK columns; checks `v_jc_op_status` + `v_jc_status` view sanity; HH:MM ↔ HH:MM:SS time normaliser |
+| `validate:phase4` | Sales chain    | `sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`                                                          | 16 FK columns; verifies job_cards source FK backfill (2/2 — IN-JC-00002 + IN-JC-00003)               |
+| `validate:phase5` | Procurement    | `purchase_requests`, `purchase_orders`, `purchase_order_lines`, `goods_receipt_notes`, `goods_receipt_note_lines`, `store_transactions` | 32 FK columns; verifies jc_ops outsource backfill (1/1)                                              |
+| `validate:phase6` | QC + dispatch  | `qc_processes`, `nc_register`, `delivery_challans`, `delivery_challan_lines`                                                            | 16 FK columns; legacy dispatch_log + JW DC + party collections deliberately NOT migrated (ADR-017)   |
+| `validate:phase8` | Activity log   | `activity_log`                                                                                                                          | 2 FK columns; legacy "Japan" entries land with `user_id=null` + `user_name` snapshot (ADR-019)       |
+
+### Run a validator
+
+```
+pnpm --filter @innovic/migration validate:phase5    # or phase2 / phase3 / phase4 / phase6 / phase8
+```
+
+Output lands in `migration/load-output/_phaseN_validation.json` (gitignored). Look at the last line of stdout: `overallStatus: PASS` or `overallStatus: FAIL`.
+
+### Reading the output
+
+PASS means: **(a)** every transform-row's mapped columns match the DB row byte-for-byte (modulo documented normalisations: enum lowercasing, NUMERIC `.toFixed(2)` strings, ISO ↔ Postgres timestamptz format, jsonb canonical), AND **(b)** every FK column in the checked set has zero orphans.
+
+FAIL means: at least one of the above failed. The output JSON has a `byTable` block listing diffs per table + an `orphanFks` block listing FK column → orphan-row counts. Investigate each before proceeding.
+
+### When to run
+
+- **After a re-load** (e.g. you reset the dev DB and re-ran `migration/load.ts`).
+- **After any schema migration that touches a phase's tables** (column add/drop/rename can leave existing rows still valid but the validator catches mismatches with transform expectations).
+- **Before any cutover** — the cutover SOP (see "Phase Cutover" section below) requires a clean PASS as the entry gate.
+- **Periodically** if you suspect drift (e.g. someone hand-edited a row in Supabase Studio against §6 rule 9).
+
+### Known transient
+
+`validate:phase3` can rarely return FAIL on `v_jc_status` view-vs-snapshot mismatch when run concurrently with a parallel test that mutates `jc_ops`. Re-run alone to confirm. If still FAIL, investigate.
+
+---
+
 ## Release Smoke / Sign-off Procedure
 
 Run this before declaring a release ready, and after any infra change (Railway region, env var rotation, schema migration, new module rollout).
@@ -231,6 +344,149 @@ When the last procurement user is cut over and has soaked clean for ≥1 day:
 
 ---
 
+## Phase 9 Cutoff — Final Switch from Legacy HTML to New System
+
+The project-wide one-time switch when all users are off legacy and the legacy HTML system goes read-only, then offline. Distinct from per-module cutover (above) — that's a recurring procedure run per-user-per-module; Phase 9 cutoff happens once.
+
+### Readiness gates — ALL must clear before T-053 runs
+
+Treat this as a hard checklist. If any gate is amber, stop and resolve.
+
+**1. All users cut over per-module and soaked.**
+
+- Sales (T-034) — every user with the `sales` role has been on the new system for ≥1 day with no rollback flagged.
+- Procurement (T-037) — every `procurement` user soaked clean.
+- Op-entry (T-027 + T-028) — every operator. Op-entry is the highest-volume daily workflow; this is the gate most likely to be amber.
+- QC + dispatch (Phase 6) — every user with `qc` / `dispatch` roles.
+- Admin / manager / viewer — confirmed working (lower-volume but high-impact roles).
+
+**2. Final delta migration completed (T-052).**
+
+- Re-run `migration/export-firestore.ts` against legacy Firebase, capturing data written between Run 1 (2026-04-30) and now.
+- Diff Run N against the latest dev DB state — every new legacy row must either (a) already exist in Supabase from a user's new-system entry during cutover, OR (b) be loaded via a delta-load run.
+- Document the delta in `docs/MIGRATION-LOG.md` with row counts per collection.
+
+**3. All phase validators return PASS.** Run all six in sequence:
+
+```
+pnpm --filter @innovic/migration validate:phase2 \
+  && pnpm --filter @innovic/migration validate:phase3 \
+  && pnpm --filter @innovic/migration validate:phase4 \
+  && pnpm --filter @innovic/migration validate:phase5 \
+  && pnpm --filter @innovic/migration validate:phase6 \
+  && pnpm --filter @innovic/migration validate:phase8
+```
+
+Each must end with `overallStatus: PASS`. Any FAIL = gate amber.
+
+**4. Backup verified by restore drill (T-055).** Per CLAUDE.md §6 rule #4 + §RUNBOOK Restore from Backup procedure:
+
+- Pull latest `pg_dump` from Backblaze B2.
+- Restore to a NEW Supabase project (NOT production).
+- Boot the API against the restored instance.
+- Run the Release Smoke procedure against it.
+- Result logged in `docs/MIGRATION-LOG.md` (or `docs/DRILL-LOG.md` if separated).
+
+If the restore fails or the smoke surfaces missing data, gate is amber until backup is fixed AND re-verified.
+
+**5. Monitoring active (T-054).** Without monitoring, post-cutoff issues surface only via user complaints — too slow.
+
+- Better Stack uptime check on `/health` configured (alerts → on-call channel).
+- Sentry connected for the API + web (test event captured to confirm DSNs).
+- Supabase dashboard alerts on: connection pool exhaustion, slow query >1s, RLS policy violations, auth failure spikes.
+
+**6. All users trained (T-057).** Each user can complete their core workflow on the new system unaided.
+
+- Sales: create SO + line, edit, close cascade
+- Procurement: PR → PO → GRN → QC accept (the cascade test from per-module cutover)
+- Operators: start op → log work → complete op + QC handoff
+- QC: accept / reject GRN line, file NC, dispose NC, close-rework
+- Dispatch: list deliveries (write flow deferred per ADR-017)
+
+Training results logged. Anyone uncertain → defer cutoff, retrain.
+
+**7. Test suite green at HEAD.** All three must be clean on the commit at cutoff:
+
+```
+pnpm test            # api + migration suites
+pnpm typecheck       # workspace
+pnpm lint            # workspace
+```
+
+Any red = gate amber (even if test is unrelated to user-facing flows — red suite means deploys can break later).
+
+**8. Activity log recording all mutations.** Per the T-051a emitter sweep, every CRUD module + op-entry + cascade emits audit rows. Confirm by:
+
+- Pick a recent date range in the activity-log viewer.
+- Spot-check that creates/edits/deletes from the day are present for each module.
+- Empty audit feed for an active module = a missing emitter; resolve before cutoff.
+
+**9. Schema documentation matches reality.** Per CLAUDE.md §2: `docs/SCHEMA.md` mirrors `apps/api/src/db/schema.ts`. Run drizzle-kit drift check:
+
+```
+pnpm --filter @innovic/api drizzle-kit generate
+```
+
+Should produce zero diffs. If it does, either the schema.ts has uncommitted changes OR Studio edits leaked in — investigate and resolve before cutoff.
+
+**10. Hard-delete scan clean.** Per CLAUDE.md §6 rule #8 (no hard deletes from app code). Before cutoff:
+
+```
+# from apps/api/src
+grep -rE "\.delete\(\)" --include="*.ts" modules/
+```
+
+Every match must either be (a) wired to soft-delete (sets `deleted_at = now()`), OR (b) a documented admin-only script in `scripts/`. Bare `DELETE FROM …` in service code = gate amber.
+
+**11. Rollback procedure documented and rehearsed.** See "Rollback" subsection below. Read it. If anything is unclear, fix the doc before cutoff.
+
+**12. Comms plan signed off.** Users know:
+
+- Date and time (IST) of legacy cutoff.
+- Out-of-hours support contact (who to call if the new system breaks at 9pm IST).
+- Escalation path if support contact is unreachable.
+- That legacy is going read-only first, archived second — no surprise data loss.
+
+### The cutoff procedure (when all gates clear)
+
+1. **Schedule the cutoff window.** Pick a low-traffic window — early morning IST, ideally on a non-production day (Saturday). Avoid month-end and quarter-end.
+2. **T-minus 1 hour:** Re-run T-052 delta migration if any user is still entering data in legacy. Last chance to capture writes. Document the cutoff timestamp precisely.
+3. **T-zero:** Make legacy Firebase project read-only.
+   - Firebase Console → project settings → Rules → set all collections to `allow read; allow write: if false;`.
+   - Verify by attempting a write from a logged-in legacy session — must get a permission denied error.
+4. **T+5 min:** Confirm the new system is healthy.
+   - `curl https://<railway-host>/health` returns 200.
+   - Open `/dashboard` as admin → all KPI tiles render.
+   - Pick one user per role → confirm they can log in and see their work.
+5. **T+1 hour:** Watch for user reports. Sentry + Better Stack should be quiet. If alerts fire, escalate to rollback path.
+6. **T+24 hours:** Sign off cutoff in `docs/MIGRATION-LOG.md` — date, time IST, gate states at cutoff, any incidents in the first hour.
+7. **T+7 days:** Archive legacy. Export the Firebase project's final state (`migration/export-firestore.ts` → save tarball to Backblaze B2 alongside pg_dumps), then delete the Firebase project from billing. Document in MIGRATION-LOG.
+
+### Rollback (if cutoff fails)
+
+The new system has been live in parallel for weeks — legacy isn't authoritative anymore. Rollback means: keep the new system running, NOT switch back to legacy.
+
+If the new system has a critical bug post-cutoff:
+
+1. **Don't re-enable legacy writes.** Legacy data would diverge from new-system data within minutes; merge becomes intractable.
+2. **Roll back the offending Railway deploy** to the last known-good image (Deploy → API → Rollback procedure above).
+3. **If the bug is in data (corrupted row, bad cascade)**, restore from the most recent B2 backup to a NEW Supabase project, smoke-test, then promote via DNS cutover. Standard Restore from Backup procedure.
+4. **If the bug surfaces only for one user / one module**, ask the user to pause that workflow, fix forward, redeploy. Not every bug needs full rollback.
+5. **Re-enabling legacy** is a last-resort escape hatch only when the new system has been down for >4 hours AND no fix-forward path is viable. Document precisely the legacy timestamp at re-enable so the eventual second cutoff can capture the gap.
+
+### Post-cutoff first 7 days
+
+Higher-than-normal alerting cadence:
+
+- **Daily:** check Sentry error volume, Better Stack uptime, Supabase pool usage. Compare against pre-cutoff baseline.
+- **Daily:** spot-check activity log for unexpected gaps (a module silently not emitting → would surface here).
+- **Day +1:** smoke-test from a fresh browser profile (clear cache, log in as each role, run the per-role workflows from the cutover SOP).
+- **Day +7:** first Monday restore drill (T-058) lands in this window — runs as a regular procedure but is also implicitly a post-cutoff backup verification.
+
+If anything trips a daily alert beyond pre-cutoff baseline, escalate. Don't normalise post-cutoff drift.
+
+---
+
 ## Monthly Restore Drill (T-058)
 
 First Monday of every month:
@@ -282,6 +538,73 @@ curl http://localhost:3000/health      # API → {"ok":true,...}
 # then open http://localhost:5173 in the browser, log in,
 # DevTools → Network → confirm /me and /items? return 200.
 ```
+
+## Test Suite — Hygiene & Recovery
+
+### How tests share the dev DB
+
+There is currently one Supabase project — dev. Tests run against the same DB the API talks to during local dev. Until a dedicated CI/staging Supabase project is provisioned (Phase 1 carry-over note), tests must be hygienic on a shared DB:
+
+- Every test file inserts rows with a code prefix (`T<phase>R?-`, e.g. `T018-A1`, `T036C-LST`, `T051-AUD`).
+- Tests `afterAll`-clean their prefixed rows. CASCADE handles child rows.
+- Vitest's `globalSetup` (`apps/api/test/global-setup.ts`) wipes any leftover test cruft _before_ the first test runs.
+
+### What `globalSetup` does
+
+`apps/api/test/global-setup.ts` runs once at the start of every full-suite invocation (`pnpm test` or `pnpm --filter @innovic/api test`). It:
+
+1. Deletes parent transactional rows where `code LIKE 'T%-%'` in FK-safe order: nc_register → delivery_challans → goods_receipt_notes → store_transactions → purchase_orders → purchase_requests → sales_orders → job_work_orders → job_cards. CASCADE handles each parent's children (lines, jc_ops, op_log, running_ops).
+2. Deletes master rows where `code LIKE 'T%-%'`: items → vendors → clients → machines → operators.
+3. Deletes `saved_reports` where `name LIKE 'T041B-%'` (saved-reports keys by `name`, not `code`).
+4. Deletes `activity_log` where `entity LIKE 'T051-%' OR ref_id LIKE 'T%-%'` (audit cruft from emitter sweeps).
+
+The `code LIKE 'T%-%'` pattern matches every test prefix without false positives — real seed/migrated codes never start with `T0/T1/T2/T3/T4` followed by a hyphen.
+
+### When `globalSetup` isn't enough
+
+If a test suite still fails on `code already exists` errors during `beforeAll`, the cruft is using a code shape that doesn't match `T%-%`. Find the shape:
+
+```sql
+-- Example: scan items for any code that doesn't look like seed/migrated data
+select code from public.items where code !~ '^[0-9A-Z]+$' order by code;
+```
+
+Once identified, either (a) update the offending test to use a `T%-%` code, OR (b) add a targeted DELETE to `global-setup.ts`.
+
+### Manual recovery — wedged dev DB
+
+When tests have left the DB in a state that `globalSetup` doesn't recover (e.g. a fixture references a row outside the prefix pattern, or a test-killed run left orphaned `running_ops` rows that block JC fixture inserts), nuke and re-load:
+
+1. **Stop the API dev server** (`Ctrl+C` in the API terminal).
+2. **Run the global-setup wipe by hand** to clear the standard cruft:
+   ```
+   pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx test/global-setup.ts
+   ```
+   (The file exports a default async function; vitest calls it; you can call it directly too.)
+3. **Inspect leftover oddities** in Supabase Studio's Table Editor or via `psql`. Common stragglers: rows in `op_log` keyed by jc_op_ids whose parent JC was wiped (FK CASCADE should handle this — if not, raw delete by id range).
+4. **Re-run the affected phase load** if a transactional table got truncated:
+   ```
+   pnpm --filter @innovic/migration tsx load.ts
+   ```
+5. **Re-run the validator** for the phase: `pnpm --filter @innovic/migration validate:phaseN` — must end PASS before resuming.
+
+### Known transient races
+
+These are documented baselines, not bugs. They surface ~1× per full-suite run; isolated module re-runs are always green.
+
+| Race                                                          | Phase                | Symptom                                                                                | Recovery                                                                                              |
+| ------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `v_jc_status` snapshot vs concurrent `op_log` write           | Phase 3 / op-entry   | A test asserting `v_jc_status` row count or computed_status sees a mid-flight value    | Re-run the affected file (`pnpm --filter @innovic/api test op-entry`). If still failing, investigate. |
+| `store_transactions` ledger write race in GRN-QC cascade      | Phase 5 / GRN module | Test reading store_transactions counts sees +/-1 vs expected during parallel GRN write | Re-run the GRN module file alone (always 15/15).                                                      |
+| Reports `stock-movement-log` filter race vs GRN ledger writes | Phase 7 / reports    | Reports test sees a transaction row that wasn't there at filter eval time              | Re-run reports module alone (always 27/27).                                                           |
+
+If a race surfaces twice in a row in the same module file run alone, treat as a real regression — investigate, don't retry.
+
+### Why we can't just `pool: 'forks' + singleFork: true`
+
+Tried 2026-05-04. Made things worse — surfaced 13 cruft-related failures from accumulated test-killed runs that the parallel-`afterAll`s were masking. Reverted. The current `globalSetup` is the proper fix for the cruft problem; `singleFork` would only paper over it. Track in TASKS.md if test isolation ever needs a real CI/staging DB.
+
+---
 
 ## Seclore / eScan Notes (this dev box only)
 

@@ -787,6 +787,84 @@ CRUD emitter sweep landed in 8 commits (T-051a #1 → #8). With CRUD covered, th
 
 ---
 
+## ADR-022: Phase 8 design tracker (T-046) deferred — all 8 source collections doc_missing
+
+**Date:** 2026-05-06
+**Status:** Accepted
+
+### Context
+
+T-046 was framed in the Phase 8 backlog as "Design tracker (consolidate 7 collections → 4 tables)." Real-data inspection of the Run 1 export contradicts that:
+
+- **All 8 design collections are `doc_missing`** (zero rows ever written by the legacy app):
+  - `designProjects`, `designTasks`, `designIssues`, `designWorkLog`, `designDCRs`, `designDCNs` (System v2 — project-task-issue tree with change-control, legacy HTML L7531–L7651, projects numbered `DP-NNNN`)
+  - `designTracker`, `designTimeLog` (System v1 — flat per-SO tracker used by `_canStartProductionForSO` gate, legacy HTML L7485–L7486, designs numbered `DSN-NNNN`)
+- The TASKS.md framing of "7 collections" undercounted by 1 — the export actually has 8 design collections across two parallel systems, neither of which legacy users ever populated.
+
+So the migration scope of T-046 is: **zero rows to migrate, two competing legacy specs, no UX requirements driving which to pick.** Same shape as ADR-016 §"Alternatives Considered → A" (the rejected `qc_inspections` design-in-a-vacuum plan) and ADR-017 §1 (dispatchLog + JW DC + 5 other doc_missing carve-outs).
+
+### Decision
+
+1. **Defer T-046 entirely.** No migration, no schema, no api/web module. T-046 row in Phase 8 backlog flipped to `[-] Deferred per ADR-022`. Phase 8 backlog comment notes the doc_missing rationale.
+2. **Apply the ADR-016 / ADR-017 precedent uniformly:** doc_missing collections are not resurrected from legacy code in a vacuum. When design tracking becomes a real workflow need, the schema gets designed fresh against the UX requirements at that time — pick System v1, v2, or a hybrid based on what actual designers need, not what legacy happens to have coded.
+3. **MIGRATION-LOG entry** records all 8 design collections as `NOT MIGRATED (per ADR-022)` with rationale, mirroring the qcAssignments / qcDocUploads / dispatchLog entries from ADR-016 / ADR-017.
+4. **Forward-looking note (not part of this decision but flagged for the user):** T-047 (CRM: `leads`, `communications`, `crmReminders`), T-048 (`toolIssues`, `storeIssues`, `partyMaterials`, `partyGrn`), T-049 (`capaRecords`), T-050 (`printTemplates`, `printTemplateRevisions`) — confirmed doc_missing on inspection of the same Run 1 export. The same defer-or-pivot question applies to each. Decisions on those tasks should be resolved separately, but the precedent set here makes deferral the path of least resistance unless UX requirements have arrived.
+
+### Alternatives Considered
+
+- **A — Build legacy v2 only (`designProjects` + 5 children → 4 tables), skip v1.** Rejected: still designing in a vacuum since v2 was never used either; the moment a real designer wants to use it, requirements may differ. Same pitfall ADR-016 §"Alternatives Considered → A" rejected for `qc_inspections`.
+- **B — Build both v1 and v2.** Rejected: largest scope, lowest payoff. v1 is essentially obsolete in legacy and would only carry a mini-feature (per-SO design gate) that doesn't justify a separate migration path.
+- **C — Build the schema now but skip the web module.** Rejected: still ships dead tables with unknown long-term shape; a future workflow-driven design would have to ALTER those tables anyway.
+
+### Consequences
+
+- **Positive:** Avoids sinking a session into 4-table design + tests + UI for a module with zero real-world usage. Phase 8 backlog shrinks meaningfully if the same logic propagates. Establishes a clear test (doc_missing → defer until UX) for the remaining Phase 8 tasks.
+- **Negative:** Phase 8's title in CLAUDE.md ("Peripheral modules") becomes mostly aspirational rather than executable — `activity_log` (T-051 + T-051a) may end up the only Phase 8 module that ships under this rule.
+- **Risks:** The legacy spec source survives in `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` and `migration/export/design*.json`. If a future design module is built from scratch, the legacy code is available as design inspiration — not as a binding spec.
+
+---
+
+## ADR-023: Phase 8 peripheral modules T-047 / T-048 / T-049 / T-050 deferred — all source collections doc_missing (extends ADR-022)
+
+**Date:** 2026-05-06
+**Status:** Accepted
+
+### Context
+
+ADR-022 (same day) deferred T-046 design tracker after confirming all 8 source collections were doc_missing. ADR-022 §4 flagged that the remaining Phase 8 backlog items (T-047, T-048, T-049, T-050) were also doc_missing on inspection of the same Run 1 export and that "the same defer-or-pivot question applies to each."
+
+Real-data inspection confirms:
+
+- **T-047 (CRM):** `leads`, `communications`, `crmReminders` — all 3 doc_missing
+- **T-048 (shop-floor / party):** `toolIssues`, `storeIssues`, `partyMaterials`, `partyGrn` — all 4 doc_missing. 3 of these (`storeIssues`, `partyMaterials`, `partyGrn`) were already explicitly carved out by ADR-017 §1 alongside the dispatch / OSP / JW DC collections; only `toolIssues` is a new carve-out under this ADR.
+- **T-049:** `capaRecords` — doc_missing. ADR-017 already mentioned the legacy `_createCAPAFromNC` cascade is absent from the data even though referenced in legacy code.
+- **T-050 (print):** `printTemplates`, `printTemplateRevisions` — both doc_missing.
+
+User agreed 2026-05-06 to apply the ADR-016 / ADR-017 / ADR-022 precedent uniformly: doc_missing modules wait for real workflow UX requirements before schema design starts.
+
+### Decision
+
+1. **Defer T-047, T-048, T-049, T-050 in one batch.** No migration, no schema, no api/web modules for any. All 4 rows in Phase 8 backlog flip to `[-] Deferred per ADR-023`.
+2. **Apply ADR-022's "designed fresh against UX" rule** to each module when it eventually becomes a real workflow need. Legacy HTML survives in `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` as design inspiration; legacy export JSONs (all empty per Run 1) survive in `migration/export/`.
+3. **Phase 8 outcome under the uniform doc_missing-defer rule:** `activity_log` (T-051 + T-051a) is the only Phase 8 module that ships. Everything else either already shipped under a different phase (`dashboardConfig` partially folded into T-041c / T-043 dashboard tiles), remains blocked on external infra (`alertConfig` → T-041d needs BullMQ + Redis + Resend), or stays deferred (this ADR + ADR-022).
+4. **MIGRATION-LOG entries** added for the 7 newly-carved-out collections in this ADR. The 3 already in ADR-017 (`storeIssues`, `partyMaterials`, `partyGrn`) don't need second entries — their existing carve-out stands and is reaffirmed here under the broader policy.
+
+### Alternatives Considered
+
+For each task individually, the same options ADR-022 considered apply: build from legacy code in a vacuum (rejected — no usage data), build a partial schema (rejected — would ALTER once UX arrives), or build the full module with full UI (rejected — designs in a vacuum). The case-by-case rationale collapses to the same precedent.
+
+One option specific to this ADR (not in ADR-022):
+
+- **Build print templates (T-050) anyway** because legacy HTML has actual JS code for templating. Rejected: the legacy print template editor is the WYSIWYG layer; the persisted `printTemplates` + `printTemplateRevisions` collections are doc_missing, meaning no users ever defined custom templates. The default-template renderer pattern shipped in T-045 (Excel export from saved-reports) covers the print-export need for Phase 9 without resurrecting the editor.
+
+### Consequences
+
+- **Positive:** Phase 8 backlog collapses cleanly. Attention pivots to Phase 9 final cutover work, which IS executable today (monitoring setup, runbook expansion, backup verify, etc.). Establishes a uniform project policy via the ADR-016 / -017 / -022 / -023 chain — future doc_missing surprises now have a clear default response.
+- **Negative:** When CRM / CAPA / tool tracking / print templates eventually become real needs, schema design starts from scratch — no migration scaffolding exists as a starting point.
+- **Risks:** None substantive. Reversible: any ADR can be superseded if real UX requirements arrive and warrant a different approach.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

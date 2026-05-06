@@ -734,6 +734,24 @@ Result summary: Phase 6 validated end-to-end: **4/4 tables match transform** (qc
 
 ---
 
+## designProjects / designTasks / designIssues / designWorkLog / designDCRs / designDCNs / designTracker / designTimeLog — NOT MIGRATED (per ADR-022)
+
+**Date:** 2026-05-06
+**Source records:** 0 each (all 8 collections `doc_missing` in the Run 1 export — never written by the legacy app)
+**Loaded records:** 0
+**Decision:** No table migration. T-046 ("Design tracker — consolidate 7 collections → 4 tables") is deferred. Two parallel design systems are coded in the legacy HTML — System v2 (`designProjects` + `designTasks` + `designIssues` + `designWorkLog` + `designDCRs` + `designDCNs`, project-task-issue tree with change-control, L7531-7651, projects numbered `DP-NNNN`) and System v1 (`designTracker` + `designTimeLog`, flat per-SO tracker used by `_canStartProductionForSO` gate, L7485-7486, designs numbered `DSN-NNNN`). Neither was ever populated. ADR-022 applies the established ADR-016 / ADR-017 precedent: doc_missing modules wait for real workflow UX requirements before schema design starts. Legacy spec source survives in `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` and `migration/export/design*.json` for future reference. Same carve-out pattern as `qcAssignments` / `qcDocUploads` (ADR-016) and `dispatchLog` / `jwDCOutward` / `jwDCInward` / `partyMaterials` / `partyGrn` / `ospDC` / `outsourceJobs` / `storeIssues` (ADR-017).
+
+---
+
+## leads / communications / crmReminders / toolIssues / capaRecords / printTemplates / printTemplateRevisions — NOT MIGRATED (per ADR-023)
+
+**Date:** 2026-05-06
+**Source records:** 0 each (all 7 collections `doc_missing` in the Run 1 export — never written by the legacy app)
+**Loaded records:** 0
+**Decision:** No table migration. Phase 8 backlog rows T-047 (CRM: `leads` + `communications` + `crmReminders`), T-048 (`toolIssues` newly carved here; `storeIssues` + `partyMaterials` + `partyGrn` already in ADR-017's broader carve-out), T-049 (`capaRecords` — legacy `_createCAPAFromNC` cascade absent from data even though present in legacy code per ADR-017's earlier note), and T-050 (`printTemplates` + `printTemplateRevisions`) are all deferred. Same rationale as ADR-022 / ADR-016 / ADR-017: doc_missing modules wait for real workflow UX requirements before schema design starts. The default-template renderer pattern from T-045 (Excel export from saved-reports) covers the print-export need without resurrecting the legacy WYSIWYG editor. Future workflow tasks (CRM / CAPA / tool tracking / print templates) design schemas forward against UX requirements at that time. Legacy spec source survives in `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` for reference.
+
+---
+
 ## Template
 
 ```
@@ -756,5 +774,5 @@ Result summary: Phase 6 validated end-to-end: **4/4 tables match transform** (qc
 - ~~**Phase 6 (qc master):** qcProcesses~~ — migrated 2026-05-03 (T-038); `qcAssignments` + `qcDocUploads` deliberately NOT migrated per ADR-016
 - ~~**Phase 6 (NC + dispatch):** ncRegister, challans~~ — migrated 2026-05-04 (T-039); `dispatchLog`, `jwDCOutward`, `jwDCInward`, `partyMaterials`, `partyGrn`, `ospDC`, `outsourceJobs`, `storeIssues` deliberately NOT migrated per ADR-017 (all `doc_missing`)
 - **Phase 6 (remaining):** capaRecords (CAPA records — see ADR-017 future scope; legacy `_createCAPAFromNC` cascade currently absent)
-- **Phase 8:** designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designDCRs, designDCNs; leads, communications, crmReminders; toolIssues, storeIssues, partyMaterials, partyGrn; printTemplates, printTemplateRevisions, dashboardConfig, alertConfig
+- **Phase 8:** ~~designProjects, designTasks, designIssues, designWorkLog, designTimeLog, designTracker, designDCRs, designDCNs~~ — deliberately NOT migrated 2026-05-06 per ADR-022 (T-046 deferred; all 8 doc_missing); ~~leads, communications, crmReminders~~ — deliberately NOT migrated 2026-05-06 per ADR-023 (T-047 deferred; all 3 doc_missing); ~~toolIssues~~ — NOT migrated per ADR-023 (T-048 deferred); `storeIssues` / `partyMaterials` / `partyGrn` already NOT migrated per ADR-017; ~~capaRecords~~ — NOT migrated per ADR-023 (T-049 deferred; doc_missing); ~~printTemplates, printTemplateRevisions~~ — NOT migrated per ADR-023 (T-050 deferred; both doc_missing); `dashboardConfig` partially folded into T-041c / T-043 dashboard tiles; `alertConfig` blocked on T-041d infra (BullMQ + Redis + Resend)
 - ~~**Phase 9 (early):** activityLog~~ — migrated 2026-05-05 (T-051; landed in Phase 8 since the table has no FK dependencies on still-pending modules)
