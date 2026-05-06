@@ -105,6 +105,119 @@ Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.y
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
+## Database — Migrations
+
+Schema is owned by Drizzle. Two migration paths run side-by-side:
+
+- **drizzle-kit-generated migrations** — file pattern `apps/api/src/db/migrations/NNNN_<name>.sql`, generated from `apps/api/src/db/schema.ts`. Applied by `drizzle-kit migrate`. Used for tables, columns, FKs, indexes, RLS policies expressed in the schema graph.
+- **Hand-written migrations** — same folder, same numbering convention, but anything outside the drizzle schema graph: triggers, views, CHECK constraints not in schema.ts, RLS policies referencing custom helpers, one-off DDL like dropping legacy text columns. Applied by `apps/api/src/db/apply-sql.ts` (statement-by-statement runner that splits on `--> statement-breakpoint` markers).
+
+### Generating a drizzle migration
+
+```
+pnpm --filter @innovic/api drizzle-kit generate
+```
+
+Creates the next-numbered SQL file in `apps/api/src/db/migrations/` plus a journal entry. Inspect the generated SQL before applying — drizzle-kit can suggest unnecessary diffs (column re-orders, default value changes); reject those by reverting the schema.ts wobble that triggered them.
+
+### Applying drizzle-generated migrations (standard path)
+
+```
+pnpm --filter @innovic/api drizzle-kit migrate
+```
+
+Executes any unapplied migrations in journal order against `DATABASE_URL`. Idempotent — already-applied entries skip.
+
+### Applying hand-written migrations (`apply-sql.ts`)
+
+```
+pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts <path1.sql> [path2.sql ...]
+```
+
+Runs each `--> statement-breakpoint`-separated statement sequentially in a single connection. Use `CREATE OR REPLACE` / `CREATE … IF NOT EXISTS` so re-runs are safe. Hand-written files do NOT get journaled — re-running is your responsibility.
+
+Concrete past invocations (search commit history for shape):
+
+- Phase 5 triggers + views: `0010_phase5_triggers.sql` + `0011_phase5_views.sql`
+- Phase 6 NC + dispatch triggers: `0012_phase6_nc_dispatch_triggers.sql`
+- Phase 7 saved-reports trigger: `0014_phase7_saved_reports_trigger.sql`
+- Phase 8 activity-log: `0015_phase8_activity_log.sql` (drizzle-gen file applied via apply-sql to bypass the journal-orphan blocker — see below)
+
+### The journal-orphan workaround
+
+**Symptom:** `drizzle-kit migrate` fails with a message about a journal entry referencing a SQL file that doesn't exist (e.g. `0008_verify_no_drift` in this repo).
+
+**Root cause:** Pre-existing journal corruption from an early migration that was rolled back before the file was created or after the file was deleted. The journal table thinks the migration ran; the file is missing; drizzle-kit refuses to proceed.
+
+**Workaround (in use since Phase 5):**
+
+1. Generate the migration normally with `drizzle-kit generate` — produces an `NNNN_*.sql` file.
+2. Skip `drizzle-kit migrate`. Apply the new file directly via `apply-sql.ts`:
+   ```
+   pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_<name>.sql
+   ```
+3. Verify in Supabase Studio (or via `psql`) that the new objects exist.
+4. Manually upsert a row in the drizzle journal table so future drizzle-kit drift checks see the migration as "applied" if needed (rarely required — drizzle-kit drift detection compares schema.ts to DB state, not journal contents).
+
+**Permanent fix (deferred):** clean up the orphan journal entry. Requires identifying which legacy migration the orphan refers to + reconstructing or replaying it. Not blocking — apply-sql is the working path. Track in a follow-on task if the journal corruption ever expands beyond the single orphan.
+
+### Rolling back a bad migration
+
+drizzle has no "down" path. To roll back:
+
+1. Write a new migration that inverts the change — drop columns added, recreate columns dropped, etc.
+2. Apply via the same path (drizzle-kit migrate or apply-sql).
+3. Production rollback path is "deploy a fixed migration", not "undo the last migration."
+
+For partial-failure cases (migration applied to half a multi-statement transaction): hand-investigate the DB state, write a corrective migration, and document the incident in `docs/MIGRATION-LOG.md`.
+
+### Forbidden
+
+- **Never modify production schema in Supabase Studio** (CLAUDE.md §6 rule 9). Studio edits don't journal and break the next deploy.
+- **Never delete a migration file once applied to any environment.** Even on local dev, you'll lose the ability to bootstrap a fresh DB.
+
+---
+
+## Database — Phase Validators
+
+Each migration phase ships a validator script that does a read-only field-level diff between transform output and DB state plus FK orphan checks. Run after any load, after any schema/data change touching a phase's tables, and before any cutover.
+
+| Script             | Phase                                | Tables covered                                                                                                    | Notes                                                                                                |
+| ------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `validate:phase2`  | Master data                          | `users`, `clients`, `vendors`, `items`, `machines`, `operators`                                                   | 14 FK columns; users count can show +1 from leftover smoke users (documented in MIGRATION-LOG)       |
+| `validate:phase3`  | Op-entry chain                       | `route_cards`, `route_card_ops`, `route_card_revisions`, `job_cards`, `jc_ops`, `op_log`, `running_ops`           | 25 FK columns; checks `v_jc_op_status` + `v_jc_status` view sanity; HH:MM ↔ HH:MM:SS time normaliser |
+| `validate:phase4`  | Sales chain                          | `sales_orders`, `sales_order_lines`, `job_work_orders`, `job_work_order_lines`                                    | 16 FK columns; verifies job_cards source FK backfill (2/2 — IN-JC-00002 + IN-JC-00003)               |
+| `validate:phase5`  | Procurement                          | `purchase_requests`, `purchase_orders`, `purchase_order_lines`, `goods_receipt_notes`, `goods_receipt_note_lines`, `store_transactions` | 32 FK columns; verifies jc_ops outsource backfill (1/1)                                              |
+| `validate:phase6`  | QC + dispatch                        | `qc_processes`, `nc_register`, `delivery_challans`, `delivery_challan_lines`                                      | 16 FK columns; legacy dispatch_log + JW DC + party collections deliberately NOT migrated (ADR-017)   |
+| `validate:phase8`  | Activity log                         | `activity_log`                                                                                                    | 2 FK columns; legacy "Japan" entries land with `user_id=null` + `user_name` snapshot (ADR-019)       |
+
+### Run a validator
+
+```
+pnpm --filter @innovic/migration validate:phase5    # or phase2 / phase3 / phase4 / phase6 / phase8
+```
+
+Output lands in `migration/load-output/_phaseN_validation.json` (gitignored). Look at the last line of stdout: `overallStatus: PASS` or `overallStatus: FAIL`.
+
+### Reading the output
+
+PASS means: **(a)** every transform-row's mapped columns match the DB row byte-for-byte (modulo documented normalisations: enum lowercasing, NUMERIC `.toFixed(2)` strings, ISO ↔ Postgres timestamptz format, jsonb canonical), AND **(b)** every FK column in the checked set has zero orphans.
+
+FAIL means: at least one of the above failed. The output JSON has a `byTable` block listing diffs per table + an `orphanFks` block listing FK column → orphan-row counts. Investigate each before proceeding.
+
+### When to run
+
+- **After a re-load** (e.g. you reset the dev DB and re-ran `migration/load.ts`).
+- **After any schema migration that touches a phase's tables** (column add/drop/rename can leave existing rows still valid but the validator catches mismatches with transform expectations).
+- **Before any cutover** — the cutover SOP (see "Phase Cutover" section below) requires a clean PASS as the entry gate.
+- **Periodically** if you suspect drift (e.g. someone hand-edited a row in Supabase Studio against §6 rule 9).
+
+### Known transient
+
+`validate:phase3` can rarely return FAIL on `v_jc_status` view-vs-snapshot mismatch when run concurrently with a parallel test that mutates `jc_ops`. Re-run alone to confirm. If still FAIL, investigate.
+
+---
+
 ## Release Smoke / Sign-off Procedure
 
 Run this before declaring a release ready, and after any infra change (Railway region, env var rotation, schema migration, new module rollout).
@@ -282,6 +395,73 @@ curl http://localhost:3000/health      # API → {"ok":true,...}
 # then open http://localhost:5173 in the browser, log in,
 # DevTools → Network → confirm /me and /items? return 200.
 ```
+
+## Test Suite — Hygiene & Recovery
+
+### How tests share the dev DB
+
+There is currently one Supabase project — dev. Tests run against the same DB the API talks to during local dev. Until a dedicated CI/staging Supabase project is provisioned (Phase 1 carry-over note), tests must be hygienic on a shared DB:
+
+- Every test file inserts rows with a code prefix (`T<phase>R?-`, e.g. `T018-A1`, `T036C-LST`, `T051-AUD`).
+- Tests `afterAll`-clean their prefixed rows. CASCADE handles child rows.
+- Vitest's `globalSetup` (`apps/api/test/global-setup.ts`) wipes any leftover test cruft *before* the first test runs.
+
+### What `globalSetup` does
+
+`apps/api/test/global-setup.ts` runs once at the start of every full-suite invocation (`pnpm test` or `pnpm --filter @innovic/api test`). It:
+
+1. Deletes parent transactional rows where `code LIKE 'T%-%'` in FK-safe order: nc_register → delivery_challans → goods_receipt_notes → store_transactions → purchase_orders → purchase_requests → sales_orders → job_work_orders → job_cards. CASCADE handles each parent's children (lines, jc_ops, op_log, running_ops).
+2. Deletes master rows where `code LIKE 'T%-%'`: items → vendors → clients → machines → operators.
+3. Deletes `saved_reports` where `name LIKE 'T041B-%'` (saved-reports keys by `name`, not `code`).
+4. Deletes `activity_log` where `entity LIKE 'T051-%' OR ref_id LIKE 'T%-%'` (audit cruft from emitter sweeps).
+
+The `code LIKE 'T%-%'` pattern matches every test prefix without false positives — real seed/migrated codes never start with `T0/T1/T2/T3/T4` followed by a hyphen.
+
+### When `globalSetup` isn't enough
+
+If a test suite still fails on `code already exists` errors during `beforeAll`, the cruft is using a code shape that doesn't match `T%-%`. Find the shape:
+
+```sql
+-- Example: scan items for any code that doesn't look like seed/migrated data
+select code from public.items where code !~ '^[0-9A-Z]+$' order by code;
+```
+
+Once identified, either (a) update the offending test to use a `T%-%` code, OR (b) add a targeted DELETE to `global-setup.ts`.
+
+### Manual recovery — wedged dev DB
+
+When tests have left the DB in a state that `globalSetup` doesn't recover (e.g. a fixture references a row outside the prefix pattern, or a test-killed run left orphaned `running_ops` rows that block JC fixture inserts), nuke and re-load:
+
+1. **Stop the API dev server** (`Ctrl+C` in the API terminal).
+2. **Run the global-setup wipe by hand** to clear the standard cruft:
+   ```
+   pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx test/global-setup.ts
+   ```
+   (The file exports a default async function; vitest calls it; you can call it directly too.)
+3. **Inspect leftover oddities** in Supabase Studio's Table Editor or via `psql`. Common stragglers: rows in `op_log` keyed by jc_op_ids whose parent JC was wiped (FK CASCADE should handle this — if not, raw delete by id range).
+4. **Re-run the affected phase load** if a transactional table got truncated:
+   ```
+   pnpm --filter @innovic/migration tsx load.ts
+   ```
+5. **Re-run the validator** for the phase: `pnpm --filter @innovic/migration validate:phaseN` — must end PASS before resuming.
+
+### Known transient races
+
+These are documented baselines, not bugs. They surface ~1× per full-suite run; isolated module re-runs are always green.
+
+| Race                                                        | Phase                | Symptom                                                                                                          | Recovery                                                                                                                  |
+| ----------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `v_jc_status` snapshot vs concurrent `op_log` write         | Phase 3 / op-entry   | A test asserting `v_jc_status` row count or computed_status sees a mid-flight value                              | Re-run the affected file (`pnpm --filter @innovic/api test op-entry`). If still failing, investigate.                     |
+| `store_transactions` ledger write race in GRN-QC cascade    | Phase 5 / GRN module | Test reading store_transactions counts sees +/-1 vs expected during parallel GRN write                           | Re-run the GRN module file alone (always 15/15).                                                                          |
+| Reports `stock-movement-log` filter race vs GRN ledger writes | Phase 7 / reports    | Reports test sees a transaction row that wasn't there at filter eval time                                        | Re-run reports module alone (always 27/27).                                                                               |
+
+If a race surfaces twice in a row in the same module file run alone, treat as a real regression — investigate, don't retry.
+
+### Why we can't just `pool: 'forks' + singleFork: true`
+
+Tried 2026-05-04. Made things worse — surfaced 13 cruft-related failures from accumulated test-killed runs that the parallel-`afterAll`s were masking. Reverted. The current `globalSetup` is the proper fix for the cruft problem; `singleFork` would only paper over it. Track in TASKS.md if test isolation ever needs a real CI/staging DB.
+
+---
 
 ## Seclore / eScan Notes (this dev box only)
 
