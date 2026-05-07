@@ -18,6 +18,21 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  // Comma-separated list of allowed CORS origins (e.g.
+  // "https://erp.innovic.in,https://erp-staging.innovic.in"). Empty list +
+  // NODE_ENV=production will refuse to start; empty list + dev/test falls
+  // back to permissive `origin: true` with a warning.
+  ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
+    ),
 });
 
 const parsed = envSchema.safeParse(process.env);
