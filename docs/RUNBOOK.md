@@ -750,6 +750,65 @@ If anything trips a daily alert beyond pre-cutoff baseline, escalate. Don't norm
 
 ---
 
+## Monitoring — Sentry + Better Stack + Supabase metrics (T-054)
+
+The code-side wiring for Sentry is in place; account provisioning is pending. Until DSNs are set, the SDKs are no-ops (the web SDK is even tree-shaken to zero bytes — see `apps/web/src/lib/sentry.ts`). Setting the env vars at deploy time activates everything without a code change.
+
+### Sentry — what's wired
+
+- **API:** `apps/api/src/lib/sentry.ts` reads `SENTRY_DSN`. The error handler at `apps/api/src/plugins/error-handler.ts` calls `captureUnhandledError(err, { user, requestId, method, url })` only on the unhandled-500 branch — domain errors (`AppError`, `ZodError`, Fastify client errors) are NOT sent (they're expected and already in Pino).
+- **Web:** `apps/web/src/lib/sentry.ts` reads `import.meta.env.VITE_SENTRY_DSN` directly (not via `lib/env.ts`) so an empty value at build time is statically dead-eliminated by Rollup. Build with no DSN → vendor-sentry chunk is 0.04 KB. Build with DSN → vendor-sentry chunk is ~28 KB gzip.
+- **User context:** API tags Sentry events with `user.id`, `user.email`, `company_id`, `role`, `request_id`, `http.method`, `http.url`. Web sets the same shape via `setSentryUser(me)` in `lib/session.ts` after every `/me` fetch.
+- **Tracing/profiling:** disabled (`tracesSampleRate: 0`). We don't have the volume to justify the noise yet.
+
+### Sentry — provisioning checklist
+
+1. **Create a Sentry org** at [sentry.io](https://sentry.io). Free tier covers 5k errors/month, which is comfortably above our expected volume at 100 users.
+2. **Create two projects** under the org:
+   - `innovic-api` → platform: Node.js
+   - `innovic-web` → platform: React
+3. **Copy the DSNs** from each project's Settings → Client Keys (DSN).
+4. **Set env vars:**
+   - Railway (API service): `SENTRY_DSN=<api-dsn>`
+   - Cloudflare Pages (web build): `VITE_SENTRY_DSN=<web-dsn>` — **must use the VITE\_ prefix** or the value never reaches the browser.
+5. **Redeploy both.** Railway picks the env var up automatically. Cloudflare Pages only embeds it on the next build, so trigger a new build.
+6. **Smoke-test:** in a non-prod environment, throw an unhandled error from a route (or from the browser console: `throw new Error('sentry smoke')`). The event should appear in Sentry within ~30 seconds with the right user/company tags attached.
+
+### Better Stack — uptime + heartbeat
+
+Two monitors:
+
+1. **Uptime monitor on `/health`:**
+   - Type: HTTP
+   - URL: `https://<railway-host>/health`
+   - Expected: `200` + body contains `"ok":true`
+   - Interval: 3 minutes (free tier limit)
+   - Alert channel: email to ops contact (start small; add Slack/SMS later)
+2. **Heartbeat monitor for the daily backup workflow** — already documented in the Backup section above. Saved as GitHub secret `BACKUP_HEARTBEAT_URL`.
+
+Better Stack's free tier covers 1 uptime monitor + 1 heartbeat monitor, which is exactly what we need for v1.
+
+### Supabase metrics — what to bookmark
+
+Supabase already exposes the metrics we'd otherwise pay an APM for. No setup; just bookmarks:
+
+- **Database → Connection Pooler:** live connection count vs pool max. Bookmark this; it's the first place to look on a "pages hang" complaint (cross-link from Performance Triage section above).
+- **Database → Query Performance:** `pg_stat_statements` view of slowest queries by total time. Use after EXPLAIN ANALYZE to find systemic offenders.
+- **Logs → Postgres logs:** server-side error log. Useful for diagnosing failed migrations or RLS policy errors that don't surface to the app.
+- **Database → Roles → `authenticated` / `anon`:** confirm RLS policies are enabled when troubleshooting visibility bugs.
+
+### Order of operations
+
+T-054 closes when **all three** are wired:
+
+- [ ] Sentry org + 2 projects + DSNs deployed (API + web)
+- [ ] Better Stack uptime monitor on `/health` + heartbeat from backup workflow
+- [ ] Supabase metrics dashboards bookmarked in the team password manager / docs
+
+Until then, T-054 stays open. The monitoring section in Performance Triage references this section's smoke-test for the "When to give up and add monitoring" trigger.
+
+---
+
 ## Monthly Restore Drill (T-058)
 
 First Monday of every month:

@@ -6,6 +6,7 @@ import Fastify from 'fastify';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
+import { initSentry } from './lib/sentry';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
@@ -27,6 +28,8 @@ import { salesOrdersRoutes } from './modules/sales-orders/routes';
 import { vendorsRoutes } from './modules/vendors/routes';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
+
+initSentry();
 
 const app = Fastify({
   loggerInstance: logger,

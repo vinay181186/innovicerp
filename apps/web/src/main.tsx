@@ -2,9 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { initSentry } from './lib/sentry';
 import { setupAuthListener } from './lib/session';
 import './index.css';
 import { router } from './router';
+
+initSentry();
 
 const queryClient = new QueryClient({
   defaultOptions: {

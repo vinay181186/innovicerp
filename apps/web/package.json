@@ -17,6 +17,7 @@
     "@hookform/resolvers": "^3.9.1",
     "@innovic/shared": "workspace:*",
     "@radix-ui/react-slot": "^1.1.1",
+    "@sentry/react": "^10.52.0",
     "@supabase/supabase-js": "^2.46.1",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.84.4",
