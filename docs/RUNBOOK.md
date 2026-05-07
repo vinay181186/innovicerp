@@ -53,6 +53,135 @@ Railway auto-redeploys when variables are edited. To force without changing valu
 
 Not yet wired. Will be a separate workflow file (`.github/workflows/deploy-web.yml`) when the Cloudflare account is set up. Until then, the web app runs only locally.
 
+## Backup — Daily pg_dump to Backblaze B2
+
+CLAUDE.md §6 rule #4 mandates a daily automated `pg_dump` to a second provider, plus a restore drill on the first Monday of every month. Supabase's native daily backups + 7-day PITR are insufficient — they don't survive a Supabase outage / billing dispute / pivot. This section documents the offsite chain.
+
+**Status (2026-05-06):** Backblaze B2 account + bucket NOT yet provisioned. The procedure below is the design; the workflow file is pending T-055 commit. T-053 (turn off legacy HTML) requires this chain to be live and verified — see "Phase 9 Cutoff" §"Readiness gate 4."
+
+### Why Backblaze B2
+
+- ~3× cheaper than S3 at our retention scale (~50 GB ultimate)
+- Same S3-compatible API surface; the `b2` CLI works alongside `aws s3`
+- Mumbai egress to B2 is acceptable (~80-150 ms; pg_dump streaming over a single TCP connection)
+- Independent provider from Supabase — outage on one ≠ outage on the other
+
+### One-time provisioning
+
+1. **Create the B2 account.** [www.backblaze.com/b2](https://www.backblaze.com/b2). Use a project-dedicated email, not a personal Gmail (rotation hygiene).
+2. **Create the bucket** `innovic-backups`:
+   - Type: Private (NOT public)
+   - Default encryption: SSE-B2 (AES-256)
+   - Lifecycle rules:
+     - Files matching `daily/*.sql.gz` → keep 30 days, then delete
+     - Files matching `monthly/*.sql.gz` → keep 12 months, then delete
+3. **Create an application key** scoped to the bucket:
+   - Name: `innovic-backups-writer`
+   - Bucket access: `innovic-backups` only
+   - Capabilities: `listFiles`, `readFiles`, `writeFiles` (NOT `deleteFiles` — lifecycle handles deletion)
+   - Save `keyId` + `applicationKey` securely; you only see them once.
+4. **Add secrets to GitHub repo settings** → Secrets and variables → Actions:
+   - `B2_KEY_ID` — the application key id
+   - `B2_APPLICATION_KEY` — the secret
+   - `B2_BUCKET` — `innovic-backups`
+   - `BACKUP_DATABASE_URL` — pooler URL of the source Supabase project (start with dev; switch to prod after T-053)
+5. **Add a Better Stack heartbeat monitor** for the workflow:
+   - Type: Heartbeat
+   - Expected interval: 24h
+   - Grace period: 12h (so a delayed backup doesn't immediately page)
+   - Save the ping URL as GitHub secret `BACKUP_HEARTBEAT_URL`
+
+### The workflow file (`.github/workflows/backup.yml`)
+
+```yaml
+name: Daily backup
+on:
+  schedule:
+    # 20:00 UTC = 01:30 IST — past the daily op-entry rush, before morning shift
+    - cron: '30 20 * * *'
+  workflow_dispatch: # manual trigger from Actions tab if needed
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install postgresql-client + b2 cli
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          pip install --user b2
+
+      - name: Dump + compress
+        env:
+          PG_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M)
+          pg_dump --no-owner --no-acl --format=custom "$PG_URL" \
+            | gzip -9 > "innovic-${STAMP}.sql.gz"
+          ls -lh "innovic-${STAMP}.sql.gz"
+          echo "STAMP=$STAMP" >> $GITHUB_ENV
+
+      - name: Upload to B2
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          ~/.local/bin/b2 authorize-account "$B2_APPLICATION_KEY_ID" "$B2_APPLICATION_KEY"
+          ~/.local/bin/b2 file upload "${{ secrets.B2_BUCKET }}" \
+            "innovic-${STAMP}.sql.gz" \
+            "daily/innovic-${STAMP}.sql.gz"
+
+      - name: Promote to monthly on 1st of month
+        if: ${{ github.event.schedule != '' }}
+        env:
+          B2_APPLICATION_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+        run: |
+          DAY=$(date -u +%d)
+          if [ "$DAY" = "01" ]; then
+            ~/.local/bin/b2 file copy-by-id \
+              $(~/.local/bin/b2 file get-info "${{ secrets.B2_BUCKET }}" "daily/innovic-${STAMP}.sql.gz" | jq -r .fileId) \
+              "${{ secrets.B2_BUCKET }}" "monthly/innovic-${STAMP}.sql.gz"
+          fi
+
+      - name: Heartbeat ping
+        if: ${{ success() }}
+        run: curl -fsS "${{ secrets.BACKUP_HEARTBEAT_URL }}" || true
+```
+
+Notes:
+
+- `--format=custom` (`-Fc`) writes a compressed binary that `pg_restore` consumes more selectively than plain SQL. `gzip` adds another ~30% reduction.
+- `--no-owner --no-acl` strips role assignments so `pg_restore` works against any target Supabase project (roles differ).
+- The job times out at 30 min — a clean dump of a 5–10 GB Postgres takes <5 min over fast network. If it ever creeps past 25 min, investigate; `pg_dump` shouldn't be slow.
+- Monthly promotion runs only on day 01 of each UTC month; the daily file is copied (not moved) to `monthly/`, then the daily lifecycle deletes the daily copy after 30 days.
+
+### Verifying the chain is healthy (do this after every change)
+
+1. **Manual run:** Actions tab → Daily backup → Run workflow. Should complete in <10 min.
+2. **B2 listing:** verify the new `daily/innovic-YYYYMMDD-HHMM.sql.gz` exists:
+   ```
+   b2 ls innovic-backups daily/ | head -5
+   ```
+3. **Heartbeat:** Better Stack dashboard should show the ping landed within the last hour.
+4. **Restore drill:** see "Restore from Backup" below — confirms the dump is valid, not just present.
+
+### Cost estimate (as of 2026)
+
+- Storage: $0.005/GB/month → 30 daily × 5 GB + 12 monthly × 5 GB = 210 GB-months = **~$1/month**
+- Egress (only when restoring): $0.01/GB → a 5 GB dump pulled for a drill = **$0.05/drill**
+- Total: under $20/year
+
+### Common failure modes
+
+- **`pg_dump: error: connection to server at "..." failed: timeout`** — Supavisor pooler dropped a long-running session. Switch the workflow to use port 5432 (direct/session pooler), not 6543 (transaction pooler). Transaction pooler doesn't support session-level SET that pg_dump uses.
+- **`b2: command not found`** — `pip install b2` puts the binary at `~/.local/bin/`; confirm the Install step + invocation path.
+- **Heartbeat never pings** — workflow failed before the heartbeat step. Check Actions logs; common cause is bucket name typo or wrong key permissions.
+- **B2 returns `unauthorized` despite valid key** — application key was revoked OR scoped to the wrong bucket. Check the key's bucket restriction in the B2 dashboard.
+
+---
+
 ## Restore from Backup
 
 1. Pull latest dump from Backblaze B2:
@@ -164,6 +293,78 @@ railway logs --tail 200 | grep '"level":50'    # 50 = error level in Pino
 ```
 
 The log entry has `err.message`, `err.stack`, `req.id`, `req.method`, `req.url`, and `req.user.id` (if present). That's what an incident investigation starts from.
+
+---
+
+## Performance Triage — Without Monitoring
+
+Until T-054 lands (Better Stack uptime + Sentry + Supabase metrics dashboards), there is no APM, no flamegraph, no p95 chart. This section is the manual triage path using only the tools that exist today: Railway log stream, Pino's per-request `responseTime`, Supabase dashboard, browser devtools, TanStack Query devtools, and `EXPLAIN ANALYZE`.
+
+### Where to look first, by complaint shape
+
+| Symptom (user-reported)                  | First place to look                                                                          | What you're looking for                                                                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| "Page loads slowly"                      | Browser devtools Network tab → sort by Time desc                                             | Which endpoint is the long bar? Single slow XHR or many parallel ones? Look for >300ms server response time on list endpoints |
+| "Save / submit takes ages"               | Network tab on the POST/PUT, then Railway logs `grep "POST /<module>"`                       | Server-side wall time. Cascade modules (GRN T-036c, NC T-040b, op-entry sales-cascade T-033) run multiple writes per request  |
+| "Whole app feels sluggish"               | React DevTools Profiler → record a click                                                     | Re-render storms; usually a stale `useEffect` dep or a Zustand store reading too broadly                                      |
+| "List filters / search are slow"         | Network tab on the list endpoint, then `EXPLAIN ANALYZE` the SQL (Supabase SQL editor)       | Sequential scan on `code LIKE '%x%'` (no GIN/trigram), or missing index on the filter column                                  |
+| "Sometimes pages just hang"              | Supabase dashboard → Database → Connection Pooler                                            | Pool saturation. At 100 users we're at ~30% of pool; if >80% something is leaking                                             |
+| "Realtime updates lag / don't arrive"    | Browser devtools → WS frames + Pino logs filter on the channel                               | Filter mismatch (RLS rejecting the row at delivery), or WebSocket dropped + not reconnected                                   |
+| "Reports / saved-reports time out"       | Network tab response time, then re-run the SQL in Supabase SQL editor with `EXPLAIN ANALYZE` | Aggregate without an index on the GROUP BY column, or a CTE the planner can't push filters into                               |
+| "Web bundle download slow on first load" | Vite build output (`pnpm --filter web build`) gzip column                                    | Vendor chunk bloat. Current target: app `index` ≤ 110 KB gzip; vendor-react ≤ 105 KB; vendor-tanstack ≤ 90 KB                 |
+| "Excel export / PDF generation slow"     | Railway logs `grep "export.xlsx"` for the request, plus row-count from the response          | Row count above the LIMIT 5000 ceiling = unintentional unbounded scan; otherwise it's exceljs CPU and can't easily be sped up |
+
+### Reading Pino request logs for response time
+
+Fastify with Pino emits a `request completed` log line per request with `responseTime` in ms:
+
+```
+railway logs --tail 500 | grep "request completed" | jq 'select(.responseTime > 300) | {url: .req.url, ms: .responseTime, user: .req.userId}'
+```
+
+`responseTime` covers the full server-side handling — auth + RLS + service + DB + serialisation. Anything > 300 ms on a list endpoint or > 800 ms on a detail/cascade endpoint warrants triage. The 60s vitest timeout (PR #2) was a CI reaction to occasional 30s+ cascade tests; if production sees those numbers, that's a separate bug, not a tuning knob.
+
+### EXPLAIN ANALYZE workflow (Supabase SQL editor)
+
+For a suspect query (copied from Pino logs or the Drizzle source):
+
+1. Wrap in `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <query>;`
+2. Look for `Seq Scan on <big_table>` — that's the smoking gun on transactional tables (job_cards, op_log, store_transactions, activity_log).
+3. Confirm the planner used the index you expect (`Index Scan using <name>` line). If it picked a different index, your filter shape may be off (e.g. `(company_id, status) WHERE deleted_at IS NULL` partial index won't be used if the query omits the `deleted_at IS NULL` clause).
+4. Buffers `read=N` shows disk reads; `hit=N` is cache. Large `read` values on a hot table = the working set has fallen out of shared_buffers — usually a sign someone ran a wide aggregate without a date filter.
+
+Indexes that exist today (per `docs/SCHEMA.md`): every FK, plus `(company_id, status) WHERE deleted_at IS NULL` on transactional tables, business-key uniques (`code`), and time-range indexes on `op_log.log_time` / `activity_log.ts` / `store_transactions.txn_date`. If `EXPLAIN` reveals a missing index, **do not** add it via Supabase Studio (CLAUDE.md §6 rule 9) — open a Drizzle migration, document in SCHEMA.md, ship through the normal flow.
+
+### Cascade-write hot spots
+
+These three flows do multiple writes inside one transaction. If a save feels slow, it's almost always one of these:
+
+- **GRN line QC accept** (`apps/api/src/modules/goods-receipt-notes/cascades.ts`) — recalcs PO line received_qty + recalcs PO header status + writes `store_transactions` row + bumps `v_item_stock` (under `SELECT … FOR UPDATE` on items row). Per accepted line. 4 GRN lines accepted in one save = 16 writes.
+- **NC dispose `make_fresh`** (`apps/api/src/modules/nc-register/cascades.ts`) — reads origin JC, scans existing supplementary JCs to compute `-S<n>` suffix, inserts new JC, updates NC, emits 2 audit rows. The supplementary-JC scan is `LIKE '<originCode>-S%'` — currently fine because `code` is uniquely indexed and result sets are tiny, but watch if any single origin JC accumulates > 20 supplementary JCs.
+- **Op-entry sales-cascade** (`apps/api/src/modules/op-entry/sales-cascade.ts`) — on last-op-of-JC complete, walks JC → SO line → SO header (or JW line → JW header) and flips status if all siblings are terminal. Idempotency-guarded but still N+1 in the worst case where many JCs complete simultaneously against the same SO. If the live ops board lags during shift end, this is the suspect.
+
+### TanStack Query refetch storms (frontend)
+
+Symptom: opening browser devtools Network tab and seeing the same endpoint hit 5+ times within a second. Causes:
+
+- `refetchOnWindowFocus` + `refetchOnMount` + `staleTime: 0` together → every tab focus triggers a full refetch chain.
+- Polling interval too aggressive (current convention: 30s for lists, 60s for detail, per ADR-004; dashboard tiles poll at 60s; live ops board uses Realtime subs, not polling).
+- `placeholderData: prev` is good (stops UI flash) but doesn't reduce request count — it just makes the loading state invisible.
+
+Fix path: open `apps/web/src/modules/<module>/api.ts`, check the `useQuery` options. If `staleTime` is missing, add it. If a list invalidates on every mutation in the same module, that's intentional — but cross-module invalidations (GRN write invalidating PO cache, NC dispose invalidating op-entry + job-cards) need to be explicit; review the cascade fanout in the relevant `useMutation` `onSuccess`.
+
+### Connection pool saturation
+
+Supabase dashboard → Database → Connection Pooler shows live + max connections. Two pools:
+
+- **Session pooler** (port 5432) — used by Drizzle for transactional work. Each Fastify worker holds 1 connection per concurrent request; at 100 users with 1 active request each = 100 connections.
+- **Transaction pooler** (port 6543, PgBouncer) — `DATABASE_URL_POOLED` in env. Used for short reads where session state isn't needed. Multiplexes many app-level connections onto few DB connections.
+
+Default Supabase Pro pool size is 60 (Mumbai region). If saturation hits before T-054 monitoring lands, the cheapest mitigation is routing more reads through `DATABASE_URL_POOLED` — but it requires careful audit (the transaction pooler doesn't support session-state features like `SET LOCAL`, prepared statements across queries, or `LISTEN/NOTIFY`).
+
+### When to give up and add monitoring
+
+If triage requires Pino log diving more than once a week, T-054 should jump the queue. The free tier of Sentry covers our error volume; Better Stack uptime is free for one monitor. The Supabase metrics dashboard already exists — it just isn't bookmarked yet.
 
 ---
 
