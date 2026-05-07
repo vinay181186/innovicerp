@@ -43,6 +43,7 @@ curl https://<railway-service>.up.railway.app/health
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWT_SECRET`
+- `ALLOWED_ORIGINS` — comma-separated list of origins allowed via CORS (e.g. `https://erp.innovic.in,https://erp-staging.innovic.in`). The API **refuses to start** in production with this unset. Update whenever a new web host is added (custom domain cutover, staging URL change).
 
 **Do not** set `PORT` — Railway injects it automatically and `apps/api/src/lib/env.ts` prefers Railway's `PORT` over `API_PORT` (ADR-010).
 

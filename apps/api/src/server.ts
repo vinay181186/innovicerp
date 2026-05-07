@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
 import { pingDatabase } from './db/client';
+import { resolveCorsOrigin } from './lib/cors';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
@@ -39,7 +40,10 @@ const app = Fastify({
 });
 
 await app.register(helmet);
-await app.register(cors, { origin: true, credentials: true });
+await app.register(cors, {
+  origin: resolveCorsOrigin(),
+  credentials: true,
+});
 await app.register(sensible);
 await app.register(errorHandlerPlugin);
 await app.register(authPlugin);
