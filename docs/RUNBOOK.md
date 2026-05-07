@@ -296,6 +296,78 @@ The log entry has `err.message`, `err.stack`, `req.id`, `req.method`, `req.url`,
 
 ---
 
+## Performance Triage — Without Monitoring
+
+Until T-054 lands (Better Stack uptime + Sentry + Supabase metrics dashboards), there is no APM, no flamegraph, no p95 chart. This section is the manual triage path using only the tools that exist today: Railway log stream, Pino's per-request `responseTime`, Supabase dashboard, browser devtools, TanStack Query devtools, and `EXPLAIN ANALYZE`.
+
+### Where to look first, by complaint shape
+
+| Symptom (user-reported)                           | First place to look                                                                          | What you're looking for                                                                                                       |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| "Page loads slowly"                               | Browser devtools Network tab → sort by Time desc                                             | Which endpoint is the long bar? Single slow XHR or many parallel ones? Look for >300ms server response time on list endpoints |
+| "Save / submit takes ages"                        | Network tab on the POST/PUT, then Railway logs `grep "POST /<module>"`                       | Server-side wall time. Cascade modules (GRN T-036c, NC T-040b, op-entry sales-cascade T-033) run multiple writes per request  |
+| "Whole app feels sluggish"                        | React DevTools Profiler → record a click                                                     | Re-render storms; usually a stale `useEffect` dep or a Zustand store reading too broadly                                      |
+| "List filters / search are slow"                  | Network tab on the list endpoint, then `EXPLAIN ANALYZE` the SQL (Supabase SQL editor)       | Sequential scan on `code LIKE '%x%'` (no GIN/trigram), or missing index on the filter column                                  |
+| "Sometimes pages just hang"                       | Supabase dashboard → Database → Connection Pooler                                            | Pool saturation. At 100 users we're at ~30% of pool; if >80% something is leaking                                             |
+| "Realtime updates lag / don't arrive"             | Browser devtools → WS frames + Pino logs filter on the channel                               | Filter mismatch (RLS rejecting the row at delivery), or WebSocket dropped + not reconnected                                   |
+| "Reports / saved-reports time out"                | Network tab response time, then re-run the SQL in Supabase SQL editor with `EXPLAIN ANALYZE` | Aggregate without an index on the GROUP BY column, or a CTE the planner can't push filters into                               |
+| "Web bundle download slow on first load"          | Vite build output (`pnpm --filter web build`) gzip column                                    | Vendor chunk bloat. Current target: app `index` ≤ 110 KB gzip; vendor-react ≤ 105 KB; vendor-tanstack ≤ 90 KB                 |
+| "Excel export / PDF generation slow"              | Railway logs `grep "export.xlsx"` for the request, plus row-count from the response          | Row count above the LIMIT 5000 ceiling = unintentional unbounded scan; otherwise it's exceljs CPU and can't easily be sped up |
+
+### Reading Pino request logs for response time
+
+Fastify with Pino emits a `request completed` log line per request with `responseTime` in ms:
+
+```
+railway logs --tail 500 | grep "request completed" | jq 'select(.responseTime > 300) | {url: .req.url, ms: .responseTime, user: .req.userId}'
+```
+
+`responseTime` covers the full server-side handling — auth + RLS + service + DB + serialisation. Anything > 300 ms on a list endpoint or > 800 ms on a detail/cascade endpoint warrants triage. The 60s vitest timeout (PR #2) was a CI reaction to occasional 30s+ cascade tests; if production sees those numbers, that's a separate bug, not a tuning knob.
+
+### EXPLAIN ANALYZE workflow (Supabase SQL editor)
+
+For a suspect query (copied from Pino logs or the Drizzle source):
+
+1. Wrap in `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <query>;`
+2. Look for `Seq Scan on <big_table>` — that's the smoking gun on transactional tables (job_cards, op_log, store_transactions, activity_log).
+3. Confirm the planner used the index you expect (`Index Scan using <name>` line). If it picked a different index, your filter shape may be off (e.g. `(company_id, status) WHERE deleted_at IS NULL` partial index won't be used if the query omits the `deleted_at IS NULL` clause).
+4. Buffers `read=N` shows disk reads; `hit=N` is cache. Large `read` values on a hot table = the working set has fallen out of shared_buffers — usually a sign someone ran a wide aggregate without a date filter.
+
+Indexes that exist today (per `docs/SCHEMA.md`): every FK, plus `(company_id, status) WHERE deleted_at IS NULL` on transactional tables, business-key uniques (`code`), and time-range indexes on `op_log.log_time` / `activity_log.ts` / `store_transactions.txn_date`. If `EXPLAIN` reveals a missing index, **do not** add it via Supabase Studio (CLAUDE.md §6 rule 9) — open a Drizzle migration, document in SCHEMA.md, ship through the normal flow.
+
+### Cascade-write hot spots
+
+These three flows do multiple writes inside one transaction. If a save feels slow, it's almost always one of these:
+
+- **GRN line QC accept** (`apps/api/src/modules/goods-receipt-notes/cascades.ts`) — recalcs PO line received_qty + recalcs PO header status + writes `store_transactions` row + bumps `v_item_stock` (under `SELECT … FOR UPDATE` on items row). Per accepted line. 4 GRN lines accepted in one save = 16 writes.
+- **NC dispose `make_fresh`** (`apps/api/src/modules/nc-register/cascades.ts`) — reads origin JC, scans existing supplementary JCs to compute `-S<n>` suffix, inserts new JC, updates NC, emits 2 audit rows. The supplementary-JC scan is `LIKE '<originCode>-S%'` — currently fine because `code` is uniquely indexed and result sets are tiny, but watch if any single origin JC accumulates > 20 supplementary JCs.
+- **Op-entry sales-cascade** (`apps/api/src/modules/op-entry/sales-cascade.ts`) — on last-op-of-JC complete, walks JC → SO line → SO header (or JW line → JW header) and flips status if all siblings are terminal. Idempotency-guarded but still N+1 in the worst case where many JCs complete simultaneously against the same SO. If the live ops board lags during shift end, this is the suspect.
+
+### TanStack Query refetch storms (frontend)
+
+Symptom: opening browser devtools Network tab and seeing the same endpoint hit 5+ times within a second. Causes:
+
+- `refetchOnWindowFocus` + `refetchOnMount` + `staleTime: 0` together → every tab focus triggers a full refetch chain.
+- Polling interval too aggressive (current convention: 30s for lists, 60s for detail, per ADR-004; dashboard tiles poll at 60s; live ops board uses Realtime subs, not polling).
+- `placeholderData: prev` is good (stops UI flash) but doesn't reduce request count — it just makes the loading state invisible.
+
+Fix path: open `apps/web/src/modules/<module>/api.ts`, check the `useQuery` options. If `staleTime` is missing, add it. If a list invalidates on every mutation in the same module, that's intentional — but cross-module invalidations (GRN write invalidating PO cache, NC dispose invalidating op-entry + job-cards) need to be explicit; review the cascade fanout in the relevant `useMutation` `onSuccess`.
+
+### Connection pool saturation
+
+Supabase dashboard → Database → Connection Pooler shows live + max connections. Two pools:
+
+- **Session pooler** (port 5432) — used by Drizzle for transactional work. Each Fastify worker holds 1 connection per concurrent request; at 100 users with 1 active request each = 100 connections.
+- **Transaction pooler** (port 6543, PgBouncer) — `DATABASE_URL_POOLED` in env. Used for short reads where session state isn't needed. Multiplexes many app-level connections onto few DB connections.
+
+Default Supabase Pro pool size is 60 (Mumbai region). If saturation hits before T-054 monitoring lands, the cheapest mitigation is routing more reads through `DATABASE_URL_POOLED` — but it requires careful audit (the transaction pooler doesn't support session-state features like `SET LOCAL`, prepared statements across queries, or `LISTEN/NOTIFY`).
+
+### When to give up and add monitoring
+
+If triage requires Pino log diving more than once a week, T-054 should jump the queue. The free tier of Sentry covers our error volume; Better Stack uptime is free for one monitor. The Supabase metrics dashboard already exists — it just isn't bookmarked yet.
+
+---
+
 ## Database — Migrations
 
 Schema is owned by Drizzle. Two migration paths run side-by-side:
