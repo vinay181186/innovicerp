@@ -38,3 +38,11 @@ export function setSentryUser(
   Sentry.setTag('company_id', user.companyId ?? 'none');
   Sentry.setTag('role', user.role);
 }
+
+export function captureReactError(error: Error, info: { componentStack: string }): void {
+  if (!initialized) return;
+  Sentry.withScope((scope) => {
+    scope.setContext('react', { componentStack: info.componentStack });
+    Sentry.captureException(error);
+  });
+}

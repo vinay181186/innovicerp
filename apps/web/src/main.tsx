@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ErrorBoundary } from './components/shared/error-boundary';
 import { initSentry } from './lib/sentry';
 import { setupAuthListener } from './lib/session';
 import './index.css';
@@ -26,8 +27,10 @@ if (!rootEl) throw new Error('#root element missing');
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 );
