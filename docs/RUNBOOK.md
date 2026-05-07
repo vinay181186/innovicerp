@@ -28,10 +28,11 @@ If the bad deployment came from a code bug rather than env/config, also revert t
 
 ```
 curl https://<railway-service>.up.railway.app/health
-# Expected: {"ok":true,"env":"production","version":"X.Y.Z","gitSha":"...","timestamp":"..."}
+# Healthy:    200 → {"ok":true,"db":"up","env":"production","version":"X.Y.Z","gitSha":"...","timestamp":"..."}
+# DB outage:  503 → {"ok":false,"db":"down","dbError":"<reason>","env":"production",...}
 ```
 
-The Railway public URL is shown on the service's main panel. Custom domains (when added) replace the `*.up.railway.app` hostname; same `/health` path.
+`/health` runs a `select 1` against the transaction pooler with a 2 s timeout — DB unreachable, slow, or auth-broken returns 503. The Dockerfile HEALTHCHECK + Railway healthcheck + Better Stack uptime monitor all key off the 2xx/5xx split, so a real outage trips them. The Railway public URL is shown on the service's main panel. Custom domains (when added) replace the `*.up.railway.app` hostname; same `/health` path.
 
 ### Required env vars (Railway → service → Settings → Variables)
 
@@ -781,7 +782,7 @@ Two monitors:
 1. **Uptime monitor on `/health`:**
    - Type: HTTP
    - URL: `https://<railway-host>/health`
-   - Expected: `200` + body contains `"ok":true`
+   - Expected: status `200` (the endpoint returns 503 with `"db":"down"` body when DB ping fails — see Verify health above)
    - Interval: 3 minutes (free tier limit)
    - Alert channel: email to ops contact (start small; add Slack/SMS later)
 2. **Heartbeat monitor for the daily backup workflow** — already documented in the Backup section above. Saved as GitHub secret `BACKUP_HEARTBEAT_URL`.

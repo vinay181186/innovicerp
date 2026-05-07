@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
+import { pingDatabase } from './db/client';
 import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
@@ -43,13 +44,19 @@ await app.register(sensible);
 await app.register(errorHandlerPlugin);
 await app.register(authPlugin);
 
-app.get('/health', async () => ({
-  ok: true,
-  env: env.NODE_ENV,
-  version: '0.0.0',
-  gitSha: env.GIT_SHA ?? null,
-  timestamp: new Date().toISOString(),
-}));
+app.get('/health', async (_req, reply) => {
+  const dbStatus = await pingDatabase();
+  reply.code(dbStatus.ok ? 200 : 503);
+  return {
+    ok: dbStatus.ok,
+    db: dbStatus.ok ? 'up' : 'down',
+    ...(dbStatus.ok ? {} : { dbError: dbStatus.error }),
+    env: env.NODE_ENV,
+    version: '0.0.0',
+    gitSha: env.GIT_SHA ?? null,
+    timestamp: new Date().toISOString(),
+  };
+});
 
 app.get('/me', async (req): Promise<MeResponse> => {
   if (!req.user) throw new AuthenticationError();
