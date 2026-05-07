@@ -2,6 +2,7 @@ import type { MeResponse } from '@innovic/shared';
 import { type QueryClient, useQuery } from '@tanstack/react-query';
 import type { AnyRouter } from '@tanstack/react-router';
 import { apiFetch } from './api';
+import { setSentryUser } from './sentry';
 import { supabase } from './supabase';
 
 export const sessionQueryKey = ['session', 'me'] as const;
@@ -13,10 +14,15 @@ export function useSession() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return null;
+      if (!session) {
+        setSentryUser(null);
+        return null;
+      }
       // Fetches /me from API to get { id, email, companyId, role, isActive }.
       // The auth plugin reads the bearer token, attaches request.user, and the route returns it.
-      return apiFetch<MeResponse>('/me');
+      const me = await apiFetch<MeResponse>('/me');
+      setSentryUser(me);
+      return me;
     },
     staleTime: 60_000,
   });

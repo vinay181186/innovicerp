@@ -11,6 +11,7 @@ function splitVendorChunk(id: string): string | undefined {
   if (!id.includes('node_modules')) return undefined;
   if (id.includes('@tanstack/')) return 'vendor-tanstack';
   if (id.includes('lucide-react')) return 'vendor-icons';
+  if (id.includes('@sentry/')) return 'vendor-sentry';
   if (id.includes('@supabase/')) return 'vendor-supabase';
   if (id.includes('react-hook-form') || id.includes('@hookform/') || id.includes('/zod/')) {
     return 'vendor-forms';

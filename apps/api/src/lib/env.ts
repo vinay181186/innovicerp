@@ -14,6 +14,10 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
   SUPABASE_JWT_SECRET: z.string().optional(),
   GIT_SHA: z.string().optional(),
+  SENTRY_DSN: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);

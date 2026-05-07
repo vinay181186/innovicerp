@@ -2,6 +2,7 @@ import type { FastifyError } from 'fastify';
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
 import { AppError } from '../lib/errors';
+import { captureUnhandledError } from '../lib/sentry';
 
 const isFastifyClientError = (e: unknown): e is FastifyError =>
   typeof e === 'object' &&
@@ -40,6 +41,12 @@ export const errorHandlerPlugin = fp(async (app) => {
     }
 
     req.log.error({ err }, 'unhandled error');
+    captureUnhandledError(err, {
+      user: req.user,
+      requestId: req.id,
+      method: req.method,
+      url: req.url,
+    });
     reply.code(500).send({ error: 'internal_error', message: 'Internal server error' });
   });
 });
