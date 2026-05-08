@@ -1751,6 +1751,49 @@ export const savedReports = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 7: alert config (T-041d Phase A) ───────────────────────────────
+// Per-company per-rule on/off toggle for the hard-coded alert registry
+// (apps/api/src/modules/alerts/definitions/*.ts). Mirrors legacy
+// `alertConfig` Firestore collection per ADR-024 — only user overrides of
+// the default `active` flag are persisted; rule definitions live in code.
+//
+// No soft-delete: a row IS the override. If a rule code disappears from
+// the registry the orphaned row is harmless leftover.
+
+export const alertConfig = pgTable(
+  'alert_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    active: boolean('active').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('alert_config_company_code_uniq').on(t.companyId, t.code),
+    pgPolicy('alert_config_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('alert_config_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 8: activity log (T-051) ────────────────────────────────────────
 // Append-only audit trail. Per ADR-019, no soft-delete + no updated_at —
 // rows are immutable once written. `action` is text not enum because the
@@ -1851,5 +1894,7 @@ export type DeliveryChallanLine = typeof deliveryChallanLines.$inferSelect;
 export type NewDeliveryChallanLine = typeof deliveryChallanLines.$inferInsert;
 export type SavedReport = typeof savedReports.$inferSelect;
 export type NewSavedReport = typeof savedReports.$inferInsert;
+export type AlertConfig = typeof alertConfig.$inferSelect;
+export type NewAlertConfig = typeof alertConfig.$inferInsert;
 export type ActivityLog = typeof activityLog.$inferSelect;
 export type NewActivityLog = typeof activityLog.$inferInsert;

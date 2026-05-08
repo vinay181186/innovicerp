@@ -1281,6 +1281,63 @@ RLS:
 
 ---
 
+## Phase 7 Tables — Reports + Alerts
+
+> **Status:** `saved_reports` (T-041b) + `alert_config` (T-041d Phase A) shipped. Phase B (push delivery) still pending — adds `alert_subscriptions` + `alert_deliveries` per ADR-024.
+
+### `saved_reports`
+
+User-defined ad-hoc reports built via the drag-and-drop builder (T-041b, ADR-018). Per-user private OR shared-with-company. Service-layer gate enforces shared/private edits (RLS does company isolation only).
+
+| Column               | Type            | Notes                                                                             |
+| -------------------- | --------------- | --------------------------------------------------------------------------------- |
+| `id`                 | `uuid`          | PK                                                                                |
+| `company_id`         | `uuid`          | not null, FK                                                                      |
+| `owner_id`           | `uuid`          | not null, FK → `users(id)`                                                        |
+| `name`               | `text`          | not null. Unique within `(company_id, owner_id)` while not soft-deleted           |
+| `description`        | `text`          | not null, default `''`                                                            |
+| `source_key`         | `text`          | not null. Whitelist key into the source catalog (sales-orders, items-stock, etc.) |
+| `spec`               | `jsonb`         | not null. `AdHocSpec` shape — columns / filters / group-by / sort                 |
+| `is_shared`          | `boolean`       | not null, default `false`                                                         |
+| audit + `deleted_at` | (audit pattern) |                                                                                   |
+
+Indexes:
+
+- `unique (company_id, owner_id, name) where deleted_at is null`
+- `(company_id, is_shared) where deleted_at is null` — drives shared-list queries
+- `(owner_id) where deleted_at is null`
+
+RLS: `saved_reports_company_read` + `saved_reports_company_write` (any authenticated company member). Owner / admin-manager edit gate is service-layer; RLS keeps the multi-tenant boundary only.
+
+### `alert_config`
+
+Per-company per-rule on/off override for the hard-coded alert registry (`apps/api/src/modules/alerts/definitions/`). Per ADR-024: rule definitions are code, this table only persists deviations from the registry's default `active` flag.
+
+| Column       | Type                             | Notes                                                             |
+| ------------ | -------------------------------- | ----------------------------------------------------------------- |
+| `id`         | `uuid`                           | PK                                                                |
+| `company_id` | `uuid`                           | not null, FK                                                      |
+| `code`       | `text`                           | not null. Rule code from the registry (e.g. `AL-001`)             |
+| `active`     | `boolean`                        | not null. The per-company override. Absent row = registry default |
+| audit        | (audit pattern, no `deleted_at`) |                                                                   |
+
+Indexes:
+
+- `unique (company_id, code)`
+
+RLS:
+
+- `alert_config_company_read` (any role) — operators see the dashboard
+- `alert_config_manager_write` (admin/manager only — operators can't change toggles)
+
+No soft-delete: a row IS the override. If a rule code disappears from the registry, the orphaned row is harmless leftover (service skips unknown codes).
+
+### Phase 7 Triggers
+
+`saved_reports` gets `before update` → `set_updated_at()`. `alert_config` doesn't currently have one — drizzle-gen didn't emit it, and the audit cols are only loosely-tracked here (admin self-edits are visible via `updated_at`/`updated_by` already set in service code on each upsert; a trigger would be belt-and-braces but isn't required).
+
+---
+
 ## Migration Notes (Phase 1 bootstrap)
 
 The chicken-and-egg of `companies.created_by → users.id` and `users.company_id → companies.id` is resolved this way:
@@ -1308,3 +1365,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-05-04 | `0014_phase5_jc_ops_drop_legacy.sql` (hand-written)                                                                                  | Phase 5 cleanup — drop legacy `jc_ops.outsource_pr_no` + `outsource_po_no` text columns (per ADR-015 #5; T-035c backfill ran 2026-05-02 and the FK columns `outsource_pr_id` / `outsource_po_line_id` are populated). Snapshot `0012_snapshot.json` patched to drop the columns; drizzle-kit confirms no drift. Cleaned up: `JC_OP_MAPPER` in `migration/load.ts` (drop the 2 keys), the now-dead `migration/load/jc-op-outsource-backfill.ts` script + its load.ts invocation block, the legacy-column refs in `migration/transforms/jc-ops.ts` mapper output (left as harmless transform-output keys), and `validate-phase3.ts` JC_OP_MAPPER + `validate-phase5.ts` `checkOutsourceBackfill` cross-check (the orphan FK checks on outsource_pr_id + outsource_po_line_id are the proper post-drop verification). validate-phase3 PASS (7/7 tables match, 0 orphan FKs across 25 checks); validate-phase5 PASS (6/6 tables, 0 orphan FKs across 32 checks); validate-phase6 PASS unchanged. 209/209 api tests still green; migration suite 137/137                                                           |
 | 2026-05-05 | `0013_phase7_saved_reports.sql` (drizzle-gen) + `0014_phase7_saved_reports_trigger.sql` (hand-written)                               | Phase 7 saved (ad-hoc) reports (T-041b) — 1 new table `saved_reports` (id, company_id, owner_id, name, description, source_key, spec jsonb, is_shared, audit + soft-delete cols), 3 indexes (company+owner+name unique, company+is_shared, owner_id), standard company_isolation RLS pair (company_read + company_write — the per-user shared/private gate is enforced at the service layer to keep RLS simple; admin/manager elevation lives in the service too). BEFORE UPDATE trigger via the standard `set_updated_at()` helper. Applied via `apply-sql.ts` per the Phase 5 journal-orphan workaround. 259/259 api tests green (was 231, +28 from T-041b)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 2026-05-05 | `0015_phase8_activity_log.sql` (drizzle-gen)                                                                                         | Phase 8 activity log (T-051) — 1 new append-only audit table `activity_log` (id, company_id, ts, user_id [nullable, ON DELETE SET NULL], user_name [snapshot], action [text], entity, detail, ref_id, created_at, created_by). 3 indexes (company+ts, company+action, company+user). RLS: company_read for SELECT + manager_insert for INSERT only — no UPDATE / DELETE policies (append-only per ADR-019). No `updated_at` / `deleted_at`. Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2026-05-08 | `0015_phase7_alert_config.sql` (drizzle-gen)                                                                                         | Phase 7 alerts Phase A (T-041d, ADR-024) — 1 new table `alert_config` (id, company_id, code text, active boolean, audit cols; no soft-delete). Per-company per-rule on/off override; rule definitions live in code under `apps/api/src/modules/alerts/definitions/`. Unique index `(company_id, code)`. RLS: company_read (any role) + manager_write (admin/manager). Filename collides with `0015_phase8_activity_log.sql` — drizzle journal disambiguates by `idx`. Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |

@@ -865,6 +865,124 @@ One option specific to this ADR (not in ADR-022):
 
 ---
 
+## ADR-024: T-041d alerts — split eval engine (Phase A) from push delivery (Phase B); registry in code
+
+**Date:** 2026-05-08
+**Status:** Accepted
+
+### Context
+
+T-041d (the last meaningful Phase 7 sub-task with code to write) is framed in TASKS.md as "Phase 7 alerts — needs BullMQ + Redis + Resend infra". Reading the legacy implementation (`legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`, `_defaultAlerts` array starting line 22255, `_getAlertRules` line 22305, `_runAlerts` line 22314, `renderAlerts` line 22323, `renderAlertConfig` line 22427) reveals two facts that change the design:
+
+1. **Legacy alerts are poll-and-display, not push.** The 23 hard-coded rules (`AL-001` … `AL-023`) are evaluated synchronously when a user opens the Alerts Dashboard. There is no scheduling, no email, no notification queue.
+2. **Legacy `alertConfig` Firestore collection is just `{code, active}` per company** — a per-company on/off override of the rule registry's default `active` flag. Optionally a renamed `name`. That's the entire persistence surface.
+
+The "BullMQ + Redis + Resend" framing is a forward-looking add-on, not a faithful migration. Conflating the two in one task makes the chunk too big to ship cleanly and obscures which work is actually optional infra.
+
+Of the 23 legacy rules, ~16 are portable to Postgres today; 5 reference doc_missing collections (`plans`, `taskAllocations`, `jwDCOutward`/`jwDCInward`, `opEntries` — the legacy proxy for op_log) and 2 are no-ops even in legacy (`AL-019` Quotation Pending returns empty, `AL-016` JW DC Pending Return depends on doc_missing data). Carve-out follows the same precedent as ADR-022 / -023 for doc_missing modules.
+
+### Decision
+
+Split T-041d into two genuinely independent phases. Both ship in the same overall task; commits chunk per logical unit per CLAUDE.md §7:
+
+**Phase A — eval engine + dashboard (no infra needed):**
+
+1. **Rule registry lives in code**, not the database — one file per rule under `apps/api/src/modules/alerts/definitions/<code>.ts` exporting `{definition, run(ctx)}`. Mirrors the saved-reports pattern (T-041a). Schema-as-code is right here because:
+   - The 16 rules are hand-written SQL queries, each different. There is no value in a generic rule DSL that interprets configuration at runtime — every rule already needs a developer to write a SQL query.
+   - Adding a rule is a code change reviewed in PR. Removing is the same. Rules don't churn frequently and benefit from typecheck + lint coverage.
+   - The legacy app's `_defaultAlerts` is exactly this pattern: hard-coded `fn` per rule, with a separate per-company on/off override. Migrating like-for-like preserves the mental model.
+2. **`alert_config` table** stores the per-company per-rule override only: `(company_id, code, active)` with audit columns. No description, no name override (legacy supported renaming but it was unused in practice and easy to add later). RLS: any role reads, admin/manager writes. No soft-delete (the row IS the override; orphaned rows after rule removal are harmless).
+3. **Service**: `listDefinitions()` + `runAll(filter, user)` (parallel evaluation, dept-filtered) + `runOne(code, user)` (drill-down records) + `listConfig(user)` (definitions joined with overrides) + `setActive(code, active, user)` (upsert).
+4. **Routes**: `GET /alerts` (run all active), `GET /alerts/:code` (drill), `GET /alerts/config` (definitions + overrides), `PUT /alerts/config/:code` (upsert toggle).
+5. **Web**: 2 routes — `/alerts` (dashboard mirroring legacy `renderAlerts`) and `/alerts/config` (admin-only toggle table mirroring legacy `renderAlertConfig`). 60s polling (matches polling cadence in ADR-004).
+
+**Phase B — push delivery (gated on Redis + Resend):**
+
+1. **Two new tables**: `alert_subscriptions` (per-user per-rule email opt-in) and `alert_deliveries` (audit log of dispatch attempts, used as a dedup key against repeated digest emails for the same rule + window).
+2. **BullMQ + ioredis + resend dependencies** added to `apps/api/package.json`. Wired behind feature flags: `REDIS_URL`, `RESEND_API_KEY`, `ALERTS_PUSH_ENABLED`, `ALERTS_FROM_EMAIL`.
+3. **Graceful no-op when infra is absent**: `lib/queue.ts` and `lib/email.ts` export wrapper APIs that log + skip when their respective env vars are unset, so api can boot without Redis/Resend in dev. Phase A continues to work — it never calls these modules.
+4. **Worker** is a BullMQ repeatable job (default cadence: every 30 minutes, configurable per env). On each tick: load active alerts, fan out per `alert_subscriptions` row, assemble per-user digest, dispatch via Resend, write `alert_deliveries` audit row keyed on `(alert_code, user_id, window_start)` for idempotency.
+5. **Web subscription UI**: per-user "subscribe" toggle on the dashboard rows.
+
+### Alternatives Considered
+
+- **A. Phase A + Phase B as one large commit.** Rejected: too large to review safely; if Phase B's env-var or migration setup needs iteration, it churns Phase A code that already worked. Splits cleanly along a real boundary (DB write surface, infra deps).
+- **B. Defer Phase A entirely; build Phase B foundation only.** Rejected: ships dead code (queue + email + subscriptions) that no rule registry feeds. Phase A is the value; Phase B is the amplifier.
+- **C. Store rule definitions in the database as SQL strings + filter spec (saved-reports-style for alerts).** Rejected: reuses the ad-hoc report builder mental model, but alerts ARE different from reports — they're tripwires, not exploration. The 23 legacy rules contain bespoke logic (`AL-022` low-FPY needs aggregate-then-threshold; `AL-013` machine-idle needs a left-join-against-running-ops set difference) that would need a much richer DSL than the saved-reports column/filter spec to express. The cost-benefit doesn't justify the complexity.
+- **D. Use Postgres `pg_cron` + `pg_notify` for scheduling instead of BullMQ.** Rejected: Supabase doesn't expose `pg_cron` install on managed Postgres without paid tier upgrade; even if it did, debugging cron-in-Postgres is materially harder than reading a BullMQ dashboard. BullMQ keeps scheduling in app-space where it's testable.
+- **E. Carry forward all 23 legacy rules even if 5 reference doc_missing data.** Rejected: those 5 would always return empty, becoming visual noise. Defer them to follow-on tasks tied to the doc_missing collections' eventual schema work (per ADR-022 / -023 precedent: when UX requirements arrive for the source domain, the alert rule arrives with it).
+
+### RLS notes
+
+- `alert_config` — `company_isolation` for read (any role); admin/manager only for write. Operators see the dashboard but can't toggle.
+- `alert_subscriptions` (Phase B) — same shape but `using` clause additionally allows the row's own `user_id` to read/write its own subscription. Admin/manager can edit anyone's. Defined inline with the table per pattern.
+- `alert_deliveries` (Phase B) — admin/manager read-only at the API layer; no app-level write (worker writes via service-role bypass like activity_log entries from system jobs).
+
+### Phase B feature-flag semantics
+
+- `REDIS_URL` unset → `lib/queue.ts` exports `enqueueAlertEvaluation = async () => {}` and warn-logs once at boot.
+- `RESEND_API_KEY` unset → `lib/email.ts` exports `sendAlertDigest` that logs the envelope and returns a fake `{id: 'stub-...'}`. No outbound network.
+- `ALERTS_PUSH_ENABLED=false` (default) → worker is registered but the repeatable scheduler is not added; `enqueueAlertEvaluation` no-ops even with Redis present.
+- All three flags together (`REDIS_URL`, `RESEND_API_KEY`, `ALERTS_PUSH_ENABLED=true`, `ALERTS_FROM_EMAIL`) → push delivery active.
+
+This means rolling out Phase B is purely an env-var change; no code redeploy. Disabling under incident is also one env var. RUNBOOK.md gets the toggle steps.
+
+### Carve-out: deferred legacy rules
+
+Following ADR-022 / -023 precedent, these legacy rules are NOT migrated in T-041d:
+
+- `AL-010` (SO Not Planned) — depends on doc_missing `plans` collection
+- `AL-016` (JW DC Pending Return) — depends on doc_missing `jwDCOutward` / `jwDCInward` per ADR-017
+- `AL-017` (My Overdue Tasks) — depends on doc_missing `taskAllocations`
+- `AL-019` (Quotation Pending) — empty stub even in legacy code
+- `AL-020` (Pending Op Entry) — depends on legacy `calcEngine()` derived view; partial portable equivalent could be done off `op_log` but defer until the legacy `_canStart` semantics are pinned down (cycle-time-aware, not just qty-aware)
+- `AL-021` (QC Pending > 3 Days) — depends on legacy `calcEngine` + `opEntries` (the legacy proxy for op_log); rules out clean port without re-implementing legacy's enriched-op view in Postgres
+- `AL-022` (Low FPY) — uses `_qccFPYData()` first-pass-yield helper that itself depends on `opEntries`; same blocker as AL-021. Trivial when an `op_log`-derived FPY view is built (likely a Phase 9 reporting task)
+- `AL-023` (High Inspector Reject Rate) — `opEntries` again
+
+Of the 23 legacy rules, **15 are migrated in this task** (AL-001, 002, 003, 004, 005, 006, 007, 008, 009, 011, 012, 013, 014, 015, 018), 8 deferred. Each deferred rule has a clean re-entry point as the underlying domain ships.
+
+### Consequences
+
+- **Positive:**
+  - Phase A ships immediate user value: a working alerts dashboard + admin config screen — same UX surface as legacy, on the new data model.
+  - Push infra (Phase B) becomes a clean env-var-driven activation: no separate code deploy when the user provisions Redis + Resend.
+  - Rule registry in code keeps the SQL inspectable and reviewable; PRs touching alerts go through the same review path as services.
+  - 8 deferred legacy rules have a uniform, principled rationale (doc_missing source data) — same shape as ADR-022 / -023.
+
+- **Negative:**
+  - Adding a rule still requires a developer (no admin self-service rule builder). Acceptable given the rule cadence (~23 rules over years of legacy use); not a real bottleneck. If self-service rules ever become a need, the saved-reports + threshold-config layer (ADR-018) is a natural starting point.
+  - Two phases means two migration windows: alert_config in Phase A, alert_subscriptions + alert_deliveries in Phase B.
+
+- **Risks:**
+  - **BullMQ worker resource cost on Railway**: a Worker is a long-lived process. Mitigated by running it in the same api container (worker mode toggled via env). Requires an explicit decision later about scale-out (separate worker dyno) when alert volume justifies it.
+  - **Email deliverability** (Resend domain verification, SPF/DKIM): RUNBOOK captures the setup; Phase B doesn't ship enabled by default, so a misconfigured domain doesn't bounce real users.
+  - **Drift between code-defined rules and `alert_config` rows**: if a rule code is removed from the registry, its `alert_config` row becomes orphaned but harmless (service skips unknown codes). If a rule code is renamed, the override is silently lost. Mitigation: code review on rule removal/rename should also drop or migrate the corresponding `alert_config` rows. Documented in `apps/api/src/modules/alerts/definitions/README.md` as part of T-041d.
+
+### Action items
+
+Phase A:
+
+- [x] `alert_config` table in `apps/api/src/db/schema.ts` (T-041d step 1)
+- [x] Migration `0015_phase7_alert_config.sql` generated + applied to dev Supabase (idempotent: re-runs via apply-sql.ts safe)
+- [ ] Shared schemas in `packages/shared/src/schemas/alert.ts`
+- [ ] 15 rule definitions in `apps/api/src/modules/alerts/definitions/`
+- [ ] Service + 4 routes + tests
+- [ ] Web `/alerts` + `/alerts/config` routes + home nav card
+- [ ] Update SCHEMA.md "Phase 7 Tables" with `alert_config`
+
+Phase B:
+
+- [ ] `bullmq`, `ioredis`, `resend` deps added to `apps/api/package.json`
+- [ ] `alert_subscriptions` + `alert_deliveries` tables + migration
+- [ ] `lib/queue.ts` + `lib/email.ts` (graceful no-op stubs)
+- [ ] `lib/env.ts` extension: `REDIS_URL?`, `RESEND_API_KEY?`, `ALERTS_PUSH_ENABLED` (default false), `ALERTS_FROM_EMAIL?`
+- [ ] Worker + repeatable BullMQ job (`runAlertEvaluation` every 30 min, configurable)
+- [ ] Subscription service + routes + web toggle UI
+- [ ] RUNBOOK steps: provision Redis (Railway add-on), get Resend key, set env vars, verify domain, enable
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
