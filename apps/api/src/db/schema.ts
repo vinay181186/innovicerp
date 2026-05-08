@@ -1097,10 +1097,11 @@ export const jobWorkOrderLines = pgTable(
 // 5 new tables: purchase_requests, purchase_orders, purchase_order_lines,
 // goods_receipt_notes, goods_receipt_note_lines, store_transactions.
 // Plus jc_ops gets two new FK columns (outsource_pr_id,
-// outsource_po_line_id) defined inline above; the legacy text columns
-// (outsource_pr_no, outsource_po_no) stay until T-035c backfill validates,
-// then dropped in a follow-on cleanup migration. Forward references via
-// AnyPgColumn handle the circular dep between jc_ops and PR/PO_line.
+// outsource_po_line_id) defined inline above. The legacy text columns
+// (outsource_pr_no, outsource_po_no) were dropped by
+// 0014_phase5_jc_ops_drop_legacy.sql once T-035c backfill was verified.
+// Forward references via AnyPgColumn handle the circular dep between
+// jc_ops and PR/PO_line.
 
 export const purchaseRequests = pgTable(
   'purchase_requests',

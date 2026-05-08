@@ -21,9 +21,11 @@
 //   outsourceStatus → outsource_status (lowercased + normalised: 'PR Raised' →
 //                     'pr_raised', 'PO Created' → 'po_created', etc.; only set
 //                     when op_type is 'outsource')
-//   outsourcePRNo,  → outsource_pr_no, outsource_po_no, outsource_dc_no
-//   outsourcePONo,
-//   outsourceDCNo
+//   outsourceDCNo   → outsource_dc_no
+//   outsourcePRNo,  → DROP (text columns dropped by
+//   outsourcePONo     0014_phase5_jc_ops_drop_legacy.sql; replaced by
+//                     outsource_pr_id / outsource_po_line_id FKs populated
+//                     in T-035c backfill)
 //   sentQty/Date    → outsource_sent_qty/date
 //   returnedQty     → outsource_returned_qty
 //   qcAccepted      → DROP (denormalised counter; computed from op_log per ADR-011)
@@ -52,9 +54,7 @@ interface LegacyJcOp {
   outsourceVendor?: string;
   outsourceCost?: number;
   outsourceStatus?: string;
-  outsourcePONo?: string;
   outsourceDCNo?: string;
-  outsourcePRNo?: string;
   sentQty?: number;
   sentDate?: string;
   returnedQty?: number;
@@ -86,8 +86,6 @@ export interface TransformedJcOp {
   outsourceVendorText: string | null;
   outsourceCost: string;
   outsourceStatus: 'pending' | 'pr_raised' | 'po_created' | 'sent' | 'received' | null;
-  outsourcePrNo: string | null;
-  outsourcePoNo: string | null;
   outsourceDcNo: string | null;
   outsourceSentQty: number;
   outsourceSentDate: string | null;
@@ -205,8 +203,6 @@ export function transformJcOps(
       outsourceVendorText: vendorText,
       outsourceCost: typeof r.outsourceCost === 'number' ? r.outsourceCost.toFixed(2) : '0.00',
       outsourceStatus,
-      outsourcePrNo: emptyToNull(r.outsourcePRNo),
-      outsourcePoNo: emptyToNull(r.outsourcePONo),
       outsourceDcNo: emptyToNull(r.outsourceDCNo),
       outsourceSentQty: typeof r.sentQty === 'number' && r.sentQty >= 0 ? r.sentQty : 0,
       outsourceSentDate: emptyToNull(r.sentDate),
