@@ -516,35 +516,35 @@ RLS: `job_cards_company_read` (any role) + `job_cards_manager_write` (admin/mana
 
 Per-step routing of a job card. Snapshot copied from `route_card_ops` at JC creation; thereafter independent.
 
-| Column                   | Type               | Notes                                                                                            |
-| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------ |
-| `id`                     | `uuid`             | PK                                                                                               |
-| `company_id`             | `uuid`             | not null, FK                                                                                     |
-| `job_card_id`            | `uuid`             | not null, FK → `job_cards(id) on delete cascade`                                                 |
-| `op_seq`                 | `integer`          | not null. 1-indexed within JC                                                                    |
-| `machine_id`             | `uuid`             | nullable, FK → `machines(id)`                                                                    |
-| `machine_code_text`      | `text`             | nullable. Preserves legacy `'QC'` and other unresolvable strings                                 |
-| `operation`              | `text`             | not null                                                                                         |
-| `op_type`                | `op_type`          | not null, default `'process'`                                                                    |
-| `cycle_time_min`         | `numeric(10,2)`    | not null, default `0`                                                                            |
-| `program`                | `text`             | nullable                                                                                         |
-| `tool_no`                | `text`             | nullable                                                                                         |
-| `tool_details`           | `text`             | nullable                                                                                         |
-| `qc_required`            | `boolean`          | not null, default `false`                                                                        |
-| `qc_call_date`           | `date`             | nullable. Auto-set when prior op completes (legacy line 5476)                                    |
-| `qc_attended_date`       | `date`             | nullable                                                                                         |
-| `rework_qty`             | `integer`          | not null, default `0`. Counter, decremented by op-log entries (legacy line 5462)                 |
-| `outsource_vendor_id`    | `uuid`             | nullable, FK → `vendors(id)`. Legacy `outsourceVendor` text resolved to FK; null if unresolvable |
-| `outsource_vendor_text`  | `text`             | nullable. Fallback for unresolvable legacy vendor codes                                          |
-| `outsource_cost`         | `numeric(12,2)`    | not null, default `0`                                                                            |
-| `outsource_status`       | `outsource_status` | nullable. Null for non-outsource ops; default `'pending'` when `op_type='outsource'`             |
-| `outsource_pr_no`        | `text`             | nullable. Until Phase 5 (procurement) ships                                                      |
-| `outsource_po_no`        | `text`             | nullable                                                                                         |
-| `outsource_dc_no`        | `text`             | nullable                                                                                         |
-| `outsource_sent_qty`     | `integer`          | not null, default `0`                                                                            |
-| `outsource_sent_date`    | `date`             | nullable                                                                                         |
-| `outsource_returned_qty` | `integer`          | not null, default `0`                                                                            |
-| audit + `deleted_at`     | (audit pattern)    |                                                                                                  |
+| Column                   | Type               | Notes                                                                                                                                                                                                        |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                     | `uuid`             | PK                                                                                                                                                                                                           |
+| `company_id`             | `uuid`             | not null, FK                                                                                                                                                                                                 |
+| `job_card_id`            | `uuid`             | not null, FK → `job_cards(id) on delete cascade`                                                                                                                                                             |
+| `op_seq`                 | `integer`          | not null. 1-indexed within JC                                                                                                                                                                                |
+| `machine_id`             | `uuid`             | nullable, FK → `machines(id)`                                                                                                                                                                                |
+| `machine_code_text`      | `text`             | nullable. Preserves legacy `'QC'` and other unresolvable strings                                                                                                                                             |
+| `operation`              | `text`             | not null                                                                                                                                                                                                     |
+| `op_type`                | `op_type`          | not null, default `'process'`                                                                                                                                                                                |
+| `cycle_time_min`         | `numeric(10,2)`    | not null, default `0`                                                                                                                                                                                        |
+| `program`                | `text`             | nullable                                                                                                                                                                                                     |
+| `tool_no`                | `text`             | nullable                                                                                                                                                                                                     |
+| `tool_details`           | `text`             | nullable                                                                                                                                                                                                     |
+| `qc_required`            | `boolean`          | not null, default `false`                                                                                                                                                                                    |
+| `qc_call_date`           | `date`             | nullable. Auto-set when prior op completes (legacy line 5476)                                                                                                                                                |
+| `qc_attended_date`       | `date`             | nullable                                                                                                                                                                                                     |
+| `rework_qty`             | `integer`          | not null, default `0`. Counter, decremented by op-log entries (legacy line 5462)                                                                                                                             |
+| `outsource_vendor_id`    | `uuid`             | nullable, FK → `vendors(id)`. Legacy `outsourceVendor` text resolved to FK; null if unresolvable                                                                                                             |
+| `outsource_vendor_text`  | `text`             | nullable. Fallback for unresolvable legacy vendor codes                                                                                                                                                      |
+| `outsource_cost`         | `numeric(12,2)`    | not null, default `0`                                                                                                                                                                                        |
+| `outsource_status`       | `outsource_status` | nullable. Null for non-outsource ops; default `'pending'` when `op_type='outsource'`                                                                                                                         |
+| `outsource_pr_id`        | `uuid`             | nullable, FK → `purchase_requests(id) on delete set null`. Phase 5 FK upgrade (ADR-015 #5); supersedes legacy text `outsource_pr_no` (dropped by `0014_phase5_jc_ops_drop_legacy.sql` after T-035c backfill) |
+| `outsource_po_line_id`   | `uuid`             | nullable, FK → `purchase_order_lines(id) on delete set null`. Phase 5 FK upgrade; supersedes legacy text `outsource_po_no`                                                                                   |
+| `outsource_dc_no`        | `text`             | nullable                                                                                                                                                                                                     |
+| `outsource_sent_qty`     | `integer`          | not null, default `0`                                                                                                                                                                                        |
+| `outsource_sent_date`    | `date`             | nullable                                                                                                                                                                                                     |
+| `outsource_returned_qty` | `integer`          | not null, default `0`                                                                                                                                                                                        |
+| audit + `deleted_at`     | (audit pattern)    |                                                                                                                                                                                                              |
 
 Indexes:
 
@@ -552,6 +552,8 @@ Indexes:
 - `(machine_id) where deleted_at is null`
 - `(company_id, op_type) where deleted_at is null` — for outsource queue / QC dashboard filters
 - `(outsource_vendor_id) where deleted_at is null and op_type = 'outsource'`
+- `(outsource_pr_id) where outsource_pr_id is not null` — Phase 5 FK
+- `(outsource_po_line_id) where outsource_po_line_id is not null` — Phase 5 FK
 
 RLS: `jc_ops_company_read` (any role) + `jc_ops_manager_write` (admin/manager — operators don't edit op definitions, only log against them).
 
@@ -1071,14 +1073,14 @@ GROUP BY st.company_id, st.item_id;
 
 (Note: `adjust` rows can be either + or − depending on the adjustment direction; legacy data has none. The CASE above treats `adjust` as positive — confirm against the first real adjustment we see.)
 
-### `jc_ops` — Phase 5 ALTERS
+### `jc_ops` — Phase 5 ALTERS (applied)
 
-Per ADR-015 #5:
+Per ADR-015 #5. Sequence (all complete):
 
-1. **Drop columns** `outsource_pr_no` (text) and `outsource_po_no` (text). Backfill before drop into the new FK columns below.
-2. **Add columns:** `outsource_pr_id uuid nullable references purchase_requests(id) on delete set null` and `outsource_po_line_id uuid nullable references purchase_order_lines(id) on delete set null`.
-3. **Add index** on each new FK column where non-null.
-4. **Backfill** during T-035c load: for each jc_op with `outsource_pr_no` / `outsource_po_no` text, look up the corresponding new row by code → set the FK. Anomaly + null on miss (matching ADR-012 #10 fallback semantics; the text columns are dropped after backfill since the FK is the source of truth going forward).
+1. **Add columns** (T-035b, migration `0009_phase5_procurement.sql`): `outsource_pr_id uuid nullable references purchase_requests(id) on delete set null` and `outsource_po_line_id uuid nullable references purchase_order_lines(id) on delete set null`.
+2. **Add index** on each new FK column where non-null.
+3. **Backfill** (T-035c): for each jc_op with the legacy `outsource_pr_no` / `outsource_po_no` text, looked up the corresponding new row by code → set the FK. Anomaly + null on miss (matching ADR-012 #10 fallback semantics).
+4. **Drop legacy text columns** `outsource_pr_no` and `outsource_po_no` (migration `0014_phase5_jc_ops_drop_legacy.sql`, 2026-05-04 in commit `994feef`) after backfill verified by `validate-phase5.ts`. The FK columns are the source of truth going forward; the canonical column list above already reflects the post-drop schema.
 
 `outsource_pr_id` is also referenced as the inverse of `purchase_requests.source_jc_op_id` — the two FKs co-exist for query convenience (PR → JC op when looking from procurement; JC op → PR when looking from shop floor). They MUST stay in sync (set both at PR creation; both null after PR cancellation). Service layer enforces — no DB CHECK because cross-table CHECKs are unwieldy in Postgres without triggers.
 

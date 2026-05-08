@@ -699,8 +699,9 @@ export const jcOps = pgTable(
     outsourceCost: numeric('outsource_cost', { precision: 12, scale: 2 }).notNull().default('0'),
     outsourceStatus: outsourceStatusEnum('outsource_status'),
     // Phase 5 FK upgrade per ADR-015 #5. Forward-ref to the procurement
-    // tables defined later in this file. These coexist with the text
-    // columns above until T-035c finishes the backfill.
+    // tables defined later in this file. The legacy text columns
+    // (outsource_pr_no, outsource_po_no) these supersede were dropped by
+    // 0014_phase5_jc_ops_drop_legacy.sql after T-035c backfill verified.
     outsourcePrId: uuid('outsource_pr_id').references((): AnyPgColumn => purchaseRequests.id, {
       onDelete: 'set null',
     }),
