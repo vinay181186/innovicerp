@@ -33,6 +33,29 @@ const envSchema = z.object({
             .filter(Boolean)
         : [],
     ),
+  // Phase 7 alerts push delivery (T-041d Phase B, ADR-024). All four flags
+  // optional; api boots without them. When ALERTS_PUSH_ENABLED=true:
+  //   - REDIS_URL is required (worker schedules + dispatches via BullMQ)
+  //   - RESEND_API_KEY is required (digest emails go out via Resend)
+  //   - ALERTS_FROM_EMAIL is the sender (e.g. "alerts@erp.innovic.in")
+  // Without ALERTS_PUSH_ENABLED, the queue.ts + email.ts wrappers no-op
+  // (log-only). The eval engine + dashboard work the same regardless.
+  REDIS_URL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  RESEND_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  ALERTS_PUSH_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => v === 'true'),
+  ALERTS_FROM_EMAIL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
 });
 
 const parsed = envSchema.safeParse(process.env);
