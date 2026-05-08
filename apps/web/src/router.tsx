@@ -1,5 +1,8 @@
 import { createRouter } from '@tanstack/react-router';
 import { activityLogListRoute } from './modules/activity-log/routes/list';
+import { alertsConfigRoute } from './modules/alerts/routes/config';
+import { alertsDashboardRoute } from './modules/alerts/routes/dashboard';
+import { alertsDrillRoute } from './modules/alerts/routes/drill';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -132,6 +135,11 @@ const routeTree = rootRoute.addChildren([
     savedReportEditRoute,
     savedReportRunRoute,
     activityLogListRoute,
+    // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
+    // before either so /alerts on its own resolves to the dashboard.
+    alertsDashboardRoute,
+    alertsConfigRoute,
+    alertsDrillRoute,
   ]),
 ]);
 

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  Bell,
   Building2,
   ClipboardList,
   Cog,
@@ -98,6 +99,12 @@ const MASTER_LINKS = [
     icon: Send,
     title: 'Delivery challans',
     subtitle: 'Outbound DCs against JW POs — read-only in T-040a',
+  },
+  {
+    to: '/alerts',
+    icon: Bell,
+    title: 'Alerts',
+    subtitle: 'Tripwires across sales/purchase/store/design/production/QC — 15 active rules',
   },
   {
     to: '/reports',
