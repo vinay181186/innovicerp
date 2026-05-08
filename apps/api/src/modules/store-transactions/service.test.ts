@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { items, storeTransactions, users } from '../../db/schema';
@@ -23,19 +23,31 @@ beforeAll(async () => {
     role: u.role,
     isActive: u.isActive,
   };
-  const itemRow = await db
-    .select({ id: items.id })
-    .from(items)
-    .where(
-      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
-    )
-    .orderBy(asc(items.createdAt))
-    .limit(1);
-  firstItemId = itemRow[0]!.id;
+  // Dedicated test item so this suite's seeded ledger rows don't perturb
+  // v_item_stock for the GRN suite (which shared firstItemId previously and
+  // saw flaky stock_before assertions when this suite's afterAll dropped its
+  // +3 net stock between the GRN test's baseline read and create call).
+  await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
+  await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  const itemRows = await db
+    .insert(items)
+    .values({
+      companyId: u.companyId,
+      code: `${TEST_PREFIX}ITEM`,
+      name: 'Store-tx test item',
+      revision: 'A',
+      uom: 'NOS',
+      itemType: 'component',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  firstItemId = itemRows[0]!.id;
 });
 
 afterAll(async () => {
   await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
+  await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
 });
 
 describe('store-transactions service', () => {
@@ -91,8 +103,6 @@ describe('store-transactions service', () => {
     const balance = await service.getItemBalance(firstItemId, admin);
     expect(balance.itemId).toBe(firstItemId);
     expect(typeof balance.onHand).toBe('number');
-    // We don't assert a specific number because the suite shares the item
-    // with the GRN cascade tests; just confirm it's non-negative + integer.
     expect(balance.onHand).toBeGreaterThanOrEqual(0);
   });
 

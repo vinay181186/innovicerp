@@ -77,15 +77,26 @@ beforeAll(async () => {
     role: u.role,
     isActive: u.isActive,
   };
-  const itemRow = await db
-    .select({ id: items.id })
-    .from(items)
-    .where(
-      and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
-    )
-    .orderBy(asc(items.createdAt))
-    .limit(1);
-  firstItemId = itemRow[0]!.id;
+  // Dedicated test item so v_item_stock for it is not perturbed by the
+  // store-transactions suite (T036D-) seeding rows on the same shared item.
+  // Previously firstItemId was the first seeded item; if that suite's
+  // afterAll fired between this suite's baseline read and create call,
+  // service.stockBefore disagreed with the test-side baseline (flake).
+  await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
+  const itemRows = await db
+    .insert(items)
+    .values({
+      companyId: u.companyId,
+      code: `${TEST_PREFIX}ITEM`,
+      name: 'GRN cascade test item',
+      revision: 'A',
+      uom: 'NOS',
+      itemType: 'component',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  firstItemId = itemRows[0]!.id;
   const vendorRow = await db
     .select({ id: vendors.id })
     .from(vendors)
@@ -132,6 +143,10 @@ afterAll(async () => {
   }
   await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
+
+  // Test item last (FK referenced by everything above; cascade deletes are
+  // off so order matters).
+  await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
 });
 
 describe('goods-receipt-notes service', () => {
