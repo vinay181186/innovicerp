@@ -40,3 +40,4 @@ export * from './schemas/dashboard';
 export * from './schemas/report';
 export * from './schemas/saved-report';
 export * from './schemas/activity-log';
+export * from './schemas/alert';
