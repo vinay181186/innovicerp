@@ -13,7 +13,14 @@ export type Db = typeof db;
 
 export type DbPingResult = { ok: true } | { ok: false; error: string };
 
-export async function pingDatabase(timeoutMs = 2000): Promise<DbPingResult> {
+// Default timeout: 8000ms (was 2000ms before T-058). Cold-start TLS +
+// pgbouncer connection setup + select 1 from a freshly-deployed Railway
+// container to Supabase Mumbai (ap-south-1) routinely takes 3-5s on the
+// first hit; 2s was tight enough to cause /readyz to time out → 503 →
+// Railway healthcheck fail → rolled-back deploys (commits e94453e, 946a83c).
+// 8s gives comfortable headroom; if a real DB blip is in progress, the
+// 503 still surfaces it for monitoring.
+export async function pingDatabase(timeoutMs = 8000): Promise<DbPingResult> {
   let timer: NodeJS.Timeout | undefined;
   try {
     const ping = queryClient`select 1`;

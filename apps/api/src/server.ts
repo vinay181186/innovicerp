@@ -49,7 +49,26 @@ await app.register(sensible);
 await app.register(errorHandlerPlugin);
 await app.register(authPlugin);
 
-app.get('/health', async (_req, reply) => {
+// Liveness probe — used by Railway's healthcheck. ALWAYS returns 200 if
+// the server is responding. Doesn't depend on downstream services so a
+// Supabase blip can't roll back a Railway deploy. Standard k8s split.
+//
+// Previous behaviour (returning 503 on DB outage) caused the deploy
+// failures captured in screenshot ER1_08-05-26 — cold-start /health
+// timed out → Railway healthcheck fail → rollback. See `/readyz` for
+// the DB-aware variant used by monitoring tools (Better Stack etc.).
+app.get('/health', async () => ({
+  ok: true,
+  env: env.NODE_ENV,
+  version: '0.0.0',
+  gitSha: env.GIT_SHA ?? null,
+  timestamp: new Date().toISOString(),
+}));
+
+// Readiness probe — DB-aware. 503 when the DB ping fails or times out.
+// Use this in Better Stack / external uptime monitoring; do NOT wire to
+// the platform healthcheck or you re-introduce the deploy-rollback bug.
+app.get('/readyz', async (_req, reply) => {
   const dbStatus = await pingDatabase();
   reply.code(dbStatus.ok ? 200 : 503);
   return {
