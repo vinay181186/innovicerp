@@ -11,6 +11,7 @@ import { logger } from './lib/logger';
 import { initSentry } from './lib/sentry';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { alertsRoutes } from './modules/alerts/routes';
+import { startAlertsWorker, stopAlertsWorker } from './modules/alerts/worker-boot';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
@@ -114,3 +115,24 @@ try {
   logger.error({ err }, 'failed to start server');
   process.exit(1);
 }
+
+// Alerts BullMQ worker — boots AFTER app.listen so a worker startup failure
+// (missing Redis, bad Resend creds) doesn't roll back the api deploy.
+// Without REDIS_URL the worker stays in stub mode and this is a quiet no-op.
+try {
+  await startAlertsWorker();
+} catch (err) {
+  logger.error({ err }, 'alerts worker failed to start; api stays up');
+}
+
+process.on('SIGTERM', () => {
+  void (async () => {
+    logger.info('SIGTERM received — shutting down alerts worker + http server');
+    try {
+      await stopAlertsWorker();
+      await app.close();
+    } finally {
+      process.exit(0);
+    }
+  })();
+});

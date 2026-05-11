@@ -91,8 +91,8 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 - [x] `alert_subscriptions` table — schema + migration + RLS (applied to dev DB 2026-05-09; not yet committed)
 - [x] `alert_deliveries` audit table with `(code, user_id, window_start, channel)` idempotency unique index (applied; not yet committed)
-- [x] Subscription CRUD service + 2 routes + 13 tests (uncommitted; tests need a re-run tomorrow to confirm green after the cross-suite isolation fix)
-- [~] BullMQ worker processor — `runDigestTick` written, NO tests yet, NOT wired into `server.ts` boot
+- [x] Subscription CRUD service + 2 routes + 13 tests (committed 2026-05-11 in slice 6a `233d2ef`)
+- [x] BullMQ worker processor — `runDigestTick` + 8 worker tests + server.ts boot wire-up + SIGTERM shutdown hook (committed 2026-05-11 in slice 6b)
 - [ ] Web subscription UI on dashboard rows
 - [ ] RUNBOOK addendum: Redis (Railway add-on) + Resend account provisioning + env vars
 
