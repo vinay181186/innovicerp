@@ -52,6 +52,10 @@ The Railway public URL is shown on the service's main panel. Custom domains (whe
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWT_SECRET`
 - `ALLOWED_ORIGINS` — comma-separated list of origins allowed via CORS (e.g. `https://erp.innovic.in,https://erp-staging.innovic.in`). The API **refuses to start** in production with this unset. Update whenever a new web host is added (custom domain cutover, staging URL change).
+- `REDIS_URL` — BullMQ connection string for the alerts push worker (T-041d Phase B). Unset = worker stays in stub mode, no scheduled digests fire. Provisioning steps in the "Alerts push delivery" section below.
+- `ALERTS_PUSH_ENABLED` — `true` to register the every-30-min cron schedule. Defaults to `false` so a fresh deploy never silently starts blasting email to subscribers.
+- `RESEND_API_KEY` — Resend API key. Unset = digest dispatch runs in log-only mode (audit row written with a `stub-` message_id, no email leaves the host).
+- `ALERTS_FROM_EMAIL` — verified Resend sender (e.g. `alerts@innovic.in`). Required alongside `RESEND_API_KEY` for real sends; without it dispatch also falls back to log-only.
 
 **Do not** set `PORT` — Railway injects it automatically and `apps/api/src/lib/env.ts` prefers Railway's `PORT` over `API_PORT` (ADR-010).
 
@@ -816,6 +820,59 @@ T-054 closes when **all three** are wired:
 - [ ] Supabase metrics dashboards bookmarked in the team password manager / docs
 
 Until then, T-054 stays open. The monitoring section in Performance Triage references this section's smoke-test for the "When to give up and add monitoring" trigger.
+
+---
+
+## Alerts push delivery — Redis + Resend provisioning (T-041d Phase B)
+
+The alerts push worker (`apps/api/src/modules/alerts/worker.ts`) fires every 30 minutes, fans out each active rule's records to subscribed users via email, and writes one audit row per (code, user, window, channel) to `alert_deliveries`. Booted from `server.ts` AFTER `app.listen()` so a worker startup failure cannot roll back the api deploy (the worker logs and exits; the api stays up). See ADR-024 for the Phase A/B carve-out + idempotency design.
+
+Four env-var flags gate the worker. Until the first three are set, the worker stays in stub mode and you can ship the rest of the system without dispatch side-effects:
+
+| Variable               | Required for           | Effect when unset                                             |
+| ---------------------- | ---------------------- | ------------------------------------------------------------- |
+| `REDIS_URL`            | Worker boot at all     | `startAlertsWorker()` returns early; no schedule registered   |
+| `ALERTS_PUSH_ENABLED`  | Cron tick              | Worker boots but the every-30-min repeat job is not enqueued  |
+| `RESEND_API_KEY`       | Real email send        | `sendAlertDigest` returns `{realSend:false, messageId:'stub-…'}` |
+| `ALERTS_FROM_EMAIL`    | Real email send        | Same as above — falls back to log-only mode                   |
+
+### Redis — Railway add-on
+
+1. Railway dashboard → project → **+ New** → Database → **Redis**. Pick a region matching the api service (Singapore / `asia-southeast1`).
+2. Railway auto-injects a `REDIS_URL` variable into linked services. Confirm the api service has it: service → **Variables** → search `REDIS_URL`. If absent, click **Add Reference** and pick the Redis instance's `${{Redis.REDIS_URL}}`.
+3. Click **Redeploy** on the api service to pick up the new variable (Railway's auto-redeploy fires on most variable edits, but a manual click is the safe path).
+4. Verify in the api logs: the first `alerts worker started + schedule registered` line confirms BullMQ connected. Absence of the warning `REDIS_URL not set — alerts push queue running in stub mode` is the other half of the confirmation.
+
+### Resend — account + sender domain
+
+1. Sign up at https://resend.com — free tier (3,000 emails/month, 1 domain) covers the expected digest volume by ~30x at 15–20 users × 15 active alerts.
+2. **Add domain** → enter the production sender domain (e.g. `innovic.in`). Resend shows DNS records to add:
+   - **MX** (`feedback-smtp.<region>.amazonses.com`, priority 10) — for bounce handling
+   - **SPF TXT** (`v=spf1 include:amazonses.com ~all`)
+   - **DKIM CNAMEs** (three records, `resend._domainkey.*`)
+   - **DMARC TXT** (`v=DMARC1; p=none;`) — optional but recommended
+3. Add those records in Cloudflare (or whoever runs DNS for the domain). Click **Verify** in Resend — typically takes 5–30 minutes to propagate.
+4. API keys: **API Keys** → **Create** → scope "Sending access only" (do NOT grant full access). Copy the `re_…` key once; Resend will not show it again.
+5. Set in Railway api service Variables: `RESEND_API_KEY=re_…` and `ALERTS_FROM_EMAIL=alerts@<verified-domain>`. The from address must match a verified domain or Resend will 422 the send.
+
+### First-tick smoke
+
+Once `REDIS_URL` + `ALERTS_PUSH_ENABLED=true` + `RESEND_API_KEY` + `ALERTS_FROM_EMAIL` are all set:
+
+1. On a staging api or a temporary deploy, lower the schedule from `0,30 * * * *` to `* * * * *` (every minute) in `apps/api/src/lib/queue.ts` `registerAlertSchedule()`. **Revert before merging.**
+2. Subscribe a test user to a known-non-empty alert (e.g. AL-018 NC pending disposition) via the web dashboard (`/alerts` → click the bell icon on the row).
+3. Tail logs (`gh deployment view --log` or Railway dashboard); expect a `alerts worker: tick start` followed by `alerts worker: tick complete` line with `evaluations`, `dispatched`, `emptySkipped`, `duplicateSkipped`, `failed` counters.
+4. Inbox check: the subject is `[Innovic ERP] <Alert name> — <N> items`. Confirm the digest body renders the drill-down records.
+5. Wait one more tick → confirm the second `tick complete` has `duplicateSkipped >= 1` and the inbox does NOT receive a second email (the unique key on `alert_deliveries` blocks the audit insert; the email DOES re-send because dispatch-then-audit ordering — known trade-off, ADR-024).
+6. Revert the cron back to `0,30 * * * *` and redeploy.
+
+### Pausing pushes without redeploying
+
+Set `ALERTS_PUSH_ENABLED=false` in Railway and redeploy. The worker stays connected to Redis but the repeat job is not registered. Existing scheduled jobs in Redis (from the prior boot) keep firing until the worker container restarts — which the redeploy handles. To wipe queued jobs explicitly, open the Railway Redis console and `DEL bull:alerts:repeat:*`.
+
+### Cost watch
+
+BullMQ stores completed jobs for 24h (1000 max) and failed for 7d. At 48 ticks/day, this is 1000-2000 keys steady-state — negligible Redis memory. Resend's free tier covers 3000 emails/month; at 20 users × 15 alerts × 48 ticks/day = 14,400 max theoretical sends/day, but the typical send count is `(empty_skipped is most ticks) << 14,400`. If usage exceeds free tier, Resend's paid plans start at $20/mo for 50,000 emails.
 
 ---
 
