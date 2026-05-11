@@ -1794,6 +1794,94 @@ export const alertConfig = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 7: alert subscriptions + deliveries (T-041d Phase B) ───────────
+// Per-user opt-in to email delivery of alert digests, plus an append-only
+// audit log of dispatch attempts. Per ADR-024:
+//   - alert_subscriptions: row IS the subscription. No soft-delete; an
+//     unsubscribe is a DELETE. Self or admin/manager can write.
+//   - alert_deliveries: append-only (no updated_at / no soft-delete, same
+//     shape as activity_log). The (code, user_id, window_start, channel)
+//     unique index is the worker's idempotency key — a second tick in the
+//     same window hits unique_violation and skips the dispatch.
+
+export const alertSubscriptions = pgTable(
+  'alert_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    channel: text('channel').notNull().default('email'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('alert_subs_company_user_code_channel_uniq').on(
+      t.companyId,
+      t.userId,
+      t.code,
+      t.channel,
+    ),
+    index('alert_subs_company_code_idx').on(t.companyId, t.code),
+    pgPolicy('alert_subs_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('alert_subs_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+export const alertDeliveries = pgTable(
+  'alert_deliveries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    channel: text('channel').notNull().default('email'),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    messageId: text('message_id').notNull(),
+    recordCount: integer('record_count').notNull().default(0),
+    realSend: boolean('real_send').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    uniqueIndex('alert_deliv_idem_uniq').on(t.code, t.userId, t.windowStart, t.channel),
+    index('alert_deliv_company_created_idx').on(t.companyId, t.createdAt),
+    pgPolicy('alert_deliv_manager_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND current_user_role() IN ('admin','manager')`,
+    }),
+    pgPolicy('alert_deliv_self_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 8: activity log (T-051) ────────────────────────────────────────
 // Append-only audit trail. Per ADR-019, no soft-delete + no updated_at —
 // rows are immutable once written. `action` is text not enum because the
@@ -1896,5 +1984,9 @@ export type SavedReport = typeof savedReports.$inferSelect;
 export type NewSavedReport = typeof savedReports.$inferInsert;
 export type AlertConfig = typeof alertConfig.$inferSelect;
 export type NewAlertConfig = typeof alertConfig.$inferInsert;
+export type AlertSubscription = typeof alertSubscriptions.$inferSelect;
+export type NewAlertSubscription = typeof alertSubscriptions.$inferInsert;
+export type AlertDelivery = typeof alertDeliveries.$inferSelect;
+export type NewAlertDelivery = typeof alertDeliveries.$inferInsert;
 export type ActivityLog = typeof activityLog.$inferSelect;
 export type NewActivityLog = typeof activityLog.$inferInsert;

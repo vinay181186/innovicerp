@@ -1,25 +1,33 @@
 // Re-export shared alert schemas (CLAUDE.md §8 — shared is the SoT).
 export {
+  alertChannelSchema,
   alertColumnSchema,
   alertConfigEntrySchema,
   alertDefinitionSchema,
   alertDeptSchema,
   alertResultSchema,
   alertRowSchema,
+  alertSubscriptionEntrySchema,
   listAlertConfigResponseSchema,
+  listAlertSubscriptionsResponseSchema,
   listAlertsResponseSchema,
   runAlertResponseSchema,
   setAlertActiveInputSchema,
+  setAlertSubscriptionInputSchema,
 } from '@innovic/shared';
 export type {
+  AlertChannel,
   AlertColumn,
   AlertConfigEntry,
   AlertDefinition,
   AlertDept,
   AlertResult,
   AlertRow,
+  AlertSubscriptionEntry,
   ListAlertConfigResponse,
+  ListAlertSubscriptionsResponse,
   ListAlertsResponse,
   RunAlertResponse,
   SetAlertActiveInput,
+  SetAlertSubscriptionInput,
 } from '@innovic/shared';

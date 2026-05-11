@@ -109,3 +109,34 @@ export const setAlertActiveInputSchema = z.object({
   active: z.boolean(),
 });
 export type SetAlertActiveInput = z.infer<typeof setAlertActiveInputSchema>;
+
+// ─── Phase B: subscriptions + deliveries (T-041d slice 6) ────────────────
+// Per-user opt-in to email digest delivery for an alert code. v1 ships
+// `email` as the only channel; the wire shape leaves room to add `slack` /
+// `sms` later without a breaking change.
+
+export const alertChannelSchema = z.enum(['email']);
+export type AlertChannel = z.infer<typeof alertChannelSchema>;
+
+export const alertSubscriptionEntrySchema = z.object({
+  code: z.string(),
+  channel: alertChannelSchema,
+  /** ISO-8601 timestamp this subscription row was created. */
+  subscribedAt: z.string(),
+});
+export type AlertSubscriptionEntry = z.infer<typeof alertSubscriptionEntrySchema>;
+
+export const listAlertSubscriptionsResponseSchema = z.object({
+  /** The current user's subscriptions. Admin/manager get a separate
+   *  endpoint to view other users' subscriptions if needed. */
+  subscriptions: z.array(alertSubscriptionEntrySchema),
+});
+export type ListAlertSubscriptionsResponse = z.infer<typeof listAlertSubscriptionsResponseSchema>;
+
+export const setAlertSubscriptionInputSchema = z.object({
+  /** When true, ensure a subscription row exists; when false, remove it.
+   *  Channel defaults to 'email' if omitted (the only channel today). */
+  subscribed: z.boolean(),
+  channel: alertChannelSchema.optional(),
+});
+export type SetAlertSubscriptionInput = z.infer<typeof setAlertSubscriptionInputSchema>;

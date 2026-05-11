@@ -71,6 +71,14 @@ export default async function setup(): Promise<void> {
     //        activity rows referencing test items by ref_id = code.
     //    Wipe both so audit cruft doesn't pile up across runs.
     await sql`DELETE FROM public.activity_log WHERE entity LIKE 'T051-%' OR ref_id LIKE 'T%-%'`;
+
+    // 5. Alert subscriptions + deliveries (T-041d Phase B). Subscription
+    //    tests insert under the seed admin user_id using real registry
+    //    codes (AL-001 etc.), so we wipe by user_id rather than by code
+    //    pattern. Tests' own afterEach handles the steady-state cleanup;
+    //    this catches killed-run cruft.
+    await sql`DELETE FROM public.alert_subscriptions WHERE user_id IN (SELECT id FROM public.users WHERE email = 'innovic.technology@gmail.com')`;
+    await sql`DELETE FROM public.alert_deliveries WHERE user_id IN (SELECT id FROM public.users WHERE email = 'innovic.technology@gmail.com')`;
   } finally {
     await sql.end();
   }

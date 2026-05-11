@@ -26,13 +26,21 @@ If the bad deployment came from a code bug rather than env/config, also revert t
 
 ### Verify health
 
+Two endpoints — different audiences. **Do not swap them.** The split was forced 2026-05-08 (commit `80688b6`) after the original combined `/health` timed out on cold-start TLS to Supabase Mumbai and tripped Railway into 9 consecutive rollbacks.
+
 ```
 curl https://<railway-service>.up.railway.app/health
+# Always:     200 → {"ok":true,"env":"production","version":"X.Y.Z","gitSha":"...","timestamp":"..."}
+
+curl https://<railway-service>.up.railway.app/readyz
 # Healthy:    200 → {"ok":true,"db":"up","env":"production","version":"X.Y.Z","gitSha":"...","timestamp":"..."}
 # DB outage:  503 → {"ok":false,"db":"down","dbError":"<reason>","env":"production",...}
 ```
 
-`/health` runs a `select 1` against the transaction pooler with a 2 s timeout — DB unreachable, slow, or auth-broken returns 503. The Dockerfile HEALTHCHECK + Railway healthcheck + Better Stack uptime monitor all key off the 2xx/5xx split, so a real outage trips them. The Railway public URL is shown on the service's main panel. Custom domains (when added) replace the `*.up.railway.app` hostname; same `/health` path.
+- `/health` is **liveness only** — no DB call, always 200 once the process binds. This is what Railway's platform healthcheck + the Dockerfile HEALTHCHECK key off. Wiring DB checks here re-introduces the deploy-rollback bug.
+- `/readyz` is **readiness** — runs a `select 1` against the transaction pooler with an 8 s timeout (default in `pingDatabase`). Wire Better Stack uptime monitoring + any other DB-aware external probe to this one.
+
+The Railway public URL is shown on the service's main panel. Custom domains (when added) replace the `*.up.railway.app` hostname; same paths.
 
 ### Required env vars (Railway → service → Settings → Variables)
 

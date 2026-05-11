@@ -2,7 +2,11 @@ import { and, eq, inArray } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { alertConfig as alertConfigTable, users } from '../../db/schema';
+import {
+  alertConfig as alertConfigTable,
+  alertSubscriptions as alertSubsTable,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { alertsRoutes } from './routes';
@@ -32,6 +36,23 @@ async function clearTouched(companyId: string): Promise<void> {
     );
 }
 
+// Codes this suite mutates in /alerts/subscriptions tests. Disjoint from
+// subscriptions.test.ts's set so the two suites don't wipe each other's
+// in-flight rows when running in parallel against the same seed admin.
+const SUB_CODES = ['AL-009', 'AL-012'];
+
+async function clearMySubs(): Promise<void> {
+  await db
+    .delete(alertSubsTable)
+    .where(
+      and(
+        eq(alertSubsTable.companyId, admin.companyId!),
+        eq(alertSubsTable.userId, admin.id),
+        inArray(alertSubsTable.code, SUB_CODES),
+      ),
+    );
+}
+
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
   const u = rows[0];
@@ -44,6 +65,7 @@ beforeAll(async () => {
     isActive: u.isActive,
   };
   await clearTouched(admin.companyId!);
+  await clearMySubs();
 });
 
 afterEach(async () => {
@@ -138,5 +160,85 @@ describe('alerts routes', () => {
     expect(Array.isArray(body.alert.records)).toBe(true);
     expect(Array.isArray(body.columns)).toBe(true);
     expect(body.columns.length).toBeGreaterThan(0);
+  });
+});
+
+describe('alerts subscription routes', () => {
+  let app: FastifyInstance;
+  afterEach(async () => {
+    if (app) await app.close();
+    await clearMySubs();
+  });
+
+  it('GET /alerts/subscriptions returns 401 without auth', async () => {
+    app = await buildApp(null);
+    const res = await app.inject({ method: 'GET', url: '/alerts/subscriptions' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('GET /alerts/subscriptions includes none of this suite\'s codes initially', async () => {
+    // The suite's afterEach + beforeAll have just wiped AL-009 / AL-012; an
+    // exact empty-list assertion would be flaky against subscriptions.test.ts
+    // running in parallel under the same admin user. Assert only that this
+    // suite's codes are absent.
+    app = await buildApp(admin);
+    const res = await app.inject({ method: 'GET', url: '/alerts/subscriptions' });
+    expect(res.statusCode).toBe(200);
+    const codes = res.json().subscriptions.map((s: { code: string }) => s.code);
+    for (const c of SUB_CODES) expect(codes).not.toContain(c);
+  });
+
+  it('PUT subscribed=true creates a subscription; PUT subscribed=false removes it', async () => {
+    app = await buildApp(admin);
+    const sub = await app.inject({
+      method: 'PUT',
+      url: '/alerts/subscriptions/AL-009',
+      payload: { subscribed: true },
+    });
+    expect(sub.statusCode).toBe(200);
+    const body = sub.json();
+    expect(body.code).toBe('AL-009');
+    expect(body.channel).toBe('email');
+    expect(typeof body.subscribedAt).toBe('string');
+
+    const list = await app.inject({ method: 'GET', url: '/alerts/subscriptions' });
+    expect(list.json().subscriptions.map((s: { code: string }) => s.code)).toContain('AL-009');
+
+    const unsub = await app.inject({
+      method: 'PUT',
+      url: '/alerts/subscriptions/AL-009',
+      payload: { subscribed: false },
+    });
+    expect(unsub.statusCode).toBe(204);
+
+    const after = await app.inject({ method: 'GET', url: '/alerts/subscriptions' });
+    expect(after.json().subscriptions).toEqual([]);
+  });
+
+  it('PUT subscribed=true is idempotent', async () => {
+    app = await buildApp(admin);
+    const first = await app.inject({
+      method: 'PUT',
+      url: '/alerts/subscriptions/AL-012',
+      payload: { subscribed: true },
+    });
+    const second = await app.inject({
+      method: 'PUT',
+      url: '/alerts/subscriptions/AL-012',
+      payload: { subscribed: true },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().subscribedAt).toBe(first.json().subscribedAt);
+  });
+
+  it('PUT rejects malformed body with 400', async () => {
+    app = await buildApp(admin);
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/alerts/subscriptions/AL-012',
+      payload: { not_subscribed: true },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

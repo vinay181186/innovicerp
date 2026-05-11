@@ -1283,7 +1283,7 @@ RLS:
 
 ## Phase 7 Tables — Reports + Alerts
 
-> **Status:** `saved_reports` (T-041b) + `alert_config` (T-041d Phase A) shipped. Phase B (push delivery) still pending — adds `alert_subscriptions` + `alert_deliveries` per ADR-024.
+> **Status:** `saved_reports` (T-041b) + `alert_config` (T-041d Phase A) + `alert_subscriptions` + `alert_deliveries` (T-041d Phase B slice 6) shipped. Push delivery activates when `REDIS_URL` + `RESEND_API_KEY` + `ALERTS_PUSH_ENABLED=true` + `ALERTS_FROM_EMAIL` are set; tables work without those infra deps.
 
 ### `saved_reports`
 
@@ -1332,9 +1332,62 @@ RLS:
 
 No soft-delete: a row IS the override. If a rule code disappears from the registry, the orphaned row is harmless leftover (service skips unknown codes).
 
+### `alert_subscriptions`
+
+Per-user opt-in to email digest delivery for a specific alert code. v1 ships `email` as the only channel; the column shape leaves room for `slack` / `sms` later. No soft-delete — a row IS the subscription, an unsubscribe is a `DELETE`.
+
+| Column       | Type                             | Notes                                                          |
+| ------------ | -------------------------------- | -------------------------------------------------------------- |
+| `id`         | `uuid`                           | PK                                                             |
+| `company_id` | `uuid`                           | not null, FK                                                   |
+| `user_id`    | `uuid`                           | not null, FK → `users(id)` ON DELETE CASCADE                   |
+| `code`       | `text`                           | not null. Rule code from the registry (e.g. `AL-001`)          |
+| `channel`    | `text`                           | not null, default `'email'`. Reserved for future channels      |
+| audit        | (audit pattern, no `deleted_at`) |                                                                |
+
+Indexes:
+
+- `unique (company_id, user_id, code, channel)` — drives upsert + dedupe
+- `(company_id, code)` — drives the worker's fan-out query
+
+RLS:
+
+- `alert_subs_company_read` (any role) — anyone in the company can read (admin/manager UI shows who's subscribed; users see their own subs)
+- `alert_subs_self_or_manager_write` — the row's own `user_id` can write OR admin/manager can write any user's row
+
+Trigger: `alert_subscriptions_set_updated_at` BEFORE UPDATE → `set_updated_at()`.
+
+### `alert_deliveries`
+
+Append-only audit log of dispatch attempts. The unique key `(code, user_id, window_start, channel)` is the worker's idempotency key — a second tick within the same window hits `unique_violation` and skips the Resend dispatch. Same shape as `activity_log`: no `updated_at`, no `deleted_at`.
+
+| Column         | Type          | Notes                                                                                            |
+| -------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `id`           | `uuid`        | PK                                                                                               |
+| `company_id`   | `uuid`        | not null, FK                                                                                     |
+| `user_id`      | `uuid`        | not null, FK → `users(id)` ON DELETE CASCADE                                                     |
+| `code`         | `text`        | not null. Rule code dispatched                                                                   |
+| `channel`      | `text`        | not null, default `'email'`                                                                      |
+| `window_start` | `timestamptz` | not null. The 30-minute boundary the dispatch was scheduled for. Worker truncates `now()` to it  |
+| `message_id`   | `text`        | not null. Resend's id on a real send, or `'stub-…'` in log-only mode (`RESEND_API_KEY` unset)    |
+| `record_count` | `integer`     | not null, default `0`. How many alert records were in the digest at dispatch time. Audit signal  |
+| `real_send`    | `boolean`     | not null. `true` when Resend actually sent, `false` when the wrapper stubbed                     |
+| `created_at`   | `timestamptz` | not null, default `now()`                                                                        |
+| `created_by`   | `uuid`        | nullable, FK → `users(id)` ON DELETE SET NULL — system writes leave it `null`                    |
+
+Indexes:
+
+- `unique (code, user_id, window_start, channel)` — idempotency key; worker relies on `INSERT … ON CONFLICT DO NOTHING` (or unique-violation catch) to skip duplicate sends within a window
+- `(company_id, created_at DESC)` — drives admin audit listing if/when a UI for it ships
+
+RLS:
+
+- `alert_deliv_manager_read` (admin/manager only) — sensitive: who emailed who when
+- `alert_deliv_self_insert` (INSERT only) — the row's own `user_id` is allowed to insert (the worker runs each dispatch under that subscriber's auth context). No app-level UPDATE / DELETE policies
+
 ### Phase 7 Triggers
 
-`saved_reports` gets `before update` → `set_updated_at()`. `alert_config` doesn't currently have one — drizzle-gen didn't emit it, and the audit cols are only loosely-tracked here (admin self-edits are visible via `updated_at`/`updated_by` already set in service code on each upsert; a trigger would be belt-and-braces but isn't required).
+`saved_reports` gets `before update` → `set_updated_at()`. `alert_config` doesn't currently have one — drizzle-gen didn't emit it, and the audit cols are only loosely-tracked here (admin self-edits are visible via `updated_at`/`updated_by` already set in service code on each upsert; a trigger would be belt-and-braces but isn't required). `alert_subscriptions` does get one (`alert_subscriptions_set_updated_at`) so subscription channel changes (when more channels land) bump the audit timestamp without service-layer ceremony. `alert_deliveries` is append-only — no trigger.
 
 ---
 
@@ -1366,3 +1419,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-05-05 | `0013_phase7_saved_reports.sql` (drizzle-gen) + `0014_phase7_saved_reports_trigger.sql` (hand-written)                               | Phase 7 saved (ad-hoc) reports (T-041b) — 1 new table `saved_reports` (id, company_id, owner_id, name, description, source_key, spec jsonb, is_shared, audit + soft-delete cols), 3 indexes (company+owner+name unique, company+is_shared, owner_id), standard company_isolation RLS pair (company_read + company_write — the per-user shared/private gate is enforced at the service layer to keep RLS simple; admin/manager elevation lives in the service too). BEFORE UPDATE trigger via the standard `set_updated_at()` helper. Applied via `apply-sql.ts` per the Phase 5 journal-orphan workaround. 259/259 api tests green (was 231, +28 from T-041b)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 2026-05-05 | `0015_phase8_activity_log.sql` (drizzle-gen)                                                                                         | Phase 8 activity log (T-051) — 1 new append-only audit table `activity_log` (id, company_id, ts, user_id [nullable, ON DELETE SET NULL], user_name [snapshot], action [text], entity, detail, ref_id, created_at, created_by). 3 indexes (company+ts, company+action, company+user). RLS: company_read for SELECT + manager_insert for INSERT only — no UPDATE / DELETE policies (append-only per ADR-019). No `updated_at` / `deleted_at`. Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 2026-05-08 | `0015_phase7_alert_config.sql` (drizzle-gen)                                                                                         | Phase 7 alerts Phase A (T-041d, ADR-024) — 1 new table `alert_config` (id, company_id, code text, active boolean, audit cols; no soft-delete). Per-company per-rule on/off override; rule definitions live in code under `apps/api/src/modules/alerts/definitions/`. Unique index `(company_id, code)`. RLS: company_read (any role) + manager_write (admin/manager). Filename collides with `0015_phase8_activity_log.sql` — drizzle journal disambiguates by `idx`. Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2026-05-09 | `0016_phase7_alert_subs_deliveries.sql` (hand-written)                                                                              | Phase 7 alerts Phase B slice 6 (T-041d, ADR-024) — 2 new tables (`alert_subscriptions` per-user opt-in, `alert_deliveries` append-only audit log) + 1 new SQL helper `current_user_id()` (extracts JWT `sub` for self-row RLS). `alert_subscriptions` has FK ON DELETE CASCADE on `user_id` so a deleted user's subs vanish; idempotency unique key `(company_id, user_id, code, channel)` + `(company_id, code)` fan-out index; RLS company_read (any role) + self_or_manager_write. `alert_deliveries` keys idempotency on `(code, user_id, window_start, channel)`; `created_by` nullable for system writes; RLS manager_read + self_insert. BEFORE UPDATE trigger only on `alert_subscriptions` (deliveries are append-only). Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                  |
