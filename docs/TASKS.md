@@ -93,7 +93,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 - [x] `alert_deliveries` audit table with `(code, user_id, window_start, channel)` idempotency unique index (applied; not yet committed)
 - [x] Subscription CRUD service + 2 routes + 13 tests (committed 2026-05-11 in slice 6a `233d2ef`)
 - [x] BullMQ worker processor — `runDigestTick` + 8 worker tests + server.ts boot wire-up + SIGTERM shutdown hook (committed 2026-05-11 in slice 6b)
-- [ ] Web subscription UI on dashboard rows
+- [x] Web subscription UI on dashboard rows (BellRing/BellOff toggle column, per-row mutation; committed 2026-05-11 in slice 6c)
 - [ ] RUNBOOK addendum: Redis (Railway add-on) + Resend account provisioning + env vars
 
 **DLP runner gap (carry-over):** The standard `pnpm --filter api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts <path.sql>` runner appears to wedge under this machine's DLP environment when reading the migration .sql via `fs.readFileSync` (script logs "read migration ok, 6590 chars" and never reaches the next step). A one-off script with the SQL inlined as a TS literal array bypassed the issue and applied cleanly. Workaround documented here so the same flake doesn't burn time again; permanent fix candidate (low priority): switch `apply-sql.ts` from regex-split to a leaner statement-iterator OR rename `.sql` files to a non-flagged extension.

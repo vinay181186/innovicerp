@@ -1,6 +1,8 @@
 import type {
   AlertConfigEntry,
+  AlertSubscriptionEntry,
   ListAlertConfigResponse,
+  ListAlertSubscriptionsResponse,
   ListAlertsResponse,
   RunAlertResponse,
 } from '@innovic/shared';
@@ -12,6 +14,7 @@ export const alertsKeys = {
   list: () => [...alertsKeys.all, 'list'] as const,
   drill: (code: string) => [...alertsKeys.all, 'drill', code] as const,
   config: () => [...alertsKeys.all, 'config'] as const,
+  subscriptions: () => [...alertsKeys.all, 'subscriptions'] as const,
 };
 
 export function useAlerts() {
@@ -51,6 +54,27 @@ export function useToggleAlert() {
     onSuccess: () => {
       // Invalidate both config (admin page) and list (user dashboard).
       void qc.invalidateQueries({ queryKey: alertsKeys.all });
+    },
+  });
+}
+
+export function useMySubscriptions() {
+  return useQuery<ListAlertSubscriptionsResponse>({
+    queryKey: alertsKeys.subscriptions(),
+    queryFn: () => apiFetch<ListAlertSubscriptionsResponse>('/alerts/subscriptions'),
+  });
+}
+
+export function useToggleSubscription() {
+  const qc = useQueryClient();
+  return useMutation<AlertSubscriptionEntry | null, Error, { code: string; subscribed: boolean }>({
+    mutationFn: ({ code, subscribed }) =>
+      apiFetch<AlertSubscriptionEntry | null>(`/alerts/subscriptions/${code}`, {
+        method: 'PUT',
+        json: { subscribed },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: alertsKeys.subscriptions() });
     },
   });
 }
