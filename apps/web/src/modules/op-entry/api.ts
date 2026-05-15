@@ -15,6 +15,7 @@ import type {
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
+  SubmitQcLogInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -133,6 +134,24 @@ export function useSubmitOpLog() {
         queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }),
       });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+    },
+  });
+}
+
+// QC inspection submit (T-040d). Same shape as useSubmitOpLog but writes the
+// QC log path. No optimistic update on this mutation — qc_pending math from
+// the view is non-trivial to mirror client-side, and a 200ms server round-trip
+// for QC inspections is acceptable. The Realtime sub on op_log invalidates
+// after the server INSERT propagates anyway.
+export function useSubmitQcLog() {
+  const qc = useQueryClient();
+  return useMutation<OpLog, Error, SubmitQcLogInput>({
+    mutationFn: (input) => apiFetch<OpLog>('/op-entry/qc-log', { method: 'POST', json: input }),
+    onSettled: (_data, _err, input) => {
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
+      void qc.invalidateQueries({
+        queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }),
+      });
     },
   });
 }

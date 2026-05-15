@@ -140,6 +140,28 @@ export const startOpInputSchema = z
   });
 export type StartOpInput = z.infer<typeof startOpInputSchema>;
 
+// QC inspection submit (T-040d per ADR-025). Mirrors legacy submitQcLog
+// handler at HTML L3893-3957. Differs from submitOpLogInputSchema:
+//  - qty can be 0 (all-rejected case is valid)
+//  - rejectQty can be 0 (all-accepted)
+//  - at least one of qty / rejectQty must be > 0 (refine)
+//  - target op must be qc-bearing (validated server-side via op_type / qc_required)
+export const submitQcLogInputSchema = z
+  .object({
+    jcOpId: z.string().uuid(),
+    qty: z.number().int().nonnegative(),
+    rejectQty: z.number().int().nonnegative(),
+    logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    shift: shiftSchema,
+    operatorId: z.string().uuid().optional(),
+    operatorName: z.string().min(1).max(120).optional(),
+    remarks: z.string().max(500).optional(),
+  })
+  .refine((i) => i.qty + i.rejectQty > 0, {
+    message: 'Enter accepted qty and/or reject qty (legacy line 3895)',
+  });
+export type SubmitQcLogInput = z.infer<typeof submitQcLogInputSchema>;
+
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listJcOpsQuerySchema = z

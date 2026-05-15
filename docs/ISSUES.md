@@ -12,8 +12,9 @@
 ## ISSUE-001 — op-entry submit form has no QC guard
 
 - **Surfaced:** 2026-05-15 (browser smoke for Resume Checklist #1)
+- **Closed:** 2026-05-15 (T-040d per ADR-025)
 - **Severity:** P1 (creates phantom complete-logs on QC ops; corrupts `v_jc_op_status`)
-- **Status:** [ ] open
+- **Status:** [x] Fixed — defensive `op.opType === 'qc'` throw added to `submitOpLog` (`apps/api/src/modules/op-entry/service.ts`); `op-entry-form.tsx` now renders the QC inspection sub-form on qc-bearing ops (production form hidden entirely). Phantom row `LOG-20260515092904` left in DB per "leave all 3 in place" direction (kept as before/after evidence; cleaned during the eventual audit pass).
 
 **Repro:** Pick a JC with QC-typed ops (e.g., IN-JC-00002 Op 6 DIR). In `/op-entry`, click the QC op row, enter any qty, click "Submit completion". The submit succeeds even though the op is `op_type='qc'`.
 
@@ -55,7 +56,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (Resume Checklist #1 step 7a)
 - **Severity:** P2 (cascade code is unit-tested via `sales-cascade.test.ts`; browser-level e2e against migrated data is blocked)
-- **Status:** [ ] open (workaround: seeded synthetic JC for browser smoke today)
+- **Status:** [~] Partial — QC submit flow shipped 2026-05-15 (T-040d per ADR-025) writes `log_type='qc'` and triggers `tryCascadeJcComplete` like `submitOpLog` does. New service test "cascade fires when QC log brings the JC to complete" proves the QC path drives the cascade end-to-end. **Still gated on the outsource receive flow** for IN-JC-00002 op 7 (COATING) — once that lands, the migrated JC can drive cascade end-to-end. Browser-smoke gated on user (after T-040d ships, navigate to `/op-entry?jc=IN-JC-00003` and submit QC against ops 1/2 to clear the `qc_pending` state).
 
 **Repro:** The only migrated JCs linked to SO lines are IN-JC-00002 (→ SO-436 line 6) and IN-JC-00003 (→ SO-436 line 4). Neither can be driven to `v_jc_status.computed_status='complete'` via current UI flows:
 

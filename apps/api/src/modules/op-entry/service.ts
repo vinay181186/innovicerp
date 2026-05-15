@@ -38,6 +38,7 @@ import type {
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
+  SubmitQcLogInput,
 } from './schema';
 
 const requireCompany = (user: AuthContext): string => {
@@ -260,6 +261,14 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
         'This is an outsource operation; use the procurement flow, not Op Entry',
       );
     }
+    // T-040d / ISSUE-001 — production-complete logs are not valid against QC ops.
+    // QC ops use POST /op-entry/qc-log which writes log_type='qc' with split
+    // accept/reject qty.
+    if (op.opType === 'qc') {
+      throw new ValidationError(
+        'This is a QC operation; use the QC inspection flow (POST /op-entry/qc-log)',
+      );
+    }
 
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.computedStatus === 'qc_pending') {
@@ -352,6 +361,174 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
           entity: 'Op',
           detail: `${meta.code} Op #${op.opSeq} — ${input.qty} pcs${operatorPart}`,
           refId: meta.code,
+        },
+        companyId,
+        user,
+      );
+    }
+
+    return {
+      id: row.id,
+      jcOpId: row.jcOpId,
+      logNo: row.logNo,
+      logType: row.logType,
+      logDate: row.logDate,
+      shift: row.shift,
+      qty: row.qty,
+      rejectQty: row.rejectQty,
+      operatorId: row.operatorId,
+      operatorName: row.operatorName,
+      startTime: row.startTime,
+      remarks: row.remarks,
+      createdAt:
+        row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+      createdBy: row.createdBy,
+    } as OpLog;
+  });
+}
+
+// QC inspection submit (T-040d per ADR-025). Mirrors legacy submitQcLog
+// at HTML L3893-3957. Writes log_type='qc' with qty (accepted) + reject_qty
+// against a qc-bearing op (op_type='qc' OR qc_required=true).
+//
+// Side effects (same tx):
+//   - jc_ops.qc_attended_date = log_date
+//   - jc_ops.qc_call_date backfilled if null (most recent prior op's complete
+//     log date, fallback to log_date itself; mirrors legacy L3909-3913)
+//   - tryCascadeJcComplete after the insert (closes SO/JW line + header if
+//     this QC log brings the JC to v_jc_status.computed_status='complete')
+//   - emitActivityLog action='OP_QC' keyed by JC code
+//
+// NOT done in this slice (deferred follow-ons per ADR-025):
+//   - T-040e: auto-create NC on rejectQty > 0
+//   - T-040f: last-op stock cascade (items.stock_qty + store_transactions)
+//   - QC report file attachment (deferred per ADR-022 — qcDocUploads doc_missing)
+export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): Promise<OpLog> {
+  requireOpEntryRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // Load op + qc_required + qc_call_date in one go (loadJcOp doesn't carry
+    // qcRequired or qcCallDate; rather than bloat its signature, query inline).
+    const opRows = await tx
+      .select({
+        id: jcOps.id,
+        jobCardId: jcOps.jobCardId,
+        opSeq: jcOps.opSeq,
+        opType: jcOps.opType,
+        qcRequired: jcOps.qcRequired,
+        qcCallDate: jcOps.qcCallDate,
+        operation: jcOps.operation,
+      })
+      .from(jcOps)
+      .where(and(eq(jcOps.id, input.jcOpId), eq(jcOps.companyId, companyId)))
+      .limit(1);
+    const op = opRows[0];
+    if (!op) throw new NotFoundError(`Op ${input.jcOpId} not found`);
+
+    const isQcBearing = op.opType === 'qc' || op.qcRequired;
+    if (!isQcBearing) {
+      throw new ValidationError(
+        'This operation does not require QC; use POST /op-entry/op-log for production logs',
+      );
+    }
+
+    // qc_pending lives in v_jc_op_status — same view that drives the UI.
+    const pendingRows = await tx.execute(sql`
+      SELECT qc_pending FROM public.v_jc_op_status WHERE jc_op_id = ${input.jcOpId}::uuid
+    `);
+    const qcPending = Number(
+      (pendingRows as unknown as Array<{ qc_pending: number }>)[0]?.qc_pending ?? 0,
+    );
+    const total = input.qty + input.rejectQty;
+    if (qcPending <= 0) {
+      throw new ValidationError('No QC pending on this operation');
+    }
+    if (total > qcPending) {
+      throw new ValidationError(
+        `Total qty ${total} exceeds QC pending ${qcPending} — cannot inspect more than what's pending`,
+      );
+    }
+
+    // Backfill qc_call_date if null. Legacy L3909-3913: most recent prior op's
+    // complete log date, fallback to today's log_date.
+    let resolvedCallDate: string = op.qcCallDate ?? input.logDate;
+    if (!op.qcCallDate) {
+      const priorRows = await tx.execute(sql`
+        SELECT l.log_date::text AS log_date
+        FROM public.op_log l
+        JOIN public.jc_ops o ON o.id = l.jc_op_id
+        WHERE o.job_card_id = ${op.jobCardId}::uuid
+          AND o.op_seq < ${op.opSeq}
+          AND l.log_type = 'complete'
+        ORDER BY l.log_date DESC
+        LIMIT 1
+      `);
+      const priorDate = (priorRows as unknown as Array<{ log_date: string }>)[0]?.log_date;
+      if (priorDate) resolvedCallDate = priorDate;
+    }
+
+    // Update jc_ops dates. Skip the call-date column when it was already set
+    // so we don't churn updated_at on every QC log.
+    if (op.qcCallDate) {
+      await tx
+        .update(jcOps)
+        .set({ qcAttendedDate: input.logDate, updatedBy: user.id })
+        .where(eq(jcOps.id, input.jcOpId));
+    } else {
+      await tx
+        .update(jcOps)
+        .set({
+          qcCallDate: resolvedCallDate,
+          qcAttendedDate: input.logDate,
+          updatedBy: user.id,
+        })
+        .where(eq(jcOps.id, input.jcOpId));
+    }
+
+    // Insert the QC log.
+    const inserted = await tx
+      .insert(opLog)
+      .values({
+        companyId,
+        jcOpId: input.jcOpId,
+        logNo: nextLogNo(),
+        logType: 'qc',
+        logDate: input.logDate,
+        shift: input.shift,
+        qty: input.qty,
+        rejectQty: input.rejectQty,
+        operatorId: input.operatorId ?? null,
+        operatorName: input.operatorName ?? null,
+        startTime: null,
+        remarks: input.remarks ?? null,
+        createdBy: user.id,
+      })
+      .returning();
+    const row = inserted[0]!;
+
+    // Cascade: if this QC log brings the JC to complete (last QC op resolved),
+    // close the source SO/JW line + header. Idempotent; no-op for source-less
+    // JCs or already-closed lines.
+    await tryCascadeJcComplete(tx, op.jobCardId, user);
+
+    // Audit emit. Single OP_QC action with both qtys in detail (one log can
+    // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).
+    const jcMeta = await tx
+      .select({ code: jobCards.code })
+      .from(jobCards)
+      .where(eq(jobCards.id, op.jobCardId))
+      .limit(1);
+    const jcCode = jcMeta[0]?.code;
+    if (jcCode) {
+      const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
+      await emitActivityLog(
+        tx,
+        {
+          action: 'OP_QC',
+          entity: 'Op',
+          detail: `${jcCode} Op #${op.opSeq} — ${input.qty} accepted, ${input.rejectQty} rejected${operatorPart}`,
+          refId: jcCode,
         },
         companyId,
         user,

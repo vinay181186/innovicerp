@@ -4,15 +4,16 @@ import {
   type Shift,
   type StartOpInput,
   type SubmitOpLogInput,
+  type SubmitQcLogInput,
 } from '@innovic/shared';
-import { Loader2, Play, Square } from 'lucide-react';
+import { Loader2, Play, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useStartOp, useStopOp, useSubmitOpLog } from '../api';
+import { useStartOp, useStopOp, useSubmitOpLog, useSubmitQcLog } from '../api';
 
 interface Props {
   op: JcOpEnriched;
@@ -32,6 +33,7 @@ function nowHHMM(): string {
 
 export function OpEntryForm({ op, activeRunningId }: Props) {
   const submit = useSubmitOpLog();
+  const submitQc = useSubmitQcLog();
   const start = useStartOp();
   const stop = useStopOp();
 
@@ -52,15 +54,28 @@ export function OpEntryForm({ op, activeRunningId }: Props) {
   }, [op.id]);
 
   const isOutsource = op.opType === 'outsource';
+  // T-040d: QC-bearing op = dedicated QC op OR process op with qc_required.
+  // The form swaps to the QC inspection sub-form (Accepted Qty + Reject Qty +
+  // Submit QC button) when QC is the relevant write path here. Closes ISSUE-001
+  // from the UI side; the server-side guard in submitOpLog catches it too.
+  const isQcOp = op.opType === 'qc';
+  const isQcBearing = isQcOp || op.qcRequired;
+  const noQcPending = isQcBearing && op.qcPending <= 0;
   const isQcPending = op.computedStatus === 'qc_pending';
   const noAvailable = op.available <= 0;
+  // Blocked reasons differ between the production path and the QC path.
+  // Production path: outsource (use procurement) / qc_pending (wait for QC)
+  //                  / no available qty.
+  // QC path: dedicated QC op with no qc_pending (already inspected fully).
   const blockedReason = isOutsource
     ? 'This is an outsource operation; use the Procurement flow.'
-    : isQcPending
-      ? 'Waiting on QC clearance — go to QC dashboard.'
-      : noAvailable
-        ? 'No qty available — start the previous op first.'
-        : null;
+    : isQcOp && noQcPending
+      ? 'No QC pending on this operation — already inspected.'
+      : !isQcOp && isQcPending
+        ? 'Waiting on QC clearance — go to QC dashboard.'
+        : !isQcOp && noAvailable
+          ? 'No qty available — start the previous op first.'
+          : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,6 +102,44 @@ export function OpEntryForm({ op, activeRunningId }: Props) {
       setRemarks('');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Submit failed');
+    }
+  }
+
+  // T-040d QC submit. Differs from handleSubmit: qty can be 0, rejectQty can
+  // be 0, but at least one must be > 0. Both are bounded by qcPending.
+  async function handleSubmitQc(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMessage(null);
+    const qtyNum = Number(qty || '0');
+    const rejNum = Number(rejectQty || '0');
+    if (!Number.isInteger(qtyNum) || qtyNum < 0 || !Number.isInteger(rejNum) || rejNum < 0) {
+      setErrorMessage('Accepted and reject qty must be non-negative integers.');
+      return;
+    }
+    if (qtyNum + rejNum <= 0) {
+      setErrorMessage('Enter accepted qty and/or reject qty.');
+      return;
+    }
+    if (qtyNum + rejNum > op.qcPending) {
+      setErrorMessage(`Total qty ${qtyNum + rejNum} exceeds QC pending ${op.qcPending}.`);
+      return;
+    }
+    const input: SubmitQcLogInput = {
+      jcOpId: op.id,
+      qty: qtyNum,
+      rejectQty: rejNum,
+      logDate,
+      shift,
+      ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
+      ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+    };
+    try {
+      await submitQc.mutateAsync(input);
+      setQty('');
+      setRejectQty('0');
+      setRemarks('');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'QC submit failed');
     }
   }
 
@@ -117,6 +170,124 @@ export function OpEntryForm({ op, activeRunningId }: Props) {
     }
   }
 
+  // Shared common fields (Date, Shift, Operator, Remarks) — used by both forms.
+  const commonFields = (
+    <>
+      <div className="space-y-1">
+        <Label htmlFor="opf-date">Date</Label>
+        <Input
+          id="opf-date"
+          type="date"
+          value={logDate}
+          onChange={(e) => setLogDate(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="opf-shift">Shift</Label>
+        <Select id="opf-shift" value={shift} onChange={(e) => setShift(e.target.value as Shift)}>
+          {SHIFTS.map((s) => (
+            <option key={s} value={s}>
+              {s === 'day' ? 'Day' : 'Night'}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </>
+  );
+
+  const operatorAndRemarks = (
+    <>
+      <div className="space-y-1 md:col-span-2">
+        <Label htmlFor="opf-op">{isQcBearing ? 'Inspector' : 'Operator'}</Label>
+        <Input
+          id="opf-op"
+          value={operatorName}
+          onChange={(e) => setOperatorName(e.target.value)}
+          placeholder={isQcBearing ? 'QC inspector name' : 'Operator name'}
+        />
+      </div>
+      <div className="space-y-1 md:col-span-2">
+        <Label htmlFor="opf-rem">Remarks</Label>
+        <Textarea
+          id="opf-rem"
+          rows={1}
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Optional notes…"
+        />
+      </div>
+    </>
+  );
+
+  // T-040d: render the QC sub-form when the selected op is qc-bearing.
+  // Production form is hidden entirely — closes ISSUE-001 from the UI side.
+  if (isQcBearing) {
+    return (
+      <form onSubmit={handleSubmitQc} className="space-y-4 rounded-md border bg-card p-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">QC inspection</h3>
+          <span className="text-xs text-muted-foreground">
+            Op {op.opSeq} · <span className="font-mono">{op.operation}</span> · QC pending:{' '}
+            <span className="font-mono">{op.qcPending}</span>
+          </span>
+        </div>
+
+        {blockedReason ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+            {blockedReason}
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {commonFields}
+          <div className="space-y-1">
+            <Label htmlFor="opf-qty">Accepted qty</Label>
+            <Input
+              id="opf-qty"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={op.qcPending}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              placeholder="0"
+              disabled={blockedReason !== null}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="opf-rej">Reject qty</Label>
+            <Input
+              id="opf-rej"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={op.qcPending}
+              value={rejectQty}
+              onChange={(e) => setRejectQty(e.target.value)}
+              placeholder="0"
+              disabled={blockedReason !== null}
+            />
+          </div>
+          {operatorAndRemarks}
+        </div>
+
+        {errorMessage ? (
+          <p className="text-sm text-destructive" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={blockedReason !== null || submitQc.isPending}>
+            {submitQc.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck />}
+            Submit QC inspection
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  // Production-complete form for non-QC ops (process / outsource).
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-md border bg-card p-4">
       <div className="flex items-baseline justify-between gap-2">
@@ -133,25 +304,7 @@ export function OpEntryForm({ op, activeRunningId }: Props) {
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="space-y-1">
-          <Label htmlFor="opf-date">Date</Label>
-          <Input
-            id="opf-date"
-            type="date"
-            value={logDate}
-            onChange={(e) => setLogDate(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="opf-shift">Shift</Label>
-          <Select id="opf-shift" value={shift} onChange={(e) => setShift(e.target.value as Shift)}>
-            {SHIFTS.map((s) => (
-              <option key={s} value={s}>
-                {s === 'day' ? 'Day' : 'Night'}
-              </option>
-            ))}
-          </Select>
-        </div>
+        {commonFields}
         <div className="space-y-1">
           <Label htmlFor="opf-qty">Qty done</Label>
           <Input
@@ -178,25 +331,7 @@ export function OpEntryForm({ op, activeRunningId }: Props) {
             placeholder="0"
           />
         </div>
-        <div className="space-y-1 md:col-span-2">
-          <Label htmlFor="opf-op">Operator</Label>
-          <Input
-            id="opf-op"
-            value={operatorName}
-            onChange={(e) => setOperatorName(e.target.value)}
-            placeholder="Operator name"
-          />
-        </div>
-        <div className="space-y-1 md:col-span-2">
-          <Label htmlFor="opf-rem">Remarks</Label>
-          <Textarea
-            id="opf-rem"
-            rows={1}
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Optional notes…"
-          />
-        </div>
+        {operatorAndRemarks}
       </div>
 
       {errorMessage ? (

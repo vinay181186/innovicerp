@@ -1,4 +1,4 @@
-import { startOpInputSchema } from '@innovic/shared';
+import { startOpInputSchema, submitQcLogInputSchema } from '@innovic/shared';
 import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
@@ -435,5 +435,453 @@ describe('op-entry service', () => {
     await db.delete(runningOps).where(eq(runningOps.jcOpId, auditOpId));
     await db.delete(jcOps).where(eq(jcOps.id, auditOpId));
     await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+});
+
+// ─── T-040d QC inspection submit (per ADR-025) ────────────────────────────
+describe('op-entry submitQcLog (T-040d)', () => {
+  // Each test creates its own QC op + clean op_log to keep state isolated.
+  // Cleanup in afterEach removes the QC op + any complete logs we added on
+  // the fixture process op. The base fixture (op_seq=1, process) is left in
+  // place and re-used across tests via afterEach reset.
+  let qcOpId: string | null = null;
+
+  async function ensureFreshFixture(qcRequiredOnFixture = false): Promise<string> {
+    // Reset op_log + running_ops on the base process op so prior tests'
+    // state doesn't bleed in. Then add a fresh op_seq=2 QC op.
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(runningOps).where(eq(runningOps.jcOpId, testJcOpId));
+    if (qcRequiredOnFixture) {
+      await db
+        .update(jcOps)
+        .set({ qcRequired: true, updatedBy: admin.id })
+        .where(eq(jcOps.id, testJcOpId));
+    } else {
+      await db
+        .update(jcOps)
+        .set({ qcRequired: false, updatedBy: admin.id })
+        .where(eq(jcOps.id, testJcOpId));
+    }
+
+    // Drop any leftover op_seq=2 from a prior test that crashed before cleanup.
+    const leftovers = await db
+      .select({ id: jcOps.id })
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, testJcId), eq(jcOps.opSeq, 2)));
+    for (const l of leftovers) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, l.id));
+      await db.delete(jcOps).where(eq(jcOps.id, l.id));
+    }
+
+    const inserted = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: testJcId,
+        opSeq: 2,
+        operation: 'inspect',
+        opType: 'qc',
+        cycleTimeMin: '0.00',
+        qcRequired: true,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const id = inserted[0]!.id;
+    qcOpId = id;
+    return id;
+  }
+
+  afterAll(async () => {
+    // Clean any QC-test-specific audit rows; teardownFixture wipes by JC code
+    // already, but be belt-and-suspenders on activity_log since OP_QC was new
+    // in this slice.
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+
+  it('happy path: writes log_type=qc, sets qc_attended_date, backfills qc_call_date, emits OP_QC audit row', async () => {
+    const id = await ensureFreshFixture();
+    // Drive prior op (op_seq=1) to completion so the QC op has input qty.
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    // Now QC op (op_seq=2) has input_avail=10 and qc_pending=10.
+
+    const row = await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 8,
+        rejectQty: 2,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+    expect(row.logType).toBe('qc');
+    expect(row.qty).toBe(8);
+    expect(row.rejectQty).toBe(2);
+
+    const opAfter = await db
+      .select({ qcAttendedDate: jcOps.qcAttendedDate, qcCallDate: jcOps.qcCallDate })
+      .from(jcOps)
+      .where(eq(jcOps.id, id))
+      .limit(1);
+    expect(opAfter[0]?.qcAttendedDate).toBe('2026-05-03');
+    // submitOpLog above already set qcCallDate when op_seq=1 finished. So the
+    // backfill path inside submitQcLog should be a no-op (already set).
+    expect(opAfter[0]?.qcCallDate).toBe('2026-05-02');
+
+    // Audit row.
+    const audit = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(eq(activityLog.action, 'OP_QC'), eq(activityLog.companyId, admin.companyId!)),
+      );
+    const myRow = audit.find((r) => r.refId === testJcCode);
+    expect(myRow).toBeDefined();
+    expect(myRow?.entity).toBe('Op');
+    expect(myRow?.detail).toContain('Op #2');
+    expect(myRow?.detail).toContain('8 accepted');
+    expect(myRow?.detail).toContain('2 rejected');
+    expect(myRow?.detail).toContain('QC-Insp');
+
+    // Cleanup audit so the next test sees a clean slate.
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
+  it('backfills qc_call_date from prior op completion log when null', async () => {
+    const id = await ensureFreshFixture();
+    // Manually clear qcCallDate that submitOpLog would have set. We want to
+    // exercise the submitQcLog backfill query directly. To do that, drive
+    // prior op to completion (which sets qc_call_date), then null it back.
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await db.update(jcOps).set({ qcCallDate: null }).where(eq(jcOps.id, id));
+
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-04',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+
+    const opAfter = await db
+      .select({ qcCallDate: jcOps.qcCallDate })
+      .from(jcOps)
+      .where(eq(jcOps.id, id))
+      .limit(1);
+    // Backfilled from the prior op's complete log date (2026-05-02), NOT the
+    // QC log_date (2026-05-04).
+    expect(opAfter[0]?.qcCallDate).toBe('2026-05-02');
+
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+
+  it('rejects when op is not qc-bearing (process op without qc_required)', async () => {
+    // The base fixture op_seq=1 is process+qc_required=false. Calling submitQcLog
+    // against it should throw.
+    await expect(
+      service.submitQcLog(
+        {
+          jcOpId: testJcOpId,
+          qty: 1,
+          rejectQty: 0,
+          logDate: '2026-05-02',
+          shift: 'day',
+          operatorName: 'QC-Insp',
+        },
+        admin,
+      ),
+    ).rejects.toThrow(ValidationError);
+  });
+
+  it('rejects when total qty exceeds qc_pending', async () => {
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    // qc_pending = 10 now. Try to inspect 11.
+    await expect(
+      service.submitQcLog(
+        {
+          jcOpId: id,
+          qty: 6,
+          rejectQty: 5,
+          logDate: '2026-05-03',
+          shift: 'day',
+          operatorName: 'QC-Insp',
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/exceeds QC pending/);
+
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+
+  it('rejects when no QC pending (prior op not completed yet)', async () => {
+    const id = await ensureFreshFixture();
+    // Don't drive op_seq=1 → qc_pending stays 0 on op_seq=2.
+    await expect(
+      service.submitQcLog(
+        {
+          jcOpId: id,
+          qty: 1,
+          rejectQty: 0,
+          logDate: '2026-05-03',
+          shift: 'day',
+          operatorName: 'QC-Insp',
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/No QC pending/);
+
+    if (qcOpId) {
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
+  it('Zod refine: rejects when both qty and rejectQty are 0', () => {
+    const r = submitQcLogInputSchema.safeParse({
+      jcOpId: '00000000-0000-0000-0000-000000000000',
+      qty: 0,
+      rejectQty: 0,
+      logDate: '2026-05-02',
+      shift: 'day',
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]?.message).toMatch(/accepted qty.*reject qty/i);
+    }
+  });
+
+  it('ISSUE-001 guard: submitOpLog rejects log against op_type=qc', async () => {
+    const id = await ensureFreshFixture();
+    await expect(
+      service.submitOpLog(
+        {
+          jcOpId: id,
+          qty: 1,
+          rejectQty: 0,
+          logDate: '2026-05-02',
+          shift: 'day',
+          operatorName: 'TestOp',
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/QC operation/);
+
+    if (qcOpId) {
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
+  it('cascade fires when QC log brings the JC to complete', async () => {
+    // Brand-new JC + 2 ops (process → qc) linked to a SO line so cascade has
+    // somewhere to land. Mirrors the _seed_cascade.mjs pattern.
+    const cascItem = await db
+      .insert(items)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}ITEM-QC`,
+        name: 'QC Cascade Test Item',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const itemId = cascItem[0]!.id;
+
+    // Create SO + line via direct insert (skip service to keep the test focused).
+    const { salesOrders, salesOrderLines } = await import('../../db/schema');
+    const so = await db
+      .insert(salesOrders)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}SO-QC-CASCADE`,
+        soDate: '2026-05-02',
+        customerName: 'QC Cascade Customer',
+        type: 'component_manufacturing',
+        status: 'open',
+        gstPercent: '18.00',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const soLine = await db
+      .insert(salesOrderLines)
+      .values({
+        companyId: admin.companyId!,
+        salesOrderId: so[0]!.id,
+        lineNo: 1,
+        itemId,
+        partName: 'QC cascade part',
+        uom: 'NOS',
+        orderQty: 5,
+        rate: '0',
+        status: 'open',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const jc = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}JC-QC-CASC`,
+        jcDate: '2026-05-02',
+        itemId,
+        orderQty: 5,
+        priority: 'normal',
+        sourceSoLineId: soLine[0]!.id,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const procOp = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: jc[0]!.id,
+        opSeq: 1,
+        operation: 'turn',
+        opType: 'process',
+        cycleTimeMin: '0.00',
+        qcRequired: false,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const qcOp = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: jc[0]!.id,
+        opSeq: 2,
+        operation: 'final inspect',
+        opType: 'qc',
+        cycleTimeMin: '0.00',
+        qcRequired: true,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+
+    // Drive prior op to complete, then submit QC inspecting all 5 pcs accepted.
+    await service.submitOpLog(
+      {
+        jcOpId: procOp[0]!.id,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await service.submitQcLog(
+      {
+        jcOpId: qcOp[0]!.id,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+
+    // Cascade should have closed the SO line + header.
+    const lineAfter = await db
+      .select({ status: salesOrderLines.status })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.id, soLine[0]!.id))
+      .limit(1);
+    expect(lineAfter[0]?.status).toBe('closed');
+    const soAfter = await db
+      .select({ status: salesOrders.status })
+      .from(salesOrders)
+      .where(eq(salesOrders.id, so[0]!.id))
+      .limit(1);
+    expect(soAfter[0]?.status).toBe('closed');
+
+    // Cleanup
+    await db.delete(opLog).where(eq(opLog.jcOpId, procOp[0]!.id));
+    await db.delete(opLog).where(eq(opLog.jcOpId, qcOp[0]!.id));
+    await db.delete(jcOps).where(eq(jcOps.id, procOp[0]!.id));
+    await db.delete(jcOps).where(eq(jcOps.id, qcOp[0]!.id));
+    await db.delete(jobCards).where(eq(jobCards.id, jc[0]!.id));
+    await db.delete(salesOrderLines).where(eq(salesOrderLines.id, soLine[0]!.id));
+    await db.delete(salesOrders).where(eq(salesOrders.id, so[0]!.id));
+    await db.delete(items).where(eq(items.id, itemId));
+    await db
+      .delete(activityLog)
+      .where(like(activityLog.refId, `${TEST_PREFIX}JC-QC-CASC%`));
+    await db
+      .delete(activityLog)
+      .where(like(activityLog.refId, `${TEST_PREFIX}SO-QC-CASCADE%`));
   });
 });

@@ -596,6 +596,12 @@ RLS:
 - `op_log_qc_insert` — `qc` role can insert with `log_type = 'qc'`
 - No update/delete policies — table is append-only by RLS as well as by convention
 
+API write paths (T-040d, 2026-05-15):
+
+- `log_type='start'` ← `POST /op-entry/start` (also creates a `running_ops` row)
+- `log_type='complete'` ← `POST /op-entry/op-log` (production complete; rejects `op_type='qc'` ops per ISSUE-001 fix)
+- `log_type='qc'` ← `POST /op-entry/qc-log` (QC inspection; only valid against qc-bearing ops, sets `jc_ops.qc_attended_date` + backfills `qc_call_date` if null, fires SO/JW close cascade)
+
 Realtime: enable on this table; client subscribes filtered by `(company_id = X and jc_op_id = Y)` for the Op Entry screen.
 
 ### `running_ops`

@@ -10,6 +10,7 @@ export {
   runningOpSchema,
   startOpInputSchema,
   submitOpLogInputSchema,
+  submitQcLogInputSchema,
 } from '@innovic/shared';
 export type {
   ComputedJcOpStatus,
@@ -21,4 +22,5 @@ export type {
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
+  SubmitQcLogInput,
 } from '@innovic/shared';

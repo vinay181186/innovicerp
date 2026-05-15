@@ -7,6 +7,7 @@ import {
   listRunningOpsQuerySchema,
   startOpInputSchema,
   submitOpLogInputSchema,
+  submitQcLogInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -35,6 +36,14 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const body = submitOpLogInputSchema.parse(req.body);
     const row = await service.submitOpLog(body, req.user);
+    reply.code(201);
+    return row;
+  });
+
+  app.post('/op-entry/qc-log', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = submitQcLogInputSchema.parse(req.body);
+    const row = await service.submitQcLog(body, req.user);
     reply.code(201);
     return row;
   });

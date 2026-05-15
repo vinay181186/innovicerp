@@ -981,6 +981,63 @@ Phase B:
 - [ ] Subscription service + routes + web toggle UI
 - [ ] RUNBOOK steps: provision Redis (Railway add-on), get Resend key, set env vars, verify domain, enable
 
+## ADR-025: T-040d QC inspection submit MVP — extend op-entry, no new tables, no new module folder
+
+**Date:** 2026-05-15
+**Status:** Accepted
+
+### Context
+
+Two issues from `docs/ISSUES.md` block real cascade verification on migrated data:
+
+- **ISSUE-001:** `op-entry/submitOpLog` has no guard against `op_type='qc'`; a user submitting against a QC op writes a phantom `log_type='complete'` row that corrupts `v_jc_op_status`. Today's smoke wrote one (`LOG-20260515092904`).
+- **ISSUE-003:** No API path writes `log_type='qc'` rows. `IN-JC-00002` ops 8/9 + `IN-JC-00003` ops 1/2 sit in `qc_pending` indefinitely; the cascade can't reach `complete` on either migrated JC.
+
+T-040c (per-inspection record table + CAPA + file uploads) is deferred until UX requirements drive the schema. But the underlying `op_log` table already supports `'qc'` log_type, accepted/reject qty columns, and the `v_jc_op_status` view already rolls QC logs into `qc_accepted_qty` / `qc_rejected_qty`. We can add the writable QC path without any schema change, closing both issues immediately.
+
+### Decision
+
+**Extend `op-entry` module. Do not create a separate `qc-entry` module folder. No new tables.**
+
+Concretely:
+
+1. **New service function** `submitQcLog(input, user)` in `apps/api/src/modules/op-entry/service.ts` next to `submitOpLog`.
+2. **Defensive guard** added to existing `submitOpLog` — throws `ValidationError` when `op.opType === 'qc'`. Closes ISSUE-001 server-side.
+3. **New route** `POST /op-entry/qc-log` in the same module's `routes.ts`.
+4. **New shared input schema** `submitQcLogInputSchema` in `packages/shared/src/schemas/op-entry.ts` — `qty` (accepted, ≥0), `rejectQty` (≥0), `logDate`, `shift`, `operatorName?`, `remarks?`. Refine: `qty + rejectQty > 0`.
+5. **Validation** mirrors legacy `submitQcLog` handler at HTML L3893-3957:
+   - Op must be qc-bearing (`op_type='qc'` OR `qc_required=true`)
+   - `qty + rejectQty` must not exceed `v_jc_op_status.qc_pending`
+   - At least one of `qty` / `rejectQty` must be > 0
+6. **Side effects** (in same tx as the insert):
+   - Insert `op_log` row with `log_type='qc'`
+   - Set `jc_ops.qc_attended_date` = log date
+   - Backfill `jc_ops.qc_call_date` if null — value = most recent prior op's `complete` log date, fallback to log date itself (mirrors legacy L3909-3913)
+   - `tryCascadeJcComplete()` — same hook `submitOpLog` uses, fires SO/JW close cascade if this QC log brings the JC to `v_jc_status.computed_status='complete'`
+   - Audit emit: action `OP_QC`, entity `Op`, refId = JC code, detail = `<jcCode> Op #<seq> — <accepted> accepted, <rejected> rejected by <operator>`
+7. **Web form swap** in `apps/web/src/modules/op-entry/components/op-entry-form.tsx`: when selected op is qc-bearing, render the QC sub-form (Accepted Qty + Reject Qty + Submit QC button) instead of the production-complete form. Hides the production form entirely on QC ops — closes ISSUE-001 from the UI side too.
+
+### Alternatives Considered
+
+- **Separate `qc-entry` module folder** — rejected: duplicates 80% of op-entry's plumbing (loadJcOp, loadAvailability, audit emitter, cascade hook). The legacy spec also keeps the QC submit logically next to the JC's op flow; no cross-module benefit. CLAUDE.md §4 hard rule about "one folder per ERP module" doesn't apply here — this isn't a new domain entity, it's a second write path against the existing op_log table.
+- **Wait for full T-040c (per-inspection record table + CAPA + file uploads)** — rejected: blocks ISSUE-003 indefinitely; T-040c needs UX requirements that don't exist yet; the underlying schema already supports the QC log path so MVP can ship now.
+- **Auto-create NC on `rejectQty > 0` in this slice** — rejected from MVP: legacy does this (HTML L3946 `_autoCreateNC()`), but it touches the nc-register module's create signature + adds a 5th cross-module call inside the same tx. Surface as a follow-on slice (T-040e) and ISSUE entry; nc-register's `createNcRegister` service already exists.
+- **Stock cascade on last-op QC accept in this slice** — rejected from MVP: legacy adds qty to `items.stock_qty` + writes `store_transactions` ledger row when last op QC passes (HTML L3923-3940). Touches 2 more modules; cleaner as a separate slice (T-040f).
+- **Split audit action into `OP_QC_ACCEPT` / `OP_QC_REJECT`** — rejected: a single QC log can have BOTH accept and reject qty (legacy allows it; the validation only requires one > 0). Single `OP_QC` action with detail string capturing both numbers is the right grain.
+
+### Consequences
+
+- **Positive:** Closes ISSUE-001 (both server + UI guards) and majority of ISSUE-003 (cascade can now drive through QC ops on migrated data once user navigates to IN-JC-00002 ops 8/9). No schema migration. Reuses existing audit emitter + cascade plumbing. Smaller blast radius than a new module.
+- **Negative:** No NC auto-create yet (manual step from QC dashboard, but that doesn't exist yet either — see follow-on). No stock cascade. No QC report file attachment (deferred per ADR-022). UX is "extend the op-entry form" rather than a dedicated /qc-entry route — fine for shop-floor but a QC engineer dashboard would be a future slice.
+- **Risks:** The `qc_pending` calc lives in the view; changing the validation to read from anywhere else risks drift with `v_jc_op_status`. Mitigation: same pattern as `submitOpLog` (also reads `available` from the view, never recomputes).
+
+### Follow-on slices to schedule
+
+- **T-040e** — auto-create NC on `rejectQty > 0` (legacy `_autoCreateNC`); calls `nc-register.createNcRegister` inside the QC submit tx
+- **T-040f** — last-op stock cascade (`items.stock_qty` += qty + `store_transactions` ledger row) when QC accepts the last op of a JC
+- **T-040g** — QC engineer dashboard (legacy renderQCEngineerDash at HTML L3963 — list of qc_pending ops + monthly perf + response times)
+- **T-040c** (still deferred) — per-inspection record table + CAPA + file uploads, gated on UX
+
 ---
 
 ## Pending Decisions

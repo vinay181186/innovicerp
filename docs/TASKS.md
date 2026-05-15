@@ -73,7 +73,32 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-_Resume Checklist #1 (T-030 / T-031 / T-032 / T-033) DONE 2026-05-15. Cascade verified end-to-end via synthetic `TEST-CASCADE-001` fixture (real op-entry submit flow → activity_log shows OP_COMPLETE → JC_COMPLETE → SO_LINE_CLOSED → SO_CLOSED; SO + line both `closed`); migrated-JC cascade gated on QC inspection + outsource receive flows per ISSUE-003. **Project mode is now "build first, audit from `docs/ISSUES.md` later" per user direction 2026-05-15.** Next code work pick is user's call — first candidate is the Phase 6 QC inspection submit flow since it unblocks ISSUE-001 + ISSUE-003 together. Parallel tracks: T-034 sales cutover (calendar), T-041d ops half (Redis + Resend + flag flip)._
+**ID:** T-040d
+**Title:** Phase 6 — QC inspection submit MVP (extend op-entry, no new tables)
+**Status:** [x] Code complete 2026-05-15 (ADR-025). 8 new tests green; api 21/21 in op-entry suite; workspace typecheck + lint clean; web build clean (2284 modules, 4.09s, index 923 KB raw / 121.82 KB gzip). Browser smoke gated on user.
+
+**Acceptance:**
+
+- [x] `submitQcLogInputSchema` in `packages/shared/src/schemas/op-entry.ts` (qty + rejectQty + logDate + shift + operatorName? + remarks?; refine: `qty + rejectQty > 0`)
+- [x] `submitQcLog()` service in `apps/api/src/modules/op-entry/service.ts` — validates qc-bearing op + qc_pending bound, inserts op_log with `log_type='qc'`, sets `qc_attended_date`, backfills `qc_call_date` if null, calls `tryCascadeJcComplete`, emits `OP_QC` audit row
+- [x] Defensive guard added to `submitOpLog()` — throws ValidationError when `op_type='qc'` (closes ISSUE-001 server side)
+- [x] `POST /op-entry/qc-log` route
+- [x] 8 service tests covering happy path + qc_call_date backfill from prior op + 4 validation failures (not qc-bearing / exceeds qc_pending / no qc pending / Zod refine zero+zero) + ISSUE-001 guard + cascade fire
+- [x] `useSubmitQcLog()` hook + form swap in `op-entry-form.tsx` rendering QC sub-form when op is qc-bearing (closes ISSUE-001 UI side)
+- [x] api typecheck + lint + tests green; web build clean
+- [x] ISSUE-001 + ISSUE-003 entries in `docs/ISSUES.md` updated (001 closed, 003 partial pending outsource receive flow)
+
+**Browser smoke (when user is ready):**
+
+- Sign in, open `/op-entry?jc=IN-JC-00003`. Op 1 MIR (QC) is `qc_pending` with `qc_pending=30`. Form should render the **QC inspection** sub-form (Accepted Qty + Reject Qty fields, "Submit QC inspection" button). Submit qty=30 reject=0 → Op 1 should flip to Complete + Op 2 (also QC) input becomes available.
+- For IN-JC-00002, Op 6 DIR (QC) currently shows DONE=55 (the phantom from today's smoke per ISSUE-001) + QC pending=0 (since legacy + phantom logs cover it). Form should show "No QC pending — already inspected." blocked-reason banner.
+- Pick a process op without qc_required (e.g. test fixture or any process op): should still render the production "Submit completion" form; defensive guard would catch a server-side QC submit attempt anyway.
+
+**Follow-on slices (deferred per ADR-025):**
+
+- T-040e — Auto-create NC on `rejectQty > 0` (legacy `_autoCreateNC`); calls `nc-register.createNcRegister` inside the QC submit tx
+- T-040f — Last-op stock cascade (`items.stock_qty` += qty + `store_transactions` ledger row) when QC accepts the last op
+- T-040g — QC engineer dashboard (legacy renderQCEngineerDash L3963)
 
 ## Closed — T-041d slice 6 + 7 (Phase B push delivery)
 
@@ -390,8 +415,15 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
 | T-038 | Migrate `qc_processes` master (5 rows) — reframed from "qc_inspections" per ADR-016 since qcAssignments + qcDocUploads are doc_missing | [x] Done (2026-05-03) |
 | T-039 | Migrate `nc_register` (3 rows), `delivery_challans` (4 rows from `challans`); legacy `dispatch_log` doc_missing                        | [x] Done (2026-05-04) |
-| T-040 | Build QC inspection workflow (per-inspection records table + file uploads to Supabase Storage)                                         | [ ]                   |
-| T-041 | Cutover QC and dispatch teams                                                                                                          | [ ]                   |
+| T-040  | Build QC inspection workflow (per-inspection records table + file uploads to Supabase Storage)                                          | [~] In progress, sliced |
+| T-040a | Phase 6 — Delivery challan migration + read-only module                                                                                 | [x] Done (2026-05-04) |
+| T-040b | Phase 6 — NC disposition workflow + service-layer cascades                                                                              | [x] Done (2026-05-04) |
+| T-040c | Phase 6 — Per-inspection record table + CAPA + file uploads (UX-driven)                                                                 | [ ] Deferred — needs UX requirements |
+| T-040d | Phase 6 — QC inspection submit MVP (extend op-entry, no new tables) per ADR-025; closes ISSUE-001 + most of ISSUE-003                  | [x] Done (2026-05-15) |
+| T-040e | Phase 6 — Auto-create NC on QC reject (legacy `_autoCreateNC`); follow-on to T-040d                                                     | [ ]                   |
+| T-040f | Phase 6 — Last-op stock cascade on QC accept (`items.stock_qty` + `store_transactions` ledger row); follow-on to T-040d                 | [ ]                   |
+| T-040g | Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash L3963)                                                                     | [ ]                   |
+| T-041  | Cutover QC and dispatch teams                                                                                                           | [ ]                   |
 
 ## Phase 7 Backlog — Reports & Dashboards (Week 10)
 
