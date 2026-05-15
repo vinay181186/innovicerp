@@ -96,7 +96,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 **Follow-on slices (deferred per ADR-025):**
 
-- T-040e — Auto-create NC on `rejectQty > 0` (legacy `_autoCreateNC`); calls `nc-register.createNcRegister` inside the QC submit tx
+- ~~T-040e — Auto-create NC on `rejectQty > 0`~~ **Done 2026-05-15** — `autoCreateNcFromQcReject` cascade in `nc-register/cascades.ts` (mirrors T-040b pattern; same-tx insert, emits CREATE NonConformance audit row inline). Code shape `NC-AUTO-<jcCode>-Op<seq>-<HHMMSSmmm>` with collision-retry. 2 new tests (rejectQty=0 no NC; validation failure no orphan NC); happy-path test extended to assert NC shape + audit row. 23/23 op-entry suite + 28/28 nc-register suite green.
 - T-040f — Last-op stock cascade (`items.stock_qty` += qty + `store_transactions` ledger row) when QC accepts the last op
 - T-040g — QC engineer dashboard (legacy renderQCEngineerDash L3963)
 
@@ -420,7 +420,7 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 | T-040b | Phase 6 — NC disposition workflow + service-layer cascades                                                                              | [x] Done (2026-05-04) |
 | T-040c | Phase 6 — Per-inspection record table + CAPA + file uploads (UX-driven)                                                                 | [ ] Deferred — needs UX requirements |
 | T-040d | Phase 6 — QC inspection submit MVP (extend op-entry, no new tables) per ADR-025; closes ISSUE-001 + most of ISSUE-003                  | [x] Done (2026-05-15) |
-| T-040e | Phase 6 — Auto-create NC on QC reject (legacy `_autoCreateNC`); follow-on to T-040d                                                     | [ ]                   |
+| T-040e | Phase 6 — Auto-create NC on QC reject (legacy `_autoCreateNC`); follow-on to T-040d                                                     | [x] Done (2026-05-15) |
 | T-040f | Phase 6 — Last-op stock cascade on QC accept (`items.stock_qty` + `store_transactions` ledger row); follow-on to T-040d                 | [ ]                   |
 | T-040g | Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash L3963)                                                                     | [ ]                   |
 | T-041  | Cutover QC and dispatch teams                                                                                                           | [ ]                   |

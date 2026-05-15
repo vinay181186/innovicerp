@@ -2,7 +2,16 @@ import { startOpInputSchema, submitQcLogInputSchema } from '@innovic/shared';
 import { and, eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, jcOps, jobCards, opLog, runningOps, users } from '../../db/schema';
+import {
+  activityLog,
+  items,
+  jcOps,
+  jobCards,
+  ncRegister,
+  opLog,
+  runningOps,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
 import * as service from './service';
@@ -76,7 +85,11 @@ async function teardownFixture(): Promise<void> {
   // Hard-delete everything in dependency order. Service-role bypasses RLS.
   // Sweep ALL jc_ops on the test JC (covers the extra QC op the T-026 test
   // creates if it crashed before its own cleanup ran).
+  // T-040e: NC rows reference jobCardId without ON DELETE CASCADE, so they
+  // must be deleted BEFORE the JC. Sweep by jobCardId (defensive) and by
+  // auto-generated NC- prefix.
   if (testJcId) {
+    await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     const opsOnJc = await db
       .select({ id: jcOps.id })
       .from(jcOps)
@@ -89,10 +102,13 @@ async function teardownFixture(): Promise<void> {
   }
   if (testJcId) await db.delete(jobCards).where(eq(jobCards.id, testJcId));
   if (testItemId) await db.delete(items).where(eq(items.id, testItemId));
+  // Sweep any NCs left behind from prior crashed runs against this test prefix.
+  await db.delete(ncRegister).where(like(ncRegister.code, `NC-AUTO-${TEST_PREFIX}%`));
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   // Wipe audit-log entries the op-entry emitter wrote for these test JCs.
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `NC-AUTO-${TEST_PREFIX}%`));
 }
 
 beforeAll(async () => {
@@ -559,8 +575,34 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(myRow?.detail).toContain('2 rejected');
     expect(myRow?.detail).toContain('QC-Insp');
 
-    // Cleanup audit so the next test sees a clean slate.
+    // T-040e: rejectQty=2 should have auto-created an NC. Verify shape.
+    const ncs = await db
+      .select()
+      .from(ncRegister)
+      .where(and(eq(ncRegister.jobCardId, testJcId), like(ncRegister.code, 'NC-AUTO-%')));
+    expect(ncs).toHaveLength(1);
+    expect(ncs[0]?.opSeq).toBe(2);
+    expect(ncs[0]?.rejectedQty).toBe('2.00');
+    expect(ncs[0]?.reportedByText).toBe('QC-Insp');
+    expect(ncs[0]?.status).toBe('pending');
+    expect(ncs[0]?.reasonCategory).toBe('other');
+    // CREATE NonConformance audit row emitted by the auto-create cascade.
+    const ncAudit = await db
+      .select()
+      .from(activityLog)
+      .where(
+        and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')),
+      );
+    const myNcRow = ncAudit.find((r) => r.refId === ncs[0]?.code);
+    expect(myNcRow).toBeDefined();
+    expect(myNcRow?.detail).toContain('auto from QC reject');
+
+    // Cleanup audit + auto-NC so the next test sees a clean slate.
+    await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+    if (ncs[0]?.code) {
+      await db.delete(activityLog).where(eq(activityLog.refId, ncs[0]!.code));
+    }
     if (qcOpId) {
       await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
       await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
@@ -631,6 +673,93 @@ describe('op-entry submitQcLog (T-040d)', () => {
         admin,
       ),
     ).rejects.toThrow(ValidationError);
+  });
+
+  it('T-040e: rejectQty=0 does NOT auto-create an NC', async () => {
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+
+    // All-accepted QC inspection: no reject → no NC.
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+
+    const ncs = await db
+      .select()
+      .from(ncRegister)
+      .where(eq(ncRegister.jobCardId, testJcId));
+    expect(ncs).toHaveLength(0);
+
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+
+  it('T-040e: validation failure (qty exceeds qc_pending) does NOT create an orphan NC', async () => {
+    // Same shape as "rejects when total qty exceeds qc_pending" but explicitly
+    // checks that the auto-NC tx rolled back too.
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    // qc_pending=10; try qty=6 reject=5 = 11 total → exceeds.
+    await expect(
+      service.submitQcLog(
+        {
+          jcOpId: id,
+          qty: 6,
+          rejectQty: 5,
+          logDate: '2026-05-03',
+          shift: 'day',
+          operatorName: 'QC-Insp',
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/exceeds QC pending/);
+
+    // No NC row should exist — tx rolled back.
+    const ncs = await db
+      .select()
+      .from(ncRegister)
+      .where(eq(ncRegister.jobCardId, testJcId));
+    expect(ncs).toHaveLength(0);
+
+    if (qcOpId) {
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
   });
 
   it('rejects when total qty exceeds qc_pending', async () => {

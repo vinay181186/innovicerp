@@ -21,9 +21,10 @@
 // re-routed through rework_qty until shop-floor reports an actual issue.
 
 import { and, eq, isNull, like, or, sql } from 'drizzle-orm';
-import { jcOps, jobCards, ncRegister, opLog, operators } from '../../db/schema';
-import type { DbTransaction } from '../../db/with-user-context';
-import { ConflictError, ValidationError } from '../../lib/errors';
+import { items, jcOps, jobCards, ncRegister, opLog, operators } from '../../db/schema';
+import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 const DISPOSITION_DATE_NOT_NULL_ACTIONS = new Set([
   'rework',
@@ -405,6 +406,148 @@ export async function closeNcReworkCascade(
 
   await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, ncId));
   return { ncId, status: 'closed' };
+}
+
+// ─── T-040e: auto-create NC from QC reject ───────────────────────────────
+//
+// Mirrors legacy `_autoCreateNC()` (HTML L3946 inside submitQcLog handler).
+// Caller is op-entry/service.submitQcLog; this runs in the SAME tx so a
+// rollback unwinds both the QC log and the auto-NC together.
+//
+// Generated NC code shape: `NC-AUTO-<jcCode>-Op<seq>-<HHMMSSmmm>` — embeds
+// the source for human readability + millisecond suffix for uniqueness under
+// bursty parallel submits without a counter query. Falls back to a random
+// suffix if codes still collide (createNcRegister-equivalent uniqueness check
+// is inline below).
+
+export interface AutoCreateNcContext {
+  companyId: string;
+  jobCardId: string;
+  jcOpId: string;
+  jcCode: string;
+  opSeq: number;
+  operationText: string;
+  rejectedQty: number; // > 0 (caller checks)
+  ncDate: string; // YYYY-MM-DD (matches the QC log's date)
+  reportedByText: string | null;
+  remarks: string | null;
+}
+
+export interface AutoCreateNcResult {
+  ncId: string;
+  ncCode: string;
+}
+
+function generateAutoNcCode(jcCode: string, opSeq: number): string {
+  const now = new Date();
+  const stamp =
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0') +
+    String(now.getSeconds()).padStart(2, '0') +
+    String(now.getMilliseconds()).padStart(3, '0');
+  // NC code regex permits letters/digits/./_/- (per createNcRegisterInputSchema).
+  // Replace any character outside that set in jcCode to be safe.
+  const safeJcCode = jcCode.replace(/[^A-Za-z0-9._-]/g, '_');
+  return `NC-AUTO-${safeJcCode}-Op${opSeq}-${stamp}`;
+}
+
+export async function autoCreateNcFromQcReject(
+  tx: DbTransaction,
+  ctx: AutoCreateNcContext,
+  user: AuthContext,
+): Promise<AutoCreateNcResult> {
+  if (ctx.rejectedQty <= 0) {
+    throw new ValidationError('autoCreateNcFromQcReject called with rejectedQty <= 0');
+  }
+
+  // Look up itemId + itemCode from the JC. NC requires itemId NOT NULL +
+  // snapshots itemCodeText for durable display.
+  const jcRows = await tx
+    .select({ itemId: jobCards.itemId })
+    .from(jobCards)
+    .where(and(eq(jobCards.id, ctx.jobCardId), eq(jobCards.companyId, ctx.companyId)))
+    .limit(1);
+  const jc = jcRows[0];
+  if (!jc) throw new NotFoundError(`JC ${ctx.jobCardId} not found for auto-NC`);
+
+  const itemRows = await tx
+    .select({ code: items.code })
+    .from(items)
+    .where(
+      and(eq(items.id, jc.itemId), eq(items.companyId, ctx.companyId), isNull(items.deletedAt)),
+    )
+    .limit(1);
+  const itemCode = itemRows[0]?.code ?? '';
+
+  // Generate code with retry on collision (vanishingly unlikely with ms
+  // resolution but cheap to be defensive).
+  let code = generateAutoNcCode(ctx.jcCode, ctx.opSeq);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const dup = await tx
+      .select({ id: ncRegister.id })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.companyId, ctx.companyId),
+          eq(ncRegister.code, code),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length === 0) break;
+    // Append a random 3-digit nonce for the next attempt.
+    const nonce = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+    code = `${generateAutoNcCode(ctx.jcCode, ctx.opSeq)}-${nonce}`;
+  }
+
+  const reason =
+    ctx.remarks && ctx.remarks.length > 0
+      ? `Auto-created from QC inspection: ${ctx.remarks}`
+      : `Auto-created from QC inspection on ${ctx.jcCode} Op #${ctx.opSeq}`;
+
+  const inserted = await tx
+    .insert(ncRegister)
+    .values({
+      companyId: ctx.companyId,
+      code,
+      ncDate: ctx.ncDate,
+      jobCardId: ctx.jobCardId,
+      jcOpId: ctx.jcOpId,
+      opSeq: ctx.opSeq,
+      operationText: ctx.operationText,
+      qcOperationText: ctx.operationText,
+      itemId: jc.itemId,
+      itemCodeText: itemCode,
+      itemNameText: null,
+      soCodeText: null,
+      machineCodeText: null,
+      rejectedQty: ctx.rejectedQty.toFixed(2),
+      reasonCategory: 'other',
+      reason,
+      status: 'pending',
+      reportedByText: ctx.reportedByText,
+      timeLogged: new Date(),
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const row = inserted[0]!;
+
+  // Emit CREATE NonConformance audit row inline — matches the format used by
+  // the public createNcRegister service so audit-log filters look uniform.
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'NonConformance',
+      detail: `${row.code} — ${itemCode || '—'} qty=${row.rejectedQty} (auto from QC reject)`,
+      refId: row.code,
+    },
+    ctx.companyId,
+    user,
+  );
+
+  return { ncId: row.id, ncCode: row.code };
 }
 
 // Silence unused-import false positives — `or` is reserved for future

@@ -28,6 +28,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
   JcOpEnriched,
@@ -507,6 +508,36 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       .returning();
     const row = inserted[0]!;
 
+    // Look up JC code once — used for cascade audit, OP_QC audit detail, and
+    // the auto-NC code prefix (T-040e).
+    const jcMeta = await tx
+      .select({ code: jobCards.code })
+      .from(jobCards)
+      .where(eq(jobCards.id, op.jobCardId))
+      .limit(1);
+    const jcCode = jcMeta[0]?.code;
+
+    // T-040e: auto-create NC when this QC log rejects qty > 0. Mirrors legacy
+    // _autoCreateNC at HTML L3946. Same tx — rollback unwinds both.
+    if (input.rejectQty > 0 && jcCode) {
+      await autoCreateNcFromQcReject(
+        tx,
+        {
+          companyId,
+          jobCardId: op.jobCardId,
+          jcOpId: input.jcOpId,
+          jcCode,
+          opSeq: op.opSeq,
+          operationText: op.operation,
+          rejectedQty: input.rejectQty,
+          ncDate: input.logDate,
+          reportedByText: input.operatorName ?? null,
+          remarks: input.remarks ?? null,
+        },
+        user,
+      );
+    }
+
     // Cascade: if this QC log brings the JC to complete (last QC op resolved),
     // close the source SO/JW line + header. Idempotent; no-op for source-less
     // JCs or already-closed lines.
@@ -514,12 +545,6 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
 
     // Audit emit. Single OP_QC action with both qtys in detail (one log can
     // carry both per legacy; splitting into _ACCEPT/_REJECT loses the link).
-    const jcMeta = await tx
-      .select({ code: jobCards.code })
-      .from(jobCards)
-      .where(eq(jobCards.id, op.jobCardId))
-      .limit(1);
-    const jcCode = jcMeta[0]?.code;
     if (jcCode) {
       const operatorPart = input.operatorName ? ` by ${input.operatorName}` : '';
       await emitActivityLog(
