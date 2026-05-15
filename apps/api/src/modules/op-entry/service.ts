@@ -29,6 +29,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
+import { tryApplyQcStockCascade } from './qc-stock-cascade';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
   JcOpEnriched,
@@ -533,6 +534,25 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
           ncDate: input.logDate,
           reportedByText: input.operatorName ?? null,
           remarks: input.remarks ?? null,
+        },
+        user,
+      );
+    }
+
+    // T-040f: stock cascade — if this QC log is against the LAST op of the
+    // JC AND qty (accepted) > 0, write a store_transactions IN row crediting
+    // the JC's item. Mirrors legacy stock-add at HTML L3923-3940. No-op when
+    // the op isn't the last or accepted qty is 0.
+    if (input.qty > 0 && jcCode) {
+      await tryApplyQcStockCascade(
+        tx,
+        {
+          companyId,
+          jobCardId: op.jobCardId,
+          jcCode,
+          opSeq: op.opSeq,
+          acceptedQty: input.qty,
+          txnDate: input.logDate,
         },
         user,
       );

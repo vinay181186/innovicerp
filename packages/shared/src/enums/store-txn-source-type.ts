@@ -7,6 +7,9 @@ export const STORE_TXN_SOURCE_TYPES = [
   'dispatch',
   'jw_in',
   'jw_out',
+  // T-040f (2026-05-15): production QC accept on the LAST op of a JC.
+  // Distinct from grn_qc which is incoming GRN material acceptance.
+  'qc_accept',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

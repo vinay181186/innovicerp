@@ -97,7 +97,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 **Follow-on slices (deferred per ADR-025):**
 
 - ~~T-040e — Auto-create NC on `rejectQty > 0`~~ **Done 2026-05-15** — `autoCreateNcFromQcReject` cascade in `nc-register/cascades.ts` (mirrors T-040b pattern; same-tx insert, emits CREATE NonConformance audit row inline). Code shape `NC-AUTO-<jcCode>-Op<seq>-<HHMMSSmmm>` with collision-retry. 2 new tests (rejectQty=0 no NC; validation failure no orphan NC); happy-path test extended to assert NC shape + audit row. 23/23 op-entry suite + 28/28 nc-register suite green.
-- T-040f — Last-op stock cascade (`items.stock_qty` += qty + `store_transactions` ledger row) when QC accepts the last op
+- ~~T-040f — Last-op stock cascade~~ **Done 2026-05-15** — new migration 0017 adds `'qc_accept'` to `store_txn_source_type` enum. New cascade `tryApplyQcStockCascade` in `op-entry/qc-stock-cascade.ts` (mirrors GRN cascade pattern: lock items row FOR UPDATE, read v_item_stock, compute stockBefore/After, insert store_transactions IN row with sourceType='qc_accept'). No items.stock_qty denormalisation per ADR-015 #11; v_item_stock auto-reflects. 1 new test (non-last op → no stock row); existing happy-path + cascade tests extended to assert stock row shape; existing validation-failure test extended to assert no orphan stock. 24/24 op-entry suite + 15/15 GRN suite green.
 - T-040g — QC engineer dashboard (legacy renderQCEngineerDash L3963)
 
 ## Closed — T-041d slice 6 + 7 (Phase B push delivery)
@@ -421,7 +421,7 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 | T-040c | Phase 6 — Per-inspection record table + CAPA + file uploads (UX-driven)                                                                 | [ ] Deferred — needs UX requirements |
 | T-040d | Phase 6 — QC inspection submit MVP (extend op-entry, no new tables) per ADR-025; closes ISSUE-001 + most of ISSUE-003                  | [x] Done (2026-05-15) |
 | T-040e | Phase 6 — Auto-create NC on QC reject (legacy `_autoCreateNC`); follow-on to T-040d                                                     | [x] Done (2026-05-15) |
-| T-040f | Phase 6 — Last-op stock cascade on QC accept (`items.stock_qty` + `store_transactions` ledger row); follow-on to T-040d                 | [ ]                   |
+| T-040f | Phase 6 — Last-op stock cascade on QC accept (`store_transactions` ledger row, no items.stock_qty per ADR-015 #11); follow-on to T-040d | [x] Done (2026-05-15) |
 | T-040g | Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash L3963)                                                                     | [ ]                   |
 | T-041  | Cutover QC and dispatch teams                                                                                                           | [ ]                   |
 

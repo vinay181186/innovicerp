@@ -10,6 +10,7 @@ import {
   ncRegister,
   opLog,
   runningOps,
+  storeTransactions,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -101,9 +102,18 @@ async function teardownFixture(): Promise<void> {
     await db.delete(jcOps).where(eq(jcOps.jobCardId, testJcId));
   }
   if (testJcId) await db.delete(jobCards).where(eq(jobCards.id, testJcId));
-  if (testItemId) await db.delete(items).where(eq(items.id, testItemId));
+  // T-040f: store_transactions reference items.id without ON DELETE CASCADE.
+  // Wipe by itemId AND by TEST_PREFIX-derived sourceRef so nothing orphans.
+  if (testItemId) {
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
+    await db.delete(items).where(eq(items.id, testItemId));
+  }
   // Sweep any NCs left behind from prior crashed runs against this test prefix.
   await db.delete(ncRegister).where(like(ncRegister.code, `NC-AUTO-${TEST_PREFIX}%`));
+  // Sweep any leftover store_transactions rows tagged with the test prefix.
+  await db
+    .delete(storeTransactions)
+    .where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   // Wipe audit-log entries the op-entry emitter wrote for these test JCs.
@@ -597,7 +607,24 @@ describe('op-entry submitQcLog (T-040d)', () => {
     expect(myNcRow).toBeDefined();
     expect(myNcRow?.detail).toContain('auto from QC reject');
 
-    // Cleanup audit + auto-NC so the next test sees a clean slate.
+    // T-040f: op_seq=2 IS the last op on testJc → stock cascade fired.
+    // qty=8 accepted → store_transactions IN row crediting testItem with 8.
+    const stockRows = await db
+      .select()
+      .from(storeTransactions)
+      .where(eq(storeTransactions.itemId, testItemId));
+    const myStockRow = stockRows.find(
+      (r) => r.sourceType === 'qc_accept' && r.sourceRef.includes(testJcCode),
+    );
+    expect(myStockRow).toBeDefined();
+    expect(myStockRow?.txnType).toBe('in');
+    expect(myStockRow?.qty).toBe(8);
+    expect(myStockRow?.stockBefore).toBe(0); // first stock txn against this item
+    expect(myStockRow?.stockAfter).toBe(8);
+    expect(myStockRow?.remarks).toContain('QC accept');
+
+    // Cleanup audit + auto-NC + stock so the next test sees a clean slate.
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
     await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
     if (ncs[0]?.code) {
@@ -649,6 +676,9 @@ describe('op-entry submitQcLog (T-040d)', () => {
     // QC log_date (2026-05-04).
     expect(opAfter[0]?.qcCallDate).toBe('2026-05-02');
 
+    // T-040f: stock cascade fired (op 2 is last op on testJc, qty=10 accepted).
+    // Cleanup so the next test sees a clean stock state.
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
     if (qcOpId) {
       await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
       await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
@@ -708,6 +738,15 @@ describe('op-entry submitQcLog (T-040d)', () => {
       .where(eq(ncRegister.jobCardId, testJcId));
     expect(ncs).toHaveLength(0);
 
+    // T-040f: but stock cascade DID fire (op 2 is last op, qty=10 accepted).
+    const stocks = await db
+      .select()
+      .from(storeTransactions)
+      .where(eq(storeTransactions.itemId, testItemId));
+    expect(stocks).toHaveLength(1);
+    expect(stocks[0]?.qty).toBe(10);
+
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
     if (qcOpId) {
       await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
       await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
@@ -753,8 +792,80 @@ describe('op-entry submitQcLog (T-040d)', () => {
       .from(ncRegister)
       .where(eq(ncRegister.jobCardId, testJcId));
     expect(ncs).toHaveLength(0);
+    // T-040f: same tx → no orphan stock row either.
+    const stocks = await db
+      .select()
+      .from(storeTransactions)
+      .where(eq(storeTransactions.itemId, testItemId));
+    expect(stocks).toHaveLength(0);
 
     if (qcOpId) {
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+    await db.delete(opLog).where(eq(opLog.jcOpId, testJcOpId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+  });
+
+  it('T-040f: stock cascade does NOT fire when QC is on a non-last op', async () => {
+    // Add a 3rd op (op_seq=3, process) AFTER the QC op_seq=2 → op 2 is no
+    // longer the last op of the JC. QC submit against op 2 should NOT write
+    // a store_transactions row.
+    const id = await ensureFreshFixture();
+    const op3Rows = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: testJcId,
+        opSeq: 3,
+        operation: 'final-pack',
+        opType: 'process',
+        cycleTimeMin: '0.00',
+        qcRequired: false,
+        reworkQty: 0,
+        outsourceCost: '0.00',
+        outsourceSentQty: 0,
+        outsourceReturnedQty: 0,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const op3Id = op3Rows[0]!.id;
+
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+
+    // No stock row — op 2 was not the last op (op 3 is).
+    const stocks = await db
+      .select()
+      .from(storeTransactions)
+      .where(eq(storeTransactions.itemId, testItemId));
+    expect(stocks).toHaveLength(0);
+
+    await db.delete(opLog).where(eq(opLog.jcOpId, op3Id));
+    await db.delete(jcOps).where(eq(jcOps.id, op3Id));
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
       await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
       qcOpId = null;
     }
@@ -997,7 +1108,17 @@ describe('op-entry submitQcLog (T-040d)', () => {
       .limit(1);
     expect(soAfter[0]?.status).toBe('closed');
 
+    // T-040f: stock cascade fired (QC op 2 = last op, qty=5 accepted).
+    const stocks = await db
+      .select()
+      .from(storeTransactions)
+      .where(eq(storeTransactions.itemId, itemId));
+    expect(stocks).toHaveLength(1);
+    expect(stocks[0]?.qty).toBe(5);
+    expect(stocks[0]?.sourceType).toBe('qc_accept');
+
     // Cleanup
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, itemId));
     await db.delete(opLog).where(eq(opLog.jcOpId, procOp[0]!.id));
     await db.delete(opLog).where(eq(opLog.jcOpId, qcOp[0]!.id));
     await db.delete(jcOps).where(eq(jcOps.id, procOp[0]!.id));
