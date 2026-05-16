@@ -196,8 +196,7 @@ function AlertsDashboardPage() {
                               : 'text-amber-600';
                         const interactive = a.count > 0;
                         const subscribed = subscribedCodes.has(a.code);
-                        const subBusy =
-                          toggleSub.isPending && toggleSub.variables?.code === a.code;
+                        const subBusy = toggleSub.isPending && toggleSub.variables?.code === a.code;
                         return (
                           <TableRow
                             key={a.code}

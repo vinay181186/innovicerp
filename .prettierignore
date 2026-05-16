@@ -18,3 +18,10 @@ migration/load-output/
 
 # Lockfiles + generated package manifests.
 pnpm-lock.yaml
+
+# Free-form running log with intentionally long single-line blockquote
+# entries (one big paragraph per session for grep-ability + ctrl-F). Prettier
+# can't reach a fixed point on the malformed-but-readable blockquote nesting;
+# attempting auto-format produces unstable diffs that block CI without
+# improving readability. Keep the file by-hand and skip format:check.
+docs/TASKS.md

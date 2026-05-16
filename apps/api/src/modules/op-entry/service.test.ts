@@ -111,9 +111,7 @@ async function teardownFixture(): Promise<void> {
   // Sweep any NCs left behind from prior crashed runs against this test prefix.
   await db.delete(ncRegister).where(like(ncRegister.code, `NC-AUTO-${TEST_PREFIX}%`));
   // Sweep any leftover store_transactions rows tagged with the test prefix.
-  await db
-    .delete(storeTransactions)
-    .where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
+  await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   // Wipe audit-log entries the op-entry emitter wrote for these test JCs.
@@ -574,9 +572,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     const audit = await db
       .select()
       .from(activityLog)
-      .where(
-        and(eq(activityLog.action, 'OP_QC'), eq(activityLog.companyId, admin.companyId!)),
-      );
+      .where(and(eq(activityLog.action, 'OP_QC'), eq(activityLog.companyId, admin.companyId!)));
     const myRow = audit.find((r) => r.refId === testJcCode);
     expect(myRow).toBeDefined();
     expect(myRow?.entity).toBe('Op');
@@ -600,9 +596,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     const ncAudit = await db
       .select()
       .from(activityLog)
-      .where(
-        and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')),
-      );
+      .where(and(eq(activityLog.action, 'CREATE'), eq(activityLog.entity, 'NonConformance')));
     const myNcRow = ncAudit.find((r) => r.refId === ncs[0]?.code);
     expect(myNcRow).toBeDefined();
     expect(myNcRow?.detail).toContain('auto from QC reject');
@@ -732,10 +726,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
       admin,
     );
 
-    const ncs = await db
-      .select()
-      .from(ncRegister)
-      .where(eq(ncRegister.jobCardId, testJcId));
+    const ncs = await db.select().from(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     expect(ncs).toHaveLength(0);
 
     // T-040f: but stock cascade DID fire (op 2 is last op, qty=10 accepted).
@@ -787,10 +778,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     ).rejects.toThrow(/exceeds QC pending/);
 
     // No NC row should exist — tx rolled back.
-    const ncs = await db
-      .select()
-      .from(ncRegister)
-      .where(eq(ncRegister.jobCardId, testJcId));
+    const ncs = await db.select().from(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     expect(ncs).toHaveLength(0);
     // T-040f: same tx → no orphan stock row either.
     const stocks = await db
@@ -1127,11 +1115,7 @@ describe('op-entry submitQcLog (T-040d)', () => {
     await db.delete(salesOrderLines).where(eq(salesOrderLines.id, soLine[0]!.id));
     await db.delete(salesOrders).where(eq(salesOrders.id, so[0]!.id));
     await db.delete(items).where(eq(items.id, itemId));
-    await db
-      .delete(activityLog)
-      .where(like(activityLog.refId, `${TEST_PREFIX}JC-QC-CASC%`));
-    await db
-      .delete(activityLog)
-      .where(like(activityLog.refId, `${TEST_PREFIX}SO-QC-CASCADE%`));
+    await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}JC-QC-CASC%`));
+    await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}SO-QC-CASCADE%`));
   });
 });

@@ -78,25 +78,20 @@ describe('alerts subscriptions service', () => {
     expect(removed).toBeNull();
 
     // Calling unsubscribe again is a no-op.
-    const removedAgain = await subs.setMySubscription(
-      { code: 'AL-014', subscribed: false },
-      admin,
-    );
+    const removedAgain = await subs.setMySubscription({ code: 'AL-014', subscribed: false }, admin);
     expect(removedAgain).toBeNull();
 
     const r = await subs.listMySubscriptions(admin);
     expect(r.subscriptions.find((s) => s.code === 'AL-014')).toBeUndefined();
   });
 
-  it('listMySubscriptions returns this suite\'s rows in code-asc order', async () => {
+  it("listMySubscriptions returns this suite's rows in code-asc order", async () => {
     await subs.setMySubscription({ code: 'AL-002', subscribed: true }, admin);
     await subs.setMySubscription({ code: 'AL-001', subscribed: true }, admin);
     const r = await subs.listMySubscriptions(admin);
     // Filter to this suite's codes — routes.test.ts may have parallel
     // subscriptions for AL-009 / AL-012 mid-flight under the same admin.
-    const owned = r.subscriptions
-      .map((s) => s.code)
-      .filter((c) => TOUCHED_CODES.includes(c));
+    const owned = r.subscriptions.map((s) => s.code).filter((c) => TOUCHED_CODES.includes(c));
     expect(owned).toEqual(['AL-001', 'AL-002']);
   });
 

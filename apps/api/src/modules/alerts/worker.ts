@@ -223,9 +223,7 @@ export async function runDigestTick(at: Date = new Date()): Promise<RunDigestRes
         role: sample.role,
         isActive: true,
       };
-      const evalResult = await withUserContext(evalCtx, async (tx) =>
-        reg.run({ tx, companyId }),
-      );
+      const evalResult = await withUserContext(evalCtx, async (tx) => reg.run({ tx, companyId }));
       records = evalResult.records;
       result.evaluations += 1;
     } catch (err) {

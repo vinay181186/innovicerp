@@ -176,7 +176,7 @@ describe('alerts subscription routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET /alerts/subscriptions includes none of this suite\'s codes initially', async () => {
+  it("GET /alerts/subscriptions includes none of this suite's codes initially", async () => {
     // The suite's afterEach + beforeAll have just wiped AL-009 / AL-012; an
     // exact empty-list assertion would be flaky against subscriptions.test.ts
     // running in parallel under the same admin user. Assert only that this

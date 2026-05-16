@@ -13,7 +13,11 @@
 // row is a silent no-op (idempotent — calling twice doesn't fail).
 // `subscribed: false` deletes if present, no-op if absent.
 
-import type { AlertChannel, AlertSubscriptionEntry, ListAlertSubscriptionsResponse } from '@innovic/shared';
+import type {
+  AlertChannel,
+  AlertSubscriptionEntry,
+  ListAlertSubscriptionsResponse,
+} from '@innovic/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { alertSubscriptions } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';

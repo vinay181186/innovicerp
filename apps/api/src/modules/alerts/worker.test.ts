@@ -118,7 +118,7 @@ describe('alerts worker — renderDigestHtml', () => {
 });
 
 describe('alerts worker — runDigestTick', () => {
-  it('completes cleanly when no subscriptions match this suite\'s code', async () => {
+  it("completes cleanly when no subscriptions match this suite's code", async () => {
     // beforeAll + afterEach guarantee cleanupForAdmin() ran. Other suites'
     // subs (different codes) may still be in-flight under parallel run; we
     // don't assert against those.

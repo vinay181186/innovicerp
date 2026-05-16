@@ -829,12 +829,12 @@ The alerts push worker (`apps/api/src/modules/alerts/worker.ts`) fires every 30 
 
 Four env-var flags gate the worker. Until the first three are set, the worker stays in stub mode and you can ship the rest of the system without dispatch side-effects:
 
-| Variable               | Required for           | Effect when unset                                             |
-| ---------------------- | ---------------------- | ------------------------------------------------------------- |
-| `REDIS_URL`            | Worker boot at all     | `startAlertsWorker()` returns early; no schedule registered   |
-| `ALERTS_PUSH_ENABLED`  | Cron tick              | Worker boots but the every-30-min repeat job is not enqueued  |
-| `RESEND_API_KEY`       | Real email send        | `sendAlertDigest` returns `{realSend:false, messageId:'stub-…'}` |
-| `ALERTS_FROM_EMAIL`    | Real email send        | Same as above — falls back to log-only mode                   |
+| Variable              | Required for       | Effect when unset                                                |
+| --------------------- | ------------------ | ---------------------------------------------------------------- |
+| `REDIS_URL`           | Worker boot at all | `startAlertsWorker()` returns early; no schedule registered      |
+| `ALERTS_PUSH_ENABLED` | Cron tick          | Worker boots but the every-30-min repeat job is not enqueued     |
+| `RESEND_API_KEY`      | Real email send    | `sendAlertDigest` returns `{realSend:false, messageId:'stub-…'}` |
+| `ALERTS_FROM_EMAIL`   | Real email send    | Same as above — falls back to log-only mode                      |
 
 ### Redis — Railway add-on
 
