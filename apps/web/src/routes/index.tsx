@@ -18,6 +18,7 @@ import {
   Package,
   History,
   Send,
+  ShieldCheck,
   Sparkles,
   Truck,
   Wrench,
@@ -99,6 +100,12 @@ const MASTER_LINKS = [
     icon: Send,
     title: 'Delivery challans',
     subtitle: 'Outbound DCs against JW POs — read-only in T-040a',
+  },
+  {
+    to: '/qc-dashboard',
+    icon: ShieldCheck,
+    title: 'QC dashboard',
+    subtitle: 'Pending QC calls, engineer performance, top rejection reasons (T-040g)',
   },
   {
     to: '/alerts',

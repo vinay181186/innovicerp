@@ -37,6 +37,7 @@ export * from './schemas/store-transaction';
 export * from './schemas/nc-register';
 export * from './schemas/delivery-challan';
 export * from './schemas/dashboard';
+export * from './schemas/qc-dashboard';
 export * from './schemas/report';
 export * from './schemas/saved-report';
 export * from './schemas/activity-log';

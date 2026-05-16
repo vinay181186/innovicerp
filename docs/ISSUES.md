@@ -117,3 +117,61 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 **Repro:** Every route renders its own card layout. There's no header with Home + breadcrumb. Users currently navigate via URL bar or browser back button.
 
 **Fix sketch:** A shared `<AppHeader>` component (`apps/web/src/components/shared/`) with Home link + per-route breadcrumb prop. Apply via the root route component so every screen inherits. Reads role from `lib/session.ts` for role-gated nav items (admin: alerts admin, etc.).
+
+---
+
+## ISSUE-008 — `/op-entry` ops table DONE column misleading on QC ops
+
+- **Surfaced:** 2026-05-16 (browser smoke T-040d Test 1, IN-JC-00003 Op 1)
+- **Severity:** P2 (numbers visibly disagree with status badge; will confuse operators)
+- **Status:** [ ] open
+
+**Repro:** Open `/op-entry?jc=IN-JC-00003`. Op 1 MIR badge reads **Complete** but the DONE column reads **20** (of 60 order qty). The real "inspected" count is `qc_accepted_qty + qc_rejected_qty = 60 + 0`.
+
+**Effect:** Three numbers on the same row contradict each other — DONE=20, AVAILABLE=40, status=Complete. Operator cannot tell at a glance what the op actually did.
+
+**Root cause:** The web table maps DONE to `completed_qty` from `v_jc_op_status`. The view defines `completed_qty = SUM(qty WHERE log_type='complete')` — that field is only meaningful for process ops. On a QC op, `completed_qty` reflects only stray legacy `log_type='complete'` rows (per ISSUE-002), never the qc submits. The QC writes go into `qc_accepted_qty` + `qc_rejected_qty` and never into `completed_qty`.
+
+**Fix sketch:** In the ops-table renderer (`apps/web/src/modules/op-entry/components/ops-table.tsx` — check actual path), branch the DONE cell on `op.opType`:
+
+- `process` / `outsource` → render `completed_qty` (current behaviour)
+- `qc` → render `qc_accepted_qty + qc_rejected_qty` with `qc_rejected_qty` annotated in red, e.g. `60 (incl. 5 rej)`
+
+Pure presentation change; no view/service edits needed.
+
+**Related:** ISSUE-009 (AVAILABLE column same root cause); ISSUE-002 (the stray legacy COMPLETE rows that show up in DONE on QC ops).
+
+---
+
+## ISSUE-009 — `/op-entry` ops table AVAILABLE column non-zero on Complete QC ops
+
+- **Surfaced:** 2026-05-16 (browser smoke T-040d Test 1, IN-JC-00003 Op 1)
+- **Severity:** P2 (same row-level contradiction as ISSUE-008)
+- **Status:** [ ] open
+
+**Repro:** On `/op-entry?jc=IN-JC-00003` Op 1 MIR (status=Complete), AVAILABLE reads **40**. On Op 2 MCR (status=QC Pending), AVAILABLE also reads **40** while QC pending is 30.
+
+**Effect:** A Complete op shows 40 "available" work. For QC ops, AVAILABLE means nothing useful — `qc_pending` is the actionable count.
+
+**Root cause:** Web table maps AVAILABLE to `v_jc_op_status.available`. The view computes `available = input - completed_qty` for all op types. For a QC op, `completed_qty` is the stray-legacy count (per ISSUE-002 / ISSUE-008), so `available` ≈ `input`, regardless of inspection progress.
+
+**Fix sketch:** Same branch as ISSUE-008. In the table renderer, swap AVAILABLE → `qc_pending` for `op_type='qc'` rows, and label the column header accordingly (or replace the cell with a "Pending QC: X" pill). Pure presentation change.
+
+**Related:** ISSUE-008.
+
+---
+
+## ISSUE-010 — `/op-entry` ops table MACHINE column shows literal "QC" on QC ops
+
+- **Surfaced:** 2026-05-16 (browser smoke T-040d, IN-JC-00003 + IN-JC-00002)
+- **Severity:** P3 (duplicates the TYPE column; cosmetic but every QC op row reads "QC QC")
+- **Status:** [ ] open
+
+**Repro:** Every QC op row on `/op-entry` shows MACHINE="QC" and TYPE="QC". Process ops correctly show MACHINE="CNC-01" / "CNC-02" / TYPE="PROCESS".
+
+**Root cause confirmed:** Legacy export has `machine_code_text='QC'` literal on every QC op (`jc_ops.machine_id` is null on all of them — verified 2026-05-16 via direct DB query against IN-JC-00002 + IN-JC-00003: 9/9 QC ops have `machine_code_text="QC"`, `machine_id=null`). Not a renderer fallback bug; data is what it is.
+
+**Fix sketch:** Two options:
+
+1. **Renderer fix (recommended):** For `op_type='qc'` rows, render MACHINE cell as `—` (or hide entirely) — TYPE already conveys "QC", machine is not a meaningful field for inspection. Pure web change; legacy data left intact.
+2. **Data fix:** One-off SQL `UPDATE jc_ops SET machine_code_text = NULL WHERE op_type = 'qc' AND machine_code_text = 'QC'`. Cleaner but touches legacy data; bundle with the audit-pass cleanup.

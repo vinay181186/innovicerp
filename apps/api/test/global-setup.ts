@@ -65,6 +65,12 @@ export default async function setup(): Promise<void> {
     //    touching real user-created reports.
     await sql`DELETE FROM public.saved_reports WHERE name LIKE 'T041B-%'`;
 
+    // 3a. op_log fixture rows hanging off seed JCs (T-040g qc-dashboard
+    //     tests insert qc logs against IN-JC-00002 Op 1 with log_no
+    //     `T040G-*`). Job-card-cascade doesn't reach these because the
+    //     parent JC is real seed data, not test cruft.
+    await sql`DELETE FROM public.op_log WHERE log_no LIKE 'T040G-%'`;
+
     // 4. Activity log — append-only audit trail. Test entries land via:
     //    (a) the T-051 service tests' explicit T051-prefixed entity, or
     //    (b) the items module emitter (T-009 follow-on) which writes
