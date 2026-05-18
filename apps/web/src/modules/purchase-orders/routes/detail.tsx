@@ -1,6 +1,6 @@
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Inbox, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Inbox, Loader2, Pencil, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -87,7 +87,17 @@ function PurchaseOrderDetailPage() {
             </Link>
           </Button>
           <div className="flex items-center gap-2">
-            {['draft', 'open', 'partial', 'qc_pending'].includes(detail.status) ? (
+            {['draft', 'open', 'partial', 'qc_pending'].includes(detail.status) &&
+            detail.poType === 'job_work' ? (
+              <Button asChild variant="default" size="sm">
+                <Link to="/delivery-challans/new" search={{ poId: detail.id }}>
+                  <Send />
+                  Issue DC
+                </Link>
+              </Button>
+            ) : null}
+            {['draft', 'open', 'partial', 'qc_pending'].includes(detail.status) &&
+            detail.poType !== 'job_work' ? (
               <Button asChild variant="default" size="sm">
                 <Link to="/goods-receipt-notes/new" search={{ poId: detail.id }}>
                   <Inbox />

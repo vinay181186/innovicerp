@@ -56,7 +56,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (Resume Checklist #1 step 7a)
 - **Severity:** P2 (cascade code is unit-tested via `sales-cascade.test.ts`; browser-level e2e against migrated data is blocked)
-- **Status:** [~] Partial — QC submit flow shipped 2026-05-15 (T-040d per ADR-025) writes `log_type='qc'` and triggers `tryCascadeJcComplete` like `submitOpLog` does. New service test "cascade fires when QC log brings the JC to complete" proves the QC path drives the cascade end-to-end. **Still gated on the outsource receive flow** for IN-JC-00002 op 7 (COATING) — once that lands, the migrated JC can drive cascade end-to-end. Browser-smoke gated on user (after T-040d ships, navigate to `/op-entry?jc=IN-JC-00003` and submit QC against ops 1/2 to clear the `qc_pending` state).
+- **Status:** [~] Partial — QC submit flow shipped 2026-05-15 (T-040d per ADR-025) writes `log_type='qc'` and triggers `tryCascadeJcComplete` like `submitOpLog` does. **Outsource OUTWARD half shipped 2026-05-18** (T-059a per ADR-026) — `IN-JC-00002` op 7 (COATING) can now be flipped `po_created → sent` via the new DC outward flow at `/delivery-challans/new?poId=<jw-po-id>`. **Still gated on T-059b receive-back** to flip the same op `sent → received` and trigger `tryCascadeJcComplete` — once that ships, the migrated JC can drive cascade end-to-end. Browser-smoke gated on user (after T-040d ships, navigate to `/op-entry?jc=IN-JC-00003` and submit QC against ops 1/2 to clear the `qc_pending` state).
 
 **Repro:** The only migrated JCs linked to SO lines are IN-JC-00002 (→ SO-436 line 6) and IN-JC-00003 (→ SO-436 line 4). Neither can be driven to `v_jc_status.computed_status='complete'` via current UI flows:
 

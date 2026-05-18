@@ -1658,6 +1658,9 @@ export const deliveryChallanLines = pgTable(
     uom: uomEnum('uom').notNull(),
     materialText: text('material_text'),
     dcRemarks: text('dc_remarks'),
+    purchaseOrderLineId: uuid('purchase_order_line_id').references(() => purchaseOrderLines.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1673,6 +1676,9 @@ export const deliveryChallanLines = pgTable(
       .on(t.deliveryChallanId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
     index('delivery_challan_lines_item_idx').on(t.itemId),
+    index('delivery_challan_lines_po_line_idx')
+      .on(t.purchaseOrderLineId)
+      .where(sql`${t.purchaseOrderLineId} is not null`),
     check('delivery_challan_lines_qty_positive', sql`${t.qty} > 0`),
     pgPolicy('delivery_challan_lines_company_read', {
       for: 'select',

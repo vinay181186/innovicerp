@@ -1040,6 +1040,67 @@ Concretely:
 
 ---
 
+## ADR-026: T-059 outsource DC outward + receive — fresh tables, slice as 059a / 059b
+
+**Date:** 2026-05-18
+**Status:** Accepted
+
+### Context
+
+`apps/api/src/modules/delivery-challans/service.ts` shipped read-only in T-040a (the comment at the top of the file points to `printChallan` legacy line 26133 as the "future task" outward flow). The read-only module exposes 4 migrated `challans` rows; it cannot create new DCs nor cascade into `jc_ops.outsource_status` / `outsource_sent_qty` / `outsource_dc_no`.
+
+ISSUE-003 in `docs/ISSUES.md` documents the consequence: `IN-JC-00002` (the only migrated JC with an outsource op) cannot be driven through `v_jc_status.computed_status='complete'` via current UI flows, because op 7 (COATING) is outsource — no flow exists to flip it `'sent' → 'received'`. The sales-cascade unit test (`sales-cascade.test.ts`) already proves the logic with synthetic fixtures; e2e against migrated data is blocked.
+
+Legacy has two parallel outsource flows:
+
+| Legacy collection       | Purpose                                                                                          | Migrated to Innovic             |
+| ----------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `db.challans`           | Simple per-shipment DC; bumps `jc_ops.sentQty` + outsourceStatus                                 | YES (T-040a, 4 rows)            |
+| `db.jwDCOutward/Inward` | Returnable Gate Pass workbench with separate outward/inward + stock IN + auto-NC on rejected qty | NO — doc_missing per ADR-017 §1 |
+
+### Decision
+
+Build T-059 as a Phase 6 follow-on sliced into two sub-tasks:
+
+- **T-059a** — Outward only. Add `purchase_order_line_id` column to `delivery_challan_lines` (nullable, FK to `purchase_order_lines`, ON DELETE SET NULL) so the cascade can find the exact `jc_op` via `outsource_po_line_id` and reverse cleanly on cancel. New service functions `createDeliveryChallan` + `cancelDeliveryChallan` with `applyOutwardToJcOp` + `reverseOutwardFromJcOp` cascade helpers + stock OUT/IN-on-cancel ledger writes (`source_type='jw_out'`). Two new audit actions `DC_ISSUE` / `OP_OUTSOURCE_SENT` on create, `DC_CANCEL` / `OP_OUTSOURCE_REVERSED` on cancel. Web: create form (PO-driven wizard at `/delivery-challans/new?poId=`), "Cancel DC" button on detail (admin-only), "Issue DC" button on PO detail (replaces "Receive (new GRN)" when `po.poType === 'job_work'`).
+- **T-059b** — Receive-back. New `delivery_challan_receipts` + `delivery_challan_receipt_lines` tables (separate from `delivery_challan_lines` because receipts are many-per-outward-line and need vendor-side fields `vendor_challan_no` / `received_qty` / `ok_qty` / `rejected_qty`). New `receiveAgainstDeliveryChallan` service. Stock IN ledger (`source_type='jw_in'`). Auto-NC on `rejected_qty > 0` (mirrors T-040e pattern). `v_jc_op_status` view update so an outsource op with `outsource_status='received'` AND `outsource_returned_qty >= input_avail` projects `computed_status='complete'` (instead of just `'received'`) — this is what makes the sales-cascade fire and closes ISSUE-003 end-to-end.
+
+### Alternatives Considered
+
+- **Single monolithic T-059 task** — rejected: ~12-16 hours of work, harder to review, cascade interactions tightly coupled but receive-back has independent test surface. Slicing matches the T-041d 6a/6b/6c precedent for big features.
+- **Resurrect `jwDCOutward` / `jwDCInward` from legacy** — rejected: source collections `doc_missing` per ADR-017 §1; same uniform-defer rule as ADR-022/023. Build fresh tables against current UX requirements instead.
+- **No new column on `delivery_challan_lines` — match by item code** — rejected: legacy `printChallan` does fuzzy match by item code which silently touches unrelated jc_ops on other JCs. Adding `purchase_order_line_id` makes the linkage exact and reverses cleanly on cancel. Small migration cost.
+- **Mutate `delivery_challan_lines` for receive-back instead of new tables** — rejected: receipts are many-per-outward-line (partial receives over time); each receipt needs vendor-side fields that don't fit on the outward line. CLAUDE.md §12 "every record gets its own row."
+- **Hard-delete on cancel instead of `status='cancelled'`** — rejected: cancel needs an audit trail + reversal of side effects (jc_op flip + stock txn). Keeping the row with status=cancelled preserves history. Same shape as PO/GRN.
+- **Single `DC_CANCEL` audit row vs. per-jc-op `OP_OUTSOURCE_REVERSED`** — chose per-op: matches the T-051a precedent (create-PO from PR emits TWO rows in one tx, one per entity touched). Each entity's audit feed stays complete from its own filter.
+
+### Consequences
+
+- **Positive:** Outsource flow finally has an end-to-end UI path (closing on T-059b). Cascade test coverage extends to real workflow data. ISSUE-003 unblocks. Each slice can be browser-smoked independently. New audit verbs surface jc_op state transitions in the activity log.
+- **Negative:** Two new audit action strings (`OP_OUTSOURCE_SENT` / `OP_OUTSOURCE_REVERSED`); the activity-log viewer's `ACTION_COLORS` map will need a future entry (defer to a small UI polish PR — falls back to muted-grey badge meanwhile).
+- **Risks:**
+  - `outsource_sent_qty` is `integer` in the DB but `delivery_challan_lines.qty` is `numeric(12,2)` — the cascade does `Math.round(Number(qty))` so fractional DC qtys lose precision in the jc_op counter. Acceptable for outsource (whole-piece shipments) but flagged for future audit if BOM ever ships kg/m fractional outsource lines.
+  - Cancel doesn't re-credit `outsource_status` past `'po_created'` even if the cascade earlier downgraded a `'pr_raised'` row. Conservative — we don't lose state, just don't recover the earlier "pr_raised" granularity. Documented in `cascades.ts:reverseOutwardFromJcOp`.
+
+### What ships in T-059a (this commit)
+
+- DB: migration `0018_phase6_dc_po_line_link.sql` + schema update
+- Service: `createDeliveryChallan` + `cancelDeliveryChallan` + cascades (4 helpers in `cascades.ts`)
+- Routes: `POST /delivery-challans` + `POST /delivery-challans/:id/cancel`
+- Tests: 22/22 green (16 service + 6 routes — full DC suite)
+- Web: hooks + create form + cancel button + PO detail "Issue DC" button
+- Quality: typecheck + lint + prettier + build all clean
+
+### What waits for T-059b
+
+- DB: `delivery_challan_receipts` + `_lines` + view update
+- Service: `receiveAgainstDeliveryChallan` + auto-NC integration + `tryCascadeJcComplete` invocation
+- Routes: `POST /delivery-challans/:id/receive`
+- Web: receive form + receipts section on detail page
+- Closes ISSUE-003 fully (end-to-end cascade on migrated data)
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

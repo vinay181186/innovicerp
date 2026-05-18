@@ -6,7 +6,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -164,12 +164,21 @@ function DeliveryChallansListPage() {
   return (
     <main className="container max-w-6xl py-10">
       <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Delivery challans</h1>
-          <p className="text-sm text-muted-foreground">
-            Outbound DCs against JW POs — material sent for outsource processing. Read-only in
-            T-040a; create flow lands when dispatch UX is defined.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Delivery challans</h1>
+            <p className="text-sm text-muted-foreground">
+              Outbound DCs against JW POs — material sent for outsource processing. Issuing a DC
+              flips the linked outsource op to <span className="font-mono">sent</span> and writes a
+              stock OUT ledger row.
+            </p>
+          </div>
+          <Button asChild>
+            <Link to="/delivery-challans/new">
+              <Plus />
+              New DC
+            </Link>
+          </Button>
         </div>
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center">

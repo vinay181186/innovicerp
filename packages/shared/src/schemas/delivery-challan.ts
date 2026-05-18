@@ -51,6 +51,7 @@ export const deliveryChallanLineSchema = z.object({
   uom: uomSchema,
   materialText: z.string().nullable(),
   dcRemarks: z.string().nullable(),
+  purchaseOrderLineId: z.string().uuid().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -102,3 +103,34 @@ export interface ListDeliveryChallansResponse {
   limit: number;
   offset: number;
 }
+
+// ─── Write shapes (T-059a) ─────────────────────────────────────────────────
+
+export const createDeliveryChallanLineInputSchema = z.object({
+  lineNo: z.number().int().positive().optional(),
+  itemId: z.string().uuid(),
+  itemCodeText: z.string().min(1),
+  itemNameText: z.string().nullable().optional(),
+  qty: z.number().positive(),
+  uom: uomSchema,
+  materialText: z.string().nullable().optional(),
+  dcRemarks: z.string().nullable().optional(),
+  purchaseOrderLineId: z.string().uuid().nullable().optional(),
+});
+export type CreateDeliveryChallanLineInput = z.infer<typeof createDeliveryChallanLineInputSchema>;
+
+export const createDeliveryChallanInputSchema = z.object({
+  header: z.object({
+    code: z.string().min(1),
+    dcDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    purchaseOrderId: z.string().uuid().nullable().optional(),
+    poCodeText: z.string().min(1),
+    vendorId: z.string().uuid(),
+    vendorCodeText: z.string().min(1),
+    salesOrderLineId: z.string().uuid().nullable().optional(),
+    soRefText: z.string().nullable().optional(),
+    transport: z.string().nullable().optional(),
+  }),
+  lines: z.array(createDeliveryChallanLineInputSchema).min(1),
+});
+export type CreateDeliveryChallanInput = z.infer<typeof createDeliveryChallanInputSchema>;

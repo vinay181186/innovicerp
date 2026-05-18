@@ -74,9 +74,35 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** T-040g
-**Title:** Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash port)
-**Status:** [x] Code complete 2026-05-16. API + web both shipped in one session. **API:** `apps/api/src/modules/qc-dashboard/` (service.ts + routes.ts + 18 tests across service.test.ts/routes.test.ts) + shared `packages/shared/src/schemas/qc-dashboard.ts` + global-setup wipe for `T040G-*` op_log fixture rows. Single endpoint `GET /qc-dashboard?month=YYYY-MM&engineer=<name?>` returns one aggregate object (summary tiles, pending list, engineerPerf, topRejectionReasons, engineers dropdown options). 5 parallel queries inside `withUserContext`; pending list joins `v_jc_op_status` + `jc_ops` + `job_cards` + `items` + `sales_orders` LIMIT 200 ordered by `qc_call_date NULLS LAST`; engineer perf groups op_log qc rows by `operator_name` with `avg_response_days = AVG(GREATEST(log_date - qc_call_date, 0))`; rejection reasons top 8 from nc_register grouped by `reason_category`. Role gate via `ALLOWED_ROLES = ['admin','manager','viewer','qc']` — others get 403. **Web:** `apps/web/src/modules/qc-dashboard/{api.ts,routes/index.tsx}` — KPI tile grid (7 tiles: pending / overdue / inspected today / accepted today / rejected today / today rate / month rate, with rate-color thresholds 95% green / 85% amber / else rose) + two-column row (Pending Calls table with click-through deep link to `/op-entry?jc=<code>`, Engineer Performance table with click-to-filter rows) + Rejection Reasons table with simple bar render. Month picker + engineer dropdown bind to URL search params. Home page gets a new tile linking to `/qc-dashboard`. **Tests:** api 18/18 green (service 13/13 + routes 5/5). **Quality gates:** api typecheck + lint + prettier clean; web typecheck + lint + prettier + build clean (2287 modules, 4.32s, index 952 KB raw / 125 KB gzip — still under 1000 KB ceiling). **Browser smoke gated on user.**
+**ID:** T-059a
+**Title:** Phase 6 — Outsource DC outward create + cancel (closes ISSUE-003 outward half)
+**Status:** [x] Code complete 2026-05-18. API + web both shipped in one session per ADR-026.
+
+**Done:**
+
+- **DB:** Migration `0018_phase6_dc_po_line_link.sql` (one new column `purchase_order_line_id` on `delivery_challan_lines` + FK + index; nullable so non-JW DCs still work). Applied to dev via `_apply_0018.mjs` (DLP-friendly inlined applier — same workaround used for 0016 alerts migration). Drizzle schema updated.
+- **Shared:** `packages/shared/src/schemas/delivery-challan.ts` extended with `createDeliveryChallanInputSchema` + `createDeliveryChallanLineInputSchema`. `purchaseOrderLineId` added to read shape.
+- **Cascade helpers:** new `apps/api/src/modules/delivery-challans/cascades.ts` — `applyOutwardToJcOp` (bumps `outsource_sent_qty`, sets `outsource_sent_date`/`outsource_dc_no`, transitions `outsource_status: po_created/pr_raised/pending → sent`), `reverseOutwardFromJcOp` (cancel-path inverse with status downgrade only when sent_qty hits 0), `writeStoreTxnOnDcIssue` (txn_type=out, source_type=jw_out, locks items row FOR UPDATE), `reverseStoreTxnOnDcCancel` (compensating IN row with same source_type, marked "(cancel)").
+- **Service:** `createDeliveryChallan` + `cancelDeliveryChallan` in `apps/api/src/modules/delivery-challans/service.ts`. Both run inside `withUserContext`; cascades fire in the same tx so rollbacks unwind cleanly. Create validates qty ≤ `po_line.qty - already_sent_across_active_dcs` per PO line, rejects duplicate code, denies viewer. Cancel is admin-only (manager → 403), rejects already-cancelled / already-received with `ConflictError`. Both emit audit rows: `DC_ISSUE` / `OP_OUTSOURCE_SENT` on create; `DC_CANCEL` / `OP_OUTSOURCE_REVERSED` on cancel. **Refactor:** extracted `loadDeliveryChallanWithLines(tx, id, companyId)` helper so the write services return the freshly-inserted row from inside the open tx instead of opening a nested `withUserContext` (which broke due to pool isolation — surfaced as `NotFoundError` on every create test until extracted).
+- **Routes:** `POST /delivery-challans` (201) + `POST /delivery-challans/:id/cancel` (200).
+- **Tests:** **22/22 green** in DC suite (16 service + 6 routes). New under T-059a:
+  - 11 service tests — happy create + jc_op flip + stock OUT + audit rows + qty exceed → 409 + duplicate code → 409 + viewer → 403 + cancel reverse + manager → 403 + unknown id → 404 + idempotent cancel → 409.
+  - 3 routes tests — POST 201, POST :id/cancel 200, viewer POST → 403.
+- **Web:** `useCreateDeliveryChallan` + `useCancelDeliveryChallan` hooks in `api.ts`. New `routes/create.tsx` (wizard: `?poId=<id>` loads PO → prefills line drafts with `purchase_order_line_id` + item + PO qty, user enters ship qty per line, submit). "New DC" button on list page; "Cancel DC" button on detail (admin-only, status='issued'). "Issue DC" button on PO detail (replaces "Receive (new GRN)" when `po.poType === 'job_work'`).
+- **Quality gates:** api typecheck + lint + prettier clean; web typecheck + lint + prettier + build clean (2288 modules, 5.96s, index 974 KB raw / 129 KB gzip — still under 1000 KB ceiling).
+
+**What this unblocks:** ISSUE-003 outward half. The cascade for `IN-JC-00002` op 7 (COATING outsource) can now be driven through to `'sent'` state via the new DC outward flow. Full e2e cascade against migrated data still requires the receive-back flow (T-059b) — once that ships, `IN-JC-00002` → `SO-436 line 6` cascade can be driven end-to-end through real UI.
+
+**Out of scope (deferred to T-059b):**
+
+- Receive-back flow (`delivery_challan_receipts` table + `receiveAgainstDeliveryChallan` service + auto-NC on reject + `v_jc_op_status` update so received outsource ops project `complete` for sales-cascade).
+- PO line `received_qty` rollup for JW POs (currently 0; derivable from DC receipts join).
+- PDF print templates (Phase 7 T-041e UX-deferred).
+- `partyMaterials` deduction (doc_missing per ADR-017 / ADR-023).
+
+**Closed previous Active Task — T-040g (Phase 6 — QC engineer dashboard):**
+
+[x] Code complete 2026-05-16. API + web both shipped in one session. **API:** `apps/api/src/modules/qc-dashboard/` (service.ts + routes.ts + 18 tests across service.test.ts/routes.test.ts) + shared `packages/shared/src/schemas/qc-dashboard.ts` + global-setup wipe for `T040G-*` op_log fixture rows. Single endpoint `GET /qc-dashboard?month=YYYY-MM&engineer=<name?>` returns one aggregate object (summary tiles, pending list, engineerPerf, topRejectionReasons, engineers dropdown options). 5 parallel queries inside `withUserContext`; pending list joins `v_jc_op_status` + `jc_ops` + `job_cards` + `items` + `sales_orders` LIMIT 200 ordered by `qc_call_date NULLS LAST`; engineer perf groups op_log qc rows by `operator_name` with `avg_response_days = AVG(GREATEST(log_date - qc_call_date, 0))`; rejection reasons top 8 from nc_register grouped by `reason_category`. Role gate via `ALLOWED_ROLES = ['admin','manager','viewer','qc']` — others get 403. **Web:** `apps/web/src/modules/qc-dashboard/{api.ts,routes/index.tsx}` — KPI tile grid (7 tiles: pending / overdue / inspected today / accepted today / rejected today / today rate / month rate, with rate-color thresholds 95% green / 85% amber / else rose) + two-column row (Pending Calls table with click-through deep link to `/op-entry?jc=<code>`, Engineer Performance table with click-to-filter rows) + Rejection Reasons table with simple bar render. Month picker + engineer dropdown bind to URL search params. Home page gets a new tile linking to `/qc-dashboard`. **Tests:** api 18/18 green (service 13/13 + routes 5/5). **Quality gates:** api typecheck + lint + prettier clean; web typecheck + lint + prettier + build clean (2287 modules, 4.32s, index 952 KB raw / 125 KB gzip — still under 1000 KB ceiling). **Browser smoke gated on user.**
 
 **Browser smoke (when user is ready):**
 
@@ -483,7 +509,9 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 | T-040d | Phase 6 — QC inspection submit MVP (extend op-entry, no new tables) per ADR-025; closes ISSUE-001 + most of ISSUE-003                  | [x] Done (2026-05-15) |
 | T-040e | Phase 6 — Auto-create NC on QC reject (legacy `_autoCreateNC`); follow-on to T-040d                                                     | [x] Done (2026-05-15) |
 | T-040f | Phase 6 — Last-op stock cascade on QC accept (`store_transactions` ledger row, no items.stock_qty per ADR-015 #11); follow-on to T-040d | [x] Done (2026-05-15) |
-| T-040g | Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash L3963)                                                                     | [ ]                   |
+| T-040g | Phase 6 — QC engineer dashboard (legacy renderQCEngineerDash L3963)                                                                     | [x] Done (2026-05-16) |
+| T-059a | Phase 6 — Outsource DC outward (create + cancel + cascades + audit) per ADR-026                                                         | [x] Done (2026-05-18) |
+| T-059b | Phase 6 — Outsource DC receive-back (`delivery_challan_receipts` + cascade + sales-cascade unblock for ISSUE-003) per ADR-026           | [ ]                   |
 | T-041  | Cutover QC and dispatch teams                                                                                                           | [ ]                   |
 
 ## Phase 7 Backlog — Reports & Dashboards (Week 10)

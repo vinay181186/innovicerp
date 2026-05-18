@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { listDeliveryChallansQuerySchema } from './schema';
+import { createDeliveryChallanInputSchema, listDeliveryChallansQuerySchema } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -17,5 +17,19 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getDeliveryChallan(id, req.user);
+  });
+
+  app.post('/delivery-challans', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = createDeliveryChallanInputSchema.parse(req.body);
+    const detail = await service.createDeliveryChallan(input, req.user);
+    reply.code(201);
+    return detail;
+  });
+
+  app.post('/delivery-challans/:id/cancel', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.cancelDeliveryChallan(id, req.user);
   });
 }

@@ -1,9 +1,10 @@
 import type {
+  CreateDeliveryChallanInput,
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
 } from '@innovic/shared';
-import { type UseQueryOptions, useQuery } from '@tanstack/react-query';
+import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const deliveryChallansKeys = {
@@ -45,5 +46,29 @@ export function useDeliveryChallan(id: string | undefined) {
     queryKey: id ? deliveryChallansKeys.detail(id) : deliveryChallansKeys.detail('__missing__'),
     queryFn: () => apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useCreateDeliveryChallan() {
+  const qc = useQueryClient();
+  return useMutation<DeliveryChallanWithLines, Error, CreateDeliveryChallanInput>({
+    mutationFn: (input) =>
+      apiFetch<DeliveryChallanWithLines>('/delivery-challans', { method: 'POST', json: input }),
+    onSuccess: (created) => {
+      void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      qc.setQueryData(deliveryChallansKeys.detail(created.id), created);
+    },
+  });
+}
+
+export function useCancelDeliveryChallan() {
+  const qc = useQueryClient();
+  return useMutation<DeliveryChallanWithLines, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}/cancel`, { method: 'POST' }),
+    onSuccess: (cancelled) => {
+      void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      qc.setQueryData(deliveryChallansKeys.detail(cancelled.id), cancelled);
+    },
   });
 }

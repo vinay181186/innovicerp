@@ -1,6 +1,7 @@
 import type { DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Ban, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -11,8 +12,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useDeliveryChallan } from '../api';
+import { useCancelDeliveryChallan, useDeliveryChallan } from '../api';
 import { DcStatusBadge } from '../components/dc-status-badge';
 
 export const deliveryChallanDetailRoute = createRoute({
@@ -24,6 +26,26 @@ export const deliveryChallanDetailRoute = createRoute({
 function DeliveryChallanDetailPage() {
   const { id } = deliveryChallanDetailRoute.useParams();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data: me } = useSession();
+  const cancel = useCancelDeliveryChallan();
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const onCancel = async (): Promise<void> => {
+    if (!id) return;
+    if (
+      !window.confirm(
+        'Cancel this delivery challan? This reverses jc_op state + writes a compensating stock IN row. Cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    setCancelError(null);
+    try {
+      await cancel.mutateAsync(id);
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : 'Failed to cancel DC.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -74,11 +96,40 @@ function DeliveryChallanDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle className="flex items-center gap-3">
-              {detail.vendorName ?? detail.vendorCodeText}
-              <DcStatusBadge status={detail.status} />
-            </CardTitle>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardDescription className="font-mono">{detail.code}</CardDescription>
+                <CardTitle className="flex items-center gap-3">
+                  {detail.vendorName ?? detail.vendorCodeText}
+                  <DcStatusBadge status={detail.status} />
+                </CardTitle>
+              </div>
+              {detail.status === 'issued' && me?.role === 'admin' ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void onCancel()}
+                  disabled={cancel.isPending}
+                >
+                  {cancel.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Cancelling…
+                    </>
+                  ) : (
+                    <>
+                      <Ban />
+                      Cancel DC
+                    </>
+                  )}
+                </Button>
+              ) : null}
+            </div>
+            {cancelError ? (
+              <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {cancelError}
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent>
             <HeaderGrid detail={detail} />
