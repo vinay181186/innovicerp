@@ -1,13 +1,14 @@
-/* Tokens load FIRST so shadcn HSL remap below can reference them. */
+/* Both @imports MUST be at the top of the file — CSS spec rejects
+   @import that comes after any non-import rule (incl. @tailwind
+   directives), and PostCSS silently drops them when ordered wrong.
+   Order matters for cascade: tokens first (so theme.css can reference
+   --vars), then Tailwind layers, then innovic-theme overrides. */
 @import './styles/tokens.css';
+@import './styles/innovic-theme.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Innovic component styles load AFTER Tailwind so legacy class selectors
-   (.panel / .badge / .btn / .modal etc.) win over Tailwind defaults. */
-@import './styles/innovic-theme.css';
 
 /*
  * shadcn primitives consume these HSL CSS vars. We remap them so an
@@ -53,10 +54,8 @@
     --ring: 197 100% 37%; /* focus ring = cyan */
     --radius: 0.5rem; /* 8px, matches var(--radius) */
   }
-  /* Dark mode intentionally NOT remapped — the legacy ERP is light-only
-     and the .dark class is unused in the app. Leaving the original
-     shadcn dark palette in place would make a stray .dark toggle look
-     broken; we just don't honour .dark anywhere. */
+  /* Dark mode intentionally NOT remapped — legacy is light-only and the
+     .dark class is unused in the app. */
   * {
     border-color: hsl(var(--border));
   }
@@ -73,6 +72,26 @@
     font-family: var(--hfont);
     letter-spacing: 0.02em;
   }
-  /* Monospace any element that wraps a code-like value (item codes,
-     SO/JC/PO numbers, IDs). Pages opt in by adding `font-mono`. */
+}
+
+/* App-shell rules — duplicated INSIDE index.css (not just in
+   innovic-theme.css) as a safety net in case PostCSS processing
+   re-orders the imported file. ID-based, high-specificity, idempotent
+   if both copies apply. */
+#app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
 }
