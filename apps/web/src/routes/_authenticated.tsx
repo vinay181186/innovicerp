@@ -1,4 +1,5 @@
 import { createRoute, Outlet, redirect } from '@tanstack/react-router';
+import { NavBar } from '@/components/shared/nav-bar';
 import { supabase } from '@/lib/supabase';
 import { rootRoute } from './__root';
 
@@ -13,5 +14,14 @@ export const authenticatedRoute = createRoute({
       throw redirect({ to: '/login' });
     }
   },
-  component: Outlet,
+  component: AuthenticatedLayout,
 });
+
+function AuthenticatedLayout(): React.JSX.Element {
+  return (
+    <div className="min-h-screen">
+      <NavBar />
+      <Outlet />
+    </div>
+  );
+}

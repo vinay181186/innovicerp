@@ -74,7 +74,21 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** ISSUE-003 close-out + ISSUE-005 fix
+**ID:** ISSUE-006 fix
+**Title:** Global nav bar — Home link + sign-out + user/role chip on every authenticated screen
+**Status:** [x] Code complete 2026-05-19.
+
+**Done:**
+
+- **Web:** New `apps/web/src/components/shared/nav-bar.tsx` — sticky top bar with `Home` icon + "Innovic ERP" link → `/`, current user's email + role chip on the right, sign-out button. `aria-current="page"` set when on `/`. Backdrop-blur background so it sits cleanly over scrolling content. `apps/web/src/routes/_authenticated.tsx` now wraps `Outlet` in a `<div>` + `<NavBar />` so every authenticated screen inherits the bar; pre-auth routes (`/login`, `/auth-callback`) don't render it. Index page's duplicate header (sign-out button + role indicator) trimmed to a single "Welcome back, <email>" line since the bar covers the auth bits.
+- **Scope kept tight:** No per-route breadcrumb, no hamburger / mega-menu, no module search — the `/` landing page already exposes all module links as a grid and the Home link gets you there from anywhere. Breadcrumbs can ship as a follow-on once user feedback demands it.
+- **Web bundle:** index chunk grew 999.79 KB → 1002.05 KB raw / 132.20 KB → 132.53 KB gzip — just barely tipped past Vite's default 1000 KB warning ceiling, but gzip delivery size (which is what matters for transfer) only added 0.33 KB.
+- **Quality gates:** web typecheck + lint + prettier + build clean (warning about the 1000 KB ceiling acknowledged in the build log).
+
+**ISSUE-006 in docs/ISSUES.md flipped `[ ] open` → `[x] Fixed 2026-05-19`.**
+
+**Closed previous Active Task — ISSUE-003 close-out + ISSUE-005 fix:**
+[Omitted long context line]
 **Title:** Resolve ISSUE-003 (now obsolete after T-059b) and fix ISSUE-005 (SO detail "— linked —" column)
 **Status:** [x] Code + docs complete 2026-05-19.
 

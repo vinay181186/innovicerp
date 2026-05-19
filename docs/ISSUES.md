@@ -108,11 +108,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (browser smoke T-030 / T-031 / T-032)
 - **Severity:** P3 (navigation UX; everything still reachable via URL bar / back)
-- **Status:** [ ] open
-
-**Repro:** Every route renders its own card layout. There's no header with Home + breadcrumb. Users currently navigate via URL bar or browser back button.
-
-**Fix sketch:** A shared `<AppHeader>` component (`apps/web/src/components/shared/`) with Home link + per-route breadcrumb prop. Apply via the root route component so every screen inherits. Reads role from `lib/session.ts` for role-gated nav items (admin: alerts admin, etc.).
+- **Status:** [x] Fixed 2026-05-19 — new `components/shared/nav-bar.tsx` (sticky top bar with Home link → /, user email + role chip, sign-out button). Wired into `routes/_authenticated.tsx` so every authenticated screen inherits it. Per-route breadcrumb deferred — the Home link covers the primary nav need; breadcrumbs can ship as a follow-on once user UX feedback demands it. Index page's duplicate sign-out + role indicator removed since the nav bar covers them. Web bundle: index chunk grew 999.79 KB → 1002.05 KB raw / 132.20 KB → 132.53 KB gzip (just barely tipped past Vite's default 1000 KB warning ceiling; gzip delivery size is what matters and that's fine). Typecheck + lint + prettier + build clean.
 
 ---
 

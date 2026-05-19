@@ -14,7 +14,6 @@ import {
   ListOrdered,
   HardHat,
   type LucideIcon,
-  LogOut,
   Package,
   History,
   Send,
@@ -23,8 +22,7 @@ import {
   Truck,
   Wrench,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { signOut, useSession } from '@/lib/session';
+import { useSession } from '@/lib/session';
 import { DashboardTilesGrid } from '@/modules/dashboard/components/dashboard-tiles-grid';
 import { authenticatedRoute } from './_authenticated';
 
@@ -155,25 +153,18 @@ function IndexPage() {
   return (
     <main className="container max-w-6xl py-10">
       <div className="space-y-8">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Innovic ERP</h1>
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading session&hellip;</p>
-            ) : me ? (
-              <p className="text-sm text-muted-foreground">
-                Signed in as <span className="font-medium text-foreground">{me.email}</span> ·{' '}
-                <span className="font-mono text-xs">{me.role}</span>
-                {me.isActive ? null : ' · inactive'}
-              </p>
-            ) : (
-              <p className="text-sm text-destructive">No session.</p>
-            )}
-          </div>
-          <Button variant="outline" size="sm" onClick={() => void signOut()}>
-            <LogOut />
-            Sign out
-          </Button>
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight">Innovic ERP</h1>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading session&hellip;</p>
+          ) : me ? (
+            <p className="text-sm text-muted-foreground">
+              Welcome back, <span className="font-medium text-foreground">{me.email}</span>
+              {me.isActive ? null : ' · inactive'}
+            </p>
+          ) : (
+            <p className="text-sm text-destructive">No session.</p>
+          )}
         </div>
 
         <DashboardTilesGrid />
