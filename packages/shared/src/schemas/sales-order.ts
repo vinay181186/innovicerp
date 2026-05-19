@@ -43,6 +43,10 @@ export const salesOrderLineSchema = z.object({
   lineNo: z.number().int().positive(),
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
+  // ISSUE-005 — live item code joined from items.code when itemId is set.
+  // Null when itemId is null (the snapshot text in itemCodeText is the
+  // only display value). UI renders `itemCode ?? itemCodeText ?? '—'`.
+  itemCode: z.string().nullable().default(null),
   partName: z.string(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),

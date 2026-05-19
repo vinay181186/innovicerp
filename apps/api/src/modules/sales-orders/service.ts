@@ -297,14 +297,18 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     if (!header) throw new NotFoundError(`Sales order ${id} not found`);
 
     const lineRows = await tx
-      .select()
+      .select({
+        row: salesOrderLines,
+        itemCode: items.code,
+      })
       .from(salesOrderLines)
+      .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
       .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
 
     return {
       ...toSalesOrder(header),
-      lines: lineRows.map(toSalesOrderLine),
+      lines: lineRows.map((r) => toSalesOrderLine(r.row, r.itemCode)),
     };
   });
 }
@@ -337,7 +341,10 @@ function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
   };
 }
 
-function toSalesOrderLine(row: typeof salesOrderLines.$inferSelect): SalesOrderLine {
+function toSalesOrderLine(
+  row: typeof salesOrderLines.$inferSelect,
+  itemCode: string | null = null,
+): SalesOrderLine {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -345,6 +352,7 @@ function toSalesOrderLine(row: typeof salesOrderLines.$inferSelect): SalesOrderL
     lineNo: row.lineNo,
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
+    itemCode,
     partName: row.partName,
     material: row.material,
     drawingNo: row.drawingNo,
@@ -471,7 +479,7 @@ export async function createSalesOrder(
 
     return {
       ...toSalesOrder(header),
-      lines: insertedLines.map(toSalesOrderLine),
+      lines: insertedLines.map((row) => toSalesOrderLine(row)),
     };
   });
 }
@@ -552,7 +560,7 @@ export async function updateSalesOrder(
 
     return {
       ...toSalesOrder(updatedHdr),
-      lines: lineRows.map(toSalesOrderLine),
+      lines: lineRows.map((row) => toSalesOrderLine(row)),
     };
   });
 }

@@ -74,7 +74,18 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** ISSUE-007 fix
+**ID:** ISSUE-003 close-out + ISSUE-005 fix
+**Title:** Resolve ISSUE-003 (now obsolete after T-059b) and fix ISSUE-005 (SO detail "— linked —" column)
+**Status:** [x] Code + docs complete 2026-05-19.
+
+**Done:**
+
+- **ISSUE-003 close-out:** Status flipped `[~] Partial` → `[x] Resolved 2026-05-19` with the rationale that all three flows now ship (T-040d QC submit, T-059a DC outward, T-059b DC receive-back) and migrated `IN-JC-00002` → `SO-436 line 6` end-to-end cascade is fully drivable through real UI. Code coverage via 39/39 DC suite + 12/12 cascade suite. Browser smoke remains gated on user driving the click-through.
+- **ISSUE-005 fix:** New `itemCode: string | null` field on `salesOrderLineSchema` (shared, defaults to null on create/update returns). `getSalesOrder` LEFT JOINs items and surfaces live `items.code` in the response. SO detail UI display changed from `l.itemCodeText ?? (l.itemId ? '— linked —' : '—')` to `l.itemCode ?? l.itemCodeText ?? '—'`. 16/16 sales-orders tests green; web build clean (index 999.79 KB / 132.20 KB gzip — unchanged ceiling). Other "— linked —" placeholders in PO / PR / NC / JW / GRN detail pages NOT touched — they have the same root cause but no user-reported pain, deferred to a future audit pass.
+- **Quality gates:** api typecheck + lint + prettier clean; web typecheck + lint + prettier + build clean.
+
+**Closed previous Active Task — ISSUE-007 fix:**
+[Omitted long context line]
 **Title:** Cascade sets `job_cards.closed_at` so the JC moves from `'complete'` to `'closed'` after sales-cascade
 **Status:** [x] Code complete 2026-05-19.
 

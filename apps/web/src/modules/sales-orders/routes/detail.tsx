@@ -224,7 +224,7 @@ function LinesTable(props: { lines: SalesOrderLine[] }) {
             <TableRow key={l.id}>
               <TableCell className="font-mono text-sm">{l.lineNo}</TableCell>
               <TableCell className="font-mono text-xs">
-                {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+                {l.itemCode ?? l.itemCodeText ?? '—'}
               </TableCell>
               <TableCell>{l.partName}</TableCell>
               <TableCell className="text-xs text-muted-foreground">{l.material ?? '—'}</TableCell>

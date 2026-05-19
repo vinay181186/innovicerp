@@ -56,7 +56,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (Resume Checklist #1 step 7a)
 - **Severity:** P2 (cascade code is unit-tested via `sales-cascade.test.ts`; browser-level e2e against migrated data is blocked)
-- **Status:** [~] Partial — QC submit flow shipped 2026-05-15 (T-040d per ADR-025) writes `log_type='qc'` and triggers `tryCascadeJcComplete` like `submitOpLog` does. **Outsource OUTWARD half shipped 2026-05-18** (T-059a per ADR-026) — `IN-JC-00002` op 7 (COATING) can now be flipped `po_created → sent` via the new DC outward flow at `/delivery-challans/new?poId=<jw-po-id>`. **Still gated on T-059b receive-back** to flip the same op `sent → received` and trigger `tryCascadeJcComplete` — once that ships, the migrated JC can drive cascade end-to-end. Browser-smoke gated on user (after T-040d ships, navigate to `/op-entry?jc=IN-JC-00003` and submit QC against ops 1/2 to clear the `qc_pending` state).
+- **Status:** [x] Resolved 2026-05-19 — all three flows now ship. QC submit (T-040d per ADR-025) writes `log_type='qc'`; outsource outward (T-059a per ADR-026) flips `po_created → sent` via `POST /delivery-challans` + the new `/delivery-challans/new?poId=<jw-po-id>` web flow; outsource receive-back (T-059b per ADR-026) flips `sent → received` via `POST /delivery-challans/:id/receive` + the new `/delivery-challans/$id/receive` web flow. The patched `v_jc_op_status` view (also from T-059b) projects `'complete'` for outsource ops at `outsource_status='received'` so the JC→SO cascade fires when outsource is the last/only step. End-to-end smoke against migrated data — `IN-JC-00002` ops 1–6 production → ops 7 outsource issue+receive → ops 8/9 QC → SO-436 line 6 close — is now drivable through real UI. Browser smoke remains gated on user driving the click-through; code coverage is via the 39/39 DC suite + 12/12 cascade suite.
 
 **Repro:** The only migrated JCs linked to SO lines are IN-JC-00002 (→ SO-436 line 6) and IN-JC-00003 (→ SO-436 line 4). Neither can be driven to `v_jc_status.computed_status='complete'` via current UI flows:
 
@@ -84,11 +84,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (browser smoke T-030 SO detail view)
 - **Severity:** P3 (UX clutter; data is correct, display is opaque)
-- **Status:** [ ] open
-
-**Repro:** Open SO-436 detail. The ITEM column on every line reads `— linked —`. The DRAWING column already shows the unique identifier the user actually scans for.
-
-**Fix sketch:** Either render the item code (when `item_id` is set, show `items.code`; else `item_code_text`), or drop the column entirely since DRAWING covers identification.
+- **Status:** [x] Fixed 2026-05-19 — path (a) from the fix sketch. New `itemCode: string | null` field added to `salesOrderLineSchema` in shared (defaults to null on create/update returns). `getSalesOrder` LEFT JOINs items on the line's itemId and surfaces the live `items.code`. SO detail UI changed from `l.itemCodeText ?? (l.itemId ? '— linked —' : '—')` to `l.itemCode ?? l.itemCodeText ?? '—'` — live code wins when itemId is set, snapshot text falls back for unresolved-at-create cases, em-dash for genuinely-empty. 16/16 sales-orders tests green; web build clean (index 999.79 KB / 132.20 KB gzip, unchanged ceiling). Other "— linked —" placeholders in PO / PR / NC / JW / GRN detail pages NOT touched — they have the same root cause but no user-reported pain.
 
 ---
 
