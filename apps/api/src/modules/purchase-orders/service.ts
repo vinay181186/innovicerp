@@ -285,9 +285,10 @@ export async function getPurchaseOrder(
 ): Promise<PurchaseOrderDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const headers = await tx
-      .select()
+    const headerRows = await tx
+      .select({ row: purchaseOrders, vendorName: vendors.name })
       .from(purchaseOrders)
+      .leftJoin(vendors, and(eq(vendors.id, purchaseOrders.vendorId), isNull(vendors.deletedAt)))
       .where(
         and(
           eq(purchaseOrders.id, id),
@@ -296,18 +297,20 @@ export async function getPurchaseOrder(
         ),
       )
       .limit(1);
-    const header = headers[0];
-    if (!header) throw new NotFoundError(`Purchase order ${id} not found`);
+    const headerRow = headerRows[0];
+    if (!headerRow) throw new NotFoundError(`Purchase order ${id} not found`);
 
     const lineRows = await tx
-      .select()
+      .select({ row: purchaseOrderLines, itemCode: items.code })
       .from(purchaseOrderLines)
+      .leftJoin(items, and(eq(items.id, purchaseOrderLines.itemId), isNull(items.deletedAt)))
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
     return {
-      ...toPurchaseOrder(header),
-      lines: lineRows.map(toPurchaseOrderLine),
+      ...toPurchaseOrder(headerRow.row),
+      vendorName: headerRow.vendorName,
+      lines: lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode)),
     };
   });
 }
@@ -340,7 +343,10 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
   };
 }
 
-function toPurchaseOrderLine(row: typeof purchaseOrderLines.$inferSelect): PurchaseOrderLine {
+function toPurchaseOrderLine(
+  row: typeof purchaseOrderLines.$inferSelect,
+  itemCode: string | null = null,
+): PurchaseOrderLine {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -348,6 +354,7 @@ function toPurchaseOrderLine(row: typeof purchaseOrderLines.$inferSelect): Purch
     lineNo: row.lineNo,
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
+    itemCode,
     itemName: row.itemName,
     qty: row.qty,
     rate: row.rate,
@@ -463,7 +470,8 @@ export async function createPurchaseOrder(
 
     return {
       ...toPurchaseOrder(header),
-      lines: insertedLines.map(toPurchaseOrderLine),
+      vendorName: null,
+      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
     };
   });
 }
@@ -543,7 +551,8 @@ export async function updatePurchaseOrder(
 
     return {
       ...toPurchaseOrder(updatedHdr),
-      lines: lineRows.map(toPurchaseOrderLine),
+      vendorName: null,
+      lines: lineRows.map((row) => toPurchaseOrderLine(row)),
     };
   });
 }
@@ -837,7 +846,8 @@ export async function createPurchaseOrderFromPr(
 
     return {
       ...toPurchaseOrder(header),
-      lines: insertedLines.map(toPurchaseOrderLine),
+      vendorName: null,
+      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
     };
   });
 }

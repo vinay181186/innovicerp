@@ -66,7 +66,12 @@ function DeliveryChallanNewPage() {
       po.lines.map((l) => ({
         purchaseOrderLineId: l.id,
         itemId: l.itemId ?? '',
-        itemCodeText: l.itemCodeText ?? '',
+        // itemCodeText is the snapshot field; for migrated/freshly-seeded
+        // PO lines it's null and the live code lives on l.itemCode (per
+        // the joined query in getPurchaseOrder). Fall back so the submit
+        // payload always carries a non-empty code (required by the API
+        // input schema).
+        itemCodeText: l.itemCodeText ?? l.itemCode ?? '',
         itemNameText: l.itemName ?? null,
         uom: 'NOS',
         poLineQty: Number(l.qty ?? 0),
@@ -187,9 +192,9 @@ function DeliveryChallanNewPage() {
           <h1 className="text-2xl font-semibold tracking-tight">New delivery challan</h1>
           <p className="text-sm text-muted-foreground">
             Issuing material against PO <span className="font-mono">{po.code}</span> — vendor{' '}
-            <span className="font-medium">{po.vendorCodeText}</span>. Submit will flip linked
-            outsource ops to <span className="font-mono">sent</span> and write a stock OUT ledger
-            row per item.
+            <span className="font-medium">{po.vendorName ?? po.vendorCodeText ?? '—'}</span>. Submit
+            will flip linked outsource ops to <span className="font-mono">sent</span> and write a
+            stock OUT ledger row per item.
           </p>
         </div>
 

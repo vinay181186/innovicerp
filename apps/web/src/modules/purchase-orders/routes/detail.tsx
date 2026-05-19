@@ -153,7 +153,7 @@ function PurchaseOrderDetailPage() {
           <CardHeader>
             <CardDescription className="font-mono">{detail.code}</CardDescription>
             <CardTitle className="flex items-center gap-3">
-              {detail.vendorCodeText ?? (detail.vendorId ? '— linked vendor —' : '—')}
+              {detail.vendorName ?? detail.vendorCodeText ?? '—'}
               <PoStatusBadge status={detail.status} />
             </CardTitle>
           </CardHeader>
@@ -243,7 +243,7 @@ function LinesTable(props: { lines: PurchaseOrderLine[] }) {
             <TableRow key={l.id}>
               <TableCell className="font-mono text-sm">{l.lineNo}</TableCell>
               <TableCell className="font-mono text-xs">
-                {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+                {l.itemCode ?? l.itemCodeText ?? '—'}
               </TableCell>
               <TableCell>{l.itemName}</TableCell>
               <TableCell className="text-right font-mono">{l.qty}</TableCell>

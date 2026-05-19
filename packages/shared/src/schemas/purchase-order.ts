@@ -42,6 +42,9 @@ export const purchaseOrderLineSchema = z.object({
   lineNo: z.number().int().positive(),
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
+  // Live item code joined from items.code when itemId is set; null otherwise.
+  // Same pattern as salesOrderLineSchema.itemCode (per ISSUE-005 fix).
+  itemCode: z.string().nullable().default(null),
   itemName: z.string(),
   qty: z.number().int().positive(),
   rate: z.string(), // numeric stored as string
@@ -86,6 +89,10 @@ export const purchaseOrderSchema = z.object({
 export type PurchaseOrder = z.infer<typeof purchaseOrderSchema>;
 
 export const purchaseOrderDetailSchema = purchaseOrderSchema.extend({
+  // Live vendor name joined from vendors.name when vendorId is set; null
+  // otherwise (free-text vendor stays in vendorCodeText). Same pattern as
+  // salesOrderLine.itemCode (per ISSUE-005 fix).
+  vendorName: z.string().nullable().default(null),
   lines: z.array(purchaseOrderLineSchema),
 });
 export type PurchaseOrderDetail = z.infer<typeof purchaseOrderDetailSchema>;
