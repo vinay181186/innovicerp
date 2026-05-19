@@ -74,7 +74,22 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** T-059b
+**ID:** T-042 (Partial — first slice)
+**Title:** Phase 7 — Materialize `v_item_stock` via trigger-maintained `item_stock_balances` table
+**Status:** [x] Code complete 2026-05-19. DB + tests shipped in one session.
+
+**Done:**
+
+- **DB:** Migration `0020_phase7_item_stock_table.sql` — new `item_stock_balances (company_id, item_id, on_hand_qty, updated_at)` table with PK on (company_id, item_id), RLS company_isolation read policy (no write policy; only the trigger writes). AFTER INSERT trigger on `store_transactions` calls `apply_store_txn_to_balance()` (SECURITY DEFINER, bypasses RLS) which upserts the balance row by txn_type (`in` → +qty, `out` → -qty, `adjust` → +qty per the existing view convention). Backfill from current ledger via `INSERT … ON CONFLICT DO UPDATE` so the table starts populated and the same statement doubles as a reconcile re-run. `v_item_stock` view rewritten to `SELECT * FROM item_stock_balances` — preserves the column contract so every existing caller (`getItemBalance`, qc-stock-cascade, GRN cascades, DC outward/cancel cascades, DC receipt cascades) works without code changes. Items FK has `ON DELETE CASCADE` so item hard-delete cleans the cache. Applied to dev via `_apply_0020.mjs`. Drizzle schema entry added for type safety.
+- **Tests:** **8/8 green** in store-transactions suite (3 existing + 5 new T-042 trigger tests covering in-direction upsert, out-direction reduce, mixed in/out/adjust matches live SUM, item_id=NULL skipped no row, v_item_stock view returns same value as direct table read). **92/92 green** across dependent suites (GRN + DC + op-entry) — zero regression on cascading writes that depend on `v_item_stock` for stock_before reads.
+- **Quality gates:** api typecheck + lint + prettier clean.
+
+**Why a partial T-042:** Remaining candidates (materializing `v_jc_op_status` with refresh triggers, monthly NC / op-log aggregate views) all add refresh-trigger complexity for unclear leverage at our 1–2 user scale. Deferred until production perf data exists post-Phase 9 cutover; T-042 row flips `[ ]` → `[~] Partial` rather than `[x] Done`.
+
+**Read-cost impact:** `v_item_stock` queries dropped from `SUM(N store_txns)` (full table scan filtered by company+item) to single-row PK lookup. Hottest callers — QC accept cascade (T-040f), JW DC issue (T-059a), JW DC receive (T-059b), GRN QC accept (T-036c) — all now read stock_before in O(1) instead of O(N).
+
+**Closed previous Active Task — T-059b (Phase 6 — Outsource DC receive-back):**
+[Omitted long context line]
 **Title:** Phase 6 — Outsource DC receive-back (closes ISSUE-003 fully)
 **Status:** [x] Code complete 2026-05-19. API + web both shipped in one session per ADR-026.
 
@@ -541,7 +556,7 @@ Same rationale as ADR-022 (T-046 deferral earlier same day): doc_missing modules
 | T-041c | Dashboard KPI tiles starter (5 fixed tiles)                                                              | [x] Done (2026-05-04)                                      |
 | T-041d | Alert config + email scheduling (cron-style, BullMQ + Redis + Resend)                                    | [ ] needs infra                                            |
 | T-041e | PDF print templates                                                                                      | [ ] UX-deferred                                            |
-| T-042  | Convert in-memory aggregations to SQL views / materialized views                                         | [ ]                                                        |
+| T-042  | Convert in-memory aggregations to SQL views / materialized views                                         | [~] Partial 2026-05-19 — `v_item_stock` materialized as trigger-maintained `item_stock_balances` table; remaining candidates (v_jc_op_status materialization, monthly NC/op aggregates) deferred until production perf data exists |
 | T-043  | Build dashboard with role-based KPI cards (extends T-041c)                                               | [x] Done (2026-05-05)                                      |
 | T-044  | Build top 5–10 most-used reports (extends T-041a)                                                        | [x] Done (2026-05-05) — 11 reports shipped across 5 groups |
 | T-045  | Add Excel export endpoint (exceljs)                                                                      | [x] Done (2026-05-05)                                      |

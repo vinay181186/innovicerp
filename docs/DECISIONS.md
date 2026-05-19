@@ -1101,6 +1101,44 @@ Build T-059 as a Phase 6 follow-on sliced into two sub-tasks:
 
 ---
 
+## ADR-027: T-042 materialize `v_item_stock` as a trigger-maintained table, not a Postgres MATERIALIZED VIEW
+
+**Date:** 2026-05-19
+**Status:** Accepted
+
+### Context
+
+`v_item_stock` was a SUM-on-the-fly view over `store_transactions` (defined in 0011_phase5_views.sql per ADR-015 #11). Every QC accept cascade, JW DC issue, JW DC receive, and GRN QC accept reads it (to derive stock_before before writing the next ledger row); items-on-hand reports also read it. Read cost grows linearly with `store_transactions` row count.
+
+T-042 calls for converting in-memory aggregations to SQL views / materialized views. The codebase is already SQL-first; the actual remaining win is materializing the hottest view.
+
+### Decision
+
+Implement materialization via a **trigger-maintained denormalized table** (`item_stock_balances`), not a Postgres `MATERIALIZED VIEW`.
+
+- New `item_stock_balances (company_id, item_id, on_hand_qty, updated_at)` table, PK on (company_id, item_id).
+- AFTER INSERT trigger on `store_transactions` (SECURITY DEFINER) upserts the balance row by `txn_type` (`in` → +qty, `out` → -qty, `adjust` → +qty per the existing view convention).
+- `v_item_stock` view rewritten to `SELECT * FROM item_stock_balances` so every existing caller continues to work unchanged.
+- Backfill via `INSERT … ON CONFLICT DO UPDATE` over the live ledger; re-runnable as a reconcile.
+- Items FK has `ON DELETE CASCADE` on the balances table so item hard-deletes clean the cache.
+
+### Alternatives Considered
+
+- **Postgres `MATERIALIZED VIEW` with periodic `REFRESH MATERIALIZED VIEW CONCURRENTLY`** — rejected: full refresh costs scale with `store_transactions` size; incremental refresh isn't a Postgres primitive; refresh staleness window adds correctness risk for cascades that read stock_before then write stock_after in the same tx.
+- **Keep the view, add covering index on `store_transactions(company_id, item_id, txn_type, qty)`** — rejected: index helps planner but still scans all rows for one item. At 100K+ ledger rows the SUM is still O(N per item) per query.
+- **Resurrect legacy `items.stock_qty` denormalization** — rejected: same as this decision in spirit but stored on `items` table. Separate table keeps `items` schema clean and lets the cache be wiped/rebuilt without touching the master.
+- **Defer T-042 entirely until production perf data exists** — partially accepted: deferred for `v_jc_op_status` + monthly aggregates (no clear leverage at current scale); only `v_item_stock` materialized in this slice because its read cost ramps with `store_transactions` row count (already 4–5 writes per JC complete), so the curve bites earliest.
+
+### Consequences
+
+- **Positive:** Hot reads drop from O(N) per item to O(1) PK lookup. Cascade write paths (T-036c GRN, T-040f QC accept, T-059a DC issue, T-059b DC receive) all get faster as the ledger grows. View contract preserved → zero caller changes. Backfill statement doubles as a reconcile primitive.
+- **Negative:** New invariant to maintain (trigger correctness). If a future ALTER on `store_transactions` adds UPDATE/DELETE without paired triggers, the cache drifts silently.
+- **Risks:**
+  - **Trigger correctness drift:** mitigated by the reconcile-style backfill which is also a fact-check. Adding a periodic `SELECT 1 FROM v_item_stock WHERE on_hand_qty != (SELECT SUM(...) ...)` smoke check as a Phase 9 monitoring item could close this.
+  - **`store_transactions` becoming mutable:** ADR-011 #4 declares the ledger append-only. If that ever changes, the trigger must add UPDATE/DELETE handlers that reverse the prior delta + apply the new one. Captured here so the breaking change can't slip in unnoticed.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

@@ -34,6 +34,7 @@ import {
   pgEnum,
   pgPolicy,
   pgTable,
+  primaryKey,
   text,
   time,
   timestamp,
@@ -1480,6 +1481,38 @@ export const storeTransactions = pgTable(
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
     // No UPDATE/DELETE policies — append-only, like op_log per ADR-011 #4.
+  ],
+).enableRLS();
+
+// ─── T-042: item stock balance cache ─────────────────────────────────────
+// Incrementally-maintained materialization of v_item_stock (which is now
+// a view over this table). Updated by an AFTER INSERT trigger on
+// store_transactions defined in migration 0020. No app-level writes —
+// the trigger function runs with SECURITY DEFINER and is the only writer.
+// Drizzle entry exists for type safety + future readers; nothing here
+// inserts/updates directly.
+
+export const itemStockBalances = pgTable(
+  'item_stock_balances',
+  {
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    onHandQty: integer('on_hand_qty').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.companyId, t.itemId] }),
+    index('item_stock_balances_company_idx').on(t.companyId),
+    pgPolicy('item_stock_balances_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // No write policy — the SECURITY DEFINER trigger is the only writer.
   ],
 ).enableRLS();
 
