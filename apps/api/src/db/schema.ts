@@ -1,4 +1,6 @@
 import {
+  BOM_LINE_TYPES,
+  BOM_STATUSES,
   DC_STATUSES,
   GRN_QC_STATUSES,
   ITEM_TYPES,
@@ -71,6 +73,10 @@ export const ncStatusEnum = pgEnum('nc_status', NC_STATUSES);
 export const ncDispositionEnum = pgEnum('nc_disposition', NC_DISPOSITIONS);
 export const ncReasonCategoryEnum = pgEnum('nc_reason_category', NC_REASON_CATEGORIES);
 export const dcStatusEnum = pgEnum('dc_status', DC_STATUSES);
+
+// ─── Phase 8 BOM Master enums (BOM-1) ─────────────────────────────────────
+export const bomStatusEnum = pgEnum('bom_status', BOM_STATUSES);
+export const bomLineTypeEnum = pgEnum('bom_line_type', BOM_LINE_TYPES);
 
 export const companies = pgTable(
   'companies',
@@ -955,6 +961,12 @@ export const salesOrderLines = pgTable(
     dueDate: date('due_date'),
     clientPoLineNo: text('client_po_line_no'),
     status: soStatusEnum('status').notNull().default('open'),
+    // BOM-8 cascade source: when set, SO line creation walks the BOM lines
+    // and spawns child JCs / PRs based on bom_type. Forward-ref to bomMasters
+    // defined later in this file.
+    sourceBomMasterId: uuid('source_bom_master_id').references((): AnyPgColumn => bomMasters.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -975,6 +987,9 @@ export const salesOrderLines = pgTable(
     index('sales_order_lines_company_status_idx')
       .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
+    index('sales_order_lines_source_bom_idx')
+      .on(t.sourceBomMasterId)
+      .where(sql`${t.sourceBomMasterId} is not null`),
     check('sales_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
     pgPolicy('sales_order_lines_company_read', {
       for: 'select',
@@ -1830,6 +1845,144 @@ export const deliveryChallanReceiptLines = pgTable(
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Phase 8 BOM Master (BOM-1, ports legacy renderBOMMaster L8438) ───────
+// Three tables: header + lines + append-only revisions log. Revisions
+// store the previous lines[] as jsonb so the diff trail survives even
+// after the underlying line rows are replaced on update. sales_order_lines
+// gets a source_bom_master_id FK (above) that the BOM-8 cascade walks
+// to spawn child JCs / PRs per bom_type. Status (draft/active/obsolete)
+// + revision integer auto-bumped on edit.
+
+export const bomMasters = pgTable(
+  'bom_masters',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    bomNo: text('bom_no').notNull(),
+    bomName: text('bom_name').notNull(),
+    revision: integer('revision').notNull().default(1),
+    status: bomStatusEnum('status').notNull().default('draft'),
+    revisionDate: date('revision_date').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('bom_masters_company_no_uniq')
+      .on(t.companyId, t.bomNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('bom_masters_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('bom_masters_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('bom_masters_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const bomMasterLines = pgTable(
+  'bom_master_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    bomMasterId: uuid('bom_master_id')
+      .notNull()
+      .references(() => bomMasters.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    childItemId: uuid('child_item_id')
+      .notNull()
+      .references(() => items.id),
+    qtyPerSet: numeric('qty_per_set', { precision: 12, scale: 2 }).notNull(),
+    bomType: bomLineTypeEnum('bom_type').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('bom_master_lines_bom_item_uniq')
+      .on(t.bomMasterId, t.childItemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('bom_master_lines_bom_idx')
+      .on(t.bomMasterId)
+      .where(sql`${t.deletedAt} is null`),
+    index('bom_master_lines_item_idx')
+      .on(t.childItemId)
+      .where(sql`${t.deletedAt} is null`),
+    check('bom_master_lines_qty_positive', sql`${t.qtyPerSet} > 0`),
+    pgPolicy('bom_master_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('bom_master_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const bomMasterRevisions = pgTable(
+  'bom_master_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    bomMasterId: uuid('bom_master_id')
+      .notNull()
+      .references(() => bomMasters.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    changedByText: text('changed_by_text').notNull(),
+    notes: text('notes'),
+    itemsSnapshot: jsonb('items_snapshot').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('bom_master_revisions_bom_rev_uniq').on(t.bomMasterId, t.revision),
+    index('bom_master_revisions_bom_idx').on(t.bomMasterId),
+    pgPolicy('bom_master_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Append-only: only INSERT policy, no UPDATE/DELETE.
+    pgPolicy('bom_master_revisions_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
   ],

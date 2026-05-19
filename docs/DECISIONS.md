@@ -1139,6 +1139,70 @@ Implement materialization via a **trigger-maintained denormalized table** (`item
 
 ---
 
+## ADR-028: Build to full legacy parity per user direction 2026-05-20
+
+**Date:** 2026-05-20
+**Status:** Accepted
+**Supersedes:** ADR-016, ADR-017, ADR-022, ADR-023
+
+### Context
+
+The previous four deferral ADRs (016/017/022/023) shelved 16+ legacy screens on the rationale that their Firebase collections were empty (`doc_missing`). The user directed on 2026-05-20 that this was the wrong default: the legacy HTML defines workflows regardless of whether the current Firebase export captured any data, and the new app's stated goal from day one was "system like HTML, database in SQL" — i.e. full parity. `docs/LEGACY_AUDIT.md` (committed `93820e5`) enumerated all ~85 legacy screens and confirmed only 21 (~25%) were shipped.
+
+### Decision
+
+Reverse all four deferral ADRs. Build out the full legacy surface area in six phases per the LEGACY_AUDIT build plan:
+
+- **Phase A** (foundation masters that gate downstream): BOM Master, Route Cards, QC Process Master, Cost Center Master, Settings + Users + Access Control
+- **Phase B** (Planning module, 5 screens)
+- **Phase C** (Production deepening, 9 missing + 2 partial)
+- **Phase D** (QC + Sales + Purchase deepening)
+- **Phase E** (Design + CRM + Finance, the bulk of previously-deferred work)
+- **Phase F** (System / Tasks / cross-cutting reports)
+
+Estimated 8–9 weeks of focused work to reach 1:1 parity.
+
+### Specifically what gets unblocked per superseded ADR
+
+- **ADR-016** → QC Documents, QC Call Register, QC Process Master UI all back in scope.
+- **ADR-017** → outsourceJobs, ospDC (separate-from-jwdc view), partyMaterials master + PartyGRN, storeIssues / issueRegister, toolIssue all back in scope. JW DC inward view added.
+- **ADR-022** → entire Design module (7 screens) back in scope — projects, issues, work log, BOM Master (shipping in this commit), design tracker, route cards, design reports.
+- **ADR-023** → CRM (leads + reminders + Customer 360°), CAPA records, print templates editor, daily task reports, task board, admin trash recovery, tool issues all back in scope.
+
+### Alternatives Considered
+
+- **Stay on the deferred scope, ship 25% of legacy** — rejected: user explicitly stated this was a misalignment with project goals. The original "data-driven deferral" rule was conservative engineering inferred from incomplete signal, not a user-confirmed scope decision.
+- **Build only what users actively ask for** — rejected: the user wanted comprehensive parity so the team doesn't have to re-train on different workflows. Asking per-feature would prolong the cutover ramp and leave gaps.
+
+### Consequences
+
+- **Positive:** Full parity restores confidence in the migration. Users see every familiar screen on day one. The audit doc becomes the build backlog.
+- **Negative:** 8–9 weeks of additional work before cutover-ready. Multi-session effort. Per-screen scope creep is a real risk.
+- **Risks:**
+  - **Scope creep on each module** — mitigated by per-module ADRs as needed AND the audit doc's "what's explicitly NOT in scope" section (backup screen → CI cron, dedicated mobile view, etc.).
+  - **Schema churn** — fresh modules need fresh tables; old tables may need ALTERs. Each migration is reviewed; soft-deletes preserve existing data.
+  - **Field-by-field divergence** — mitigated by `feedback_ui_match_legacy_html.md` memory note (mirror legacy 1:1 for both data layout AND chrome) + per-module audit during build.
+
+### What ships in this commit (BOM-1 through BOM-8)
+
+- DB: migration `0021_phase8_bom_master.sql` — 3 tables + 2 enums + indexes + RLS + sales_order_lines.source_bom_master_id FK
+- Drizzle schema entries
+- Shared zod schemas (read + write input + Excel import shapes)
+- Service layer with revision lifecycle + auto-diff note + linked-SO delete guard
+- Routes: GET / POST / PUT / DELETE
+- 24 tests green (17 service + 4 routes + 3 cascade)
+- BOM-to-SO cascade hooked into createSalesOrder — manufacture lines spawn child JC, purchase/outsource lines spawn PR (with `'OUTSOURCE'` operation marker for outsource)
+- 40/40 green across BOM + sales-orders modules
+
+### What waits for follow-up commits
+
+- Web pages (list + detail + create + edit forms + Excel import)
+- Update-path cascade hook (updateSalesOrder line additions with sourceBomMasterId set)
+- Phase A items 2–5 (Route Cards, QC Process Master, Cost Center, Settings/Users/Access Control)
+- Phase B+ per LEGACY_AUDIT plan
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

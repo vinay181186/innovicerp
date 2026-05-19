@@ -56,6 +56,7 @@ export const salesOrderLineSchema = z.object({
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),
   status: soStatusSchema,
+  sourceBomMasterId: z.string().uuid().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -126,6 +127,11 @@ export const salesOrderLineInputSchema = z
       .optional(),
     clientPoLineNo: z.string().max(64).optional(),
     status: soStatusSchema.optional(),
+    // BOM-8 cascade: when set, line creation spawns child JCs / PRs from
+    // the BOM's lines (per bom_type). Fires once per line creation;
+    // re-saves with same BOM are idempotent (checked by source_so_line_id
+    // already-existing children). See modules/bom-master/cascade.ts.
+    sourceBomMasterId: z.string().uuid().optional(),
   })
   .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
     message: 'itemId or itemCodeText is required (per ADR-012 #10)',

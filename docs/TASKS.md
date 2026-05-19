@@ -74,9 +74,35 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** UI-001
+**ID:** BOM-1..8 (Phase A item 1 per ADR-028 / LEGACY_AUDIT.md)
+**Title:** BOM Master — port legacy renderBOMMaster + SO→BOM cascade
+**Status:** [x] API + cascade + tests complete 2026-05-20. Web pages (list/detail/forms) follow in next commit.
+
+**Done:**
+
+- **Migration `0021_phase8_bom_master.sql`** — 3 tables (`bom_masters`, `bom_master_lines`, `bom_master_revisions`) + 2 enums (`bom_status`, `bom_line_type`) + indexes + RLS + ALTER on `sales_order_lines.source_bom_master_id` FK. Idempotent. Applied via `_apply_0021.mjs`.
+- **Drizzle schema** — `bomMasters`, `bomMasterLines`, `bomMasterRevisions` entries + new enums + `sourceBomMasterId` column on `salesOrderLines`.
+- **Shared zod schemas** (`packages/shared/src/schemas/bom-master.ts`) — read shapes (header / line with joined `childItemCode + childItemName` / revision with `itemsSnapshot` jsonb), `createBomMasterInputSchema` + `updateBomMasterInputSchema` (with Zod refines for duplicate-items + ≥1-line), `importBomLinesInputSchema` for the Excel flow.
+- **Service** (`apps/api/src/modules/bom-master/service.ts`) — listBomMasters (with `lineCount` + `linkedSoCount` aggregates), getBomMaster (header + lines joined to items.code + revisions ordered desc + linkedSoCount), createBomMaster (auto BOM-NNNN + revision 1 with initial snapshot), updateBomMaster (bumps revision, snapshots PRE-update lines to `bom_master_revisions`, auto-generates diff note via `computeBomDiffNote(oldLines, newLines)` — "Added: X · Removed: Y · Changed: Z (qty A→B, type C→D)"), softDeleteBomMaster (admin-only, blocked when any non-cancelled SO line links the BOM).
+- **Routes** (`/bom-masters` GET / POST / PUT / DELETE / GET-by-id). Registered in `server.ts`.
+- **Tests** — **24/24 green** (17 service + 4 routes + 3 cascade). Helper unit tests for `computeBomDiffNote` (added/removed/qty/type changes + no-change empty). CRUD + revision-bump + diff-note + override-note + duplicate-bomNo + delete-blocked-by-linked-SO + admin-only + viewer 403.
+- **BOM-8 cascade** (`apps/api/src/modules/bom-master/cascade.ts`) — `cascadeBomToSoLine(tx, soLineId, user)`: looks up the SO line's `sourceBomMasterId`, walks BOM lines, spawns child JC (manufacture, code `JC-BOM-<slug>-NN`, orderQty = soLineQty × qtyPerSet, sourceSoLineId = parent SO line so T-033 cascade still closes back) and child PR (purchase / outsource, code `PR-BOM-<slug>-NN`, vendor `'TBD'` placeholder, operation `'OUTSOURCE'` differentiates outsource from purchase). Idempotent: re-runs return `fired: false` and create nothing new (checked by source_so_line_id already-existing children). Emits `BOM_CASCADE` activity log row. **Hooked into** `createSalesOrder` so any line with `sourceBomMasterId` set triggers the cascade in the same tx as the SO insert (rollback unwinds cleanly).
+- **Shared SO schemas extended** — `salesOrderLineInputSchema.sourceBomMasterId?` for writes, `salesOrderLineSchema.sourceBomMasterId` for reads (`null` default).
+- **Excel import** (BOM-5) intentionally scoped to client-side parsing via the `xlsx` library — happens in the web forms (BOM-10), no server endpoint required since item-code resolution piggybacks on the existing /items query.
+- **ADR-028** written, superseding ADRs 016/017/022/023. Full-parity build plan adopted; remaining Phase A items (Route Cards, QC Process Master, Cost Center, Settings/Users/Access Control) tracked in LEGACY_AUDIT.
+- **LEGACY_AUDIT.md** BOM Master row flipped to "🟡 API + cascade shipped".
+- **Quality gates** — shared + api typecheck clean; web build untouched (no web changes in this commit); api lint + prettier clean; **40/40 tests green** across BOM-master + sales-orders modules (zero regression from cascade hook).
+
+**Next commit (continuing same phase):**
+- BOM-9: Web list page with expand-row showing lines + linked-SO count
+- BOM-10: Web create/edit forms with `xlsx` Excel-import button, line editor, revision-note field
+- Sidebar nav entry under Design dept
+- updateSalesOrder cascade hook (new lines with `sourceBomMasterId` during edit)
+
+**Closed previous Active Task — UI-001 (Innovic design system Phase 1):**
+[Omitted long context line]
 **Title:** Innovic design system — port tokens / chrome from legacy HTML to React app (Phase 1: tokens + shell + Tailwind config)
-**Status:** [x] Phase 1 complete 2026-05-20. Per-screen polish in subsequent commits.
+**Status:** [x] Phase 1 complete 2026-05-20.
 
 **Done:**
 

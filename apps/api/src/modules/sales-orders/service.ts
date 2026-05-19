@@ -22,6 +22,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { cascadeBomToSoLine } from '../bom-master/cascade';
 
 function soDetail(code: string, customerName: string | null | undefined): string {
   return customerName ? `${code} — ${customerName}` : code;
@@ -362,6 +363,7 @@ function toSalesOrderLine(
     dueDate: row.dueDate,
     clientPoLineNo: row.clientPoLineNo,
     status: row.status,
+    sourceBomMasterId: row.sourceBomMasterId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -458,6 +460,7 @@ export async function createSalesOrder(
           dueDate: l.dueDate ?? null,
           clientPoLineNo: l.clientPoLineNo ?? null,
           status: l.status ?? headerStatus,
+          sourceBomMasterId: l.sourceBomMasterId ?? null,
           createdBy: user.id,
           updatedBy: user.id,
         };
@@ -476,6 +479,15 @@ export async function createSalesOrder(
       companyId,
       user,
     );
+
+    // BOM-8 cascade: for every freshly-inserted line that links a BOM,
+    // walk the BOM's lines and spawn child JCs / PRs. Runs in the same
+    // tx as the SO insert so a cascade failure rolls back the SO.
+    for (const line of insertedLines) {
+      if (line.sourceBomMasterId) {
+        await cascadeBomToSoLine(tx, line.id, user);
+      }
+    }
 
     return {
       ...toSalesOrder(header),

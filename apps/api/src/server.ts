@@ -12,6 +12,7 @@ import { initSentry } from './lib/sentry';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { alertsRoutes } from './modules/alerts/routes';
 import { startAlertsWorker, stopAlertsWorker } from './modules/alerts/worker-boot';
+import { bomMasterRoutes } from './modules/bom-master/routes';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
@@ -110,6 +111,7 @@ await app.register(reportsRoutes);
 await app.register(savedReportsRoutes);
 await app.register(activityLogRoutes);
 await app.register(alertsRoutes);
+await app.register(bomMasterRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });
