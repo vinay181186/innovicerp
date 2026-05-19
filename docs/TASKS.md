@@ -74,7 +74,21 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** T-042 (Partial — first slice)
+**ID:** ISSUE-007 fix
+**Title:** Cascade sets `job_cards.closed_at` so the JC moves from `'complete'` to `'closed'` after sales-cascade
+**Status:** [x] Code complete 2026-05-19.
+
+**Done:**
+
+- **Service (`apps/api/src/modules/op-entry/sales-cascade.ts`):** Inside `tryCascadeJcComplete`, after the inner cascadeSo / cascadeJw confirms a line was closed (and right before emitting `JC_COMPLETE`), update `job_cards.closed_at = now() WHERE id = jobCardId AND closed_at IS NULL` — idempotent via the IS NULL guard, in the same tx as the audit so rollback unwinds both. Early-return check at the top relaxed from `if (computedStatus !== 'complete')` to `if (computedStatus !== 'complete' && computedStatus !== 'closed')` so idempotent re-runs (after closed_at is set, view projects `'closed'` not `'complete'`) still flow through to the inner cascade and return the canonical `skipped: 'so_line_already_terminal'` instead of a misleading `skipped: 'jc_not_complete'`.
+- **Tests:** 2 new in `sales-cascade.test.ts` — `ISSUE-007: cascade sets job_cards.closed_at when it closes the SO line` (verifies closed_at is null pre-cascade then Date post-cascade); `ISSUE-007: closed_at is idempotent — re-running cascade does NOT update it` (captures closed_at timestamp, re-runs `tryCascadeJcComplete`, asserts the timestamp is unchanged + skipped reason is `so_line_already_terminal`).
+- **ISSUES.md:** ISSUE-007 row flipped `[ ] open` → `[x] Fixed 2026-05-19`.
+- **Quality gates:** api typecheck + lint + prettier clean; 12/12 cascade tests green (was 10, +2 from this fix).
+
+**Downstream impact:** `v_jc_status.computed_status` now projects `'closed'` for cascade-completed JCs (previously stuck at `'complete'`). Reports / alerts / dashboards keying off `closed_at` (jc-ageing report, al-012-jc-overdue alert, etc.) now see the JC as closed. The earlier ADR-026 view-update change for outsource ops is unaffected.
+
+**Closed previous Active Task — T-042 (Partial — first slice):**
+[Omitted long context line]
 **Title:** Phase 7 — Materialize `v_item_stock` via trigger-maintained `item_stock_balances` table
 **Status:** [x] Code complete 2026-05-19. DB + tests shipped in one session.
 

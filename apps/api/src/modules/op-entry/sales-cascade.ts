@@ -55,12 +55,18 @@ export async function tryCascadeJcComplete(
   user: AuthContext,
 ): Promise<CascadeResult> {
   // Step 1: only fire when the JC is fully complete per v_jc_status.
+  // Accept BOTH 'complete' (closed_at IS NULL, just reached the bar) and
+  // 'closed' (closed_at already set by a prior cascade run) — the second
+  // state happens on idempotent re-runs after this function set closed_at
+  // the first time around. Without accepting 'closed', re-runs would
+  // short-circuit here instead of flowing through to the inner cascade,
+  // breaking the existing idempotency contract (skipped: 'so_line_already_terminal').
   const statusRows = await tx.execute(sql`
     SELECT computed_status FROM public.v_jc_status WHERE job_card_id = ${jobCardId}::uuid
   `);
   const computedStatus =
     (statusRows as unknown as Array<{ computed_status: string }>)[0]?.computed_status ?? null;
-  if (computedStatus !== 'complete') {
+  if (computedStatus !== 'complete' && computedStatus !== 'closed') {
     return { skipped: 'jc_not_complete' };
   }
 
@@ -89,6 +95,14 @@ export async function tryCascadeJcComplete(
   // (not on idempotent re-runs against an already-terminal line). Pairs
   // with the SO_LINE_CLOSED / JW_LINE_CLOSED row for the same tx.
   if ((result.closedSoLineId || result.closedJwLineId) && user.companyId) {
+    // ISSUE-007 — set closed_at when the JC transitions complete → closed.
+    // Idempotent via the closedAt IS NULL guard so re-runs are no-ops.
+    // Done in the SAME tx as the audit row so a rollback unwinds both.
+    await tx
+      .update(jobCards)
+      .set({ closedAt: new Date(), updatedBy: user.id })
+      .where(and(eq(jobCards.id, jobCardId), isNull(jobCards.closedAt)));
+
     await emitActivityLog(
       tx,
       {

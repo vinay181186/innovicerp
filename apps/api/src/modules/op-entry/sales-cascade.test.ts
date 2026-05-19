@@ -784,6 +784,88 @@ describe('op-entry sales-cascade (T-033)', () => {
     }
   });
 
+  it('ISSUE-007: cascade sets job_cards.closed_at when it closes the SO line', async () => {
+    const f = await makeSoCascadeFixture({
+      soCode: `${TEST_PREFIX}SO-CLA`,
+      jcCodePrefix: `${TEST_PREFIX}JC-CLA`,
+      lineCount: 1,
+    });
+
+    // Pre-condition: closed_at is null on a fresh JC.
+    const before = await db
+      .select({ closedAt: jobCards.closedAt })
+      .from(jobCards)
+      .where(eq(jobCards.id, f.jcIds[0]!))
+      .limit(1);
+    expect(before[0]?.closedAt).toBeNull();
+
+    await service.submitOpLog(
+      {
+        jcOpId: f.jcOpIds[0]!,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'Closer',
+      },
+      admin,
+    );
+
+    const after = await db
+      .select({ closedAt: jobCards.closedAt })
+      .from(jobCards)
+      .where(eq(jobCards.id, f.jcIds[0]!))
+      .limit(1);
+    expect(after[0]?.closedAt).not.toBeNull();
+    expect(after[0]?.closedAt).toBeInstanceOf(Date);
+  });
+
+  it('ISSUE-007: closed_at is idempotent — re-running cascade does NOT update it', async () => {
+    const f = await makeSoCascadeFixture({
+      soCode: `${TEST_PREFIX}SO-CLB`,
+      jcCodePrefix: `${TEST_PREFIX}JC-CLB`,
+      lineCount: 1,
+    });
+
+    await service.submitOpLog(
+      {
+        jcOpId: f.jcOpIds[0]!,
+        qty: 5,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'Closer',
+      },
+      admin,
+    );
+
+    const firstClosedAt = (
+      await db
+        .select({ closedAt: jobCards.closedAt })
+        .from(jobCards)
+        .where(eq(jobCards.id, f.jcIds[0]!))
+        .limit(1)
+    )[0]?.closedAt;
+
+    // Re-run the cascade directly. Should be a no-op via the IS NULL guard
+    // on the closed_at UPDATE; also the inner cascade returns
+    // so_line_already_terminal so no JC_COMPLETE row emits.
+    await withUserContext(admin, async (tx) => {
+      const result = await tryCascadeJcComplete(tx, f.jcIds[0]!, admin);
+      expect(result.skipped).toBe('so_line_already_terminal');
+    });
+
+    const secondClosedAt = (
+      await db
+        .select({ closedAt: jobCards.closedAt })
+        .from(jobCards)
+        .where(eq(jobCards.id, f.jcIds[0]!))
+        .limit(1)
+    )[0]?.closedAt;
+
+    expect(secondClosedAt?.toISOString()).toBe(firstClosedAt?.toISOString());
+  });
+
   it('idempotent re-run: cascade does NOT emit duplicate JC_COMPLETE on already-closed line', async () => {
     const f = await makeSoCascadeFixture({
       soCode: `${TEST_PREFIX}SO-IDEMP`,

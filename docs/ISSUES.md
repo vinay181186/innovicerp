@@ -96,7 +96,7 @@ Per user direction 2026-05-15, **leave in place** until the audit pass.
 
 - **Surfaced:** 2026-05-15 (cascade smoke verification on TEST-CASCADE-001)
 - **Severity:** P2 (cascade still fires correctly; downstream consumers reading `closed_at` will miss the event)
-- **Status:** [ ] open
+- **Status:** [x] Fixed 2026-05-19 — `sales-cascade.ts` now sets `closed_at = now()` in the same tx as the JC_COMPLETE audit emit (path (a) from the fix sketch). Idempotent via `WHERE closedAt IS NULL`. Early-return check relaxed to accept both `'complete'` and `'closed'` so re-runs still flow through to the inner cascade (preserves the existing `so_line_already_terminal` skipped contract). 2 new tests in `sales-cascade.test.ts` verify closed_at gets set + stays stable on re-run; full cascade suite 12/12 green.
 
 **Repro:** Run a full op-entry cascade through TEST-CASCADE-001. After Op 2 submit, query `SELECT closed_at FROM job_cards WHERE code='TEST-CASCADE-001'` — value is `NULL` even though `v_jc_status.computed_status='complete'` and the SO/SO-line are both `closed`.
 
