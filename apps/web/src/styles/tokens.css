@@ -1,0 +1,148 @@
+/*
+ * Innovic ERP design tokens — extracted verbatim from
+ * legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html (the :root block).
+ *
+ * Per ADR / memory note `feedback_ui_match_legacy_html.md`: chrome must
+ * now match legacy 1:1. This file IS the source of truth for colours,
+ * spacing, typography, radii — every component / page must consume these
+ * variables (or the Tailwind utilities derived from them) and never
+ * hard-code a hex.
+ *
+ * Loaded BEFORE Tailwind + shadcn vars so the shadcn remap in index.css
+ * can reference these.
+ */
+
+:root {
+  /* ─── Surfaces ─────────────────────────────────────────────────
+   * bg   = app background (cool off-white)
+   * bg2  = card / panel / sidebar / topbar surface (pure white)
+   * bg3  = subtle interior — table-header / form-input / modal-hdr
+   * bg4  = active row hover / muted chip background
+   * bg5  = pressed state / scrollbar thumb
+   */
+  --bg: #f0f4f8;
+  --bg2: #ffffff;
+  --bg3: #f5f7fa;
+  --bg4: #e8edf4;
+  --bg5: #dce3ed;
+
+  /* ─── Borders (three depths) ───────────────────────────────────
+   * border  = default panel / card / row separator
+   * border2 = stronger — input / modal / button-ghost outline
+   * border3 = strongest — used sparingly (highlighted callouts)
+   */
+  --border: #d1d9e6;
+  --border2: #c5cfe0;
+  --border3: #b0bed4;
+
+  /* ─── Text (three weights) ─────────────────────────────────────
+   * text  = body / primary headings (~slate-900)
+   * text2 = secondary labels (~slate-600)
+   * text3 = muted captions, table-header text (~slate-400)
+   */
+  --text: #1a2235;
+  --text2: #4a5a72;
+  --text3: #7a8fa8;
+
+  /* ─── Brand accents (3-tier each: solid / dark / pale-bg) ──────
+   * Convention: the "3" suffix is the pale wash used for badge BG
+   * + chip BG + button-secondary background.
+   */
+  --cyan: #0088bb;
+  --cyan2: #006694;
+  --cyan3: #dff0f7;
+  --amber: #c47a00;
+  --amber2: #a06200;
+  --amber3: #fff4d6;
+  --green: #16a34a;
+  --green2: #15803d;
+  --green3: #dcfce7;
+  --red: #dc2626;
+  --red2: #b91c1c;
+  --red3: #fee2e2;
+  --blue: #2563eb;
+  --blue2: #1d4ed8;
+  --blue3: #dbeafe;
+  --orange: #ea6c00;
+  --orange2: #c25a00;
+  --purple: #7c3aed;
+
+  /* ─── Department identity tints ────────────────────────────────
+   * Muted, used for sidebar-section borders + dashboard accents.
+   * Each has -bg pair for the subtle wash.
+   */
+  --dept-planning: #6d4ab8;
+  --dept-planning-bg: #ede9f7;
+  --dept-sales: #128a3e;
+  --dept-sales-bg: #dcf5e4;
+  --dept-store: #a96300;
+  --dept-store-bg: #fbeeda;
+  --dept-design: #6d4ab8;
+  --dept-design-bg: #ede9f7;
+  --dept-production: #006f8f;
+  --dept-production-bg: #dff0f7;
+  --dept-qc: #b83030;
+  --dept-qc-bg: #fbe0e0;
+  --dept-purchase: #1e4db3;
+  --dept-purchase-bg: #e0e8f7;
+  --dept-finance: #0b776e;
+  --dept-finance-bg: #d4ede9;
+  --dept-tasks: #6d4ab8;
+  --dept-tasks-bg: #ede9f7;
+  --dept-system: #4b5563;
+  --dept-system-bg: #e5e7eb;
+
+  /* ─── Signal colours — reserved for actionable meaning ─────────
+   * Each has -bg (wash) + -bd (border) so the badge/banner trio
+   * is consistent.
+   */
+  --sig-critical: #dc2626;
+  --sig-critical-bg: #fee2e2;
+  --sig-critical-bd: #fecaca;
+  --sig-warn: #c47a00;
+  --sig-warn-bg: #fff4d6;
+  --sig-warn-bd: #fde68a;
+  --sig-ok: #16a34a;
+  --sig-ok-bg: #dcfce7;
+  --sig-ok-bd: #bbf7d0;
+  --sig-info: #2563eb;
+  --sig-info-bg: #dbeafe;
+  --sig-info-bd: #bfdbfe;
+  --sig-neutral: #64748b;
+  --sig-neutral-bg: #f1f5f9;
+  --sig-neutral-bd: #e2e8f0;
+
+  /* ─── Typography ──────────────────────────────────────────────
+   * hfont = Barlow Condensed (headings, big numbers, panel titles)
+   * bfont = Barlow            (body, labels, button text)
+   * mono  = Source Code Pro   (codes, IDs, table-header text,
+   *                            qty cells, sync indicator)
+   */
+  --hfont: 'Barlow Condensed', sans-serif;
+  --bfont: 'Barlow', sans-serif;
+  --mono: 'Source Code Pro', monospace;
+
+  /* ─── Radii ────────────────────────────────────────────────────
+   * 8px   for inputs, buttons, small chips
+   * 12px  for panels, cards, modals, machine-cards
+   */
+  --radius: 8px;
+  --radius2: 12px;
+
+  /* ─── Layout — sidebar + topbar dimensions (legacy fixed) ──── */
+  --sidebar-width: 220px;
+  --topbar-height: 54px;
+
+  /* ─── Content density ──────────────────────────────────────────
+   * Legacy is information-dense: 14px body, 13px controls, 10–11px
+   * uppercase mono for labels + table headers. We carry that
+   * through here so the app doesn't feel sparse / consumer-app-ey.
+   */
+  --fs-body: 14px;
+  --fs-control: 13px;
+  --fs-label: 11px;
+  --fs-mono: 10px;
+  --fs-heading: 17px;
+  --fs-section: 22px;
+  --fs-stat: 32px;
+}

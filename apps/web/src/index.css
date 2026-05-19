@@ -1,56 +1,78 @@
+/* Tokens load FIRST so shadcn HSL remap below can reference them. */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Innovic component styles load AFTER Tailwind so legacy class selectors
+   (.panel / .badge / .btn / .modal etc.) win over Tailwind defaults. */
+@import './styles/innovic-theme.css';
+
+/*
+ * shadcn primitives consume these HSL CSS vars. We remap them so an
+ * unchanged <Button> / <Card> / <Badge> / <Input> automatically picks
+ * up Innovic colours — no per-page rewrite required.
+ *
+ * HSL form is required by shadcn's `hsl(var(--name))` plugin.
+ * Innovic palette → HSL conversions below (rounded to nearest integer).
+ *
+ *   bg2  #ffffff → 0 0% 100%
+ *   bg3  #f5f7fa → 214 33% 97%
+ *   bg4  #e8edf4 → 217 35% 93%
+ *   border  #d1d9e6 → 218 27% 86%
+ *   border2 #c5cfe0 → 219 28% 82%
+ *   text  #1a2235 → 222 36% 16%
+ *   text2 #4a5a72 → 217 22% 37%
+ *   text3 #7a8fa8 → 213 19% 57%
+ *   cyan  #0088bb → 197 100% 37%
+ *   cyan2 #006694 → 198 100% 29%
+ *   blue2 #1d4ed8 → 224 76% 48%
+ *   red2  #b91c1c → 0 74% 42%
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --background: 213 33% 95%; /* var(--bg)  #f0f4f8 */
+    --foreground: 222 36% 16%; /* var(--text) */
+    --card: 0 0% 100%; /* var(--bg2)  white */
+    --card-foreground: 222 36% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 222 36% 16%;
+    --primary: 224 76% 48%; /* var(--blue2) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 35% 93%; /* var(--bg4)  ghost-button bg */
+    --secondary-foreground: 217 22% 37%; /* var(--text2) */
+    --muted: 214 33% 97%; /* var(--bg3) */
+    --muted-foreground: 213 19% 57%; /* var(--text3) */
+    --accent: 197 100% 37%; /* var(--cyan) */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 74% 42%; /* var(--red2) */
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 27% 86%; /* var(--border) */
+    --input: 219 28% 82%; /* var(--border2) — input outlines pop a bit */
+    --ring: 197 100% 37%; /* focus ring = cyan */
+    --radius: 0.5rem; /* 8px, matches var(--radius) */
   }
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-  }
+  /* Dark mode intentionally NOT remapped — the legacy ERP is light-only
+     and the .dark class is unused in the app. Leaving the original
+     shadcn dark palette in place would make a stray .dark toggle look
+     broken; we just don't honour .dark anywhere. */
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--bfont);
+    font-size: var(--fs-body);
   }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--hfont);
+    letter-spacing: 0.02em;
+  }
+  /* Monospace any element that wraps a code-like value (item codes,
+     SO/JC/PO numbers, IDs). Pages opt in by adding `font-mono`. */
 }

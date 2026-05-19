@@ -74,7 +74,36 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** ISSUE-006 fix
+**ID:** UI-001
+**Title:** Innovic design system — port tokens / chrome from legacy HTML to React app (Phase 1: tokens + shell + Tailwind config)
+**Status:** [x] Phase 1 complete 2026-05-20. Per-screen polish in subsequent commits.
+
+**Done:**
+
+- **Tokens (`apps/web/src/styles/tokens.css`):** Every CSS variable from `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` `:root` block ported verbatim — 5 surface tones, 3 border depths, 3 text tiers, 7 brand-accent families (cyan / amber / green / red / blue / orange / purple, each 3-tier), 10 department tints (planning / sales / store / design / production / qc / purchase / finance / tasks / system, each with `-bg` wash), 5 signal colours (critical / warn / ok / info / neutral, each with `-bg` + `-bd`), 3 font families (Barlow / Barlow Condensed / Source Code Pro), 2 radii (8 / 12 px), sidebar + topbar fixed dimensions (220 / 54), 7 density-specific font sizes. Each token documented inline with purpose + legacy line citation.
+- **Component CSS (`apps/web/src/styles/innovic-theme.css`):** Legacy class selectors ported — `.panel`, `.panel-hdr/title/body`, `.stat-card.cyan/amber/green/red`, `.innovic-table`, `.badge.b-green/amber/blue/red/grey/cyan/orange`, `.btn.btn-primary/success/danger/ghost/sm/icon`, `.form-grid/form-grid-3/form-grp/form-label`, `.innovic-input/select/textarea`, `.overlay/modal/modal-lg/modal-hdr/body/footer`, `.toast-item.toast-ok/err/info`, `.section-hdr`, `.empty-state`, `.divider`, mono / cyan / amber / green / red utility classes. Mobile media query at 768px also ported (sidebar slide-in, modals full-screen, single-column forms).
+- **shadcn HSL remap (`apps/web/src/index.css`):** Existing shadcn primitives (`<Button>` / `<Card>` / `<Badge>` / `<Input>` / `<Label>` / `<Textarea>` / `<Select>` / `<Table>` / `<Tabs>` etc.) consume `hsl(var(--background))` / `--primary` / `--muted` / etc. Those HSL vars are now remapped to the Innovic palette so every existing JSX page picks up legacy colours WITHOUT a per-file rewrite. Dark mode intentionally not remapped (legacy is light-only); the `.dark` class is dead.
+- **Tailwind config (`apps/web/tailwind.config.ts`):** Innovic palette exposed under three namespaces — `innovic-*` (literal hex from legacy), `dept-*` (department tints), `sig-*` (signal colours). `font-sans` defaults to Barlow; `font-heading` = Barlow Condensed; `font-mono` = Source Code Pro. New `text-innovic-{mono|label|control|body|heading|section|stat}` font-size utilities matching legacy density. Sidebar (`sidebar`) + topbar (`topbar`) spacing tokens. Three `shadow-innovic-*` utilities (card / modal / menu).
+- **Fonts (`apps/web/index.html`):** Google Fonts `<link>` for Barlow (400/500/600/700/800), Barlow Condensed (700/800), Source Code Pro (400/600/700) + DNS preconnect for fonts.googleapis.com + fonts.gstatic.com.
+- **Layout shell:**
+  - New `apps/web/src/components/shared/sidebar.tsx` — 220px collapsible department sections with cyan active-item indicator, mirrors legacy HTML L399–500. Items currently rendered for shipped routes only (Planning / Sales / Store / Production / QC / Purchase / Tasks / Reports — 21 nav items across 8 sections). User card at the bottom (avatar + email + role).
+  - New `apps/web/src/components/shared/topbar.tsx` — 54px topbar with page title (derived from pathname via TITLE_MAP), green sync dot, sign-out button.
+  - `apps/web/src/routes/_authenticated.tsx` rewritten to wrap `<Outlet />` in the Innovic shell (`#app-shell > #sidebar + #main > #topbar + #content`) — class IDs preserved verbatim from legacy.
+  - `apps/web/src/routes/index.tsx` simplified — the giant module-tile grid is gone (the sidebar covers it); home is now a section header + DashboardTilesGrid.
+  - Old `apps/web/src/components/shared/nav-bar.tsx` deleted (replaced by Sidebar + TopBar).
+- **Style guide (`docs/STYLE_GUIDE.md`):** New ~280-line cheat sheet — token tables (surfaces / borders / text / accents / department / signal / typography / radii / spacing / shadows), layout shell explainer, component patterns with JSX examples (panel, stat card, table, badge, button, form, modal, toast, empty state), Innovic-specific status colours (JC + SO + sync indicator), "what to do when / what NOT to do" sections, status of themed-vs-not pages.
+- **Memory updates:** `feedback_ui_match_legacy_html.md` flipped from "data layout 1:1, chrome free to improve" (intermediate 2026-05-19 softening) back to "mirror legacy 1:1 — chrome AND data layout" per user direction 2026-05-20. `MEMORY.md` index pointer updated.
+- **Quality gates:** shared + api + web typecheck clean; web lint + prettier clean; web build clean (2294 modules, 5.18s, index 1003.97 KB raw / 132.86 KB gzip — over Vite's 1000 KB raw warning threshold; gzip delivery cost was +0.33 KB for the new theme + sidebar, negligible).
+
+**Open follow-ups (per-screen polish, ship as user surfaces pain):**
+
+- List pages (sales-orders / purchase-orders / job-cards / items / etc.) still use Tailwind utility-based card containers — swap to `.panel + .panel-hdr + .innovic-table` legacy shapes per-page.
+- Module status badges (`SoStatusBadge`, `JcStatusBadge`, `NcStatusBadge`, `PoStatusBadge`, `DcStatusBadge`) currently use shadcn `<Badge>` variants — switch to the legacy `.badge .b-*` class names for closer parity.
+- Form pages (PO new, SO new, JC new, etc.) — open the legacy HTML, find the matching modal, mirror field order + labels verbatim. Each commits as its own slice.
+- "— linked —" pattern audit (per `project_linked_display_audit.md`) — PR / NC / JW / GRN detail pages still have it; fix as user reports.
+
+**Closed previous Active Task — ISSUE-006 fix:**
+[Omitted long context line]
 **Title:** Global nav bar — Home link + sign-out + user/role chip on every authenticated screen
 **Status:** [x] Code complete 2026-05-19.
 

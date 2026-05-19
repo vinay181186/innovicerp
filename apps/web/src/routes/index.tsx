@@ -1,145 +1,13 @@
-import { Link, createRoute } from '@tanstack/react-router';
-import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  BarChart3,
-  Bell,
-  Building2,
-  ClipboardList,
-  Cog,
-  Factory,
-  FileText,
-  Inbox,
-  ListOrdered,
-  HardHat,
-  type LucideIcon,
-  Package,
-  History,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Truck,
-  Wrench,
-} from 'lucide-react';
+import { createRoute } from '@tanstack/react-router';
 import { useSession } from '@/lib/session';
 import { DashboardTilesGrid } from '@/modules/dashboard/components/dashboard-tiles-grid';
 import { authenticatedRoute } from './_authenticated';
 
-const MASTER_LINKS = [
-  {
-    to: '/op-entry',
-    icon: Wrench,
-    title: 'Op Entry (JC-wise)',
-    subtitle: 'Log work against a job card',
-  },
-  {
-    to: '/op-entry/machines',
-    icon: Cog,
-    title: 'Op Entry (machine-first)',
-    subtitle: 'Pick a machine, see what runs there',
-  },
-  {
-    to: '/op-entry/running',
-    icon: Activity,
-    title: 'Live operations board',
-    subtitle: 'Sessions running right now',
-  },
-  {
-    to: '/sales-orders',
-    icon: ClipboardList,
-    title: 'Sales orders',
-    subtitle: 'Customer orders, lines, and status',
-  },
-  {
-    to: '/job-work-orders',
-    icon: Truck,
-    title: 'Job-work orders',
-    subtitle: 'Customer-supplied material → finished parts',
-  },
-  {
-    to: '/job-cards',
-    icon: Factory,
-    title: 'Job cards',
-    subtitle: 'Production batches with computed status + source link',
-  },
-  {
-    to: '/purchase-requests',
-    icon: FileText,
-    title: 'Purchase requests',
-    subtitle: 'Procurement intent — bridges plan / outsource to a PO',
-  },
-  {
-    to: '/purchase-orders',
-    icon: ClipboardList,
-    title: 'Purchase orders',
-    subtitle: 'Vendor orders with line-level receipt + QC tracking',
-  },
-  {
-    to: '/goods-receipt-notes',
-    icon: Inbox,
-    title: 'Goods receipt notes',
-    subtitle: 'Material received against POs · QC accept writes stock-in',
-  },
-  {
-    to: '/store-transactions',
-    icon: ListOrdered,
-    title: 'Store transactions',
-    subtitle: 'Append-only stock-movement ledger · per-item on-hand from v_item_stock',
-  },
-  {
-    to: '/nc-register',
-    icon: AlertTriangle,
-    title: 'NC register',
-    subtitle: 'Non-conformance log — QC rejections by JC + op (disposition workflow in T-040b)',
-  },
-  {
-    to: '/delivery-challans',
-    icon: Send,
-    title: 'Delivery challans',
-    subtitle: 'Outbound DCs against JW POs — read-only in T-040a',
-  },
-  {
-    to: '/qc-dashboard',
-    icon: ShieldCheck,
-    title: 'QC dashboard',
-    subtitle: 'Pending QC calls, engineer performance, top rejection reasons (T-040g)',
-  },
-  {
-    to: '/alerts',
-    icon: Bell,
-    title: 'Alerts',
-    subtitle: 'Tripwires across sales/purchase/store/design/production/QC — 15 active rules',
-  },
-  {
-    to: '/reports',
-    icon: BarChart3,
-    title: 'Reports',
-    subtitle: 'Server-defined reports — daily op log, NC summary, PO ageing',
-  },
-  {
-    to: '/saved-reports',
-    icon: Sparkles,
-    title: 'Saved reports',
-    subtitle: 'Drag-and-drop ad-hoc builder — save & re-run custom reports',
-  },
-  {
-    to: '/activity-log',
-    icon: History,
-    title: 'Activity log',
-    subtitle: 'Append-only audit trail — what changed, when, and by whom',
-  },
-  { to: '/items', icon: Package, title: 'Items master', subtitle: 'Components and assemblies' },
-  { to: '/clients', icon: Building2, title: 'Clients master', subtitle: 'Customers we sell to' },
-  { to: '/vendors', icon: Truck, title: 'Vendors master', subtitle: 'Suppliers we buy from' },
-  { to: '/machines', icon: Cog, title: 'Machines master', subtitle: 'Shop-floor equipment' },
-  { to: '/operators', icon: HardHat, title: 'Operators master', subtitle: 'Shop-floor workers' },
-] as const satisfies ReadonlyArray<{
-  to: string;
-  icon: LucideIcon;
-  title: string;
-  subtitle: string;
-}>;
+// Dashboard / landing — every authenticated page hangs off here.
+// The big module-link grid that used to live here is now in the
+// sidebar (apps/web/src/components/shared/sidebar.tsx). This page
+// focuses on the welcome line + the role-filtered KPI tile grid
+// (DashboardTilesGrid).
 
 export const indexRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -147,52 +15,15 @@ export const indexRoute = createRoute({
   component: IndexPage,
 });
 
-function IndexPage() {
+function IndexPage(): React.JSX.Element {
   const { data: me, isLoading } = useSession();
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-8">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">Innovic ERP</h1>
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading session&hellip;</p>
-          ) : me ? (
-            <p className="text-sm text-muted-foreground">
-              Welcome back, <span className="font-medium text-foreground">{me.email}</span>
-              {me.isActive ? null : ' · inactive'}
-            </p>
-          ) : (
-            <p className="text-sm text-destructive">No session.</p>
-          )}
-        </div>
-
-        <DashboardTilesGrid />
-
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Modules
-          </h2>
-          <nav className="grid gap-3 md:grid-cols-2">
-            {MASTER_LINKS.map(({ to, icon: Icon, title, subtitle }) => (
-              <Link
-                key={to}
-                to={to}
-                className="group flex items-center justify-between rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent"
-              >
-                <span className="flex items-center gap-3">
-                  <Icon className="h-5 w-5 text-muted-foreground" />
-                  <span>
-                    <span className="block font-medium">{title}</span>
-                    <span className="block text-xs text-muted-foreground">{subtitle}</span>
-                  </span>
-                </span>
-                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-              </Link>
-            ))}
-          </nav>
-        </div>
+    <div>
+      <div className="section-hdr">
+        {isLoading ? 'Loading…' : me ? `Welcome, ${me.email}` : 'Not signed in'}
       </div>
-    </main>
+      <DashboardTilesGrid />
+    </div>
   );
 }
