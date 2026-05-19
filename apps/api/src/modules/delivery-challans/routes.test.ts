@@ -5,8 +5,12 @@ import { db } from '../../db/client';
 import {
   activityLog,
   deliveryChallanLines,
+  deliveryChallanReceipts,
   deliveryChallans,
   items,
+  jcOps,
+  jobCards,
+  ncRegister,
   purchaseOrderLines,
   purchaseOrders,
   storeTransactions,
@@ -76,6 +80,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db
+    .delete(deliveryChallanReceipts)
+    .where(like(deliveryChallanReceipts.receiptCode, `RCPT-${TEST_PREFIX}%`));
   const dcs = await db
     .select({ id: deliveryChallans.id })
     .from(deliveryChallans)
@@ -85,6 +92,11 @@ afterAll(async () => {
   }
   await db.delete(deliveryChallans).where(like(deliveryChallans.code, `${TEST_PREFIX}%`));
   await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
+  await db
+    .delete(storeTransactions)
+    .where(like(storeTransactions.sourceRef, `RCPT-${TEST_PREFIX}%`));
+  await db.delete(ncRegister).where(like(ncRegister.code, `NC-AUTO-${TEST_PREFIX}%`));
+  await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
   const poHeaders = await db
     .select({ id: purchaseOrders.id })
     .from(purchaseOrders)
@@ -94,6 +106,7 @@ afterAll(async () => {
   }
   await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `RCPT-${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
 });
 
@@ -245,5 +258,116 @@ describe('delivery-challans routes', () => {
       },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  // T-059b — receive-back endpoint surface tests.
+
+  async function createIssuedDcViaRoute(
+    suffix: string,
+  ): Promise<{ id: string; lineId: string; opId: string }> {
+    const po = await freshJwPo(suffix);
+
+    // Build a JC + outsource op so the receive cascade has something to flip.
+    const jcCode = `${TEST_PREFIX}JC-${suffix}-${Date.now()}`;
+    const jcRows = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code: jcCode,
+        jcDate: '2026-05-19',
+        itemId: testItemId,
+        orderQty: 4,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const opRows = await db
+      .insert(jcOps)
+      .values({
+        companyId: admin.companyId!,
+        jobCardId: jcRows[0]!.id,
+        opSeq: 1,
+        operation: 'COATING',
+        opType: 'outsource',
+        outsourcePoLineId: po.lineId,
+        outsourceStatus: 'po_created',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+
+    app = await buildApp(admin);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/delivery-challans',
+      payload: {
+        header: {
+          code: `${TEST_PREFIX}DC-${suffix}`,
+          dcDate: '2026-05-19',
+          purchaseOrderId: po.id,
+          poCodeText: 'JW-PO',
+          vendorId: firstVendorId,
+          vendorCodeText: 'TEST-VENDOR',
+        },
+        lines: [
+          {
+            itemId: testItemId,
+            itemCodeText: `${TEST_PREFIX}ITEM`,
+            qty: 4,
+            uom: 'NOS',
+            purchaseOrderLineId: po.lineId,
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    return { id: body.id, lineId: body.lines[0].id, opId: opRows[0]!.id };
+  }
+
+  it('POST /delivery-challans/:id/receive returns 201 with detail + receipt', async () => {
+    const dc = await createIssuedDcViaRoute('RCV1');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/delivery-challans/${dc.id}/receive`,
+      payload: {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 4, rejectedQty: 0 }],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.status).toBe('received');
+    expect(body.receipts).toHaveLength(1);
+    expect(body.receipts[0].receiptCode).toBe(`RCPT-${TEST_PREFIX}DC-RCV1-01`);
+  });
+
+  it('POST /delivery-challans/:id/receive returns 403 for viewer', async () => {
+    const dc = await createIssuedDcViaRoute('RCV2');
+    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    await app.close();
+    app = await buildApp(viewer);
+    const res = await app.inject({
+      method: 'POST',
+      url: `/delivery-challans/${dc.id}/receive`,
+      payload: {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 1, rejectedQty: 0 }],
+      },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('POST /delivery-challans/:id/receive returns 400 when reject without reason', async () => {
+    const dc = await createIssuedDcViaRoute('RCV3');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/delivery-challans/${dc.id}/receive`,
+      payload: {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 0, rejectedQty: 2 }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

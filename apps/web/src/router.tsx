@@ -9,6 +9,7 @@ import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
 import { deliveryChallansListRoute } from './modules/delivery-challans/routes/list';
 import { deliveryChallanDetailRoute } from './modules/delivery-challans/routes/detail';
 import { deliveryChallanNewRoute } from './modules/delivery-challans/routes/create';
+import { deliveryChallanReceiveRoute } from './modules/delivery-challans/routes/receive';
 import { ncRegisterListRoute } from './modules/nc-register/routes/list';
 import { ncRegisterDetailRoute } from './modules/nc-register/routes/detail';
 import { ncRegisterEditRoute } from './modules/nc-register/routes/edit';
@@ -129,6 +130,7 @@ const routeTree = rootRoute.addChildren([
     deliveryChallansListRoute,
     deliveryChallanNewRoute,
     deliveryChallanDetailRoute,
+    deliveryChallanReceiveRoute,
     // Order matters: /reports/$slug last so /reports beats it for the list view.
     reportsListRoute,
     reportRunRoute,

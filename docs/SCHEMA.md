@@ -1278,6 +1278,71 @@ RLS:
 
 `before update` on `nc_register`, `delivery_challans`, `delivery_challan_lines` → `set_updated_at()`. Same helper as Phase 2/3/4/5.
 
+#### `delivery_challan_receipts` (T-059b)
+
+Inward records against an outsource DC. Receipts are many-per-DC (partial receives over time). Header captures receipt date + vendor invoice; lines record per-DC-line received + rejected qty with required reject reason.
+
+| Column                                         | Type                | Notes                                                            |
+| ---------------------------------------------- | ------------------- | ---------------------------------------------------------------- |
+| `id`                                           | `uuid`              | PK                                                               |
+| `company_id`                                   | `uuid`              | not null, FK                                                     |
+| `delivery_challan_id`                          | `uuid`              | not null, FK → `delivery_challans(id)` ON DELETE CASCADE         |
+| `receipt_code`                                 | `text`              | not null. Auto-generated `RCPT-<dcCode>-NN`. Unique per company. |
+| `receipt_date`                                 | `date`              | not null                                                         |
+| `vendor_invoice_text`                          | `text`              | optional vendor invoice / gate-pass reference                    |
+| `remarks`                                      | `text`              | optional                                                         |
+| `created_at/by`, `updated_at/by`, `deleted_at` | standard audit cols |
+
+Indexes:
+
+- `delivery_challan_receipts_company_code_uniq` UNIQUE on (`company_id`, `receipt_code`) WHERE `deleted_at IS NULL`
+- `delivery_challan_receipts_dc_idx` on (`delivery_challan_id`) WHERE `deleted_at IS NULL`
+- `delivery_challan_receipts_company_date_idx` on (`company_id`, `receipt_date`) WHERE `deleted_at IS NULL`
+
+RLS:
+
+- `delivery_challan_receipts_company_read` (any role)
+- `delivery_challan_receipts_manager_write` (admin/manager)
+
+#### `delivery_challan_receipt_lines` (T-059b)
+
+| Column                                         | Type                | Notes                                                            |
+| ---------------------------------------------- | ------------------- | ---------------------------------------------------------------- |
+| `id`                                           | `uuid`              | PK                                                               |
+| `company_id`                                   | `uuid`              | not null, FK                                                     |
+| `receipt_id`                                   | `uuid`              | not null, FK → `delivery_challan_receipts(id)` ON DELETE CASCADE |
+| `delivery_challan_line_id`                     | `uuid`              | not null, FK → `delivery_challan_lines(id)` ON DELETE CASCADE    |
+| `received_qty`                                 | `numeric(12,2)`     | not null, ≥ 0                                                    |
+| `rejected_qty`                                 | `numeric(12,2)`     | not null, ≥ 0, default 0                                         |
+| `reject_reason`                                | `text`              | required when `rejected_qty > 0` (DB CHECK)                      |
+| `remarks`                                      | `text`              | optional                                                         |
+| `created_at/by`, `updated_at/by`, `deleted_at` | standard audit cols |
+
+CHECKs:
+
+- `dcr_lines_qty_nonneg` — `received_qty >= 0 AND rejected_qty >= 0`
+- `dcr_lines_qty_positive_sum` — `received_qty + rejected_qty > 0`
+- `dcr_lines_reject_reason_when_rejected` — `rejected_qty = 0 OR reject_reason IS NOT NULL`
+
+Indexes:
+
+- `delivery_challan_receipt_lines_receipt_idx` on (`receipt_id`) WHERE `deleted_at IS NULL`
+- `delivery_challan_receipt_lines_dc_line_idx` on (`delivery_challan_line_id`) WHERE `deleted_at IS NULL`
+
+RLS:
+
+- `delivery_challan_receipt_lines_company_read` (any role)
+- `delivery_challan_receipt_lines_manager_write` (admin/manager)
+
+#### `v_jc_op_status` view — receipt-aware patch (T-059b)
+
+The view is replaced (DROP + CREATE) with two surgical changes so outsource ops behave correctly under the receive flow:
+
+1. **`prev_output` CTE** — when projecting the output of an outsource op for the next op's `input_avail`, use `outsource_received_qty - outsource_rejected_qty` (summed from the receipts table) instead of `completed_qty` (always 0 for outsource ops).
+2. **`computed_status`** — a new `WHEN op_type='outsource' AND outsource_status='received' THEN 'complete'` clause is added BEFORE the existing outsource sub-state CASE. This makes `v_jc_status.done_ops` count fully-received outsource ops as complete, which is what the sales-cascade keys off (`tryCascadeJcComplete`).
+
+The new `outsource_receipts_rollup` CTE joins receipt_lines through dc_lines (by `purchase_order_line_id`) and excludes cancelled / deleted DCs.
+
 ### Phase 6 Action items (T-039 implementation, single chunk)
 
 - [x] 4 new enums in `packages/shared/src/enums/` (`nc_status`, `nc_disposition`, `nc_reason_category`, `dc_status`) + index.ts wiring
@@ -1431,3 +1496,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-05-09 | `0016_phase7_alert_subs_deliveries.sql` (hand-written)                                                                               | Phase 7 alerts Phase B slice 6 (T-041d, ADR-024) — 2 new tables (`alert_subscriptions` per-user opt-in, `alert_deliveries` append-only audit log) + 1 new SQL helper `current_user_id()` (extracts JWT `sub` for self-row RLS). `alert_subscriptions` has FK ON DELETE CASCADE on `user_id` so a deleted user's subs vanish; idempotency unique key `(company_id, user_id, code, channel)` + `(company_id, code)` fan-out index; RLS company_read (any role) + self_or_manager_write. `alert_deliveries` keys idempotency on `(code, user_id, window_start, channel)`; `created_by` nullable for system writes; RLS manager_read + self_insert. BEFORE UPDATE trigger only on `alert_subscriptions` (deliveries are append-only). Applied via `apply-sql.ts`                                                                                                                                                                                                                                                                                                                                                  |
 | 2026-05-15 | `0017_phase6_qc_accept_source.sql` (hand-written)                                                                                    | T-040f — `ALTER TYPE store_txn_source_type ADD VALUE IF NOT EXISTS 'qc_accept'`. Adds the source enum value used by op-entry's QC stock cascade (last-op QC accept writes a `store_transactions` IN row crediting the JC's item, mirrors legacy HTML L3923-3940). Single-statement non-transactional ALTER; applied cleanly via standard `apply-sql.ts` runner. No schema-shape change; the shared TS enum array also gets the value (ordering differs from Postgres which always appends — unimportant since no code orders by enumsortorder). 24/24 op-entry tests + 15/15 GRN tests green; v_item_stock view picks up the new source automatically                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2026-05-18 | `0018_phase6_dc_po_line_link.sql` (hand-written, idempotent)                                                                         | T-059a (ADR-026) — add nullable `delivery_challan_lines.purchase_order_line_id` (FK → `purchase_order_lines`, `ON DELETE SET NULL`) + partial index `delivery_challan_lines_po_line_idx` on non-null values. Lets the outward DC cascade find the linked `jc_op` via `jc_ops.outsource_po_line_id` and reverse cleanly on cancel. Nullable so non-JW DCs (free-standing dispatch) still work — only DCs issued against a JW PO populate the FK. Applied via DLP-friendly `_apply_0018.mjs` inlined applier (same pattern as 0016 alerts migration). 22/22 DC tests green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 2026-05-19 | `0019_phase6_dc_receipts.sql` (hand-written, idempotent)                                                                             | T-059b (ADR-026) — outsource receive-back. 2 new tables (`delivery_challan_receipts` header + `delivery_challan_receipt_lines` per-line received + rejected qty with required reject_reason CHECK). Both have `ON DELETE CASCADE` from their parent (DC for the header, dc_line for the receipt_line) so test cleanup + admin purges work without orphans. `v_jc_op_status` view is replaced (DROP + CREATE) with two surgical changes — `prev_output` CTE uses `received - rejected` for outsource ops, and a new `WHEN op_type='outsource' AND outsource_status='received' THEN 'complete'` clause makes `v_jc_status.done_ops` count fully-received outsource ops as complete so the sales-cascade fires. `v_jc_status` recreated unchanged. Applied via DLP-friendly `_apply_0019.mjs` inlined applier. 39/39 DC tests green (was 22, +17 from T-059b)                                                                                                                                                                                                                                                    |

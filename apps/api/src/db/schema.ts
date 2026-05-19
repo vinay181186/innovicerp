@@ -1694,6 +1694,114 @@ export const deliveryChallanLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase 6: DC receipts (T-059b — outsource receive-back) ───────────────
+// Receipts are many-per-outward-line (partial receives over time). Each
+// receipt line captures received + rejected qty against a specific
+// delivery_challan_line, with reject_reason required when rejected_qty > 0.
+// Auto-NC fires at the service layer on rejected_qty.
+
+export const deliveryChallanReceipts = pgTable(
+  'delivery_challan_receipts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    deliveryChallanId: uuid('delivery_challan_id')
+      .notNull()
+      .references(() => deliveryChallans.id, { onDelete: 'cascade' }),
+    receiptCode: text('receipt_code').notNull(),
+    receiptDate: date('receipt_date').notNull(),
+    vendorInvoiceText: text('vendor_invoice_text'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('delivery_challan_receipts_company_code_uniq')
+      .on(t.companyId, t.receiptCode)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challan_receipts_dc_idx')
+      .on(t.deliveryChallanId)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challan_receipts_company_date_idx')
+      .on(t.companyId, t.receiptDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('delivery_challan_receipts_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('delivery_challan_receipts_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const deliveryChallanReceiptLines = pgTable(
+  'delivery_challan_receipt_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    receiptId: uuid('receipt_id')
+      .notNull()
+      .references(() => deliveryChallanReceipts.id, { onDelete: 'cascade' }),
+    deliveryChallanLineId: uuid('delivery_challan_line_id')
+      .notNull()
+      .references(() => deliveryChallanLines.id, { onDelete: 'cascade' }),
+    receivedQty: numeric('received_qty', { precision: 12, scale: 2 }).notNull(),
+    rejectedQty: numeric('rejected_qty', { precision: 12, scale: 2 }).notNull().default('0'),
+    rejectReason: text('reject_reason'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('delivery_challan_receipt_lines_receipt_idx')
+      .on(t.receiptId)
+      .where(sql`${t.deletedAt} is null`),
+    index('delivery_challan_receipt_lines_dc_line_idx')
+      .on(t.deliveryChallanLineId)
+      .where(sql`${t.deletedAt} is null`),
+    check('dcr_lines_qty_nonneg', sql`${t.receivedQty} >= 0 AND ${t.rejectedQty} >= 0`),
+    check('dcr_lines_qty_positive_sum', sql`${t.receivedQty} + ${t.rejectedQty} > 0`),
+    check(
+      'dcr_lines_reject_reason_when_rejected',
+      sql`${t.rejectedQty} = 0 OR ${t.rejectReason} IS NOT NULL`,
+    ),
+    pgPolicy('delivery_challan_receipt_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('delivery_challan_receipt_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 7: saved (ad-hoc) reports (T-041b) ─────────────────────────────
 // User-composed report definitions. The `spec` jsonb stores the AdHocSpec
 // (sourceKey + columns + filters + groupBy + sumCol + sumFn + sort) — see

@@ -5,9 +5,11 @@
 // T-059b. Writes go through service.ts so cascades into jc_ops.sentQty +
 // outsource_status + store_transactions stay atomic with the DC row insert.
 
-import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
+  deliveryChallanReceiptLines,
+  deliveryChallanReceipts,
   deliveryChallans,
   items,
   purchaseOrderLines,
@@ -24,15 +26,25 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import {
   applyOutwardToJcOp,
   reverseOutwardFromJcOp,
   reverseStoreTxnOnDcCancel,
   writeStoreTxnOnDcIssue,
 } from './cascades';
+import {
+  applyReceiveToJcOp,
+  autoCreateNcFromOutsourceReject,
+  dcHasActiveReceipts,
+  isDcFullyReconciled,
+  writeStoreTxnOnDcReceive,
+} from './receipt-cascades';
 import type {
   CreateDeliveryChallanInput,
+  CreateDeliveryChallanReceiptInput,
   DeliveryChallanListItem,
+  DeliveryChallanReceipt,
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
@@ -220,6 +232,71 @@ async function loadDeliveryChallanWithLines(
     )
     .orderBy(deliveryChallanLines.lineNo);
 
+  // T-059b — load receipts + their lines bundled with the DC detail.
+  const receiptHeaders = await tx
+    .select()
+    .from(deliveryChallanReceipts)
+    .where(
+      and(
+        eq(deliveryChallanReceipts.deliveryChallanId, id),
+        eq(deliveryChallanReceipts.companyId, companyId),
+        isNull(deliveryChallanReceipts.deletedAt),
+      ),
+    )
+    .orderBy(asc(deliveryChallanReceipts.receiptDate), asc(deliveryChallanReceipts.receiptCode));
+
+  const receipts: DeliveryChallanReceipt[] = [];
+  if (receiptHeaders.length > 0) {
+    const receiptIds = receiptHeaders.map((h) => h.id);
+    const recLineRows = await tx
+      .select()
+      .from(deliveryChallanReceiptLines)
+      .where(
+        and(
+          inArray(deliveryChallanReceiptLines.receiptId, receiptIds),
+          eq(deliveryChallanReceiptLines.companyId, companyId),
+          isNull(deliveryChallanReceiptLines.deletedAt),
+        ),
+      );
+    const linesByReceipt = new Map<string, typeof recLineRows>();
+    for (const rl of recLineRows) {
+      const arr = linesByReceipt.get(rl.receiptId) ?? [];
+      arr.push(rl);
+      linesByReceipt.set(rl.receiptId, arr);
+    }
+    for (const h of receiptHeaders) {
+      receipts.push({
+        id: h.id,
+        companyId: h.companyId,
+        deliveryChallanId: h.deliveryChallanId,
+        receiptCode: h.receiptCode,
+        receiptDate: dateLike(h.receiptDate),
+        vendorInvoiceText: h.vendorInvoiceText,
+        remarks: h.remarks,
+        createdAt: tsLike(h.createdAt),
+        createdBy: h.createdBy,
+        updatedAt: tsLike(h.updatedAt),
+        updatedBy: h.updatedBy,
+        deletedAt: maybeTsLike(h.deletedAt),
+        lines: (linesByReceipt.get(h.id) ?? []).map((rl) => ({
+          id: rl.id,
+          companyId: rl.companyId,
+          receiptId: rl.receiptId,
+          deliveryChallanLineId: rl.deliveryChallanLineId,
+          receivedQty: rl.receivedQty,
+          rejectedQty: rl.rejectedQty,
+          rejectReason: rl.rejectReason,
+          remarks: rl.remarks,
+          createdAt: tsLike(rl.createdAt),
+          createdBy: rl.createdBy,
+          updatedAt: tsLike(rl.updatedAt),
+          updatedBy: rl.updatedBy,
+          deletedAt: maybeTsLike(rl.deletedAt),
+        })),
+      });
+    }
+  }
+
   return {
     id: headerRow['id'] as string,
     companyId: headerRow['companyId'] as string,
@@ -260,6 +337,7 @@ async function loadDeliveryChallanWithLines(
       updatedBy: l.updatedBy,
       deletedAt: maybeTsLike(l.deletedAt),
     })),
+    receipts,
   };
 }
 
@@ -643,6 +721,15 @@ export async function cancelDeliveryChallan(
     if (header.status === 'received') {
       throw new ConflictError(`Delivery challan ${header.code} has been received; cannot cancel`);
     }
+    // T-059b — block cancel once receipts exist. Reversing receipts cleanly
+    // (reverse the stock IN, unwind any auto-NC, restore JC status) is out
+    // of scope for this slice. Admin must void the receipts first if that
+    // flow is ever needed (no UI today).
+    if (await dcHasActiveReceipts(tx, id)) {
+      throw new ConflictError(
+        `Delivery challan ${header.code} has receipts; cannot cancel until receipts are voided`,
+      );
+    }
 
     const lineRows = await tx
       .select()
@@ -711,5 +798,330 @@ export async function cancelDeliveryChallan(
     }
 
     return loadDeliveryChallanWithLines(tx, id, companyId);
+  });
+}
+
+// ─── Writes (T-059b receive-back) ──────────────────────────────────────────
+
+async function generateReceiptCode(
+  tx: DbTransaction,
+  companyId: string,
+  dcCode: string,
+): Promise<string> {
+  // Format: RCPT-<dcCode>-NN (zero-padded, 1-based per DC). Read the existing
+  // count + 1 inside the same tx. Re-checks with a uniqueness probe loop in
+  // case of concurrent inserts (extremely rare; bail after 5 attempts).
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const countRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS n
+      FROM public.delivery_challan_receipts dcr
+      INNER JOIN public.delivery_challans dc ON dc.id = dcr.delivery_challan_id
+      WHERE dcr.company_id = ${companyId}::uuid
+        AND dc.code = ${dcCode}
+        AND dcr.deleted_at IS NULL
+    `)) as unknown as Array<{ n: number }>;
+    const seq = (countRows[0]?.n ?? 0) + 1 + attempt;
+    const code = `RCPT-${dcCode}-${String(seq).padStart(2, '0')}`;
+    const dup = await tx
+      .select({ id: deliveryChallanReceipts.id })
+      .from(deliveryChallanReceipts)
+      .where(
+        and(
+          eq(deliveryChallanReceipts.companyId, companyId),
+          eq(deliveryChallanReceipts.receiptCode, code),
+          isNull(deliveryChallanReceipts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length === 0) return code;
+  }
+  throw new ConflictError(`Unable to allocate a unique receipt code for ${dcCode}`);
+}
+
+export async function receiveAgainstDeliveryChallan(
+  deliveryChallanId: string,
+  input: CreateDeliveryChallanReceiptInput,
+  user: AuthContext,
+): Promise<DeliveryChallanWithLines> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const headerRows = await tx
+      .select()
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.id, deliveryChallanId),
+          eq(deliveryChallans.companyId, companyId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .limit(1);
+    const dcHeader = headerRows[0];
+    if (!dcHeader) throw new NotFoundError(`Delivery challan ${deliveryChallanId} not found`);
+    if (dcHeader.status === 'cancelled') {
+      throw new ConflictError(`Delivery challan ${dcHeader.code} is cancelled; cannot receive`);
+    }
+    if (dcHeader.status === 'received') {
+      throw new ConflictError(`Delivery challan ${dcHeader.code} is already fully received`);
+    }
+
+    // Load outward lines for this DC + validate every input line belongs to it.
+    const dcLineRows = await tx
+      .select()
+      .from(deliveryChallanLines)
+      .where(
+        and(
+          eq(deliveryChallanLines.deliveryChallanId, deliveryChallanId),
+          eq(deliveryChallanLines.companyId, companyId),
+          isNull(deliveryChallanLines.deletedAt),
+        ),
+      );
+    const dcLineById = new Map(dcLineRows.map((l) => [l.id, l]));
+
+    const inputLineIds = input.lines.map((l) => l.deliveryChallanLineId);
+    for (const id of inputLineIds) {
+      if (!dcLineById.has(id)) {
+        throw new ValidationError(
+          `DC line ${id} does not belong to delivery challan ${dcHeader.code}`,
+        );
+      }
+    }
+
+    // Per-line over-receive check: cumulative received+rejected across all
+    // prior receipts + this receipt's quantities must not exceed the
+    // outward line's qty.
+    const priorRows = await tx
+      .select({
+        dcLineId: deliveryChallanReceiptLines.deliveryChallanLineId,
+        sumQty: sql<string>`COALESCE(SUM(${deliveryChallanReceiptLines.receivedQty} + ${deliveryChallanReceiptLines.rejectedQty}), 0)::numeric`,
+      })
+      .from(deliveryChallanReceiptLines)
+      .where(
+        and(
+          inArray(deliveryChallanReceiptLines.deliveryChallanLineId, inputLineIds),
+          eq(deliveryChallanReceiptLines.companyId, companyId),
+          isNull(deliveryChallanReceiptLines.deletedAt),
+        ),
+      )
+      .groupBy(deliveryChallanReceiptLines.deliveryChallanLineId);
+    const priorByLine = new Map<string, number>();
+    for (const r of priorRows) priorByLine.set(r.dcLineId, Number(r.sumQty));
+
+    const incomingByLine = new Map<string, { received: number; rejected: number }>();
+    for (const il of input.lines) {
+      const prev = incomingByLine.get(il.deliveryChallanLineId) ?? { received: 0, rejected: 0 };
+      prev.received += il.receivedQty;
+      prev.rejected += il.rejectedQty;
+      incomingByLine.set(il.deliveryChallanLineId, prev);
+    }
+    for (const [dcLineId, inc] of incomingByLine) {
+      const dcLine = dcLineById.get(dcLineId)!;
+      const sentQty = Number(dcLine.qty);
+      const prior = priorByLine.get(dcLineId) ?? 0;
+      const totalAfter = prior + inc.received + inc.rejected;
+      if (totalAfter > sentQty) {
+        throw new ConflictError(
+          `DC line ${dcLine.lineNo} sent ${sentQty} pcs; cumulative receive ${totalAfter} would exceed it`,
+        );
+      }
+    }
+
+    // Generate receipt code + insert header.
+    const receiptCode = await generateReceiptCode(tx, companyId, dcHeader.code);
+    const insertedHeader = await tx
+      .insert(deliveryChallanReceipts)
+      .values({
+        companyId,
+        deliveryChallanId,
+        receiptCode,
+        receiptDate: input.receiptDate,
+        vendorInvoiceText: input.vendorInvoiceText ?? null,
+        remarks: input.remarks ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const receiptHeader = insertedHeader[0]!;
+
+    // Insert receipt lines.
+    const receiptLineValues = input.lines.map((il) => ({
+      companyId,
+      receiptId: receiptHeader.id,
+      deliveryChallanLineId: il.deliveryChallanLineId,
+      receivedQty: il.receivedQty.toFixed(2),
+      rejectedQty: il.rejectedQty.toFixed(2),
+      rejectReason: il.rejectReason ?? null,
+      remarks: il.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    }));
+    const insertedLines = await tx
+      .insert(deliveryChallanReceiptLines)
+      .values(receiptLineValues)
+      .returning();
+
+    // Cascades per receipt line: stock IN, jc_op flip, auto-NC on reject.
+    // Track per-po-line aggregates so we only invoke applyReceiveToJcOp once
+    // per po_line even when multiple receipt lines target the same po_line.
+    const poLineQtyAdded = new Map<string, number>();
+    for (const rl of insertedLines) {
+      const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
+      const receivedInt = Math.round(Number(rl.receivedQty));
+      const rejectedInt = Math.round(Number(rl.rejectedQty));
+
+      // Stock IN — good qty only (rejected goes to NC, not stock).
+      await writeStoreTxnOnDcReceive({
+        tx,
+        companyId,
+        adminUserId: user.id,
+        receiptCode,
+        receiptDate: input.receiptDate,
+        dcLineNo: dcLine.lineNo,
+        itemId: dcLine.itemId,
+        qty: receivedInt,
+      });
+
+      if (dcLine.purchaseOrderLineId) {
+        const prev = poLineQtyAdded.get(dcLine.purchaseOrderLineId) ?? 0;
+        poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt + rejectedInt);
+      }
+    }
+
+    // jc_op flip per po_line.
+    const ncCascades: Array<{ jcCode: string; opSeq: number; ncCode: string }> = [];
+    const opCascades: Array<{
+      jcCode: string;
+      opSeq: number;
+      fullyReceived: boolean;
+      jobCardId: string;
+    }> = [];
+    for (const [poLineId, qtyAdded] of poLineQtyAdded) {
+      const cascadeResult = await applyReceiveToJcOp({
+        tx,
+        companyId,
+        adminUserId: user.id,
+        receiptCode,
+        receiptDate: input.receiptDate,
+        purchaseOrderLineId: poLineId,
+        qtyAdded,
+      });
+      if (cascadeResult.fired && cascadeResult.jcCode && cascadeResult.opSeq) {
+        opCascades.push({
+          jcCode: cascadeResult.jcCode,
+          opSeq: cascadeResult.opSeq,
+          fullyReceived: Boolean(cascadeResult.fullyReceived),
+          jobCardId: cascadeResult.jobCardId!,
+        });
+      }
+    }
+
+    // Auto-NC per rejected line. One NC per receipt line with rejected_qty>0.
+    for (const rl of insertedLines) {
+      const rejectedInt = Math.round(Number(rl.rejectedQty));
+      if (rejectedInt <= 0) continue;
+      const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
+      if (!dcLine.purchaseOrderLineId) continue;
+
+      const jcOpRows = (await tx.execute(sql`
+        SELECT o.id, o.op_seq, o.job_card_id, o.operation, jc.code AS jc_code
+        FROM public.jc_ops o
+        INNER JOIN public.job_cards jc ON jc.id = o.job_card_id
+        WHERE o.outsource_po_line_id = ${dcLine.purchaseOrderLineId}::uuid
+          AND o.company_id = ${companyId}::uuid
+          AND o.op_type = 'outsource'
+          AND o.deleted_at IS NULL
+        LIMIT 1
+      `)) as unknown as Array<{
+        id: string;
+        op_seq: number;
+        job_card_id: string;
+        operation: string | null;
+        jc_code: string;
+      }>;
+      const jcOp = jcOpRows[0];
+      if (!jcOp) continue;
+
+      const nc = await autoCreateNcFromOutsourceReject(
+        tx,
+        {
+          companyId,
+          jobCardId: jcOp.job_card_id,
+          jcCode: jcOp.jc_code,
+          jcOpId: jcOp.id,
+          opSeq: jcOp.op_seq,
+          operationText: jcOp.operation,
+          rejectedQty: rejectedInt,
+          ncDate: input.receiptDate,
+          reportedByText: dcHeader.vendorCodeText,
+          rejectReason: rl.rejectReason ?? 'Outsource reject',
+        },
+        user,
+      );
+      ncCascades.push({ jcCode: jcOp.jc_code, opSeq: jcOp.op_seq, ncCode: nc.ncCode });
+    }
+
+    // DC status flip when ALL outward lines fully reconciled.
+    let dcMarkedReceived = false;
+    if (await isDcFullyReconciled(tx, deliveryChallanId)) {
+      await tx
+        .update(deliveryChallans)
+        .set({ status: 'received', updatedBy: user.id })
+        .where(eq(deliveryChallans.id, deliveryChallanId));
+      dcMarkedReceived = true;
+    }
+
+    // Audit emissions in the same tx.
+    await emitActivityLog(
+      tx,
+      {
+        action: 'DC_RECEIVE',
+        entity: 'DeliveryChallan',
+        detail: `${dcHeader.code} — receipt ${receiptCode}`,
+        refId: dcHeader.code,
+      },
+      companyId,
+      user,
+    );
+    for (const op of opCascades) {
+      if (op.fullyReceived) {
+        await emitActivityLog(
+          tx,
+          {
+            action: 'OP_OUTSOURCE_RECEIVED',
+            entity: 'JcOp',
+            detail: `${op.jcCode} Op ${op.opSeq} — fully received via ${receiptCode}`,
+            refId: op.jcCode,
+          },
+          companyId,
+          user,
+        );
+      }
+    }
+    if (dcMarkedReceived) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'DC_COMPLETE',
+          entity: 'DeliveryChallan',
+          detail: `${dcHeader.code} — all lines fully reconciled`,
+          refId: dcHeader.code,
+        },
+        companyId,
+        user,
+      );
+    }
+    void ncCascades; // Audit rows emitted inside autoCreateNcFromOutsourceReject.
+
+    // Sales-cascade: a fully-received outsource op may make the JC complete.
+    // Run only for jobs whose outsource op just flipped to fully-received.
+    for (const op of opCascades) {
+      if (op.fullyReceived) {
+        await tryCascadeJcComplete(tx, op.jobCardId, user);
+      }
+    }
+
+    return loadDeliveryChallanWithLines(tx, deliveryChallanId, companyId);
   });
 }

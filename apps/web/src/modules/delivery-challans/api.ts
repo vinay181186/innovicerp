@@ -1,5 +1,6 @@
 import type {
   CreateDeliveryChallanInput,
+  CreateDeliveryChallanReceiptInput,
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
@@ -69,6 +70,26 @@ export function useCancelDeliveryChallan() {
     onSuccess: (cancelled) => {
       void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
       qc.setQueryData(deliveryChallansKeys.detail(cancelled.id), cancelled);
+    },
+  });
+}
+
+// T-059b — receive-back. POST input is the receipt body; URL carries the DC id.
+export function useReceiveDeliveryChallan() {
+  const qc = useQueryClient();
+  return useMutation<
+    DeliveryChallanWithLines,
+    Error,
+    { dcId: string; input: CreateDeliveryChallanReceiptInput }
+  >({
+    mutationFn: ({ dcId, input }) =>
+      apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${dcId}/receive`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (received) => {
+      void qc.invalidateQueries({ queryKey: deliveryChallansKeys.lists() });
+      qc.setQueryData(deliveryChallansKeys.detail(received.id), received);
     },
   });
 }

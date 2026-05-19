@@ -1,7 +1,7 @@
 import type { DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Ban, Inbox, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -84,6 +84,19 @@ function DeliveryChallanDetailPage() {
 
   const totalQty = detail.lines.reduce((sum, l) => sum + Number(l.qty), 0);
 
+  const receivedAggregates = useMemo(() => {
+    const map = new Map<string, { received: number; rejected: number }>();
+    for (const r of detail.receipts) {
+      for (const rl of r.lines) {
+        const prev = map.get(rl.deliveryChallanLineId) ?? { received: 0, rejected: 0 };
+        prev.received += Number(rl.receivedQty);
+        prev.rejected += Number(rl.rejectedQty);
+        map.set(rl.deliveryChallanLineId, prev);
+      }
+    }
+    return map;
+  }, [detail.receipts]);
+
   return (
     <main className="container max-w-5xl py-10">
       <div className="space-y-6">
@@ -104,26 +117,36 @@ function DeliveryChallanDetailPage() {
                   <DcStatusBadge status={detail.status} />
                 </CardTitle>
               </div>
-              {detail.status === 'issued' && me?.role === 'admin' ? (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => void onCancel()}
-                  disabled={cancel.isPending}
-                >
-                  {cancel.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Cancelling…
-                    </>
-                  ) : (
-                    <>
-                      <Ban />
-                      Cancel DC
-                    </>
-                  )}
-                </Button>
-              ) : null}
+              <div className="flex items-center gap-2">
+                {detail.status === 'issued' && (me?.role === 'admin' || me?.role === 'manager') ? (
+                  <Button asChild variant="default" size="sm">
+                    <Link to="/delivery-challans/$id/receive" params={{ id: detail.id }}>
+                      <Inbox />
+                      Receive
+                    </Link>
+                  </Button>
+                ) : null}
+                {detail.status === 'issued' && me?.role === 'admin' ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void onCancel()}
+                    disabled={cancel.isPending}
+                  >
+                    {cancel.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Cancelling…
+                      </>
+                    ) : (
+                      <>
+                        <Ban />
+                        Cancel DC
+                      </>
+                    )}
+                  </Button>
+                ) : null}
+              </div>
             </div>
             {cancelError ? (
               <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -151,32 +174,106 @@ function DeliveryChallanDetailPage() {
                     <TableHead>Item code</TableHead>
                     <TableHead>Item name</TableHead>
                     <TableHead>Material</TableHead>
-                    <TableHead>Qty</TableHead>
+                    <TableHead className="text-right">Sent</TableHead>
+                    <TableHead className="text-right">Received</TableHead>
+                    <TableHead className="text-right">Rejected</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead>Remarks</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detail.lines.map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-mono text-xs">{line.lineNo}</TableCell>
-                      <TableCell className="font-mono text-xs">{line.itemCodeText}</TableCell>
-                      <TableCell className="text-sm">{line.itemNameText ?? '—'}</TableCell>
-                      <TableCell className="text-xs">{line.materialText ?? '—'}</TableCell>
-                      <TableCell className="font-mono text-sm font-semibold">
-                        {Number(line.qty).toFixed(0)}
-                      </TableCell>
-                      <TableCell className="text-xs uppercase">{line.uom}</TableCell>
-                      <TableCell className="text-xs whitespace-pre-wrap">
-                        {line.dcRemarks ?? '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {detail.lines.map((line) => {
+                    const agg = receivedAggregates.get(line.id) ?? { received: 0, rejected: 0 };
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-mono text-xs">{line.lineNo}</TableCell>
+                        <TableCell className="font-mono text-xs">{line.itemCodeText}</TableCell>
+                        <TableCell className="text-sm">{line.itemNameText ?? '—'}</TableCell>
+                        <TableCell className="text-xs">{line.materialText ?? '—'}</TableCell>
+                        <TableCell className="text-right font-mono text-sm font-semibold">
+                          {Number(line.qty).toFixed(0)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {agg.received.toFixed(0)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {agg.rejected.toFixed(0)}
+                        </TableCell>
+                        <TableCell className="text-xs uppercase">{line.uom}</TableCell>
+                        <TableCell className="text-xs whitespace-pre-wrap">
+                          {line.dcRemarks ?? '—'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           </CardContent>
         </Card>
+
+        {detail.receipts.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Receipts ({detail.receipts.length})</CardTitle>
+              <CardDescription>
+                Inward records against this DC. Rejected qty auto-creates an NC in the same tx.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {detail.receipts.map((r) => (
+                  <div key={r.id} className="rounded-md border bg-card">
+                    <div className="flex items-center justify-between border-b px-4 py-2 text-sm">
+                      <div className="font-mono">{r.receiptCode}</div>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>Receipt date: {r.receiptDate}</span>
+                        {r.vendorInvoiceText ? <span>Invoice: {r.vendorInvoiceText}</span> : null}
+                      </div>
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>DC line</TableHead>
+                          <TableHead className="text-right">Received</TableHead>
+                          <TableHead className="text-right">Rejected</TableHead>
+                          <TableHead>Reject reason</TableHead>
+                          <TableHead>Remarks</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {r.lines.map((rl) => {
+                          const dcLine = detail.lines.find(
+                            (l) => l.id === rl.deliveryChallanLineId,
+                          );
+                          return (
+                            <TableRow key={rl.id}>
+                              <TableCell className="font-mono text-xs">
+                                #{dcLine?.lineNo ?? '?'} · {dcLine?.itemCodeText ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {Number(rl.receivedQty).toFixed(0)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {Number(rl.rejectedQty).toFixed(0)}
+                              </TableCell>
+                              <TableCell className="text-xs whitespace-pre-wrap">
+                                {rl.rejectReason ?? '—'}
+                              </TableCell>
+                              <TableCell className="text-xs whitespace-pre-wrap">
+                                {rl.remarks ?? '—'}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </main>
   );

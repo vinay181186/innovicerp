@@ -12,18 +12,28 @@ import { db } from '../../db/client';
 import {
   activityLog,
   deliveryChallanLines,
+  deliveryChallanReceiptLines,
+  deliveryChallanReceipts,
   deliveryChallans,
   items,
   jcOps,
   jobCards,
+  ncRegister,
   purchaseOrderLines,
   purchaseOrders,
+  salesOrderLines,
+  salesOrders,
   storeTransactions,
   users,
   vendors,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import * as poService from '../purchase-orders/service';
 import * as service from './service';
 
@@ -621,3 +631,516 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
     );
   });
 });
+
+// ─── T-059b: receive-back ──────────────────────────────────────────────────
+
+const RB_PREFIX = 'T059B-';
+
+let rbItemId: string;
+let rbVendorId: string;
+
+interface DcContext {
+  poId: string;
+  poLineId: string;
+  dcId: string;
+  dcLineId: string;
+  jcCode: string;
+  jcId: string;
+  opId: string;
+}
+
+async function setupIssuedDc(
+  suffix: string,
+  options: { sentQty?: number; sourceSoLineId?: string | null; opSeq?: number } = {},
+): Promise<DcContext> {
+  const sentQty = options.sentQty ?? 6;
+  const opSeq = options.opSeq ?? 1;
+  const poCode = `${RB_PREFIX}PO-${suffix}-${Date.now()}`;
+  const poDetail = await poService.createPurchaseOrder(
+    {
+      header: {
+        code: poCode,
+        poDate: '2026-05-19',
+        poType: 'job_work',
+        vendorId: rbVendorId,
+        status: 'open',
+        sgstPct: 0,
+        cgstPct: 0,
+        igstPct: 0,
+      },
+      lines: [{ itemId: rbItemId, itemName: 'JW outsource source', qty: sentQty + 4, rate: 0 }],
+    },
+    admin,
+  );
+  const poLineId = poDetail.lines[0]!.id;
+
+  const jcCode = `${RB_PREFIX}JC-${suffix}-${Date.now()}`;
+  const jcRows = await db
+    .insert(jobCards)
+    .values({
+      companyId: admin.companyId!,
+      code: jcCode,
+      jcDate: '2026-05-19',
+      itemId: rbItemId,
+      orderQty: sentQty,
+      sourceSoLineId: options.sourceSoLineId ?? null,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const jcId = jcRows[0]!.id;
+
+  const opRows = await db
+    .insert(jcOps)
+    .values({
+      companyId: admin.companyId!,
+      jobCardId: jcId,
+      opSeq,
+      operation: 'COATING',
+      opType: 'outsource',
+      outsourceVendorId: rbVendorId,
+      outsourcePoLineId: poLineId,
+      outsourceStatus: 'po_created',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const opId = opRows[0]!.id;
+
+  const dcCode = `${RB_PREFIX}DC-${suffix}`;
+  const dcDetail = await service.createDeliveryChallan(
+    {
+      header: {
+        code: dcCode,
+        dcDate: '2026-05-19',
+        purchaseOrderId: poDetail.id,
+        poCodeText: poCode,
+        vendorId: rbVendorId,
+        vendorCodeText: 'TEST-VENDOR',
+      },
+      lines: [
+        {
+          itemId: rbItemId,
+          itemCodeText: `${RB_PREFIX}ITEM`,
+          qty: sentQty,
+          uom: 'NOS',
+          purchaseOrderLineId: poLineId,
+        },
+      ],
+    },
+    admin,
+  );
+  const dcLineId = dcDetail.lines[0]!.id;
+
+  return { poId: poDetail.id, poLineId, dcId: dcDetail.id, dcLineId, jcCode, jcId, opId };
+}
+
+async function readJcOpRb(opId: string): Promise<{
+  outsourceStatus: string | null;
+  outsourceSentQty: number;
+}> {
+  const rows = await db
+    .select({
+      outsourceStatus: jcOps.outsourceStatus,
+      outsourceSentQty: jcOps.outsourceSentQty,
+    })
+    .from(jcOps)
+    .where(eq(jcOps.id, opId))
+    .limit(1);
+  return rows[0]! as { outsourceStatus: string | null; outsourceSentQty: number };
+}
+
+describe('delivery-challans service — receive-back (T-059b)', () => {
+  beforeAll(async () => {
+    await db.delete(items).where(like(items.code, `${RB_PREFIX}%`));
+    const itemRows = await db
+      .insert(items)
+      .values({
+        companyId: admin.companyId!,
+        code: `${RB_PREFIX}ITEM`,
+        name: 'DC receive test item',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    rbItemId = itemRows[0]!.id;
+    const vendorRow = await db
+      .select({ id: vendors.id })
+      .from(vendors)
+      .where(
+        and(
+          eq(vendors.companyId, admin.companyId!),
+          isNull(vendors.deletedAt),
+          notLike(vendors.code, 'T%-%'),
+        ),
+      )
+      .orderBy(asc(vendors.createdAt))
+      .limit(1);
+    rbVendorId = vendorRow[0]!.id;
+  });
+
+  beforeEach(async () => {
+    await db
+      .delete(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `RCPT-${RB_PREFIX}%`));
+    await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${RB_PREFIX}%`));
+  });
+
+  afterAll(async () => {
+    // Receipts CASCADE from DCs; DCs CASCADE from their wipe. Belt-and-braces.
+    await db
+      .delete(deliveryChallanReceipts)
+      .where(like(deliveryChallanReceipts.receiptCode, `RCPT-${RB_PREFIX}%`));
+    const dcs = await db
+      .select({ id: deliveryChallans.id })
+      .from(deliveryChallans)
+      .where(like(deliveryChallans.code, `${RB_PREFIX}%`));
+    for (const d of dcs) {
+      await db.delete(deliveryChallanLines).where(eq(deliveryChallanLines.deliveryChallanId, d.id));
+    }
+    await db.delete(deliveryChallans).where(like(deliveryChallans.code, `${RB_PREFIX}%`));
+    await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${RB_PREFIX}%`));
+    await db
+      .delete(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `RCPT-${RB_PREFIX}%`));
+    await db.delete(ncRegister).where(like(ncRegister.code, `NC-AUTO-${RB_PREFIX}%`));
+    await db.delete(jobCards).where(like(jobCards.code, `${RB_PREFIX}%`));
+    const poHeaders = await db
+      .select({ id: purchaseOrders.id })
+      .from(purchaseOrders)
+      .where(like(purchaseOrders.code, `${RB_PREFIX}%`));
+    for (const h of poHeaders) {
+      await db.delete(purchaseOrderLines).where(eq(purchaseOrderLines.purchaseOrderId, h.id));
+    }
+    await db.delete(purchaseOrders).where(like(purchaseOrders.code, `${RB_PREFIX}%`));
+    // sales_order_lines CASCADE-delete from sales_orders.
+    await db.delete(salesOrders).where(like(salesOrders.code, `${RB_PREFIX}%`));
+    await db.delete(activityLog).where(like(activityLog.refId, `${RB_PREFIX}%`));
+    await db.delete(activityLog).where(like(activityLog.refId, `RCPT-${RB_PREFIX}%`));
+    await db.delete(activityLog).where(like(activityLog.refId, `NC-AUTO-${RB_PREFIX}%`));
+    await db.delete(items).where(like(items.code, `${RB_PREFIX}%`));
+  });
+
+  it('full receive flips DC status → received + jc_op outsourceStatus → received', async () => {
+    const ctx = await setupIssuedDc('RC1', { sentQty: 5 });
+    const result = await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    expect(result.status).toBe('received');
+    expect(result.receipts).toHaveLength(1);
+    expect(result.receipts[0]?.receiptCode).toBe(`RCPT-${RB_PREFIX}DC-RC1-01`);
+    const op = await readJcOpRb(ctx.opId);
+    expect(op.outsourceStatus).toBe('received');
+  });
+
+  it('partial receive leaves DC status=issued and jc_op status=sent', async () => {
+    const ctx = await setupIssuedDc('RC2', { sentQty: 10 });
+    const result = await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 4, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    expect(result.status).toBe('issued');
+    const op = await readJcOpRb(ctx.opId);
+    expect(op.outsourceStatus).toBe('sent');
+  });
+
+  it('cumulative receive across two receipts flips DC on the second', async () => {
+    const ctx = await setupIssuedDc('RC3', { sentQty: 8 });
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    const second = await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    expect(second.status).toBe('received');
+    expect(second.receipts).toHaveLength(2);
+    expect(second.receipts.map((r) => r.receiptCode)).toEqual([
+      `RCPT-${RB_PREFIX}DC-RC3-01`,
+      `RCPT-${RB_PREFIX}DC-RC3-02`,
+    ]);
+  });
+
+  it('over-receive (sent_qty + 1) raises ConflictError and writes no rows', async () => {
+    const ctx = await setupIssuedDc('RC4', { sentQty: 5 });
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        ctx.dcId,
+        {
+          receiptDate: '2026-05-19',
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6, rejectedQty: 0 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+    const headers = await db
+      .select({ id: deliveryChallanReceipts.id })
+      .from(deliveryChallanReceipts)
+      .where(eq(deliveryChallanReceipts.deliveryChallanId, ctx.dcId));
+    expect(headers).toHaveLength(0);
+  });
+
+  it('reject-qty creates auto-NC, stock IN counts only received-good qty', async () => {
+    const ctx = await setupIssuedDc('RC5', { sentQty: 10 });
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [
+          {
+            deliveryChallanLineId: ctx.dcLineId,
+            receivedQty: 7,
+            rejectedQty: 3,
+            rejectReason: 'Coating thickness out of tol',
+          },
+        ],
+      },
+      admin,
+    );
+    const ncs = await db
+      .select({ code: ncRegister.code, rejectedQty: ncRegister.rejectedQty })
+      .from(ncRegister)
+      .where(eq(ncRegister.jcOpId, ctx.opId));
+    expect(ncs).toHaveLength(1);
+    expect(ncs[0]?.code).toMatch(/^NC-AUTO-T059B-JC-RC5-/);
+    expect(Number(ncs[0]?.rejectedQty)).toBe(3);
+    const txns = await db
+      .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })
+      .from(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `RCPT-${RB_PREFIX}DC-RC5%`));
+    expect(txns).toHaveLength(1);
+    expect(txns[0]?.qty).toBe(7);
+    expect(txns[0]?.txnType).toBe('in');
+    const op = await readJcOpRb(ctx.opId);
+    expect(op.outsourceStatus).toBe('received'); // 7+3=10 reconciled
+  });
+
+  it('reject without reason is rejected at the input schema layer', async () => {
+    const ctx = await setupIssuedDc('RC6', { sentQty: 4 });
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        ctx.dcId,
+        {
+          receiptDate: '2026-05-19',
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 0, rejectedQty: 4 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(Error);
+  });
+
+  it('writes store_transactions IN row with source_type=jw_in and matching qty', async () => {
+    const ctx = await setupIssuedDc('RC7', { sentQty: 6 });
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    const txns = await db
+      .select({
+        qty: storeTransactions.qty,
+        txnType: storeTransactions.txnType,
+        sourceType: storeTransactions.sourceType,
+      })
+      .from(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `RCPT-${RB_PREFIX}DC-RC7%`));
+    expect(txns).toHaveLength(1);
+    expect(txns[0]).toMatchObject({ qty: 6, txnType: 'in', sourceType: 'jw_in' });
+  });
+
+  it('emits DC_RECEIVE + OP_OUTSOURCE_RECEIVED audit rows on full receive', async () => {
+    const ctx = await setupIssuedDc('RC8', { sentQty: 5 });
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    const dcRows = await db
+      .select({ action: activityLog.action, detail: activityLog.detail })
+      .from(activityLog)
+      .where(eq(activityLog.refId, `${RB_PREFIX}DC-RC8`));
+    const dcReceive = dcRows.find((r) => r.action === 'DC_RECEIVE');
+    expect(dcReceive).toBeDefined();
+    expect(dcReceive?.detail).toContain(`${RB_PREFIX}DC-RC8`);
+
+    const opRows = await db
+      .select({ action: activityLog.action, detail: activityLog.detail })
+      .from(activityLog)
+      .where(eq(activityLog.refId, ctx.jcCode));
+    const opReceived = opRows.find((r) => r.action === 'OP_OUTSOURCE_RECEIVED');
+    expect(opReceived).toBeDefined();
+    expect(opReceived?.detail).toContain(ctx.jcCode);
+  });
+
+  it('sales cascade fires when outsource is the only op of a JC linked to an SO line', async () => {
+    // Build SO + line + JC pointing at it via sourceSoLineId.
+    const soCode = `${RB_PREFIX}SO-RC9`;
+    // Clean up any leftover from a prior failed run.
+    await db.delete(salesOrders).where(eq(salesOrders.code, soCode));
+    const soRows = await db
+      .insert(salesOrders)
+      .values({
+        companyId: admin.companyId!,
+        code: soCode,
+        soDate: '2026-05-19',
+        status: 'open',
+        type: 'component_manufacturing',
+        gstPercent: '18.00',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const soId = soRows[0]!.id;
+    const soLineRows = await db
+      .insert(salesOrderLines)
+      .values({
+        companyId: admin.companyId!,
+        salesOrderId: soId,
+        lineNo: 1,
+        itemId: rbItemId,
+        partName: 'Test part',
+        orderQty: 5,
+        rate: '0',
+        status: 'open',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const soLineId = soLineRows[0]!.id;
+
+    const ctx = await setupIssuedDc('RC9', { sentQty: 5, sourceSoLineId: soLineId });
+
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+      },
+      admin,
+    );
+
+    const soAfter = await db
+      .select({ status: salesOrders.status })
+      .from(salesOrders)
+      .where(eq(salesOrders.id, soId))
+      .limit(1);
+    const soLineAfter = await db
+      .select({ status: salesOrderLines.status })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.id, soLineId))
+      .limit(1);
+    expect(soLineAfter[0]?.status).toBe('closed');
+    expect(soAfter[0]?.status).toBe('closed');
+  });
+
+  it('viewer role denied with AuthorizationError', async () => {
+    const ctx = await setupIssuedDc('RCA', { sentQty: 3 });
+    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        ctx.dcId,
+        {
+          receiptDate: '2026-05-19',
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+        },
+        viewer,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('NotFoundError on unknown DC id', async () => {
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        '00000000-0000-0000-0000-000000000000',
+        {
+          receiptDate: '2026-05-19',
+          lines: [
+            {
+              deliveryChallanLineId: '00000000-0000-0000-0000-000000000001',
+              receivedQty: 1,
+              rejectedQty: 0,
+            },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('receive against cancelled DC raises ConflictError', async () => {
+    const ctx = await setupIssuedDc('RCC', { sentQty: 3 });
+    await service.cancelDeliveryChallan(ctx.dcId, admin);
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        ctx.dcId,
+        {
+          receiptDate: '2026-05-19',
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('input line referencing wrong DC raises ValidationError', async () => {
+    const ctxA = await setupIssuedDc('RCV1', { sentQty: 3 });
+    const ctxB = await setupIssuedDc('RCV2', { sentQty: 3 });
+    await expect(
+      service.receiveAgainstDeliveryChallan(
+        ctxA.dcId,
+        {
+          receiptDate: '2026-05-19',
+          lines: [{ deliveryChallanLineId: ctxB.dcLineId, receivedQty: 1, rejectedQty: 0 }],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('cancel after a receipt raises ConflictError (block until receipts voided)', async () => {
+    const ctx = await setupIssuedDc('RCN', { sentQty: 5 });
+    await service.receiveAgainstDeliveryChallan(
+      ctx.dcId,
+      {
+        receiptDate: '2026-05-19',
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 2, rejectedQty: 0 }],
+      },
+      admin,
+    );
+    await expect(service.cancelDeliveryChallan(ctx.dcId, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+  });
+});
+
+// Reference to deliveryChallanReceiptLines to avoid unused-import lint when
+// the suite is run in isolation (drizzle relations don't trip the lint, but
+// the import is included for future tests asserting line-level state).
+void deliveryChallanReceiptLines;

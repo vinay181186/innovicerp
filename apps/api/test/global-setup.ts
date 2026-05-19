@@ -32,7 +32,16 @@ export default async function setup(): Promise<void> {
     //    that other tables FK into must go AFTER their dependants.
     //    Lines tables cascade-delete from their headers, so we only target
     //    headers here.
-    await sql`DELETE FROM public.nc_register WHERE code LIKE 'T%-%'`;
+    // T-prefixed NC codes from explicit test inserts + auto-NCs generated
+    // from QC reject (T-040e) and outsource reject (T-059b) against T-prefixed
+    // JC codes (format: NC-AUTO-<jcCode>-...). Both shapes wiped here so the
+    // job_cards delete below doesn't trip the FK.
+    await sql`DELETE FROM public.nc_register WHERE code LIKE 'T%-%' OR code LIKE 'NC-AUTO-T%'`;
+    // delivery_challan_receipts CASCADE-deletes from delivery_challans, and
+    // delivery_challan_receipt_lines CASCADE-delete from both their receipt
+    // header AND from their dc_line — but we also wipe by receipt_code
+    // pattern here as a belt-and-braces for any orphaned receipts.
+    await sql`DELETE FROM public.delivery_challan_receipts WHERE receipt_code LIKE 'RCPT-T%-%'`;
     await sql`DELETE FROM public.delivery_challans WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.goods_receipt_notes WHERE code LIKE 'T%-%'`;
     // store_transactions has no `code` column; cruft surfaces via the
@@ -41,7 +50,7 @@ export default async function setup(): Promise<void> {
     // pointing at non-existent grn codes via source_ref text — clean those
     // by source_ref pattern + by remarks pattern (T036C tests write a
     // marker remark).
-    await sql`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR remarks LIKE '%T036%'`;
+    await sql`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%'`;
     await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.sales_orders WHERE code LIKE 'T%-%'`;
