@@ -32,6 +32,7 @@ const TITLE_MAP: Record<string, string> = {
   '/activity-log': 'Activity Log',
   '/reports': 'Reports',
   '/saved-reports': 'Saved Reports',
+  '/bom-masters': 'BOM Master',
 };
 
 function deriveTitle(pathname: string): string {

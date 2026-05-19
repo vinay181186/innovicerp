@@ -17,6 +17,12 @@ function splitVendorChunk(id: string): string | undefined {
     return 'vendor-forms';
   }
   if (id.includes('date-fns')) return 'vendor-dates';
+  // xlsx is huge (~400 KB raw / 150 KB gzip) — pulled in only by BOM form
+  // Excel import. Splitting it out lets every other page cache without
+  // re-downloading it on app updates.
+  if (id.includes('/xlsx/') || id.includes('/cfb/') || id.includes('/codepage/')) {
+    return 'vendor-xlsx';
+  }
   if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) {
     return 'vendor-react';
   }

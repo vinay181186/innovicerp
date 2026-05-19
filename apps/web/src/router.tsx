@@ -3,6 +3,10 @@ import { activityLogListRoute } from './modules/activity-log/routes/list';
 import { alertsConfigRoute } from './modules/alerts/routes/config';
 import { alertsDashboardRoute } from './modules/alerts/routes/dashboard';
 import { alertsDrillRoute } from './modules/alerts/routes/drill';
+import { bomMastersListRoute } from './modules/bom-master/routes/list';
+import { bomMasterDetailRoute } from './modules/bom-master/routes/detail';
+import { bomMasterNewRoute } from './modules/bom-master/routes/new';
+import { bomMasterEditRoute } from './modules/bom-master/routes/edit';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -146,6 +150,11 @@ const routeTree = rootRoute.addChildren([
     alertsDashboardRoute,
     alertsConfigRoute,
     alertsDrillRoute,
+    // BOM Master — order: new before $id before $id/edit so static path wins.
+    bomMastersListRoute,
+    bomMasterNewRoute,
+    bomMasterDetailRoute,
+    bomMasterEditRoute,
   ]),
 ]);
 

@@ -121,6 +121,18 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
+    key: 'design',
+    label: 'Design',
+    modClass: 'design',
+    icon: '📐',
+    groups: [
+      {
+        label: 'Master',
+        items: [{ to: '/bom-masters', label: 'BOM Master', icon: '📦' }],
+      },
+    ],
+  },
+  {
     key: 'qc',
     label: 'Quality',
     modClass: 'qc',

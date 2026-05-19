@@ -74,9 +74,31 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** BOM-1..8 (Phase A item 1 per ADR-028 / LEGACY_AUDIT.md)
+**ID:** BOM-9..10 (web layer, completes Phase A item 1)
+**Title:** BOM Master — list / detail / create / edit web pages + Excel import + sidebar nav
+**Status:** [x] Complete 2026-05-20. BOM Master fully shipped (API + cascade + web).
+
+**Done:**
+
+- **`apps/web/src/modules/bom-master/api.ts`** — TanStack Query hooks: `useBomMastersList`, `useBomMaster`, `useCreateBomMaster`, `useUpdateBomMaster`, `useDeleteBomMaster`.
+- **List page** (`routes/list.tsx`) — port of legacy renderBOMMaster L8438. Status filter + free-text search bound to URL params. Expand-row reveals lines table (Item Code / Name / Qty per Set / Type with emoji-colored chip per bom_type). "Linked SOs" count in green when > 0.
+- **Detail page** (`routes/detail.tsx`) — header card with BOM No + Name + Status badge + Rev N indicator. Edit / Delete buttons gated by role (admin/manager for edit, admin-only for delete). Delete is blocked with friendly message + count when `linkedSoCount > 0`. Lines table + Revision History table (Rev / Date / Changed By / Notes / Snapshot items count).
+- **Create + Edit forms** (`routes/new.tsx`, `routes/edit.tsx`, `components/bom-form.tsx`) — shared `BomForm` component. Header inputs (BOM No, Name, Status). Line editor with item-code datalist autocomplete (drives from `useItemsList` cache, 1000-item limit). Per-line qty + bom_type dropdown + remove. Add Item / Excel Template / Import Excel buttons. Edit mode shows "Rev N → N+1" indicator + revision-note textarea (auto-generated diff used if blank). Validation (≥1 line, no duplicate items, qty > 0). Submit / Cancel.
+- **Excel template + import** — `xlsx` library added as web dep. Template downloads a 3-column `item_code, qty_per_set, bom_type` sample. Import parses xlsx/csv client-side, resolves item codes against the items master, dedup against existing lines, surfaces per-row errors inline. Dynamic-imported only when Template / Import buttons are clicked, so non-BOM pages skip the ~140 KB gzip cost.
+- **Vite config (`vite.config.ts`)** — new `vendor-xlsx` manual chunk so the xlsx bundle is cached independently of app updates.
+- **Router** (`router.tsx`) — registered `bomMastersListRoute`, `bomMasterNewRoute`, `bomMasterDetailRoute`, `bomMasterEditRoute` in order (`new` before `$id` before `$id/edit` so static path wins).
+- **Sidebar** (`components/shared/sidebar.tsx`) — new `Design` department section with `BOM Master` entry. Purple `dept-design` tint per Innovic palette.
+- **TopBar** (`components/shared/topbar.tsx`) — page title map updated.
+- **LEGACY_AUDIT.md** — BOM Master row flipped to ✅ Shipped.
+
+**Quality gates:** shared + api + web typecheck + lint + prettier clean; web build clean (2294 modules, 5.49s; index 1062 KB raw / 141 KB gzip — unchanged from pre-BOM since xlsx is dynamic; vendor-xlsx 429 KB raw / 143 KB gzip loads only on Template/Import click). **40/40 API tests still green.**
+
+**Phase A item 1 complete.** Remaining Phase A items per LEGACY_AUDIT: Route Cards, QC Process Master UI, Cost Center Master, Settings/Users/Access Control.
+
+**Closed previous Active Task — BOM-1..8 (API + cascade):**
+[Omitted long context line]
 **Title:** BOM Master — port legacy renderBOMMaster + SO→BOM cascade
-**Status:** [x] API + cascade + tests complete 2026-05-20. Web pages (list/detail/forms) follow in next commit.
+**Status:** [x] API + cascade + tests complete 2026-05-20.
 
 **Done:**
 
