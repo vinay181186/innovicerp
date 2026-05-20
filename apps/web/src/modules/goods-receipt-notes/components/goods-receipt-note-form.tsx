@@ -1,16 +1,5 @@
-// GRN form — header + dynamic line items with inline QC fields.
-//
-// Mirrors the legacy `addGRN()` line 26515 + `_grnLineRowHtml` layout.
-// Per ADR-015 #8, QC fields are inline on each line. Per the T-036c product
-// call, once a line is qc_status='completed' on the existing detail, its QC
-// inputs lock client-side too (the service rejects edits with ConflictError;
-// we just match here so the user knows). Reversal flow: create a new GRN
-// line with the same PO line and a "rejecting" qty.
-//
-// PO selection drives the line auto-populate: when a PO is chosen, the form
-// pre-fills lines from PO lines that have remaining qty (qty - received_qty
-// > 0), with `receivedQty` defaulting to the remaining and qcStatus=pending.
-// User can edit any field before save.
+// GRN form (UI-003-05) — header + dynamic line items with inline QC fields.
+// QC-completed lines lock client-side (server enforces with ConflictError).
 
 import {
   type CreateGoodsReceiptNoteInput,
@@ -20,21 +9,13 @@ import {
   type UpdateGoodsReceiptNoteInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
 interface LineFormValue {
   id?: string;
-  /** Existing qcStatus on a saved line — drives the lock behavior (read-only
-   *  inputs when 'completed'). Absent on new lines. */
   existingQcStatus?: GrnQcStatus;
   purchaseOrderLineId?: string;
   itemId?: string;
@@ -81,9 +62,6 @@ const NEW_LINE: LineFormValue = {
 
 type CreateMode = {
   mode: 'create';
-  /** Optional initial PO id — when present, the form auto-selects this PO and
-   *  pre-fills lines from its remaining qty. Used by the "Receive (new GRN)"
-   *  link from a PO detail page. */
   initialPurchaseOrderId?: string;
   onSubmit: (values: CreateGoodsReceiptNoteInput) => Promise<void> | void;
   submitLabel?: string;
@@ -102,7 +80,7 @@ type EditMode = {
 
 export type GoodsReceiptNoteFormProps = CreateMode | EditMode;
 
-export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
+export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
@@ -124,15 +102,11 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const vendors = vendorsData?.vendors ?? [];
 
-  // Open + partial + qc_pending POs are the receivable states; closed +
-  // cancelled POs hide from the picker.
   const { data: posData } = usePurchaseOrdersList({ limit: 200, offset: 0 });
   const pos = (posData?.items ?? []).filter((p) =>
     ['draft', 'open', 'partial', 'qc_pending'].includes(p.status),
   );
 
-  // Watch the selected PO id — when it changes (and we're in create mode +
-  // there are no user-edited lines yet), pre-populate from PO lines.
   const selectedPoId = useWatch({ control, name: 'header.purchaseOrderId' });
   const { data: selectedPoDetail } = usePurchaseOrder(
     !isEdit && selectedPoId ? selectedPoId : undefined,
@@ -141,11 +115,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
   useEffect(() => {
     if (isEdit) return;
     if (!selectedPoDetail) return;
-    // Only auto-populate when the lines look pristine (one blank line).
     const cur = getValues('lines');
     const isPristine = cur.length === 1 && cur[0]!.itemCodeText === '' && cur[0]!.itemName === '';
     if (!isPristine) return;
-    // Inherit vendor from PO if not already set.
     if (!getValues('header.vendorId') && selectedPoDetail.vendorId) {
       setValue('header.vendorId', selectedPoDetail.vendorId, { shouldDirty: true });
     }
@@ -211,252 +183,360 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps) {
   };
 
   return (
-    <form className="space-y-8" onSubmit={handleSubmit(onValid)}>
-      {/* Header */}
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Header
-        </h3>
-        <FieldRow>
-          <Field label="GRN No." htmlFor="code" error={errors.header?.code?.message} required>
-            <Input
-              id="code"
-              autoFocus={!isEdit}
-              autoComplete="off"
-              disabled={isEdit}
-              readOnly={isEdit}
-              {...register('header.code', { required: !isEdit ? 'GRN No. is required' : false })}
-            />
-            {isEdit ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Code cannot be changed after creation.
-              </p>
-            ) : null}
-          </Field>
-          <Field label="Date" htmlFor="grnDate" required>
-            <Input
-              id="grnDate"
-              type="date"
-              {...register('header.grnDate', { required: 'Date is required' })}
-            />
-          </Field>
-          <Field label="Purchase order" htmlFor="purchaseOrderId">
-            <Select id="purchaseOrderId" {...register('header.purchaseOrderId')} disabled={isEdit}>
-              <option value="">— Free-text PO ref below —</option>
-              {pos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="PO ref (audit)" htmlFor="poCodeText">
-            <Input id="poCodeText" autoComplete="off" {...register('header.poCodeText')} />
-          </Field>
-          <Field label="Vendor" htmlFor="vendorId">
-            <Select id="vendorId" {...register('header.vendorId')}>
-              <option value="">— Free-text vendor below —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Vendor code (fallback)" htmlFor="vendorCodeText">
-            <Input id="vendorCodeText" autoComplete="off" {...register('header.vendorCodeText')} />
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="DC No." htmlFor="dcNo">
-            <Input id="dcNo" autoComplete="off" {...register('header.dcNo')} />
-          </Field>
-          <Field label="Invoice No." htmlFor="invoiceNo">
-            <Input id="invoiceNo" autoComplete="off" {...register('header.invoiceNo')} />
-          </Field>
-        </FieldRow>
-
-        <Field label="Remarks" htmlFor="remarks">
-          <Textarea id="remarks" rows={2} {...register('header.remarks')} />
-        </Field>
-      </section>
-
-      {/* Lines */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Line items
-          </h3>
-          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
-            <Plus />
-            Add line
-          </Button>
+    <form onSubmit={handleSubmit(onValid)}>
+      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            GRN No.<span className="req">★</span>
+          </label>
+          <input
+            id="code"
+            className="innovic-input"
+            autoFocus={!isEdit}
+            autoComplete="off"
+            readOnly={isEdit}
+            {...register('header.code', { required: !isEdit ? 'GRN No. is required' : false })}
+          />
+          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          {errors.header?.code?.message ? (
+            <div className="form-error">{errors.header.code.message}</div>
+          ) : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="grnDate">
+            Date<span className="req">★</span>
+          </label>
+          <input
+            id="grnDate"
+            type="date"
+            className="innovic-input"
+            {...register('header.grnDate', { required: 'Date is required' })}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="purchaseOrderId">
+            Purchase Order
+          </label>
+          <select
+            id="purchaseOrderId"
+            className="innovic-select"
+            disabled={isEdit}
+            {...register('header.purchaseOrderId')}
+          >
+            <option value="">— Free-text PO ref below —</option>
+            {pos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {fields.length === 0 ? (
-          <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No lines yet. Pick a PO above to auto-populate, or click <b>Add line</b>.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {fields.map((field, idx) => {
-              const locked = field.existingQcStatus === 'completed';
-              return (
+        <div className="form-grp">
+          <label className="form-label" htmlFor="poCodeText">
+            PO ref (audit)
+          </label>
+          <input
+            id="poCodeText"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('header.poCodeText')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorId">
+            Vendor
+          </label>
+          <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
+            <option value="">— Free-text vendor below —</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.code} — {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorCodeText">
+            Vendor Code (fallback)
+          </label>
+          <input
+            id="vendorCodeText"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('header.vendorCodeText')}
+          />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="dcNo">
+            DC No.
+          </label>
+          <input
+            id="dcNo"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('header.dcNo')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="invoiceNo">
+            Invoice No.
+          </label>
+          <input
+            id="invoiceNo"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('header.invoiceNo')}
+          />
+        </div>
+
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">
+            Remarks
+          </label>
+          <textarea
+            id="remarks"
+            className="innovic-textarea"
+            rows={2}
+            {...register('header.remarks')}
+          />
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 8,
+        }}
+      >
+        <div
+          className="form-label"
+          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
+        >
+          Line items
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => append({ ...NEW_LINE })}
+        >
+          <Plus size={13} /> Add line
+        </button>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
+          No lines yet. Pick a PO above to auto-populate, or click <strong>Add line</strong>.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fields.map((field, idx) => {
+            const locked = field.existingQcStatus === 'completed';
+            return (
+              <div
+                key={field.id}
+                style={{
+                  border: `1px solid ${locked ? 'rgba(22,163,74,0.5)' : 'var(--border)'}`,
+                  borderRadius: 8,
+                  padding: 10,
+                  background: 'var(--bg2)',
+                }}
+              >
                 <div
-                  key={field.id}
-                  className={`grid grid-cols-12 gap-2 rounded border bg-card p-3 text-card-foreground ${locked ? 'border-green-500/40' : ''}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 8,
+                    fontSize: 11,
+                    color: 'var(--text3)',
+                    fontFamily: 'var(--mono)',
+                    textTransform: 'uppercase',
+                    fontWeight: 700,
+                  }}
                 >
-                  <div className="col-span-12 flex items-center justify-between text-xs font-medium text-muted-foreground">
-                    <span>
-                      Line {idx + 1}
-                      {locked ? (
-                        <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-green-700 dark:bg-green-900/40 dark:text-green-300">
-                          QC locked
-                        </span>
-                      ) : null}
-                    </span>
-                    {!locked ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => remove(idx)}
-                        aria-label={`Remove line ${idx + 1}`}
-                        className="h-7 px-2 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 />
-                        Remove
-                      </Button>
+                  <span>
+                    Line {idx + 1}
+                    {locked ? (
+                      <span className="badge b-green" style={{ marginLeft: 8 }}>
+                        QC locked
+                      </span>
                     ) : null}
-                  </div>
-                  <div className="col-span-6 md:col-span-3">
-                    <Label className="text-xs">Item code</Label>
-                    <Input
+                  </span>
+                  {!locked ? (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm btn-icon"
+                      onClick={() => remove(idx)}
+                      aria-label={`Remove line ${idx + 1}`}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="form-grid form-grid-3" style={{ marginBottom: 8 }}>
+                  <div className="form-grp">
+                    <label className="form-label">Item Code</label>
+                    <input
+                      className="innovic-input"
                       autoComplete="off"
-                      disabled={locked}
+                      readOnly={locked}
                       {...register(`lines.${idx}.itemCodeText` as const)}
                     />
                   </div>
-                  <div className="col-span-6 md:col-span-3">
-                    <Label className="text-xs">Item name *</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">
+                      Item Name<span className="req">★</span>
+                    </label>
+                    <input
+                      className="innovic-input"
                       autoComplete="off"
-                      disabled={locked}
+                      readOnly={locked}
                       {...register(`lines.${idx}.itemName` as const, {
                         required: 'Item name is required',
                       })}
                     />
                     {errors.lines?.[idx]?.itemName?.message ? (
-                      <p className="text-xs text-destructive">
-                        {errors.lines[idx]?.itemName?.message}
-                      </p>
+                      <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
                     ) : null}
                   </div>
-                  <div className="col-span-4 md:col-span-1">
-                    <Label className="text-xs">Received *</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">
+                      Received<span className="req">★</span>
+                    </label>
+                    <input
                       type="number"
                       min={0}
-                      disabled={locked}
+                      className="innovic-input"
+                      readOnly={locked}
                       {...register(`lines.${idx}.receivedQty` as const, {
                         valueAsNumber: true,
                         min: { value: 0, message: 'Min 0' },
                       })}
                     />
                   </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Label className="text-xs">DC ref</Label>
-                    <Input
+
+                  <div className="form-grp">
+                    <label className="form-label">DC Ref</label>
+                    <input
+                      className="innovic-input"
                       autoComplete="off"
-                      disabled={locked}
+                      readOnly={locked}
                       {...register(`lines.${idx}.dcRefNo` as const)}
                     />
                   </div>
-                  <div className="col-span-4 md:col-span-3">
-                    <Label className="text-xs">QC status</Label>
-                    <Select disabled={locked} {...register(`lines.${idx}.qcStatus` as const)}>
+                  <div className="form-grp">
+                    <label className="form-label">QC Status</label>
+                    <select
+                      className="innovic-select"
+                      disabled={locked}
+                      {...register(`lines.${idx}.qcStatus` as const)}
+                    >
                       {GRN_QC_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {s.replaceAll('_', ' ')}
                         </option>
                       ))}
-                    </Select>
+                    </select>
                   </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Label className="text-xs">QC accepted</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">QC Accepted</label>
+                    <input
                       type="number"
                       min={0}
-                      disabled={locked}
+                      className="innovic-input"
+                      readOnly={locked}
                       {...register(`lines.${idx}.qcAcceptedQty` as const, {
                         valueAsNumber: true,
                       })}
                     />
                   </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Label className="text-xs">QC rejected</Label>
-                    <Input
+
+                  <div className="form-grp">
+                    <label className="form-label">QC Rejected</label>
+                    <input
                       type="number"
                       min={0}
-                      disabled={locked}
+                      className="innovic-input"
+                      readOnly={locked}
                       {...register(`lines.${idx}.qcRejectedQty` as const, {
                         valueAsNumber: true,
                       })}
                     />
                   </div>
-                  <div className="col-span-4 md:col-span-2">
-                    <Label className="text-xs">QC date</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">QC Date</label>
+                    <input
                       type="date"
-                      disabled={locked}
+                      className="innovic-input"
+                      readOnly={locked}
                       {...register(`lines.${idx}.qcDate` as const)}
                     />
                   </div>
-                  <div className="col-span-12 md:col-span-6">
-                    <Label className="text-xs">QC remarks</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">QC Remarks</label>
+                    <input
+                      className="innovic-input"
                       autoComplete="off"
-                      disabled={locked}
+                      readOnly={locked}
                       {...register(`lines.${idx}.qcRemarks` as const)}
                     />
                   </div>
-                  <div className="col-span-12">
-                    <Label className="text-xs">Line remarks</Label>
-                    <Input
+
+                  <div className="form-grp form-full">
+                    <label className="form-label">Line Remarks</label>
+                    <input
+                      className="innovic-input"
                       autoComplete="off"
-                      disabled={locked}
+                      readOnly={locked}
                       {...register(`lines.${idx}.remarks` as const)}
                     />
                   </div>
-                  {locked ? (
-                    <p className="col-span-12 text-xs text-muted-foreground">
-                      QC fields are locked once QC is marked complete. To correct a wrong accept,
-                      create a reversing GRN line on the same PO.
-                    </p>
-                  ) : null}
                 </div>
-              );
-            })}
+
+                {locked ? (
+                  <div className="form-help" style={{ marginTop: 4 }}>
+                    QC fields are locked once QC is marked complete. To correct a wrong accept,
+                    create a reversing GRN line on the same PO.
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        {props.submitError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            {props.submitError}
           </div>
-        )}
-      </section>
-
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={formState.isSubmitting}>
-          {formState.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create GRN')}
-        </Button>
-        {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
-            Cancel
-          </Button>
         ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          {props.onCancel ? (
+            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+              Cancel
+            </button>
+          ) : null}
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create GRN')}
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -494,27 +574,4 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
       }),
     ),
   };
-}
-
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
 }

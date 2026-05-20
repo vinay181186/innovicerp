@@ -1,17 +1,15 @@
+// GRN new + edit routes (UI-003-05).
+
 import type { CreateGoodsReceiptNoteInput, UpdateGoodsReceiptNoteInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateGoodsReceiptNote, useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
 
 const newSearchSchema = z.object({
-  /** Optional — when set, the form auto-selects this PO and pre-fills lines
-   *  from its remaining qty. Set by the "Receive (new GRN)" link on PO detail. */
   poId: z.string().uuid().optional(),
 });
 
@@ -28,13 +26,13 @@ export const goodsReceiptNoteEditRoute = createRoute({
   component: GoodsReceiptNoteEditPage,
 });
 
-function GoodsReceiptNoteNewPage() {
+function GoodsReceiptNoteNewPage(): React.JSX.Element {
   const { poId } = goodsReceiptNoteNewRoute.useSearch();
   const navigate = useNavigate();
   const create = useCreateGoodsReceiptNote();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const onSubmit = async (values: CreateGoodsReceiptNoteInput) => {
+  const onSubmit = async (values: CreateGoodsReceiptNoteInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
@@ -49,45 +47,41 @@ function GoodsReceiptNoteNewPage() {
   };
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/goods-receipt-notes">
-            <ArrowLeft />
-            Back to GRNs
-          </Link>
-        </Button>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>New goods receipt note</CardTitle>
-            <CardDescription>
+    <div>
+      <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to GRN list
+      </Link>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="panel-title">+ New Goods Receipt Note</div>
+            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Receive material against a PO. QC accept on a line writes a stock-in ledger entry.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <GoodsReceiptNoteForm
-              mode="create"
-              {...(poId ? { initialPurchaseOrderId: poId } : {})}
-              onSubmit={onSubmit}
-              submitError={submitError}
-              onCancel={() => void navigate({ to: '/goods-receipt-notes' })}
-            />
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <GoodsReceiptNoteForm
+            mode="create"
+            {...(poId ? { initialPurchaseOrderId: poId } : {})}
+            onSubmit={onSubmit}
+            submitError={submitError}
+            onCancel={() => void navigate({ to: '/goods-receipt-notes' })}
+          />
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
-function GoodsReceiptNoteEditPage() {
+function GoodsReceiptNoteEditPage(): React.JSX.Element {
   const { id } = goodsReceiptNoteEditRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
   const update = useUpdateGoodsReceiptNote(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const onSubmit = async (values: UpdateGoodsReceiptNoteInput) => {
+  const onSubmit = async (values: UpdateGoodsReceiptNoteInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
@@ -99,64 +93,60 @@ function GoodsReceiptNoteEditPage() {
 
   if (isLoading) {
     return (
-      <main className="container max-w-5xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading GRN…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading GRN…
+      </div>
     );
   }
 
   if (isError || !detail) {
     return (
-      <main className="container max-w-5xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>GRN not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This GRN could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/goods-receipt-notes">
-                <ArrowLeft />
-                Back to GRNs
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'GRN not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/goods-receipt-notes/$id" params={{ id }}>
-            <ArrowLeft />
-            Back to GRN
-          </Link>
-        </Button>
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle>Edit GRN</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GoodsReceiptNoteForm
-              mode="edit"
-              detail={detail}
-              onSubmit={onSubmit}
-              submitError={submitError}
-              onCancel={() => void navigate({ to: '/goods-receipt-notes/$id', params: { id } })}
-            />
-          </CardContent>
-        </Card>
+    <div>
+      <Link
+        to="/goods-receipt-notes/$id"
+        params={{ id }}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 10 }}
+      >
+        <ArrowLeft size={14} /> Back to GRN
+      </Link>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+              {detail.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              Edit GRN
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <GoodsReceiptNoteForm
+            mode="edit"
+            detail={detail}
+            onSubmit={onSubmit}
+            submitError={submitError}
+            onCancel={() => void navigate({ to: '/goods-receipt-notes/$id', params: { id } })}
+          />
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
