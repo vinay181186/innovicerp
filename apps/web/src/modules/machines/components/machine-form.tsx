@@ -1,3 +1,9 @@
+// Machine create + edit form (UI-003-03). Field order matches legacy
+// machineForm (legacy/InnovicERP_v82_12_3.html L13113): Machine ID,
+// Machine Name, Type (full), Capacity/Shift, Shifts/Day, Status.
+// Hour Rate + Maintenance fields from legacy are NOT in the current
+// shared schema and are deferred to a Phase C extension.
+
 import {
   type CreateMachineInput,
   type Machine,
@@ -7,12 +13,7 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 
 const MACHINE_STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
 
@@ -55,12 +56,12 @@ function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
   };
 }
 
-export function MachineForm(props: MachineFormProps) {
+export function MachineForm(props: MachineFormProps): React.JSX.Element {
   if (props.mode === 'create') return <CreateMachineForm {...props} />;
   return <EditMachineForm {...props} />;
 }
 
-function CreateMachineForm(props: CreateMode) {
+function CreateMachineForm(props: CreateMode): React.JSX.Element {
   const form = useForm<CreateMachineInput>({
     resolver: zodResolver(createMachineInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
@@ -70,65 +71,63 @@ function CreateMachineForm(props: CreateMode) {
 
   return (
     <form
-      className="space-y-6"
       onSubmit={form.handleSubmit(async (values) => {
         await props.onSubmit(values);
       })}
     >
-      <FieldRow>
-        <Field label="Code" htmlFor="code" error={errors.code?.message} required>
-          <Input id="code" autoFocus autoComplete="off" {...register('code')} />
-        </Field>
-        <Field label="Name" htmlFor="name" error={errors.name?.message} required>
-          <Input id="name" autoComplete="off" {...register('name')} />
-        </Field>
-      </FieldRow>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            Machine ID<span className="req">★</span>
+          </label>
+          <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="CNC-01" {...register('code')} />
+          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="name">
+            Machine Name<span className="req">★</span>
+          </label>
+          <input id="name" className="innovic-input" autoComplete="off" placeholder="CNC Turning Centre" {...register('name')} />
+          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
 
-      <FieldRow>
-        <Field label="Machine type" htmlFor="machineType" error={errors.machineType?.message}>
-          <Input id="machineType" autoComplete="off" {...register('machineType')} />
-        </Field>
-        <Field
-          label="Capacity / shift"
-          htmlFor="capacityPerShift"
-          error={errors.capacityPerShift?.message}
-        >
-          <Input
-            id="capacityPerShift"
-            type="number"
-            min={0}
-            autoComplete="off"
-            {...register('capacityPerShift')}
-          />
-        </Field>
-        <Field label="Shifts / day" htmlFor="shiftsPerDay" error={errors.shiftsPerDay?.message}>
-          <Input
-            id="shiftsPerDay"
-            type="number"
-            min={1}
-            autoComplete="off"
-            {...register('shiftsPerDay')}
-          />
-        </Field>
-      </FieldRow>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="machineType">
+            Type
+          </label>
+          <input id="machineType" className="innovic-input" autoComplete="off" placeholder="CNC Lathe, VMC, Grinding…" {...register('machineType')} />
+        </div>
 
-      <FieldRow>
-        <Field label="Status" htmlFor="status" error={errors.status?.message}>
-          <Select id="status" {...register('status')}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="capacityPerShift">
+            Capacity / Shift (hrs)
+          </label>
+          <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="shiftsPerDay">
+            Shifts / Day
+          </label>
+          <input id="shiftsPerDay" className="innovic-input" type="number" min={1} autoComplete="off" {...register('shiftsPerDay')} />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('status')}>
             {MACHINE_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-          </Select>
-        </Field>
-        <div />
-        <div />
-      </FieldRow>
+          </select>
+        </div>
+      </div>
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Create machine'}
+        submitLabel={props.submitLabel ?? 'Add Machine'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -136,7 +135,7 @@ function CreateMachineForm(props: CreateMode) {
   );
 }
 
-function EditMachineForm(props: EditMode) {
+function EditMachineForm(props: EditMode): React.JSX.Element {
   const form = useForm<UpdateMachineInput>({
     resolver: zodResolver(updateMachineInputSchema),
     defaultValues: machineToUpdateDefaults(props.machine),
@@ -146,64 +145,59 @@ function EditMachineForm(props: EditMode) {
 
   return (
     <form
-      className="space-y-6"
       onSubmit={form.handleSubmit(async (values) => {
         await props.onSubmit(values);
       })}
     >
-      <FieldRow>
-        <Field label="Code" htmlFor="code">
-          <Input id="code" value={props.machine.code} disabled readOnly />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Code cannot be changed after creation.
-          </p>
-        </Field>
-        <Field label="Name" htmlFor="name" error={errors.name?.message} required>
-          <Input id="name" autoComplete="off" {...register('name')} />
-        </Field>
-      </FieldRow>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            Machine ID
+          </label>
+          <input id="code" className="innovic-input" value={props.machine.code} readOnly />
+          <div className="form-help">Machine ID cannot be changed after creation.</div>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="name">
+            Machine Name<span className="req">★</span>
+          </label>
+          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
 
-      <FieldRow>
-        <Field label="Machine type" htmlFor="machineType" error={errors.machineType?.message}>
-          <Input id="machineType" autoComplete="off" {...register('machineType')} />
-        </Field>
-        <Field
-          label="Capacity / shift"
-          htmlFor="capacityPerShift"
-          error={errors.capacityPerShift?.message}
-        >
-          <Input
-            id="capacityPerShift"
-            type="number"
-            min={0}
-            autoComplete="off"
-            {...register('capacityPerShift')}
-          />
-        </Field>
-        <Field label="Shifts / day" htmlFor="shiftsPerDay" error={errors.shiftsPerDay?.message}>
-          <Input
-            id="shiftsPerDay"
-            type="number"
-            min={1}
-            autoComplete="off"
-            {...register('shiftsPerDay')}
-          />
-        </Field>
-      </FieldRow>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="machineType">
+            Type
+          </label>
+          <input id="machineType" className="innovic-input" autoComplete="off" {...register('machineType')} />
+        </div>
 
-      <FieldRow>
-        <Field label="Status" htmlFor="status" error={errors.status?.message}>
-          <Select id="status" {...register('status')}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="capacityPerShift">
+            Capacity / Shift (hrs)
+          </label>
+          <input id="capacityPerShift" className="innovic-input" type="number" min={0} autoComplete="off" {...register('capacityPerShift')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="shiftsPerDay">
+            Shifts / Day
+          </label>
+          <input id="shiftsPerDay" className="innovic-input" type="number" min={1} autoComplete="off" {...register('shiftsPerDay')} />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('status')}>
             {MACHINE_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
             ))}
-          </Select>
-        </Field>
-        <div />
-        <div />
-      </FieldRow>
+          </select>
+        </div>
+      </div>
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
@@ -215,48 +209,39 @@ function EditMachineForm(props: EditMode) {
   );
 }
 
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
-}
-
 function FormFooter(props: {
   isSubmitting: boolean;
   submitLabel: string;
   submitError: string | null;
   onCancel?: (() => void) | undefined;
-}) {
+}): React.JSX.Element {
   return (
-    <div className="space-y-3">
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={props.isSubmitting}>
-          {props.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel}
-        </Button>
+    <div style={{ marginTop: 16 }}>
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid #fca5a5',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
-          </Button>
+          </button>
         ) : null}
+        <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
+          {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {props.submitLabel}
+        </button>
       </div>
     </div>
   );

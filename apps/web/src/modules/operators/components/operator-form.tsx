@@ -1,3 +1,8 @@
+// Operator create + edit form (UI-003-03). Field order matches legacy
+// operatorForm (legacy/InnovicERP_v82_12_3.html L13726): Operator ID,
+// Name, Department, Status, Skills/Machines (full). Plus an optional
+// Linked User field from current shared schema.
+
 import {
   type CreateOperatorInput,
   type Operator,
@@ -7,12 +12,7 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 
 type CreateMode = {
   mode: 'create';
@@ -53,12 +53,12 @@ function operatorToUpdateDefaults(o: Operator): UpdateOperatorInput {
   };
 }
 
-export function OperatorForm(props: OperatorFormProps) {
+export function OperatorForm(props: OperatorFormProps): React.JSX.Element {
   if (props.mode === 'create') return <CreateOperatorForm {...props} />;
   return <EditOperatorForm {...props} />;
 }
 
-function CreateOperatorForm(props: CreateMode) {
+function CreateOperatorForm(props: CreateMode): React.JSX.Element {
   const form = useForm<CreateOperatorInput>({
     resolver: zodResolver(createOperatorInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
@@ -68,72 +68,67 @@ function CreateOperatorForm(props: CreateMode) {
 
   return (
     <form
-      className="space-y-6"
       onSubmit={form.handleSubmit(async (values) => {
         await props.onSubmit(values);
       })}
     >
-      <FieldRow>
-        <Field label="Operator ID" htmlFor="code" error={errors.code?.message} required>
-          <Input
-            id="code"
-            autoFocus
-            autoComplete="off"
-            placeholder="OP-001"
-            {...register('code')}
-          />
-        </Field>
-        <Field label="Name" htmlFor="name" error={errors.name?.message} required>
-          <Input id="name" autoComplete="off" placeholder="Full name" {...register('name')} />
-        </Field>
-      </FieldRow>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            Operator ID<span className="req">★</span>
+          </label>
+          <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="OP-001" {...register('code')} />
+          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="name">
+            Name<span className="req">★</span>
+          </label>
+          <input id="name" className="innovic-input" autoComplete="off" placeholder="Full name" {...register('name')} />
+          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
 
-      <FieldRow>
-        <Field label="Department" htmlFor="department" error={errors.department?.message}>
-          <Input
-            id="department"
-            autoComplete="off"
-            placeholder="CNC Turning, Grinding…"
-            {...register('department')}
-          />
-        </Field>
-        <Field label="Status" htmlFor="isActive" error={errors.isActive?.message}>
-          <Select
+        <div className="form-grp">
+          <label className="form-label" htmlFor="department">
+            Department
+          </label>
+          <input id="department" className="innovic-input" autoComplete="off" placeholder="CNC Turning, Grinding…" {...register('department')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="isActive">
+            Status
+          </label>
+          <select
             id="isActive"
+            className="innovic-select"
             {...register('isActive', {
               setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
             })}
           >
             <option value="true">Active</option>
             <option value="false">Inactive</option>
-          </Select>
-        </Field>
-      </FieldRow>
+          </select>
+        </div>
 
-      <Field label="Skills / Machines" htmlFor="skills" error={errors.skills?.message}>
-        <Input
-          id="skills"
-          autoComplete="off"
-          placeholder="CNC-01, VMC-01, GR-01…"
-          {...register('skills')}
-        />
-      </Field>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="skills">
+            Skills / Machines
+          </label>
+          <input id="skills" className="innovic-input" autoComplete="off" placeholder="CNC-01, VMC-01, GR-01…" {...register('skills')} />
+        </div>
 
-      <Field label="Linked user (optional)" htmlFor="userId" error={errors.userId?.message}>
-        <Input
-          id="userId"
-          autoComplete="off"
-          placeholder="UUID of a user account, if this operator also has a login"
-          {...register('userId')}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">
-          Leave blank for shop-floor-only operators.
-        </p>
-      </Field>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="userId">
+            Linked User (optional)
+          </label>
+          <input id="userId" className="innovic-input" autoComplete="off" placeholder="UUID of a user account, if this operator also has a login" {...register('userId')} />
+          <div className="form-help">Leave blank for shop-floor-only operators.</div>
+        </div>
+      </div>
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Create operator'}
+        submitLabel={props.submitLabel ?? 'Add Operator'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -141,7 +136,7 @@ function CreateOperatorForm(props: CreateMode) {
   );
 }
 
-function EditOperatorForm(props: EditMode) {
+function EditOperatorForm(props: EditMode): React.JSX.Element {
   const form = useForm<UpdateOperatorInput>({
     resolver: zodResolver(updateOperatorInputSchema),
     defaultValues: operatorToUpdateDefaults(props.operator),
@@ -151,65 +146,63 @@ function EditOperatorForm(props: EditMode) {
 
   return (
     <form
-      className="space-y-6"
       onSubmit={form.handleSubmit(async (values) => {
         await props.onSubmit(values);
       })}
     >
-      <FieldRow>
-        <Field label="Operator ID" htmlFor="code">
-          <Input id="code" value={props.operator.code} disabled readOnly />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Operator ID cannot be changed after creation.
-          </p>
-        </Field>
-        <Field label="Name" htmlFor="name" error={errors.name?.message} required>
-          <Input id="name" autoComplete="off" {...register('name')} />
-        </Field>
-      </FieldRow>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            Operator ID
+          </label>
+          <input id="code" className="innovic-input" value={props.operator.code} readOnly />
+          <div className="form-help">Operator ID cannot be changed after creation.</div>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="name">
+            Name<span className="req">★</span>
+          </label>
+          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
+        </div>
 
-      <FieldRow>
-        <Field label="Department" htmlFor="department" error={errors.department?.message}>
-          <Input
-            id="department"
-            autoComplete="off"
-            placeholder="CNC Turning, Grinding…"
-            {...register('department')}
-          />
-        </Field>
-        <Field label="Status" htmlFor="isActive" error={errors.isActive?.message}>
-          <Select
+        <div className="form-grp">
+          <label className="form-label" htmlFor="department">
+            Department
+          </label>
+          <input id="department" className="innovic-input" autoComplete="off" placeholder="CNC Turning, Grinding…" {...register('department')} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="isActive">
+            Status
+          </label>
+          <select
             id="isActive"
+            className="innovic-select"
             {...register('isActive', {
               setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
             })}
           >
             <option value="true">Active</option>
             <option value="false">Inactive</option>
-          </Select>
-        </Field>
-      </FieldRow>
+          </select>
+        </div>
 
-      <Field label="Skills / Machines" htmlFor="skills" error={errors.skills?.message}>
-        <Input
-          id="skills"
-          autoComplete="off"
-          placeholder="CNC-01, VMC-01, GR-01…"
-          {...register('skills')}
-        />
-      </Field>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="skills">
+            Skills / Machines
+          </label>
+          <input id="skills" className="innovic-input" autoComplete="off" placeholder="CNC-01, VMC-01, GR-01…" {...register('skills')} />
+        </div>
 
-      <Field label="Linked user (optional)" htmlFor="userId" error={errors.userId?.message}>
-        <Input
-          id="userId"
-          autoComplete="off"
-          placeholder="UUID of a user account, if this operator also has a login"
-          {...register('userId')}
-        />
-        <p className="mt-1 text-xs text-muted-foreground">
-          Leave blank for shop-floor-only operators.
-        </p>
-      </Field>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="userId">
+            Linked User (optional)
+          </label>
+          <input id="userId" className="innovic-input" autoComplete="off" {...register('userId')} />
+          <div className="form-help">Leave blank for shop-floor-only operators.</div>
+        </div>
+      </div>
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
@@ -221,48 +214,39 @@ function EditOperatorForm(props: EditMode) {
   );
 }
 
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
-}
-
 function FormFooter(props: {
   isSubmitting: boolean;
   submitLabel: string;
   submitError: string | null;
   onCancel?: (() => void) | undefined;
-}) {
+}): React.JSX.Element {
   return (
-    <div className="space-y-3">
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={props.isSubmitting}>
-          {props.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel}
-        </Button>
+    <div style={{ marginTop: 16 }}>
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid #fca5a5',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
-          </Button>
+          </button>
         ) : null}
+        <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
+          {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {props.submitLabel}
+        </button>
       </div>
     </div>
   );

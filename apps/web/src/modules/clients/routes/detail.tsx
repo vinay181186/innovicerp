@@ -1,9 +1,10 @@
+// Client detail page (UI-003-03). Mirrors items/routes/detail.tsx pattern.
+
 import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClient, useSoftDeleteClient } from '../api';
 
@@ -13,48 +14,40 @@ export const clientDetailRoute = createRoute({
   component: ClientDetailPage,
 });
 
-function ClientDetailPage() {
+function ClientDetailPage(): React.JSX.Element {
   const { id } = clientDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: client, isLoading, isError, error } = useClient(id);
+  const { data: me } = useSession();
   const softDelete = useSoftDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
     return (
-      <main className="container max-w-3xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading client…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading client…
+      </div>
     );
   }
 
   if (isError || !client) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Client not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This client could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/clients">
-                <ArrowLeft />
-                Back to clients
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/clients" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Client not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const onDelete = () => {
+  const onDelete = (): void => {
     softDelete.mutate(client.id, {
       onSuccess: () => {
         void navigate({ to: '/clients', replace: true });
@@ -62,80 +55,115 @@ function ClientDetailPage() {
     });
   };
 
+  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  const isAdmin = me?.role === 'admin';
+
   return (
-    <main className="container max-w-3xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/clients">
-              <ArrowLeft />
-              Back
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/clients/$id/edit" params={{ id: client.id }}>
-                <Pencil />
-                Edit
+    <div>
+      <Link to="/clients" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Client Master
+      </Link>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+            >
+              {client.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              {client.name}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {canEdit ? (
+              <Link
+                to="/clients/$id/edit"
+                params={{ id: client.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                <Pencil size={13} /> Edit
               </Link>
-            </Button>
-            {confirmDelete ? (
-              <>
-                <span className="text-sm text-muted-foreground">Delete this client?</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onDelete}
-                  disabled={softDelete.isPending}
+            ) : null}
+            {isAdmin ? (
+              confirmDelete ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                    Delete?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={onDelete}
+                    disabled={softDelete.isPending}
+                  >
+                    {softDelete.isPending ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={softDelete.isPending}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setConfirmDelete(true)}
                 >
-                  {softDelete.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  Confirm
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={softDelete.isPending}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
-                <Trash2 />
-                Delete
-              </Button>
-            )}
+                  <Trash2 size={13} /> Delete
+                </button>
+              )
+            ) : null}
           </div>
         </div>
-
-        {softDelete.isError ? (
-          <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete client.'}
-          </p>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{client.code}</CardDescription>
-            <CardTitle>{client.name}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailGrid client={client} />
-          </CardContent>
-        </Card>
+        <div className="panel-body">
+          {softDelete.isError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Failed to delete client.'}
+            </div>
+          ) : null}
+          <DetailGrid client={client} />
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
-function DetailGrid(props: { client: Client }) {
+function DetailGrid(props: { client: Client }): React.JSX.Element {
   const { client } = props;
   return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm md:grid-cols-2">
-      <Pair label="Status" value={client.isActive ? 'Active' : 'Inactive'} />
+    <div className="form-grid">
+      <Pair
+        label="Status"
+        value={
+          <span className={`badge ${client.isActive ? 'b-green' : 'b-grey'}`}>
+            {client.isActive ? 'active' : 'inactive'}
+          </span>
+        }
+      />
       <Pair label="Contact person" value={client.contactPerson ?? '—'} />
       <Pair label="Email" value={client.email ?? '—'} />
       <Pair label="Phone" value={client.phone ?? '—'} />
@@ -143,19 +171,19 @@ function DetailGrid(props: { client: Client }) {
       <Pair label="Pincode" value={client.pincode ?? '—'} />
       <Pair label="City" value={client.city ?? '—'} />
       <Pair label="State" value={client.state ?? '—'} />
-      <div className="md:col-span-2">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Address</dt>
-        <dd className="mt-1 whitespace-pre-wrap">{client.addressLine1 ?? '—'}</dd>
+      <div className="form-grp form-full">
+        <span className="form-label">Address</span>
+        <div style={{ whiteSpace: 'pre-wrap' }}>{client.addressLine1 ?? '—'}</div>
       </div>
-    </dl>
+    </div>
   );
 }
 
-function Pair(props: { label: string; value: string }) {
+function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
   );
 }

@@ -1,9 +1,10 @@
+// Operator detail page (UI-003-03).
+
 import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOperator, useSoftDeleteOperator } from '../api';
 
@@ -13,48 +14,40 @@ export const operatorDetailRoute = createRoute({
   component: OperatorDetailPage,
 });
 
-function OperatorDetailPage() {
+function OperatorDetailPage(): React.JSX.Element {
   const { id } = operatorDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: operator, isLoading, isError, error } = useOperator(id);
+  const { data: me } = useSession();
   const softDelete = useSoftDeleteOperator();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
     return (
-      <main className="container max-w-3xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading operator…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading operator…
+      </div>
     );
   }
 
   if (isError || !operator) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Operator not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This operator could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/operators">
-                <ArrowLeft />
-                Back to operators
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/operators" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Operator not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const onDelete = () => {
+  const onDelete = (): void => {
     softDelete.mutate(operator.id, {
       onSuccess: () => {
         void navigate({ to: '/operators', replace: true });
@@ -62,95 +55,130 @@ function OperatorDetailPage() {
     });
   };
 
-  return (
-    <main className="container max-w-3xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/operators">
-              <ArrowLeft />
-              Back
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/operators/$id/edit" params={{ id: operator.id }}>
-                <Pencil />
-                Edit
-              </Link>
-            </Button>
-            {confirmDelete ? (
-              <>
-                <span className="text-sm text-muted-foreground">Delete this operator?</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onDelete}
-                  disabled={softDelete.isPending}
-                >
-                  {softDelete.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  Confirm
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={softDelete.isPending}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
-                <Trash2 />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
+  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  const isAdmin = me?.role === 'admin';
 
-        {softDelete.isError ? (
-          <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete operator.'}
-          </p>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{operator.code}</CardDescription>
-            <CardTitle>{operator.name}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailGrid operator={operator} />
-          </CardContent>
-        </Card>
-      </div>
-    </main>
-  );
-}
-
-function DetailGrid(props: { operator: Operator }) {
-  const { operator } = props;
-  return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm md:grid-cols-2">
-      <Pair label="Status" value={operator.isActive ? 'Active' : 'Inactive'} />
-      <Pair label="Department" value={operator.department ?? '—'} />
-      <Pair label="Linked user" value={operator.userId ?? '—'} />
-      <div className="md:col-span-2">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Skills / Machines</dt>
-        <dd className="mt-1 whitespace-pre-wrap">{operator.skills ?? '—'}</dd>
-      </div>
-    </dl>
-  );
-}
-
-function Pair(props: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
+      <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Operator Master
+      </Link>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+            >
+              {operator.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              {operator.name}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {canEdit ? (
+              <Link
+                to="/operators/$id/edit"
+                params={{ id: operator.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                <Pencil size={13} /> Edit
+              </Link>
+            ) : null}
+            {isAdmin ? (
+              confirmDelete ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                    Delete?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={onDelete}
+                    disabled={softDelete.isPending}
+                  >
+                    {softDelete.isPending ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={softDelete.isPending}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )
+            ) : null}
+          </div>
+        </div>
+        <div className="panel-body">
+          {softDelete.isError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Failed to delete operator.'}
+            </div>
+          ) : null}
+          <DetailGrid operator={operator} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailGrid(props: { operator: Operator }): React.JSX.Element {
+  const { operator } = props;
+  return (
+    <div className="form-grid">
+      <Pair
+        label="Status"
+        value={
+          <span className={`badge ${operator.isActive ? 'b-green' : 'b-grey'}`}>
+            {operator.isActive ? 'active' : 'inactive'}
+          </span>
+        }
+      />
+      <Pair label="Department" value={operator.department ?? '—'} />
+      <Pair label="Linked user" value={operator.userId ?? '—'} />
+      <div className="form-grp form-full">
+        <span className="form-label">Skills / Machines</span>
+        <div style={{ whiteSpace: 'pre-wrap' }}>{operator.skills ?? '—'}</div>
+      </div>
+    </div>
+  );
+}
+
+function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
   );
 }
