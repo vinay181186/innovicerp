@@ -21,6 +21,7 @@ import { costCenterNewRoute } from './modules/cost-centers/routes/new';
 import { costCenterEditRoute } from './modules/cost-centers/routes/edit';
 import { usersListRoute } from './modules/users/routes/list';
 import { userEditRoute } from './modules/users/routes/edit';
+import { settingsRoute } from './modules/settings/routes';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -184,6 +185,7 @@ const routeTree = rootRoute.addChildren([
     costCenterEditRoute,
     usersListRoute,
     userEditRoute,
+    settingsRoute,
   ]),
 ]);
 

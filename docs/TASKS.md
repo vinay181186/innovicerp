@@ -74,6 +74,25 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** ST-1..2 (Phase A item 5b of LEGACY_AUDIT.md build plan — Settings)
+**Title:** Settings page — edit caller's own company (name, GST, phone, address) + sign-out button
+**Status:** [x] Complete 2026-05-20. Per ADR-028. Replaces the Firebase-specific legacy `renderSettings` L13351 with a streamlined company-info edit page. Admin-only writes; read for any authed user (since the data is on every printed doc header).
+
+**Done:**
+
+- **Shared zod** (`packages/shared/src/schemas/company.ts`) — read shape + `updateCompanyInputSchema` (8 editable fields: name + gstNumber + phone + 2 address lines + city + state + pincode).
+- **API service** (`apps/api/src/modules/companies/service.ts`) — `getMyCompany` (any authed user) + `updateMyCompany` (admin-only via `requireAdminRole`).
+- **Routes** (`/companies/me` GET + PATCH). Registered in `server.ts`.
+- **Tests** — **7/7 green** (3 service + 4 routes). Captures original row in `beforeAll`; restores in `afterAll`. Covers: getMyCompany happy path + update all editable fields + non-admin rejected with AuthorizationError + route 401 / 200 (viewer read) / 403 (viewer write) / 200 (admin write).
+- **Web module** (`apps/web/src/modules/settings/`) — `api.ts` (`useMyCompany` + `useUpdateMyCompany`) + `routes/index.tsx`. Top card shows the caller's email + role + truncated company UUID + Sign-out button (calls the existing `signOut()` helper from `lib/session.ts`). Lower card is the company-info form: `<fieldset disabled={!isAdmin}>` flips the whole form readonly for non-admin viewers, with a friendly "Admin access required" note in the header. Save shows a green "✓ Company details saved" flash for 3s on success; submitError red box otherwise.
+- **Router** — `settingsRoute` registered at `/settings`.
+- **Sidebar** — added under the Reports → Admin group alongside User Management.
+- **Quality gates** — api typecheck + web typecheck + lint + build all green.
+
+**Prior:** UM-1..3 (Phase A item 5a — User Management) — Complete 2026-05-20.
+
+---
+
 **ID:** UM-1..3 (Phase A item 5a of LEGACY_AUDIT.md build plan — User Management)
 **Title:** User Management — list + edit (rename / change role / phone / activate / deactivate / soft-delete) + sidebar nav
 **Status:** [x] Complete 2026-05-20. Per ADR-028. Mirror of legacy `renderUsers` L13435 — admin-only. Insert intentionally absent: Supabase Auth owns invites + the post-init trigger seeds the row on auth.users insert.

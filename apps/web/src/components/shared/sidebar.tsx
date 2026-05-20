@@ -212,7 +212,10 @@ const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Admin',
-        items: [{ to: '/users', label: 'User Management', icon: '👥' }],
+        items: [
+          { to: '/users', label: 'User Management', icon: '👥' },
+          { to: '/settings', label: 'Settings', icon: '⚙' },
+        ],
       },
     ],
   },
