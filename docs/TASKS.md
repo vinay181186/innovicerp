@@ -74,6 +74,39 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** Resume next session (2026-05-21)
+**Title:** Phase A substantively complete; pick the next direction
+**Status:** [~] Paused at end of 2026-05-20 session — resume tomorrow.
+
+**Phase A status (LEGACY_AUDIT.md build plan):**
+
+- [x] Item 1: BOM Master (BOM-1..8, committed `6ace8ab` + `f2a2a51`)
+- [x] Item 2: Route Cards (RC-1..6, committed `4d74427`)
+- [x] Item 3: QC Process Master (QCP-1..5, committed `29c9ac2`)
+- [x] Item 4: Cost Center Master (CC-1..5, committed `bc3af4d`)
+- [x] Item 5a: User Management (UM-1..3, committed `69dd11c`)
+- [x] Item 5b: Settings (ST-1..2, committed `02b55bd`)
+- [ ] Item 5c: Access Control matrix — **recommend deferring to docs**. Legacy version is per-user form-level toggles stored in `db.userAccess`; our model is enum-driven (8 fixed roles → hardcoded permissions in `apps/api/src/lib/auth.ts` + RLS policies). A UI matrix page would just document what's already in code. Suggested resolution: write up a "Role Permissions Matrix" section in `docs/CONVENTIONS.md` instead.
+
+**Options offered to user (parked for tomorrow's call):**
+
+1. **Phase B — Planning module** (recommended). 5 screens per LEGACY_AUDIT.md: plandash, planning, sooverview, sostatus, assytracker. ~1 week estimate.
+2. **Document Access Control matrix in CONVENTIONS.md.** ~30 min. Closes Phase A item 5c without building a misleading UI page.
+3. **Phase 3 fixes — linked-display + pixel polish.** Per memory `project_linked_display_audit.md`, fix `— linked —` placeholders on PR / NC / JW / GRN detail pages (~1-2h per page).
+4. **Audit + fix backlog in `docs/ISSUES.md`.** Per "build first, audit later" mode; estimated 4-8 hours depending on scope.
+
+**Session totals — 2026-05-20:**
+
+- 9 commits (~6 hours of work): UI-003-06 → UI-003-07 → QCP-1..5 → CC-1..5 → UM-1..3 → ST-1..2 plus prior UI-003-04/05/06 batches.
+- ~52 files added/modified across the 6 ship-ready commits.
+- All quality gates green: api typecheck, web typecheck + lint + build clean throughout.
+- Web bundle steady at ~1191 KB raw / ~157 KB gzip after the Phase A masters (no manual chunks change needed).
+- API test deltas: +11 qc-processes + +11 cost-centers + +17 users + +7 companies = **+46 tests**, all green.
+
+**Prior:** ST-1..2 (Phase A item 5b — Settings) — Complete 2026-05-20. See full block below.
+
+---
+
 **ID:** ST-1..2 (Phase A item 5b of LEGACY_AUDIT.md build plan — Settings)
 **Title:** Settings page — edit caller's own company (name, GST, phone, address) + sign-out button
 **Status:** [x] Complete 2026-05-20. Per ADR-028. Replaces the Firebase-specific legacy `renderSettings` L13351 with a streamlined company-info edit page. Admin-only writes; read for any authed user (since the data is on every printed doc header).
