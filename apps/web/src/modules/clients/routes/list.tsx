@@ -1,21 +1,16 @@
+// Client Master list (UI-003-02).
+// Ports legacy renderClients (legacy/InnovicERP_v82_12_3.html L12969) to
+// Innovic chrome. Columns: Code | Client Name | Address | Contact | Email
+// | Actions (matches legacy header). TanStack Table for column defs;
+// rendering via plain <table className="innovic-table">.
+
 import type { Client, ListClientsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClientsList } from '../api';
 
@@ -34,9 +29,10 @@ export const clientsListRoute = createRoute({
   component: ClientsListPage,
 });
 
-function ClientsListPage() {
+function ClientsListPage(): React.JSX.Element {
   const search = clientsListRoute.useSearch();
   const navigate = clientsListRoute.useNavigate();
+  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -48,10 +44,7 @@ function ClientsListPage() {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({
-        search: (prev) => ({ ...prev, search: next, page: 1 }),
-        replace: true,
-      });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
@@ -70,6 +63,7 @@ function ClientsListPage() {
   );
 
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   const columns = useMemo<ColumnDef<Client>[]>(
     () => [
@@ -80,40 +74,78 @@ function ClientsListPage() {
           <Link
             to="/clients/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="td-code"
+            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           >
             {row.original.code}
           </Link>
         ),
       },
-      { header: 'Name', accessorKey: 'name' },
+      {
+        header: 'Client Name',
+        accessorKey: 'name',
+        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
+      },
+      {
+        header: 'Address',
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.addressLine1 ?? '—'}
+          </span>
+        ),
+      },
       {
         header: 'Contact',
         accessorKey: 'contactPerson',
-        cell: ({ row }) => row.original.contactPerson ?? '—',
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.contactPerson ?? '—'}
+          </span>
+        ),
       },
       {
         header: 'Email',
         accessorKey: 'email',
-        cell: ({ row }) => row.original.email ?? '—',
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.email ?? '—'}
+          </span>
+        ),
       },
       {
         header: 'Status',
         accessorKey: 'isActive',
         cell: ({ row }) => (
-          <span
-            className={
-              row.original.isActive
-                ? 'text-xs uppercase text-emerald-600'
-                : 'text-xs uppercase text-muted-foreground'
-            }
-          >
-            {row.original.isActive ? 'Active' : 'Inactive'}
+          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-grey'}`}>
+            {row.original.isActive ? 'active' : 'inactive'}
           </span>
         ),
       },
+      {
+        header: 'Actions',
+        cell: ({ row }) => (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Link
+              to="/clients/$id"
+              params={{ id: row.original.id }}
+              className="btn btn-ghost btn-sm"
+            >
+              View
+            </Link>
+            {canWrite ? (
+              <Link
+                to="/clients/$id/edit"
+                params={{ id: row.original.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                Edit
+              </Link>
+            ) : null}
+          </div>
+        ),
+      },
     ],
-    [],
+    [canWrite],
   );
 
   const table = useReactTable({
@@ -127,142 +159,157 @@ function ClientsListPage() {
   const currentPage = search.page;
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Clients</h1>
-            <p className="text-sm text-muted-foreground">
-              Customer master — companies that buy from us.
-            </p>
-          </div>
-          <Button asChild>
-            <Link to="/clients/new">
-              <Plus />
-              New client
-            </Link>
-          </Button>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Client Master
         </div>
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input
-            placeholder="Search code or name…"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            className="innovic-input"
+            placeholder="🔍 Search client, code…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="md:max-w-sm"
+            style={{ width: 220, fontSize: 12 }}
           />
-          <Select
+          <select
+            className="innovic-select"
             value={search.status ?? ''}
             onChange={(e) => {
               const v = e.target.value as 'active' | 'inactive' | '';
               void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  status: v === '' ? undefined : v,
-                  page: 1,
-                }),
+                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
                 replace: true,
               });
             }}
-            className="md:max-w-[180px]"
+            style={{ width: 120, fontSize: 12 }}
           >
             <option value="">All</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-          </Select>
+          </select>
           {isFetching && !isLoading ? (
-            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Updating…
+            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-        </div>
-
-        <div className="rounded-md border bg-card">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading clients…
-                  </span>
-                </TableEmpty>
-              ) : isError ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="text-destructive">
-                    {error instanceof Error ? error.message : 'Failed to load clients'}
-                  </span>
-                </TableEmpty>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>No clients match these filters.</TableEmpty>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            {total === 0
-              ? 'No clients'
-              : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                  replace: true,
-                })
-              }
-            >
-              <ChevronLeft />
-              Prev
-            </Button>
-            <span className="font-medium text-foreground">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                  replace: true,
-                })
-              }
-            >
-              Next
-              <ChevronRight />
-            </Button>
-          </div>
+          {canWrite ? (
+            <Link to="/clients/new" className="btn btn-primary">
+              <Plus size={14} /> New Client
+            </Link>
+          ) : null}
         </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((header) => (
+                    <th key={header.id}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Loading…
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    className="empty-state"
+                    style={{ color: 'var(--red)' }}
+                  >
+                    {error instanceof Error ? error.message : 'Failed to load clients'}
+                  </td>
+                </tr>
+              ) : table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    No clients yet — click <strong>+ New Client</strong>
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
+        <span>
+          {total === 0
+            ? 'No clients'
+            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage <= 1}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                replace: true,
+              })
+            }
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+            Page {currentPage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage >= totalPages}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                replace: true,
+              })
+            }
+          >
+            Next <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
