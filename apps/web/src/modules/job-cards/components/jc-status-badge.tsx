@@ -1,11 +1,14 @@
+// JC computed_status → legacy .badge .b-* class (UI-002).
+// Mapping per docs/STYLE_GUIDE.md "JC (Job Card) status → badge class".
+
 import type { JcComputedStatus } from '@innovic/shared';
 
-const STYLES: Record<JcComputedStatus, string> = {
-  open: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  qc_pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  complete: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  closed: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
-  no_ops: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+const CLASSES: Record<JcComputedStatus, string> = {
+  open: 'b-grey',
+  qc_pending: 'b-amber',
+  complete: 'b-cyan',
+  closed: 'b-green',
+  no_ops: 'b-red',
 };
 
 const LABELS: Record<JcComputedStatus, string> = {
@@ -17,11 +20,5 @@ const LABELS: Record<JcComputedStatus, string> = {
 };
 
 export function JcStatusBadge(props: { status: JcComputedStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium uppercase tracking-wide ${STYLES[props.status]}`}
-    >
-      {LABELS[props.status]}
-    </span>
-  );
+  return <span className={`badge ${CLASSES[props.status]}`}>{LABELS[props.status]}</span>;
 }

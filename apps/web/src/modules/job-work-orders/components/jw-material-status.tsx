@@ -20,23 +20,29 @@ export function JwMaterialStatusBadge({ receivedQty, expectedQty }: Props) {
 
   if (safeExpected > 0 && safeReceived >= safeExpected) {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
-        <span aria-hidden>✓</span>
+      <span className="badge b-green">
+        <span aria-hidden style={{ marginRight: 4 }}>
+          ✓
+        </span>
         Full
       </span>
     );
   }
   if (safeReceived > 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-        <span aria-hidden>◑</span>
+      <span className="badge b-amber">
+        <span aria-hidden style={{ marginRight: 4 }}>
+          ◑
+        </span>
         Partial ({safeReceived})
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
-      <span aria-hidden>✕</span>
+    <span className="badge b-red">
+      <span aria-hidden style={{ marginRight: 4 }}>
+        ✕
+      </span>
       Not received
     </span>
   );
