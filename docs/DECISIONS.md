@@ -1203,6 +1203,62 @@ Estimated 8–9 weeks of focused work to reach 1:1 parity.
 
 ---
 
+## ADR-029: Route Cards — ALTER existing schema for OSP fields, keep `cycle_time_min` column name despite hours semantics
+
+**Date:** 2026-05-20
+**Status:** Accepted
+
+### Context
+
+Phase 1 reserved `route_cards`, `route_card_ops`, `route_card_revisions` tables on first migration (Phase 3 design — ADR-013) but the module was never built; legacy `renderRouteCards` (HTML L10078) defines the missing master. Two design questions surfaced before code touched:
+
+1. **OSP fields:** Legacy route-card ops with `opType:'OSP'` carry `ospVendorCode`, `ospVendor`, `ospLeadDays`. Our `route_card_ops` table has `op_type='outsource'` enum value but NO vendor / lead-days columns. Porting a real route card with an outsource step would silently lose vendor + scheduling data.
+2. **Cycle time unit:** Legacy form labels read "Cycle (hrs)" (L10240 placeholder `"hrs"`, L10163 header `<th>Cycle(h)</th>`) and store the value in hours. Our column is named `cycle_time_min` ("minutes per piece" per SCHEMA.md). Same shape carries through `jc_ops.cycle_time_min` already (Phase 3 snapshots route-card ops to JC ops). Storing hours in a column named "min" is a unit mismatch.
+
+### Decision
+
+1. **Add 3 nullable OSP columns to `route_card_ops`** via migration `0022_phase8_route_card_osp.sql`:
+   - `osp_vendor_id uuid` FK → `vendors(id) ON DELETE SET NULL` (live FK when the legacy ospVendorCode resolves)
+   - `osp_vendor_code_text text` (free-text fallback per ADR-012 #10)
+   - `osp_lead_days integer` (lead days between issuing OSP PO and expected return; legacy default 5)
+   - Partial index on `osp_vendor_id` for the lookup.
+   - No CHECK enforcing "outsource → vendor required" — service-layer Zod refine conditionally requires one of `ospVendorId` / `ospVendorCodeText` only when `opType='outsource'`, so partial drafts stay editable.
+
+2. **Mirror legacy unit semantics — store hours in `cycle_time_min`, label "Cycle (hrs)" in UI.** Matches the existing `jc_ops.cycle_time_min` behaviour (Phase 3 already carries the same mismatch). Avoids touching every reader (op-entry, JC display, reports). Logged as ISSUE-011 for the audit-phase cleanup pass.
+
+### Alternatives Considered
+
+- **Defer OSP fields to a follow-up commit** — rejected: legacy already supports OSP route-card ops; without these columns a port of any real OSP-bearing route card loses vendor + lead-time silently. Small migration (~30 LOC), cheap to include now.
+- **Add a CHECK constraint enforcing "outsource → vendor required"** — rejected: would block partial form drafts (user picks outsource → saves → sets vendor later). Form-layer validation is the right enforcement point.
+- **Rename `cycle_time_min` → `cycle_time_hours` across `route_card_ops` AND `jc_ops` in this slice** — rejected: scope creep. Touches op-entry, JC display, reports, store-tx cascades. Bundle into the audit-phase cleanup with the rest of the cycle-time fixes.
+- **Convert hours → minutes on save** — rejected: legacy `jc_ops.cycle_time_min` already stores hours; a converter on route-card writes would create asymmetric semantics with the downstream `jc_ops` snapshot the JC creation flow does.
+
+### Consequences
+
+- **Positive:** Full parity with legacy OSP behaviour shipped in the same slice as the master CRUD. Service-layer validation surfaces friendly errors instead of raw DB FK failures.
+- **Negative:** Cycle-time unit mismatch persists across two tables. Future readers may misread `cycle_time_min` as "minutes."
+- **Risks:**
+  - **Hidden unit assumption** — anyone editing op-entry / JC display without reading SCHEMA.md or ISSUE-011 could compute totals in minutes by mistake. Mitigation: every UI surface label explicitly reads "Cycle (hrs)"; ISSUE-011 tracks the column rename for the audit phase.
+  - **OSP vendor lookup drift** — legacy `ospVendorCode` may not resolve to a vendor master row at import time. The free-text fallback keeps the audit trail intact; service-layer doesn't try to re-resolve later. Acceptable.
+
+### What ships in this commit (RC-1 through RC-6)
+
+- DB: migration `0022_phase8_route_card_osp.sql` — 3 ALTER columns + 1 FK constraint + 1 index
+- Drizzle schema additions (`ospVendorId`, `ospVendorCodeText`, `ospLeadDays`)
+- Shared zod schemas (read + write input with conditional OSP refines)
+- Service layer with revision lifecycle + auto-diff note + one-active-RC-per-item guard
+- Routes: GET / POST / PUT / DELETE
+- 21 tests green (16 service + 5 routes)
+- Web module: list (expand-row), detail, new, edit; sidebar entry under Design dept; topbar title map
+- 4 routes registered in router.tsx
+
+### What waits for follow-up
+
+- JC-creation auto-load from route_card_ops snapshot (Phase 3 logic already wires this when route_card exists for the item; verify it picks up the new OSP fields cleanly on first JC built from an OSP-bearing route card)
+- Phase A items 3–5 (QC Process Master UI, Cost Center, Settings/Users/Access Control)
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

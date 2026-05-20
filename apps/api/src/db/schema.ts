@@ -533,6 +533,12 @@ export const routeCardOps = pgTable(
     toolNo: text('tool_no'),
     toolDetails: text('tool_details'),
     qcRequired: boolean('qc_required').notNull().default(false),
+    // OSP step fields (RC-1, migration 0022). Live FK + free-text
+    // fallback + lead days. All nullable; only populated when
+    // op_type = 'outsource'.
+    ospVendorId: uuid('osp_vendor_id').references(() => vendors.id),
+    ospVendorCodeText: text('osp_vendor_code_text'),
+    ospLeadDays: integer('osp_lead_days'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -550,6 +556,9 @@ export const routeCardOps = pgTable(
     index('route_card_ops_machine_idx')
       .on(t.machineId)
       .where(sql`${t.deletedAt} is null`),
+    index('route_card_ops_osp_vendor_idx')
+      .on(t.ospVendorId)
+      .where(sql`${t.ospVendorId} is not null`),
     pgPolicy('route_card_ops_company_read', {
       for: 'select',
       to: 'authenticated',

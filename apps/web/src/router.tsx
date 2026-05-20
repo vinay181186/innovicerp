@@ -7,6 +7,10 @@ import { bomMastersListRoute } from './modules/bom-master/routes/list';
 import { bomMasterDetailRoute } from './modules/bom-master/routes/detail';
 import { bomMasterNewRoute } from './modules/bom-master/routes/new';
 import { bomMasterEditRoute } from './modules/bom-master/routes/edit';
+import { routeCardsListRoute } from './modules/route-cards/routes/list';
+import { routeCardDetailRoute } from './modules/route-cards/routes/detail';
+import { routeCardNewRoute } from './modules/route-cards/routes/new';
+import { routeCardEditRoute } from './modules/route-cards/routes/edit';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -155,6 +159,11 @@ const routeTree = rootRoute.addChildren([
     bomMasterNewRoute,
     bomMasterDetailRoute,
     bomMasterEditRoute,
+    // Route Cards — same ordering rule.
+    routeCardsListRoute,
+    routeCardNewRoute,
+    routeCardDetailRoute,
+    routeCardEditRoute,
   ]),
 ]);
 

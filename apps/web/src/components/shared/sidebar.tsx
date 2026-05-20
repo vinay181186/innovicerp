@@ -128,7 +128,10 @@ const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         label: 'Master',
-        items: [{ to: '/bom-masters', label: 'BOM Master', icon: '📦' }],
+        items: [
+          { to: '/bom-masters', label: 'BOM Master', icon: '📦' },
+          { to: '/route-cards', label: 'Route Cards', icon: '📋' },
+        ],
       },
     ],
   },

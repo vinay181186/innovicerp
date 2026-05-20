@@ -33,6 +33,7 @@ const TITLE_MAP: Record<string, string> = {
   '/reports': 'Reports',
   '/saved-reports': 'Saved Reports',
   '/bom-masters': 'BOM Master',
+  '/route-cards': 'Route Card Master',
 };
 
 function deriveTitle(pathname: string): string {

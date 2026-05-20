@@ -167,3 +167,41 @@ Pure presentation change; no view/service edits needed.
 
 1. **Renderer fix (recommended):** For `op_type='qc'` rows, render MACHINE cell as `—` (or hide entirely) — TYPE already conveys "QC", machine is not a meaningful field for inspection. Pure web change; legacy data left intact.
 2. **Data fix:** One-off SQL `UPDATE jc_ops SET machine_code_text = NULL WHERE op_type = 'qc' AND machine_code_text = 'QC'`. Cleaner but touches legacy data; bundle with the audit-pass cleanup.
+
+## ISSUE-011 — `cycle_time_min` column name vs stored hours semantics across `route_card_ops` + `jc_ops`
+
+- **Surfaced:** 2026-05-20 (RC-1 schema review per ADR-029)
+- **Severity:** P3 (no current bug — every reader treats the stored value as opaque numeric; risk is future regressions or report miscalculations)
+- **Status:** [ ] open
+
+**Repro:** Column is named `cycle_time_min` but stores HOURS (matches legacy `cycleTime` field — form L10240 placeholder reads `"hrs"`, view modal L10163 header reads `Cycle(h)`). UI labels read "Cycle (hrs)" so user-facing semantics are correct, but any code reading `cycle_time_min` and treating the value as minutes would compute a 60× error.
+
+**Affected tables:** `route_card_ops.cycle_time_min`, `jc_ops.cycle_time_min` (Phase 3 already inherits the same mismatch via the route-card-to-JC snapshot).
+
+**Fix sketch:** Single migration during the audit-phase cleanup pass:
+
+1. ALTER both tables: `RENAME COLUMN cycle_time_min TO cycle_time_hours`.
+2. Update Drizzle schema entries.
+3. Update shared zod schemas (`route-card.ts`, `op-entry.ts`, `job-card.ts`).
+4. Update all readers (op-entry service, JC display, reports definitions, store-tx cascades — none of which currently arithmetic on the value).
+
+Pure rename — no data conversion needed since the stored unit was always hours. ~60-80 LOC across schema + 5-6 reader sites. Defer until the audit pass per "build first, audit later" mode.
+
+## ISSUE-012 — `items-on-hand` report has a -3 row from pre-existing dev DB state
+
+- **Surfaced:** 2026-05-20 (RC-6 quality gates)
+- **Severity:** P3 (single item; doesn't affect production data, only test flakiness)
+- **Status:** [ ] open
+
+**Repro:** Running `pnpm test` against dev Supabase, the test `reports service > runReport "items-on-hand" returns one row per item incl. zero-stock items` fails on the assertion `expect(Number(row['on_hand_qty'])).toBeGreaterThanOrEqual(0)` — at least one item has `on_hand_qty = -3` in `item_stock_balances`. Reproduces in isolation, so it's not a parallel-test race.
+
+**Root cause hypothesis:** Some prior test run (likely GRN or store-tx) left a soft-deleted item whose store_transactions rows weren't fully reversed, leaving a negative balance. The `item_stock_balances` table is trigger-maintained per T-042, so once a negative lands it stays until either (a) the test that owns the item cleans up its txns, or (b) a reconcile run hits the row.
+
+**Fix sketch:**
+
+1. Identify the offending item id via direct SQL: `SELECT item_id, on_hand_qty FROM item_stock_balances WHERE on_hand_qty < 0`.
+2. Trace its store_transactions rows; identify the test prefix.
+3. Patch that test's afterAll to reverse its txns OR add a reconcile script invocation to `package.json`'s `test:reset`.
+4. As a one-off fix, manually `DELETE` the orphan ledger row (admin SQL via Supabase studio, NOT app code).
+
+Defer to audit phase OR when this flake blocks a release. Not caused by route-cards (route-cards module doesn't touch `store_transactions`).

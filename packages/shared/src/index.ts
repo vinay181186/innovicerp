@@ -45,3 +45,4 @@ export * from './schemas/saved-report';
 export * from './schemas/activity-log';
 export * from './schemas/alert';
 export * from './schemas/bom-master';
+export * from './schemas/route-card';
