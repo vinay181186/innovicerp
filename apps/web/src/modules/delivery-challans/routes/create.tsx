@@ -6,19 +6,6 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { usePurchaseOrder } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDeliveryChallan } from '../api';
@@ -41,12 +28,12 @@ interface LineDraft {
   itemNameText: string | null;
   uom: Uom;
   poLineQty: number;
-  shipQty: string; // user-entered, parsed on submit
+  shipQty: string;
   materialText: string;
   dcRemarks: string;
 }
 
-function DeliveryChallanNewPage() {
+function DeliveryChallanNewPage(): React.JSX.Element {
   const { poId } = deliveryChallanNewRoute.useSearch();
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
@@ -59,18 +46,12 @@ function DeliveryChallanNewPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Prefill line drafts whenever the PO finishes loading.
   useEffect(() => {
     if (!po) return;
     setLineDrafts(
       po.lines.map((l) => ({
         purchaseOrderLineId: l.id,
         itemId: l.itemId ?? '',
-        // itemCodeText is the snapshot field; for migrated/freshly-seeded
-        // PO lines it's null and the live code lives on l.itemCode (per
-        // the joined query in getPurchaseOrder). Fall back so the submit
-        // payload always carries a non-empty code (required by the API
-        // input schema).
         itemCodeText: l.itemCodeText ?? l.itemCode ?? '',
         itemNameText: l.itemName ?? null,
         uom: 'NOS',
@@ -97,48 +78,45 @@ function DeliveryChallanNewPage() {
 
   if (!poId) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Pick a JW PO first</CardTitle>
-            <CardDescription>
-              The new-DC form needs a purchase order to source line items from. Go to the PO list
-              and click "New DC" on a JW PO.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/purchase-orders">
-                <ArrowLeft />
-                Go to purchase orders
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div>
+        <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+          <ArrowLeft size={14} /> Back to Delivery Challans
+        </Link>
+        <div className="panel">
+          <div className="panel-hdr">
+            <div>
+              <div className="panel-title">Pick a JW PO first</div>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                The new-DC form needs a purchase order to source line items from. Go to the PO list
+                and click "New DC" on a JW PO.
+              </div>
+            </div>
+          </div>
+          <div className="panel-body">
+            <Link to="/purchase-orders" className="btn btn-primary">
+              <ArrowLeft size={14} /> Go to purchase orders
+            </Link>
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (poLoading) {
     return (
-      <main className="container max-w-3xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading purchase order…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase order…
+      </div>
     );
   }
 
   if (poError || !po) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Could not load PO</CardTitle>
-          </CardHeader>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+          Could not load PO.
+        </div>
+      </div>
     );
   }
 
@@ -180,168 +158,191 @@ function DeliveryChallanNewPage() {
   };
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/delivery-challans">
-            <ArrowLeft />
-            Back to delivery challans
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New delivery challan</h1>
-          <p className="text-sm text-muted-foreground">
-            Issuing material against PO <span className="font-mono">{po.code}</span> — vendor{' '}
-            <span className="font-medium">{po.vendorName ?? po.vendorCodeText ?? '—'}</span>. Submit
-            will flip linked outsource ops to <span className="font-mono">sent</span> and write a
-            stock OUT ledger row per item.
-          </p>
-        </div>
+    <div>
+      <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Delivery Challans
+      </Link>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Header</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="space-y-1">
-                <Label htmlFor="dc-code">DC code</Label>
-                <Input
-                  id="dc-code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="DC-NNNNN"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="dc-date">DC date</Label>
-                <Input
-                  id="dc-date"
-                  type="date"
-                  value={dcDate}
-                  onChange={(e) => setDcDate(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="dc-transport">Transport / vehicle</Label>
-                <Input
-                  id="dc-transport"
-                  value={transport}
-                  onChange={(e) => setTransport(e.target.value)}
-                  placeholder="optional"
-                />
-              </div>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="panel-title">New delivery challan</div>
+            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              Issuing material against PO <span className="mono">{po.code}</span> — vendor{' '}
+              <b style={{ color: 'var(--text)' }}>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>.
+              Submit will flip linked outsource ops to <span className="mono">sent</span> and write a
+              stock OUT ledger row per item.
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Lines</CardTitle>
-            <CardDescription>
-              Enter ship qty per PO line. Lines with qty 0 are skipped.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>PO line</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead>PO qty</TableHead>
-                    <TableHead>Ship qty</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead>Remarks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lineDrafts.map((l, idx) => (
-                    <TableRow key={l.purchaseOrderLineId}>
-                      <TableCell className="font-mono text-xs">{idx + 1}</TableCell>
-                      <TableCell className="text-sm">
-                        <div className="font-mono text-xs">{l.itemCodeText}</div>
-                        {l.itemNameText ? (
-                          <div className="text-xs text-muted-foreground">{l.itemNameText}</div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{l.poLineQty}</TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          step="1"
-                          min={0}
-                          max={l.poLineQty}
-                          value={l.shipQty}
-                          onChange={(e) =>
-                            setLineDrafts((prev) => {
-                              const next = prev.slice();
-                              next[idx] = { ...next[idx]!, shipQty: e.target.value };
-                              return next;
-                            })
-                          }
-                          className="w-24"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={l.materialText}
-                          onChange={(e) =>
-                            setLineDrafts((prev) => {
-                              const next = prev.slice();
-                              next[idx] = { ...next[idx]!, materialText: e.target.value };
-                              return next;
-                            })
-                          }
-                          placeholder="optional"
-                          className="w-32"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Textarea
-                          rows={1}
-                          value={l.dcRemarks}
-                          onChange={(e) =>
-                            setLineDrafts((prev) => {
-                              const next = prev.slice();
-                              next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
-                              return next;
-                            })
-                          }
-                          placeholder="optional"
-                          className="w-48"
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {submitError ? (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {submitError}
           </div>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={() => void navigate({ to: '/delivery-challans' })}>
-            Cancel
-          </Button>
-          <Button onClick={onSubmit} disabled={!canSubmit || submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Creating…
-              </>
-            ) : (
-              'Create DC'
-            )}
-          </Button>
+        </div>
+        <div className="panel-body">
+          <div className="form-grid form-grid-3">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dc-code">
+                DC code<span className="req">★</span>
+              </label>
+              <input
+                id="dc-code"
+                className="innovic-input"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="DC-NNNNN"
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dc-date">
+                DC date
+              </label>
+              <input
+                id="dc-date"
+                type="date"
+                className="innovic-input"
+                value={dcDate}
+                onChange={(e) => setDcDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dc-transport">
+                Transport / vehicle
+              </label>
+              <input
+                id="dc-transport"
+                className="innovic-input"
+                value={transport}
+                onChange={(e) => setTransport(e.target.value)}
+                placeholder="optional"
+              />
+            </div>
+          </div>
         </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="panel-title">Lines</div>
+            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              Enter ship qty per PO line. Lines with qty 0 are skipped.
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Item</th>
+                  <th className="td-right">PO qty</th>
+                  <th className="td-right">Ship qty</th>
+                  <th>Material</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineDrafts.map((l, idx) => (
+                  <tr key={l.purchaseOrderLineId}>
+                    <td className="td-ctr mono">{idx + 1}</td>
+                    <td>
+                      <span className="mono">{l.itemCodeText}</span>
+                      {l.itemNameText ? (
+                        <div className="text3" style={{ fontSize: 11 }}>
+                          {l.itemNameText}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="td-right mono">{l.poLineQty}</td>
+                    <td className="td-right">
+                      <input
+                        type="number"
+                        step="1"
+                        min={0}
+                        max={l.poLineQty}
+                        className="innovic-input"
+                        value={l.shipQty}
+                        onChange={(e) =>
+                          setLineDrafts((prev) => {
+                            const next = prev.slice();
+                            next[idx] = { ...next[idx]!, shipQty: e.target.value };
+                            return next;
+                          })
+                        }
+                        style={{ width: 90, textAlign: 'right' }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="innovic-input"
+                        value={l.materialText}
+                        onChange={(e) =>
+                          setLineDrafts((prev) => {
+                            const next = prev.slice();
+                            next[idx] = { ...next[idx]!, materialText: e.target.value };
+                            return next;
+                          })
+                        }
+                        placeholder="optional"
+                        style={{ width: 130 }}
+                      />
+                    </td>
+                    <td>
+                      <textarea
+                        rows={1}
+                        className="innovic-textarea"
+                        value={l.dcRemarks}
+                        onChange={(e) =>
+                          setLineDrafts((prev) => {
+                            const next = prev.slice();
+                            next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
+                            return next;
+                          })
+                        }
+                        placeholder="optional"
+                        style={{ width: 200 }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {submitError ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid #fca5a5',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {submitError}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => void navigate({ to: '/delivery-challans' })}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => void onSubmit()}
+          disabled={!canSubmit || submitting}
+        >
+          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {submitting ? 'Creating…' : 'Create DC'}
+        </button>
+      </div>
+    </div>
   );
 }

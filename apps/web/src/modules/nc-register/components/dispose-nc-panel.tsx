@@ -1,14 +1,5 @@
-// Dispose-NC inline panel (T-040b). Mirrors the legacy `_disposeNC` modal
-// (line 22618) but rendered inline on the NC detail page since the project
-// doesn't have a Dialog primitive yet (would force shadcn Dialog + Radix
-// portal dependency for one screen — disproportionate).
-//
-// Action selector reveals conditional fields:
-//   rework      → reworkOpSeq picker (defaults to NC.opSeq)
-//   scrap       → scrapCost number
-//   use_as_is   → no extra fields
-//   return_to_vendor → no extra fields
-//   make_fresh  → no extra fields (supplementary JC code is server-assigned)
+// Dispose-NC inline panel (UI-003-06). Mirrors legacy `_disposeNC` modal L22618.
+// Inline (not a modal) — project doesn't have a Dialog primitive yet.
 
 import {
   type DisposeNcInput,
@@ -18,11 +9,6 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 
 interface Props {
   nc: NcRegister;
@@ -33,7 +19,7 @@ interface Props {
   error: string | null;
 }
 
-export function DisposeNcPanel(props: Props) {
+export function DisposeNcPanel(props: Props): React.JSX.Element {
   const { nc, jcOpSeqs, onSubmit, onCancel, pending, error } = props;
 
   const [action, setAction] = useState<NcDisposition | ''>('');
@@ -46,7 +32,7 @@ export function DisposeNcPanel(props: Props) {
     return nc.opSeq != null ? [nc.opSeq] : [];
   }, [jcOpSeqs, nc.opSeq]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent): void => {
     e.preventDefault();
     if (!action) return;
     const payload: DisposeNcInput = { action };
@@ -61,125 +47,173 @@ export function DisposeNcPanel(props: Props) {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-md border bg-muted/30 p-4">
-      <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide">Dispose</h3>
-        <span className="text-xs text-muted-foreground">
+    <div className="panel">
+      <div className="panel-hdr">
+        <div className="panel-title">Dispose</div>
+        <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
           Rejected qty:{' '}
-          <span className="font-mono font-semibold">{Number(nc.rejectedQty).toFixed(0)}</span>
+          <b style={{ color: 'var(--text)' }}>{Number(nc.rejectedQty).toFixed(0)}</b>
         </span>
       </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="space-y-2">
-          <Label htmlFor="dispAction">
-            Action
-            <span className="ml-1 text-destructive">*</span>
-          </Label>
-          <Select
-            id="dispAction"
-            value={action}
-            onChange={(e) => setAction(e.target.value as NcDisposition | '')}
-            required
-          >
-            <option value="">— Select action —</option>
-            {NC_DISPOSITIONS.map((a) => (
-              <option key={a} value={a}>
-                {a.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {action === 'rework' ? (
-          <div className="space-y-2">
-            <Label htmlFor="dispReworkOp">Rework to op_seq</Label>
-            {reworkOps.length > 0 ? (
-              <Select
-                id="dispReworkOp"
-                value={reworkOpSeq === '' ? '' : String(reworkOpSeq)}
-                onChange={(e) =>
-                  setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
-                }
+      <div className="panel-body">
+        <form onSubmit={submit}>
+          <div className="form-grid form-grid-3">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dispAction">
+                Action<span className="req">★</span>
+              </label>
+              <select
+                id="dispAction"
+                className="innovic-select"
+                value={action}
+                onChange={(e) => setAction(e.target.value as NcDisposition | '')}
+                required
               >
-                <option value="">
-                  {nc.opSeq != null ? `Defaults to op ${nc.opSeq}` : '— pick op —'}
-                </option>
-                {reworkOps.map((s) => (
-                  <option key={s} value={s}>
-                    op {s}
+                <option value="">— Select action —</option>
+                {NC_DISPOSITIONS.map((a) => (
+                  <option key={a} value={a}>
+                    {a.replaceAll('_', ' ')}
                   </option>
                 ))}
-              </Select>
-            ) : (
-              <Input
-                id="dispReworkOp"
-                type="number"
-                min={1}
-                value={reworkOpSeq === '' ? '' : reworkOpSeq}
-                onChange={(e) =>
-                  setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
-                }
+              </select>
+            </div>
+
+            {action === 'rework' ? (
+              <div className="form-grp">
+                <label className="form-label" htmlFor="dispReworkOp">
+                  Rework to op_seq
+                </label>
+                {reworkOps.length > 0 ? (
+                  <select
+                    id="dispReworkOp"
+                    className="innovic-select"
+                    value={reworkOpSeq === '' ? '' : String(reworkOpSeq)}
+                    onChange={(e) =>
+                      setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  >
+                    <option value="">
+                      {nc.opSeq != null ? `Defaults to op ${nc.opSeq}` : '— pick op —'}
+                    </option>
+                    {reworkOps.map((s) => (
+                      <option key={s} value={s}>
+                        op {s}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="dispReworkOp"
+                    type="number"
+                    min={1}
+                    className="innovic-input"
+                    value={reworkOpSeq === '' ? '' : reworkOpSeq}
+                    onChange={(e) =>
+                      setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  />
+                )}
+                <div className="form-help">
+                  Increments <span className="mono">jc_ops.rework_qty</span> for the picked op.
+                </div>
+              </div>
+            ) : null}
+
+            {action === 'scrap' ? (
+              <div className="form-grp">
+                <label className="form-label" htmlFor="dispScrapCost">
+                  Scrap cost (₹)
+                </label>
+                <input
+                  id="dispScrapCost"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="innovic-input"
+                  value={scrapCost === '' ? '' : scrapCost}
+                  onChange={(e) =>
+                    setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                />
+              </div>
+            ) : null}
+
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="dispRemarks">
+                Remarks
+              </label>
+              <textarea
+                id="dispRemarks"
+                className="innovic-textarea"
+                rows={2}
+                placeholder="Disposition notes…"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
               />
-            )}
-            <p className="text-xs text-muted-foreground">
-              Increments <span className="font-mono">jc_ops.rework_qty</span> for the picked op.
-            </p>
+            </div>
           </div>
-        ) : null}
 
-        {action === 'scrap' ? (
-          <div className="space-y-2">
-            <Label htmlFor="dispScrapCost">Scrap cost (₹)</Label>
-            <Input
-              id="dispScrapCost"
-              type="number"
-              min={0}
-              step="0.01"
-              value={scrapCost === '' ? '' : scrapCost}
-              onChange={(e) => setScrapCost(e.target.value === '' ? '' : Number(e.target.value))}
-            />
+          {action === 'use_as_is' && (nc.opSeq == null || nc.jcOpId == null) ? (
+            <div
+              style={{
+                marginTop: 12,
+                color: 'var(--amber2)',
+                background: 'var(--amber3)',
+                border: '1px solid #fcd34d',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+              }}
+            >
+              ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none — server will reject.
+            </div>
+          ) : null}
+
+          {action === 'make_fresh' ? (
+            <div
+              style={{
+                marginTop: 12,
+                color: 'var(--blue2)',
+                background: 'var(--blue3)',
+                border: '1px solid #93c5fd',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+              }}
+            >
+              A supplementary JC will be created with qty {Number(nc.rejectedQty).toFixed(0)} and
+              the origin's source SO/JW link inherited. Code:{' '}
+              <span className="mono">&lt;origin&gt;-S&lt;n&gt;</span>.
+            </div>
+          ) : null}
+
+          {error ? (
+            <div
+              style={{
+                marginTop: 12,
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+              }}
+            >
+              {error}
+            </div>
+          ) : null}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
+            <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={pending}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={pending || !action}>
+              {pending ? <Loader2 size={13} className="animate-spin" /> : null}
+              Apply disposition
+            </button>
           </div>
-        ) : null}
+        </form>
       </div>
-
-      {action === 'use_as_is' && (nc.opSeq == null || nc.jcOpId == null) ? (
-        <p className="text-sm text-amber-700 dark:text-amber-300">
-          ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none — server
-          will reject.
-        </p>
-      ) : null}
-
-      {action === 'make_fresh' ? (
-        <p className="text-sm text-blue-700 dark:text-blue-300">
-          A supplementary JC will be created with qty {Number(nc.rejectedQty).toFixed(0)} and the
-          origin's source SO/JW link inherited. Code:{' '}
-          <span className="font-mono">&lt;origin&gt;-S&lt;n&gt;</span>.
-        </p>
-      ) : null}
-
-      <div className="space-y-2">
-        <Label htmlFor="dispRemarks">Remarks</Label>
-        <Textarea
-          id="dispRemarks"
-          rows={2}
-          placeholder="Disposition notes…"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-        />
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={pending || !action}>
-          {pending ? <Loader2 className="animate-spin" /> : null}
-          Apply disposition
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }

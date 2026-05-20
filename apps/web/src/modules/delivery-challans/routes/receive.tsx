@@ -7,19 +7,6 @@ import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 
@@ -42,7 +29,7 @@ interface LineDraft {
   rejectReason: string;
 }
 
-function DeliveryChallanReceivePage() {
+function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
@@ -55,8 +42,6 @@ function DeliveryChallanReceivePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Prefill drafts once the DC detail loads. Per-line "already received" is
-  // computed from the existing receipts in the same payload — no extra fetch.
   useEffect(() => {
     if (!detail) return;
     const receivedByLine = computeReceivedByLine(detail);
@@ -130,213 +115,224 @@ function DeliveryChallanReceivePage() {
 
   if (isLoading) {
     return (
-      <main className="container max-w-4xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading delivery challan…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading delivery challan…
+      </div>
     );
   }
   if (isError || !detail) {
     return (
-      <main className="container max-w-4xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Delivery challan not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This delivery challan could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/delivery-challans">
-                <ArrowLeft />
-                Back to delivery challans
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/delivery-challans" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Delivery challan not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/delivery-challans/$id" params={{ id }}>
-            <ArrowLeft />
-            Back to DC
-          </Link>
-        </Button>
+    <div>
+      <Link
+        to="/delivery-challans/$id"
+        params={{ id }}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 10 }}
+      >
+        <ArrowLeft size={14} /> Back to DC
+      </Link>
 
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle>Receive against {detail.vendorName ?? detail.vendorCodeText}</CardTitle>
-            <CardDescription>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+              {detail.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              Receive against {detail.vendorName ?? detail.vendorCodeText}
+            </div>
+            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Record qty received + rejected per line. Rejected qty auto-creates an NC; only the
               received qty goes back to stock.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <form onSubmit={(e) => void onSubmit(e)}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Receipt header</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="receiptDate">Receipt date</Label>
-                  <Input
-                    id="receiptDate"
-                    type="date"
-                    value={receiptDate}
-                    onChange={(e) => setReceiptDate(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="vendorInvoice">Vendor invoice</Label>
-                  <Input
-                    id="vendorInvoice"
-                    type="text"
-                    placeholder="optional"
-                    value={vendorInvoiceText}
-                    onChange={(e) => setVendorInvoiceText(e.target.value)}
-                  />
-                </div>
-                <div className="md:col-span-1 space-y-1.5">
-                  <Label htmlFor="remarks">Remarks</Label>
-                  <Input
-                    id="remarks"
-                    type="text"
-                    placeholder="optional"
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                  />
-                </div>
+      <form onSubmit={(e) => void onSubmit(e)}>
+        <div className="panel">
+          <div className="panel-hdr">
+            <div className="panel-title">Receipt header</div>
+          </div>
+          <div className="panel-body">
+            <div className="form-grid form-grid-3">
+              <div className="form-grp">
+                <label className="form-label" htmlFor="receiptDate">
+                  Receipt date<span className="req">★</span>
+                </label>
+                <input
+                  id="receiptDate"
+                  type="date"
+                  className="innovic-input"
+                  value={receiptDate}
+                  onChange={(e) => setReceiptDate(e.target.value)}
+                  required
+                />
               </div>
-            </CardContent>
-          </Card>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="vendorInvoice">
+                  Vendor invoice
+                </label>
+                <input
+                  id="vendorInvoice"
+                  type="text"
+                  className="innovic-input"
+                  placeholder="optional"
+                  value={vendorInvoiceText}
+                  onChange={(e) => setVendorInvoiceText(e.target.value)}
+                />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="remarks">
+                  Remarks
+                </label>
+                <input
+                  id="remarks"
+                  type="text"
+                  className="innovic-input"
+                  placeholder="optional"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle className="text-lg">Lines</CardTitle>
-              <CardDescription>
+        <div className="panel">
+          <div className="panel-hdr">
+            <div>
+              <div className="panel-title">Lines</div>
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 Each row shows what was sent and what's still outstanding. Enter the qty just
                 received. Reject reason is required when rejected qty &gt; 0.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="text-right">Sent</TableHead>
-                      <TableHead className="text-right">Already recv</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead>Receive now</TableHead>
-                      <TableHead>Reject now</TableHead>
-                      <TableHead>Reject reason</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lineDrafts.map((d, idx) => (
-                      <TableRow key={d.dcLineId}>
-                        <TableCell className="font-mono text-xs">{d.lineNo}</TableCell>
-                        <TableCell className="text-sm">
-                          <div className="font-mono text-xs">{d.itemCodeText}</div>
-                          {d.itemNameText ? (
-                            <div className="text-xs text-muted-foreground">{d.itemNameText}</div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {d.sentQty.toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {d.alreadyReceived.toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm font-semibold">
-                          {d.remaining.toFixed(0)}
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            max={d.remaining}
-                            value={d.receivedQty}
-                            onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
-                            disabled={d.remaining === 0}
-                            className="w-24"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={0}
-                            max={d.remaining}
-                            value={d.rejectedQty}
-                            onChange={(e) => updateDraft(idx, { rejectedQty: e.target.value })}
-                            disabled={d.remaining === 0}
-                            className="w-24"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Textarea
-                            rows={2}
-                            value={d.rejectReason}
-                            onChange={(e) => updateDraft(idx, { rejectReason: e.target.value })}
-                            placeholder={
-                              Number(d.rejectedQty || '0') > 0 ? 'Required' : 'Only if rejecting'
-                            }
-                            disabled={Number(d.rejectedQty || '0') === 0}
-                            className="min-w-[180px]"
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
               </div>
-            </CardContent>
-          </Card>
-
-          {submitError ? (
-            <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {submitError}
             </div>
-          ) : null}
-
-          <div className="mt-6 flex items-center justify-end gap-3">
-            <Button asChild variant="outline" type="button">
-              <Link to="/delivery-challans/$id" params={{ id }}>
-                Cancel
-              </Link>
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Recording…
-                </>
-              ) : (
-                'Record receipt'
-              )}
-            </Button>
           </div>
-        </form>
-      </div>
-    </main>
+          <div className="panel-body">
+            <div className="tbl-wrap">
+              <table className="innovic-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item</th>
+                    <th className="td-right">Sent</th>
+                    <th className="td-right">Already recv</th>
+                    <th className="td-right">Remaining</th>
+                    <th>Receive now</th>
+                    <th>Reject now</th>
+                    <th>Reject reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lineDrafts.map((d, idx) => (
+                    <tr key={d.dcLineId}>
+                      <td className="td-ctr mono">{d.lineNo}</td>
+                      <td>
+                        <span className="mono">{d.itemCodeText}</span>
+                        {d.itemNameText ? (
+                          <div className="text3" style={{ fontSize: 11 }}>
+                            {d.itemNameText}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="td-right mono">{d.sentQty.toFixed(0)}</td>
+                      <td className="td-right mono">{d.alreadyReceived.toFixed(0)}</td>
+                      <td className="td-right mono fw-700">{d.remaining.toFixed(0)}</td>
+                      <td>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={d.remaining}
+                          className="innovic-input"
+                          value={d.receivedQty}
+                          onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
+                          disabled={d.remaining === 0}
+                          style={{ width: 90, textAlign: 'right' }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={d.remaining}
+                          className="innovic-input"
+                          value={d.rejectedQty}
+                          onChange={(e) => updateDraft(idx, { rejectedQty: e.target.value })}
+                          disabled={d.remaining === 0}
+                          style={{ width: 90, textAlign: 'right' }}
+                        />
+                      </td>
+                      <td>
+                        <textarea
+                          rows={2}
+                          className="innovic-textarea"
+                          value={d.rejectReason}
+                          onChange={(e) => updateDraft(idx, { rejectReason: e.target.value })}
+                          placeholder={
+                            Number(d.rejectedQty || '0') > 0 ? 'Required' : 'Only if rejecting'
+                          }
+                          disabled={Number(d.rejectedQty || '0') === 0}
+                          style={{ minWidth: 180 }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {submitError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            {submitError}
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          <Link
+            to="/delivery-challans/$id"
+            params={{ id }}
+            className="btn btn-ghost"
+          >
+            Cancel
+          </Link>
+          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
+            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {submitting ? 'Recording…' : 'Record receipt'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

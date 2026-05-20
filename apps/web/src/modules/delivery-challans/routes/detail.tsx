@@ -1,17 +1,9 @@
-import type { DeliveryChallanWithLines } from '@innovic/shared';
+// Delivery-challan detail (UI-003-06).
+
+import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Inbox, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCancelDeliveryChallan, useDeliveryChallan } from '../api';
@@ -23,294 +15,345 @@ export const deliveryChallanDetailRoute = createRoute({
   component: DeliveryChallanDetailPage,
 });
 
-function DeliveryChallanDetailPage() {
+interface LineAgg {
+  receivedQty: number;
+  rejectedQty: number;
+}
+
+function DeliveryChallanDetailPage(): React.JSX.Element {
   const { id } = deliveryChallanDetailRoute.useParams();
-  const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data, isLoading, isError, error } = useDeliveryChallan(id);
   const { data: me } = useSession();
   const cancel = useCancelDeliveryChallan();
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const onCancel = async (): Promise<void> => {
-    if (!id) return;
-    if (
-      !window.confirm(
-        'Cancel this delivery challan? This reverses jc_op state + writes a compensating stock IN row. Cannot be undone.',
-      )
-    ) {
-      return;
+  const aggregatesByLine = useMemo(() => {
+    const map = new Map<string, LineAgg>();
+    if (!data) return map;
+    for (const r of data.receipts) {
+      for (const rl of r.lines) {
+        const cur = map.get(rl.deliveryChallanLineId) ?? { receivedQty: 0, rejectedQty: 0 };
+        cur.receivedQty += Number(rl.receivedQty);
+        cur.rejectedQty += Number(rl.rejectedQty);
+        map.set(rl.deliveryChallanLineId, cur);
+      }
     }
+    return map;
+  }, [data]);
+
+  const lineLookup = useMemo(() => {
+    const m = new Map<string, DeliveryChallanLine>();
+    if (!data) return m;
+    for (const l of data.lines) m.set(l.id, l);
+    return m;
+  }, [data]);
+
+  if (isLoading) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading DC…
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/delivery-challans" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'DC not found'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const dc = data;
+  const canReceive = dc.status === 'issued';
+  const canCancel = dc.status === 'issued' && me?.role === 'admin';
+
+  const onCancel = async (): Promise<void> => {
     setCancelError(null);
     try {
-      await cancel.mutateAsync(id);
+      await cancel.mutateAsync(dc.id);
+      setConfirmCancel(false);
     } catch (e) {
       setCancelError(e instanceof Error ? e.message : 'Failed to cancel DC.');
     }
   };
 
-  if (isLoading) {
-    return (
-      <main className="container max-w-4xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading delivery challan…
-        </div>
-      </main>
-    );
-  }
-  if (isError || !detail) {
-    return (
-      <main className="container max-w-4xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Delivery challan not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error
-                ? error.message
-                : 'This delivery challan could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/delivery-challans">
-                <ArrowLeft />
-                Back to delivery challans
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
-
-  const totalQty = detail.lines.reduce((sum, l) => sum + Number(l.qty), 0);
-
-  const receivedAggregates = useMemo(() => {
-    const map = new Map<string, { received: number; rejected: number }>();
-    for (const r of detail.receipts) {
-      for (const rl of r.lines) {
-        const prev = map.get(rl.deliveryChallanLineId) ?? { received: 0, rejected: 0 };
-        prev.received += Number(rl.receivedQty);
-        prev.rejected += Number(rl.rejectedQty);
-        map.set(rl.deliveryChallanLineId, prev);
-      }
-    }
-    return map;
-  }, [detail.receipts]);
-
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/delivery-challans">
-            <ArrowLeft />
-            Back
-          </Link>
-        </Button>
+    <div>
+      <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Delivery Challans
+      </Link>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <CardDescription className="font-mono">{detail.code}</CardDescription>
-                <CardTitle className="flex items-center gap-3">
-                  {detail.vendorName ?? detail.vendorCodeText}
-                  <DcStatusBadge status={detail.status} />
-                </CardTitle>
-              </div>
-              <div className="flex items-center gap-2">
-                {detail.status === 'issued' && (me?.role === 'admin' || me?.role === 'manager') ? (
-                  <Button asChild variant="default" size="sm">
-                    <Link to="/delivery-challans/$id/receive" params={{ id: detail.id }}>
-                      <Inbox />
-                      Receive
-                    </Link>
-                  </Button>
-                ) : null}
-                {detail.status === 'issued' && me?.role === 'admin' ? (
-                  <Button
-                    variant="destructive"
-                    size="sm"
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+              {dc.code}
+            </div>
+            <div
+              className="panel-title"
+              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+            >
+              {dc.vendorName ?? dc.vendorCodeText}
+              <DcStatusBadge status={dc.status} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {canReceive ? (
+              <Link
+                to="/delivery-challans/$id/receive"
+                params={{ id: dc.id }}
+                className="btn btn-primary btn-sm"
+              >
+                <Inbox size={13} /> Receive
+              </Link>
+            ) : null}
+            {canCancel ? (
+              confirmCancel ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12 }}>
+                    Cancel DC?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
                     onClick={() => void onCancel()}
                     disabled={cancel.isPending}
                   >
                     {cancel.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Cancelling…
-                      </>
+                      <Loader2 size={13} className="animate-spin" />
                     ) : (
-                      <>
-                        <Ban />
-                        Cancel DC
-                      </>
+                      <Ban size={13} />
                     )}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {cancelError ? (
-              <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {cancelError}
-              </div>
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmCancel(false)}
+                    disabled={cancel.isPending}
+                  >
+                    Keep
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setConfirmCancel(true)}
+                >
+                  <Ban size={13} /> Cancel DC
+                </button>
+              )
             ) : null}
-          </CardHeader>
-          <CardContent>
-            <HeaderGrid detail={detail} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              Lines ({detail.lines.length}) · total qty {totalQty.toFixed(0)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Item code</TableHead>
-                    <TableHead>Item name</TableHead>
-                    <TableHead>Material</TableHead>
-                    <TableHead className="text-right">Sent</TableHead>
-                    <TableHead className="text-right">Received</TableHead>
-                    <TableHead className="text-right">Rejected</TableHead>
-                    <TableHead>UOM</TableHead>
-                    <TableHead>Remarks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.lines.map((line) => {
-                    const agg = receivedAggregates.get(line.id) ?? { received: 0, rejected: 0 };
-                    return (
-                      <TableRow key={line.id}>
-                        <TableCell className="font-mono text-xs">{line.lineNo}</TableCell>
-                        <TableCell className="font-mono text-xs">{line.itemCodeText}</TableCell>
-                        <TableCell className="text-sm">{line.itemNameText ?? '—'}</TableCell>
-                        <TableCell className="text-xs">{line.materialText ?? '—'}</TableCell>
-                        <TableCell className="text-right font-mono text-sm font-semibold">
-                          {Number(line.qty).toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {agg.received.toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {agg.rejected.toFixed(0)}
-                        </TableCell>
-                        <TableCell className="text-xs uppercase">{line.uom}</TableCell>
-                        <TableCell className="text-xs whitespace-pre-wrap">
-                          {line.dcRemarks ?? '—'}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+          </div>
+        </div>
+        <div className="panel-body">
+          {cancelError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {cancelError}
             </div>
-          </CardContent>
-        </Card>
-
-        {detail.receipts.length > 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Receipts ({detail.receipts.length})</CardTitle>
-              <CardDescription>
-                Inward records against this DC. Rejected qty auto-creates an NC in the same tx.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {detail.receipts.map((r) => (
-                  <div key={r.id} className="rounded-md border bg-card">
-                    <div className="flex items-center justify-between border-b px-4 py-2 text-sm">
-                      <div className="font-mono">{r.receiptCode}</div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Receipt date: {r.receiptDate}</span>
-                        {r.vendorInvoiceText ? <span>Invoice: {r.vendorInvoiceText}</span> : null}
-                      </div>
-                    </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>DC line</TableHead>
-                          <TableHead className="text-right">Received</TableHead>
-                          <TableHead className="text-right">Rejected</TableHead>
-                          <TableHead>Reject reason</TableHead>
-                          <TableHead>Remarks</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {r.lines.map((rl) => {
-                          const dcLine = detail.lines.find(
-                            (l) => l.id === rl.deliveryChallanLineId,
-                          );
-                          return (
-                            <TableRow key={rl.id}>
-                              <TableCell className="font-mono text-xs">
-                                #{dcLine?.lineNo ?? '?'} · {dcLine?.itemCodeText ?? '—'}
-                              </TableCell>
-                              <TableCell className="text-right font-mono text-sm">
-                                {Number(rl.receivedQty).toFixed(0)}
-                              </TableCell>
-                              <TableCell className="text-right font-mono text-sm">
-                                {Number(rl.rejectedQty).toFixed(0)}
-                              </TableCell>
-                              <TableCell className="text-xs whitespace-pre-wrap">
-                                {rl.rejectReason ?? '—'}
-                              </TableCell>
-                              <TableCell className="text-xs whitespace-pre-wrap">
-                                {rl.remarks ?? '—'}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+          ) : null}
+          <HeaderGrid dc={dc} />
+        </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">Lines</div>
+          <span className="text3" style={{ fontSize: 11 }}>
+            {dc.lines.length} line{dc.lines.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="panel-body">
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Item</th>
+                  <th className="td-right">Ship qty</th>
+                  <th className="td-right">Received</th>
+                  <th className="td-right">Rejected</th>
+                  <th className="td-right">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dc.lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-state">
+                      No lines
+                    </td>
+                  </tr>
+                ) : (
+                  dc.lines.map((line) => {
+                    const ship = Number(line.qty);
+                    const agg = aggregatesByLine.get(line.id);
+                    const received = agg?.receivedQty ?? 0;
+                    const rejected = agg?.rejectedQty ?? 0;
+                    const remaining = Math.max(0, ship - received - rejected);
+                    return (
+                      <tr key={line.id}>
+                        <td className="td-ctr mono">{line.lineNo}</td>
+                        <td>
+                          <span className="mono">{line.itemCodeText}</span>
+                          {line.itemNameText ? (
+                            <span className="text3" style={{ marginLeft: 6 }}>
+                              {line.itemNameText}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="td-right mono fw-700">{ship.toFixed(2)}</td>
+                        <td className="td-right mono" style={{ color: 'var(--green2)' }}>
+                          {received.toFixed(2)}
+                        </td>
+                        <td className="td-right mono" style={{ color: 'var(--red2)' }}>
+                          {rejected.toFixed(2)}
+                        </td>
+                        <td className="td-right mono">{remaining.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {dc.receipts.length > 0 ? (
+        <div className="panel">
+          <div className="panel-hdr">
+            <div className="panel-title">Receipts</div>
+            <span className="text3" style={{ fontSize: 11 }}>
+              {dc.receipts.length} receipt{dc.receipts.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="panel-body" style={{ padding: 0 }}>
+            {dc.receipts.map((rcpt) => (
+              <div
+                key={rcpt.id}
+                style={{ padding: '10px 14px', borderTop: '1px solid var(--line)' }}
+              >
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}
+                >
+                  <div style={{ fontSize: 12 }}>
+                    <span className="mono">{rcpt.receiptCode}</span>{' '}
+                    <span className="text3">· {rcpt.receiptDate}</span>
+                    {rcpt.vendorInvoiceText ? (
+                      <span className="text3">
+                        {' '}
+                        · inv <span className="mono">{rcpt.vendorInvoiceText}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text3" style={{ fontSize: 11 }}>
+                    {rcpt.lines.length} line{rcpt.lines.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+                {rcpt.remarks ? (
+                  <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+                    {rcpt.remarks}
+                  </div>
+                ) : null}
+                <table className="innovic-table" style={{ fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th className="td-right">Received</th>
+                      <th className="td-right">Rejected</th>
+                      <th>Reject reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rcpt.lines.map((rl) => {
+                      const ll = lineLookup.get(rl.deliveryChallanLineId);
+                      return (
+                        <tr key={rl.id}>
+                          <td>
+                            <span className="mono">{ll?.itemCodeText ?? '—'}</span>
+                            {ll?.itemNameText ? (
+                              <span className="text3" style={{ marginLeft: 6 }}>
+                                {ll.itemNameText}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="td-right mono" style={{ color: 'var(--green2)' }}>
+                            {Number(rl.receivedQty).toFixed(2)}
+                          </td>
+                          <td className="td-right mono" style={{ color: 'var(--red2)' }}>
+                            {Number(rl.rejectedQty).toFixed(2)}
+                          </td>
+                          <td className="text3">{rl.rejectReason ?? '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function HeaderGrid(props: { detail: DeliveryChallanWithLines }) {
-  const { detail } = props;
+function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element {
+  const { dc } = props;
   return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm md:grid-cols-3">
-      <Pair label="DC date" value={detail.dcDate} />
+    <div className="form-grid form-grid-3">
+      <Pair label="DC date" value={dc.dcDate} />
+      <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
       <Pair
-        label="Purchase order"
+        label="PO"
         value={
-          detail.poCode ? detail.poCode : `${detail.poCodeText} (text snapshot — PO not in DB)`
+          dc.poCode ? (
+            <span className="badge b-green">{dc.poCode}</span>
+          ) : dc.poCodeText ? (
+            <span className="badge b-amber" title="Snapshot text — no live PO linked">
+              {dc.poCodeText}*
+            </span>
+          ) : (
+            '—'
+          )
         }
       />
       <Pair
-        label="Sales order"
-        value={
-          detail.soCode
-            ? detail.soCode
-            : detail.soRefText
-              ? `ref:${detail.soRefText} (snapshot)`
-              : '—'
-        }
+        label="SO"
+        value={dc.soCode ?? dc.soRefText ?? '—'}
       />
-      <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText} />
-      <Pair label="Transport" value={detail.transport ?? '—'} />
-    </dl>
+      <Pair label="Transport" value={dc.transport ?? '—'} />
+      <div className="form-grp" />
+    </div>
   );
 }
 
-function Pair(props: { label: string; value: string }) {
+function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
   );
 }
