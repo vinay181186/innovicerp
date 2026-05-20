@@ -147,6 +147,10 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
         ],
       },
+      {
+        label: 'Master',
+        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙' }],
+      },
     ],
   },
   {

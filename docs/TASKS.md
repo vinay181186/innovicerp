@@ -74,9 +74,22 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
-**ID:** RC-1..6 (Phase A item 2 of LEGACY_AUDIT.md build plan — Route Cards)
-**Title:** Route Card Master — DB ALTER for OSP fields + API + web list / detail / new / edit + sidebar nav
-**Status:** [x] Complete 2026-05-20.
+**ID:** QCP-1..5 (Phase A item 3 of LEGACY_AUDIT.md build plan — QC Process Master)
+**Title:** QC Process Master — API service + web list / detail / new / edit + sidebar nav
+**Status:** [x] Complete 2026-05-20. Per ADR-016 / ADR-028. Backend table `qc_processes` already existed from T-040c; this ships the missing CRUD service + web pages.
+
+**Done:**
+
+- **Shared zod** (`packages/shared/src/schemas/qc-process.ts`) — read shape + `createQcProcessInputSchema` + `updateQcProcessInputSchema` + `listQcProcessesQuerySchema`. `code` doubles as the display name (legacy is a name-only master, L23440). Cycle time stored in minutes (legacy stored hours; minutes is consistent with op-entry runtime).
+- **API service** (`apps/api/src/modules/qc-processes/service.ts`) — CRUD + soft-delete. Manager / admin only for writes via `requireWriteRole`. Duplicate-code-in-company surfaced as `ConflictError`.
+- **Routes** (`/qc-processes` GET / GET-by-id / POST / PATCH / DELETE). Registered in `server.ts`.
+- **Tests** — **11/11 green** (7 service + 4 routes). Create + duplicate + defaults + getById-not-found + listFilters + update + softDelete + 401 + 200 + 201 + 400.
+- **Web module** (`apps/web/src/modules/qc-processes/`) — `api.ts` (5 query/mutation hooks) + `components/qc-process-form.tsx` (shared create+edit shape, RHF) + 4 routes (list / new / detail / edit). Legacy chrome (`.panel + .innovic-table + .badge + .btn`) mirroring `renderQCProcessMaster` L23440: green-coloured names matching legacy CSS, b-green/b-amber Active/Inactive badge, single-line description + numeric std-time, search + isActive filter, role-gated Add / Edit / Delete.
+- **Router** — 4 routes registered (`qcProcessesListRoute`, `qcProcessNewRoute`, `qcProcessDetailRoute`, `qcProcessEditRoute`).
+- **Sidebar** — new "Master" group under the QC department with "⚙ QC Process Master" link, matching the legacy QC nav placement.
+- **Quality gates** — api typecheck + web typecheck + lint + build all green. Bundle 1191 KB / 157 KB gzip.
+
+**Prior:** RC-1..6 (Phase A item 2 — Route Cards) — Complete 2026-05-20.
 
 **Done:**
 

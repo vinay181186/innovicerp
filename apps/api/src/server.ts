@@ -27,6 +27,7 @@ import { operatorsRoutes } from './modules/operators/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
 import { qcDashboardRoutes } from './modules/qc-dashboard/routes';
+import { qcProcessesRoutes } from './modules/qc-processes/routes';
 import { reportsRoutes } from './modules/reports/routes';
 import { routeCardRoutes } from './modules/route-cards/routes';
 import { savedReportsRoutes } from './modules/saved-reports/routes';
@@ -114,6 +115,7 @@ await app.register(activityLogRoutes);
 await app.register(alertsRoutes);
 await app.register(bomMasterRoutes);
 await app.register(routeCardRoutes);
+await app.register(qcProcessesRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

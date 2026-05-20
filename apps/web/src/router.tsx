@@ -11,6 +11,10 @@ import { routeCardsListRoute } from './modules/route-cards/routes/list';
 import { routeCardDetailRoute } from './modules/route-cards/routes/detail';
 import { routeCardNewRoute } from './modules/route-cards/routes/new';
 import { routeCardEditRoute } from './modules/route-cards/routes/edit';
+import { qcProcessesListRoute } from './modules/qc-processes/routes/list';
+import { qcProcessDetailRoute } from './modules/qc-processes/routes/detail';
+import { qcProcessNewRoute } from './modules/qc-processes/routes/new';
+import { qcProcessEditRoute } from './modules/qc-processes/routes/edit';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -164,6 +168,10 @@ const routeTree = rootRoute.addChildren([
     routeCardNewRoute,
     routeCardDetailRoute,
     routeCardEditRoute,
+    qcProcessesListRoute,
+    qcProcessNewRoute,
+    qcProcessDetailRoute,
+    qcProcessEditRoute,
   ]),
 ]);
 
