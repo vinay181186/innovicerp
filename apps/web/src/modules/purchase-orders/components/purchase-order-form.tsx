@@ -1,11 +1,4 @@
-// Purchase Order form — header + dynamic line items.
-//
-// Mirrors the legacy `_getPoBaseData()` line 25717 / `addPO()` line 25728
-// layout: header fields (vendor + tax) at top, lines as a sub-grid with
-// "Add line" / "Remove" controls. Per ADR-012 #10, the form collects
-// `vendorCodeText` as a free-text fallback alongside the vendor picker, and
-// `itemCodeText` per line as a free-text fallback. The API service resolves
-// itemCodeText → itemId and preserves the text when no master item matches.
+// Purchase Order form (UI-003-04) — header + dynamic line items.
 
 import {
   type CreatePurchaseOrderInput,
@@ -17,25 +10,16 @@ import {
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useVendorsList } from '@/modules/vendors/api';
 
 interface LineFormValue {
   id?: string;
-  /** Hidden — preserved when editing so the FK survives a header-only save
-   *  (mirror of SO form pattern). The visible field is `itemCodeText`. */
   itemId?: string;
   itemCodeText: string;
   itemName: string;
   qty: number;
   rate: number;
-  /** Display-only on edit; never written via this form. */
   receivedQty?: number;
   dueDate?: string;
   lineRemarks?: string;
@@ -97,7 +81,7 @@ type EditMode = {
 
 export type PurchaseOrderFormProps = CreateMode | EditMode;
 
-export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
+export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
@@ -136,7 +120,6 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
         itemName: l.itemName.trim(),
         qty: Number(l.qty),
         rate: Number(l.rate),
-        // receivedQty deliberately omitted — service ignores it on update path.
         dueDate: l.dueDate || undefined,
         lineRemarks: l.lineRemarks?.trim() || undefined,
       };
@@ -152,250 +135,351 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps) {
   };
 
   return (
-    <form className="space-y-8" onSubmit={handleSubmit(onValid)}>
+    <form onSubmit={handleSubmit(onValid)}>
       {/* Header */}
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Header
-        </h3>
-        <FieldRow>
-          <Field label="PO No." htmlFor="code" error={errors.header?.code?.message} required>
-            <Input
-              id="code"
-              autoFocus={!isEdit}
-              autoComplete="off"
-              disabled={isEdit}
-              readOnly={isEdit}
-              {...register('header.code', { required: !isEdit ? 'PO No. is required' : false })}
-            />
-            {isEdit ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Code cannot be changed after creation.
-              </p>
-            ) : null}
-          </Field>
-          <Field label="Date" htmlFor="poDate" required>
-            <Input
-              id="poDate"
-              type="date"
-              {...register('header.poDate', { required: 'Date is required' })}
-            />
-          </Field>
-          <Field label="Type" htmlFor="poType">
-            <Select id="poType" {...register('header.poType')}>
-              {PO_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="Status" htmlFor="status">
-            <Select id="status" {...register('header.status')}>
-              {PO_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Due date" htmlFor="dueDate">
-            <Input id="dueDate" type="date" {...register('header.dueDate')} />
-          </Field>
-          <Field label="PR ref (audit)" htmlFor="prCodeText">
-            <Input
-              id="prCodeText"
-              autoComplete="off"
-              placeholder="PR-NNNNN (when applicable)"
-              {...register('header.prCodeText')}
-            />
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="Vendor" htmlFor="vendorId">
-            <Select id="vendorId" {...register('header.vendorId')}>
-              <option value="">— Free-text vendor below —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Vendor code (fallback)" htmlFor="vendorCodeText">
-            <Input
-              id="vendorCodeText"
-              autoComplete="off"
-              placeholder="Required if no vendor picked"
-              {...register('header.vendorCodeText')}
-            />
-          </Field>
-          <Field label="Tax type" htmlFor="taxType">
-            <Select id="taxType" {...register('header.taxType')}>
-              <option value="">— None —</option>
-              <option value="sgst_cgst">SGST + CGST</option>
-              <option value="igst">IGST</option>
-              <option value="none">None</option>
-            </Select>
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="SGST %" htmlFor="sgstPct">
-            <Input
-              id="sgstPct"
-              type="number"
-              step="0.01"
-              min={0}
-              {...register('header.sgstPct', { valueAsNumber: true })}
-            />
-          </Field>
-          <Field label="CGST %" htmlFor="cgstPct">
-            <Input
-              id="cgstPct"
-              type="number"
-              step="0.01"
-              min={0}
-              {...register('header.cgstPct', { valueAsNumber: true })}
-            />
-          </Field>
-          <Field label="IGST %" htmlFor="igstPct">
-            <Input
-              id="igstPct"
-              type="number"
-              step="0.01"
-              min={0}
-              {...register('header.igstPct', { valueAsNumber: true })}
-            />
-          </Field>
-        </FieldRow>
-
-        <Field label="Remarks" htmlFor="remarks">
-          <Textarea id="remarks" rows={2} {...register('header.remarks')} />
-        </Field>
-      </section>
-
-      {/* Lines */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Line items
-          </h3>
-          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
-            <Plus />
-            Add line
-          </Button>
+      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            PO No.<span className="req">★</span>
+          </label>
+          <input
+            id="code"
+            className="innovic-input"
+            autoFocus={!isEdit}
+            autoComplete="off"
+            readOnly={isEdit}
+            {...register('header.code', { required: !isEdit ? 'PO No. is required' : false })}
+          />
+          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          {errors.header?.code?.message ? (
+            <div className="form-error">{errors.header.code.message}</div>
+          ) : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="poDate">
+            Date<span className="req">★</span>
+          </label>
+          <input
+            id="poDate"
+            type="date"
+            className="innovic-input"
+            {...register('header.poDate', { required: 'Date is required' })}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="poType">
+            Type
+          </label>
+          <select id="poType" className="innovic-select" {...register('header.poType')}>
+            {PO_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {fields.length === 0 ? (
-          <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No lines yet. Click <b>Add line</b> to add one (required).
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {fields.map((field, idx) => (
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('header.status')}>
+            {PO_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="dueDate">
+            Due date
+          </label>
+          <input
+            id="dueDate"
+            type="date"
+            className="innovic-input"
+            {...register('header.dueDate')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="prCodeText">
+            PR ref (audit)
+          </label>
+          <input
+            id="prCodeText"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="PR-NNNNN (when applicable)"
+            {...register('header.prCodeText')}
+          />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorId">
+            Vendor
+          </label>
+          <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
+            <option value="">— Free-text vendor below —</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.code} — {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorCodeText">
+            Vendor code (fallback)
+          </label>
+          <input
+            id="vendorCodeText"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Required if no vendor picked"
+            {...register('header.vendorCodeText')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="taxType">
+            Tax type
+          </label>
+          <select id="taxType" className="innovic-select" {...register('header.taxType')}>
+            <option value="">— None —</option>
+            <option value="sgst_cgst">SGST + CGST</option>
+            <option value="igst">IGST</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="sgstPct">
+            SGST %
+          </label>
+          <input
+            id="sgstPct"
+            type="number"
+            step="0.01"
+            min={0}
+            className="innovic-input"
+            {...register('header.sgstPct', { valueAsNumber: true })}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="cgstPct">
+            CGST %
+          </label>
+          <input
+            id="cgstPct"
+            type="number"
+            step="0.01"
+            min={0}
+            className="innovic-input"
+            {...register('header.cgstPct', { valueAsNumber: true })}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="igstPct">
+            IGST %
+          </label>
+          <input
+            id="igstPct"
+            type="number"
+            step="0.01"
+            min={0}
+            className="innovic-input"
+            {...register('header.igstPct', { valueAsNumber: true })}
+          />
+        </div>
+
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">
+            Remarks
+          </label>
+          <textarea
+            id="remarks"
+            className="innovic-textarea"
+            rows={2}
+            {...register('header.remarks')}
+          />
+        </div>
+      </div>
+
+      {/* Lines */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 8,
+        }}
+      >
+        <div
+          className="form-label"
+          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
+        >
+          Line items
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => append({ ...NEW_LINE })}
+        >
+          <Plus size={13} /> Add line
+        </button>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
+          No lines yet. Click <strong>Add line</strong> — at least one is required.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fields.map((field, idx) => (
+            <div
+              key={field.id}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: 10,
+                background: 'var(--bg2)',
+              }}
+            >
               <div
-                key={field.id}
-                className="grid grid-cols-12 gap-2 rounded border bg-card p-3 text-card-foreground"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  fontSize: 11,
+                  color: 'var(--text3)',
+                  fontFamily: 'var(--mono)',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
               >
-                <div className="col-span-12 flex items-center justify-between text-xs font-medium text-muted-foreground">
-                  <span>Line {idx + 1}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => remove(idx)}
-                    aria-label={`Remove line ${idx + 1}`}
-                    className="h-7 px-2 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 />
-                    Remove
-                  </Button>
-                </div>
-                <div className="col-span-6 md:col-span-3">
-                  <Label className="text-xs">Item code</Label>
-                  <Input
+                <span>Line {idx + 1}</span>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm btn-icon"
+                  onClick={() => remove(idx)}
+                  aria-label={`Remove line ${idx + 1}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <div className="form-grid form-grid-3">
+                <div className="form-grp">
+                  <label className="form-label">Item Code</label>
+                  <input
+                    className="innovic-input"
                     autoComplete="off"
                     placeholder="ITM-001"
                     {...register(`lines.${idx}.itemCodeText` as const)}
                   />
                 </div>
-                <div className="col-span-6 md:col-span-3">
-                  <Label className="text-xs">Item name *</Label>
-                  <Input
+                <div className="form-grp">
+                  <label className="form-label">
+                    Item Name<span className="req">★</span>
+                  </label>
+                  <input
+                    className="innovic-input"
                     autoComplete="off"
                     {...register(`lines.${idx}.itemName` as const, {
                       required: 'Item name is required',
                     })}
                   />
                   {errors.lines?.[idx]?.itemName?.message ? (
-                    <p className="text-xs text-destructive">
-                      {errors.lines[idx]?.itemName?.message}
-                    </p>
+                    <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
                   ) : null}
                 </div>
-                <div className="col-span-4 md:col-span-1">
-                  <Label className="text-xs">Qty *</Label>
-                  <Input
+                <div className="form-grp">
+                  <label className="form-label">
+                    Qty<span className="req">★</span>
+                  </label>
+                  <input
                     type="number"
                     min={1}
+                    className="innovic-input"
                     {...register(`lines.${idx}.qty` as const, {
                       valueAsNumber: true,
                       min: { value: 1, message: 'Min 1' },
                     })}
                   />
                 </div>
-                <div className="col-span-4 md:col-span-2">
-                  <Label className="text-xs">Rate (₹)</Label>
-                  <Input
+
+                <div className="form-grp">
+                  <label className="form-label">Rate (₹)</label>
+                  <input
                     type="number"
                     step="0.01"
                     min={0}
+                    className="innovic-input"
                     {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
                   />
                 </div>
                 {isEdit ? (
-                  <div className="col-span-4 md:col-span-1">
-                    <Label className="text-xs">Received</Label>
-                    <Input
+                  <div className="form-grp">
+                    <label className="form-label">Received</label>
+                    <input
                       type="number"
+                      className="innovic-input"
                       readOnly
-                      disabled
                       title="Received qty is mutated only by GRN cascade (T-036c)"
                       value={field.receivedQty ?? 0}
                     />
                   </div>
                 ) : null}
-                <div className="col-span-6 md:col-span-2">
-                  <Label className="text-xs">Due date</Label>
-                  <Input type="date" {...register(`lines.${idx}.dueDate` as const)} />
+                <div className="form-grp">
+                  <label className="form-label">Due date</label>
+                  <input
+                    type="date"
+                    className="innovic-input"
+                    {...register(`lines.${idx}.dueDate` as const)}
+                  />
                 </div>
-                <div className="col-span-12">
-                  <Label className="text-xs">Line remarks</Label>
-                  <Input autoComplete="off" {...register(`lines.${idx}.lineRemarks` as const)} />
+
+                <div className="form-grp form-full">
+                  <label className="form-label">Line Remarks</label>
+                  <input
+                    className="innovic-input"
+                    autoComplete="off"
+                    {...register(`lines.${idx}.lineRemarks` as const)}
+                  />
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        {props.submitError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            {props.submitError}
           </div>
-        )}
-      </section>
-
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={formState.isSubmitting}>
-          {formState.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PO')}
-        </Button>
-        {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
-            Cancel
-          </Button>
         ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          {props.onCancel ? (
+            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+              Cancel
+            </button>
+          ) : null}
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PO')}
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -433,27 +517,4 @@ function detailToFormValues(detail: PurchaseOrderDetail): FormValues {
       }),
     ),
   };
-}
-
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
 }

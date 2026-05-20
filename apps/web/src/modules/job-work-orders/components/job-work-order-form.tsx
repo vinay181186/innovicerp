@@ -1,17 +1,5 @@
-// Job Work Order form — header + dynamic line items.
-//
-// Mirrors the legacy `jwHeaderForm` (line 12784) and `_jwLineRowHtml`
-// (line 12692). Differences from SO form:
-//   - Header: no GST / type / cost-center / BOM. Status only.
-//   - Lines: no rate / clientPoLineNo. Add 4 client-material fields:
-//     clientMaterial, clientMaterialQty, materialReceivedDate,
-//     materialReceivedQty (legacy form puts these at header level since
-//     all current JWs are single-line; our DB stores them per-line for
-//     forward-compat with multi-line JWs).
-//
-// Same content patterns as SO form — see sales-order-form.tsx for the
-// shared considerations (hidden itemId preservation, conditional spreads
-// for exactOptionalPropertyTypes, etc.).
+// Job Work Order form (UI-003-04) — header + dynamic line items.
+// Mirrors legacy jwHeaderForm L12784 + _jwLineRowHtml L12692.
 
 import {
   type CreateJobWorkOrderInput,
@@ -23,20 +11,11 @@ import {
   UOMS,
 } from '@innovic/shared';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useClientsList } from '@/modules/clients/api';
 
 interface LineFormValue {
   id?: string;
-  /** Preserved through the form when editing a line whose item resolved to a
-   *  real items master row. Hidden value keeps the FK intact when the user
-   *  doesn't retype the code. */
   itemId?: string;
   itemCodeText: string;
   partName: string;
@@ -97,7 +76,7 @@ type EditMode = {
 
 export type JobWorkOrderFormProps = CreateMode | EditMode;
 
-export function JobWorkOrderForm(props: JobWorkOrderFormProps) {
+export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
@@ -161,223 +140,304 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps) {
   };
 
   return (
-    <form className="space-y-8" onSubmit={handleSubmit(onValid)}>
+    <form onSubmit={handleSubmit(onValid)}>
       {/* Header */}
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Header
-        </h3>
-
-        <FieldRow>
-          <Field label="JW No." htmlFor="code" error={errors.header?.code?.message} required>
-            <Input
-              id="code"
-              autoFocus={!isEdit}
-              autoComplete="off"
-              disabled={isEdit}
-              readOnly={isEdit}
-              {...register('header.code', { required: 'JW No. is required' })}
-            />
-            {isEdit ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Code cannot be changed after creation.
-              </p>
-            ) : null}
-          </Field>
-          <Field label="Date" htmlFor="jwDate" error={errors.header?.jwDate?.message} required>
-            <Input
-              id="jwDate"
-              type="date"
-              {...register('header.jwDate', { required: 'Date is required' })}
-            />
-          </Field>
-          <Field label="Status" htmlFor="status">
-            <Select id="status" {...register('header.status')}>
-              {SO_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </FieldRow>
-
-        <FieldRow>
-          <Field label="Client" htmlFor="clientId">
-            <Select id="clientId" {...register('header.clientId')}>
-              <option value="">— Free-text customer below —</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Customer name (fallback)" htmlFor="customerName">
-            <Input
-              id="customerName"
-              autoComplete="off"
-              placeholder="Required if no client picked"
-              {...register('header.customerName')}
-            />
-          </Field>
-          <Field label="Client PO No." htmlFor="clientPoNo">
-            <Input id="clientPoNo" autoComplete="off" {...register('header.clientPoNo')} />
-          </Field>
-        </FieldRow>
-
-        <Field label="Remarks" htmlFor="remarks">
-          <Textarea id="remarks" rows={2} {...register('header.remarks')} />
-        </Field>
-      </section>
-
-      {/* Lines */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Line items
-          </h3>
-          <Button type="button" size="sm" variant="outline" onClick={() => append({ ...NEW_LINE })}>
-            <Plus />
-            Add line
-          </Button>
+      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            JW No.<span className="req">★</span>
+          </label>
+          <input
+            id="code"
+            className="innovic-input"
+            autoFocus={!isEdit}
+            autoComplete="off"
+            readOnly={isEdit}
+            {...register('header.code', { required: 'JW No. is required' })}
+          />
+          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          {errors.header?.code?.message ? (
+            <div className="form-error">{errors.header.code.message}</div>
+          ) : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="jwDate">
+            Date<span className="req">★</span>
+          </label>
+          <input
+            id="jwDate"
+            type="date"
+            className="innovic-input"
+            {...register('header.jwDate', { required: 'Date is required' })}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('header.status')}>
+            {SO_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {fields.length === 0 ? (
-          <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No lines yet. Click <b>Add line</b> — at least one is required.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {fields.map((field, idx) => (
-              <div
-                key={field.id}
-                className="grid grid-cols-12 gap-2 rounded border bg-card p-3 text-card-foreground"
-              >
-                <div className="col-span-12 flex items-center justify-between text-xs font-medium text-muted-foreground">
-                  <span>Line {idx + 1}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => remove(idx)}
-                    aria-label={`Remove line ${idx + 1}`}
-                    className="h-7 px-2 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 />
-                    Remove
-                  </Button>
-                </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="clientId">
+            Client
+          </label>
+          <select id="clientId" className="innovic-select" {...register('header.clientId')}>
+            <option value="">— Free-text customer below —</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="customerName">
+            Customer Name (fallback)
+          </label>
+          <input
+            id="customerName"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Required if no client picked"
+            {...register('header.customerName')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="clientPoNo">
+            Client PO No.
+          </label>
+          <input
+            id="clientPoNo"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('header.clientPoNo')}
+          />
+        </div>
 
-                {/* Row 1: item + part + material + drawing */}
-                <div className="col-span-12 md:col-span-3">
-                  <Label className="text-xs">Item code</Label>
-                  <Input
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">
+            Remarks
+          </label>
+          <textarea
+            id="remarks"
+            className="innovic-textarea"
+            rows={2}
+            {...register('header.remarks')}
+          />
+        </div>
+      </div>
+
+      {/* Lines */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 8,
+        }}
+      >
+        <div
+          className="form-label"
+          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
+        >
+          Line items
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => append({ ...NEW_LINE })}
+        >
+          <Plus size={13} /> Add line
+        </button>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
+          No lines yet. Click <strong>Add line</strong> — at least one is required.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {fields.map((field, idx) => (
+            <div
+              key={field.id}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: 10,
+                background: 'var(--bg2)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  fontSize: 11,
+                  color: 'var(--text3)',
+                  fontFamily: 'var(--mono)',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
+              >
+                <span>Line {idx + 1}</span>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm btn-icon"
+                  onClick={() => remove(idx)}
+                  aria-label={`Remove line ${idx + 1}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+
+              <div className="form-grid form-grid-3" style={{ marginBottom: 8 }}>
+                <div className="form-grp">
+                  <label className="form-label">Item Code</label>
+                  <input
+                    className="innovic-input"
                     autoComplete="off"
                     placeholder="ITM-001"
                     {...register(`lines.${idx}.itemCodeText` as const)}
                   />
                 </div>
-                <div className="col-span-12 md:col-span-3">
-                  <Label className="text-xs">Part name *</Label>
-                  <Input
+                <div className="form-grp">
+                  <label className="form-label">
+                    Part Name<span className="req">★</span>
+                  </label>
+                  <input
+                    className="innovic-input"
                     autoComplete="off"
                     {...register(`lines.${idx}.partName` as const, {
                       required: 'Part name is required',
                     })}
                   />
                   {errors.lines?.[idx]?.partName?.message ? (
-                    <p className="text-xs text-destructive">
-                      {errors.lines[idx]?.partName?.message}
-                    </p>
+                    <div className="form-error">{errors.lines[idx]?.partName?.message}</div>
                   ) : null}
                 </div>
-                <div className="col-span-6 md:col-span-3">
-                  <Label className="text-xs">Material</Label>
-                  <Input autoComplete="off" {...register(`lines.${idx}.material` as const)} />
-                </div>
-                <div className="col-span-6 md:col-span-3">
-                  <Label className="text-xs">Drawing no</Label>
-                  <Input autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} />
+                <div className="form-grp">
+                  <label className="form-label">Material</label>
+                  <input
+                    className="innovic-input"
+                    autoComplete="off"
+                    {...register(`lines.${idx}.material` as const)}
+                  />
                 </div>
 
-                {/* Row 2: uom + qty + due date */}
-                <div className="col-span-4 md:col-span-2">
-                  <Label className="text-xs">UOM</Label>
-                  <Select {...register(`lines.${idx}.uom` as const)}>
+                <div className="form-grp">
+                  <label className="form-label">Drawing No.</label>
+                  <input
+                    className="innovic-input"
+                    autoComplete="off"
+                    {...register(`lines.${idx}.drawingNo` as const)}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label">UOM</label>
+                  <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
                     {UOMS.map((u) => (
                       <option key={u} value={u}>
                         {u}
                       </option>
                     ))}
-                  </Select>
+                  </select>
                 </div>
-                <div className="col-span-4 md:col-span-2">
-                  <Label className="text-xs">Qty *</Label>
-                  <Input
+                <div className="form-grp">
+                  <label className="form-label">
+                    Qty<span className="req">★</span>
+                  </label>
+                  <input
                     type="number"
                     min={1}
+                    className="innovic-input"
                     {...register(`lines.${idx}.orderQty` as const, {
                       valueAsNumber: true,
                       min: { value: 1, message: 'Min 1' },
                     })}
                   />
                 </div>
-                <div className="col-span-4 md:col-span-2">
-                  <Label className="text-xs">Due date</Label>
-                  <Input type="date" {...register(`lines.${idx}.dueDate` as const)} />
-                </div>
 
-                {/* Row 3: client-material section (legacy line 12839-12860) */}
-                <div className="col-span-12 mt-1 rounded border border-green-700/30 bg-green-700/5 p-3">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-                    ▸ Client material (party-supplied)
+                <div className="form-grp">
+                  <label className="form-label">Due date</label>
+                  <input
+                    type="date"
+                    className="innovic-input"
+                    {...register(`lines.${idx}.dueDate` as const)}
+                  />
+                </div>
+              </div>
+
+              {/* Client-material section */}
+              <div
+                style={{
+                  background: 'rgba(22,163,74,0.05)',
+                  border: '1px solid rgba(22,163,74,0.25)',
+                  borderRadius: 6,
+                  padding: 10,
+                }}
+              >
+                <div
+                  className="form-label"
+                  style={{ color: 'var(--green2)', marginBottom: 6, fontSize: 11 }}
+                >
+                  ▸ Client material (party-supplied)
+                </div>
+                <div className="form-grid form-grid-3">
+                  <div className="form-grp">
+                    <label className="form-label">Material code</label>
+                    <input
+                      className="innovic-input"
+                      autoComplete="off"
+                      placeholder="ITM-001-rm"
+                      {...register(`lines.${idx}.clientMaterial` as const)}
+                    />
                   </div>
-                  <div className="grid grid-cols-12 gap-2">
-                    <div className="col-span-12 md:col-span-4">
-                      <Label className="text-xs">Material code</Label>
-                      <Input
-                        autoComplete="off"
-                        placeholder="ITM-001-rm"
-                        {...register(`lines.${idx}.clientMaterial` as const)}
-                      />
-                    </div>
-                    <div className="col-span-6 md:col-span-2">
-                      <Label className="text-xs">Mat. qty</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        {...register(`lines.${idx}.clientMaterialQty` as const, {
-                          valueAsNumber: true,
-                        })}
-                      />
-                    </div>
-                    <div className="col-span-6 md:col-span-3">
-                      <Label className="text-xs">Received date</Label>
-                      <Input
-                        type="date"
-                        {...register(`lines.${idx}.materialReceivedDate` as const)}
-                      />
-                    </div>
-                    <div className="col-span-12 md:col-span-3">
-                      <Label className="text-xs">Received qty</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        {...register(`lines.${idx}.materialReceivedQty` as const, {
-                          valueAsNumber: true,
-                        })}
-                      />
-                    </div>
+                  <div className="form-grp">
+                    <label className="form-label">Mat. qty</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="innovic-input"
+                      {...register(`lines.${idx}.clientMaterialQty` as const, {
+                        valueAsNumber: true,
+                      })}
+                    />
+                  </div>
+                  <div className="form-grp">
+                    <label className="form-label">Received date</label>
+                    <input
+                      type="date"
+                      className="innovic-input"
+                      {...register(`lines.${idx}.materialReceivedDate` as const)}
+                    />
+                  </div>
+                  <div className="form-grp">
+                    <label className="form-label">Received qty</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="innovic-input"
+                      {...register(`lines.${idx}.materialReceivedQty` as const, {
+                        valueAsNumber: true,
+                      })}
+                    />
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            </div>
+          ))}
+        </div>
+      )}
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
@@ -388,8 +448,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps) {
     </form>
   );
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────
 
 function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
   return {
@@ -425,48 +483,39 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
   };
 }
 
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
-}
-
 function FormFooter(props: {
   isSubmitting: boolean;
   submitLabel: string;
   submitError: string | null;
   onCancel?: (() => void) | undefined;
-}) {
+}): React.JSX.Element {
   return (
-    <div className="space-y-3">
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={props.isSubmitting}>
-          {props.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel}
-        </Button>
+    <div style={{ marginTop: 16 }}>
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid #fca5a5',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
-          </Button>
+          </button>
         ) : null}
+        <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
+          {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {props.submitLabel}
+        </button>
       </div>
     </div>
   );

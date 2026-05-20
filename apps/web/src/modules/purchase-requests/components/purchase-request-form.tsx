@@ -1,10 +1,4 @@
-// Purchase Request form — single-row entity (ADR-015 #2). Mirrors the legacy
-// `addPR()` / "Plan → PR" outsource flow but greatly simplified for T-036a:
-// no JC-op or SO-line picker yet — those source links carry through from
-// migration data and stay read-only on edit until the cascade UX (T-036b/c)
-// makes them useful to set by hand. Source link display is on the detail
-// page; the form keeps `sourceJcOpId` and `sourceSoLineId` as hidden values
-// when editing so they survive a header-only save.
+// Purchase Request form (UI-003-04) — single-row entity per ADR-015 #2.
 
 import {
   type CreatePurchaseRequestInput,
@@ -14,13 +8,7 @@ import {
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useVendorsList } from '@/modules/vendors/api';
 
 interface FormValues {
@@ -66,7 +54,7 @@ type EditMode = {
 
 export type PurchaseRequestFormProps = CreateMode | EditMode;
 
-export function PurchaseRequestForm(props: PurchaseRequestFormProps) {
+export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
 
@@ -78,10 +66,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps) {
   const vendors = vendorsData?.vendors ?? [];
 
   const onValid = async (values: FormValues): Promise<void> => {
-    // Resolution priority: if user typed an itemCode, send it as itemCodeText
-    // (server resolves to itemId or preserves text per ADR-012 #10). If left
-    // blank but we have a preserved itemId from the original detail, send the
-    // itemId so the FK is kept intact. Same pattern for vendor.
     const trimmedItemCode = values.itemCodeText?.trim();
     const itemRefs: { itemId?: string; itemCodeText?: string } = trimmedItemCode
       ? { itemCodeText: trimmedItemCode }
@@ -114,129 +98,190 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps) {
   };
 
   return (
-    <form className="space-y-6" onSubmit={handleSubmit(onValid)}>
-      <FieldRow>
-        <Field label="PR No." htmlFor="code" error={errors.code?.message} required>
-          <Input
+    <form onSubmit={handleSubmit(onValid)}>
+      <div className="form-grid form-grid-3">
+        <div className="form-grp">
+          <label className="form-label" htmlFor="code">
+            PR No.<span className="req">★</span>
+          </label>
+          <input
             id="code"
+            className="innovic-input"
             autoFocus={!isEdit}
             autoComplete="off"
-            disabled={isEdit}
             readOnly={isEdit}
             {...register('code', { required: !isEdit ? 'PR No. is required' : false })}
           />
-          {isEdit ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Code cannot be changed after creation.
-            </p>
-          ) : null}
-        </Field>
-        <Field label="Date" htmlFor="prDate" error={errors.prDate?.message} required>
-          <Input
+          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="prDate">
+            Date<span className="req">★</span>
+          </label>
+          <input
             id="prDate"
             type="date"
+            className="innovic-input"
             {...register('prDate', { required: 'Date is required' })}
           />
-        </Field>
-        <Field label="Status" htmlFor="status">
-          <Select id="status" {...register('status')}>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('status')}>
             {PR_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s.replaceAll('_', ' ')}
               </option>
             ))}
-          </Select>
-        </Field>
-      </FieldRow>
+          </select>
+        </div>
 
-      <FieldRow>
-        <Field label="Vendor" htmlFor="vendorId">
-          <Select id="vendorId" {...register('vendorId')}>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorId">
+            Vendor
+          </label>
+          <select id="vendorId" className="innovic-select" {...register('vendorId')}>
             <option value="">— Free-text vendor below —</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.code} — {v.name}
               </option>
             ))}
-          </Select>
-        </Field>
-        <Field label="Vendor code (fallback)" htmlFor="vendorCodeText">
-          <Input
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="vendorCodeText">
+            Vendor Code (fallback)
+          </label>
+          <input
             id="vendorCodeText"
+            className="innovic-input"
             autoComplete="off"
             placeholder="Required if no vendor picked"
             {...register('vendorCodeText')}
           />
-        </Field>
-        <Field label="Required date" htmlFor="requiredDate">
-          <Input id="requiredDate" type="date" {...register('requiredDate')} />
-        </Field>
-      </FieldRow>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="requiredDate">
+            Required Date
+          </label>
+          <input
+            id="requiredDate"
+            type="date"
+            className="innovic-input"
+            {...register('requiredDate')}
+          />
+        </div>
 
-      <FieldRow>
-        <Field label="Item code" htmlFor="itemCodeText">
-          <Input
+        <div className="form-grp">
+          <label className="form-label" htmlFor="itemCodeText">
+            Item Code
+          </label>
+          <input
             id="itemCodeText"
+            className="innovic-input"
             autoComplete="off"
             placeholder="ITM-001"
             {...register('itemCodeText')}
           />
-        </Field>
-        <Field label="Item name (snapshot)" htmlFor="itemName">
-          <Input id="itemName" autoComplete="off" {...register('itemName')} />
-        </Field>
-        <Field label="Operation" htmlFor="operation">
-          <Input
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="itemName">
+            Item Name (snapshot)
+          </label>
+          <input
+            id="itemName"
+            className="innovic-input"
+            autoComplete="off"
+            {...register('itemName')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="operation">
+            Operation
+          </label>
+          <input
             id="operation"
+            className="innovic-input"
             autoComplete="off"
             placeholder="COATING / TURN / …"
             {...register('operation')}
           />
-        </Field>
-      </FieldRow>
+        </div>
 
-      <FieldRow>
-        <Field label="Qty" htmlFor="qty" required>
-          <Input
+        <div className="form-grp">
+          <label className="form-label" htmlFor="qty">
+            Qty<span className="req">★</span>
+          </label>
+          <input
             id="qty"
             type="number"
             min={1}
+            className="innovic-input"
             {...register('qty', {
               valueAsNumber: true,
               min: { value: 1, message: 'Min 1' },
             })}
           />
-          {errors.qty?.message ? (
-            <p className="text-sm text-destructive">{errors.qty.message}</p>
-          ) : null}
-        </Field>
-        <Field label="Estimated cost (₹)" htmlFor="estCost">
-          <Input
+          {errors.qty?.message ? <div className="form-error">{errors.qty.message}</div> : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="estCost">
+            Estimated Cost (₹)
+          </label>
+          <input
             id="estCost"
             type="number"
             step="0.01"
             min={0}
+            className="innovic-input"
             {...register('estCost', { valueAsNumber: true })}
           />
-        </Field>
-      </FieldRow>
+        </div>
 
-      <Field label="Remarks" htmlFor="remarks">
-        <Textarea id="remarks" rows={3} {...register('remarks')} />
-      </Field>
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">
+            Remarks
+          </label>
+          <textarea
+            id="remarks"
+            className="innovic-textarea"
+            rows={3}
+            {...register('remarks')}
+          />
+        </div>
+      </div>
 
-      {props.submitError ? <p className="text-sm text-destructive">{props.submitError}</p> : null}
-
-      <div className="flex items-center gap-2">
-        <Button type="submit" disabled={formState.isSubmitting}>
-          {formState.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-          {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PR')}
-        </Button>
-        {props.onCancel ? (
-          <Button type="button" variant="outline" onClick={props.onCancel}>
-            Cancel
-          </Button>
+      <div style={{ marginTop: 16 }}>
+        {props.submitError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            {props.submitError}
+          </div>
         ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          {props.onCancel ? (
+            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+              Cancel
+            </button>
+          ) : null}
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PR')}
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -258,27 +303,4 @@ function detailToFormValues(detail: PurchaseRequest): FormValues {
     ...(detail.operation ? { operation: detail.operation } : {}),
     ...(detail.remarks ? { remarks: detail.remarks } : {}),
   };
-}
-
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: {
-  label: string;
-  htmlFor: string;
-  error?: string | undefined;
-  required?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
-      {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-    </div>
-  );
 }

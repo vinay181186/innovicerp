@@ -1,20 +1,12 @@
+// JW detail page (UI-003-04).
+
 import type { JobWorkOrderDetail, JobWorkOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { authenticatedRoute } from '@/routes/_authenticated';
+import { useSession } from '@/lib/session';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
+import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 
@@ -24,48 +16,39 @@ export const jobWorkOrderDetailRoute = createRoute({
   component: JobWorkOrderDetailPage,
 });
 
-function JobWorkOrderDetailPage() {
+function JobWorkOrderDetailPage(): React.JSX.Element {
   const { id } = jobWorkOrderDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
+  const { data: me } = useSession();
   const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
     return (
-      <main className="container max-w-5xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading job-work order…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading job-work order…
+      </div>
     );
   }
-
   if (isError || !detail) {
     return (
-      <main className="container max-w-5xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Job-work order not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This job-work order could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/job-work-orders">
-                <ArrowLeft />
-                Back to job-work orders
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/job-work-orders" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Job-work order not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const onDelete = () => {
+  const onDelete = (): void => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
         void navigate({ to: '/job-work-orders', replace: true });
@@ -73,188 +56,223 @@ function JobWorkOrderDetailPage() {
     });
   };
 
+  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  const isAdmin = me?.role === 'admin';
+
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   const clientMatTotal = detail.lines.reduce((s, l) => s + Number(l.clientMaterialQty ?? 0), 0);
   const matRecvTotal = detail.lines.reduce((s, l) => s + Number(l.materialReceivedQty ?? 0), 0);
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/job-work-orders">
-              <ArrowLeft />
-              Back
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/job-work-orders/$id/edit" params={{ id: detail.id }}>
-                <Pencil />
-                Edit
-              </Link>
-            </Button>
-            {confirmDelete ? (
-              <>
-                <span className="text-sm text-muted-foreground">Delete this JW?</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onDelete}
-                  disabled={softDelete.isPending}
-                >
-                  {softDelete.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  Confirm
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={softDelete.isPending}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
-                <Trash2 />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
+    <div>
+      <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to JW Master
+      </Link>
 
-        {softDelete.isError ? (
-          <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete job-work order.'}
-          </p>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle className="flex items-center gap-3">
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+              {detail.code}
+            </div>
+            <div
+              className="panel-title"
+              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+            >
               {detail.customerName ?? 'Untitled customer'}
               <SoStatusBadge status={detail.status} />
               <JwMaterialStatusBadge receivedQty={matRecvTotal} expectedQty={clientMatTotal} />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailGrid detail={detail} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Line items</CardTitle>
-              <span className="text-sm text-muted-foreground">
-                {detail.lines.length} line{detail.lines.length === 1 ? '' : 's'} · total qty{' '}
-                <span className="font-mono text-foreground">{totalQty}</span>
-                {clientMatTotal > 0 ? (
-                  <>
-                    {' '}
-                    · client material{' '}
-                    <span className="font-mono text-foreground">
-                      {matRecvTotal}/{clientMatTotal}
-                    </span>
-                  </>
-                ) : null}
-              </span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <LinesTable lines={detail.lines} />
-          </CardContent>
-        </Card>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {canEdit ? (
+              <Link
+                to="/job-work-orders/$id/edit"
+                params={{ id: detail.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                <Pencil size={13} /> Edit
+              </Link>
+            ) : null}
+            {isAdmin ? (
+              confirmDelete ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                    Delete?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={onDelete}
+                    disabled={softDelete.isPending}
+                  >
+                    {softDelete.isPending ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={softDelete.isPending}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )
+            ) : null}
+          </div>
+        </div>
+        <div className="panel-body">
+          {softDelete.isError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Failed to delete job-work order.'}
+            </div>
+          ) : null}
+          <DetailGrid detail={detail} />
+        </div>
       </div>
-    </main>
-  );
-}
 
-function DetailGrid(props: { detail: JobWorkOrderDetail }) {
-  const { detail } = props;
-  return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm md:grid-cols-3">
-      <Pair label="Date" value={detail.jwDate} />
-      <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
-      <Pair label="Status" value={detail.status} />
-      <div className="md:col-span-3">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Remarks</dt>
-        <dd className="mt-1 whitespace-pre-wrap">{detail.remarks ?? '—'}</dd>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+            total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
+            {clientMatTotal > 0 ? (
+              <>
+                {' '}
+                · client material{' '}
+                <b style={{ color: 'var(--text)' }}>
+                  {matRecvTotal}/{clientMatTotal}
+                </b>
+              </>
+            ) : null}
+          </span>
+        </div>
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Part name</th>
+                <th>Material</th>
+                <th>Drawing</th>
+                <th className="td-right">Qty</th>
+                <th>UOM</th>
+                <th>Due</th>
+                <th>Client material</th>
+                <th>Mat. status</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.lines.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="empty-state">
+                    No lines on this JW yet.
+                  </td>
+                </tr>
+              ) : (
+                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </dl>
-  );
-}
-
-function Pair(props: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
     </div>
   );
 }
 
-function LinesTable(props: { lines: JobWorkOrderLine[] }) {
+function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
+  const { line: l } = props;
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>#</TableHead>
-          <TableHead>Item</TableHead>
-          <TableHead>Part name</TableHead>
-          <TableHead>Material</TableHead>
-          <TableHead>Drawing</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead>UOM</TableHead>
-          <TableHead>Due date</TableHead>
-          <TableHead>Client material</TableHead>
-          <TableHead>Material status</TableHead>
-          <TableHead>Status</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {props.lines.length === 0 ? (
-          <TableEmpty colSpan={11}>No lines on this JW yet.</TableEmpty>
+    <tr>
+      <td className="mono">{l.lineNo}</td>
+      <td className="mono" style={{ fontSize: 11 }}>
+        {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+      </td>
+      <td>{l.partName}</td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {l.material ?? '—'}
+      </td>
+      <td className="mono" style={{ fontSize: 11 }}>
+        {l.drawingNo ?? '—'}
+      </td>
+      <td className="td-right mono">{l.orderQty}</td>
+      <td>{l.uom}</td>
+      <td className="text2" style={{ fontSize: 11 }}>
+        {l.dueDate ?? '—'}
+      </td>
+      <td style={{ fontSize: 11 }}>
+        {l.clientMaterial ? (
+          <span className="mono">
+            {l.clientMaterial}
+            {l.clientMaterialQty ? ` (${l.clientMaterialQty})` : ''}
+          </span>
         ) : (
-          props.lines.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell className="font-mono text-sm">{l.lineNo}</TableCell>
-              <TableCell className="font-mono text-xs">
-                {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
-              </TableCell>
-              <TableCell>{l.partName}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">{l.material ?? '—'}</TableCell>
-              <TableCell className="font-mono text-xs">{l.drawingNo ?? '—'}</TableCell>
-              <TableCell className="text-right font-mono">{l.orderQty}</TableCell>
-              <TableCell>{l.uom}</TableCell>
-              <TableCell className="text-xs">{l.dueDate ?? '—'}</TableCell>
-              <TableCell className="text-xs">
-                {l.clientMaterial ? (
-                  <span className="font-mono">
-                    {l.clientMaterial}
-                    {l.clientMaterialQty ? ` (${l.clientMaterialQty})` : ''}
-                  </span>
-                ) : (
-                  '—'
-                )}
-              </TableCell>
-              <TableCell>
-                <JwMaterialStatusBadge
-                  receivedQty={Number(l.materialReceivedQty ?? 0)}
-                  expectedQty={Number(l.clientMaterialQty ?? 0)}
-                />
-              </TableCell>
-              <TableCell>
-                <SoStatusBadge status={l.status} />
-              </TableCell>
-            </TableRow>
-          ))
+          '—'
         )}
-      </TableBody>
-    </Table>
+      </td>
+      <td>
+        <JwMaterialStatusBadge
+          receivedQty={Number(l.materialReceivedQty ?? 0)}
+          expectedQty={Number(l.clientMaterialQty ?? 0)}
+        />
+      </td>
+      <td>
+        <SoStatusBadge status={l.status} />
+      </td>
+    </tr>
+  );
+}
+
+function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
+  const { detail } = props;
+  return (
+    <div className="form-grid form-grid-3">
+      <Pair label="Date" value={detail.jwDate} />
+      <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
+      <Pair
+        label="Status"
+        value={<SoStatusBadge status={detail.status} />}
+      />
+      <div className="form-grp form-full">
+        <span className="form-label">Remarks</span>
+        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
+      </div>
+    </div>
+  );
+}
+
+function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
+    </div>
   );
 }

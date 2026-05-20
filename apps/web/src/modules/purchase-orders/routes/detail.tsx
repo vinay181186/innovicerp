@@ -1,18 +1,10 @@
+// PO detail page (UI-003-04).
+
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Inbox, Loader2, Pencil, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrder, useSoftDeletePurchaseOrder } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -23,48 +15,39 @@ export const purchaseOrderDetailRoute = createRoute({
   component: PurchaseOrderDetailPage,
 });
 
-function PurchaseOrderDetailPage() {
+function PurchaseOrderDetailPage(): React.JSX.Element {
   const { id } = purchaseOrderDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
+  const { data: me } = useSession();
   const softDelete = useSoftDeletePurchaseOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
     return (
-      <main className="container max-w-5xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading purchase order…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase order…
+      </div>
     );
   }
-
   if (isError || !detail) {
     return (
-      <main className="container max-w-5xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Purchase order not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This purchase order could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/purchase-orders">
-                <ArrowLeft />
-                Back to purchase orders
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Purchase order not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const onDelete = () => {
+  const onDelete = (): void => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
         void navigate({ to: '/purchase-orders', replace: true });
@@ -72,127 +55,208 @@ function PurchaseOrderDetailPage() {
     });
   };
 
+  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  const isAdmin = me?.role === 'admin';
+  const canIssueOrReceive = ['draft', 'open', 'partial', 'qc_pending'].includes(detail.status);
+
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   const totalValue = detail.lines.reduce((s, l) => s + l.qty * Number(l.rate), 0);
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/purchase-orders">
-              <ArrowLeft />
-              Back
-            </Link>
-          </Button>
-          <div className="flex items-center gap-2">
-            {['draft', 'open', 'partial', 'qc_pending'].includes(detail.status) &&
-            detail.poType === 'job_work' ? (
-              <Button asChild variant="default" size="sm">
-                <Link to="/delivery-challans/new" search={{ poId: detail.id }}>
-                  <Send />
-                  Issue DC
-                </Link>
-              </Button>
-            ) : null}
-            {['draft', 'open', 'partial', 'qc_pending'].includes(detail.status) &&
-            detail.poType !== 'job_work' ? (
-              <Button asChild variant="default" size="sm">
-                <Link to="/goods-receipt-notes/new" search={{ poId: detail.id }}>
-                  <Inbox />
-                  Receive (new GRN)
-                </Link>
-              </Button>
-            ) : null}
-            <Button asChild variant="outline" size="sm">
-              <Link to="/purchase-orders/$id/edit" params={{ id: detail.id }}>
-                <Pencil />
-                Edit
-              </Link>
-            </Button>
-            {confirmDelete ? (
-              <>
-                <span className="text-sm text-muted-foreground">Delete this PO?</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={onDelete}
-                  disabled={softDelete.isPending}
-                >
-                  {softDelete.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  Confirm
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  disabled={softDelete.isPending}
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
-                <Trash2 />
-                Delete
-              </Button>
-            )}
-          </div>
-        </div>
+    <div>
+      <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Purchase Orders
+      </Link>
 
-        {softDelete.isError ? (
-          <p className="text-sm text-destructive">
-            {softDelete.error instanceof Error
-              ? softDelete.error.message
-              : 'Failed to delete purchase order.'}
-          </p>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{detail.code}</CardDescription>
-            <CardTitle className="flex items-center gap-3">
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 800 }}
+            >
+              {detail.code}
+            </div>
+            <div
+              className="panel-title"
+              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+            >
               {detail.vendorName ?? detail.vendorCodeText ?? '—'}
               <PoStatusBadge status={detail.status} />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailGrid detail={detail} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Line items</CardTitle>
-              <span className="text-sm text-muted-foreground">
-                {detail.lines.length} line{detail.lines.length === 1 ? '' : 's'} · qty{' '}
-                <span className="font-mono text-foreground">{receivedQty}</span>
-                <span className="text-xs">/{totalQty}</span> received
-                {totalValue > 0 ? (
-                  <>
-                    {' '}
-                    · value{' '}
-                    <span className="font-mono text-foreground">₹{totalValue.toFixed(2)}</span>
-                  </>
-                ) : null}
-              </span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <LinesTable lines={detail.lines} />
-          </CardContent>
-        </Card>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {canIssueOrReceive && detail.poType === 'job_work' && canEdit ? (
+              <Link
+                to="/delivery-challans/new"
+                search={{ poId: detail.id }}
+                className="btn btn-primary btn-sm"
+              >
+                <Send size={13} /> Issue DC
+              </Link>
+            ) : null}
+            {canIssueOrReceive && detail.poType !== 'job_work' && canEdit ? (
+              <Link
+                to="/goods-receipt-notes/new"
+                search={{ poId: detail.id }}
+                className="btn btn-primary btn-sm"
+              >
+                <Inbox size={13} /> Receive (new GRN)
+              </Link>
+            ) : null}
+            {canEdit ? (
+              <Link
+                to="/purchase-orders/$id/edit"
+                params={{ id: detail.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                <Pencil size={13} /> Edit
+              </Link>
+            ) : null}
+            {isAdmin ? (
+              confirmDelete ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                    Delete?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={onDelete}
+                    disabled={softDelete.isPending}
+                  >
+                    {softDelete.isPending ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={softDelete.isPending}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )
+            ) : null}
+          </div>
+        </div>
+        <div className="panel-body">
+          {softDelete.isError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {softDelete.error instanceof Error
+                ? softDelete.error.message
+                : 'Failed to delete purchase order.'}
+            </div>
+          ) : null}
+          <DetailGrid detail={detail} />
+        </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="panel-hdr">
+          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+            qty <b style={{ color: 'var(--text)' }}>{receivedQty}</b>/{totalQty} received
+            {totalValue > 0 ? (
+              <>
+                {' '}
+                · value <b style={{ color: 'var(--text)' }}>₹{totalValue.toFixed(2)}</b>
+              </>
+            ) : null}
+          </span>
+        </div>
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Item Name</th>
+                <th className="td-right">Qty</th>
+                <th className="td-right">Rate</th>
+                <th className="td-right">Received</th>
+                <th>Due</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.lines.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="empty-state">
+                    No lines on this PO yet.
+                  </td>
+                </tr>
+              ) : (
+                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function DetailGrid(props: { detail: PurchaseOrderDetail }) {
+function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
+  const { line: l } = props;
+  const color =
+    l.receivedQty >= l.qty && l.qty > 0
+      ? 'var(--green)'
+      : l.receivedQty > 0
+        ? 'var(--amber)'
+        : 'var(--text3)';
+  return (
+    <tr>
+      <td className="mono">{l.lineNo}</td>
+      <td className="mono" style={{ fontSize: 11 }}>
+        {l.itemCode ?? l.itemCodeText ?? '—'}
+      </td>
+      <td>{l.itemName}</td>
+      <td className="td-right mono">{l.qty}</td>
+      <td className="td-right mono">
+        {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
+      </td>
+      <td className="td-right mono" style={{ color, fontWeight: 700 }}>
+        {l.receivedQty}
+      </td>
+      <td className="text2" style={{ fontSize: 11 }}>
+        {l.dueDate ?? '—'}
+      </td>
+      <td className="text3" style={{ fontSize: 11 }}>
+        {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
+      </td>
+    </tr>
+  );
+}
+
+function DetailGrid(props: { detail: PurchaseOrderDetail }): React.JSX.Element {
   const { detail } = props;
   return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm md:grid-cols-3">
+    <div className="form-grid form-grid-3">
       <Pair label="Type" value={detail.poType.replaceAll('_', ' ')} />
       <Pair label="Date" value={detail.poDate} />
       <Pair label="Due date" value={detail.dueDate ?? '—'} />
@@ -203,80 +267,19 @@ function DetailGrid(props: { detail: PurchaseOrderDetail }) {
       />
       <Pair label="PR ref" value={detail.prCodeText ?? '—'} />
       <Pair label="Approved at" value={detail.approvedAt ?? '—'} />
-      <div className="md:col-span-3">
-        <dt className="text-xs uppercase tracking-wide text-muted-foreground">Remarks</dt>
-        <dd className="mt-1 whitespace-pre-wrap">{detail.remarks ?? '—'}</dd>
+      <div className="form-grp form-full">
+        <span className="form-label">Remarks</span>
+        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
       </div>
-    </dl>
-  );
-}
-
-function Pair(props: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
     </div>
   );
 }
 
-function LinesTable(props: { lines: PurchaseOrderLine[] }) {
+function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>#</TableHead>
-          <TableHead>Item</TableHead>
-          <TableHead>Item name</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Rate</TableHead>
-          <TableHead className="text-right">Received</TableHead>
-          <TableHead>Due date</TableHead>
-          <TableHead>Source</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {props.lines.length === 0 ? (
-          <TableEmpty colSpan={8}>No lines on this PO yet.</TableEmpty>
-        ) : (
-          props.lines.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell className="font-mono text-sm">{l.lineNo}</TableCell>
-              <TableCell className="font-mono text-xs">
-                {l.itemCode ?? l.itemCodeText ?? '—'}
-              </TableCell>
-              <TableCell>{l.itemName}</TableCell>
-              <TableCell className="text-right font-mono">{l.qty}</TableCell>
-              <TableCell className="text-right font-mono">
-                {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                <span
-                  className={
-                    l.receivedQty >= l.qty && l.qty > 0
-                      ? 'text-green-600'
-                      : l.receivedQty > 0
-                        ? 'text-amber-600'
-                        : 'text-muted-foreground'
-                  }
-                >
-                  {l.receivedQty}
-                </span>
-              </TableCell>
-              <TableCell className="text-xs">{l.dueDate ?? '—'}</TableCell>
-              <TableCell className="text-xs">
-                {l.sourceJcOpId ? (
-                  <span className="text-muted-foreground">JC op</span>
-                ) : l.sourceSoLineId ? (
-                  <span className="text-muted-foreground">SO line</span>
-                ) : (
-                  '—'
-                )}
-              </TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
+    </div>
   );
 }

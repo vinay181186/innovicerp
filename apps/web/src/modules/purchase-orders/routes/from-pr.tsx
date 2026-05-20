@@ -1,22 +1,11 @@
-// "Create PO from PR" route. Reached from the PR detail page's "Create PO"
-// button (PR.id passed as a search param). Pre-fills the new-PO form with PR
-// vendor/item already locked, lets the user pick the PO code + dates + GST,
-// then on submit calls POST /purchase-orders/from-pr which creates the PO +
-// stamps the PR atomically.
+// "Create PO from PR" route (UI-003-04).
 
 import { type CreatePurchaseOrderFromPrInput, PO_TYPES, type PoType } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPr } from '../api';
@@ -44,7 +33,7 @@ interface FormValues {
   remarks?: string;
 }
 
-function PurchaseOrderFromPrPage() {
+function PurchaseOrderFromPrPage(): React.JSX.Element {
   const { prId } = purchaseOrderFromPrRoute.useSearch();
   const navigate = useNavigate();
   const { data: pr, isLoading, isError, error } = usePurchaseRequest(prId);
@@ -82,11 +71,7 @@ function PurchaseOrderFromPrPage() {
     };
     try {
       const created = await createFromPr.mutateAsync(payload);
-      await navigate({
-        to: '/purchase-orders/$id',
-        params: { id: created.id },
-        replace: true,
-      });
+      await navigate({ to: '/purchase-orders/$id', params: { id: created.id }, replace: true });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create PO from PR');
     }
@@ -94,215 +79,272 @@ function PurchaseOrderFromPrPage() {
 
   if (isLoading) {
     return (
-      <main className="container max-w-3xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading source PR…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading source PR…
+      </div>
     );
   }
 
   if (isError || !pr) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Source PR not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'PR could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/purchase-requests">
-                <ArrowLeft />
-                Back to purchase requests
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Source PR not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // PRs that already have a PO can't convert again.
   const alreadyConverted = pr.poId !== null || pr.status === 'po_created';
   const isCancelled = pr.status === 'cancelled';
 
   return (
-    <main className="container max-w-3xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/purchase-requests/$id" params={{ id: pr.id }}>
-            <ArrowLeft />
-            Back to PR
-          </Link>
-        </Button>
+    <div>
+      <Link
+        to="/purchase-requests/$id"
+        params={{ id: pr.id }}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 10 }}
+      >
+        <ArrowLeft size={14} /> Back to PR
+      </Link>
 
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">From PR {pr.code}</CardDescription>
-            <CardTitle>Create purchase order</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {alreadyConverted ? (
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                This PR is already linked to a PO. Open the PR detail to navigate to it.
-              </p>
-            ) : isCancelled ? (
-              <p className="text-sm text-destructive">
-                This PR is cancelled — no PO can be generated.
-              </p>
-            ) : (
-              <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
-                <Card className="border-dashed bg-muted/30">
-                  <CardContent className="pt-4">
-                    <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-2">
-                      <Pair
-                        label="Vendor"
-                        value={pr.vendorCodeText ?? (pr.vendorId ? '— linked —' : '—')}
-                      />
-                      <Pair
-                        label="Item"
-                        value={`${pr.itemCodeText ?? (pr.itemId ? '— linked —' : '—')} · ${pr.itemName ?? ''}`}
-                      />
-                      <Pair label="Qty" value={String(pr.qty)} />
-                      <Pair label="Est. cost" value={`₹${Number(pr.estCost).toFixed(2)}`} />
-                      <Pair label="Operation" value={pr.operation ?? '—'} />
-                      <Pair label="Required by" value={pr.requiredDate ?? '—'} />
-                    </dl>
-                  </CardContent>
-                </Card>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+              From PR {pr.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              Create Purchase Order
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          {alreadyConverted ? (
+            <div
+              style={{
+                color: 'var(--amber2)',
+                background: 'var(--amber3)',
+                border: '1px solid #fcd34d',
+                borderRadius: 6,
+                padding: '8px 12px',
+                fontSize: 12,
+              }}
+            >
+              This PR is already linked to a PO. Open the PR detail to navigate to it.
+            </div>
+          ) : isCancelled ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '8px 12px',
+                fontSize: 12,
+              }}
+            >
+              This PR is cancelled — no PO can be generated.
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <div
+                style={{
+                  background: 'var(--bg3)',
+                  border: '1px dashed var(--border2)',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div className="form-grid">
+                  <Pair
+                    label="Vendor"
+                    value={pr.vendorCodeText ?? (pr.vendorId ? '— linked —' : '—')}
+                  />
+                  <Pair
+                    label="Item"
+                    value={`${pr.itemCodeText ?? (pr.itemId ? '— linked —' : '—')} · ${pr.itemName ?? ''}`}
+                  />
+                  <Pair label="Qty" value={String(pr.qty)} />
+                  <Pair label="Est. cost" value={`₹${Number(pr.estCost).toFixed(2)}`} />
+                  <Pair label="Operation" value={pr.operation ?? '—'} />
+                  <Pair label="Required by" value={pr.requiredDate ?? '—'} />
+                </div>
+              </div>
 
-                <FieldRow>
-                  <Field label="PO No." htmlFor="code" required>
-                    <Input
-                      id="code"
-                      autoFocus
-                      autoComplete="off"
-                      placeholder="IN-PO-NNNNN"
-                      {...register('code', { required: 'PO No. is required' })}
-                    />
-                  </Field>
-                  <Field label="Date" htmlFor="poDate" required>
-                    <Input
-                      id="poDate"
-                      type="date"
-                      {...register('poDate', { required: 'Date is required' })}
-                    />
-                  </Field>
-                  <Field label="Type" htmlFor="poType">
-                    <Select id="poType" {...register('poType')}>
-                      {PO_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t.replaceAll('_', ' ')}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </FieldRow>
+              <div className="form-grid form-grid-3">
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="code">
+                    PO No.<span className="req">★</span>
+                  </label>
+                  <input
+                    id="code"
+                    className="innovic-input"
+                    autoFocus
+                    autoComplete="off"
+                    placeholder="IN-PO-NNNNN"
+                    {...register('code', { required: 'PO No. is required' })}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="poDate">
+                    Date<span className="req">★</span>
+                  </label>
+                  <input
+                    id="poDate"
+                    type="date"
+                    className="innovic-input"
+                    {...register('poDate', { required: 'Date is required' })}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="poType">
+                    Type
+                  </label>
+                  <select id="poType" className="innovic-select" {...register('poType')}>
+                    {PO_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t.replaceAll('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                <FieldRow>
-                  <Field label="Due date" htmlFor="dueDate">
-                    <Input id="dueDate" type="date" {...register('dueDate')} />
-                  </Field>
-                  <Field label="Tax type" htmlFor="taxType">
-                    <Select id="taxType" {...register('taxType')}>
-                      <option value="">— None —</option>
-                      <option value="sgst_cgst">SGST + CGST</option>
-                      <option value="igst">IGST</option>
-                      <option value="none">None</option>
-                    </Select>
-                  </Field>
-                </FieldRow>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="dueDate">
+                    Due date
+                  </label>
+                  <input
+                    id="dueDate"
+                    type="date"
+                    className="innovic-input"
+                    {...register('dueDate')}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="taxType">
+                    Tax type
+                  </label>
+                  <select id="taxType" className="innovic-select" {...register('taxType')}>
+                    <option value="">— None —</option>
+                    <option value="sgst_cgst">SGST + CGST</option>
+                    <option value="igst">IGST</option>
+                    <option value="none">None</option>
+                  </select>
+                </div>
 
-                <FieldRow>
-                  <Field label="SGST %" htmlFor="sgstPct">
-                    <Input
-                      id="sgstPct"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      {...register('sgstPct', { valueAsNumber: true })}
-                    />
-                  </Field>
-                  <Field label="CGST %" htmlFor="cgstPct">
-                    <Input
-                      id="cgstPct"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      {...register('cgstPct', { valueAsNumber: true })}
-                    />
-                  </Field>
-                  <Field label="IGST %" htmlFor="igstPct">
-                    <Input
-                      id="igstPct"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      {...register('igstPct', { valueAsNumber: true })}
-                    />
-                  </Field>
-                </FieldRow>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="sgstPct">
+                    SGST %
+                  </label>
+                  <input
+                    id="sgstPct"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    className="innovic-input"
+                    {...register('sgstPct', { valueAsNumber: true })}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="cgstPct">
+                    CGST %
+                  </label>
+                  <input
+                    id="cgstPct"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    className="innovic-input"
+                    {...register('cgstPct', { valueAsNumber: true })}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="igstPct">
+                    IGST %
+                  </label>
+                  <input
+                    id="igstPct"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    className="innovic-input"
+                    {...register('igstPct', { valueAsNumber: true })}
+                  />
+                </div>
 
-                <Field label="Remarks" htmlFor="remarks">
-                  <Textarea
+                <div className="form-grp form-full">
+                  <label className="form-label" htmlFor="remarks">
+                    Remarks
+                  </label>
+                  <textarea
                     id="remarks"
+                    className="innovic-textarea"
                     rows={2}
                     placeholder={`From PR ${pr.code}${pr.operation ? ` — ${pr.operation}` : ''} (default if blank)`}
                     {...register('remarks')}
                   />
-                </Field>
+                </div>
+              </div>
 
-                {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
-
-                <div className="flex items-center gap-2">
-                  <Button type="submit" disabled={formState.isSubmitting}>
-                    {formState.isSubmitting ? <Loader2 className="animate-spin" /> : null}
-                    Create PO
-                  </Button>
-                  <Button
+              <div style={{ marginTop: 16 }}>
+                {submitError ? (
+                  <div
+                    style={{
+                      color: 'var(--red)',
+                      background: 'var(--red3)',
+                      border: '1px solid #fca5a5',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                      fontSize: 12,
+                      marginBottom: 10,
+                    }}
+                  >
+                    {submitError}
+                  </div>
+                ) : null}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                  <button
                     type="button"
-                    variant="outline"
+                    className="btn btn-ghost"
                     onClick={() =>
                       void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
                     }
                   >
                     Cancel
-                  </Button>
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={formState.isSubmitting}
+                  >
+                    {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+                    Create PO
+                  </button>
                 </div>
-              </form>
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
-    </main>
-  );
-}
-
-function FieldRow(props: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{props.children}</div>;
-}
-
-function Field(props: { label: string; htmlFor: string; required?: boolean; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={props.htmlFor}>
-        {props.label}
-        {props.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </Label>
-      {props.children}
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string }) {
+function Pair(props: { label: string; value: string }): React.JSX.Element {
   return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{props.label}</dt>
-      <dd className="mt-1 font-medium">{props.value}</dd>
+    <div className="form-grp">
+      <span className="form-label">{props.label}</span>
+      <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
   );
 }

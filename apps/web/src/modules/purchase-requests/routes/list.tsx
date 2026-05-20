@@ -1,3 +1,5 @@
+// Purchase Requests list (UI-003-04).
+
 import {
   type ListPurchaseRequestsQuery,
   PR_STATUSES,
@@ -9,18 +11,7 @@ import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tan
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseRequestsList } from '../api';
 import { PrStatusBadge } from '../components/pr-status-badge';
@@ -40,9 +31,10 @@ export const purchaseRequestsListRoute = createRoute({
   component: PurchaseRequestsListPage,
 });
 
-function PurchaseRequestsListPage() {
+function PurchaseRequestsListPage(): React.JSX.Element {
   const search = purchaseRequestsListRoute.useSearch();
   const navigate = purchaseRequestsListRoute.useNavigate();
+  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -54,10 +46,7 @@ function PurchaseRequestsListPage() {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({
-        search: (prev) => ({ ...prev, search: next, page: 1 }),
-        replace: true,
-      });
+      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
@@ -73,17 +62,19 @@ function PurchaseRequestsListPage() {
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   const columns = useMemo<ColumnDef<PurchaseRequestListItem>[]>(
     () => [
       {
-        header: 'Code',
+        header: 'PR No.',
         accessorKey: 'code',
         cell: ({ row }) => (
           <Link
             to="/purchase-requests/$id"
             params={{ id: row.original.id }}
-            className="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="td-code"
+            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           >
             {row.original.code}
           </Link>
@@ -92,12 +83,16 @@ function PurchaseRequestsListPage() {
       {
         header: 'Date',
         accessorKey: 'prDate',
-        cell: ({ row }) => <span className="text-sm">{row.original.prDate}</span>,
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.prDate}
+          </span>
+        ),
       },
       {
         header: 'Vendor',
         cell: ({ row }) => (
-          <span className="text-sm">
+          <span style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
           </span>
         ),
@@ -105,7 +100,7 @@ function PurchaseRequestsListPage() {
       {
         header: 'Item',
         cell: ({ row }) => (
-          <span className="font-mono text-xs">
+          <span className="td-code mono" style={{ fontSize: 11 }}>
             {row.original.itemCode ?? row.original.itemCodeText ?? '—'}
           </span>
         ),
@@ -113,35 +108,38 @@ function PurchaseRequestsListPage() {
       {
         header: 'Operation',
         cell: ({ row }) => (
-          <span className="text-xs uppercase text-muted-foreground">
+          <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
             {row.original.operation ?? '—'}
           </span>
         ),
       },
       {
         header: 'Qty',
-        cell: ({ row }) => <span className="font-mono text-sm">{row.original.qty}</span>,
+        cell: ({ row }) => <span className="td-ctr mono">{row.original.qty}</span>,
       },
       {
         header: 'Source JC',
         cell: ({ row }) =>
           row.original.sourceJcCode ? (
-            <span className="font-mono text-xs">
+            <span className="mono" style={{ fontSize: 11 }}>
               {row.original.sourceJcCode} · op {row.original.sourceJcOpSeq}
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text3">—</span>
           ),
       },
       {
         header: 'PO',
         cell: ({ row }) =>
           row.original.poCode ? (
-            <span className="font-mono text-xs text-green-700 dark:text-green-300">
+            <span
+              className="mono"
+              style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}
+            >
               {row.original.poCode}
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground">—</span>
+            <span className="text3">—</span>
           ),
       },
       {
@@ -164,31 +162,29 @@ function PurchaseRequestsListPage() {
   const currentPage = search.page;
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Purchase Requests</h1>
-            <p className="text-sm text-muted-foreground">
-              Procurement intent — bridges plan / outsource workflows to a PO.
-            </p>
-          </div>
-          <Button asChild>
-            <Link to="/purchase-requests/new">
-              <Plus />
-              New PR
-            </Link>
-          </Button>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Purchase Requests
         </div>
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            className="innovic-input"
             placeholder="Search code, operation, item name…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="md:max-w-sm"
+            style={{ width: 240, fontSize: 12 }}
           />
-          <Select
+          <select
+            className="innovic-select"
             value={search.status ?? ''}
             onChange={(e) => {
               const v = e.target.value as PrStatus | '';
@@ -197,7 +193,7 @@ function PurchaseRequestsListPage() {
                 replace: true,
               });
             }}
-            className="md:max-w-[180px]"
+            style={{ width: 160, fontSize: 12 }}
           >
             <option value="">All statuses</option>
             {PR_STATUSES.map((s) => (
@@ -205,102 +201,121 @@ function PurchaseRequestsListPage() {
                 {s.replaceAll('_', ' ')}
               </option>
             ))}
-          </Select>
+          </select>
           {isFetching && !isLoading ? (
-            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Updating…
+            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-        </div>
-
-        <div className="rounded-md border bg-card">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading purchase requests…
-                  </span>
-                </TableEmpty>
-              ) : isError ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="text-destructive">
-                    {error instanceof Error ? error.message : 'Failed to load purchase requests'}
-                  </span>
-                </TableEmpty>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>
-                  No purchase requests match these filters.
-                </TableEmpty>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            {total === 0
-              ? 'No purchase requests'
-              : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                  replace: true,
-                })
-              }
-            >
-              <ChevronLeft />
-              Prev
-            </Button>
-            <span className="font-medium text-foreground">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                  replace: true,
-                })
-              }
-            >
-              Next
-              <ChevronRight />
-            </Button>
-          </div>
+          {canWrite ? (
+            <Link to="/purchase-requests/new" className="btn btn-primary">
+              <Plus size={14} /> New PR
+            </Link>
+          ) : null}
         </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((header) => (
+                    <th key={header.id}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Loading…
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    className="empty-state"
+                    style={{ color: 'var(--red)' }}
+                  >
+                    {error instanceof Error ? error.message : 'Failed to load purchase requests'}
+                  </td>
+                </tr>
+              ) : table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    No purchase requests
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
+        <span>
+          {total === 0
+            ? 'No purchase requests'
+            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage <= 1}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                replace: true,
+              })
+            }
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+            Page {currentPage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage >= totalPages}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                replace: true,
+              })
+            }
+          >
+            Next <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
