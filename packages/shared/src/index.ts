@@ -47,3 +47,4 @@ export * from './schemas/alert';
 export * from './schemas/bom-master';
 export * from './schemas/route-card';
 export * from './schemas/qc-process';
+export * from './schemas/cost-center';

@@ -26,6 +26,7 @@ import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
 import { operatorsRoutes } from './modules/operators/routes';
 import { purchaseOrdersRoutes } from './modules/purchase-orders/routes';
 import { purchaseRequestsRoutes } from './modules/purchase-requests/routes';
+import { costCentersRoutes } from './modules/cost-centers/routes';
 import { qcDashboardRoutes } from './modules/qc-dashboard/routes';
 import { qcProcessesRoutes } from './modules/qc-processes/routes';
 import { reportsRoutes } from './modules/reports/routes';
@@ -116,6 +117,7 @@ await app.register(alertsRoutes);
 await app.register(bomMasterRoutes);
 await app.register(routeCardRoutes);
 await app.register(qcProcessesRoutes);
+await app.register(costCentersRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

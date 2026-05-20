@@ -74,6 +74,27 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** CC-1..5 (Phase A item 4 of LEGACY_AUDIT.md build plan — Cost Center Master)
+**Title:** Cost Center Master — DB migration + API service + web list / detail / new / edit + sidebar nav
+**Status:** [x] Complete 2026-05-20. Per ADR-028. New table, mirror of legacy `renderCostCenters` L17165.
+
+**Done:**
+
+- **Migration `0023_phase8_cost_centers.sql`** — new `cost_centers` table (code, name, department, type, description, is_active + audit envelope). Unique `(company_id, code)` partial index + active filter index. RLS company_read + manager_write. Applied via `_apply_0023.mjs`.
+- **Drizzle schema** — `costCenters` entry with all 6 business fields + 2 partial indexes + 2 RLS policies.
+- **Shared zod** (`packages/shared/src/schemas/cost-center.ts`) — read shape + create / update / list query schemas + `COST_CENTER_DEPARTMENTS` (9 values) + `COST_CENTER_TYPES` (3 values) exports for the UI dropdowns.
+- **API service** (`apps/api/src/modules/cost-centers/service.ts`) — CRUD + soft-delete. Admin/manager only for writes via `requireWriteRole`. Duplicate-code-in-company surfaces as `ConflictError`. Free-text department + type fields (not enums) so adding a department doesn't need a migration — Zod just enforces max length.
+- **Routes** (`/cost-centers` GET / GET-by-id / POST / PATCH / DELETE). Registered in `server.ts`.
+- **Tests** — **11/11 green** (7 service + 4 routes). Create + duplicate + defaults + getById-not-found + listFilters (search + isActive + department + type) + update + softDelete + 401 + 200 + 201 + 400.
+- **Web module** (`apps/web/src/modules/cost-centers/`) — `api.ts` (5 hooks) + `components/cost-center-form.tsx` (shared create+edit, suggested-code on create like legacy `CC-NNN`) + 4 routes (list / new / detail / edit). Legacy chrome with cyan code links + b-green/b-amber Active/Inactive badge + 3-column filter row (department + type + status) + search.
+- **Router** — 4 routes registered.
+- **Sidebar** — new "Finance" department (`💰`) with "Master → Cost Center Master" link between Tasks & Alerts and Reports.
+- **Quality gates** — api typecheck + web typecheck + lint + build all green.
+
+**Prior:** QCP-1..5 (Phase A item 3 — QC Process Master) — Complete 2026-05-20.
+
+---
+
 **ID:** QCP-1..5 (Phase A item 3 of LEGACY_AUDIT.md build plan — QC Process Master)
 **Title:** QC Process Master — API service + web list / detail / new / edit + sidebar nav
 **Status:** [x] Complete 2026-05-20. Per ADR-016 / ADR-028. Backend table `qc_processes` already existed from T-040c; this ships the missing CRUD service + web pages.

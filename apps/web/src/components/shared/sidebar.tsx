@@ -187,6 +187,18 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
+    key: 'finance',
+    label: 'Finance',
+    modClass: 'finance',
+    icon: '💰',
+    groups: [
+      {
+        label: 'Master',
+        items: [{ to: '/cost-centers', label: 'Cost Center Master', icon: '🏢' }],
+      },
+    ],
+  },
+  {
     key: 'system',
     label: 'Reports',
     modClass: 'system',

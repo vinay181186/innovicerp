@@ -461,6 +461,55 @@ export const qcProcesses = pgTable(
   ],
 ).enableRLS();
 
+// ─── Cost Center Master (CC-1, Phase A item 4) ────────────────────────────
+// Mirror of legacy renderCostCenters L17165. Sales orders already snapshot
+// the code via sales_orders.cost_center (L912) — promoting that to FK is a
+// future migration; this slice ships the master only.
+
+export const costCenters = pgTable(
+  'cost_centers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    department: text('department'),
+    type: text('type'),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('cost_centers_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('cost_centers_company_active_idx')
+      .on(t.companyId, t.isActive)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('cost_centers_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('cost_centers_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 3 tables — Op Entry Chain (T-024b) ─────────────────────────────
 // Per ADR-011 and SCHEMA.md §"Phase 3 Tables".
 // Status columns deliberately absent from job_cards / jc_ops — derived via

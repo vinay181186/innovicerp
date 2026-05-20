@@ -15,6 +15,10 @@ import { qcProcessesListRoute } from './modules/qc-processes/routes/list';
 import { qcProcessDetailRoute } from './modules/qc-processes/routes/detail';
 import { qcProcessNewRoute } from './modules/qc-processes/routes/new';
 import { qcProcessEditRoute } from './modules/qc-processes/routes/edit';
+import { costCentersListRoute } from './modules/cost-centers/routes/list';
+import { costCenterDetailRoute } from './modules/cost-centers/routes/detail';
+import { costCenterNewRoute } from './modules/cost-centers/routes/new';
+import { costCenterEditRoute } from './modules/cost-centers/routes/edit';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -172,6 +176,10 @@ const routeTree = rootRoute.addChildren([
     qcProcessNewRoute,
     qcProcessDetailRoute,
     qcProcessEditRoute,
+    costCentersListRoute,
+    costCenterNewRoute,
+    costCenterDetailRoute,
+    costCenterEditRoute,
   ]),
 ]);
 
