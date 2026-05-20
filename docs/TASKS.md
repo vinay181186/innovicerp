@@ -74,6 +74,25 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** UM-1..3 (Phase A item 5a of LEGACY_AUDIT.md build plan — User Management)
+**Title:** User Management — list + edit (rename / change role / phone / activate / deactivate / soft-delete) + sidebar nav
+**Status:** [x] Complete 2026-05-20. Per ADR-028. Mirror of legacy `renderUsers` L13435 — admin-only. Insert intentionally absent: Supabase Auth owns invites + the post-init trigger seeds the row on auth.users insert.
+
+**Done:**
+
+- **Shared zod** (`packages/shared/src/schemas/user.ts`) — read shape + `updateUserInputSchema` + `listUsersQuerySchema`. No create input.
+- **API service** (`apps/api/src/modules/users/service.ts`) — list / get / update / softDelete. Admin-only via new `requireAdminRole` helper in `lib/auth.ts`. Cross-company access blocked (`existing.companyId !== user.companyId` even though RLS already enforces). Self-demote (`role` becomes anything other than admin) + self-deactivate (`isActive=false`) + self-delete all surface as `ValidationError`.
+- **Routes** (`/users` GET / GET-by-id / PATCH / DELETE). Registered in `server.ts`.
+- **Tests** — **17/17 green** (12 service + 5 routes). Captures viewer's original row in `beforeAll`; restores in `afterAll` (cleanup must be deterministic because we can't delete auth.users rows). Covers: list (with search + role filter), viewer denied 403, getUser-not-found, update (fullName/phone/role with restore), self-demote rejected, self-deactivate rejected, viewer cannot call updateUser, softDelete with restore, self-delete rejected, route 401 / 403 / 200 / 400.
+- **Web module** (`apps/web/src/modules/users/`) — `api.ts` (4 hooks) + `routes/list.tsx` (admin-only with ⛔ banner for non-admin; role badge red/blue/amber/cyan; isActive Active/Inactive badge; search + role + active filters; TanStack Table + URL-state pagination) + `routes/edit.tsx` (form with role/isActive disabled when `me.id === detail.id`; email readonly with help text "Owned by Supabase Auth"; delete-confirm flip hidden on self; submitError + softDelete error inline).
+- **Router** — 2 routes registered.
+- **Sidebar** — new "Admin" group under Reports department with "👥 User Management" link.
+- **Quality gates** — api typecheck + web typecheck + lint + build all green.
+
+**Prior:** CC-1..5 (Phase A item 4 — Cost Center Master) — Complete 2026-05-20.
+
+---
+
 **ID:** CC-1..5 (Phase A item 4 of LEGACY_AUDIT.md build plan — Cost Center Master)
 **Title:** Cost Center Master — DB migration + API service + web list / detail / new / edit + sidebar nav
 **Status:** [x] Complete 2026-05-20. Per ADR-028. New table, mirror of legacy `renderCostCenters` L17165.

@@ -11,6 +11,15 @@ export function requireWriteRole(user: AuthContext): void {
   }
 }
 
+// For admin-only actions (managing users, deactivating accounts, editing
+// company settings). Distinct from requireWriteRole so a manager can edit
+// items / vendors / etc. but cannot promote anyone else to admin.
+export function requireAdminRole(user: AuthContext): void {
+  if (user.role !== 'admin') {
+    throw new AuthorizationError(`Role "${user.role}" cannot perform this action — admin required`);
+  }
+}
+
 // For Op Entry actions (start op, submit completion, stop op). Operators
 // log shop-floor work; managers/admins can override or correct.
 export function requireOpEntryRole(user: AuthContext): void {
