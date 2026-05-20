@@ -1,9 +1,10 @@
+// Item new + edit routes (UI-003-01). Both wrap <ItemForm> in the
+// Innovic panel chrome with a section header + back link.
+
 import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
@@ -20,12 +21,12 @@ export const itemEditRoute = createRoute({
   component: ItemEditPage,
 });
 
-function ItemNewPage() {
+function ItemNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateItem();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const onSubmit = async (values: CreateItemInput) => {
+  const onSubmit = async (values: CreateItemInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
@@ -36,42 +37,40 @@ function ItemNewPage() {
   };
 
   return (
-    <main className="container max-w-3xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/items">
-            <ArrowLeft />
-            Back to items
-          </Link>
-        </Button>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>New item</CardTitle>
-            <CardDescription>Create a master record for a component or assembly.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ItemForm
-              mode="create"
-              onSubmit={onSubmit}
-              submitError={submitError}
-              onCancel={() => void navigate({ to: '/items' })}
-            />
-          </CardContent>
-        </Card>
+    <div>
+      <Link to="/items" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Item Master
+      </Link>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div className="panel-title">+ New Item</div>
+            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              Create a master record for a component or assembly.
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <ItemForm
+            mode="create"
+            onSubmit={onSubmit}
+            submitError={submitError}
+            onCancel={() => void navigate({ to: '/items' })}
+          />
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
-function ItemEditPage() {
+function ItemEditPage(): React.JSX.Element {
   const { id } = itemEditRoute.useParams();
   const navigate = useNavigate();
   const { data: item, isLoading, isError, error } = useItem(id);
   const update = useUpdateItem(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const onSubmit = async (values: UpdateItemInput) => {
+  const onSubmit = async (values: UpdateItemInput): Promise<void> => {
     setSubmitError(null);
     try {
       await update.mutateAsync(values);
@@ -83,64 +82,58 @@ function ItemEditPage() {
 
   if (isLoading) {
     return (
-      <main className="container max-w-3xl py-10">
-        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading item…
-        </div>
-      </main>
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading item…
+      </div>
     );
   }
 
   if (isError || !item) {
     return (
-      <main className="container max-w-3xl py-10">
-        <Card>
-          <CardHeader>
-            <CardTitle>Item not found</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'This item could not be loaded.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline">
-              <Link to="/items">
-                <ArrowLeft />
-                Back to items
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/items" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Item not found'}
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <main className="container max-w-3xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/items/$id" params={{ id }}>
-            <ArrowLeft />
-            Back to item
-          </Link>
-        </Button>
-
-        <Card>
-          <CardHeader>
-            <CardDescription className="font-mono">{item.code}</CardDescription>
-            <CardTitle>Edit item</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ItemForm
-              mode="edit"
-              item={item}
-              onSubmit={onSubmit}
-              submitError={submitError}
-              onCancel={() => void navigate({ to: '/items/$id', params: { id } })}
-            />
-          </CardContent>
-        </Card>
+    <div>
+      <Link to="/items/$id" params={{ id }} className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to item
+      </Link>
+      <div className="panel">
+        <div className="panel-hdr">
+          <div>
+            <div
+              className="td-code"
+              style={{ color: 'var(--purple)', fontSize: 14, fontWeight: 700 }}
+            >
+              {item.code}
+            </div>
+            <div className="panel-title" style={{ marginTop: 2 }}>
+              Edit Item
+            </div>
+          </div>
+        </div>
+        <div className="panel-body">
+          <ItemForm
+            mode="edit"
+            item={item}
+            onSubmit={onSubmit}
+            submitError={submitError}
+            onCancel={() => void navigate({ to: '/items/$id', params: { id } })}
+          />
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
