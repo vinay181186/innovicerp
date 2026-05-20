@@ -6,17 +6,18 @@ import { Link } from '@tanstack/react-router';
  *  "JW-001 ▸ line 1 / FLANGE-75" → links to /job-work-orders/:id
  *  Renders an em-dash when there's no link (source-less JCs are valid per
  *  ADR-012 #4 CHECK num_nonnulls(...) <= 1). */
-export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }) {
+export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }): React.JSX.Element {
   const { sourceLink } = props;
   if (!sourceLink) {
-    return <span className="text-muted-foreground">—</span>;
+    return <span className="text3">—</span>;
   }
   if (sourceLink.type === 'so') {
     return (
       <Link
         to="/sales-orders/$id"
         params={{ id: sourceLink.salesOrderId }}
-        className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+        className="mono"
+        style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 11 }}
         onClick={(e) => e.stopPropagation()}
       >
         {sourceLink.code} ▸ line {sourceLink.lineNo}
@@ -28,7 +29,8 @@ export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }) {
     <Link
       to="/job-work-orders/$id"
       params={{ id: sourceLink.jobWorkOrderId }}
-      className="font-mono text-xs text-primary underline-offset-4 hover:underline"
+      className="mono"
+      style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 11 }}
       onClick={(e) => e.stopPropagation()}
     >
       {sourceLink.code} ▸ line {sourceLink.lineNo}

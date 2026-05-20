@@ -1,3 +1,5 @@
+// Job cards list (UI-003-07) — read-only.
+
 import {
   JC_COMPUTED_STATUSES,
   type JcComputedStatus,
@@ -9,18 +11,6 @@ import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tan
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -53,7 +43,7 @@ export const jobCardsListRoute = createRoute({
   component: JobCardsListPage,
 });
 
-function JobCardsListPage() {
+function JobCardsListPage(): React.JSX.Element {
   const search = jobCardsListRoute.useSearch();
   const navigate = jobCardsListRoute.useNavigate();
 
@@ -112,7 +102,8 @@ function JobCardsListPage() {
           <Link
             to="/op-entry"
             search={{ jc: row.original.code }}
-            className="font-mono text-sm font-medium text-primary underline-offset-4 hover:underline"
+            className="td-code"
+            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
             title="Open in Op Entry"
           >
             {row.original.code}
@@ -122,22 +113,30 @@ function JobCardsListPage() {
       {
         header: 'Date',
         accessorKey: 'jcDate',
-        cell: ({ row }) => <span className="text-sm">{row.original.jcDate}</span>,
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.jcDate}
+          </span>
+        ),
       },
       {
         header: 'Item',
         cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.itemCode}
+          <span style={{ fontSize: 11 }}>
+            <span className="mono">{row.original.itemCode}</span>
             {row.original.itemName ? (
-              <span className="ml-1 text-muted-foreground">— {row.original.itemName}</span>
+              <span className="text3" style={{ marginLeft: 6 }}>
+                — {row.original.itemName}
+              </span>
             ) : null}
           </span>
         ),
       },
       {
         header: 'Customer',
-        cell: ({ row }) => <span className="text-sm">{row.original.customerName ?? '—'}</span>,
+        cell: ({ row }) => (
+          <span style={{ fontSize: 11 }}>{row.original.customerName ?? '—'}</span>
+        ),
       },
       {
         header: 'Source',
@@ -145,37 +144,49 @@ function JobCardsListPage() {
       },
       {
         header: 'Qty',
-        cell: ({ row }) => <span className="font-mono text-sm">{row.original.orderQty}</span>,
+        cell: ({ row }) => (
+          <span className="td-ctr mono fw-700">{row.original.orderQty}</span>
+        ),
       },
       {
         header: 'Ops',
         cell: ({ row }) => {
           const r = row.original;
-          const cls =
+          const color =
             r.totalOps > 0 && r.doneOps >= r.totalOps
-              ? 'text-green-600'
+              ? 'var(--green2)'
               : r.doneOps > 0
-                ? 'text-amber-600'
-                : 'text-muted-foreground';
+                ? 'var(--amber2)'
+                : 'var(--text3)';
           return (
-            <span className={`font-mono text-sm ${cls}`}>
+            <span className="td-ctr mono" style={{ color }}>
               {r.doneOps}
-              <span className="text-xs text-muted-foreground"> /{r.totalOps}</span>
+              <span className="text3" style={{ marginLeft: 2 }}>
+                /{r.totalOps}
+              </span>
             </span>
           );
         },
       },
       {
         header: 'Due',
-        cell: ({ row }) => <span className="text-sm">{row.original.dueDate ?? '—'}</span>,
+        cell: ({ row }) => (
+          <span className="text2" style={{ fontSize: 11 }}>
+            {row.original.dueDate ?? '—'}
+          </span>
+        ),
       },
       {
         header: 'Priority',
         cell: ({ row }) => (
           <span
-            className={`text-xs font-medium uppercase ${
-              row.original.priority === 'high' ? 'text-red-600' : 'text-muted-foreground'
-            }`}
+            className="mono"
+            style={{
+              fontSize: 11,
+              textTransform: 'uppercase',
+              color: row.original.priority === 'high' ? 'var(--red2)' : 'var(--text3)',
+              fontWeight: row.original.priority === 'high' ? 700 : 400,
+            }}
           >
             {row.original.priority}
           </span>
@@ -203,7 +214,7 @@ function JobCardsListPage() {
     update: Partial<
       Pick<typeof search, 'status' | 'machineId' | 'operatorId' | 'fromDate' | 'toDate'>
     >,
-  ) => {
+  ): void => {
     void navigate({
       search: (prev) => ({ ...prev, ...update, page: 1 }),
       replace: true,
@@ -211,172 +222,217 @@ function JobCardsListPage() {
   };
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Job cards</h1>
-            <p className="text-sm text-muted-foreground">
-              Production batches with computed status, ops progress, and source SO/JW link. Click a
-              code to open in Op Entry.
-            </p>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            Job Cards
+          </div>
+          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            Production batches with computed status, ops progress, and source SO/JW link. Click a
+            code to open in Op Entry.
           </div>
         </div>
-
-        {/* Filter row 1: search + status + priority indicator */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <Input
-            placeholder="Search code, item, customer, SO/JW…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="md:max-w-sm"
-          />
-          <Select
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as JcComputedStatus | '';
-              setNav({ status: v === '' ? undefined : v });
-            }}
-            className="md:max-w-[180px]"
-          >
-            <option value="">All statuses</option>
-            {JC_COMPUTED_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </Select>
-          {isFetching && !isLoading ? (
-            <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Updating…
-            </span>
-          ) : null}
-        </div>
-
-        {/* Filter row 2: machine + operator + date range */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <Select
-            value={search.machineId ?? ''}
-            onChange={(e) => setNav({ machineId: e.target.value || undefined })}
-          >
-            <option value="">All machines</option>
-            {machines.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.code} — {m.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={search.operatorId ?? ''}
-            onChange={(e) => setNav({ operatorId: e.target.value || undefined })}
-          >
-            <option value="">All operators</option>
-            {operators.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.code} — {o.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            type="date"
-            value={search.fromDate ?? ''}
-            onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
-            placeholder="From date"
-          />
-          <Input
-            type="date"
-            value={search.toDate ?? ''}
-            onChange={(e) => setNav({ toDate: e.target.value || undefined })}
-            placeholder="To date"
-          />
-        </div>
-
-        <div className="rounded-md border bg-card">
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading job cards…
-                  </span>
-                </TableEmpty>
-              ) : isError ? (
-                <TableEmpty colSpan={columns.length}>
-                  <span className="text-destructive">
-                    {error instanceof Error ? error.message : 'Failed to load job cards'}
-                  </span>
-                </TableEmpty>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <TableEmpty colSpan={columns.length}>No job cards match these filters.</TableEmpty>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            {total === 0
-              ? 'No job cards'
-              : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+        {isFetching && !isLoading ? (
+          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
           </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                  replace: true,
-                })
-              }
+        ) : null}
+      </div>
+
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel-body" style={{ padding: '10px 14px' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              alignItems: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <input
+              className="innovic-input"
+              placeholder="Search code, item, customer, SO/JW…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 280, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as JcComputedStatus | '';
+                setNav({ status: v === '' ? undefined : v });
+              }}
+              style={{ width: 180, fontSize: 12 }}
             >
-              <ChevronLeft />
-              Prev
-            </Button>
-            <span className="font-medium text-foreground">
-              Page {currentPage} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages}
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                  replace: true,
-                })
-              }
+              <option value="">All statuses</option>
+              {JC_COMPUTED_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 8,
+            }}
+          >
+            <select
+              className="innovic-select"
+              value={search.machineId ?? ''}
+              onChange={(e) => setNav({ machineId: e.target.value || undefined })}
+              style={{ fontSize: 12 }}
             >
-              Next
-              <ChevronRight />
-            </Button>
+              <option value="">All machines</option>
+              {machines.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.code} — {m.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="innovic-select"
+              value={search.operatorId ?? ''}
+              onChange={(e) => setNav({ operatorId: e.target.value || undefined })}
+              style={{ fontSize: 12 }}
+            >
+              <option value="">All operators</option>
+              {operators.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.code} — {o.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              className="innovic-input"
+              value={search.fromDate ?? ''}
+              onChange={(e) => setNav({ fromDate: e.target.value || undefined })}
+              placeholder="From date"
+              style={{ fontSize: 12 }}
+            />
+            <input
+              type="date"
+              className="innovic-input"
+              value={search.toDate ?? ''}
+              onChange={(e) => setNav({ toDate: e.target.value || undefined })}
+              placeholder="To date"
+              style={{ fontSize: 12 }}
+            />
           </div>
         </div>
       </div>
-    </main>
+
+      <div className="panel">
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((header) => (
+                    <th key={header.id}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Loading job cards…
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>
+                    {error instanceof Error ? error.message : 'Failed to load job cards'}
+                  </td>
+                </tr>
+              ) : table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="empty-state">
+                    No job cards match these filters.
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
+        <span>
+          {total === 0
+            ? 'No job cards'
+            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+        </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage <= 1}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                replace: true,
+              })
+            }
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px', color: 'var(--text)' }}>
+            Page {currentPage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={currentPage >= totalPages}
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                replace: true,
+              })
+            }
+          >
+            Next <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
