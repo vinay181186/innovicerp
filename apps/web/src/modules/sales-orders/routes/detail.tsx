@@ -2,7 +2,7 @@
 
 import type { SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
+import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -82,6 +82,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <Link
+              to="/sales-orders/$id/status"
+              params={{ id: detail.id }}
+              className="btn btn-ghost btn-sm"
+              title="Open SO Status Review"
+            >
+              <Activity size={13} /> Status
+            </Link>
             {canEdit ? (
               <Link
                 to="/sales-orders/$id/edit"

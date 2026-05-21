@@ -79,6 +79,7 @@ import {
 import { salesOrdersListRoute } from './modules/sales-orders/routes/list';
 import { salesOrderDetailRoute } from './modules/sales-orders/routes/detail';
 import { salesOrderEditRoute, salesOrderNewRoute } from './modules/sales-orders/routes/edit';
+import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -120,6 +121,7 @@ const routeTree = rootRoute.addChildren([
     salesOrderNewRoute,
     salesOrderDetailRoute,
     salesOrderEditRoute,
+    soStatusDetailRoute,
     jobWorkOrdersListRoute,
     jobWorkOrderNewRoute,
     jobWorkOrderDetailRoute,

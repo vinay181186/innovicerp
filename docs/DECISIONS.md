@@ -1259,6 +1259,89 @@ Phase 1 reserved `route_cards`, `route_card_ops`, `route_card_revisions` tables 
 
 ---
 
+## ADR-030: Planning module schema — `plans` per (SO line × BOM child), separate `assembly_units` + `assembly_tracking`
+
+**Date:** 2026-05-21
+**Status:** Accepted
+
+### Context
+
+Phase B of ADR-028 ships the Planning module: 5 React screens that mirror legacy `renderPlanDashboard` (L9994), `renderSOPlanning` (L9299), `renderSOOverview` (L9112), `renderSOStatus` (L4255), `renderAssemblyTracker` (L28738). Two of the five screens are pure-read over data we already have (SO Status, SO Overview). The other three need new schema:
+
+1. **`plans`** — the planning record itself. Legacy stores in `db.plans` as a Firestore JSON blob with a wide, sparse field set whose meaning depends on `planType`.
+2. **`assembly_units`** — one row per assembled equipment unit (serial number, assembly date, assembledBy, dispatched flag/date). Legacy `db.assemblyUnits`.
+3. **`assembly_tracking`** — manual component-readiness overrides per (SO, BOM child). Legacy `db.assemblyTracking`.
+
+Three architectural questions surfaced before any DDL was written:
+
+1. **Plan grain:** is a plan per SO line, per item-instance, or per BOM child? Legacy stores `soRefId` (SO LINE id, not header) + `bomParentCode` + `bomChildCode`; an Equipment SO with a 5-child BOM produces 6 plans (5 children + 1 assembly), a Component SO line produces 1.
+2. **Plan-type fan-out:** four plan types (`manufacture`, `direct_purchase`, `full_outsource`, `assembly`) write disjoint field sets — DP fills `dp_*`, FO fills `fo_*`, manufacture fills `ops[]` + `jc_no`. Single wide nullable table vs polymorphic split?
+3. **State machine:** transitions are `In Planning → Planned → (JC Created | PR Created) → In Production → Complete`, plus `Cancelled` as a soft terminal. Legacy enforces guards in JS only — once the plan ≥ `JC Created` / `PR Created` the form is locked. Where do we enforce in our stack?
+
+### Decision
+
+1. **One `plans` table, per (SO line × BOM child).** Single fact row keyed by `(so_line_id, bom_parent_code, bom_child_code)`. Wide nullable shape mirrors legacy — DP / FO / manufacture / assembly fields all co-exist as nullable columns. Identification of "which kind of plan" is via `plan_type` enum; service-layer Zod refines enforce the conditional field requirements per type. Rejected polymorphic split (separate `direct_purchase_plans` / `outsource_plans` / `manufacture_plans`) because: (a) cross-type listings on the dashboard get expensive (UNION across 4 tables), (b) plan-type can change while still "In Planning" without paying a row-move cost, (c) legacy's wide shape is what every downstream report reads against.
+
+2. **Two new enums:** `plan_status` ∈ {`in_planning`, `planned`, `jc_created`, `pr_created`, `in_production`, `complete`, `cancelled`}, `plan_type` ∈ {`manufacture`, `direct_purchase`, `full_outsource`, `assembly`}. Lowercase snake_case (matches our existing op-type / store-tx-type convention; legacy values stored as Title Case strings are normalised on import).
+
+3. **State machine enforced at three layers** (matches ADR-005 RLS pattern):
+   - **DB CHECK** on the `(plan_type, plan_status)` combinations that are legal (e.g. `plan_status='jc_created' → plan_type IN ('manufacture','assembly')`).
+   - **DB CHECK** that linked FK columns are set when status demands it (`status='jc_created' → jc_id IS NOT NULL`, `status='pr_created' → (dp_pr_id OR fo_pr_id) IS NOT NULL`).
+   - **Service-layer transition guards** in `apps/api/src/modules/plans/service.ts` — only `planned → execute()` is a public mutation; all forward transitions happen inside `executePlan()` in one transaction with the JC / PR creation.
+   - **RLS policy** restricts updates to status ∈ `('in_planning','planned')` for non-admin roles; admin can reopen via explicit override action.
+
+4. **Live FKs + free-text fallback per ADR-012 #10** for vendor refs (`dp_vendor_id` + `dp_vendor_code_text`, `fo_vendor_id` + `fo_vendor_code_text`, etc). Same pattern as route_cards OSP fields (ADR-029).
+
+5. **`plans.ops` lives in `plan_ops` child table** (not a JSONB column) — manufacture/assembly plans have an array of operations matching `route_card_ops` shape. Promoting to a child table avoids the legacy JSON-blob anti-pattern (CLAUDE.md §12 #1) and makes per-op outsource PR linking (`plan_ops.outsource_pr_id`) trivial.
+
+6. **`assembly_units`** as a fact table keyed by `(so_id, unit_no)` unique. Includes a `deductions` JSONB column for per-child stock deductions captured at assembly time (this is intentionally JSONB — it's a snapshot of point-in-time stock movement, not a transactional source of truth; the actual stock writes go through `store_transactions` in the same tx). Dispatched flag + date columns.
+
+7. **`assembly_tracking`** as an override table with unique `(so_id, child_item_code)`. Single `ready_qty_override` numeric column + audit envelope. Per-row not per-unit because the legacy semantics are "I declare 50 of this part are ready," not per-unit allocation.
+
+### Alternatives Considered
+
+- **Per-SO plan grain (one plan row per SO line, BOM children stored as JSONB array of `child_plans`)** — rejected: re-introduces the legacy JSON-blob anti-pattern. Status queries ("show me all `jc_created` plans for child item X") become `WHERE child_plans @> '[{"itemCode":"X","status":"jc_created"}]'` which is unindexable. Also breaks the per-child JC link, which is 1:1 with a row in legacy.
+- **Polymorphic split (4 tables, one per plan_type)** — rejected per Decision #1 rationale.
+- **No DB CHECK on (type, status) combinations — service layer only** — rejected: this is a closed enum + a small finite state machine. CHECK constraints are the right place; service-layer guards catch the friendly-error path, CHECK catches anything that slips through (direct SQL fixes, future bug).
+- **`plans.ops` as JSONB column** — rejected per CLAUDE.md §12 #1 and per ADR-013 (jc_ops promoted to a child table for the same reason).
+- **Status enum as TEXT with a CHECK list** — rejected: Postgres ENUM gives index-friendly storage + compiler-checked typing in Drizzle, same pattern as `op_type`, `store_tx_type`.
+
+### Consequences
+
+- **Positive:**
+  - Wide nullable `plans` table is dead-simple to query for cross-type listings (dashboard KPIs become a single GROUP BY without UNIONs).
+  - Per (SO line × BOM child) grain matches legacy exactly — Phase 2 migration import becomes a 1:1 mapping with no shape transform.
+  - State machine guarded at 3 layers (DB CHECK + service-layer + RLS) prevents both code bugs and direct-SQL accidents from corrupting plan status.
+  - `plan_ops` child table enables proper outsource PR linking per op (legacy stores `outsourcePRNos` as a parallel array on `plans` — the new structure gives us a real FK).
+- **Negative:**
+  - Wide table has ~30 columns, many always-null for any given row. Cost: ~24 bytes per null bitmap + a longer migration. Acceptable.
+  - Plan-type fan-out logic lives in two places (DB CHECK + service refine). Drift risk if one is updated and not the other. Mitigation: every plan-type change ships in both places in the same migration + commit.
+- **Risks:**
+  - **`(plan_type, plan_status)` CHECK is brittle** — adding a new plan_type means dropping + recreating the CHECK. Acceptable; the set is closed and changes are rare.
+  - **`assembly_units.deductions` JSONB drift** — point-in-time snapshot may diverge from `store_transactions` if a later correction is made. Mitigation: deductions is read-only metadata for the assembly UI; the source of truth for stock IS store_transactions.
+
+### What ships in this ADR
+
+- **Architectural decision only.** No DDL, no code. Defines the shape for PL-3 (`plans` table) and PL-5 (`assembly_units` + `assembly_tracking`) when those slices are built.
+
+### What ships per sub-task
+
+- **PL-1 — SO Status Review:** No new schema. Reads existing tables. Ports legacy `calcEngine()` aggregator to `apps/api/src/lib/calc-engine.ts`.
+- **PL-2 — SO Overview:** No new schema. Reuses PL-1's calc-engine. Adds stage/status derivation helper.
+- **PL-3 — Planning Dashboard:** Migration `0024_phase8_plans.sql` — `plans` + `plan_ops` + 2 enums + (type, status) CHECK + status-guarded RLS + indexes. Service + routes + tests. Dashboard UI.
+- **PL-4 — SO/JW Planning:** No new schema. Plan create/edit + execute flow. Reuses PL-3 tables.
+- **PL-5 — Assembly Tracker:** Migration `0025_phase8_assembly_units.sql` — `assembly_units` + `assembly_tracking` + indexes + RLS. Service + routes + tests. Tracker UI with multi-level BOM readiness rollup.
+
+### Build sequence
+
+1. PL-1 (SO Status Review) — proves calc-engine port.
+2. PL-2 (SO Overview) — reuses calc-engine; pure read.
+3. PL-3 (Planning Dashboard) — introduces `plans` + `plan_ops`.
+4. PL-4 (SO/JW Planning) — depends on PL-3.
+5. PL-5 (Assembly Tracker) — depends on PL-3 + PL-4; introduces `assembly_units` + `assembly_tracking`.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
