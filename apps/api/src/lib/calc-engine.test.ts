@@ -2,7 +2,13 @@
 
 import { describe, expect, it } from 'vitest';
 import type { jcOps, jobCards, opLog } from '../db/schema';
-import { enrichOps, rollupJC, rollupSoLine } from './calc-engine';
+import {
+  derivePerLineStage,
+  deriveOverallSoStatus,
+  enrichOps,
+  rollupJC,
+  rollupSoLine,
+} from './calc-engine';
 
 type JcRow = typeof jobCards.$inferSelect;
 type JcOpRow = typeof jcOps.$inferSelect;
@@ -330,5 +336,181 @@ describe('rollupSoLine', () => {
     expect(rollup.lineStatus).toBe('in_progress');
     expect(rollup.doneQty).toBe(10);
     expect(rollup.completionPct).toBe(20);
+  });
+});
+
+describe('derivePerLineStage', () => {
+  it('no JCs → not_released', () => {
+    expect(derivePerLineStage([])).toBe('not_released');
+  });
+
+  it('explicit hold flag overrides everything', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1 })];
+    const logs1 = [log('o1', 'complete', 30)];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, logs1, new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1], { hold: true })).toBe('hold');
+  });
+
+  it('all JCs complete → finished', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1 })];
+    const logs1 = [log('o1', 'complete', 30)];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, logs1, new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('finished');
+  });
+
+  it('any op qc_pending → quality_check', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1, qcRequired: true })];
+    const logs1 = [log('o1', 'complete', 30)];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, logs1, new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('quality_check');
+  });
+
+  it('outsource op at_vendor → outsourced', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'sent' })];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, [], new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('outsourced');
+  });
+
+  it('outsource pr_raised → outsourced (pre-vendor states count)', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus: 'pr_raised' })];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, [], new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('outsourced');
+  });
+
+  it('production in progress → in_production', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1 })];
+    const logs1 = [log('o1', 'complete', 10)];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, logs1, new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('in_production');
+  });
+
+  it('JC linked but no progress yet → not_released', () => {
+    const ops1 = [op({ id: 'o1', opSeq: 1 })];
+    const enriched1 = enrichOps(jc({ orderQty: 30 }), ops1, [], new Set());
+    const r1 = rollupJC(jc({ orderQty: 30 }), enriched1);
+    expect(derivePerLineStage([r1])).toBe('not_released');
+  });
+});
+
+describe('deriveOverallSoStatus', () => {
+  it('any hold → blocked', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 0,
+        totalRequiredQty: 100,
+        holdCount: 1,
+        finishedCount: 0,
+        delayedCount: 0,
+        lineCount: 2,
+        dueDate: '2026-06-01',
+      }),
+    ).toBe('blocked');
+  });
+
+  it('all lines finished → completed', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 100,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 3,
+        delayedCount: 0,
+        lineCount: 3,
+        dueDate: '2026-06-01',
+      }),
+    ).toBe('completed');
+  });
+
+  it('completed beats delayed (finished count short-circuits before delayed check)', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 100,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 2,
+        delayedCount: 1,
+        lineCount: 2,
+        dueDate: '2025-01-01',
+      }),
+    ).toBe('completed');
+  });
+
+  it('delayed when any line past due', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 10,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: 1,
+        lineCount: 2,
+        dueDate: '2025-01-01',
+      }),
+    ).toBe('delayed');
+  });
+
+  it('on_track when in progress + due date in future', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 20,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: 0,
+        lineCount: 2,
+        dueDate: '2099-12-31',
+        today: '2026-05-21',
+      }),
+    ).toBe('on_track');
+  });
+
+  it('in_progress when in progress + due date past (and not delayed)', () => {
+    // delayedCount=0 but dueDate < today → still in_progress, not on_track
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 20,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: 0,
+        lineCount: 2,
+        dueDate: '2020-01-01',
+        today: '2026-05-21',
+      }),
+    ).toBe('in_progress');
+  });
+
+  it('not_started when no progress yet', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 0,
+        totalRequiredQty: 100,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: 0,
+        lineCount: 2,
+        dueDate: '2099-12-31',
+      }),
+    ).toBe('not_started');
+  });
+
+  it('zero lines → not_started (defensive against empty SOs)', () => {
+    expect(
+      deriveOverallSoStatus({
+        totalDoneQty: 0,
+        totalRequiredQty: 0,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: 0,
+        lineCount: 0,
+        dueDate: null,
+      }),
+    ).toBe('not_started');
   });
 });

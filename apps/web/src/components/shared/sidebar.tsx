@@ -72,6 +72,10 @@ const SECTIONS: readonly NavSection[] = [
         ],
       },
       {
+        label: 'Reports',
+        items: [{ to: '/so-overview', label: 'SO Overview', icon: '📊' }],
+      },
+      {
         label: 'Master',
         items: [{ to: '/clients', label: 'Client Master', icon: '🏢' }],
       },

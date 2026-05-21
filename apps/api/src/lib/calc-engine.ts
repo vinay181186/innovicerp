@@ -265,6 +265,100 @@ export function rollupJC(jc: JcRow, ops: EnrichedOp[]): JCRollup {
   };
 }
 
+/** Per-line stage label — what production stage the line is in.
+ *  Six values mirror legacy renderSOOverview stage labels. Used by PL-2. */
+export type LineStage =
+  | 'not_released'
+  | 'in_production'
+  | 'outsourced'
+  | 'quality_check'
+  | 'finished'
+  | 'hold';
+
+/** Overall SO status — distinct from per-line status; aggregates across all
+ *  lines and folds in due-date awareness. Mirrors legacy _deriveSOSummaries
+ *  decision tree at HTML L9081-9082. */
+export type SoOverallStatus =
+  | 'not_started'
+  | 'in_progress'
+  | 'on_track'
+  | 'delayed'
+  | 'completed'
+  | 'blocked';
+
+/** Derive the 6-state stage label for one line from its JC rollups + ops.
+ *  Order of checks matches legacy _deriveBOMItemRow:
+ *    hold > finished > quality_check > outsourced > in_production > not_released
+ */
+export function derivePerLineStage(
+  jcRollups: JCRollup[],
+  opts: { hold?: boolean } = {},
+): LineStage {
+  if (opts.hold) return 'hold';
+  if (jcRollups.length === 0) return 'not_released';
+
+  const allOps = jcRollups.flatMap((j) => j.ops);
+  const allComplete = jcRollups.every((j) => j.status === 'complete');
+  if (allComplete) return 'finished';
+
+  const anyQcPending = allOps.some((op) => op.status === 'qc_pending');
+  if (anyQcPending) return 'quality_check';
+
+  const anyAtVendor = allOps.some(
+    (op) =>
+      op.status === 'outsource_at_vendor' ||
+      op.status === 'outsource_po_created' ||
+      op.status === 'outsource_pr_raised',
+  );
+  if (anyAtVendor) return 'outsourced';
+
+  const anyInProgress = allOps.some(
+    (op) =>
+      op.status === 'running' || op.status === 'in_progress' || op.completed > 0,
+  );
+  if (anyInProgress) return 'in_production';
+
+  return 'not_released';
+}
+
+interface OverallStatusInput {
+  /** Total qty done across all lines of the SO. */
+  totalDoneQty: number;
+  /** Total qty required across all lines of the SO. */
+  totalRequiredQty: number;
+  /** Count of lines in 'hold' stage. */
+  holdCount: number;
+  /** Count of lines in 'finished' stage. */
+  finishedCount: number;
+  /** Count of lines whose due_date is in the past AND not yet finished. */
+  delayedCount: number;
+  /** Number of lines on the SO. */
+  lineCount: number;
+  /** SO due date (header-level). null acceptable. ISO date string. */
+  dueDate: string | null;
+  /** Caller-provided "today" for testability. Defaults to runtime now. */
+  today?: string;
+}
+
+/** Derive the 6-state overall SO status. Mirrors legacy decision tree:
+ *  blocked > completed > delayed > on_track (in_progress + on schedule)
+ *           > in_progress > not_started
+ */
+export function deriveOverallSoStatus(input: OverallStatusInput): SoOverallStatus {
+  if (input.holdCount > 0) return 'blocked';
+  if (input.lineCount > 0 && input.finishedCount === input.lineCount) return 'completed';
+  if (input.delayedCount > 0) return 'delayed';
+
+  if (input.totalDoneQty > 0) {
+    // On track only if header due-date hasn't passed yet
+    const today = input.today ?? new Date().toISOString().slice(0, 10);
+    if (input.dueDate && input.dueDate >= today) return 'on_track';
+    return 'in_progress';
+  }
+
+  return 'not_started';
+}
+
 /** Aggregate JC rollups into per-SO-line metrics — used by PL-1 + PL-2. */
 export interface SoLineRollup {
   soLineId: string;
