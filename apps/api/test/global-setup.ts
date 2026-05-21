@@ -53,6 +53,8 @@ export default async function setup(): Promise<void> {
     await sql`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%'`;
     await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%'`;
+    // plans CASCADE-delete their plan_ops via FK ON DELETE CASCADE.
+    await sql`DELETE FROM public.plans WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.sales_orders WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.job_work_orders WHERE code LIKE 'T%-%'`;
     // job_cards CASCADE-deletes its jc_ops, op_log, running_ops (per

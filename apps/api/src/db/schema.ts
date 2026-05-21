@@ -11,6 +11,8 @@ import {
   OP_LOG_TYPES,
   OP_TYPES,
   OUTSOURCE_STATUSES,
+  PLAN_STATUSES,
+  PLAN_TYPES,
   PO_STATUSES,
   PO_TYPES,
   PR_STATUSES,
@@ -77,6 +79,10 @@ export const dcStatusEnum = pgEnum('dc_status', DC_STATUSES);
 // ─── Phase 8 BOM Master enums (BOM-1) ─────────────────────────────────────
 export const bomStatusEnum = pgEnum('bom_status', BOM_STATUSES);
 export const bomLineTypeEnum = pgEnum('bom_line_type', BOM_LINE_TYPES);
+
+// ─── Phase B Planning enums (PL-3) ───────────────────────────────────────
+export const planStatusEnum = pgEnum('plan_status', PLAN_STATUSES);
+export const planTypeEnum = pgEnum('plan_type', PLAN_TYPES);
 
 export const companies = pgTable(
   'companies',
@@ -2284,6 +2290,183 @@ export const activityLog = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase B Planning module (PL-3) ──────────────────────────────────────
+// Per ADR-030. Wide nullable shape — DP / FO / manufacture / assembly type
+// columns coexist; service-layer Zod refines enforce which are required per
+// plan_type. DB CHECK constraints (defined in 0024_phase8_plans.sql) lock
+// down (type, status) legal combinations + status→FK requirements.
+
+export const plans = pgTable(
+  'plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    planDate: date('plan_date').notNull(),
+    planStatus: planStatusEnum('plan_status').notNull().default('in_planning'),
+    planType: planTypeEnum('plan_type').notNull(),
+
+    // SO/JW source link
+    soLineId: uuid('so_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    soCodeText: text('so_code_text'),
+    lineNo: integer('line_no'),
+
+    // Item under plan
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemNameText: text('item_name_text'),
+
+    orderQty: integer('order_qty').notNull(),
+    planQty: integer('plan_qty').notNull(),
+
+    plannedStartDate: date('planned_start_date'),
+    plannedEndDate: date('planned_end_date'),
+
+    bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
+      onDelete: 'set null',
+    }),
+    bomParentCode: text('bom_parent_code'),
+    bomChildCode: text('bom_child_code'),
+
+    jcId: uuid('jc_id').references(() => jobCards.id, { onDelete: 'set null' }),
+
+    dpVendorId: uuid('dp_vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+    dpVendorCodeText: text('dp_vendor_code_text'),
+    dpCost: numeric('dp_cost', { precision: 12, scale: 2 }),
+    dpRemarks: text('dp_remarks'),
+    dpPrId: uuid('dp_pr_id').references(() => purchaseRequests.id, { onDelete: 'set null' }),
+
+    foVendorId: uuid('fo_vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+    foVendorCodeText: text('fo_vendor_code_text'),
+    foProcess: text('fo_process'),
+    foRate: numeric('fo_rate', { precision: 12, scale: 2 }),
+    foMaterialSrc: text('fo_material_src'),
+    foDeliveryDate: date('fo_delivery_date'),
+    foCostCenter: text('fo_cost_center'),
+    foRemarks: text('fo_remarks'),
+    foPrId: uuid('fo_pr_id').references(() => purchaseRequests.id, { onDelete: 'set null' }),
+    foMatPrId: uuid('fo_mat_pr_id').references(() => purchaseRequests.id, {
+      onDelete: 'set null',
+    }),
+
+    materialPrId: uuid('material_pr_id').references(() => purchaseRequests.id, {
+      onDelete: 'set null',
+    }),
+
+    remarks: text('remarks'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('plans_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('plans_company_status_idx')
+      .on(t.companyId, t.planStatus)
+      .where(sql`${t.deletedAt} is null`),
+    index('plans_so_line_idx')
+      .on(t.soLineId)
+      .where(sql`${t.soLineId} is not null`),
+    index('plans_jc_id_idx')
+      .on(t.jcId)
+      .where(sql`${t.jcId} is not null`),
+    index('plans_item_idx')
+      .on(t.itemId)
+      .where(sql`${t.itemId} is not null AND ${t.deletedAt} is null`),
+    index('plans_company_date_idx')
+      .on(t.companyId, t.planDate)
+      .where(sql`${t.deletedAt} is null`),
+    check('plans_order_qty_positive', sql`${t.orderQty} > 0`),
+    check('plans_plan_qty_positive', sql`${t.planQty} > 0`),
+    // (type, status) + status→FK CHECKs live in 0024_phase8_plans.sql.
+    pgPolicy('plans_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('plans_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const planOps = pgTable(
+  'plan_ops',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id, { onDelete: 'cascade' }),
+    opSeq: integer('op_seq').notNull(),
+    machineId: uuid('machine_id').references(() => machines.id),
+    machineCodeText: text('machine_code_text'),
+    operation: text('operation').notNull(),
+    opType: opTypeEnum('op_type').notNull().default('process'),
+    cycleTimeMin: numeric('cycle_time_min', { precision: 10, scale: 2 }).notNull().default('0'),
+    program: text('program'),
+    toolDetails: text('tool_details'),
+    qcRequired: boolean('qc_required').notNull().default(false),
+    outsourceVendorId: uuid('outsource_vendor_id').references(() => vendors.id, {
+      onDelete: 'set null',
+    }),
+    outsourceVendorText: text('outsource_vendor_text'),
+    outsourceCost: numeric('outsource_cost', { precision: 12, scale: 2 }).notNull().default('0'),
+    outsourcePrId: uuid('outsource_pr_id').references(() => purchaseRequests.id, {
+      onDelete: 'set null',
+    }),
+    outsourceLeadDays: integer('outsource_lead_days'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('plan_ops_plan_seq_uniq')
+      .on(t.planId, t.opSeq)
+      .where(sql`${t.deletedAt} is null`),
+    index('plan_ops_machine_idx')
+      .on(t.machineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('plan_ops_outsource_pr_idx')
+      .on(t.outsourcePrId)
+      .where(sql`${t.outsourcePrId} is not null`),
+    pgPolicy('plan_ops_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('plan_ops_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -2348,3 +2531,7 @@ export type AlertDelivery = typeof alertDeliveries.$inferSelect;
 export type NewAlertDelivery = typeof alertDeliveries.$inferInsert;
 export type ActivityLog = typeof activityLog.$inferSelect;
 export type NewActivityLog = typeof activityLog.$inferInsert;
+export type Plan = typeof plans.$inferSelect;
+export type NewPlan = typeof plans.$inferInsert;
+export type PlanOp = typeof planOps.$inferSelect;
+export type NewPlanOp = typeof planOps.$inferInsert;

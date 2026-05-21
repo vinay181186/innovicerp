@@ -53,7 +53,10 @@ const SECTIONS: readonly NavSection[] = [
     icon: '📋',
     groups: [
       {
-        items: [{ to: '/job-cards', label: 'Job Cards', icon: '🏭' }],
+        items: [
+          { to: '/planning-dashboard', label: 'Plan Dashboard', icon: '📊' },
+          { to: '/job-cards', label: 'Job Cards', icon: '🏭' },
+        ],
       },
     ],
   },

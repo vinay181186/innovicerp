@@ -55,6 +55,7 @@ import { runningOpsRoute } from './modules/op-entry/routes/running';
 import { operatorsListRoute } from './modules/operators/routes/list';
 import { operatorDetailRoute } from './modules/operators/routes/detail';
 import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
+import { planningDashboardRoute } from './modules/plans/routes/dashboard';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
 import {
@@ -124,6 +125,7 @@ const routeTree = rootRoute.addChildren([
     salesOrderEditRoute,
     soStatusDetailRoute,
     soOverviewListRoute,
+    planningDashboardRoute,
     jobWorkOrdersListRoute,
     jobWorkOrderNewRoute,
     jobWorkOrderDetailRoute,
