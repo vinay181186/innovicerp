@@ -56,6 +56,7 @@ const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/planning-dashboard', label: 'Plan Dashboard', icon: '📊' },
           { to: '/plans', label: 'Plans', icon: '📋' },
+          { to: '/assemblies', label: 'Assembly Tracker', icon: '🔧' },
           { to: '/job-cards', label: 'Job Cards', icon: '🏭' },
         ],
       },

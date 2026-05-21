@@ -2467,6 +2467,118 @@ export const planOps = pgTable(
   ],
 ).enableRLS();
 
+// ─── Phase B Assembly Tracker (PL-5) ─────────────────────────────────────
+// Per ADR-030. assembly_units = one row per assembled equipment unit;
+// assembly_tracking = manual override per (so_id, child_item_code) for the
+// component readiness rollup.
+
+export const assemblyUnits = pgTable(
+  'assembly_units',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    soCodeText: text('so_code_text').notNull(),
+    unitNo: integer('unit_no').notNull(),
+    serialNo: text('serial_no'),
+    assemblyDate: date('assembly_date').notNull(),
+    assembledBy: text('assembled_by'),
+    remarks: text('remarks'),
+    bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
+      onDelete: 'set null',
+    }),
+    partNoText: text('part_no_text'),
+    customerText: text('customer_text'),
+    dispatched: boolean('dispatched').notNull().default(false),
+    dispatchDate: date('dispatch_date'),
+    dispatchedBy: text('dispatched_by'),
+    dispatchRemarks: text('dispatch_remarks'),
+    deductions: jsonb('deductions'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('assembly_units_so_unit_uniq')
+      .on(t.salesOrderId, t.unitNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_units_company_dispatch_idx')
+      .on(t.companyId, t.dispatched)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_units_serial_idx')
+      .on(t.serialNo)
+      .where(sql`${t.serialNo} is not null AND ${t.deletedAt} is null`),
+    check('assembly_units_unit_no_positive', sql`${t.unitNo} > 0`),
+    pgPolicy('assembly_units_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('assembly_units_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const assemblyTracking = pgTable(
+  'assembly_tracking',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    childItemCode: text('child_item_code').notNull(),
+    childItemId: uuid('child_item_id').references(() => items.id, { onDelete: 'set null' }),
+    readyQtyOverride: integer('ready_qty_override').notNull().default(0),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('assembly_tracking_so_child_uniq')
+      .on(t.salesOrderId, t.childItemCode)
+      .where(sql`${t.deletedAt} is null`),
+    index('assembly_tracking_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    check('assembly_tracking_override_nonneg', sql`${t.readyQtyOverride} >= 0`),
+    pgPolicy('assembly_tracking_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('assembly_tracking_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -2535,3 +2647,7 @@ export type Plan = typeof plans.$inferSelect;
 export type NewPlan = typeof plans.$inferInsert;
 export type PlanOp = typeof planOps.$inferSelect;
 export type NewPlanOp = typeof planOps.$inferInsert;
+export type AssemblyUnit = typeof assemblyUnits.$inferSelect;
+export type NewAssemblyUnit = typeof assemblyUnits.$inferInsert;
+export type AssemblyTracking = typeof assemblyTracking.$inferSelect;
+export type NewAssemblyTracking = typeof assemblyTracking.$inferInsert;
