@@ -51,15 +51,27 @@ export default async function setup(): Promise<void> {
     // by source_ref pattern + by remarks pattern (T036C tests write a
     // marker remark).
     await sql`DELETE FROM public.store_transactions WHERE source_ref LIKE 'T%-%' OR source_ref LIKE 'RCPT-T%-%' OR remarks LIKE '%T036%'`;
-    await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
-    await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%'`;
+    // PL-4 ordering: plans MUST go before JCs/PRs they reference. The schema's
+    // ON DELETE SET NULL on plans.jc_id / dp_pr_id / fo_pr_id would null those
+    // out on JC/PR delete, then the CHECK `plans_status_fk_check` would trip
+    // (jc_created requires jc_id NOT NULL, etc). Drop plans first.
     // plans CASCADE-delete their plan_ops via FK ON DELETE CASCADE.
     await sql`DELETE FROM public.plans WHERE code LIKE 'T%-%'`;
+    await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
+    // PL-4 executePlan generates PR codes like PR-DP-<slug>-NN / PR-FO-... / PR-FOMAT-...
+    // Sweep those by prefix in case a test crashed before afterAll could clean them.
+    await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%' OR code LIKE 'PR-DP-%' OR code LIKE 'PR-FO-%' OR code LIKE 'PR-FOMAT-%'`;
     await sql`DELETE FROM public.sales_orders WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.job_work_orders WHERE code LIKE 'T%-%'`;
     // job_cards CASCADE-deletes its jc_ops, op_log, running_ops (per
     // schema fk on_delete=cascade). Wiping here drops the whole subtree.
-    await sql`DELETE FROM public.job_cards WHERE code LIKE 'T%-%'`;
+    // PL-4 executePlan generates codes JC-PLN-<slug>-NN — sweep those too
+    // so a crashed test doesn't leave JCs referencing test items.
+    await sql`DELETE FROM public.job_cards WHERE code LIKE 'T%-%' OR code LIKE 'JC-PLN-%'`;
+    // route_cards CASCADE-delete their route_card_ops + route_card_revisions
+    // (FK ON DELETE CASCADE). PL-4 tests create temporary route cards under
+    // the test-prefix so cleanup wipes them too.
+    await sql`DELETE FROM public.route_cards WHERE code LIKE 'T%-%'`;
 
     // 2. Master tables — referenced by transactional tables, so wipe last.
     //    These are also LIKE-matched at SELECT time by tests' notLike()

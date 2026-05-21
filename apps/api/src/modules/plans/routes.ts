@@ -1,5 +1,6 @@
 import {
   createPlanInputSchema,
+  defaultRouteOpsQuerySchema,
   listPlansQuerySchema,
   updatePlanInputSchema,
 } from '@innovic/shared';
@@ -48,6 +49,18 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamsSchema.parse(req.params);
     return service.softDeletePlan(id, req.user);
+  });
+
+  app.post('/plans/:id/execute', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamsSchema.parse(req.params);
+    return service.executePlan(id, req.user);
+  });
+
+  app.get('/plans/default-ops', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { itemId } = defaultRouteOpsQuerySchema.parse(req.query);
+    return { ops: await service.getDefaultRouteOpsForItem(itemId, req.user) };
   });
 
   app.get('/planning-dashboard', async (req) => {

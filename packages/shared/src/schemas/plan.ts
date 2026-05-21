@@ -280,3 +280,20 @@ export const planningDashboardResponseSchema = z.object({
   ),
 });
 export type PlanningDashboardResponse = z.infer<typeof planningDashboardResponseSchema>;
+
+// ─── Execute plan response (PL-4) ────────────────────────────────────────
+
+export const executePlanResultSchema = z.object({
+  plan: planDetailSchema,
+  jcCode: z.string().optional(),
+  primaryPrCode: z.string().optional(),
+  materialPrCode: z.string().optional(),
+});
+export type ExecutePlanResultShape = z.infer<typeof executePlanResultSchema>;
+
+// ─── Default route-card ops loader (PL-4) ────────────────────────────────
+
+export const defaultRouteOpsQuerySchema = z.object({
+  itemId: z.string().uuid(),
+});
+export type DefaultRouteOpsQuery = z.infer<typeof defaultRouteOpsQuerySchema>;

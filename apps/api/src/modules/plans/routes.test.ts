@@ -4,7 +4,15 @@ import { eq, like } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, planOps, plans, users } from '../../db/schema';
+import {
+  activityLog,
+  items,
+  jobCards,
+  planOps,
+  plans,
+  purchaseRequests,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { plansRoutes } from './routes';
@@ -26,6 +34,10 @@ async function buildApp(user: AuthContext | null): Promise<FastifyInstance> {
 }
 
 async function teardown(): Promise<void> {
+  await db.delete(jobCards).where(like(jobCards.code, `JC-PLN-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-DP-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FO-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FOMAT-%`));
   await db.delete(plans).where(like(plans.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
@@ -159,6 +171,59 @@ describe('plans routes', () => {
       expect(body).toHaveProperty('kpi');
       expect(body.kpi).toHaveProperty('inPlanning');
       expect(body.kpi).toHaveProperty('planned');
+      // PL-4 added needsPlanning
+      expect(body.kpi).toHaveProperty('needsPlanning');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('GET /plans/default-ops requires itemId param (400 without)', async () => {
+    app = await buildApp(admin);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/plans/default-ops' });
+      expect(res.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('GET /plans/default-ops?itemId=X returns 200 + ops envelope', async () => {
+    app = await buildApp(admin);
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/plans/default-ops?itemId=${itemId}`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(Array.isArray(body.ops)).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('POST /plans/:id/execute rejects non-planned plans with 400', async () => {
+    // Insert a fresh in_planning plan so the prior finalize test doesn't pollute.
+    const fresh = await db
+      .insert(plans)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}EXEC-REJECT`,
+        planDate: '2026-05-21',
+        planStatus: 'in_planning',
+        planType: 'manufacture',
+        itemId,
+        orderQty: 5,
+        planQty: 5,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    app = await buildApp(admin);
+    try {
+      const res = await app.inject({ method: 'POST', url: `/plans/${fresh[0]!.id}/execute` });
+      expect(res.statusCode).toBe(400);
     } finally {
       await app.close();
     }

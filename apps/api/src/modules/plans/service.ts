@@ -14,7 +14,7 @@
 // 0024_phase8_plans.sql. Both layers must agree; the service enforces friendly
 // errors, the DB catches anything that slips through.
 
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
   ListPlansQuery,
@@ -27,7 +27,16 @@ import type {
   PlanStatus,
   UpdatePlanInput,
 } from '@innovic/shared';
-import { items, planOps, plans } from '../../db/schema';
+import {
+  items,
+  jcOps,
+  jobCards,
+  planOps,
+  plans,
+  purchaseRequests,
+  routeCardOps,
+  routeCards,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import {
@@ -421,6 +430,381 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
   });
 }
 
+// ─── Default route-card ops loader (PL-4) ─────────────────────────────────
+
+/** Fetch the active route card's ops for an item, formatted as PlanOpInput[]
+ *  ready to splice into a plan create form. Returns [] when no active route
+ *  card exists. UI calls this from the "Load default ops" button. */
+export async function getDefaultRouteOpsForItem(
+  itemId: string,
+  user: AuthContext,
+): Promise<PlanOpInput[]> {
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const rcRows = await tx
+      .select({ id: routeCards.id })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1);
+    const rc = rcRows[0];
+    if (!rc) return [];
+
+    const ops = await tx
+      .select()
+      .from(routeCardOps)
+      .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
+      .orderBy(asc(routeCardOps.opSeq));
+
+    return ops.map((op) => ({
+      opSeq: op.opSeq,
+      machineId: op.machineId,
+      machineCodeText: op.machineCodeText,
+      operation: op.operation,
+      opType: op.opType,
+      cycleTimeMin: Number(op.cycleTimeMin),
+      program: op.program,
+      toolDetails: op.toolDetails,
+      qcRequired: op.qcRequired,
+      outsourceVendorId: op.ospVendorId,
+      outsourceVendorText: op.ospVendorCodeText,
+      outsourceCost: 0,
+      outsourceLeadDays: op.ospLeadDays,
+    }));
+  });
+}
+
+// ─── Execute plan (PL-4): planned → jc_created | pr_created ──────────────
+
+export interface ExecutePlanResult {
+  plan: PlanDetail;
+  /** Code of the JC that was created (manufacture / assembly). */
+  jcCode?: string;
+  /** Code of the primary PR that was created (direct_purchase / full_outsource). */
+  primaryPrCode?: string;
+  /** Code of the material PR that was created (full_outsource only). */
+  materialPrCode?: string;
+}
+
+/** Execute a planned plan. Type-specific:
+ *   - manufacture / assembly  → create JC (+ copy plan_ops → jc_ops), set plan.jc_id, status=jc_created
+ *   - direct_purchase         → create 1 PR, set plan.dp_pr_id, status=pr_created
+ *   - full_outsource          → create 1 JW PR (+ optional material PR), set plan.fo_pr_id (+ fo_mat_pr_id), status=pr_created
+ *  Wraps all writes in a single transaction so rollback unwinds JC/PR atomically. */
+export async function executePlan(
+  id: string,
+  user: AuthContext,
+): Promise<ExecutePlanResult> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(plans)
+      .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
+      .limit(1);
+    const plan = existing[0];
+    if (!plan) throw new NotFoundError(`Plan ${id} not found`);
+    if (plan.planStatus !== 'planned') {
+      throw new ValidationError(
+        `Plan in status '${plan.planStatus}' cannot be executed (must be planned)`,
+      );
+    }
+
+    let result: ExecutePlanResult;
+    if (plan.planType === 'manufacture' || plan.planType === 'assembly') {
+      result = await executeManufacture(tx, plan, user);
+    } else if (plan.planType === 'direct_purchase') {
+      result = await executeDirectPurchase(tx, plan, user);
+    } else {
+      result = await executeFullOutsource(tx, plan, user);
+    }
+    return result;
+  });
+}
+
+async function executeManufacture(
+  tx: DbTransaction,
+  plan: typeof plans.$inferSelect,
+  user: AuthContext,
+): Promise<ExecutePlanResult> {
+  const ops = await tx
+    .select()
+    .from(planOps)
+    .where(and(eq(planOps.planId, plan.id), isNull(planOps.deletedAt)))
+    .orderBy(asc(planOps.opSeq));
+  if (ops.length === 0) {
+    throw new ValidationError(
+      `${plan.planType} plan cannot be executed with zero operations`,
+    );
+  }
+  if (!plan.itemId) {
+    throw new ValidationError(
+      `${plan.planType} plan requires a resolved itemId to create a JC (item_code_text alone is not enough)`,
+    );
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const jcCode = await nextPlanJcCode(tx, plan.companyId, plan.id);
+
+  const jcRows = await tx
+    .insert(jobCards)
+    .values({
+      companyId: plan.companyId,
+      code: jcCode,
+      jcDate: today,
+      itemId: plan.itemId,
+      orderQty: plan.planQty,
+      priority: 'normal',
+      sourceSoLineId: plan.soLineId ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const jc = jcRows[0]!;
+
+  // Copy plan_ops → jc_ops verbatim.
+  await tx.insert(jcOps).values(
+    ops.map((op) => ({
+      companyId: plan.companyId,
+      jobCardId: jc.id,
+      opSeq: op.opSeq,
+      machineId: op.machineId,
+      machineCodeText: op.machineCodeText,
+      operation: op.operation,
+      opType: op.opType,
+      cycleTimeMin: op.cycleTimeMin,
+      program: op.program,
+      toolDetails: op.toolDetails,
+      qcRequired: op.qcRequired,
+      outsourceVendorId: op.outsourceVendorId,
+      outsourceVendorText: op.outsourceVendorText,
+      outsourceCost: op.outsourceCost,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })),
+  );
+
+  await tx
+    .update(plans)
+    .set({
+      planStatus: 'jc_created',
+      jcId: jc.id,
+      updatedBy: user.id,
+    })
+    .where(eq(plans.id, plan.id));
+
+  await emitActivityLog(
+    tx,
+    {
+      action: 'PLAN_EXECUTED',
+      entity: 'Plan',
+      detail: `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops)`,
+      refId: plan.code,
+    },
+    plan.companyId,
+    user,
+  );
+
+  return {
+    plan: await getPlanInTx(tx, plan.id, plan.companyId),
+    jcCode: jc.code,
+  };
+}
+
+async function executeDirectPurchase(
+  tx: DbTransaction,
+  plan: typeof plans.$inferSelect,
+  user: AuthContext,
+): Promise<ExecutePlanResult> {
+  if (!plan.dpVendorId && !plan.dpVendorCodeText) {
+    throw new ValidationError('direct_purchase plan requires a vendor before execute');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const prCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'DP');
+
+  const prRows = await tx
+    .insert(purchaseRequests)
+    .values({
+      companyId: plan.companyId,
+      code: prCode,
+      prDate: today,
+      status: 'open',
+      vendorId: plan.dpVendorId ?? null,
+      vendorCodeText: plan.dpVendorCodeText ?? null,
+      itemId: plan.itemId ?? null,
+      itemCodeText: plan.itemCodeText ?? null,
+      itemName: plan.itemNameText ?? null,
+      qty: plan.planQty,
+      estCost: plan.dpCost ?? '0',
+      sourceSoLineId: plan.soLineId ?? null,
+      remarks: `Auto from plan ${plan.code} (direct_purchase)`,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const pr = prRows[0]!;
+
+  await tx
+    .update(plans)
+    .set({
+      planStatus: 'pr_created',
+      dpPrId: pr.id,
+      updatedBy: user.id,
+    })
+    .where(eq(plans.id, plan.id));
+
+  await emitActivityLog(
+    tx,
+    {
+      action: 'PLAN_EXECUTED',
+      entity: 'Plan',
+      detail: `${plan.code} → PR ${pr.code} (direct_purchase)`,
+      refId: plan.code,
+    },
+    plan.companyId,
+    user,
+  );
+
+  return {
+    plan: await getPlanInTx(tx, plan.id, plan.companyId),
+    primaryPrCode: pr.code,
+  };
+}
+
+async function executeFullOutsource(
+  tx: DbTransaction,
+  plan: typeof plans.$inferSelect,
+  user: AuthContext,
+): Promise<ExecutePlanResult> {
+  if (!plan.foVendorId && !plan.foVendorCodeText) {
+    throw new ValidationError('full_outsource plan requires a vendor before execute');
+  }
+  if (!plan.foProcess) {
+    throw new ValidationError('full_outsource plan requires a process description before execute');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 1. Primary JW PR.
+  const jwCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'FO');
+  const jwRows = await tx
+    .insert(purchaseRequests)
+    .values({
+      companyId: plan.companyId,
+      code: jwCode,
+      prDate: today,
+      status: 'open',
+      vendorId: plan.foVendorId ?? null,
+      vendorCodeText: plan.foVendorCodeText ?? null,
+      itemId: plan.itemId ?? null,
+      itemCodeText: plan.itemCodeText ?? null,
+      itemName: plan.itemNameText ?? null,
+      qty: plan.planQty,
+      estCost: plan.foRate ?? '0',
+      requiredDate: plan.foDeliveryDate ?? null,
+      sourceSoLineId: plan.soLineId ?? null,
+      operation: 'OUTSOURCE',
+      remarks: `Auto from plan ${plan.code} (full_outsource: ${plan.foProcess})`,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const jwPr = jwRows[0]!;
+
+  // 2. Optional material PR when foMaterialSrc is set + isn't 'self'/'inhouse'.
+  let materialPr: { id: string; code: string } | null = null;
+  const matSrc = plan.foMaterialSrc?.trim().toLowerCase();
+  if (matSrc && matSrc !== 'self' && matSrc !== 'inhouse' && matSrc !== 'in-house') {
+    const matCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'FOMAT');
+    const matRows = await tx
+      .insert(purchaseRequests)
+      .values({
+        companyId: plan.companyId,
+        code: matCode,
+        prDate: today,
+        status: 'open',
+        vendorCodeText: plan.foMaterialSrc!,
+        itemId: plan.itemId ?? null,
+        itemCodeText: plan.itemCodeText ?? null,
+        itemName: plan.itemNameText ?? null,
+        qty: plan.planQty,
+        sourceSoLineId: plan.soLineId ?? null,
+        remarks: `Auto from plan ${plan.code} (full_outsource material)`,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    materialPr = { id: matRows[0]!.id, code: matRows[0]!.code };
+  }
+
+  await tx
+    .update(plans)
+    .set({
+      planStatus: 'pr_created',
+      foPrId: jwPr.id,
+      foMatPrId: materialPr?.id ?? null,
+      updatedBy: user.id,
+    })
+    .where(eq(plans.id, plan.id));
+
+  await emitActivityLog(
+    tx,
+    {
+      action: 'PLAN_EXECUTED',
+      entity: 'Plan',
+      detail: materialPr
+        ? `${plan.code} → PR ${jwPr.code} + material PR ${materialPr.code} (full_outsource)`
+        : `${plan.code} → PR ${jwPr.code} (full_outsource)`,
+      refId: plan.code,
+    },
+    plan.companyId,
+    user,
+  );
+
+  const out: ExecutePlanResult = {
+    plan: await getPlanInTx(tx, plan.id, plan.companyId),
+    primaryPrCode: jwPr.code,
+  };
+  if (materialPr) out.materialPrCode = materialPr.code;
+  return out;
+}
+
+async function nextPlanJcCode(
+  tx: DbTransaction,
+  companyId: string,
+  planId: string,
+): Promise<string> {
+  const rows = await tx
+    .select({ value: count() })
+    .from(jobCards)
+    .where(and(eq(jobCards.companyId, companyId), like(jobCards.code, `JC-PLN-${planId.slice(0, 8)}-%`)));
+  const seq = (rows[0]?.value ?? 0) + 1;
+  return `JC-PLN-${planId.slice(0, 8)}-${String(seq).padStart(2, '0')}`;
+}
+
+async function nextPlanPrCode(
+  tx: DbTransaction,
+  companyId: string,
+  planId: string,
+  kind: 'DP' | 'FO' | 'FOMAT',
+): Promise<string> {
+  const slug = planId.slice(0, 8);
+  const prefix = `PR-${kind}-${slug}-`;
+  const rows = await tx
+    .select({ value: count() })
+    .from(purchaseRequests)
+    .where(and(eq(purchaseRequests.companyId, companyId), like(purchaseRequests.code, `${prefix}%`)));
+  const seq = (rows[0]?.value ?? 0) + 1;
+  return `${prefix}${String(seq).padStart(2, '0')}`;
+}
+
 // ─── Planning dashboard ───────────────────────────────────────────────────
 
 export async function getPlanningDashboard(
@@ -429,7 +813,7 @@ export async function getPlanningDashboard(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const [statusCounts, recentRows] = await Promise.all([
+    const [statusCounts, recentRows, needsPlanningRows] = await Promise.all([
       tx
         .select({ status: plans.planStatus, c: count() })
         .from(plans)
@@ -446,6 +830,25 @@ export async function getPlanningDashboard(
         .where(and(eq(plans.companyId, companyId), isNull(plans.deletedAt)))
         .orderBy(desc(plans.planDate), asc(plans.code))
         .limit(50),
+      // needsPlanning = SO lines on open SOs with NO non-cancelled plan covering them.
+      // Counts each unplanned SO line once. Same shape as the legacy renderPlanDashboard
+      // "Needs Planning" tile: open SO lines that haven't been planned yet.
+      tx.execute(sql`
+        SELECT COUNT(*)::int AS c
+        FROM public.sales_order_lines sol
+        JOIN public.sales_orders so ON so.id = sol.sales_order_id
+        WHERE so.company_id = ${companyId}::uuid
+          AND so.status = 'open'
+          AND so.deleted_at IS NULL
+          AND sol.deleted_at IS NULL
+          AND sol.status = 'open'
+          AND NOT EXISTS (
+            SELECT 1 FROM public.plans p
+            WHERE p.so_line_id = sol.id
+              AND p.deleted_at IS NULL
+              AND p.plan_status <> 'cancelled'
+          )
+      `),
     ]);
 
     const byStatus = new Map<PlanStatus, number>();
@@ -462,10 +865,13 @@ export async function getPlanningDashboard(
       for (const r of opsAgg) opsCounts.set(r.planId, Number(r.c));
     }
 
+    const needsPlanning =
+      Number((needsPlanningRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
+
     return {
       generatedAt: new Date().toISOString(),
       kpi: {
-        needsPlanning: 0, // legacy "open SO lines with no plan" — deferred to PL-4
+        needsPlanning,
         inPlanning: byStatus.get('in_planning') ?? 0,
         planned: byStatus.get('planned') ?? 0,
         jcCreated: byStatus.get('jc_created') ?? 0,

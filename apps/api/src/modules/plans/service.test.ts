@@ -5,7 +5,17 @@
 import { eq, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, planOps, plans, users } from '../../db/schema';
+import {
+  activityLog,
+  items,
+  jobCards,
+  planOps,
+  plans,
+  purchaseRequests,
+  routeCardOps,
+  routeCards,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   ConflictError,
@@ -21,9 +31,22 @@ let admin: AuthContext;
 let itemId: string;
 
 async function teardown(): Promise<void> {
+  // PL-4 ordering: plans MUST go before JCs/PRs they reference. The schema's
+  // ON DELETE SET NULL on jc_id / dp_pr_id / fo_pr_id would null those out
+  // on JC/PR delete, then the CHECK `plans_status_fk_check` would trip
+  // because jc_created requires jc_id (and pr_created requires the relevant
+  // PR id). Drop the plans first, then the JCs/PRs are unreferenced.
   await db.delete(plans).where(like(plans.code, `${TEST_PREFIX}%`));
+  await db.delete(jobCards).where(like(jobCards.code, `JC-PLN-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-DP-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FO-%`));
+  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FOMAT-%`));
+  await db.delete(routeCards).where(like(routeCards.code, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `JC-PLN-%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `PR-DP-%`));
+  await db.delete(activityLog).where(like(activityLog.refId, `PR-FO-%`));
 }
 
 beforeAll(async () => {
@@ -324,5 +347,196 @@ describe('plans service — softDelete + dashboard', () => {
     expect(result.kpi).toHaveProperty('planned');
     expect(Array.isArray(result.recentPlans)).toBe(true);
     expect(result.recentPlans.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe('plans service — executePlan + defaults (PL-4)', () => {
+  it('getDefaultRouteOpsForItem returns [] when no route card exists', async () => {
+    const ops = await service.getDefaultRouteOpsForItem(itemId, admin);
+    expect(ops).toEqual([]);
+  });
+
+  it('getDefaultRouteOpsForItem returns route_card_ops when active RC exists', async () => {
+    // Create a fixture route card for the test item
+    const rc = await db
+      .insert(routeCards)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}RC-A`,
+        itemId,
+        currentRevision: 1,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    await db.insert(routeCardOps).values([
+      {
+        companyId: admin.companyId!,
+        routeCardId: rc[0]!.id,
+        opSeq: 1,
+        operation: 'turn',
+        opType: 'process',
+        cycleTimeMin: '4.5',
+        qcRequired: false,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+      {
+        companyId: admin.companyId!,
+        routeCardId: rc[0]!.id,
+        opSeq: 2,
+        operation: 'mill',
+        opType: 'process',
+        cycleTimeMin: '6',
+        qcRequired: true,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+    ]);
+
+    const ops = await service.getDefaultRouteOpsForItem(itemId, admin);
+    expect(ops).toHaveLength(2);
+    expect(ops[0]?.operation).toBe('turn');
+    expect(ops[0]?.cycleTimeMin).toBe(4.5);
+    expect(ops[1]?.qcRequired).toBe(true);
+  });
+
+  it('executePlan rejects when plan is not in planned status', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-NP`,
+        planDate: '2026-05-21',
+        planType: 'manufacture',
+        itemId,
+        orderQty: 5,
+        planQty: 5,
+        ops: [{ opSeq: 1, operation: 'turn' }],
+      },
+      admin,
+    );
+    await expect(service.executePlan(created.id, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('executePlan(manufacture): creates JC + copies plan_ops, sets jc_id + status=jc_created', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-MFG`,
+        planDate: '2026-05-21',
+        planType: 'manufacture',
+        itemId,
+        orderQty: 20,
+        planQty: 20,
+        ops: [
+          { opSeq: 1, operation: 'turn', cycleTimeMin: 3 },
+          { opSeq: 2, operation: 'mill', cycleTimeMin: 5, qcRequired: true },
+        ],
+      },
+      admin,
+    );
+    await service.finalizePlan(created.id, admin);
+    const result = await service.executePlan(created.id, admin);
+    expect(result.jcCode).toMatch(/^JC-PLN-/);
+    expect(result.plan.planStatus).toBe('jc_created');
+    expect(result.plan.jcId).not.toBeNull();
+
+    // Verify jc_ops were copied
+    const jc = await db
+      .select()
+      .from(jobCards)
+      .where(eq(jobCards.id, result.plan.jcId!))
+      .limit(1);
+    expect(jc[0]?.orderQty).toBe(20);
+  });
+
+  it('executePlan(direct_purchase): creates 1 PR, sets dp_pr_id + status=pr_created', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-DP`,
+        planDate: '2026-05-21',
+        planType: 'direct_purchase',
+        itemId,
+        orderQty: 10,
+        planQty: 10,
+        dpVendorCodeText: 'ACME-VEN',
+        dpCost: 100.5,
+      },
+      admin,
+    );
+    await service.finalizePlan(created.id, admin);
+    const result = await service.executePlan(created.id, admin);
+    expect(result.primaryPrCode).toMatch(/^PR-DP-/);
+    expect(result.plan.planStatus).toBe('pr_created');
+    expect(result.plan.dpPrId).not.toBeNull();
+    expect(result.materialPrCode).toBeUndefined();
+  });
+
+  it('executePlan(full_outsource): creates JW PR + material PR when material_src set', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-FO`,
+        planDate: '2026-05-21',
+        planType: 'full_outsource',
+        itemId,
+        orderQty: 8,
+        planQty: 8,
+        foVendorCodeText: 'JW-VEN',
+        foProcess: 'heat treat',
+        foMaterialSrc: 'SUPPLIER-X',
+        foRate: 50,
+      },
+      admin,
+    );
+    await service.finalizePlan(created.id, admin);
+    const result = await service.executePlan(created.id, admin);
+    expect(result.primaryPrCode).toMatch(/^PR-FO-/);
+    expect(result.materialPrCode).toMatch(/^PR-FOMAT-/);
+    expect(result.plan.planStatus).toBe('pr_created');
+    expect(result.plan.foPrId).not.toBeNull();
+    expect(result.plan.foMatPrId).not.toBeNull();
+  });
+
+  it('executePlan(full_outsource): material_src=inhouse → no material PR', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-FO-IH`,
+        planDate: '2026-05-21',
+        planType: 'full_outsource',
+        itemId,
+        orderQty: 8,
+        planQty: 8,
+        foVendorCodeText: 'JW-VEN',
+        foProcess: 'heat treat',
+        foMaterialSrc: 'inhouse',
+      },
+      admin,
+    );
+    await service.finalizePlan(created.id, admin);
+    const result = await service.executePlan(created.id, admin);
+    expect(result.materialPrCode).toBeUndefined();
+    expect(result.plan.foMatPrId).toBeNull();
+  });
+
+  it('executePlan(manufacture): no ops → ValidationError before any DB write', async () => {
+    // Force a row in planned without ops (bypass finalize guard via direct DB)
+    const inserted = await db
+      .insert(plans)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}P-EXEC-NOOPS`,
+        planDate: '2026-05-21',
+        planStatus: 'planned',
+        planType: 'manufacture',
+        itemId,
+        orderQty: 5,
+        planQty: 5,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    await expect(service.executePlan(inserted[0]!.id, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 });
