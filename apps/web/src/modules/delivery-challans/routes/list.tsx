@@ -175,7 +175,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Delivery Challans
+          📦 Dispatch Register
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
@@ -214,6 +214,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
           </Link>
         </div>
       </div>
+
+      {data?.summary ? <DispatchKpiStrip summary={data.summary} /> : null}
 
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
@@ -319,6 +321,96 @@ function DeliveryChallansListPage(): React.JSX.Element {
           >
             Next <ChevronRight size={14} />
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// PL-DR-1b — KPI strip mirroring legacy renderDispatchRegister L10756–10770.
+// 3 tiles in a 3-col auto-fit grid: Total Dispatched (red), Dispatch Entries
+// (default), Items Dispatched (cyan).
+function DispatchKpiStrip({
+  summary,
+}: {
+  summary: { totalDispatched: number; entryCount: number; itemCount: number };
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: 10,
+        marginBottom: 16,
+      }}
+    >
+      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: 6,
+          }}
+        >
+          Total Dispatched
+        </div>
+        <div
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 28,
+            fontWeight: 800,
+            color: 'var(--red)',
+          }}
+        >
+          {summary.totalDispatched.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>pieces</div>
+      </div>
+      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: 6,
+          }}
+        >
+          Dispatch Entries
+        </div>
+        <div
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 28,
+            fontWeight: 800,
+          }}
+        >
+          {summary.entryCount}
+        </div>
+      </div>
+      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: 6,
+          }}
+        >
+          Items Dispatched
+        </div>
+        <div
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 28,
+            fontWeight: 800,
+            color: 'var(--cyan)',
+          }}
+        >
+          {summary.itemCount}
         </div>
       </div>
     </div>

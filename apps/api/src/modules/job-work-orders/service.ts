@@ -168,6 +168,7 @@ export async function listJobWorkOrders(
         COALESCE(line_agg.total_qty, 0)::int  AS "totalQty",
         COALESCE(line_agg.client_mat_qty, 0)::text AS "clientMaterialQtyTotal",
         COALESCE(line_agg.material_recv_qty, 0)::text AS "materialReceivedQtyTotal",
+        line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty"
       FROM public.job_work_orders jw
       LEFT JOIN (
@@ -175,7 +176,8 @@ export async function listJobWorkOrders(
                COUNT(*) AS line_count,
                SUM(order_qty) AS total_qty,
                SUM(COALESCE(client_material_qty, 0)) AS client_mat_qty,
-               SUM(COALESCE(material_received_qty, 0)) AS material_recv_qty
+               SUM(COALESCE(material_received_qty, 0)) AS material_recv_qty,
+               MIN(due_date) AS earliest_due_date
         FROM public.job_work_order_lines
         WHERE deleted_at IS NULL
         GROUP BY job_work_order_id
@@ -233,6 +235,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     jcQty: Number(r['jcQty'] ?? 0),
     clientMaterialQtyTotal: String(r['clientMaterialQtyTotal'] ?? '0'),
     materialReceivedQtyTotal: String(r['materialReceivedQtyTotal'] ?? '0'),
+    earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
   };
 }
 

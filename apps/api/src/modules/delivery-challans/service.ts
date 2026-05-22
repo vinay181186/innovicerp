@@ -149,8 +149,36 @@ export async function listDeliveryChallans(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
+    // PL-DR-1b — KPI summary (matches the filter set). Legacy
+    // renderDispatchRegister L10756–10770: Total Dispatched / Entries /
+    // Items. entryCount = total DC lines, itemCount = distinct items.
+    const summaryRows = await tx.execute(sql`
+      SELECT
+        COALESCE(SUM(dcl.qty), 0)::float       AS total_dispatched,
+        COUNT(dcl.id)::int                     AS entry_count,
+        COUNT(DISTINCT dcl.item_id)::int       AS item_count
+      FROM public.delivery_challans dc
+      LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.delivery_challan_lines dcl
+        ON dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
+      WHERE dc.company_id = ${companyId}::uuid
+        AND dc.deleted_at IS NULL
+        ${searchFrag}
+        ${statusFrag}
+        ${vendorFrag}
+        ${poFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+    const summary = {
+      totalDispatched: Number(sumRow['total_dispatched'] ?? 0),
+      entryCount: Number(sumRow['entry_count'] ?? 0),
+      itemCount: Number(sumRow['item_count'] ?? 0),
+    };
+
     const items = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
-    return { items, total, limit: input.limit, offset: input.offset };
+    return { items, total, limit: input.limit, offset: input.offset, summary };
   });
 }
 

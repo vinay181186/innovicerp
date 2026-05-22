@@ -100,11 +100,24 @@ export const listDeliveryChallansQuerySchema = z.object({
 });
 export type ListDeliveryChallansQuery = z.infer<typeof listDeliveryChallansQuerySchema>;
 
+/** Legacy renderDispatchRegister L10756–10770 — 3-tile KPI strip above the
+ *  table. totalDispatched = Σ lines.qty across all DCs (matching the filter
+ *  set), entryCount = total DC lines, itemCount = COUNT(DISTINCT item). */
+export const dispatchSummarySchema = z.object({
+  totalDispatched: z.number().nonnegative(),
+  entryCount: z.number().int().nonnegative(),
+  itemCount: z.number().int().nonnegative(),
+});
+export type DispatchSummary = z.infer<typeof dispatchSummarySchema>;
+
 export interface ListDeliveryChallansResponse {
   items: DeliveryChallanListItem[];
   total: number;
   limit: number;
   offset: number;
+  /** PL-DR-1b — overall totals across all (non-deleted) DCs matching the
+   *  filter set. Drives the KPI strip on /delivery-challans. */
+  summary: DispatchSummary;
 }
 
 // ─── Write shapes (T-059a) ─────────────────────────────────────────────────

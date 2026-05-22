@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobWorkOrdersList } from '../api';
+import { useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 import { JwMaterialStatusBadge } from '../components/jw-material-status';
 
 const PAGE_SIZE = 25;
@@ -64,6 +64,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const deleteMut = useSoftDeleteJobWorkOrder();
 
   const columns = useMemo<ColumnDef<JobWorkOrderListItem>[]>(
     () => [
@@ -93,6 +94,18 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {
         header: 'Client',
         cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span>,
+      },
+      {
+        // Legacy renderJWMaster L12656 — Client PO col with purple mono text.
+        header: 'Client PO',
+        cell: ({ row }) => (
+          <span
+            className="td-code mono"
+            style={{ fontSize: 11, color: 'var(--purple)' }}
+          >
+            {row.original.clientPoNo ?? '—'}
+          </span>
+        ),
       },
       {
         header: 'Lines',
@@ -134,12 +147,59 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         ),
       },
       {
+        // Legacy renderJWMaster L12664 — Due col, red when overdue.
+        header: 'Due',
+        cell: ({ row }) => {
+          const due = row.original.earliestDueDate;
+          if (!due) return <span className="text3">—</span>;
+          const today = new Date().toISOString().slice(0, 10);
+          const overdue = due < today && row.original.status === 'open';
+          return (
+            <span
+              className="text2"
+              style={{
+                fontSize: 11,
+                color: overdue ? 'var(--red)' : undefined,
+                fontWeight: overdue ? 700 : undefined,
+              }}
+            >
+              {due}
+              {overdue ? ' ⚠' : ''}
+            </span>
+          );
+        },
+      },
+      {
         header: 'Status',
         accessorKey: 'status',
         cell: ({ row }) => <SoStatusBadge status={row.original.status} />,
       },
+      ...(canWrite
+        ? [
+            {
+              // Legacy renderJWMaster L12667–12670 — per-row Edit + Del.
+              header: '',
+              id: 'actions',
+              cell: ({ row }) => (
+                <JwRowActions
+                  id={row.original.id}
+                  code={row.original.code}
+                  onDelete={(id) =>
+                    deleteMut.mutate(id, {
+                      onError: (err) =>
+                        window.alert(
+                          err instanceof Error ? err.message : 'Failed to delete JW',
+                        ),
+                    })
+                  }
+                  busy={deleteMut.isPending}
+                />
+              ),
+            } satisfies ColumnDef<JobWorkOrderListItem>,
+          ]
+        : []),
     ],
-    [],
+    [canWrite, deleteMut],
   );
 
   const table = useReactTable({
@@ -277,6 +337,50 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         emptyLabel="No job-work orders"
         onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
       />
+    </div>
+  );
+}
+
+function JwRowActions({
+  id,
+  code,
+  onDelete,
+  busy,
+}: {
+  id: string;
+  code: string;
+  onDelete: (id: string) => void;
+  busy: boolean;
+}): React.JSX.Element {
+  const handleDelete = (): void => {
+    if (window.confirm(`Move JW ${code} to Trash?`)) onDelete(id);
+  };
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      <Link
+        to="/job-work-orders/$id/edit"
+        params={{ id }}
+        className="btn btn-ghost btn-sm"
+        style={{ fontSize: 11 }}
+      >
+        Edit
+      </Link>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={handleDelete}
+        disabled={busy}
+        style={{
+          fontSize: 11,
+          background: 'var(--red)',
+          color: '#fff',
+          fontWeight: 700,
+          opacity: busy ? 0.5 : 1,
+        }}
+        title="Soft-delete (move to Trash)"
+      >
+        Del
+      </button>
     </div>
   );
 }

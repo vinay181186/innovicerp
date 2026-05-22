@@ -79,7 +79,7 @@ const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/sales-orders', label: 'SO Master', icon: '📋' },
           { to: '/job-work-orders', label: 'JW Master', icon: '🔧' },
-          { to: '/delivery-challans', label: 'Delivery Challans', icon: '📦' },
+          { to: '/delivery-challans', label: 'Dispatch Register', icon: '📦' },
         ],
       },
       {

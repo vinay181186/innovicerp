@@ -82,7 +82,7 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
 export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
 
 /** List row: header + aggregates from job_work_order_lines + linked job_cards.
- *  Mirrors legacy renderJWMaster columns line 12685 (Qty, JC Qty, Material). */
+ *  Mirrors legacy renderJWMaster columns line 12685 (Qty, JC Qty, Material, Due). */
 export const jobWorkOrderListItemSchema = jobWorkOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
@@ -92,6 +92,9 @@ export const jobWorkOrderListItemSchema = jobWorkOrderSchema.extend({
   materialReceivedQtyTotal: z.string(),
   /** Sum of clientMaterialQty across all lines. */
   clientMaterialQtyTotal: z.string(),
+  /** MIN(line.due_date) across non-deleted lines. Drives the "Due" col +
+   *  red-when-overdue colour. */
+  earliestDueDate: z.string().nullable(),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 

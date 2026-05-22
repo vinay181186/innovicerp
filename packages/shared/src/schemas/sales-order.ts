@@ -95,11 +95,13 @@ export const salesOrderDetailSchema = salesOrderSchema.extend({
 export type SalesOrderDetail = z.infer<typeof salesOrderDetailSchema>;
 
 /** List row: header + aggregates from sales_order_lines + linked job_cards.
- *  Mirrors legacy renderSOmaster columns line 11971 (Lines, Total Qty, JC Qty). */
+ *  Mirrors legacy renderSOmaster columns line 11971 (Lines, Total Qty, JC Qty,
+ *  Due Date). earliestDueDate = MIN(line.due_date) across non-deleted lines. */
 export const salesOrderListItemSchema = salesOrderSchema.extend({
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
   jcQty: z.number().int().nonnegative(),
+  earliestDueDate: z.string().nullable(),
 });
 export type SalesOrderListItem = z.infer<typeof salesOrderListItemSchema>;
 

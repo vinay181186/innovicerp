@@ -197,10 +197,14 @@ export async function listSalesOrders(
         so.deleted_at AS "deletedAt",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
+        line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty"
       FROM public.sales_orders so
       LEFT JOIN (
-        SELECT sales_order_id, COUNT(*) AS line_count, SUM(order_qty) AS total_qty
+        SELECT sales_order_id,
+               COUNT(*) AS line_count,
+               SUM(order_qty) AS total_qty,
+               MIN(due_date) AS earliest_due_date
         FROM public.sales_order_lines
         WHERE deleted_at IS NULL
         GROUP BY sales_order_id
@@ -267,6 +271,7 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     jcQty: Number(r['jcQty'] ?? 0),
+    earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
   };
 }
 
