@@ -1,6 +1,7 @@
 # PARITY — SO Overview (`renderSOOverview`)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L9112–9219 (+ `_deriveSOSummaries` L9064, `_soOvStageBadge` L9088, `_soOvStatusBadge` L9089).
+> **Shipped status (2026-05-22):** PL-2b commit `68ee9dd feat(so-overview): PL-2b — in-screen drill view + status pills + Equipment column` shipped the named gap (in-screen drill) + status pills + Equipment column to `apps/web/src/modules/so-overview/routes/list.tsx` (933 lines). **The four §5 BLOCKERs below are now ✅ shipped.** Re-verify before treating any item as open work.
 > **Shipped today (PL-2):** flat list at `/so-overview` — summary tile strip, search + status (open/closed) filter, one row per SO with code/customer/type/lines/status badge/progress/qty triplet/due/alerts + Activity-icon link to PL-1 SO Status. About **55% of legacy** is in.
 > **Status legend:** ✅ present · ⚠️ partial · ❌ missing.
 > **Tag every gap:** **BLOCKER** (team can't work without it) · **DELTA** (different but workable) · **POLISH** (visual only).

@@ -445,6 +445,13 @@
   background: #ffedd5;
   border: 1px solid var(--orange);
 }
+.b-teal {
+  /* Legacy renderAssemblyTracker uses #14b8a6 for the "Done" assembly state
+     to distinguish completed equipment-assembly from the green "Ready" state. */
+  color: #14b8a6;
+  background: rgba(20, 184, 166, 0.12);
+  border: 1px solid rgba(20, 184, 166, 0.4);
+}
 
 /* ═══ BUTTONS ═══ */
 .btn {

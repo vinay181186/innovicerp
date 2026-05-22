@@ -295,6 +295,33 @@ export const planningDashboardResponseSchema = z.object({
 });
 export type PlanningDashboardResponse = z.infer<typeof planningDashboardResponseSchema>;
 
+// ─── Needs Planning (PL-3b) — unplanned SO lines list ───────────────────
+// Drives the "Needs Planning" tile click on the dashboard.
+// Legacy renderPlanDashboard L10024–10041: each row is an open SO/JW line
+// where Σ planQty < orderQty. We return the SO-side rows only; JW lines join
+// later when the JW path lands.
+
+export const unplannedOrderRowSchema = z.object({
+  soLineId: z.string().uuid(),
+  soId: z.string().uuid(),
+  soCode: z.string(),
+  lineNo: z.number().int().positive(),
+  itemCode: z.string().nullable(),
+  partName: z.string().nullable(),
+  customerName: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  orderQty: z.number().int().nonnegative(),
+  plannedQty: z.number().int().nonnegative(),
+  remainingQty: z.number().int().nonnegative(),
+});
+export type UnplannedOrderRow = z.infer<typeof unplannedOrderRowSchema>;
+
+export const unplannedOrdersResponseSchema = z.object({
+  generatedAt: z.string(),
+  rows: z.array(unplannedOrderRowSchema),
+});
+export type UnplannedOrdersResponse = z.infer<typeof unplannedOrdersResponseSchema>;
+
 // ─── Execute plan response (PL-4) ────────────────────────────────────────
 
 export const executePlanResultSchema = z.object({

@@ -26,6 +26,7 @@ import type {
   PlanRequiredDoc,
   PlanningDashboardResponse,
   PlanStatus,
+  UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
 import {
@@ -887,6 +888,84 @@ export async function getPlanningDashboard(
         itemCode: r.itemCode ?? null,
         itemName: r.itemName ?? null,
         opsCount: opsCounts.get(r.plan.id) ?? 0,
+      })),
+    };
+  });
+}
+
+// ─── Needs Planning (PL-3b) ──────────────────────────────────────────────
+// Lists open SO lines that don't yet have a non-cancelled plan covering
+// their full quantity. Mirrors legacy renderPlanDashboard L10024–10041 when
+// flt='unplanned'. SO-side only; JW lines join when JW planning lands.
+export async function getUnplannedOrders(
+  user: AuthContext,
+): Promise<UnplannedOrdersResponse> {
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx.execute(sql`
+      WITH planned_qty AS (
+        SELECT so_line_id, COALESCE(SUM(plan_qty), 0)::int AS qty
+        FROM public.plans
+        WHERE company_id = ${companyId}::uuid
+          AND deleted_at IS NULL
+          AND plan_status <> 'cancelled'
+          AND so_line_id IS NOT NULL
+        GROUP BY so_line_id
+      )
+      SELECT
+        sol.id            AS so_line_id,
+        so.id             AS so_id,
+        so.code           AS so_code,
+        sol.line_no       AS line_no,
+        sol.item_code_text AS item_code,
+        sol.part_name     AS part_name,
+        so.customer_name  AS customer_name,
+        sol.due_date::text AS due_date,
+        sol.order_qty     AS order_qty,
+        COALESCE(pq.qty, 0)::int AS planned_qty,
+        GREATEST(sol.order_qty - COALESCE(pq.qty, 0), 0)::int AS remaining_qty
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      LEFT JOIN planned_qty pq ON pq.so_line_id = sol.id
+      WHERE so.company_id = ${companyId}::uuid
+        AND so.status = 'open'
+        AND so.deleted_at IS NULL
+        AND sol.deleted_at IS NULL
+        AND sol.status = 'open'
+        AND COALESCE(pq.qty, 0) < sol.order_qty
+      ORDER BY sol.due_date ASC NULLS LAST, so.code ASC, sol.line_no ASC
+    `);
+
+    type Row = {
+      so_line_id: string;
+      so_id: string;
+      so_code: string;
+      line_no: number;
+      item_code: string | null;
+      part_name: string | null;
+      customer_name: string | null;
+      due_date: string | null;
+      order_qty: number;
+      planned_qty: number;
+      remaining_qty: number;
+    };
+    const typed = rows as unknown as Row[];
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rows: typed.map((r) => ({
+        soLineId: r.so_line_id,
+        soId: r.so_id,
+        soCode: r.so_code,
+        lineNo: Number(r.line_no),
+        itemCode: r.item_code,
+        partName: r.part_name,
+        customerName: r.customer_name,
+        dueDate: r.due_date,
+        orderQty: Number(r.order_qty),
+        plannedQty: Number(r.planned_qty),
+        remainingQty: Number(r.remaining_qty),
       })),
     };
   });

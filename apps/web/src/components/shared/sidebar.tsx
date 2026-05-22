@@ -51,14 +51,19 @@ const SECTIONS: readonly NavSection[] = [
     label: 'Planning',
     modClass: 'planning',
     icon: '📋',
+    // Items mirror legacy sidebar L401–405 in order + labels + icons.
+    // /plans (React-only convenience index) is appended below the legacy
+    // five so the legacy list stays in canonical order at the top.
+    // /job-cards moved to Production per legacy L459 (dept:'production').
     groups: [
       {
         items: [
-          { to: '/planning-dashboard', label: 'Plan Dashboard', icon: '📊' },
-          { to: '/planning', label: 'SO/JW Planning', icon: '🎯' },
+          { to: '/planning-dashboard', label: 'Planning Dashboard', icon: '📊' },
+          { to: '/planning', label: 'SO/JW Planning', icon: '📋' },
+          { to: '/so-overview', label: 'SO Overview', icon: '📊' },
+          { to: '/so-status', label: 'SO Status Review', icon: '📊' },
+          { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
           { to: '/plans', label: 'Plans', icon: '📋' },
-          { to: '/assemblies', label: 'Assembly Tracker', icon: '🔧' },
-          { to: '/job-cards', label: 'Job Cards', icon: '🏭' },
         ],
       },
     ],
@@ -76,10 +81,6 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/job-work-orders', label: 'JW Master', icon: '🔧' },
           { to: '/delivery-challans', label: 'Delivery Challans', icon: '📦' },
         ],
-      },
-      {
-        label: 'Reports',
-        items: [{ to: '/so-overview', label: 'SO Overview', icon: '📊' }],
       },
       {
         label: 'Master',
@@ -116,6 +117,7 @@ const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
+          { to: '/job-cards', label: 'Job Cards', icon: '🏭' },
           { to: '/op-entry', label: 'Op Entry (JC)', icon: '🔧' },
           { to: '/op-entry/machines', label: 'Op Entry (Machine)', icon: '⚙️' },
           { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },

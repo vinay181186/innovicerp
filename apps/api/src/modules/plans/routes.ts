@@ -67,4 +67,11 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     return service.getPlanningDashboard(req.user);
   });
+
+  // PL-3b — Needs Planning tile drill: returns unplanned SO lines.
+  // Mirrors legacy renderPlanDashboard L10024–10041 when flt='unplanned'.
+  app.get('/planning-dashboard/unplanned', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getUnplannedOrders(req.user);
+  });
 }

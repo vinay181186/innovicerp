@@ -1,7 +1,7 @@
 # PARITY — SO/JW Planning workflow (`renderSOPlanning`)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L9299–9437 (+ supporting modals L7116, L8848, L9440, L9500, L9777, L9942).
-> **Shipped today (PL-4):** generic Plans list + per-plan form at `/plans` and `/plans/new`. SO-centric workflow does NOT exist yet.
+> **Shipped status (2026-05-22):** PL-4b commit `3ce5cbd feat(so-planning): PL-4b — SO-centric /planning workflow (parity-checklist port)` ported the two-pane workflow to `apps/web/src/modules/so-planning/routes/workflow.tsx` (634 lines). **The list below predates that ship — many ❌ BLOCKERs are now ✅ shipped.** Re-verify before treating any item as open work.
 > **Status legend:** ✅ present · ⚠️ partial · ❌ missing.
 > **Tag every gap:** **BLOCKER** (team can't work without it) · **DELTA** (different but workable) · **POLISH** (visual only).
 

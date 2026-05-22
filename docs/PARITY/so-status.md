@@ -1,6 +1,7 @@
 # PARITY — SO Status Review (`renderSOStatus`)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L4255–4561.
+> **Shipped status (2026-05-22):** PL-1b commit `22bbea5 feat(so-status): PL-1b — Equipment-BOM banner + items table + OSP alerts + Create JC bridge` shipped Equipment-BOM banner + items table + 3 OSP alert rows + inline PR Op buttons + Create Job Card bridge to `apps/web/src/modules/so-status/routes/detail.tsx` (779 lines). **Multiple ❌ BLOCKERs below are now ✅ shipped.** Re-verify before treating any item as open work.
 > **Shipped today (PL-1):** single-pane detail at `/sales-orders/$id/status` — header + per-line panel + JC table + op chips. Missing: Equipment-BOM banner, Equipment-BOM items table, per-line tracker chips beyond the 6 basic, per-line action buttons, left-pane SO selector, Export Excel + Edit-in-Master actions, OSP-aware op chips, GRN-QC alert lines.
 > **Status legend:** ✅ present · ⚠️ partial · ❌ missing.
 > **Tag every gap:** **BLOCKER** (team can't work without it) · **DELTA** (different but workable) · **POLISH** (visual only).

@@ -6,6 +6,7 @@ import type {
   PlanDetail,
   PlanOpInput,
   PlanningDashboardResponse,
+  UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,6 +53,18 @@ export function usePlanningDashboard() {
   return useQuery<PlanningDashboardResponse>({
     queryKey: plansKeys.dashboard(),
     queryFn: () => apiFetch<PlanningDashboardResponse>('/planning-dashboard'),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// PL-3b — Needs Planning tile data. Only fetched when the user clicks the
+// "Needs Planning" tile (gate via `enabled` in the caller).
+export function useUnplannedOrders(enabled: boolean) {
+  return useQuery<UnplannedOrdersResponse>({
+    queryKey: [...plansKeys.all, 'unplanned'] as const,
+    queryFn: () => apiFetch<UnplannedOrdersResponse>('/planning-dashboard/unplanned'),
+    enabled,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });

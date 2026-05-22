@@ -296,6 +296,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
             .select({
               soId: salesOrderLines.salesOrderId,
               orderQty: sql<number>`COALESCE(SUM(${salesOrderLines.orderQty}), 0)::int`,
+              earliestDueDate: sql<string | null>`MIN(${salesOrderLines.dueDate})::text`,
             })
             .from(salesOrderLines)
             .where(
@@ -330,7 +331,11 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
     ]);
 
     const orderQtyMap = new Map<string, number>();
-    for (const r of orderQtyRows) orderQtyMap.set(r.soId, Number(r.orderQty));
+    const dueDateMap = new Map<string, string | null>();
+    for (const r of orderQtyRows) {
+      orderQtyMap.set(r.soId, Number(r.orderQty));
+      dueDateMap.set(r.soId, r.earliestDueDate ?? null);
+    }
     const assembledMap = new Map<string, { assembled: number; dispatched: number }>();
     for (const r of assembledAggRows) {
       assembledMap.set(r.soId, {
@@ -356,6 +361,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
         orderQty,
         assembledQty,
         dispatchedQty,
+        dueDate: dueDateMap.get(r.soId) ?? null,
         status: deriveStatus(orderQty, assembledQty, 0),
       };
     });

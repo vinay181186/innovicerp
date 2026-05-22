@@ -101,6 +101,7 @@ export const assemblyListItemSchema = z.object({
   orderQty: z.number().int().nonnegative(),
   assembledQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
+  dueDate: z.string().nullable(),
   status: z.enum(['waiting', 'ready', 'assembling', 'done']),
 });
 export type AssemblyListItem = z.infer<typeof assemblyListItemSchema>;
