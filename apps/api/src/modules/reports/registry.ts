@@ -11,6 +11,7 @@
 import type { DbTransaction } from '../../db/with-user-context';
 import { dailyOpLogReport } from './definitions/daily-op-log';
 import { grnQcLogReport } from './definitions/grn-qc-log';
+import { itemTrackerReport } from './definitions/item-tracker';
 import { itemsOnHandReport } from './definitions/items-on-hand';
 import { jcAgeingReport } from './definitions/jc-ageing';
 import { jcStatusSummaryReport } from './definitions/jc-status-summary';
@@ -43,6 +44,7 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [ncSummaryByReasonReport.definition.slug]: ncSummaryByReasonReport,
   [openPoAgeingReport.definition.slug]: openPoAgeingReport,
   [itemsOnHandReport.definition.slug]: itemsOnHandReport,
+  [itemTrackerReport.definition.slug]: itemTrackerReport,
   [operatorProductivityReport.definition.slug]: operatorProductivityReport,
   [jcStatusSummaryReport.definition.slug]: jcStatusSummaryReport,
   [soOpenBacklogReport.definition.slug]: soOpenBacklogReport,

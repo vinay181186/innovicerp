@@ -94,6 +94,7 @@ const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/so-timeline', label: 'SO Timeline', icon: '📅' },
           { to: '/pending-so-value', label: 'Pending SO Value', icon: '💰' },
+          { to: '/reports?group=Sales', label: 'Sales Reports', icon: '📊' },
         ],
       },
     ],

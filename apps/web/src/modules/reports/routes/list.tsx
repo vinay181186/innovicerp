@@ -2,29 +2,40 @@ import type { ReportDefinition } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowRight, BarChart3, Loader2, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
+import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList } from '../api';
 
+const listSearchSchema = z.object({
+  group: z.string().optional(),
+});
+
 export const reportsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'reports',
+  validateSearch: listSearchSchema,
   component: ReportsListPage,
 });
 
 function ReportsListPage() {
+  const search = reportsListRoute.useSearch();
   const { data, isLoading, isError, error } = useReportList();
 
   const grouped = useMemo(() => {
     if (!data) return {} as Record<string, ReportDefinition[]>;
     const out: Record<string, ReportDefinition[]> = {};
     for (const r of data.reports) {
+      // PL-RPT-1 — `?group=Sales` (or any group label) narrows the list to
+      // one dept. Mirrors legacy renderDeptReport L2473 which scopes the
+      // generic /reports page to a single department's tabs.
+      if (search.group && r.group !== search.group) continue;
       if (!out[r.group]) out[r.group] = [];
       out[r.group]!.push(r);
     }
     return out;
-  }, [data]);
+  }, [data, search.group]);
 
   return (
     <main className="container max-w-5xl py-10">
@@ -33,9 +44,13 @@ function ReportsListPage() {
           <div className="flex items-start gap-3">
             <BarChart3 className="mt-1 h-6 w-6 text-muted-foreground" />
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {search.group ? `${search.group} Reports` : 'Reports'}
+              </h1>
               <p className="text-sm text-muted-foreground">
-                Server-defined reports — pick one, fill the filters, run.
+                {search.group
+                  ? `Reports filtered to ${search.group} department.`
+                  : 'Server-defined reports — pick one, fill the filters, run.'}
               </p>
             </div>
           </div>
