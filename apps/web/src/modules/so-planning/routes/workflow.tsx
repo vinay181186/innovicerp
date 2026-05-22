@@ -1,0 +1,634 @@
+// SO/JW Planning workflow (PL-4b §1, §2, §3). Two-pane layout mirroring
+// legacy renderSOPlanning (HTML L9299):
+//   Left  = 250px fixed SO list with planning %.
+//   Right = per-line cards with status-specific action buttons.
+// Clicking actions opens the modals (create, edit, equip-bom, assembly-bom).
+
+import type { PlanningPlanSummary, PlanningSoListItem } from '@innovic/shared';
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { Activity, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { z } from 'zod';
+import { authenticatedRoute } from '@/routes/_authenticated';
+import { useExecutePlan, usePlan } from '@/modules/plans/api';
+import { usePlanningSoDetail, usePlanningSoList } from '../api';
+import { BomPlanningModal } from '../components/bom-planning-modal';
+import { CreatePlanModal } from '../components/create-plan-modal';
+import { EditPlanModal } from '../components/edit-plan-modal';
+
+const searchSchema = z.object({
+  soId: z.string().uuid().optional(),
+  openPlan: z.string().uuid().optional(),
+});
+
+export const soPlanningWorkflowRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  path: 'planning',
+  validateSearch: searchSchema,
+  component: PlanningWorkflowPage,
+});
+
+type ModalState =
+  | { kind: 'none' }
+  | { kind: 'create'; soLineId: string }
+  | { kind: 'edit'; planId: string }
+  | { kind: 'equip-bom'; soLineId: string }
+  | { kind: 'assembly-bom'; soLineId: string };
+
+function PlanningWorkflowPage(): JSX.Element {
+  const navigate = useNavigate();
+  const { soId: soIdParam, openPlan } = soPlanningWorkflowRoute.useSearch();
+  const soList = usePlanningSoList();
+  const [selSoId, setSelSoId] = useState<string | null>(soIdParam ?? null);
+  const [modal, setModal] = useState<ModalState>(
+    openPlan ? { kind: 'edit', planId: openPlan } : { kind: 'none' },
+  );
+
+  // Auto-select first SO on first load.
+  useEffect(() => {
+    if (!selSoId && soList.data && soList.data.items.length > 0) {
+      setSelSoId(soList.data.items[0]!.soId);
+    }
+  }, [soList.data, selSoId]);
+
+  // Keep ?soId= in URL aligned with selection.
+  useEffect(() => {
+    if (selSoId && selSoId !== soIdParam) {
+      void navigate({
+        to: '/planning',
+        search: (prev) => ({ ...prev, soId: selSoId }),
+        replace: true,
+      });
+    }
+  }, [selSoId, soIdParam, navigate]);
+
+  return (
+    <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 70px)' }}>
+      {/* Left pane */}
+      <div
+        style={{
+          width: 250,
+          minWidth: 250,
+          borderRight: '1px solid var(--border)',
+          overflowY: 'auto',
+          background: 'var(--bg2)',
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 12px',
+            borderBottom: '1px solid var(--border)',
+            fontSize: 11,
+            fontWeight: 700,
+            color: 'var(--text3)',
+            textTransform: 'uppercase',
+            letterSpacing: '.08em',
+          }}
+        >
+          Select SO/JW
+        </div>
+        {soList.isLoading && (
+          <div style={{ padding: 16 }}>
+            <Loader2 className="inline-block animate-spin" /> Loading…
+          </div>
+        )}
+        {soList.data && soList.data.items.length === 0 && (
+          <div className="empty-state" style={{ padding: 16 }}>
+            No SOs found
+          </div>
+        )}
+        {(soList.data?.items ?? []).map((so) => (
+          <SoListRow
+            key={so.soId}
+            so={so}
+            active={so.soId === selSoId}
+            onClick={() => setSelSoId(so.soId)}
+          />
+        ))}
+      </div>
+
+      {/* Right pane */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <RightPane
+          soId={selSoId}
+          modal={modal}
+          setModal={setModal}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SoListRow({
+  so,
+  active,
+  onClick,
+}: {
+  so: PlanningSoListItem;
+  active: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  const dotColor =
+    so.planningStatus === 'fully_planned'
+      ? 'var(--green)'
+      : so.planningStatus === 'partial'
+        ? 'var(--amber)'
+        : 'var(--text3)';
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '8px 12px',
+        cursor: 'pointer',
+        borderLeft: `3px solid ${active ? 'var(--cyan)' : 'transparent'}`,
+        background: active ? 'var(--bg3)' : 'transparent',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span
+          className="mono fw-700"
+          style={{ fontSize: 12, color: 'var(--cyan)' }}
+        >
+          {so.soCode}
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            padding: '2px 6px',
+            borderRadius: 3,
+            background: dotColor,
+            color: '#fff',
+            fontWeight: 700,
+          }}
+        >
+          {so.planningPct}%
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{so.customerName ?? '—'}</div>
+    </div>
+  );
+}
+
+function RightPane({
+  soId,
+  modal,
+  setModal,
+}: {
+  soId: string | null;
+  modal: ModalState;
+  setModal: (m: ModalState) => void;
+}): JSX.Element {
+  const detail = usePlanningSoDetail(soId);
+  const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
+  const executePlan = useExecutePlan();
+  const navigate = useNavigate();
+
+  if (!soId) {
+    return (
+      <div className="empty-state">
+        Select an SO from the left panel to view and plan its lines.
+      </div>
+    );
+  }
+  if (detail.isLoading) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Loader2 className="inline-block animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (detail.error || !detail.data) {
+    return (
+      <div
+        style={{
+          padding: 12,
+          color: 'var(--red)',
+          background: 'rgba(239,68,68,0.1)',
+          borderRadius: 4,
+        }}
+      >
+        {detail.error instanceof Error ? detail.error.message : 'Failed to load SO'}
+      </div>
+    );
+  }
+
+  const so = detail.data;
+  return (
+    <>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Planning: {so.soCode} {so.customerName ? <small>({so.customerName})</small> : null}
+        </div>
+      </div>
+      {so.lines.length === 0 ? (
+        <div className="empty-state">No open lines for this SO.</div>
+      ) : (
+        so.lines.map((line) => {
+          const totalQty = line.orderQty;
+          const pct =
+            totalQty > 0 ? Math.min(100, Math.round((line.totalPlanned / totalQty) * 100)) : 0;
+          const barColor =
+            pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--cyan)' : 'var(--text3)';
+          const lineStatusLabel =
+            line.remaining <= 0
+              ? 'Fully Planned'
+              : line.plans.length > 0
+                ? `Partial (${line.remaining} left)`
+                : 'Unplanned';
+          const lineStatusColor =
+            line.remaining <= 0
+              ? 'var(--green)'
+              : line.plans.length > 0
+                ? 'var(--amber)'
+                : 'var(--text3)';
+          return (
+            <div
+              key={line.soLineId}
+              className="card"
+              style={{
+                marginBottom: 12,
+                padding: 0,
+                overflow: 'hidden',
+                borderLeft: `3px solid ${lineStatusColor}`,
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '10px 14px',
+                  background: 'var(--bg3)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: 'var(--text3)',
+                      fontFamily: 'var(--mono)',
+                    }}
+                  >
+                    LINE {line.lineNo}
+                  </span>
+                  {line.clientPoLineNo ? (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: 'var(--purple)',
+                        fontWeight: 700,
+                        background: 'rgba(124,58,237,0.1)',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                      }}
+                    >
+                      [CPO:{line.clientPoLineNo}]
+                    </span>
+                  ) : null}
+                  <span style={{ fontWeight: 700, color: 'var(--purple)' }}>
+                    {line.itemCode ?? ''}
+                  </span>
+                  <span style={{ fontSize: 12 }}>{line.itemName ?? ''}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12 }}>
+                    SO: <b>{line.orderQty}</b>
+                  </span>
+                  <span style={{ fontSize: 12 }}>
+                    Due: <b>{line.dueDate ?? '—'}</b>
+                  </span>
+                </div>
+              </div>
+              {/* Progress */}
+              <div
+                style={{
+                  padding: '6px 14px',
+                  background: 'var(--bg)',
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+                    Planned:{' '}
+                    <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b> /{' '}
+                    {line.orderQty} pcs ({pct}%)
+                  </span>
+                  <span
+                    style={{ fontSize: 10, fontWeight: 700, color: lineStatusColor }}
+                  >
+                    {lineStatusLabel}
+                  </span>
+                </div>
+                <div style={{ height: 6, background: 'var(--bg5)', borderRadius: 3 }}>
+                  <div
+                    style={{
+                      width: `${pct}%`,
+                      height: 6,
+                      background: barColor,
+                      borderRadius: 3,
+                    }}
+                  />
+                </div>
+              </div>
+              {/* Plan sub-cards */}
+              {line.plans.length > 0 && (
+                <div style={{ padding: '6px 14px' }}>
+                  {line.plans.map((p) => (
+                    <PlanCard
+                      key={p.id}
+                      plan={p}
+                      onEdit={() => setModal({ kind: 'edit', planId: p.id })}
+                      onExecute={async () => {
+                        await executePlan.mutateAsync(p.id);
+                        // refetch handled by mutation onSuccess invalidation
+                      }}
+                      onViewJc={() => {
+                        // Navigate to JC detail by jcCode if present
+                        // (existing /job-cards/:id is by id, not code, so use list filter as fallback)
+                        if (p.jcCode) {
+                          void navigate({
+                            to: '/op-entry',
+                            search: { jc: p.jcCode } as never,
+                          });
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              {/* Footer actions */}
+              <div
+                style={{
+                  padding: '6px 14px',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 6,
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
+                {line.hasEquipmentBom ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{
+                      background: 'rgba(34,211,238,0.08)',
+                      color: 'var(--cyan)',
+                      border: '1px solid rgba(34,211,238,0.3)',
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}
+                    onClick={() => setModal({ kind: 'equip-bom', soLineId: line.soLineId })}
+                  >
+                    📦 Equipment BOM Planning ({line.bomPartsCount} parts)
+                  </button>
+                ) : null}
+                {line.hasAssemblyBom ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{
+                      background: 'rgba(34,211,238,0.08)',
+                      color: 'var(--cyan)',
+                      border: '1px solid rgba(34,211,238,0.3)',
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}
+                    onClick={() => setModal({ kind: 'assembly-bom', soLineId: line.soLineId })}
+                  >
+                    📦 BOM Planning ({line.bomPartsCount} parts)
+                  </button>
+                ) : null}
+                {!line.hasEquipmentBom && line.remaining > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{
+                      background: 'var(--cyan)',
+                      color: '#fff',
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}
+                    onClick={() => setModal({ kind: 'create', soLineId: line.soLineId })}
+                  >
+                    + Plan {line.remaining} pcs
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      {/* Modals */}
+      {modal.kind === 'create' &&
+        (() => {
+          const targetLine = so.lines.find((l) => l.soLineId === modal.soLineId);
+          if (!targetLine) return null;
+          return (
+            <CreatePlanModal
+              so={so}
+              line={targetLine}
+              onClose={() => setModal({ kind: 'none' })}
+              onCreated={(planId) => {
+                setModal({ kind: 'edit', planId });
+                void detail.refetch();
+              }}
+            />
+          );
+        })()}
+
+      {modal.kind === 'edit' && editingPlan.data ? (
+        <EditPlanModal
+          plan={editingPlan.data}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            void detail.refetch();
+            void editingPlan.refetch();
+          }}
+        />
+      ) : null}
+
+      {modal.kind === 'equip-bom' && (
+        <BomPlanningModal
+          mode="equipment"
+          soId={so.soId}
+          soCode={so.soCode}
+          soLineId={modal.soLineId}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            void detail.refetch();
+          }}
+        />
+      )}
+
+      {modal.kind === 'assembly-bom' && (
+        <BomPlanningModal
+          mode="assembly"
+          soId={so.soId}
+          soCode={so.soCode}
+          soLineId={modal.soLineId}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            void detail.refetch();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function PlanCard({
+  plan,
+  onEdit,
+  onExecute,
+  onViewJc,
+}: {
+  plan: PlanningPlanSummary;
+  onEdit: () => void;
+  onExecute: () => void | Promise<void>;
+  onViewJc: () => void;
+}): JSX.Element {
+  const isDP = plan.planType === 'direct_purchase';
+  const isFO = plan.planType === 'full_outsource';
+  const typeIcon = isDP ? '🛒' : isFO ? '📦' : '🏭';
+  const typeLabel = isDP ? 'Buy' : isFO ? 'OSP' : 'Mfg';
+  const stColor =
+    plan.planStatus === 'in_planning'
+      ? 'var(--amber)'
+      : plan.planStatus === 'planned'
+        ? 'var(--blue)'
+        : plan.planStatus === 'jc_created'
+          ? 'var(--cyan)'
+          : plan.planStatus === 'pr_created'
+            ? '#8b5cf6'
+            : 'var(--green)';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 10px',
+        margin: '4px 0',
+        background: 'var(--bg)',
+        borderRadius: 6,
+        border: '1px solid var(--border)',
+      }}
+    >
+      <span style={{ fontSize: 11 }}>{typeIcon}</span>
+      <span className="mono fw-700" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+        {plan.code}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+        {typeLabel} · <b>{plan.planQty} pcs</b>
+      </span>
+      {!isDP && !isFO && plan.opsCount > 0 ? (
+        <span style={{ fontSize: 9, color: 'var(--text3)' }}>
+          ({plan.opsCount} ops{plan.hasOutsourceOp ? ', 🏭 outsrc' : ''})
+        </span>
+      ) : null}
+      {isFO && plan.foVendorCodeText ? (
+        <span style={{ fontSize: 9, color: 'var(--purple)' }}>→ {plan.foVendorCodeText}</span>
+      ) : null}
+      <span
+        style={{
+          fontWeight: 700,
+          color: stColor,
+          fontSize: 10,
+          marginLeft: 'auto',
+        }}
+      >
+        {plan.planStatus}
+      </span>
+      <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+        {plan.planStatus === 'in_planning' && (
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{
+              background: 'var(--amber)',
+              color: '#000',
+              fontSize: 10,
+              fontWeight: 700,
+            }}
+            onClick={onEdit}
+          >
+            ✏ Edit
+          </button>
+        )}
+        {plan.planStatus === 'planned' && (
+          <>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{
+                background: 'var(--green)',
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 700,
+              }}
+              onClick={onExecute}
+            >
+              ⚡ Execute
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 10 }}
+              onClick={onEdit}
+            >
+              ✏
+            </button>
+          </>
+        )}
+        {plan.planStatus === 'pr_created' && (
+          <span
+            className="mono"
+            style={{ color: '#8b5cf6', fontSize: 10, fontWeight: 700 }}
+          >
+            PR:{plan.foPrCode ?? plan.dpPrCode ?? ''}
+            {plan.foMatPrCode ? (
+              <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
+                Mat:{plan.foMatPrCode}
+              </span>
+            ) : null}
+          </span>
+        )}
+        {(plan.planStatus === 'jc_created' ||
+          plan.planStatus === 'in_production' ||
+          plan.planStatus === 'complete') && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 10, color: 'var(--cyan)' }}
+            onClick={onViewJc}
+          >
+            <Activity size={11} /> {plan.jcCode ?? 'View JC'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -87,6 +87,7 @@ import { salesOrdersListRoute } from './modules/sales-orders/routes/list';
 import { salesOrderDetailRoute } from './modules/sales-orders/routes/detail';
 import { salesOrderEditRoute, salesOrderNewRoute } from './modules/sales-orders/routes/edit';
 import { soOverviewListRoute } from './modules/so-overview/routes/list';
+import { soPlanningWorkflowRoute } from './modules/so-planning/routes/workflow';
 import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
@@ -131,6 +132,7 @@ const routeTree = rootRoute.addChildren([
     salesOrderEditRoute,
     soStatusDetailRoute,
     soOverviewListRoute,
+    soPlanningWorkflowRoute,
     planningDashboardRoute,
     plansListRoute,
     planNewRoute,

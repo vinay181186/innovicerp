@@ -10,6 +10,14 @@ export const planStatusSchema: z.ZodType<PlanStatus> = z.enum(PLAN_STATUSES);
 export const planTypeSchema: z.ZodType<PlanType> = z.enum(PLAN_TYPES);
 const planOpTypeSchema: z.ZodType<OpType> = z.enum(OP_TYPES);
 
+// Legacy editPlan §5.8: per-plan list of QC documents the operator must
+// upload during inspection. Mandatory docs block QC completion later.
+export const planRequiredDocSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  mandatory: z.boolean(),
+});
+export type PlanRequiredDoc = z.infer<typeof planRequiredDocSchema>;
+
 export const planOpSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -82,6 +90,8 @@ export const planSchema = z.object({
   foMatPrId: z.string().uuid().nullable(),
 
   materialPrId: z.string().uuid().nullable(),
+
+  requiredDocs: z.array(planRequiredDocSchema),
 
   remarks: z.string().nullable(),
 
@@ -186,6 +196,8 @@ export const createPlanInputSchema = z.object({
 
   remarks: z.string().trim().max(500).nullable().optional(),
 
+  requiredDocs: z.array(planRequiredDocSchema).optional(),
+
   ops: z.array(planOpInputSchema).optional(),
 }).superRefine((val, ctx) => {
   // Item identification — at least one of itemId / itemCodeText must be set.
@@ -248,6 +260,8 @@ export const updatePlanInputSchema = z.object({
   foRemarks: z.string().trim().max(500).nullable().optional(),
 
   remarks: z.string().trim().max(500).nullable().optional(),
+
+  requiredDocs: z.array(planRequiredDocSchema).optional(),
 
   // Replace-all behavior on ops when present (matches sales_orders.lines merge)
   ops: z.array(planOpInputSchema).optional(),

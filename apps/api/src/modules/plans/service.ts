@@ -23,6 +23,7 @@ import type {
   PlanDetail,
   PlanOp,
   PlanOpInput,
+  PlanRequiredDoc,
   PlanningDashboardResponse,
   PlanStatus,
   UpdatePlanInput,
@@ -218,6 +219,7 @@ export async function createPlan(
         foDeliveryDate: input.foDeliveryDate ?? null,
         foCostCenter: input.foCostCenter ?? null,
         foRemarks: input.foRemarks ?? null,
+        requiredDocs: input.requiredDocs ?? [],
         remarks: input.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -287,6 +289,7 @@ export async function updatePlan(
     if (input.foDeliveryDate !== undefined) updates['foDeliveryDate'] = input.foDeliveryDate;
     if (input.foCostCenter !== undefined) updates['foCostCenter'] = input.foCostCenter;
     if (input.foRemarks !== undefined) updates['foRemarks'] = input.foRemarks;
+    if (input.requiredDocs !== undefined) updates['requiredDocs'] = input.requiredDocs;
     if (input.remarks !== undefined) updates['remarks'] = input.remarks;
 
     await tx.update(plans).set(updates).where(eq(plans.id, id));
@@ -995,6 +998,7 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     foPrId: row.foPrId,
     foMatPrId: row.foMatPrId,
     materialPrId: row.materialPrId,
+    requiredDocs: (Array.isArray(row.requiredDocs) ? row.requiredDocs : []) as PlanRequiredDoc[],
     remarks: row.remarks,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,

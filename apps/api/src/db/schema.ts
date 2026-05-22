@@ -2357,6 +2357,8 @@ export const plans = pgTable(
       onDelete: 'set null',
     }),
 
+    requiredDocs: jsonb('required_docs').notNull().default(sql`'[]'::jsonb`),
+
     remarks: text('remarks'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
