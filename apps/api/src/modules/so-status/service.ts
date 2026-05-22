@@ -13,15 +13,26 @@
 // cross-company isolation at the DB; service is just defensive.
 
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { SoStatusJc, SoStatusLine, SoStatusResponse } from '@innovic/shared';
+import type {
+  SoStatusBomItem,
+  SoStatusEquipmentInfo,
+  SoStatusJc,
+  SoStatusLine,
+  SoStatusPendingOsPrOp,
+  SoStatusResponse,
+} from '@innovic/shared';
 import {
+  bomMasterLines,
+  bomMasters,
   deliveryChallanLines,
   deliveryChallans,
   goodsReceiptNoteLines,
+  itemStockBalances,
   items,
   jcOps,
   jobCards,
   opLog,
+  plans,
   purchaseOrderLines,
   runningOps,
   salesOrderLines,
@@ -36,6 +47,8 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -307,17 +320,33 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       const dispQty = dispAggByLine.get(line.id) ?? 0;
 
       // Outsource tracking across all ops of all JCs linked to this line.
-      const outsourceOps = jcsForLine
-        .flatMap((jc) => rollupByJcId.get(jc.id)!.ops)
-        .filter((op) => op.opType === 'outsource');
+      // Carry the parent jc per op so we can emit pendingOps[] for the UI's
+      // inline "📋 PR Op<N>" buttons (PL-1b §2.3).
+      const outsourceOps = jcsForLine.flatMap((jc) =>
+        rollupByJcId
+          .get(jc.id)!
+          .ops.filter((op) => op.opType === 'outsource')
+          .map((op) => ({ op, jcId: jc.id, jcCode: jc.code })),
+      );
       let atVendorQty = 0;
+      let atVendorOpCount = 0;
       let pendingPrCount = 0;
       let prRaisedCount = 0;
-      for (const op of outsourceOps) {
+      const pendingOps: SoStatusPendingOsPrOp[] = [];
+      for (const { op, jcId: opJcId, jcCode } of outsourceOps) {
         if (op.status === 'outsource_at_vendor' || op.status === 'outsource_po_created') {
           atVendorQty += Math.max(0, op.inputAvail - op.completed);
+          atVendorOpCount += 1;
         }
-        if (op.status === 'outsource_pending') pendingPrCount += 1;
+        if (op.status === 'outsource_pending') {
+          pendingPrCount += 1;
+          pendingOps.push({
+            jcId: opJcId,
+            jcCode,
+            opSeq: op.opSeq,
+            operation: op.operation,
+          });
+        }
         if (op.status === 'outsource_pr_raised') prRaisedCount += 1;
       }
 
@@ -381,7 +410,13 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           produced: { qty: soLineRollup.doneQty, total: line.orderQty },
           dispatched: { qty: dispQty, total: line.orderQty },
         },
-        outsourceAlert: { atVendorQty, pendingPrCount, prRaisedCount },
+        outsourceAlert: {
+          atVendorQty,
+          atVendorOpCount,
+          pendingPrCount,
+          prRaisedCount,
+          pendingOps,
+        },
         jobCards: jobCardsOut,
       };
     });
@@ -390,6 +425,144 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
     const totalDoneQty = lines.reduce((s, l) => s + l.doneQty, 0);
     const overallPct =
       totalQty > 0 ? Math.min(100, Math.round((totalDoneQty / totalQty) * 100)) : 0;
+
+    // Equipment-SO BOM banner + items table (PL-1b §1.1 + §3). Only when
+    // type='equipment' AND a real uuid bomMasterId is set (defends against
+    // legacy text values like 'demo-bom-001' stored in the uuid column).
+    const isEquipment = header.type === 'equipment';
+    const equipmentBomId =
+      isEquipment && header.bomMasterId && UUID_RE.test(header.bomMasterId)
+        ? header.bomMasterId
+        : null;
+
+    let equipmentInfo: SoStatusEquipmentInfo | null = null;
+    let bomItems: SoStatusBomItem[] = [];
+
+    if (isEquipment) {
+      const firstLine = lineRows[0] ?? null;
+      const equipmentQty = lineRows.reduce((s, l) => s + l.orderQty, 0);
+      equipmentInfo = {
+        equipmentItemCode: firstLine?.itemCode ?? firstLine?.itemCodeText ?? null,
+        equipmentItemName: firstLine?.partName ?? null,
+        equipmentQty,
+        bomNo: null,
+        bomRev: null,
+        bomName: null,
+        bomPartsCount: 0,
+      };
+
+      if (equipmentBomId) {
+        const [bomHeaderRows, bomLineRows] = await Promise.all([
+          tx
+            .select({
+              id: bomMasters.id,
+              bomNo: bomMasters.bomNo,
+              bomName: bomMasters.bomName,
+              revision: bomMasters.revision,
+            })
+            .from(bomMasters)
+            .where(
+              and(
+                eq(bomMasters.id, equipmentBomId),
+                eq(bomMasters.companyId, companyId),
+                isNull(bomMasters.deletedAt),
+              ),
+            )
+            .limit(1),
+          tx
+            .select({
+              bml: bomMasterLines,
+              childCode: items.code,
+              childName: items.name,
+            })
+            .from(bomMasterLines)
+            .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
+            .where(
+              and(
+                eq(bomMasterLines.bomMasterId, equipmentBomId),
+                isNull(bomMasterLines.deletedAt),
+              ),
+            )
+            .orderBy(asc(bomMasterLines.lineNo)),
+        ]);
+
+        const bomHeader = bomHeaderRows[0];
+        if (bomHeader) {
+          equipmentInfo.bomNo = bomHeader.bomNo;
+          equipmentInfo.bomRev = bomHeader.revision;
+          equipmentInfo.bomName = bomHeader.bomName;
+          equipmentInfo.bomPartsCount = bomLineRows.length;
+        }
+
+        if (bomLineRows.length > 0) {
+          const childIds = bomLineRows.map((c) => c.bml.childItemId);
+          const [stockRows, existingPlanRows] = await Promise.all([
+            tx
+              .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
+              .from(itemStockBalances)
+              .where(
+                and(
+                  eq(itemStockBalances.companyId, companyId),
+                  inArray(itemStockBalances.itemId, childIds),
+                ),
+              ),
+            tx
+              .select({
+                plan: plans,
+                jcCode: jobCards.code,
+              })
+              .from(plans)
+              .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+              .where(
+                and(
+                  inArray(plans.soLineId, lineIds),
+                  isNull(plans.deletedAt),
+                  sql`${plans.planStatus} <> 'cancelled'`,
+                ),
+              ),
+          ]);
+          const stockMap = new Map<string, number>();
+          for (const s of stockRows) stockMap.set(s.itemId, Number(s.qty));
+
+          // Bucket existing plans by bomChildCode (skip assembly plans).
+          const planByChildCode = new Map<
+            string,
+            { status: string; code: string; jcCode: string | null }
+          >();
+          for (const r of existingPlanRows) {
+            if (r.plan.planType === 'assembly') continue;
+            const code = r.plan.bomChildCode;
+            if (!code) continue;
+            planByChildCode.set(code, {
+              status: r.plan.planStatus,
+              code: r.plan.code,
+              jcCode: r.jcCode ?? null,
+            });
+          }
+
+          bomItems = bomLineRows.map((c) => {
+            const qtyPerSet = Number(c.bml.qtyPerSet);
+            const totalNeed = qtyPerSet * equipmentQty;
+            const stockQty = stockMap.get(c.bml.childItemId) ?? 0;
+            const shortfall = Math.max(0, totalNeed - stockQty);
+            const existing = planByChildCode.get(c.childCode);
+            return {
+              childItemId: c.bml.childItemId,
+              childItemCode: c.childCode,
+              childItemName: c.childName,
+              qtyPerSet,
+              totalNeed,
+              stockQty,
+              shortfall,
+              bomType: c.bml.bomType,
+              planStatus: existing?.status ?? null,
+              planCode: existing?.code ?? null,
+              jcCode: existing?.jcCode ?? null,
+            };
+          });
+        }
+      }
+    }
 
     return {
       generatedAt: new Date().toISOString(),
@@ -403,14 +576,16 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         customerName: header.customerName,
         clientPoNo: header.clientPoNo,
         remarks: header.remarks,
-        bomMasterId: header.bomMasterId,
+        bomMasterId: equipmentBomId,
         bomStatus: header.bomStatus,
         gstPercent: header.gstPercent,
         totalQty,
         totalDoneQty,
         overallCompletionPct: overallPct,
+        equipmentInfo,
       },
       lines,
+      bomItems,
     };
   });
 }
@@ -418,6 +593,10 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
 function buildEmptyResponse(
   header: typeof salesOrders.$inferSelect,
 ): SoStatusResponse {
+  const equipmentBomId =
+    header.type === 'equipment' && header.bomMasterId && UUID_RE.test(header.bomMasterId)
+      ? header.bomMasterId
+      : null;
   return {
     generatedAt: new Date().toISOString(),
     header: {
@@ -430,13 +609,15 @@ function buildEmptyResponse(
       customerName: header.customerName,
       clientPoNo: header.clientPoNo,
       remarks: header.remarks,
-      bomMasterId: header.bomMasterId,
+      bomMasterId: equipmentBomId,
       bomStatus: header.bomStatus,
       gstPercent: header.gstPercent,
       totalQty: 0,
       totalDoneQty: 0,
       overallCompletionPct: 0,
+      equipmentInfo: null,
     },
     lines: [],
+    bomItems: [],
   };
 }

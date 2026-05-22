@@ -94,13 +94,30 @@ export const soStatusChipSchema = z.object({
 });
 export type SoStatusChip = z.infer<typeof soStatusChipSchema>;
 
+/** Per-op handle for the inline "📋 PR Op<N>" button on the JC ops chip strip
+ *  (PL-1b §2.3). Caller posts to the existing /purchase-requests endpoint
+ *  using these fields to identify which JC op needs the PR. */
+export const soStatusPendingOsPrOpSchema = z.object({
+  jcId: z.string().uuid(),
+  jcCode: z.string(),
+  opSeq: z.number().int().positive(),
+  operation: z.string(),
+});
+export type SoStatusPendingOsPrOp = z.infer<typeof soStatusPendingOsPrOpSchema>;
+
 export const soStatusOutsourceAlertSchema = z.object({
   /** Across ALL outsource ops for this line — qty currently at the vendor. */
   atVendorQty: z.number().int().nonnegative(),
+  /** # of outsource ops currently at the vendor (status Sent or PO Created).
+   *  Lets the UI render "<atVendorQty> pcs across <N> outsource op(s)". */
+  atVendorOpCount: z.number().int().nonnegative(),
   /** # of outsource ops awaiting PR creation. */
   pendingPrCount: z.number().int().nonnegative(),
   /** # of outsource ops where PR raised but no PO yet. */
   prRaisedCount: z.number().int().nonnegative(),
+  /** Per-op handles for the pending OSP ops — drives the inline PR buttons
+   *  inside the JC ops chip strip (PL-1b §2.3). */
+  pendingOps: z.array(soStatusPendingOsPrOpSchema),
 });
 export type SoStatusOutsourceAlert = z.infer<typeof soStatusOutsourceAlertSchema>;
 
@@ -133,6 +150,20 @@ export const soStatusLineSchema = z.object({
 });
 export type SoStatusLine = z.infer<typeof soStatusLineSchema>;
 
+/** Equipment-SO banner data (PL-1b §1.1). Present when SO type=equipment
+ *  AND a BOM master is linked at the SO header level. Drives the BOM-status
+ *  badge + linked-BOM chip + the "📦 Plan BOM Items" entry point. */
+export const soStatusEquipmentInfoSchema = z.object({
+  equipmentItemCode: z.string().nullable(),
+  equipmentItemName: z.string().nullable(),
+  equipmentQty: z.number().int().nonnegative(),
+  bomNo: z.string().nullable(),
+  bomRev: z.number().int().nullable(),
+  bomName: z.string().nullable(),
+  bomPartsCount: z.number().int().nonnegative(),
+});
+export type SoStatusEquipmentInfo = z.infer<typeof soStatusEquipmentInfoSchema>;
+
 export const soStatusHeaderSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
@@ -150,12 +181,36 @@ export const soStatusHeaderSchema = z.object({
   totalQty: z.number().int().nonnegative(),
   totalDoneQty: z.number().int().nonnegative(),
   overallCompletionPct: z.number().int().min(0).max(100),
+  /** Only set when type === 'equipment'. Null otherwise. */
+  equipmentInfo: soStatusEquipmentInfoSchema.nullable(),
 });
 export type SoStatusHeader = z.infer<typeof soStatusHeaderSchema>;
+
+/** BOM child row for the Equipment-SO BOM items table (PL-1b §3).
+ *  Same shape as PL-4b's PlanningBomChild but redeclared here to keep
+ *  so-status.ts self-contained for consumers. */
+export const soStatusBomItemSchema = z.object({
+  childItemId: z.string().uuid(),
+  childItemCode: z.string(),
+  childItemName: z.string(),
+  qtyPerSet: z.number().nonnegative(),
+  totalNeed: z.number().nonnegative(),
+  stockQty: z.number().nonnegative(),
+  shortfall: z.number().nonnegative(),
+  bomType: z.enum(['manufacture', 'purchase', 'outsource']),
+  /** Plan-status label + linked JC code, if a plan covers this child. */
+  planStatus: z.string().nullable(),
+  planCode: z.string().nullable(),
+  jcCode: z.string().nullable(),
+});
+export type SoStatusBomItem = z.infer<typeof soStatusBomItemSchema>;
 
 export const soStatusResponseSchema = z.object({
   generatedAt: z.string(),
   header: soStatusHeaderSchema,
   lines: z.array(soStatusLineSchema),
+  /** Only populated when the SO is an Equipment SO with a linked BOM master
+   *  and that BOM has children. [] otherwise. */
+  bomItems: z.array(soStatusBomItemSchema),
 });
 export type SoStatusResponse = z.infer<typeof soStatusResponseSchema>;
