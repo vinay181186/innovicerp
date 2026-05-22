@@ -1,6 +1,6 @@
 // GRN detail (UI-003-05).
 
-import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLine } from '@innovic/shared';
+import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -76,7 +76,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              {detail.vendorCodeText ?? (detail.vendorId ? '— linked vendor —' : '—')}
+              {detail.vendorName ?? detail.vendorCodeText ?? '—'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -208,13 +208,13 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   );
 }
 
-function LineRow(props: { line: GoodsReceiptNoteLine }): React.JSX.Element {
+function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element {
   const { line: l } = props;
   return (
     <tr>
       <td className="mono">{l.lineNo}</td>
       <td className="mono" style={{ fontSize: 11 }}>
-        {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
+        {l.itemCode ?? l.itemCodeText ?? '—'}
       </td>
       <td>{l.itemName}</td>
       <td className="td-right mono">{l.receivedQty}</td>
@@ -244,10 +244,10 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       <Pair label="Date" value={detail.grnDate} />
       <Pair label="DC No." value={detail.dcNo ?? '—'} />
       <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
-      <Pair label="PO" value={detail.purchaseOrderId ? '— linked —' : (detail.poCodeText ?? '—')} />
+      <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
       <Pair
         label="Vendor"
-        value={detail.vendorId ? '— linked —' : (detail.vendorCodeText ?? '—')}
+        value={detail.vendorName ?? detail.vendorCodeText ?? '—'}
       />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>

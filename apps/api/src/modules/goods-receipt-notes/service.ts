@@ -21,7 +21,7 @@
 // is present in the payload, run the merge; if omitted, only the header is
 // updated (existing lines untouched).
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -42,7 +42,6 @@ import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
 import type {
   CreateGoodsReceiptNoteInput,
-  GoodsReceiptNote,
   GoodsReceiptNoteDetail,
   GoodsReceiptNoteLine,
   GoodsReceiptNoteLineInput,
@@ -370,86 +369,112 @@ export async function getGoodsReceiptNote(
 ): Promise<GoodsReceiptNoteDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const headers = await tx
-      .select()
-      .from(goodsReceiptNotes)
-      .where(
-        and(
-          eq(goodsReceiptNotes.id, id),
-          eq(goodsReceiptNotes.companyId, companyId),
-          isNull(goodsReceiptNotes.deletedAt),
-        ),
-      )
-      .limit(1);
-    const header = headers[0];
-    if (!header) throw new NotFoundError(`Goods receipt note ${id} not found`);
+    // Per docs/PARITY/linked-display-audit (memory project_linked_display_audit):
+    // when an FK is set (vendor_id / purchase_order_id / line.item_id) we
+    // resolve the joined display value here so the UI can render the actual
+    // name/code rather than falling back to a "— linked —" placeholder.
+    const headerRows = await tx.execute(sql`
+      SELECT
+        grn.id, grn.company_id AS "companyId", grn.code,
+        grn.grn_date AS "grnDate",
+        grn.purchase_order_id AS "purchaseOrderId",
+        grn.po_code_text AS "poCodeText",
+        grn.vendor_id AS "vendorId",
+        grn.vendor_code_text AS "vendorCodeText",
+        grn.dc_no AS "dcNo", grn.invoice_no AS "invoiceNo", grn.remarks,
+        grn.created_at AS "createdAt", grn.created_by AS "createdBy",
+        grn.updated_at AS "updatedAt", grn.updated_by AS "updatedBy",
+        grn.deleted_at AS "deletedAt",
+        po.code AS "poCode",
+        v.name AS "vendorName"
+      FROM public.goods_receipt_notes grn
+      LEFT JOIN public.purchase_orders po
+        ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
+      LEFT JOIN public.vendors v
+        ON v.id = grn.vendor_id AND v.deleted_at IS NULL
+      WHERE grn.id = ${id}::uuid
+        AND grn.company_id = ${companyId}::uuid
+        AND grn.deleted_at IS NULL
+      LIMIT 1
+    `);
+    const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
+    if (!headerRow) throw new NotFoundError(`Goods receipt note ${id} not found`);
 
-    const lineRows = await tx
-      .select()
-      .from(goodsReceiptNoteLines)
-      .where(
-        and(
-          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-          isNull(goodsReceiptNoteLines.deletedAt),
-        ),
-      )
-      .orderBy(asc(goodsReceiptNoteLines.lineNo));
+    const lineResult = await tx.execute(sql`
+      SELECT
+        gnl.id, gnl.company_id AS "companyId",
+        gnl.goods_receipt_note_id AS "goodsReceiptNoteId",
+        gnl.line_no AS "lineNo",
+        gnl.purchase_order_line_id AS "purchaseOrderLineId",
+        gnl.item_id AS "itemId",
+        gnl.item_code_text AS "itemCodeText",
+        gnl.item_name AS "itemName",
+        gnl.received_qty AS "receivedQty",
+        gnl.dc_ref_no AS "dcRefNo",
+        gnl.qc_status AS "qcStatus",
+        gnl.qc_accepted_qty AS "qcAcceptedQty",
+        gnl.qc_rejected_qty AS "qcRejectedQty",
+        gnl.qc_date AS "qcDate",
+        gnl.qc_remarks AS "qcRemarks",
+        gnl.qc_inspected_by AS "qcInspectedBy",
+        gnl.remarks, gnl.created_at AS "createdAt", gnl.created_by AS "createdBy",
+        gnl.updated_at AS "updatedAt", gnl.updated_by AS "updatedBy",
+        gnl.deleted_at AS "deletedAt",
+        i.code AS "itemCode"
+      FROM public.goods_receipt_note_lines gnl
+      LEFT JOIN public.items i ON i.id = gnl.item_id AND i.deleted_at IS NULL
+      WHERE gnl.goods_receipt_note_id = ${id}::uuid
+        AND gnl.deleted_at IS NULL
+      ORDER BY gnl.line_no ASC
+    `);
+    const lineRows = lineResult as unknown as Array<Record<string, unknown>>;
 
     return {
-      ...toGoodsReceiptNote(header),
-      lines: lineRows.map(toGoodsReceiptNoteLine),
+      id: headerRow['id'] as string,
+      companyId: headerRow['companyId'] as string,
+      code: headerRow['code'] as string,
+      grnDate: dateLike(headerRow['grnDate']),
+      purchaseOrderId: (headerRow['purchaseOrderId'] as string | null) ?? null,
+      poCodeText: (headerRow['poCodeText'] as string | null) ?? null,
+      vendorId: (headerRow['vendorId'] as string | null) ?? null,
+      vendorCodeText: (headerRow['vendorCodeText'] as string | null) ?? null,
+      dcNo: (headerRow['dcNo'] as string | null) ?? null,
+      invoiceNo: (headerRow['invoiceNo'] as string | null) ?? null,
+      remarks: (headerRow['remarks'] as string | null) ?? null,
+      createdAt: tsLike(headerRow['createdAt']),
+      createdBy: headerRow['createdBy'] as string,
+      updatedAt: tsLike(headerRow['updatedAt']),
+      updatedBy: headerRow['updatedBy'] as string,
+      deletedAt: maybeTsLike(headerRow['deletedAt']),
+      poCode: (headerRow['poCode'] as string | null) ?? null,
+      vendorName: (headerRow['vendorName'] as string | null) ?? null,
+      lines: lineRows.map((r) => ({
+        id: r['id'] as string,
+        companyId: r['companyId'] as string,
+        goodsReceiptNoteId: r['goodsReceiptNoteId'] as string,
+        lineNo: Number(r['lineNo']),
+        purchaseOrderLineId: (r['purchaseOrderLineId'] as string | null) ?? null,
+        itemId: (r['itemId'] as string | null) ?? null,
+        itemCodeText: (r['itemCodeText'] as string | null) ?? null,
+        itemName: String(r['itemName'] ?? ''),
+        receivedQty: Number(r['receivedQty'] ?? 0),
+        dcRefNo: (r['dcRefNo'] as string | null) ?? null,
+        qcStatus: r['qcStatus'] as GoodsReceiptNoteLine['qcStatus'],
+        qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
+        qcRejectedQty: Number(r['qcRejectedQty'] ?? 0),
+        qcDate: maybeDateLike(r['qcDate']),
+        qcRemarks: (r['qcRemarks'] as string | null) ?? null,
+        qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
+        remarks: (r['remarks'] as string | null) ?? null,
+        createdAt: tsLike(r['createdAt']),
+        createdBy: r['createdBy'] as string,
+        updatedAt: tsLike(r['updatedAt']),
+        updatedBy: r['updatedBy'] as string,
+        deletedAt: maybeTsLike(r['deletedAt']),
+        itemCode: (r['itemCode'] as string | null) ?? null,
+      })),
     };
   });
-}
-
-function toGoodsReceiptNote(row: typeof goodsReceiptNotes.$inferSelect): GoodsReceiptNote {
-  return {
-    id: row.id,
-    companyId: row.companyId,
-    code: row.code,
-    grnDate: row.grnDate,
-    purchaseOrderId: row.purchaseOrderId,
-    poCodeText: row.poCodeText,
-    vendorId: row.vendorId,
-    vendorCodeText: row.vendorCodeText,
-    dcNo: row.dcNo,
-    invoiceNo: row.invoiceNo,
-    remarks: row.remarks,
-    createdAt: tsLike(row.createdAt),
-    createdBy: row.createdBy,
-    updatedAt: tsLike(row.updatedAt),
-    updatedBy: row.updatedBy,
-    deletedAt: maybeTsLike(row.deletedAt),
-  };
-}
-
-function toGoodsReceiptNoteLine(
-  row: typeof goodsReceiptNoteLines.$inferSelect,
-): GoodsReceiptNoteLine {
-  return {
-    id: row.id,
-    companyId: row.companyId,
-    goodsReceiptNoteId: row.goodsReceiptNoteId,
-    lineNo: row.lineNo,
-    purchaseOrderLineId: row.purchaseOrderLineId,
-    itemId: row.itemId,
-    itemCodeText: row.itemCodeText,
-    itemName: row.itemName,
-    receivedQty: row.receivedQty,
-    dcRefNo: row.dcRefNo,
-    qcStatus: row.qcStatus,
-    qcAcceptedQty: row.qcAcceptedQty,
-    qcRejectedQty: row.qcRejectedQty,
-    qcDate: maybeDateLike(row.qcDate),
-    qcRemarks: row.qcRemarks,
-    qcInspectedBy: row.qcInspectedBy,
-    remarks: row.remarks,
-    createdAt: tsLike(row.createdAt),
-    createdBy: row.createdBy,
-    updatedAt: tsLike(row.updatedAt),
-    updatedBy: row.updatedBy,
-    deletedAt: maybeTsLike(row.deletedAt),
-  };
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -556,10 +581,9 @@ export async function createGoodsReceiptNote(
       user,
     );
 
-    return {
-      ...toGoodsReceiptNote(header),
-      lines: insertedLines.map(toGoodsReceiptNoteLine),
-    };
+    // Refetch with joins so the response carries vendorName / poCode /
+    // per-line itemCode (matches getGoodsReceiptNote shape).
+    return getGoodsReceiptNote(header.id, user);
   });
 }
 
@@ -616,17 +640,6 @@ export async function updateGoodsReceiptNote(
       .from(goodsReceiptNotes)
       .where(eq(goodsReceiptNotes.id, id))
       .limit(1);
-    const lineRows = await tx
-      .select()
-      .from(goodsReceiptNoteLines)
-      .where(
-        and(
-          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-          isNull(goodsReceiptNoteLines.deletedAt),
-        ),
-      )
-      .orderBy(asc(goodsReceiptNoteLines.lineNo));
-
     const updatedHdr = updatedHdrRows[0]!;
     await emitActivityLog(
       tx,
@@ -640,10 +653,8 @@ export async function updateGoodsReceiptNote(
       user,
     );
 
-    return {
-      ...toGoodsReceiptNote(updatedHdr),
-      lines: lineRows.map(toGoodsReceiptNoteLine),
-    };
+    // Refetch with joins to match getGoodsReceiptNote shape.
+    return getGoodsReceiptNote(updatedHdr.id, user);
   });
 }
 

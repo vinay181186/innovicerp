@@ -85,8 +85,21 @@ export const goodsReceiptNoteSchema = z.object({
 });
 export type GoodsReceiptNote = z.infer<typeof goodsReceiptNoteSchema>;
 
+/** Detail line includes the joined item code (from items.code) so the UI
+ *  can render "MAT-001 — Steel block" without falling back to a "— linked —"
+ *  placeholder. itemCodeText remains the snapshot for legacy / FK-less rows. */
+export const goodsReceiptNoteLineDetailSchema = goodsReceiptNoteLineSchema.extend({
+  /** Resolved item code from items.code via the FK; null when no FK is set. */
+  itemCode: z.string().nullable(),
+});
+export type GoodsReceiptNoteLineDetail = z.infer<typeof goodsReceiptNoteLineDetailSchema>;
+
 export const goodsReceiptNoteDetailSchema = goodsReceiptNoteSchema.extend({
-  lines: z.array(goodsReceiptNoteLineSchema),
+  /** Resolved PO code from purchase_orders.code via FK; null when not linked. */
+  poCode: z.string().nullable(),
+  /** Resolved vendor name from vendors.name via FK; null when not linked. */
+  vendorName: z.string().nullable(),
+  lines: z.array(goodsReceiptNoteLineDetailSchema),
 });
 export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema>;
 
