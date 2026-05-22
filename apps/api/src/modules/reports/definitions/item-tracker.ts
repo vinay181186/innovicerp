@@ -19,7 +19,14 @@ export const itemTrackerReport: RegisteredReport = {
     description:
       'Per-item rollup of current location: in stock, in production (open JCs), and pending on open POs. Drives the sales-planner question "where is this item right now?".',
     group: 'Sales',
-    filters: [],
+    filters: [
+      {
+        key: 'search',
+        label: 'Item search',
+        kind: 'text',
+        placeholder: 'Item code or name (substring match)',
+      },
+    ],
     columns: [
       { key: 'item_code', label: 'Item', type: 'text' },
       { key: 'item_name', label: 'Name', type: 'text' },
@@ -29,7 +36,10 @@ export const itemTrackerReport: RegisteredReport = {
       { key: 'total', label: 'Total', type: 'number' },
     ],
   },
-  async run({ tx, companyId }) {
+  async run({ tx, companyId, filters }) {
+    const search = filters['search']?.trim() ?? '';
+    const term = search ? `%${search}%` : null;
+    const searchFrag = term ? sql`AND (i.code ILIKE ${term} OR i.name ILIKE ${term})` : sql``;
     const result = await tx.execute(sql`
       WITH jc_open AS (
         SELECT
@@ -85,6 +95,7 @@ export const itemTrackerReport: RegisteredReport = {
       LEFT JOIN po_pending ON po_pending.item_id = i.id
       WHERE i.company_id = ${companyId}::uuid
         AND i.deleted_at IS NULL
+        ${searchFrag}
       ORDER BY i.code
       LIMIT 1000
     `);

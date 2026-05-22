@@ -29,12 +29,15 @@ export type ReportColumn = z.infer<typeof reportColumnSchema>;
 export const reportFilterFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  /** Date filter renders as a date input; enum filter renders as a Select. */
-  kind: z.enum(['date', 'enum']),
+  /** Date renders as a date input; enum as a Select; text as a free-text Input
+   *  (substring match — case-insensitive against the report's chosen columns). */
+  kind: z.enum(['date', 'enum', 'text']),
   /** Required only for kind='enum'. */
   options: z.array(z.string()).optional(),
   /** Default value pre-filled into the form. */
   defaultValue: z.string().optional(),
+  /** Optional placeholder for kind='text'. */
+  placeholder: z.string().optional(),
 });
 export type ReportFilterField = z.infer<typeof reportFilterFieldSchema>;
 

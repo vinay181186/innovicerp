@@ -208,6 +208,14 @@ function FilterInput(props: {
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
+      ) : filter.kind === 'text' ? (
+        <Input
+          id={`filter-${filter.key}`}
+          type="text"
+          placeholder={filter.placeholder ?? ''}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
       ) : (
         <Select
           id={`filter-${filter.key}`}
