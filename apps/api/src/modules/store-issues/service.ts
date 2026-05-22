@@ -107,7 +107,7 @@ export async function listStoreIssues(
         si.updated_at AS "updatedAt", si.updated_by AS "updatedBy",
         si.deleted_at AS "deletedAt",
         i.code AS "itemCode",
-        u.name AS "issuedByName"
+        u.full_name AS "issuedByName"
       FROM public.store_issues si
       LEFT JOIN public.items i ON i.id = si.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.users u ON u.id = si.created_by

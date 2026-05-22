@@ -2584,6 +2584,120 @@ export const assemblyTracking = pgTable(
   ],
 ).enableRLS();
 
+// ─── PL-TI-1 (migration 0029) — tool_issues + tool_issue_returns ────────
+// Returnable items register: tools / inserts / fixtures issued and tracked
+// until returned. Multiple returns can land against one issue (partial).
+// Only Good qty restores stock; Damaged + Consumed are permanent removals.
+
+export const toolIssues = pgTable(
+  'tool_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    issueDate: date('issue_date').notNull(),
+    expectedReturnDate: date('expected_return_date'),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    qty: integer('qty').notNull(),
+    issuedTo: text('issued_to').notNull(),
+    refType: text('ref_type'),
+    refNo: text('ref_no'),
+    purpose: text('purpose'),
+    remarks: text('remarks'),
+    returnStatus: text('return_status').notNull().default('issued'),
+    returnGoodQty: integer('return_good_qty').notNull().default(0),
+    returnDamagedQty: integer('return_damaged_qty').notNull().default(0),
+    returnConsumedQty: integer('return_consumed_qty').notNull().default(0),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('tool_issues_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('tool_issues_company_date_idx')
+      .on(t.companyId, t.issueDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('tool_issues_company_status_idx')
+      .on(t.companyId, t.returnStatus)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_issues_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('tool_issues_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const toolIssueReturns = pgTable(
+  'tool_issue_returns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    toolIssueId: uuid('tool_issue_id')
+      .notNull()
+      .references((): AnyPgColumn => toolIssues.id, { onDelete: 'cascade' }),
+    returnDate: date('return_date').notNull(),
+    returnedBy: text('returned_by'),
+    goodQty: integer('good_qty').notNull().default(0),
+    damagedQty: integer('damaged_qty').notNull().default(0),
+    consumedQty: integer('consumed_qty').notNull().default(0),
+    remarks: text('remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('tool_issue_returns_issue_idx')
+      .on(t.toolIssueId, t.returnDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tool_issue_returns_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('tool_issue_returns_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── PL-II-1 (migration 0028) — store_issues ──────────────────────────────
 // Daily-use consumable register (legacy renderIssueRegister HTML L23874).
 // Write cascades into store_transactions (existing append-only ledger);
@@ -2828,3 +2942,7 @@ export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type NewInvoiceLine = typeof invoiceLines.$inferInsert;
 export type StoreIssue = typeof storeIssues.$inferSelect;
 export type NewStoreIssue = typeof storeIssues.$inferInsert;
+export type ToolIssue = typeof toolIssues.$inferSelect;
+export type NewToolIssue = typeof toolIssues.$inferInsert;
+export type ToolIssueReturn = typeof toolIssueReturns.$inferSelect;
+export type NewToolIssueReturn = typeof toolIssueReturns.$inferInsert;
