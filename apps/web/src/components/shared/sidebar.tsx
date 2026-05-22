@@ -104,10 +104,15 @@ const SECTIONS: readonly NavSection[] = [
     label: 'Store',
     modClass: 'store',
     icon: '🏬',
+    // Mirrors legacy sidebar L427–439. Items missing legacy entries are
+    // added as their modules ship (per docs/PARITY/store-sidebar.md).
     groups: [
       {
         label: 'Entry',
-        items: [{ to: '/goods-receipt-notes', label: 'GRN', icon: '📥' }],
+        items: [
+          { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥' },
+          { to: '/issue-register', label: 'Item Issue Register', icon: '📋' },
+        ],
       },
       {
         label: 'Master',
@@ -115,7 +120,10 @@ const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Report',
-        items: [{ to: '/store-transactions', label: 'Stock Ledger', icon: '📖' }],
+        items: [
+          { to: '/store-inventory', label: 'Store / Inventory', icon: '📦' },
+          { to: '/store-transactions', label: 'Stock Ledger', icon: '📖' },
+        ],
       },
     ],
   },

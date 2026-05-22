@@ -92,6 +92,8 @@ import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { soStatusIndexRoute } from './modules/so-status/routes/index';
 import { soTimelineIndexRoute } from './modules/so-timeline/routes/index';
 import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
+import { storeIssuesListRoute } from './modules/store-issues/routes/list';
+import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -137,6 +139,8 @@ const routeTree = rootRoute.addChildren([
     soStatusDetailRoute,
     soTimelineIndexRoute,
     pendingSoValueRoute,
+    storeIssuesListRoute,
+    storeInventoryRoute,
     soOverviewListRoute,
     soPlanningWorkflowRoute,
     planningDashboardRoute,

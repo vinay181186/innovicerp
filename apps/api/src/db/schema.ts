@@ -184,6 +184,9 @@ export const items = pgTable(
     itemType: itemTypeEnum('item_type').notNull().default('component'),
     hsnCode: text('hsn_code'),
     drawingFilePath: text('drawing_file_path'),
+    /** PL-SI-1 (migration 0028) — low-stock alert threshold per item.
+     *  Drives the "Low Stock" tile + per-row red tint on Store/Inventory. */
+    minStockQty: integer('min_stock_qty').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2581,6 +2584,67 @@ export const assemblyTracking = pgTable(
   ],
 ).enableRLS();
 
+// ─── PL-II-1 (migration 0028) — store_issues ──────────────────────────────
+// Daily-use consumable register (legacy renderIssueRegister HTML L23874).
+// Write cascades into store_transactions (existing append-only ledger);
+// item.stockQty decrements via the same service helper used by GRN.
+
+export const storeIssues = pgTable(
+  'store_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    issueDate: date('issue_date').notNull(),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    qty: integer('qty').notNull(),
+    issuedTo: text('issued_to').notNull(),
+    refType: text('ref_type'),
+    refNo: text('ref_no'),
+    purpose: text('purpose'),
+    remarks: text('remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('store_issues_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('store_issues_company_date_idx')
+      .on(t.companyId, t.issueDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('store_issues_company_item_idx')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('store_issues_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('store_issues_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── PL-PSV-1 (migration 0027) — invoices + invoice_lines ────────────────
 // Sales-side revenue / cashflow tracking. Drives the Pending SO Value report
 // (legacy renderPendingSOValue HTML L19272). See docs/PARITY/pendingsovalue.md.
@@ -2762,3 +2826,5 @@ export type Invoice = typeof invoices.$inferSelect;
 export type NewInvoice = typeof invoices.$inferInsert;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type NewInvoiceLine = typeof invoiceLines.$inferInsert;
+export type StoreIssue = typeof storeIssues.$inferSelect;
+export type NewStoreIssue = typeof storeIssues.$inferInsert;
