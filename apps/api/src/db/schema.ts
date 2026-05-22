@@ -2581,6 +2581,111 @@ export const assemblyTracking = pgTable(
   ],
 ).enableRLS();
 
+// ─── PL-PSV-1 (migration 0027) — invoices + invoice_lines ────────────────
+// Sales-side revenue / cashflow tracking. Drives the Pending SO Value report
+// (legacy renderPendingSOValue HTML L19272). See docs/PARITY/pendingsovalue.md.
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    invoiceDate: date('invoice_date').notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    soCodeText: text('so_code_text'),
+    grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
+    totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('invoices_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('invoices_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('invoices_company_date_idx')
+      .on(t.companyId, t.invoiceDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('invoices_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('invoices_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const invoiceLines = pgTable(
+  'invoice_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => invoices.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    qty: integer('qty').notNull(),
+    rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    lineAmount: numeric('line_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('invoice_lines_invoice_line_uniq')
+      .on(t.invoiceId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('invoice_lines_so_line_idx')
+      .on(t.salesOrderLineId)
+      .where(sql`${t.salesOrderLineId} is not null and ${t.deletedAt} is null`),
+    pgPolicy('invoice_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('invoice_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -2653,3 +2758,7 @@ export type AssemblyUnit = typeof assemblyUnits.$inferSelect;
 export type NewAssemblyUnit = typeof assemblyUnits.$inferInsert;
 export type AssemblyTracking = typeof assemblyTracking.$inferSelect;
 export type NewAssemblyTracking = typeof assemblyTracking.$inferInsert;
+export type Invoice = typeof invoices.$inferSelect;
+export type NewInvoice = typeof invoices.$inferInsert;
+export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type NewInvoiceLine = typeof invoiceLines.$inferInsert;

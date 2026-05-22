@@ -91,7 +91,10 @@ const SECTIONS: readonly NavSection[] = [
       // ship per docs/PARITY/sales-sidebar.md §summary.
       {
         label: 'Report',
-        items: [{ to: '/so-timeline', label: 'SO Timeline', icon: '📅' }],
+        items: [
+          { to: '/so-timeline', label: 'SO Timeline', icon: '📅' },
+          { to: '/pending-so-value', label: 'Pending SO Value', icon: '💰' },
+        ],
       },
     ],
   },

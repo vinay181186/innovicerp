@@ -44,6 +44,7 @@ export * from './schemas/dashboard';
 export * from './schemas/qc-dashboard';
 export * from './schemas/so-status';
 export * from './schemas/so-timeline';
+export * from './schemas/pending-so-value';
 export * from './schemas/so-overview';
 export * from './schemas/plan';
 export * from './schemas/so-planning';
