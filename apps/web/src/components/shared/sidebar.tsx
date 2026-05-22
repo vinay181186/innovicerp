@@ -86,6 +86,13 @@ const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [{ to: '/clients', label: 'Client Master', icon: '🏢' }],
       },
+      // Legacy sidebar L419–423 (Report group). Only the entries with a
+      // shipped /route in React are listed; the rest land as their modules
+      // ship per docs/PARITY/sales-sidebar.md §summary.
+      {
+        label: 'Report',
+        items: [{ to: '/so-timeline', label: 'SO Timeline', icon: '📅' }],
+      },
     ],
   },
   {
