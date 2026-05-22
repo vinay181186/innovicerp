@@ -71,9 +71,24 @@ export const listStoreTransactionsQuerySchema = z.object({
 });
 export type ListStoreTransactionsQuery = z.infer<typeof listStoreTransactionsQuerySchema>;
 
+/** PL-SL-1b — 5-tile KPI strip data. Mirrors legacy renderStockLedger
+ *  L25086–25092 — Transactions count / Total IN / Total OUT / Net /
+ *  Items count. All totals respect the active filter set (item, txnType,
+ *  sourceType, date range). */
+export const stockLedgerSummarySchema = z.object({
+  txnCount: z.number().int().nonnegative(),
+  totalIn: z.number().int().nonnegative(),
+  totalOut: z.number().int().nonnegative(),
+  net: z.number().int(),
+  itemCount: z.number().int().nonnegative(),
+});
+export type StockLedgerSummary = z.infer<typeof stockLedgerSummarySchema>;
+
 export interface ListStoreTransactionsResponse {
   items: StoreTransactionListItem[];
   total: number;
   limit: number;
   offset: number;
+  /** PL-SL-1b — summary across the SAME filter set (no LIMIT). */
+  summary: StockLedgerSummary;
 }

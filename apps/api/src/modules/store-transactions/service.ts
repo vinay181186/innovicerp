@@ -91,8 +91,37 @@ export async function listStoreTransactions(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
+    // PL-SL-1b — KPI summary across the SAME filter set (no LIMIT).
+    // Mirrors legacy renderStockLedger L25081–25084.
+    const summaryRows = await tx.execute(sql`
+      SELECT
+        COUNT(*)::int                                                    AS txn_count,
+        COALESCE(SUM(CASE WHEN st.txn_type = 'in'  THEN st.qty END), 0)::int AS total_in,
+        COALESCE(SUM(CASE WHEN st.txn_type = 'out' THEN st.qty END), 0)::int AS total_out,
+        COUNT(DISTINCT st.item_id)::int                                  AS item_count
+      FROM public.store_transactions st
+      LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
+      WHERE st.company_id = ${companyId}::uuid
+        ${searchFrag}
+        ${itemFrag}
+        ${txnTypeFrag}
+        ${sourceTypeFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+    const totalIn = Number(sumRow['total_in'] ?? 0);
+    const totalOut = Number(sumRow['total_out'] ?? 0);
+    const summary = {
+      txnCount: Number(sumRow['txn_count'] ?? 0),
+      totalIn,
+      totalOut,
+      net: totalIn - totalOut,
+      itemCount: Number(sumRow['item_count'] ?? 0),
+    };
+
     const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
-    return { items: rowsList, total, limit: input.limit, offset: input.offset };
+    return { items: rowsList, total, limit: input.limit, offset: input.offset, summary };
   });
 }
 

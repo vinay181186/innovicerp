@@ -128,6 +128,30 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         ),
       },
       {
+        // Legacy renderGRN L26468 — QC Accepted total across lines (green).
+        header: 'QC Accepted',
+        cell: ({ row }) => (
+          <span
+            className="td-ctr mono fw-700"
+            style={{ color: 'var(--green)' }}
+          >
+            {row.original.totalQcAcceptedQty}
+          </span>
+        ),
+      },
+      {
+        // Legacy renderGRN L26469 — QC Rejected total across lines (red).
+        header: 'QC Rejected',
+        cell: ({ row }) => (
+          <span
+            className="td-ctr mono"
+            style={{ color: 'var(--red)', fontWeight: 700 }}
+          >
+            {row.original.totalQcRejectedQty}
+          </span>
+        ),
+      },
+      {
         header: 'QC pending',
         cell: ({ row }) => {
           const p = row.original.qcPendingCount;
@@ -167,7 +191,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Goods Receipt Notes
+          📥 Goods Receipt Note (GRN)
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
@@ -209,11 +233,25 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         </div>
       </div>
 
+      {data?.summary ? (
+        <GrnKpiStrip
+          summary={data.summary}
+          activeStatus={search.qcStatus ?? null}
+          onSelectStatus={(s) => {
+            void navigate({
+              search: (prev) => ({ ...prev, qcStatus: s, page: 1 }),
+              replace: true,
+            });
+          }}
+        />
+      ) : null}
+
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            📥 Material received against POs · QC accept on a line writes a stock-in ledger entry
-            (v_item_stock cascade).
+            💡 GRN creates receipt record with <b>QC Pending</b> status. Go to{' '}
+            <b>Incoming QC</b> to inspect and accept/reject. Only QC-accepted qty moves to Store
+            inventory.
           </span>
         </div>
       </div>
@@ -315,6 +353,114 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// PL-GRN-1b — 4-tile stat strip mirroring legacy renderGRN L26483–26488.
+// Clicking Total / QC Pending / QC Cleared filters by qcStatus. Today
+// is informational (we don't have a "filter by today's date" yet — the
+// Today tile shows the count for context only).
+function GrnKpiStrip({
+  summary,
+  activeStatus,
+  onSelectStatus,
+}: {
+  summary: { total: number; qcPending: number; qcCleared: number; today: number };
+  activeStatus: GrnQcStatus | null;
+  onSelectStatus: (next: GrnQcStatus | undefined) => void;
+}): React.JSX.Element {
+  const tiles: Array<{
+    key: 'all' | 'qcpending' | 'qccleared' | 'today';
+    label: string;
+    value: number;
+    color: string;
+    onClick?: () => void;
+    active: boolean;
+    sub?: string;
+  }> = [
+    {
+      key: 'all',
+      label: 'Total GRNs',
+      value: summary.total,
+      color: 'var(--cyan)',
+      onClick: () => onSelectStatus(undefined),
+      active: activeStatus === null,
+    },
+    {
+      key: 'qcpending',
+      label: 'QC Pending',
+      value: summary.qcPending,
+      color: 'var(--amber)',
+      onClick: () => onSelectStatus('pending'),
+      active: activeStatus === 'pending',
+      sub: '→ Go to Incoming QC',
+    },
+    {
+      key: 'qccleared',
+      label: 'QC Cleared',
+      value: summary.qcCleared,
+      color: 'var(--green)',
+      onClick: () => onSelectStatus('completed'),
+      active: activeStatus === 'completed',
+    },
+    {
+      key: 'today',
+      label: 'Today',
+      value: summary.today,
+      color: 'var(--blue)',
+      active: false,
+    },
+  ];
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 10,
+        marginBottom: 16,
+      }}
+    >
+      {tiles.map((t) => (
+        <div
+          key={t.key}
+          onClick={t.onClick}
+          style={{
+            padding: 14,
+            background: 'var(--bg2)',
+            border: '1px solid var(--border)',
+            borderTop: `3px solid ${t.color}`,
+            borderRadius: 6,
+            cursor: t.onClick ? 'pointer' : 'default',
+            boxShadow: t.active ? `0 0 0 2px ${t.color}` : undefined,
+            transition: 'box-shadow .15s',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+          >
+            {t.label}
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--mono)',
+              fontSize: 22,
+              fontWeight: 700,
+              color: t.color,
+              marginTop: 2,
+            }}
+          >
+            {t.value}
+          </div>
+          {t.sub ? (
+            <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+              {t.sub}
+            </div>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

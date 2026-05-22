@@ -249,6 +249,8 @@ export async function listGoodsReceiptNotes(
         po.code AS "poCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_received_qty, 0)::int AS "totalReceivedQty",
+        COALESCE(line_agg.qc_accepted_qty, 0)::int AS "totalQcAcceptedQty",
+        COALESCE(line_agg.qc_rejected_qty, 0)::int AS "totalQcRejectedQty",
         COALESCE(line_agg.qc_pending_count, 0)::int AS "qcPendingCount"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
@@ -258,6 +260,8 @@ export async function listGoodsReceiptNotes(
         SELECT goods_receipt_note_id,
                COUNT(*) AS line_count,
                SUM(received_qty) AS total_received_qty,
+               SUM(qc_accepted_qty) AS qc_accepted_qty,
+               SUM(qc_rejected_qty) AS qc_rejected_qty,
                SUM(CASE WHEN qc_status != 'completed' THEN 1 ELSE 0 END) AS qc_pending_count
         FROM public.goods_receipt_note_lines
         WHERE deleted_at IS NULL
@@ -288,8 +292,47 @@ export async function listGoodsReceiptNotes(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
+    // PL-GRN-1b — KPI summary across the SAME filter set (no LIMIT). Mirrors
+    // legacy renderGRN L26483–26488 four-tile strip. A GRN counts as
+    // QC-cleared if all its lines have qc_status='completed'; QC-pending if
+    // any line is pending or partial. "Today" uses the company-local date —
+    // we approximate with NOW()::date (UTC); IST drift is < 1 day and the
+    // tile is informational. Future: take company TZ into account.
+    const summaryRows = await tx.execute(sql`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE per_grn.has_pending)::int AS qc_pending,
+        COUNT(*) FILTER (WHERE NOT per_grn.has_pending AND per_grn.line_count > 0)::int AS qc_cleared,
+        COUNT(*) FILTER (WHERE grn.grn_date = CURRENT_DATE)::int AS today
+      FROM public.goods_receipt_notes grn
+      LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) AS line_count,
+          BOOL_OR(qc_status != 'completed') AS has_pending
+        FROM public.goods_receipt_note_lines gnl
+        WHERE gnl.goods_receipt_note_id = grn.id
+          AND gnl.deleted_at IS NULL
+      ) per_grn ON TRUE
+      WHERE grn.company_id = ${companyId}::uuid
+        AND grn.deleted_at IS NULL
+        ${searchFrag}
+        ${vendorFrag}
+        ${poFrag}
+        ${qcStatusFrag}
+        ${fromFrag}
+        ${toFrag}
+    `);
+    const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+    const summary = {
+      total: Number(sumRow['total'] ?? 0),
+      qcPending: Number(sumRow['qc_pending'] ?? 0),
+      qcCleared: Number(sumRow['qc_cleared'] ?? 0),
+      today: Number(sumRow['today'] ?? 0),
+    };
+
     const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
-    return { items: rowsList, total, limit: input.limit, offset: input.offset };
+    return { items: rowsList, total, limit: input.limit, offset: input.offset, summary };
   });
 }
 
@@ -315,6 +358,8 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     poCode: (r['poCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
+    totalQcAcceptedQty: Number(r['totalQcAcceptedQty'] ?? 0),
+    totalQcRejectedQty: Number(r['totalQcRejectedQty'] ?? 0),
     qcPendingCount: Number(r['qcPendingCount'] ?? 0),
   };
 }

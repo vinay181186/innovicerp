@@ -96,6 +96,10 @@ export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   poCode: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalReceivedQty: z.number().int().nonnegative(),
+  /** Σ qcAcceptedQty across lines. Legacy renderGRN L26468 column. */
+  totalQcAcceptedQty: z.number().int().nonnegative(),
+  /** Σ qcRejectedQty across lines. Legacy renderGRN L26469 column. */
+  totalQcRejectedQty: z.number().int().nonnegative(),
   qcPendingCount: z.number().int().nonnegative(),
 });
 export type GoodsReceiptNoteListItem = z.infer<typeof goodsReceiptNoteListItemSchema>;
@@ -183,9 +187,23 @@ export const listGoodsReceiptNotesQuerySchema = z.object({
 });
 export type ListGoodsReceiptNotesQuery = z.infer<typeof listGoodsReceiptNotesQuerySchema>;
 
+/** PL-GRN-1b — 4-tile stat strip data. Mirrors legacy renderGRN L26483–26488:
+ *  Total / QC Pending / QC Cleared / Today. Pending counts GRN docs with
+ *  any line still in pending or partial QC status. */
+export const grnSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  qcPending: z.number().int().nonnegative(),
+  qcCleared: z.number().int().nonnegative(),
+  today: z.number().int().nonnegative(),
+});
+export type GrnSummary = z.infer<typeof grnSummarySchema>;
+
 export interface ListGoodsReceiptNotesResponse {
   items: GoodsReceiptNoteListItem[];
   total: number;
   limit: number;
   offset: number;
+  /** PL-GRN-1b — KPI strip totals across all (non-deleted) GRNs in the
+   *  filter set. */
+  summary: GrnSummary;
 }

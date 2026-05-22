@@ -43,6 +43,47 @@ export const storeTransactionsListRoute = createRoute({
   component: StoreTransactionsListPage,
 });
 
+function KpiTile({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number | string;
+  color: string;
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        padding: 12,
+        background: 'var(--bg2)',
+        border: '1px solid var(--border)',
+        borderTop: `3px solid ${color}`,
+        borderRadius: 6,
+        textAlign: 'center',
+      }}
+    >
+      <div
+        className="text3"
+        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: 'var(--mono)',
+          fontSize: 22,
+          fontWeight: 700,
+          color,
+          marginTop: 2,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function StoreTransactionsListPage() {
   const search = storeTransactionsListRoute.useSearch();
   const navigate = storeTransactionsListRoute.useNavigate();
@@ -145,12 +186,32 @@ function StoreTransactionsListPage() {
     <main className="container max-w-6xl py-10">
       <div className="space-y-6">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Store Transactions</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">📖 Stock Ledger</h1>
           <p className="text-sm text-muted-foreground">
             Append-only stock-movement ledger. Rows land here via service-layer cascades — today,
             GRN QC accept; soon, dispatch and JW in/out.
           </p>
         </div>
+
+        {data?.summary ? (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: 10,
+            }}
+          >
+            <KpiTile label="Transactions" value={data.summary.txnCount} color="var(--cyan)" />
+            <KpiTile label="Total IN" value={`+${data.summary.totalIn}`} color="var(--green)" />
+            <KpiTile label="Total OUT" value={`-${data.summary.totalOut}`} color="var(--red)" />
+            <KpiTile
+              label="Net"
+              value={`${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`}
+              color={data.summary.net >= 0 ? 'var(--green)' : 'var(--red)'}
+            />
+            <KpiTile label="Items" value={data.summary.itemCount} color="var(--text2)" />
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <Input
