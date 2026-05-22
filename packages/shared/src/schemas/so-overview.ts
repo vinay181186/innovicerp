@@ -58,6 +58,8 @@ export const soOverviewRowSchema = z.object({
   /** Earliest unfinished line due date (proxy for SO due date). */
   earliestDueDate: z.string().nullable(),
   bomMasterId: z.string().uuid().nullable(),
+  /** Equipment SO: partName of the first line. Component SO: null. PL-2b §1.4. */
+  equipmentItemName: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalRequiredQty: z.number().int().nonnegative(),
   totalDoneQty: z.number().int().nonnegative(),
@@ -91,3 +93,58 @@ export const soOverviewResponseSchema = z.object({
   rows: z.array(soOverviewRowSchema),
 });
 export type SoOverviewResponse = z.infer<typeof soOverviewResponseSchema>;
+
+// ─── Drill-down response (PL-2b §2 + §4) ─────────────────────────────────
+
+/** Six-state stage label per per-item row. Mirrors LineStage from calc-engine. */
+export const soOverviewItemStageEnum = z.enum([
+  'not_released',
+  'in_production',
+  'outsourced',
+  'quality_check',
+  'finished',
+  'hold',
+]);
+export type SoOverviewItemStage = z.infer<typeof soOverviewItemStageEnum>;
+
+/** Per-item row in the drill view. For Equipment SOs each row is a BOM child;
+ *  for Component SOs each row is an SO line. */
+export const soOverviewChildRowSchema = z.object({
+  /** Stable row id. For Equipment: childItemId. For Component: soLineId. */
+  rowId: z.string().uuid(),
+  /** Only set for Component drill. */
+  lineNo: z.number().int().positive().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  itemCode: z.string(),
+  itemName: z.string(),
+  stage: soOverviewItemStageEnum,
+  status: soOverallStatusEnum,
+  requiredQty: z.number().int().nonnegative(),
+  issuedQty: z.number().int().nonnegative(),
+  inProductionQty: z.number().int().nonnegative(),
+  qcPendingQty: z.number().int().nonnegative(),
+  atVendorQty: z.number().int().nonnegative(),
+  completedQty: z.number().int().nonnegative(),
+  balanceQty: z.number().int().nonnegative(),
+  /** Currently-running OR next-up op name. null when no active op. */
+  currentOpName: z.string().nullable(),
+  /** Machine name if in production. */
+  machineName: z.string().nullable(),
+  /** Vendor name if outsourced. */
+  vendorName: z.string().nullable(),
+  /** 'Factory' / 'Vendor' / 'QC'. Drives the Machine/Vendor column rendering. */
+  currentLocation: z.enum(['Factory', 'Vendor', 'QC']),
+});
+export type SoOverviewChildRow = z.infer<typeof soOverviewChildRowSchema>;
+
+export const soOverviewDetailResponseSchema = z.object({
+  generatedAt: z.string(),
+  so: soOverviewRowSchema,
+  /** true when this drill walks BOM children (Equipment + bomMasterId);
+   *  false when it walks SO lines (Component / With Material / Equipment-no-BOM). */
+  isEquipmentDrill: z.boolean(),
+  bomNo: z.string().nullable(),
+  bomRev: z.number().int().nullable(),
+  childRows: z.array(soOverviewChildRowSchema),
+});
+export type SoOverviewDetailResponse = z.infer<typeof soOverviewDetailResponseSchema>;
