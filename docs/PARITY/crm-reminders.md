@@ -1,5 +1,7 @@
 # PARITY — CRM Reminders & Follow-ups (`renderCRMReminders`)
 
+> **DEFERRED (2026-05-23):** Paired with CRM Leads; deferred together. Re-open when sales team needs the follow-up queue.
+
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L16283–16357. Helpers: `_crmNewReminder` L16359, `_crmEditReminder` L16364, `_crmReminderForm` L16370, `_crmDoneReminder` L16416.
 > **React target:** ❌ **WHOLE PAGE MISSING.** No `/crm-reminders` route. No `crm-reminders` module folder.
 > **Status:** ❌ entire feature absent.

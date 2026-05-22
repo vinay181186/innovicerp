@@ -64,10 +64,10 @@ Differing on label: 1 (Dispatch Register → "Delivery Challans")
 Missing in React: 7 whole pages
 
 ### BLOCKERs
-1. **CRM Leads & Pipeline** (`/leads` or `/crm-leads`) — whole page missing
-2. **CRM Reminders** — whole page missing
-3. **Customer 360°** — whole page missing
-4. **Pending SO Value** report — whole page missing (revenue signal)
+1. ~~**CRM Leads & Pipeline**~~ — DEFERRED 2026-05-23 (not critical now)
+2. ~~**CRM Reminders**~~ — DEFERRED 2026-05-23 (paired with #1)
+3. ~~**Customer 360°**~~ — DEFERRED 2026-05-23 (paired with #1)
+4. ~~**Pending SO Value**~~ — SHIPPED 2026-05-23 (commit `4652aaa`)
 
 ### DELTAs (defer; team can work without them)
 5. **SO Timeline** — Gantt-style report

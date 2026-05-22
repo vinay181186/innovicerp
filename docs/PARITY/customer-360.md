@@ -1,5 +1,7 @@
 # PARITY — Customer 360° View (`renderCustomer360`)
 
+> **DEFERRED (2026-05-23):** Paired with CRM bundle; deferred together. Gated by the new `communications` table — bigger lift than Leads + Reminders alone.
+
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L16429–16523. Helpers: `_crmSelectCustomer` L16525, `_crmAddReminderForCust` L16530, `_crmLogComm` (referenced — find body).
 > **React target:** ❌ **WHOLE PAGE MISSING.** No `/customer-360` or `/customers/$code/360` route.
 > **Status:** ❌ entire feature absent.

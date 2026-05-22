@@ -1,5 +1,7 @@
 # PARITY — CRM Leads & Pipeline (`renderCRMLeads`)
 
+> **DEFERRED (2026-05-23):** CRM is not critical for the current daily-use scope. This module is parked. Re-open when sales team needs lead tracking; the parity below is the source of truth for when it lands.
+
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L15998–16092 (`function renderCRMLeads()`). Supporting modals: `_crmNewLead` L16100, `_crmEditLead` L16105, `_crmLeadForm` L16111, `_crmConvertLead` L16188. Filter helper: `_crmFilterByStatus` L16094.
 > **React target:** ❌ **WHOLE PAGE MISSING.** No `/crm-leads` / `/leads` route exists. No `apps/web/src/modules/leads/` or `crm-leads/` folder.
 > **Status:** ❌ entire feature absent.
