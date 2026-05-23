@@ -164,12 +164,17 @@ const SECTIONS: readonly NavSection[] = [
     label: 'Design',
     modClass: 'design',
     icon: '📐',
+    // Mirrors legacy sidebar L443–449 verbatim (ungrouped — no group labels).
     groups: [
       {
-        label: 'Master',
         items: [
+          { to: '/design-projects', label: 'Design Projects', icon: '📋' },
+          { to: '/design-issues', label: 'Design Issues', icon: '⚠' },
+          { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱' },
           { to: '/bom-masters', label: 'BOM Master', icon: '📦' },
-          { to: '/route-cards', label: 'Route Cards', icon: '📋' },
+          { to: '/design-tracker', label: 'Design Tracker', icon: '🎨' },
+          { to: '/route-cards', label: 'Route Cards', icon: '🗒' },
+          { to: '/reports?group=Design', label: 'Design Reports', icon: '📊' },
         ],
       },
     ],
@@ -183,6 +188,7 @@ const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/qc-dashboard', label: 'QC Dashboard', icon: '🛡️' },
+          { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
         ],
       },

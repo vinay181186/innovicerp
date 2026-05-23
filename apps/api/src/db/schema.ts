@@ -3153,6 +3153,421 @@ export const jwDcInwardLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Design Section (migration 0033) — 8 tables ─────────────────────────
+// Mirrors legacy renderDesignTracker L7259 + renderDesignProjects L7570 +
+// renderDesignIssuesPage L7890 + renderDesignWorkLog L7935.
+// See docs/PARITY/design-section.md.
+
+export const designTracker = pgTable(
+  'design_tracker',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    soCodeText: text('so_code_text'),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemNameText: text('item_name_text'),
+    designer: text('designer').notNull(),
+    estimatedHours: numeric('estimated_hours', { precision: 8, scale: 2 }).notNull().default('0'),
+    startDate: date('start_date').notNull(),
+    targetDate: date('target_date').notNull(),
+    status: text('status').notNull().default('In Progress'),
+    revision: integer('revision').notNull().default(0),
+    remarks: text('remarks'),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedByText: text('approved_by_text'),
+    reviewSubmittedAt: timestamp('review_submitted_at', { withTimezone: true }),
+    revisionHistory: jsonb('revision_history').notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('design_tracker_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_tracker_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_tracker_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_tracker_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_tracker_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designTimeLog = pgTable(
+  'design_time_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    designTrackerId: uuid('design_tracker_id')
+      .notNull()
+      .references((): AnyPgColumn => designTracker.id, { onDelete: 'cascade' }),
+    logDate: date('log_date').notNull(),
+    hours: numeric('hours', { precision: 6, scale: 2 }).notNull(),
+    workerText: text('worker_text').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('design_time_log_tracker_idx')
+      .on(t.designTrackerId, t.logDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_time_log_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_time_log_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designProjects = pgTable(
+  'design_projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    projectName: text('project_name').notNull(),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, {
+      onDelete: 'set null',
+    }),
+    soCodeText: text('so_code_text'),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    clientText: text('client_text'),
+    leadText: text('lead_text'),
+    engineers: jsonb('engineers').notNull().default(sql`'[]'::jsonb`),
+    status: text('status').notNull().default('Design Active'),
+    startDate: date('start_date').notNull(),
+    targetDate: date('target_date').notNull(),
+    description: text('description'),
+    checklist: jsonb('checklist').notNull().default(sql`'{}'::jsonb`),
+    releasedDate: date('released_date'),
+    releasedByText: text('released_by_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('design_projects_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_projects_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_projects_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_projects_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designTasks = pgTable(
+  'design_tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    designProjectId: uuid('design_project_id')
+      .notNull()
+      .references((): AnyPgColumn => designProjects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    partText: text('part_text'),
+    assigneeText: text('assignee_text'),
+    priority: text('priority').notNull().default('Medium'),
+    status: text('status').notNull().default('Not Started'),
+    dueDate: date('due_date'),
+    description: text('description'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    discussions: jsonb('discussions').notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('design_tasks_project_idx')
+      .on(t.designProjectId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_tasks_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_tasks_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designIssues = pgTable(
+  'design_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    designProjectId: uuid('design_project_id')
+      .notNull()
+      .references((): AnyPgColumn => designProjects.id, { onDelete: 'cascade' }),
+    designTaskId: uuid('design_task_id').references((): AnyPgColumn => designTasks.id, {
+      onDelete: 'set null',
+    }),
+    title: text('title').notNull(),
+    partText: text('part_text'),
+    severity: text('severity').notNull().default('Major'),
+    status: text('status').notNull().default('Open'),
+    raisedByText: text('raised_by_text'),
+    assignedToText: text('assigned_to_text'),
+    raisedDate: date('raised_date').notNull(),
+    resolvedDate: date('resolved_date'),
+    description: text('description'),
+    discussions: jsonb('discussions').notNull().default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('design_issues_project_idx')
+      .on(t.designProjectId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_issues_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_issues_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_issues_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designWorkLog = pgTable(
+  'design_work_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    logDate: date('log_date').notNull(),
+    engineerText: text('engineer_text').notNull(),
+    designProjectId: uuid('design_project_id').references((): AnyPgColumn => designProjects.id, {
+      onDelete: 'set null',
+    }),
+    taskText: text('task_text'),
+    category: text('category').notNull().default('Design'),
+    hours: numeric('hours', { precision: 6, scale: 2 }).notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('design_work_log_company_date_idx')
+      .on(t.companyId, t.logDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_work_log_engineer_date_idx')
+      .on(t.companyId, t.engineerText, t.logDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_work_log_project_idx')
+      .on(t.designProjectId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_work_log_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_work_log_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designDcrs = pgTable(
+  'design_dcrs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    designProjectId: uuid('design_project_id')
+      .notNull()
+      .references((): AnyPgColumn => designProjects.id, { onDelete: 'cascade' }),
+    code: text('code').notNull(),
+    title: text('title').notNull(),
+    changeType: text('change_type').notNull().default('Other'),
+    partAffected: text('part_affected'),
+    priority: text('priority').notNull().default('Normal'),
+    status: text('status').notNull().default('Submitted'),
+    requestedByText: text('requested_by_text'),
+    requestDate: date('request_date').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('design_dcrs_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_dcrs_project_idx')
+      .on(t.designProjectId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_dcrs_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_dcrs_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const designDcns = pgTable(
+  'design_dcns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    designProjectId: uuid('design_project_id')
+      .notNull()
+      .references((): AnyPgColumn => designProjects.id, { onDelete: 'cascade' }),
+    linkedDcrId: uuid('linked_dcr_id').references((): AnyPgColumn => designDcrs.id, {
+      onDelete: 'set null',
+    }),
+    code: text('code').notNull(),
+    title: text('title').notNull(),
+    status: text('status').notNull().default('Draft'),
+    description: text('description'),
+    releasedDate: date('released_date'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('design_dcns_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_dcns_project_idx')
+      .on(t.designProjectId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('design_dcns_dcr_idx')
+      .on(t.linkedDcrId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('design_dcns_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('design_dcns_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── PL-PSV-1 (migration 0027) — invoices + invoice_lines ────────────────
 // Sales-side revenue / cashflow tracking. Drives the Pending SO Value report
 // (legacy renderPendingSOValue HTML L19272). See docs/PARITY/pendingsovalue.md.
@@ -3354,3 +3769,19 @@ export type JwDcInward = typeof jwDcInward.$inferSelect;
 export type NewJwDcInward = typeof jwDcInward.$inferInsert;
 export type JwDcInwardLine = typeof jwDcInwardLines.$inferSelect;
 export type NewJwDcInwardLine = typeof jwDcInwardLines.$inferInsert;
+export type DesignTracker = typeof designTracker.$inferSelect;
+export type NewDesignTracker = typeof designTracker.$inferInsert;
+export type DesignTimeLog = typeof designTimeLog.$inferSelect;
+export type NewDesignTimeLog = typeof designTimeLog.$inferInsert;
+export type DesignProject = typeof designProjects.$inferSelect;
+export type NewDesignProject = typeof designProjects.$inferInsert;
+export type DesignTask = typeof designTasks.$inferSelect;
+export type NewDesignTask = typeof designTasks.$inferInsert;
+export type DesignIssue = typeof designIssues.$inferSelect;
+export type NewDesignIssue = typeof designIssues.$inferInsert;
+export type DesignWorkLog = typeof designWorkLog.$inferSelect;
+export type NewDesignWorkLog = typeof designWorkLog.$inferInsert;
+export type DesignDcr = typeof designDcrs.$inferSelect;
+export type NewDesignDcr = typeof designDcrs.$inferInsert;
+export type DesignDcn = typeof designDcns.$inferSelect;
+export type NewDesignDcn = typeof designDcns.$inferInsert;

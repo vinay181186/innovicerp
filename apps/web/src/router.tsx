@@ -73,6 +73,7 @@ import {
 import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-pr';
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { qcDashboardRoute } from './modules/qc-dashboard/routes/index';
+import { incomingQcRoute } from './modules/incoming-qc/routes/index';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -100,6 +101,11 @@ import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
+import { designTrackerListRoute } from './modules/design-tracker/routes/list';
+import { designProjectsListRoute } from './modules/design-projects/routes/list';
+import { designProjectDetailRoute } from './modules/design-projects/routes/detail';
+import { designIssuesListRoute } from './modules/design-issues/routes/list';
+import { designWorkLogListRoute } from './modules/design-work-log/routes/list';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -153,6 +159,11 @@ const routeTree = rootRoute.addChildren([
     partyMaterialsListRoute,
     partyGrnListRoute,
     jwDcListRoute,
+    designTrackerListRoute,
+    designProjectsListRoute,
+    designProjectDetailRoute,
+    designIssuesListRoute,
+    designWorkLogListRoute,
     soOverviewListRoute,
     soPlanningWorkflowRoute,
     planningDashboardRoute,
@@ -202,6 +213,7 @@ const routeTree = rootRoute.addChildren([
     savedReportRunRoute,
     activityLogListRoute,
     qcDashboardRoute,
+    incomingQcRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,
