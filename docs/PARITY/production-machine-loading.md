@@ -18,6 +18,40 @@ Per machine: `totalAvailQty`, `pendingHrs` (Σ available×cycleTime over its ope
 4. **Job Queue View** (per-machine `.panel`): machine header (load bar, %, pending hrs, days, jobs count) + queue table with **op-chain flow** (`.op-node`/`.op-arrow`) + priority toggle (`togglePriority`).
 5. **Capacity Summary** (`.panel` table, 10 cols): `Machine · Name · Type · Open Ops · Avail Qty · Pending Hrs · Daily Cap · Days to Clear · Loading% · Status`.
 
+### Exact calc-engine formula (legacy `calcEngine()` L1668, L1703–1715) — port verbatim
+
+Per op (L1668): `pendingHrs = available × cycleTime` (legacy cycleTime is HOURS).
+**Our DB stores `jc_ops.cycle_time_min` (minutes)** → `pendingHrs = available × cycle_time_min / 60`.
+`available` + `completed` come from `v_jc_op_status`.
+
+Per machine (L1703–1715), over its ops (`jc_ops.machine_id = m.id`):
+```
+totalAvailQty = Σ available
+pendingHrs    = Σ (available × cycle_time_min / 60)          -- 2 dp
+dailyCap      = capacity_per_shift × shifts_per_day
+weekCap       = dailyCap × 5
+loadPct       = weekCap > 0 ? pendingHrs / weekCap : 0
+daysToClear   = dailyCap > 0 ? round(pendingHrs / dailyCap, 1) : 0
+loadStatus    = loadPct > 1   ? 'Overloaded'
+              : loadPct > 0.7 ? 'High Load'
+              : pendingHrs > 0 ? 'Manageable'
+              : 'Clear'
+```
+Card % display = `min(150, round(loadPct × 100))`. Inputs verified to exist:
+`jc_ops.machine_id` (uuid→machines.id), `jc_ops.cycle_time_min`,
+`machines.capacity_per_shift`, `machines.shifts_per_day`, `v_jc_op_status.{available,completed_qty,computed_status}`.
+
+> **No migration required** — compute in the service via raw SQL (like
+> `job-cards`/`store-inventory` services), not a view.
+
+### ⚠️ Build blocker (2026-05-23)
+Wiring a new API module touches `apps/api/src/server.ts` (route registration)
+and `packages/shared/src/index.ts` (schema export). **Both currently carry
+uncommitted Store Wave 3/4 edits** (party-materials / party-grn / jw-dc), and
+`index.ts` references untracked schema files. Cannot add Production exports
+without entangling that work or breaking the build. **Resolve the store-wave
+tree first** (commit or stash), then build Waves 3-5.
+
 ### Build plan (full-stack)
 1. **Backend `v_machine_load` view** (or service aggregation): per machine — avail qty, pending hrs, daily cap, days to clear, load %, load status. Joins `machines` ⨝ `jc_ops`/`v_jc_op_status` (cycle time × available) ⨝ `running_ops`. RLS via base tables. Needs `machines.cycle`/`jc_ops.cycle_time` (cycle_time exists on jc_ops per v_jc_op_status usage).
 2. **Shared schema** + `machine-loading` API hook.

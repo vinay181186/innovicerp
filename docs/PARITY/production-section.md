@@ -31,4 +31,9 @@ Per-page detail: `production-{job-cards,operators,machines,op-entry,shop-floor,m
 2. **`machines` columns** — `hour_rate`, `maint_cycle_days`, `last_maint_date` + `machine_maint_log` table.
 3. **JC write endpoints** — create/update/delete job cards with ops + docs (Phase-3-level; currently read-only).
 
-> New migrations intentionally deferred while uncommitted store-wave migrations (0030–0032) remain in the working tree, to avoid sequence entanglement. Resume migration-bearing waves (3-5) once those land.
+> **Blocker for Waves 3-5:** adding new API modules touches `apps/api/src/server.ts`
+> + `packages/shared/src/index.ts`, which both carry **uncommitted Store Wave 3/4
+> edits** (party-materials/party-grn/jw-dc) referencing untracked schema files.
+> Cannot wire new Production modules without entangling that work or breaking the
+> build. Resolve the store-wave tree (commit or stash) first, then build Waves 3-5.
+> The calc-engine aggregation needs **no migration** (raw SQL in service).
