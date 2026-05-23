@@ -156,6 +156,12 @@ export const submitQcLogInputSchema = z
     operatorId: z.string().uuid().optional(),
     operatorName: z.string().min(1).max(120).optional(),
     remarks: z.string().max(500).optional(),
+    // TPI (Third Party Inspection) metadata — set when this QC log is a TPI
+    // inspection (legacy renderTPI / _tpiSubmit). Persisted on op_log (0037).
+    isTpi: z.boolean().optional(),
+    tpiInspector: z.string().max(120).optional(),
+    tpiOrganization: z.string().max(160).optional(),
+    tpiCertNo: z.string().max(80).optional(),
   })
   .refine((i) => i.qty + i.rejectQty > 0, {
     message: 'Enter accepted qty and/or reject qty (legacy line 3895)',

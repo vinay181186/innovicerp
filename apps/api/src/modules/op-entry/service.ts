@@ -504,6 +504,10 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         operatorName: input.operatorName ?? null,
         startTime: null,
         remarks: input.remarks ?? null,
+        isTpi: input.isTpi ?? false,
+        tpiInspector: input.tpiInspector ?? null,
+        tpiOrganization: input.tpiOrganization ?? null,
+        tpiCertNo: input.tpiCertNo ?? null,
         createdBy: user.id,
       })
       .returning();

@@ -39,7 +39,7 @@ QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note
   - **QC Call Register** ✅ built (`ed4fe63`) — reuses qc-history data + op-entry submitQcLog.
 - **Wave 3 — MIGRATION-BEARING (Design landed; resuming):**
   - **CAPA** ✅ built — `capa_records` migration `0036` (0034/0035 reserved by Production re-audit) + 5-step modal.
-  - **TPI Inspection** — new `tpi_records` table + entry page.
+  - **TPI Inspection** ✅ built — `op_log` += is_tpi/inspector/org/cert (migration `0037`) + extended QC submit + `/tpi` page. (Not a `tpi_records` table.)
   - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
 - **Wave 4 — aggregation (depends on Wave 3 infra):**
   - **SO QC Status** + **QC Command Center** roll up 4 QC stages (QC ops + GRN QC + **TPI** + **Docs**). QC ops + GRN QC exist; TPI + Docs need Wave 3. Interim 2-stage version possible (see qc-so-status.md).

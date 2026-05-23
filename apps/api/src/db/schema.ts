@@ -850,6 +850,12 @@ export const opLog = pgTable(
     operatorName: text('operator_name'),
     startTime: time('start_time'),
     remarks: text('remarks'),
+    // TPI (Third Party Inspection) metadata — set on a QC log when it is a TPI
+    // inspection (legacy renderTPI L21381 / _tpiSubmit). Migration 0037.
+    isTpi: boolean('is_tpi').notNull().default(false),
+    tpiInspector: text('tpi_inspector'),
+    tpiOrganization: text('tpi_organization'),
+    tpiCertNo: text('tpi_cert_no'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -857,6 +863,9 @@ export const opLog = pgTable(
   },
   (t) => [
     index('op_log_company_op_date_idx').on(t.companyId, t.jcOpId, t.logDate),
+    index('op_log_company_tpi_idx')
+      .on(t.companyId, t.logDate)
+      .where(sql`${t.isTpi} = true`),
     index('op_log_company_date_complete_idx')
       .on(t.companyId, t.logDate)
       .where(sql`${t.logType} = 'complete'`),

@@ -192,6 +192,7 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
           { to: '/capa', label: 'CAPA', icon: '🛡' },
           { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },
+          { to: '/tpi', label: 'TPI Inspection', icon: '🔍' },
           { to: '/qc-history', label: 'QC History', icon: '📊' },
         ],
       },

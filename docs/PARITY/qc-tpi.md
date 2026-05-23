@@ -5,7 +5,7 @@
 
 ---
 
-## Verdict: MISSING — small migration (op_log columns), NOT a new table
+## Verdict: BUILT ✅ — op_log columns (migration `0037`), NOT a new table
 
 **Corrected data model:** TPI is **not** a standalone `tpi_records` table. In legacy, a TPI op is just a **QC op whose operation name contains "TPI"** (`o.qcReq && operation ILIKE '%TPI%'`). The TPI submit writes a normal QC **`op_log`** entry (`type='qc'`) flagged `isTPI=true` with three extra metadata fields: `tpiInspector`, `tpiOrganization`, `tpiCertNo`.
 
