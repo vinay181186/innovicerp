@@ -210,6 +210,7 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
           { to: '/so-qc-status', label: 'SO QC Status', icon: '📋' },
           { to: '/qc-history', label: 'QC History', icon: '📊' },
+          { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
         ],
       },
       {

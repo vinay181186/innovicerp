@@ -5,7 +5,23 @@
 
 ---
 
-## Verdict: MISSING — blocked on net-new file-Storage infrastructure
+## Verdict: BUILT ✅ — `/qc-docs` (stood up the app's first file-Storage capability)
+
+Migration `0039` creates a private `qc-docs` Supabase Storage bucket + storage
+RLS + a `qc_documents` metadata table. The web client uploads files directly to
+Storage (`supabase.storage.from('qc-docs').upload`), then registers metadata via
+`POST /qc-documents`; downloads use short-lived signed URLs. Page: upload modal
+(file + doc type + category + JC/SO ref) + category/search filters + table
+(Doc Type · File · Category · JC · SO · Uploaded By · Date · Open/Delete).
+
+> This is the app's first Storage wiring — the `uploadQcFile`/`signedUrlFor`
+> helpers + `qc-docs` bucket can be generalised later for JC drawings / GRN-TPI
+> reports / Design files (each currently has a `*_file_path` text col but no
+> uploader). Original (pre-build) analysis retained below.
+
+---
+
+### (historical) Original gap analysis
 
 QC Documents is a **file repository**: attach + browse MIR / MCR / Inspection Reports / TPI Reports / Drawings per JC / SO, with category filters, upload, and download. Its core is **binary file upload/download** — legacy uploads to Firebase Storage (`_fsUploadAndRegister`) and registers each file in `db.fileRegistry` (category, docType, fileName, downloadUrl), with a base64 local fallback.
 

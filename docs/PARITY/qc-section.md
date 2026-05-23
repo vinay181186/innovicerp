@@ -40,18 +40,20 @@ QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note
 - **Wave 3 — MIGRATION-BEARING (Design landed; resuming):**
   - **CAPA** ✅ built — `capa_records` migration `0036` (0034/0035 reserved by Production re-audit) + 5-step modal.
   - **TPI Inspection** ✅ built — `op_log` += is_tpi/inspector/org/cert (migration `0037`) + extended QC submit + `/tpi` page. (Not a `tpi_records` table.)
-  - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
+  - **QC Documents** ✅ built — see Wave 5.
 - **Wave 4 — aggregation:**
   - **SO QC Status** ✅ built (`/so-qc-status`) — per-line QC Ops + TPI rollup; GRN-QC + Docs columns show "—" (not per-line attributable / Docs pending).
   - **QC Command Center** ✅ built (`/qc-command`) — 5-tab board; Queue/Pareto/Inspector full (compose qc-history + qc-dashboard), FPY/Rework partial (need per-op attempt index), Pick-Up/Assign deferred (qc_assignments table).
 - **Wave 5:**
   - Report Master ✅ built — `report_types` master CRUD (migration `0038`), `/report-master`.
-  - **QC Documents** ❌ blocked — needs net-new file-Storage infra (Supabase Storage bucket + upload/download + signed URLs + `qc_documents` table). No file-upload capability exists anywhere in the app yet; build the Storage capability as a dedicated foundational slice first (unblocks JC drawings + GRN/TPI reports + Design files too). See qc-documents.md.
+  - **QC Documents** ✅ built (`/qc-docs`) — stood up the app's first file-Storage capability: `qc-docs` Supabase Storage bucket + `qc_documents` table (migration `0039`); client uploads + signed-URL downloads. See qc-documents.md.
   - QC Reports (`rpt_qc`) → folds into the existing Reports module (`/reports?group=QC`).
 
-## Status: 12 of 13 QC menu items built/verified
+## Status: 13 of 13 QC menu items built/verified ✅
 
-Built: Incoming QC · CAPA · QC Call Register · TPI · Report Master · QC Dashboard · QC Command Center (3/5 tabs full) · SO QC Status (2/4 stages) · QC History. Verified at parity: NC Register · QC Process Master. Folds into Reports: QC Reports. **Remaining: QC Documents only — blocked on file-Storage infra.**
+Built: Incoming QC · CAPA · QC Call Register · TPI · Report Master · QC Dashboard · QC Command Center (3/5 tabs full) · SO QC Status (2/4 stages) · QC History · QC Documents. Verified at parity: NC Register · QC Process Master. Folds into Reports: QC Reports.
+
+Documented partials (not blockers): QC Command Center FPY/Rework tabs (need per-op QC-attempt index) + Pick-Up/Assign (qc_assignments table); SO QC Status GRN-QC + Docs stages.
 
 ### ⚠️ Concurrent-migration blocker (2026-05-23)
 All Wave 3-4 pages are migration-bearing or depend on migration-bearing infra

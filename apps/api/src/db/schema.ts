@@ -3909,3 +3909,59 @@ export const reportTypes = pgTable(
 
 export type ReportType = typeof reportTypes.$inferSelect;
 export type NewReportType = typeof reportTypes.$inferInsert;
+
+// ─── QC Documents — migration 0039 ────────────────────────────────────────
+// File repository (MIR/MCR/inspection/TPI reports) per JC/SO. Files live in
+// the `qc-docs` Supabase Storage bucket; this table registers the metadata.
+// Mirrors legacy renderQCDocuments L23039.
+export const qcDocuments = pgTable(
+  'qc_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    jcCodeText: text('jc_code_text'),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
+    soCodeText: text('so_code_text'),
+    category: text('category').notNull().default('qc-docs'),
+    docType: text('doc_type').notNull(),
+    fileName: text('file_name').notNull(),
+    storagePath: text('storage_path').notNull(),
+    uploadedByText: text('uploaded_by_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('qc_documents_company_jc_idx')
+      .on(t.companyId, t.jobCardId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_documents_company_cat_idx')
+      .on(t.companyId, t.category)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('qc_documents_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('qc_documents_qc_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type QcDocument = typeof qcDocuments.$inferSelect;
+export type NewQcDocument = typeof qcDocuments.$inferInsert;
