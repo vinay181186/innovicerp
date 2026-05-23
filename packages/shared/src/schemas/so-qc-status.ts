@@ -1,10 +1,12 @@
-// SO QC Status read shapes (QC Wave 4). Mirrors legacy renderSOQCStatus
-// (HTML L18347): per-SO selector -> per-line QC-stage rollup. Read-only over
-// job_cards (source_so_line_id) -> v_jc_op_status (QC ops) + op_log (is_tpi).
-//
-// Cleanly-attributable stages: QC Ops + TPI. GRN-QC + Docs are partial (GRN is
-// not attributable per SO line in the normalised model; QC Documents not built)
-// — surfaced as informational, see docs/PARITY/qc-so-status.md.
+// SO QC Status read shapes (QC Wave 4 + 2026-05-24 GRN-QC/Docs). Mirrors legacy
+// renderSOQCStatus (HTML L18347): per-SO selector -> per-line QC-stage rollup.
+// All four legacy stages now attributable per SO line:
+//   • QC Ops — job_cards.source_so_line_id -> v_jc_op_status
+//   • TPI    — op_log.is_tpi on the same JCs
+//   • GRN-QC — goods_receipt_note_lines -> purchase_order_lines
+//              (source_so_line_id, or source_jc_op_id -> jc_ops -> job_cards)
+//   • Docs   — qc_documents.job_card_id -> job_cards.source_so_line_id
+// Read-only, no migration. See docs/PARITY/qc-so-status.md.
 
 import { z } from 'zod';
 
@@ -35,6 +37,14 @@ export const soQcLineSchema = z.object({
   tpiCount: z.number().int().nonnegative(),
   tpiAccepted: z.number().int().nonnegative(),
   tpiRejected: z.number().int().nonnegative(),
+  // GRN-QC (incoming material) — GRN lines attributable to this SO line.
+  grnTotal: z.number().int().nonnegative(),
+  grnDone: z.number().int().nonnegative(), // qc_status = 'completed'
+  grnReceived: z.number().int().nonnegative(),
+  grnAccepted: z.number().int().nonnegative(),
+  grnRejected: z.number().int().nonnegative(),
+  // QC Documents registered against the line's JCs (every row has a file).
+  docCount: z.number().int().nonnegative(),
   overall: soQcOverallSchema,
 });
 export type SoQcLine = z.infer<typeof soQcLineSchema>;

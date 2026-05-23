@@ -1,40 +1,29 @@
 # PARITY — SO QC Status (`renderSOQCStatus`)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L18347–18610.
-> **React target:** **none** — page missing. Route `/so-qc-status`. **Blocked on missing infra** (see below).
+> **React target:** `apps/web/src/modules/so-qc-status/` (route `/so-qc-status`).
 
 ---
 
-## Verdict: BUILT ✅ (partial — 2 of 4 stages) — `/so-qc-status`
+## Verdict: BUILT ✅ — full 4-stage parity (2026-05-24)
 
-SO selector → per-line rollup of **QC Ops + TPI** (cleanly attributable via
-`job_cards.source_so_line_id` → `v_jc_op_status` + `op_log.is_tpi`), with an
-Overall pill (Passed / In Progress / Pending / No QC). **GRN-QC + Docs columns
-show "—"**: GRN QC isn't attributable per SO line in the normalised model, and
-QC Documents isn't built. Full 4-stage parity tracked below.
+SO selector → summary strip (QC Ops / Incoming QC / QC Pending / Documents / TPI)
+→ per-line rollup of **all four legacy QC stages** with status pills + an Overall
+pill (Passed / In Progress / Pending / No QC). Read-only, no migration.
 
-`renderSOQCStatus` is a per-SO, per-line QC rollup. For each SO line it gathers **four QC stages** and shows status pills + an Overall:
+`renderSOQCStatus` is a per-SO, per-line QC rollup. For each SO line it gathers **four QC stages**:
 
-1. **QC Ops** — `jc_ops` where op_type='QC' or qc_required, with accept/reject from op entries. ✅ available (op_log qc + v_jc_op_status).
-2. **GRN QC** — GRNs against the line's POs (`grn.qc_status`/accepted/rejected). ✅ available (goods_receipt_note_lines).
-3. **TPI** — `db.tpiRecords` (third-party inspection). ❌ **no `tpi_records` table** in our schema.
-4. **QC Documents** — `db.qcDocUploads` + `db.fileRegistry` + `jc.qcDocs`. ❌ **no QC-doc/attachment storage** in our schema.
+1. **QC Ops** — `jc_ops` where op_type='QC' or qc_required. ✅ `v_jc_op_status` on JCs sourced from the line (`job_cards.source_so_line_id`).
+2. **TPI** — third-party inspection. ✅ `op_log.is_tpi` on the same JCs (migration 0037).
+3. **GRN QC** — incoming-material QC on the line's POs. ✅ `goods_receipt_note_lines` → `purchase_order_lines`, attributed to the SO line via `pol.source_so_line_id` (direct purchase) **or** `pol.source_jc_op_id → jc_ops → job_cards.source_so_line_id` (outsource). "Done" = `qc_status = 'completed'`.
+4. **QC Documents** — ✅ `qc_documents.job_card_id → job_cards.source_so_line_id` (migration 0039). Every registered doc carries a file, so docCount = uploaded.
 
-Header: SO selector → SO header card → per-line table with Incoming-QC / TPI / Docs / Overall pills (L18495), click row to expand stage detail tables.
+The earlier 2-of-4 blocker is **resolved**: TPI/Docs/CAPA infra all landed (migrations 0036/0037/0039), and `purchase_order_lines` gained `source_so_line_id` + `source_jc_op_id`, which is the GRN→SO-line attribution path the original note said was missing.
 
-## Build blocker / dependency chain
+## Minor DELTA (backlog, not blocking)
+- **No expandable per-line detail tables** (legacy `_sqcToggle` expands GRN/TPI/Docs sub-tables with vendor / inspector / file-link rows). The React page keeps the flat rollup design it was built with — pills + counts, no row expansion. Add detail expansion if the user wants drill-down.
+- **No per-line Overall %** bar — the React page uses an enum badge (none/pending/in_progress/passed) rather than legacy's % progress bar.
+- **"Required docs" gating** (legacy missing-doc concept) not modelled here; `qc_documents` only stores uploaded files. Plans `required_docs` is the future source for that.
 
-SO QC Status (and **QC Command Center**, which rolls up the same stages org-wide) cannot reach 1:1 until the upstream QC infra exists:
-
-- **TPI Inspection** → needs a `tpi_records` table (migration) + an entry page.
-- **QC Documents** → needs a QC-document/attachment store (table + Supabase Storage wiring) + the QC-docs page.
-- **CAPA** → needs a `capa_records` table (migration).
-
-Only **then** can SO QC Status / QC Command Center aggregate all four stages faithfully.
-
-## ⚠️ Concurrent-migration conflict (2026-05-23)
-
-All remaining QC pages are **migration-bearing or depend on migration-bearing infra**. A **parallel session is actively editing `schema.ts` + adding migrations** for the Design module (just landed `0033`). Adding QC migrations (capa/tpi/qc-docs) concurrently risks Drizzle journal + schema.ts conflicts. **Sequence the QC migration wave after the Design migrations settle**, or coordinate the journal.
-
-## Interim option (no migration)
-A reduced SO QC Status showing only the **two available stages** (QC Ops + GRN QC) per SO line is buildable now, with TPI/Docs columns shown as "—/n/a" until their infra lands. Lower parity but unblocks the SO-level QC view. Flag before building (partial parity).
+## ⚠️ Note — dev-DB migration gap found 2026-05-24
+This dev DB was **missing migrations 0036–0039** (capa/tpi/report_types/qc_documents) — the existing TPI query (`op_log.is_tpi`) was 500ing and the new Docs query needs `qc_documents`. The prior QC modules shipped without tests, so this was latent. Applied all four (idempotent) via `apply-sql.ts`; the new so-qc-status service test now exercises the path.

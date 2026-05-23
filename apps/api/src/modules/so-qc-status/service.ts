@@ -56,10 +56,21 @@ function overallOf(line: {
   qcOpsPassed: number;
   qcPending: number;
   tpiCount: number;
+  grnTotal: number;
+  grnDone: number;
+  docCount: number;
 }): SoQcLine['overall'] {
-  if (line.qcOpsTotal === 0 && line.tpiCount === 0) return 'none';
-  if (line.qcPending === 0 && line.qcOpsPassed >= line.qcOpsTotal) return 'passed';
-  if (line.qcOpsPassed > 0 || line.tpiCount > 0) return 'in_progress';
+  const hasAny =
+    line.qcOpsTotal > 0 || line.tpiCount > 0 || line.grnTotal > 0 || line.docCount > 0;
+  if (!hasAny) return 'none';
+  const opsDone = line.qcPending === 0 && line.qcOpsPassed >= line.qcOpsTotal;
+  const grnDone = line.grnDone >= line.grnTotal;
+  // Docs in our model always carry a file once registered, so any present docs
+  // count as satisfied; a line with zero docs doesn't gate "passed".
+  if (opsDone && grnDone) return 'passed';
+  if (line.qcOpsPassed > 0 || line.tpiCount > 0 || line.grnDone > 0 || line.docCount > 0) {
+    return 'in_progress';
+  }
   return 'pending';
 }
 
@@ -121,14 +132,82 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
       });
     }
 
+    // Per-line GRN-QC aggregate. A GRN line attributes to an SO line via its
+    // PO line: directly (purchase_order_lines.source_so_line_id, e.g. a direct
+    // material purchase) OR via the outsource path (source_jc_op_id -> jc_ops
+    // -> job_cards.source_so_line_id). "Done" = qc_status 'completed'.
+    const grnRows = await tx.execute(sql`
+      SELECT
+        COALESCE(pol.source_so_line_id, jcx.source_so_line_id) AS "soLineId",
+        COUNT(*)::int AS "grnTotal",
+        COUNT(*) FILTER (WHERE gl.qc_status = 'completed')::int AS "grnDone",
+        COALESCE(SUM(gl.received_qty), 0)::int AS "grnReceived",
+        COALESCE(SUM(gl.qc_accepted_qty), 0)::int AS "grnAccepted",
+        COALESCE(SUM(gl.qc_rejected_qty), 0)::int AS "grnRejected"
+      FROM public.goods_receipt_note_lines gl
+      JOIN public.goods_receipt_notes grn
+        ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
+      JOIN public.purchase_order_lines pol ON pol.id = gl.purchase_order_line_id
+      LEFT JOIN public.jc_ops jo ON jo.id = pol.source_jc_op_id
+      LEFT JOIN public.job_cards jcx ON jcx.id = jo.job_card_id AND jcx.deleted_at IS NULL
+      JOIN public.sales_order_lines sol3
+        ON sol3.id = COALESCE(pol.source_so_line_id, jcx.source_so_line_id)
+       AND sol3.deleted_at IS NULL
+      WHERE gl.company_id = ${companyId}::uuid
+        AND gl.deleted_at IS NULL
+        AND sol3.sales_order_id = ${soId}::uuid
+      GROUP BY 1
+    `);
+    const grnByLine = new Map<
+      string,
+      { total: number; done: number; received: number; accepted: number; rejected: number }
+    >();
+    for (const r of grnRows as unknown as Array<Record<string, unknown>>) {
+      grnByLine.set(r['soLineId'] as string, {
+        total: Number(r['grnTotal'] ?? 0),
+        done: Number(r['grnDone'] ?? 0),
+        received: Number(r['grnReceived'] ?? 0),
+        accepted: Number(r['grnAccepted'] ?? 0),
+        rejected: Number(r['grnRejected'] ?? 0),
+      });
+    }
+
+    // Per-line QC Documents — qc_documents registered against the line's JCs.
+    const docRows = await tx.execute(sql`
+      SELECT jc.source_so_line_id AS "soLineId", COUNT(*)::int AS "docCount"
+      FROM public.qc_documents qd
+      JOIN public.job_cards jc ON jc.id = qd.job_card_id AND jc.deleted_at IS NULL
+      JOIN public.sales_order_lines sol4
+        ON sol4.id = jc.source_so_line_id AND sol4.deleted_at IS NULL
+      WHERE qd.company_id = ${companyId}::uuid
+        AND qd.deleted_at IS NULL
+        AND sol4.sales_order_id = ${soId}::uuid
+      GROUP BY jc.source_so_line_id
+    `);
+    const docByLine = new Map<string, number>();
+    for (const r of docRows as unknown as Array<Record<string, unknown>>) {
+      docByLine.set(r['soLineId'] as string, Number(r['docCount'] ?? 0));
+    }
+
     const lines: SoQcLine[] = (lineRows as unknown as Array<Record<string, unknown>>).map((r) => {
       const soLineId = r['soLineId'] as string;
       const tpi = tpiByLine.get(soLineId) ?? { count: 0, accepted: 0, rejected: 0 };
+      const grn = grnByLine.get(soLineId) ?? {
+        total: 0,
+        done: 0,
+        received: 0,
+        accepted: 0,
+        rejected: 0,
+      };
+      const docCount = docByLine.get(soLineId) ?? 0;
       const base = {
         qcOpsTotal: Number(r['qcOpsTotal'] ?? 0),
         qcOpsPassed: Number(r['qcOpsPassed'] ?? 0),
         qcPending: Number(r['qcPending'] ?? 0),
         tpiCount: tpi.count,
+        grnTotal: grn.total,
+        grnDone: grn.done,
+        docCount,
       };
       return {
         soLineId,
@@ -145,6 +224,12 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         tpiCount: tpi.count,
         tpiAccepted: tpi.accepted,
         tpiRejected: tpi.rejected,
+        grnTotal: grn.total,
+        grnDone: grn.done,
+        grnReceived: grn.received,
+        grnAccepted: grn.accepted,
+        grnRejected: grn.rejected,
+        docCount,
         overall: overallOf(base),
       };
     });

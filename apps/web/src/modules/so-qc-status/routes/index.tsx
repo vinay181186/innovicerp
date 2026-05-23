@@ -1,7 +1,6 @@
 // SO QC Status (legacy renderSOQCStatus L18347). SO selector -> per-line QC
-// stage rollup. Stages shown: QC Ops + TPI (cleanly attributable via
-// job_cards.source_so_line_id). GRN-QC + Docs are partial (not attributable per
-// SO line / QC Documents not built) — shown as "—". Legacy chrome.
+// stage rollup over all four legacy stages: QC Ops + TPI + GRN-QC + Docs, with
+// a summary strip and per-line Overall pill. Legacy chrome.
 
 import type { SoQcLine, SoQcOverall } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -117,6 +116,8 @@ function SoQcStatusPage(): React.JSX.Element {
             </div>
           </div>
 
+          <SummaryStrip lines={detail.data.lines} />
+
           <div className="panel">
             <div className="panel-hdr">
               <span className="panel-title">Per-line QC Status</span>
@@ -158,8 +159,9 @@ function SoQcStatusPage(): React.JSX.Element {
             </div>
             <div className="panel-body">
               <span className="text3" style={{ fontSize: 11 }}>
-                💡 QC Ops + TPI are rolled up per SO line via the job cards sourced from it. GRN-QC
-                and Docs (—) are not yet attributable per SO line / QC Documents pending.
+                💡 All four QC stages rolled up per SO line: QC Ops + TPI via the JCs sourced from
+                the line, GRN-QC via the line's PO lines (direct or outsource), Docs via QC Documents
+                on those JCs.
               </span>
             </div>
           </div>
@@ -195,11 +197,81 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
       <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
         {l.tpiCount === 0 ? '—' : `${l.tpiCount} (${l.tpiAccepted}/${l.tpiRejected})`}
       </td>
-      <td className="td-ctr text3">—</td>
-      <td className="td-ctr text3">—</td>
+      <td className="td-ctr">
+        {l.grnTotal === 0 ? (
+          <span className="text3">—</span>
+        ) : (
+          <span className={`badge ${l.grnDone >= l.grnTotal ? 'b-green' : 'b-amber'}`}>
+            {l.grnDone >= l.grnTotal ? '✅' : '⏳'} {l.grnDone}/{l.grnTotal}
+          </span>
+        )}
+      </td>
+      <td className="td-ctr">
+        {l.docCount === 0 ? (
+          <span className="text3">—</span>
+        ) : (
+          <span className="badge b-green">📄 {l.docCount}</span>
+        )}
+      </td>
       <td>
         <span className={`badge ${ov.cls}`}>{ov.label}</span>
       </td>
     </tr>
+  );
+}
+
+// Summary strip (legacy summary cards L18483): QC Ops / Incoming QC / QC Pending
+// (ops) / Documents / TPI — reduced over the lines.
+function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
+  const t = lines.reduce(
+    (a, l) => ({
+      qcOps: a.qcOps + l.qcOpsTotal,
+      qcPassed: a.qcPassed + l.qcOpsPassed,
+      pendingOps: a.pendingOps + Math.max(0, l.qcOpsTotal - l.qcOpsPassed),
+      grn: a.grn + l.grnTotal,
+      grnDone: a.grnDone + l.grnDone,
+      docs: a.docs + l.docCount,
+      tpi: a.tpi + l.tpiCount,
+    }),
+    { qcOps: 0, qcPassed: 0, pendingOps: 0, grn: 0, grnDone: 0, docs: 0, tpi: 0 },
+  );
+  const allDone = (done: number, total: number): string =>
+    total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        gap: 8,
+        marginBottom: 16,
+      }}
+    >
+      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="passed" color={allDone(t.qcPassed, t.qcOps)} />
+      <Card label="INCOMING QC" value={`${t.grnDone}/${t.grn}`} sub="done" color={allDone(t.grnDone, t.grn)} />
+      <Card label="QC PENDING" value={t.pendingOps} sub="ops" color={t.pendingOps > 0 ? 'var(--red)' : 'var(--green)'} />
+      <Card label="DOCUMENTS" value={t.docs} sub="uploaded" color={t.docs > 0 ? 'var(--green)' : 'var(--text3)'} />
+      <Card label="TPI" value={t.tpi} sub="done" color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'} />
+    </div>
+  );
+}
+
+function Card(props: {
+  label: string;
+  value: number | string;
+  sub: string;
+  color: string;
+}): React.JSX.Element {
+  return (
+    <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
+      <div className="text3" style={{ fontSize: 9 }}>
+        {props.label}
+      </div>
+      <div className="mono fw-700" style={{ fontSize: 20, color: props.color }}>
+        {props.value}
+      </div>
+      <div className="text3" style={{ fontSize: 9 }}>
+        {props.sub}
+      </div>
+    </div>
   );
 }

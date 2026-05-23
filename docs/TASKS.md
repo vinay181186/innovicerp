@@ -82,6 +82,10 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** QC-SOQC-1 (QC backlog partial — "qc resume" step 2, 2026-05-24)
+**Title:** SO QC Status — GRN-QC + Docs stages built (now full 4-stage parity).
+**Status:** [x] Done 2026-05-24, NOT yet committed. Read-only, no new migration. GRN-QC attributed per SO line via `purchase_order_lines.source_so_line_id` (direct) or `source_jc_op_id → jc_ops → job_cards.source_so_line_id` (outsource); Docs via `qc_documents.job_card_id`. Added summary strip + GRN/Docs pills; broadened Overall calc. **Found + fixed a dev-DB gap:** migrations 0036–0039 were unapplied (existing `op_log.is_tpi` query was 500ing) — applied all four idempotently. New so-qc-status service test (4/4 green). typecheck + lint clean. **Next QC:** optional — generalise file-Storage to JC drawings / GRN-TPI / Design (step 3); else QC complete.
+
 **ID:** QC-CMD-1 (QC backlog partial — "qc resume" 2026-05-24)
 **Title:** QC Command Center — FPY + Rework tabs real + Pick-Up / Assign built (first `qc-command` backend module).
 **Status:** [x] Done 2026-05-24, NOT yet committed. Migration `0040_phase8_qc_assignments.sql` applied (ADR-031). New `qc-command` API module (`GET /qc-command` analytics over op_log QC groups + `POST /qc-command/{pickup,assign}`) + `qc_assignments` table. Web: real FPY/Rework tabs, queue Attempt + Assigned-To cols + Pick Up/Assign actions + Assign modal, stats strip realigned to legacy. 17/17 module tests green; full typecheck + lint clean. **Next QC:** SO QC Status GRN-QC + Docs stages (see [[project_qc_section_progress]]).
