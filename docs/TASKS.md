@@ -82,6 +82,10 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** QC-STORAGE-1 (QC backlog step 3 — "qc resume" step 3, 2026-05-24)
+**Title:** Generalize file-Storage capability → shared `@/lib/storage` + Item drawing upload/view.
+**Status:** [x] Done 2026-05-24, NOT yet committed. Per ADR-032. Web-only, no migration. Extracted `uploadFile`/`signedUrl` to `apps/web/src/lib/storage.ts` (qc-documents now delegates); added `DrawingUploadField` to the item create/edit form (sets `drawingFilePath`) + "View drawing" signed-URL link on item detail — making the previously-dead `items.drawing_file_path` column live. typecheck + lint clean. Scoped OUT (no host screens/columns): JC drawings (no JC detail page), GRN-TPI report, Design files. Known security DELTA logged in ADR-032: `qc-docs` bucket reads are per-authenticated-user, not per-company. **QC SECTION FULLY COMPLETE** (13/13 + all 3 backlog steps).
+
 **ID:** QC-SOQC-1 (QC backlog partial — "qc resume" step 2, 2026-05-24)
 **Title:** SO QC Status — GRN-QC + Docs stages built (now full 4-stage parity).
 **Status:** [x] Done 2026-05-24, NOT yet committed. Read-only, no new migration. GRN-QC attributed per SO line via `purchase_order_lines.source_so_line_id` (direct) or `source_jc_op_id → jc_ops → job_cards.source_so_line_id` (outsource); Docs via `qc_documents.job_card_id`. Added summary strip + GRN/Docs pills; broadened Overall calc. **Found + fixed a dev-DB gap:** migrations 0036–0039 were unapplied (existing `op_log.is_tpi` query was 500ing) — applied all four idempotently. New so-qc-status service test (4/4 green). typecheck + lint clean. **Next QC:** optional — generalise file-Storage to JC drawings / GRN-TPI / Design (step 3); else QC complete.

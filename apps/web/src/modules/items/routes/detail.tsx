@@ -8,6 +8,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
+import { signedUrl } from '@/lib/storage';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -266,6 +267,7 @@ function DetailGrid(props: { item: Item }): React.JSX.Element {
       <Pair label="UOM" value={item.uom} />
       <Pair label="Revision" value={item.revision} />
       <Pair label="Drawing no." value={item.drawingNo ?? '—'} />
+      <DrawingFilePair path={item.drawingFilePath} />
       <Pair label="Material" value={item.material ?? '—'} />
       <Pair label="HSN code" value={item.hsnCode ?? '—'} />
       <div className="form-grp form-full">
@@ -281,6 +283,32 @@ function Pair(props: { label: string; value: string }): React.JSX.Element {
     <div className="form-grp">
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
+    </div>
+  );
+}
+
+function DrawingFilePair({ path }: { path: string | null }): React.JSX.Element {
+  async function view(): Promise<void> {
+    if (!path) return;
+    try {
+      const url = await signedUrl(path);
+      window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not open file');
+    }
+  }
+  return (
+    <div className="form-grp">
+      <span className="form-label">Drawing file</span>
+      <div style={{ fontWeight: 600 }}>
+        {path ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
+            📎 View drawing
+          </button>
+        ) : (
+          '—'
+        )}
+      </div>
     </div>
   );
 }

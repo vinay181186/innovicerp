@@ -1374,6 +1374,35 @@ Two questions: (1) where does the FPY/rework aggregation live, and (2) how do we
 
 ---
 
+## ADR-032: Generalize file-Storage into a shared lib; reuse one `qc-docs` bucket
+
+**Date:** 2026-05-24
+**Status:** Accepted
+
+### Context
+
+QC Documents (ADR via migration 0039) stood up the app's first file capability: a private `qc-docs` Supabase Storage bucket + `uploadQcFile` / `signedUrlFor` helpers living inside `apps/web/src/modules/qc-documents/api.ts`. Other entities want files too — `items.drawing_file_path` and `job_cards.drawing_file_path` exist as columns but had no uploader (the item-form even registered `drawingFilePath` with no UI — a dead column). "Generalise the file capability" (QC backlog step 3).
+
+Investigation found the literal targets are thin: there is **no JC detail/edit page** (only a list) and **no TPI-report or design-file columns** — so only `items.drawing_file_path` has a real host screen today.
+
+### Decision
+
+1. **Extract the helpers into `apps/web/src/lib/storage.ts`** — generic `uploadFile(file, companyId, { bucket?, folder? })` + `signedUrl(path, { bucket?, expiresIn? })`, default bucket `qc-docs`. `qc-documents/api.ts` keeps `uploadQcFile`/`signedUrlFor` as thin wrappers (call sites untouched).
+2. **Reuse the single `qc-docs` bucket** for all file types (no new bucket/migration), namespaced by `${companyId}/<folder>/` path prefix (item drawings → `item-drawings/`). A new bucket per domain buys nothing at current scale.
+3. **Wire item drawings** as the first non-QC consumer: an upload field in the item form (sets `drawingFilePath`) + a "View drawing" signed-URL link on item detail. JC drawings / TPI / Design deferred — no host screens/columns.
+
+### Alternatives Considered
+
+- **A bucket per domain** (`drawings`, `design`, …) — rejected: more RLS surface, no benefit at this scale; revisit if retention/ACL policies diverge.
+- **Register item drawings as `qc_documents` rows** — rejected: a drawing is a property of the item (its own column), not a QC document; avoids cross-module coupling from the items form into the QC API.
+
+### Consequences
+
+- Positive: any module can now upload/download with two imports; the dead `drawing_file_path` column is live; no migration.
+- **Known limitation (security DELTA):** the `qc-docs` bucket's `storage.objects` policies grant read to **any authenticated user**, not per-company — the `${companyId}/` path prefix is organisational, not a boundary. A user could read another company's object if they knew the path. This predates this change (QC Documents already had it); widening usage widens the blast radius. **Follow-up:** path-prefix RLS on `storage.objects` keyed to the JWT `company_id`, org-wide. Tracked here; not addressed in this slice.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

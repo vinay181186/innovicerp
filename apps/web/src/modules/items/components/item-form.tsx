@@ -16,6 +16,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { DrawingUploadField } from './drawing-upload-field';
 
 type CreateMode = {
   mode: 'create';
@@ -74,7 +75,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
     resolver: zodResolver(createItemInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
 
   return (
@@ -124,6 +125,10 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <div className="form-error">{errors.drawingNo.message}</div>
           ) : null}
         </div>
+        <DrawingUploadField
+          value={watch('drawingFilePath')}
+          onChange={(p) => setValue('drawingFilePath', p, { shouldDirty: true })}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="revision">
             Revision
@@ -204,7 +209,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
     resolver: zodResolver(updateItemInputSchema),
     defaultValues: itemToUpdateDefaults(props.item),
   });
-  const { register, formState } = form;
+  const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
 
   return (
@@ -248,6 +253,10 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             <div className="form-error">{errors.drawingNo.message}</div>
           ) : null}
         </div>
+        <DrawingUploadField
+          value={watch('drawingFilePath')}
+          onChange={(p) => setValue('drawingFilePath', p, { shouldDirty: true })}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="revision">
             Revision

@@ -6,9 +6,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
-
-const BUCKET = 'qc-docs';
+import { signedUrl, uploadFile } from '@/lib/storage';
 
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
@@ -32,20 +30,15 @@ export function useQcDocuments(query: ListQcDocumentsQuery) {
   });
 }
 
-/** Uploads the file to the qc-docs Storage bucket; returns its storage path. */
-export async function uploadQcFile(file: File, companyId: string): Promise<string> {
-  const safe = file.name.replace(/[^\w.-]+/g, '_');
-  const path = `${companyId}/${Date.now()}-${safe}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-  if (error) throw new Error(`Upload failed: ${error.message}`);
-  return path;
+/** Uploads a QC document file; returns its storage path. Thin wrapper over the
+ *  shared Storage helper (kept for the QC Documents call sites). */
+export function uploadQcFile(file: File, companyId: string): Promise<string> {
+  return uploadFile(file, companyId);
 }
 
-/** Issues a short-lived signed URL for downloading/viewing a stored file. */
-export async function signedUrlFor(storagePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 120);
-  if (error || !data) throw new Error(`Could not open file: ${error?.message ?? 'unknown'}`);
-  return data.signedUrl;
+/** Issues a short-lived signed URL for a stored QC document. */
+export function signedUrlFor(storagePath: string): Promise<string> {
+  return signedUrl(storagePath);
 }
 
 export function useCreateQcDocument() {
