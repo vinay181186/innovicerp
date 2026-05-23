@@ -95,6 +95,9 @@ import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
 import { storeIssuesListRoute } from './modules/store-issues/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
+import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
+import { partyGrnListRoute } from './modules/party-grn/routes/list';
+import { jwDcListRoute } from './modules/jw-dc/routes/list';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -143,6 +146,9 @@ const routeTree = rootRoute.addChildren([
     storeIssuesListRoute,
     storeInventoryRoute,
     toolIssuesListRoute,
+    partyMaterialsListRoute,
+    partyGrnListRoute,
+    jwDcListRoute,
     soOverviewListRoute,
     soPlanningWorkflowRoute,
     planningDashboardRoute,

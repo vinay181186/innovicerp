@@ -11,7 +11,7 @@ import type {
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
@@ -31,6 +31,7 @@ function StoreInventoryPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [adjustRow, setAdjustRow] = useState<StoreInventoryRow | null>(null);
   const [minRow, setMinRow] = useState<StoreInventoryRow | null>(null);
+  const [showManualReceipt, setShowManualReceipt] = useState(false);
 
   const { data, isLoading, isError, error } = useStoreInventory({
     filter,
@@ -41,14 +42,25 @@ function StoreInventoryPage(): React.JSX.Element {
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">🏬 Store / Inventory</div>
-        <input
-          type="text"
-          className="innovic-input"
-          placeholder="🔍 Search item, material…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 240, fontSize: 12 }}
-        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Search item, material…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 240, fontSize: 12 }}
+          />
+          {canWrite ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowManualReceipt(true)}
+            >
+              + Manual Receipt
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {isLoading ? (
@@ -221,6 +233,12 @@ function StoreInventoryPage(): React.JSX.Element {
         <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} />
       ) : null}
       {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
+      {showManualReceipt ? (
+        <ManualReceiveModal
+          onClose={() => setShowManualReceipt(false)}
+          rows={data?.rows ?? []}
+        />
+      ) : null}
     </div>
   );
 }
@@ -548,6 +566,232 @@ function SetMinModal({
             </>
           ) : (
             'Save'
+          )}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// Legacy storeReceiveManual (HTML L24981) — manual stock IN entry. Today the
+// underlying ledger writes `source_type='manual_adjust'` via the existing
+// AdjustStock service; the "Source" dropdown + Ref No fields shown in the
+// legacy modal are stored only on the local input here and folded into the
+// remarks string (a DELTA to track separately — adding source/ref to
+// store_transactions requires a backend schema bump).
+function ManualReceiveModal({
+  onClose,
+  rows,
+}: {
+  onClose: () => void;
+  rows: StoreInventoryRow[];
+}): React.JSX.Element {
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [qty, setQty] = useState('');
+  const [source, setSource] = useState('Production');
+  const [refNo, setRefNo] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const mut = useAdjustStock();
+
+  const selected = useMemo(
+    () => rows.find((r) => r.itemId === itemId) ?? null,
+    [rows, itemId],
+  );
+  const filtered = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) =>
+        r.itemCode.toLowerCase().includes(q) ||
+        r.itemName.toLowerCase().includes(q) ||
+        (r.material ?? '').toLowerCase().includes(q),
+    );
+  }, [rows, itemSearch]);
+
+  const onSave = (): void => {
+    setErr(null);
+    if (!itemId) {
+      setErr('Select an item');
+      return;
+    }
+    const q = Number(qty);
+    if (!Number.isFinite(q) || q <= 0) {
+      setErr('Enter a valid quantity');
+      return;
+    }
+    const composedRemarks = [
+      `Manual receipt · source=${source}`,
+      refNo.trim() ? `ref=${refNo.trim()}` : null,
+      remarks.trim() || null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const input: AdjustStockInput = {
+      itemId,
+      direction: 'add',
+      qty: q,
+      remarks: composedRemarks,
+    };
+    mut.mutate(input, {
+      onSuccess: () => onClose(),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to record receipt'),
+    });
+  };
+
+  return (
+    <ModalShell onClose={onClose} title="+ Manual Stock Receipt">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ gridColumn: 'span 2' }}>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Item ★
+          </div>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Search item…"
+            value={selected ? `${selected.itemCode} — ${selected.itemName}` : itemSearch}
+            onChange={(e) => {
+              setItemId(null);
+              setItemSearch(e.target.value);
+            }}
+          />
+          {!itemId && itemSearch.trim() ? (
+            <div
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                background: 'var(--bg2)',
+                marginTop: 4,
+                maxHeight: 180,
+                overflowY: 'auto',
+              }}
+            >
+              {filtered.slice(0, 20).map((r) => (
+                <div
+                  key={r.itemId}
+                  onClick={() => {
+                    setItemId(r.itemId);
+                    setItemSearch('');
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    borderBottom: '1px solid var(--border)',
+                  }}
+                >
+                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{r.itemCode}</span> —{' '}
+                  {r.itemName}
+                  <span className="text3" style={{ marginLeft: 6 }}>
+                    · stock {r.inStock} {r.uom}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Quantity ★
+          </div>
+          <input
+            type="number"
+            min={1}
+            className="innovic-input"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="0"
+            style={{ fontSize: 16, fontWeight: 700 }}
+          />
+        </div>
+        <div>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Source
+          </div>
+          <select
+            className="innovic-select"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+          >
+            <option>Production</option>
+            <option>Purchase</option>
+            <option>Return</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Reference No.
+          </div>
+          <input
+            type="text"
+            className="innovic-input"
+            value={refNo}
+            onChange={(e) => setRefNo(e.target.value)}
+            placeholder="JC / PO / GRN number"
+          />
+        </div>
+        <div style={{ gridColumn: 'span 2' }}>
+          <div
+            className="text3"
+            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+          >
+            Remarks
+          </div>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Optional notes"
+          />
+        </div>
+      </div>
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'rgba(239,68,68,0.08)',
+            color: 'var(--red)',
+            fontSize: 12,
+            borderRadius: 4,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onSave}
+          disabled={mut.isPending}
+        >
+          {mut.isPending ? (
+            <>
+              <Loader2 size={14} className="inline animate-spin" /> Saving…
+            </>
+          ) : (
+            'Receive'
           )}
         </button>
       </div>

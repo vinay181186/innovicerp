@@ -2759,6 +2759,400 @@ export const storeIssues = pgTable(
   ],
 ).enableRLS();
 
+// ─── Store slice 1 (migration 0030) — party_materials ────────────────────
+// Catalogue of raw materials supplied by clients for Job Work orders.
+// Distinct from `items` master — these belong to the client. Stock is
+// tracked separately (issued/received/on-hand) and feeds Party Material
+// GRN + JW DC workflows. Legacy `db.partyMaterials` (renderPartyMaterial
+// HTML L24129). See docs/PARITY/party-material.md.
+
+export const partyMaterials = pgTable(
+  'party_materials',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    material: text('material'),
+    uom: text('uom').notNull().default('NOS'),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    clientCodeText: text('client_code_text'),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    stockQty: integer('stock_qty').notNull().default(0),
+    issuedQty: integer('issued_qty').notNull().default(0),
+    receivedQty: integer('received_qty').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('party_materials_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_materials_company_client_idx')
+      .on(t.companyId, t.clientId)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_materials_company_item_idx')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('party_materials_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_materials_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Store slice 2 (migration 0031) — party_grn + party_grn_lines ────────
+// Records client-supplied raw material received against a JW order.
+// Mirrors legacy db.partyGrn (renderPartyGRN HTML L24251) + addPartyGRN
+// (L24298). Numbering: PGRN-NNNNN.
+
+export const partyGrn = pgTable(
+  'party_grn',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    grnDate: date('grn_date').notNull(),
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
+    jwCodeText: text('jw_code_text'),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    clientCodeText: text('client_code_text'),
+    clientPoNo: text('client_po_no'),
+    dcNo: text('dc_no'),
+    remarks: text('remarks'),
+    receivedByText: text('received_by_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('party_grn_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_grn_company_date_idx')
+      .on(t.companyId, t.grnDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_grn_company_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_grn_company_client_idx')
+      .on(t.companyId, t.clientId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('party_grn_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_grn_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const partyGrnLines = pgTable(
+  'party_grn_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    partyGrnId: uuid('party_grn_id')
+      .notNull()
+      .references((): AnyPgColumn => partyGrn.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    partyMaterialId: uuid('party_material_id').references((): AnyPgColumn => partyMaterials.id, {
+      onDelete: 'set null',
+    }),
+    partyMaterialCodeText: text('party_material_code_text').notNull(),
+    partyMaterialName: text('party_material_name'),
+    receivedQty: integer('received_qty').notNull(),
+    jwLineNoText: text('jw_line_no_text'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('party_grn_lines_grn_idx')
+      .on(t.partyGrnId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_grn_lines_material_idx')
+      .on(t.partyMaterialId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('party_grn_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_grn_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Store slice 3 (migration 0032) — JW Delivery Challan (4 tables) ────
+// Outward = Returnable Gate Pass (material sent to JW vendor). Inward =
+// material received back (with OK/Rejected split). Mirrors legacy
+// renderJWDC (HTML L24434). Numbering: JWDC-OUT-NNNN / JWIN-NNNN.
+
+export const jwDcOutward = pgTable(
+  'jw_dc_outward',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    dcDate: date('dc_date').notNull(),
+    purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id, {
+      onDelete: 'set null',
+    }),
+    jwpoCodeText: text('jwpo_code_text'),
+    vendorId: uuid('vendor_id').references(() => vendors.id, { onDelete: 'set null' }),
+    vendorCodeText: text('vendor_code_text'),
+    vendorNameText: text('vendor_name_text'),
+    vehicleNo: text('vehicle_no'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('jw_dc_outward_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_outward_company_date_idx')
+      .on(t.companyId, t.dcDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_outward_company_po_idx')
+      .on(t.companyId, t.purchaseOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_outward_company_vendor_idx')
+      .on(t.companyId, t.vendorId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_dc_outward_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_dc_outward_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jwDcOutwardLines = pgTable(
+  'jw_dc_outward_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jwDcOutwardId: uuid('jw_dc_outward_id')
+      .notNull()
+      .references((): AnyPgColumn => jwDcOutward.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    purchaseOrderLineId: uuid('purchase_order_line_id').references(
+      () => purchaseOrderLines.id,
+      { onDelete: 'set null' },
+    ),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text').notNull(),
+    itemNameText: text('item_name_text'),
+    processText: text('process_text'),
+    poQty: integer('po_qty').notNull().default(0),
+    sentQty: integer('sent_qty').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('jw_dc_outward_lines_dc_idx')
+      .on(t.jwDcOutwardId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_outward_lines_po_line_idx')
+      .on(t.purchaseOrderLineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_dc_outward_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_dc_outward_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jwDcInward = pgTable(
+  'jw_dc_inward',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    inwardDate: date('inward_date').notNull(),
+    jwDcOutwardId: uuid('jw_dc_outward_id')
+      .notNull()
+      .references((): AnyPgColumn => jwDcOutward.id, { onDelete: 'restrict' }),
+    dcCodeText: text('dc_code_text'),
+    vendorChallanNo: text('vendor_challan_no'),
+    vehicleNo: text('vehicle_no'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('jw_dc_inward_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_inward_company_date_idx')
+      .on(t.companyId, t.inwardDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_inward_company_dc_idx')
+      .on(t.companyId, t.jwDcOutwardId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_dc_inward_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_dc_inward_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jwDcInwardLines = pgTable(
+  'jw_dc_inward_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jwDcInwardId: uuid('jw_dc_inward_id')
+      .notNull()
+      .references((): AnyPgColumn => jwDcInward.id, { onDelete: 'cascade' }),
+    jwDcOutwardLineId: uuid('jw_dc_outward_line_id')
+      .notNull()
+      .references((): AnyPgColumn => jwDcOutwardLines.id, { onDelete: 'restrict' }),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text').notNull(),
+    itemNameText: text('item_name_text'),
+    processText: text('process_text'),
+    sentQty: integer('sent_qty').notNull().default(0),
+    receivedQty: integer('received_qty').notNull(),
+    okQty: integer('ok_qty').notNull().default(0),
+    rejectedQty: integer('rejected_qty').notNull().default(0),
+    remarks: text('remarks'),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('jw_dc_inward_lines_inward_idx')
+      .on(t.jwDcInwardId)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_dc_inward_lines_outward_line_idx')
+      .on(t.jwDcOutwardLineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_dc_inward_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_dc_inward_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── PL-PSV-1 (migration 0027) — invoices + invoice_lines ────────────────
 // Sales-side revenue / cashflow tracking. Drives the Pending SO Value report
 // (legacy renderPendingSOValue HTML L19272). See docs/PARITY/pendingsovalue.md.
@@ -2946,3 +3340,17 @@ export type ToolIssue = typeof toolIssues.$inferSelect;
 export type NewToolIssue = typeof toolIssues.$inferInsert;
 export type ToolIssueReturn = typeof toolIssueReturns.$inferSelect;
 export type NewToolIssueReturn = typeof toolIssueReturns.$inferInsert;
+export type PartyMaterial = typeof partyMaterials.$inferSelect;
+export type NewPartyMaterial = typeof partyMaterials.$inferInsert;
+export type PartyGrn = typeof partyGrn.$inferSelect;
+export type NewPartyGrn = typeof partyGrn.$inferInsert;
+export type PartyGrnLine = typeof partyGrnLines.$inferSelect;
+export type NewPartyGrnLine = typeof partyGrnLines.$inferInsert;
+export type JwDcOutward = typeof jwDcOutward.$inferSelect;
+export type NewJwDcOutward = typeof jwDcOutward.$inferInsert;
+export type JwDcOutwardLine = typeof jwDcOutwardLines.$inferSelect;
+export type NewJwDcOutwardLine = typeof jwDcOutwardLines.$inferInsert;
+export type JwDcInward = typeof jwDcInward.$inferSelect;
+export type NewJwDcInward = typeof jwDcInward.$inferInsert;
+export type JwDcInwardLine = typeof jwDcInwardLines.$inferSelect;
+export type NewJwDcInwardLine = typeof jwDcInwardLines.$inferInsert;
