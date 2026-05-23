@@ -35,4 +35,10 @@ NC Register's "🛡 CAPA" action calls `_createCAPAFromNC(ncNo)` (prefills NC re
 4. Wire NC Register CAPA create/link action.
 5. Sidebar QC → Entry "CAPA" + router.
 
-> **Data-conflict watch:** verify `capa_records` columns cover the 5-step fields (rootCauseMethod, correctiveAction, verification, verifiedBy/date, preventiveAction, effectiveness, reviewDate, ncRefs[]). If columns are missing, a migration is needed — flag before building.
+> **Confirmed (2026-05-23):** `capa_records` does **NOT** exist in the Drizzle
+> schema (nor `qc_inspections`). CAPA is a from-scratch table — needs a new
+> migration with all 5-step columns (type, status, date, ncRefs[], jcNo/soNo/
+> itemCode, problem, rootCauseMethod, rootCause, correctiveAction, responsible,
+> targetDate, verification, verifiedBy/Date, preventiveAction, effectiveness,
+> reviewDate, department + standard cols + RLS). Migration-bearing → coordinate
+> with any concurrent migration work before building.

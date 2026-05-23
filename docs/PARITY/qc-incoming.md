@@ -21,8 +21,10 @@ GRN No · GRN Date · QC Date · **Resp** (response days, "Same day"/Nd, colour)
 ### Inspect modal (`grnQC`)
 Accept qty + Reject qty (≤ received pending) + remarks + optional QC report attach → sets `qc_accepted_qty`/`qc_rejected_qty`/`qc_date`/`qc_status`. Rejections feed NC Register (auto-NC).
 
-### Build plan (full-stack, Wave 2)
-1. **Confirm GRN QC fields** on our `grn`/`grn_lines` schema: `qc_status`, `qc_accepted_qty`, `qc_rejected_qty`, `qc_date`, `qc_remarks`, report attachment. (GRN parity doc notes QC pending/cleared exists — verify the per-line accept/reject qty columns.) **Data-conflict watch:** if columns missing → migration needed, flag first.
+### Build plan (full-stack, Wave 2) — ✅ NO MIGRATION
+1. **GRN QC fields confirmed present** on `goods_receipt_note_lines`: `qc_status`
+   (enum), `qc_accepted_qty`, `qc_rejected_qty`, `qc_date`, `qc_remarks` (+ checks
+   `accepted+rejected ≤ received`). **No migration needed** — most tractable QC build.
 2. **API** `modules/incoming-qc` (or extend `goods-receipt-notes`): list pending + completed + pipeline metrics; inspect action (write accept/reject + optional auto-NC).
 3. **Web** `modules/incoming-qc`: 7-card dashboard + pending table (Inspect) + completed table, legacy chrome.
 4. Sidebar QC → Entry "Incoming QC" + router.

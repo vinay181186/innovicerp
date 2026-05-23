@@ -28,14 +28,19 @@ Backend QC tables (per SCHEMA.md): `qc_inspections`, `qc_attachments`, `nc_regis
 
 ---
 
-## Build waves (by tractability)
+## Build waves (by tractability) — backend confirmed 2026-05-23
 
-- **Wave 1 — verify/refactor existing 3:** qc-dashboard (qcengineer) chrome refactor + parity; nc-register parity; qc-processes parity.
-- **Wave 2 — registers/entry (backend-light, reuse qc_inspections/op_log/grn):** Incoming QC, QC Call Register, QC History, QC Documents.
-- **Wave 3 — CAPA:** capa_records CRUD (table exists).
-- **Wave 4 — overview dashboards:** QC Command Center, SO QC Status (aggregation over qc stages).
-- **Wave 5 — TPI Inspection, Report Master:** if distinct from existing modules (TPI may be a sub-mode of qc_inspections; Report Master likely the Reports module).
+QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note_lines` qc fields**. There is **no `qc_inspections` and no `capa_records` table**.
+
+- **Wave 1 — DONE:** qc-dashboard (qcengineer) chrome refactor (`6854672`); nc-register + qc-processes mapped/verified (`697f159`).
+- **Wave 2 — NO MIGRATION (most tractable):**
+  - **Incoming QC** — GRN lines already have `qc_status`/`qc_accepted_qty`/`qc_rejected_qty`/`qc_date`/`qc_remarks`. ✅ buildable now.
+  - **QC History** — read `op_log` qc entries. ✅ buildable now.
+  - **QC Call Register** (`qcdashboard`) — qc-pending ops + log-QC action (op_log). Mostly reuses op-entry QC write.
+- **Wave 3 — MIGRATION:** **CAPA** (new `capa_records` table) — coordinate migrations.
+- **Wave 4 — aggregation (no migration):** QC Command Center, SO QC Status (roll up qc stages over op_log qc + grn qc).
+- **Wave 5:** QC Documents (needs an attachments source — check `qc_attachments`/storage), TPI Inspection, Report Master (likely the Reports module).
 
 ## Cross-cutting
-- Several pages read the same `qc_inspections` / op_log QC entries — check the existing qc-dashboard service before adding new aggregation endpoints (reuse).
+- Reuse the existing `qc-dashboard` service aggregation pattern before adding new endpoints.
 - QC Reports + Report Master likely fold into the existing `reports` module rather than new pages.
