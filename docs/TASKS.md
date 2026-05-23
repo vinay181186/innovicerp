@@ -82,6 +82,10 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** SEC-STORAGE-1 (security follow-up from ADR-032, 2026-05-24)
+**Title:** Harden qc-docs Storage bucket — per-company object RLS.
+**Status:** [x] Done 2026-05-24, NOT yet committed. Per ADR-033, migration `0041_phase8_qc_docs_company_rls.sql` (applied to dev). Replaced the permissive "any authenticated user" storage.objects policies with per-company `qc_docs_company_{read,insert,delete}` keyed on the object path's first segment vs the caller's company. New SECURITY DEFINER helper `current_auth_company_id()` derives company from `public.users` by JWT sub (the Supabase access token carries no company_id claim). 2/2 helper tests green; full Storage-policy enforcement needs a manual/Playwright upload test. Resolves the ADR-032 security DELTA.
+
 **ID:** QC-STORAGE-1 (QC backlog step 3 — "qc resume" step 3, 2026-05-24)
 **Title:** Generalize file-Storage capability → shared `@/lib/storage` + Item drawing upload/view.
 **Status:** [x] Done 2026-05-24, NOT yet committed. Per ADR-032. Web-only, no migration. Extracted `uploadFile`/`signedUrl` to `apps/web/src/lib/storage.ts` (qc-documents now delegates); added `DrawingUploadField` to the item create/edit form (sets `drawingFilePath`) + "View drawing" signed-URL link on item detail — making the previously-dead `items.drawing_file_path` column live. typecheck + lint clean. Scoped OUT (no host screens/columns): JC drawings (no JC detail page), GRN-TPI report, Design files. Known security DELTA logged in ADR-032: `qc-docs` bucket reads are per-authenticated-user, not per-company. **QC SECTION FULLY COMPLETE** (13/13 + all 3 backlog steps).

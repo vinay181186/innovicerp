@@ -1399,7 +1399,39 @@ Investigation found the literal targets are thin: there is **no JC detail/edit p
 ### Consequences
 
 - Positive: any module can now upload/download with two imports; the dead `drawing_file_path` column is live; no migration.
-- **Known limitation (security DELTA):** the `qc-docs` bucket's `storage.objects` policies grant read to **any authenticated user**, not per-company — the `${companyId}/` path prefix is organisational, not a boundary. A user could read another company's object if they knew the path. This predates this change (QC Documents already had it); widening usage widens the blast radius. **Follow-up:** path-prefix RLS on `storage.objects` keyed to the JWT `company_id`, org-wide. Tracked here; not addressed in this slice.
+- **Known limitation (security DELTA):** the `qc-docs` bucket's `storage.objects` policies grant read to **any authenticated user**, not per-company — the `${companyId}/` path prefix is organisational, not a boundary. A user could read another company's object if they knew the path. This predates this change (QC Documents already had it); widening usage widens the blast radius. **→ RESOLVED by ADR-033 / migration 0041 (2026-05-24).**
+
+---
+
+## ADR-033: qc-docs Storage bucket — per-company object RLS via a SECURITY DEFINER sub→company lookup
+
+**Date:** 2026-05-24
+**Status:** Accepted (resolves the ADR-032 limitation)
+
+### Context
+
+The `qc-docs` bucket (migration 0039) granted **any authenticated user** read/insert/delete on every object (`USING (bucket_id = 'qc-docs')`). The `${companyId}/…` path prefix was organisational only — a user who knew a path could read another company's file. With item drawings now using the bucket (ADR-032), this needed fixing.
+
+The blocker: storage objects are accessed **directly browser→Supabase** with the Supabase Auth JWT, which **does not carry `company_id`** — the Fastify API derives company from `public.users` by the JWT `sub` (`auth.ts`). So `current_company_id()` (reads the `company_id` claim) returns NULL in the Storage context; a policy using it would deny all access.
+
+### Decision
+
+Migration 0041:
+
+1. **New helper `public.current_auth_company_id()`** — returns the caller's company by looking up `public.users` with the JWT `sub` (`request.jwt.claims->>'sub'`). `SECURITY DEFINER` + `SET search_path = public` so it bypasses the company-scoped users RLS (which itself needs a company context the Storage caller lacks — a chicken-and-egg otherwise). `GRANT EXECUTE … TO authenticated`.
+2. **Replace the three permissive policies** with `qc_docs_company_{read,insert,delete}`, each asserting `(storage.foldername(name))[1] = current_auth_company_id()::text` — the object's first path segment must equal the caller's company. Works for both `${companyId}/…` and `${companyId}/<folder>/…` layouts.
+
+### Alternatives Considered
+
+- **`current_company_id()` in the policy** — rejected: NULL in the Storage context (no `company_id` JWT claim) → denies everything.
+- **Add a Supabase custom access-token hook** to inject `company_id` into the JWT — rejected for now: requires Supabase Auth dashboard config (not just SQL), changes the token app-wide, and the app already resolves company via DB. The SECURITY DEFINER lookup is self-contained in one migration.
+- **Subquery to `public.users` inline in the policy (no DEFINER)** — rejected: the subquery is itself subject to users RLS (NULL company context) → returns null → fails closed.
+
+### Consequences
+
+- Positive: cross-company object access is closed at the Storage layer; signed-URL issuance (which checks SELECT RLS) is now company-scoped too. `service_role` still bypasses (server ops unaffected).
+- Testing: the policies can't be exercised in the vitest harness (they apply to the `authenticated` role via the Storage API with a real JWT; the harness connects as the migration role). Covered the helper logic instead (`storage-rls.test.ts`: correct company for a known sub, NULL for an unknown sub). End-to-end cross-company denial needs a manual/Playwright upload test.
+- Path discipline is now load-bearing: `uploadFile` MUST keep writing the company id as the first segment, or writes fail the INSERT check. Documented in `lib/storage.ts`.
 
 ---
 
