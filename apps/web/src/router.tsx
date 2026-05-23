@@ -80,6 +80,7 @@ import { capaListRoute } from './modules/capa/routes/list';
 import { tpiRoute } from './modules/tpi/routes/index';
 import { reportTypesListRoute } from './modules/report-types/routes/list';
 import { soQcStatusRoute } from './modules/so-qc-status/routes/index';
+import { qcCommandRoute } from './modules/qc-command/routes/index';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -240,6 +241,7 @@ const routeTree = rootRoute.addChildren([
     tpiRoute,
     reportTypesListRoute,
     soQcStatusRoute,
+    qcCommandRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,

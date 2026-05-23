@@ -43,7 +43,7 @@ QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note
   - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
 - **Wave 4 — aggregation:**
   - **SO QC Status** ✅ built (`/so-qc-status`) — per-line QC Ops + TPI rollup; GRN-QC + Docs columns show "—" (not per-line attributable / Docs pending).
-  - **QC Command Center** — 5-tab analytics (Queue/FPY/Pareto/Inspector/Rework); pending.
+  - **QC Command Center** ✅ built (`/qc-command`) — 5-tab board; Queue/Pareto/Inspector full (compose qc-history + qc-dashboard), FPY/Rework partial (need per-op attempt index), Pick-Up/Assign deferred (qc_assignments table).
 - **Wave 5:** Report Master ✅ built — `report_types` master CRUD (migration `0038`), `/report-master`. (It's a distinct master, not the Reports module.)
 
 ### ⚠️ Concurrent-migration blocker (2026-05-23)
