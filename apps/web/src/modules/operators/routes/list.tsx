@@ -106,7 +106,7 @@ function OperatorsListPage(): React.JSX.Element {
         accessorKey: 'isActive',
         cell: ({ row }) => (
           <span className={`badge ${row.original.isActive ? 'b-green' : 'b-grey'}`}>
-            {row.original.isActive ? 'active' : 'inactive'}
+            {row.original.isActive ? 'Active' : 'Inactive'}
           </span>
         ),
       },
