@@ -43,7 +43,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const machineRows = (await tx.execute(sql`
-      SELECT id, code, name, type
+      SELECT id, code, name, machine_type AS type
       FROM public.machines
       WHERE company_id = ${companyId}::uuid
         AND deleted_at IS NULL
@@ -64,8 +64,8 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         jc.code AS "jcCode",
         op.op_seq AS "opSeq",
         op.operation,
-        COALESCE(i.code, jc.item_code_text) AS "itemCode",
-        COALESCE(i.name, jc.item_name_text) AS "itemName",
+        i.code AS "itemCode",
+        i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         jc.order_qty AS "orderQty",
         COALESCE(s.completed_qty, 0)::int AS "doneQty",

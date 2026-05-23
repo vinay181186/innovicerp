@@ -37,7 +37,7 @@ export async function listJcOpsBoard(
       ? sql`AND (
           jc.code ILIKE ${term}
           OR op.operation ILIKE ${term}
-          OR COALESCE(i.code, jc.item_code_text) ILIKE ${term}
+          OR i.code ILIKE ${term}
         )`
       : sql``;
 
@@ -48,8 +48,8 @@ export async function listJcOpsBoard(
         op.id AS "jcOpId",
         jc.id AS "jcId",
         jc.code AS "jcCode",
-        COALESCE(i.code, jc.item_code_text) AS "jcItemCode",
-        COALESCE(i.name, jc.item_name_text) AS "jcItemName",
+        i.code AS "jcItemCode",
+        i.name AS "jcItemName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
         op.operation,

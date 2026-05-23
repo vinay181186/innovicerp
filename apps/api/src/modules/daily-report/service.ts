@@ -33,8 +33,8 @@ export async function getDailyReport(
       SELECT
         l.id AS "logId",
         jc.code AS "jcCode",
-        COALESCE(i.code, jc.item_code_text) AS "itemCode",
-        COALESCE(i.name, jc.item_name_text) AS "itemName",
+        i.code AS "itemCode",
+        i.name AS "itemName",
         op.op_seq AS "opSeq",
         op.operation,
         l.shift::text AS shift,

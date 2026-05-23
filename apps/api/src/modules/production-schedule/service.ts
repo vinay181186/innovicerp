@@ -88,7 +88,7 @@ export async function getProductionSchedule(
     const today = todayIso();
 
     const machineRows = (await tx.execute(sql`
-      SELECT id, code, name, type
+      SELECT id, code, name, machine_type AS type
       FROM public.machines
       WHERE company_id = ${companyId}::uuid
         AND deleted_at IS NULL
@@ -117,7 +117,7 @@ export async function getProductionSchedule(
         op.op_seq AS "opSeq",
         op.operation,
         op.machine_id AS "machineId",
-        COALESCE(i.code, jc.item_code_text) AS "itemCode",
+        i.code AS "itemCode",
         op.planned_start AS "plannedStart",
         op.planned_end AS "plannedEnd",
         jc.due_date AS "dueDate",

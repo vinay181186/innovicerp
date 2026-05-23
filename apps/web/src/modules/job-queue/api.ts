@@ -35,15 +35,48 @@ export function useReorderJobQueue() {
   return useMutation<
     { ok: true },
     Error,
-    { machineId: string; input: ReorderJobQueueInput }
+    { machineId: string; input: ReorderJobQueueInput },
+    { snaps: Array<[readonly unknown[], unknown]> }
   >({
     mutationFn: ({ machineId, input }) =>
       apiFetch<{ ok: true }>(`/job-queue/machines/${machineId}/order`, {
         method: 'PUT',
         json: input,
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: jobQueueKeys.all });
+    // Optimistic update: rewrite the cached machine's `rows` in the new
+    // order so the UI flips before the network roundtrip.
+    onMutate: async ({ machineId, input }) => {
+      await qc.cancelQueries({ queryKey: jobQueueKeys.all });
+      const snaps: Array<[readonly unknown[], unknown]> = [];
+      const cached = qc.getQueriesData<JobQueueResponse>({ queryKey: jobQueueKeys.all });
+      for (const [key, value] of cached) {
+        snaps.push([key, value]);
+        if (!value) continue;
+        const next: JobQueueResponse = {
+          ...value,
+          machines: value.machines.map((m) => {
+            if (m.machineId !== machineId) return m;
+            const byId = new Map(m.rows.map((r) => [r.jcOpId, r]));
+            const ordered = input.jcOpIds
+              .map((id) => byId.get(id))
+              .filter((x): x is (typeof m.rows)[number] => Boolean(x));
+            const inSet = new Set(input.jcOpIds);
+            for (const r of m.rows) if (!inSet.has(r.jcOpId)) ordered.push(r);
+            return { ...m, rows: ordered };
+          }),
+        };
+        qc.setQueryData(key, next);
+      }
+      return { snaps };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snaps) {
+        for (const [key, value] of ctx.snaps) qc.setQueryData(key, value);
+      }
+    },
+    onSettled: () => {
+      // Server-side ORDER BY queue_position re-confirms the new order.
+      void qc.refetchQueries({ queryKey: jobQueueKeys.all });
     },
   });
 }

@@ -39,7 +39,7 @@ export async function getJobQueue(
       : sql``;
 
     const machineRows = (await tx.execute(sql`
-      SELECT id, code, name, type
+      SELECT id, code, name, machine_type AS type
       FROM public.machines
       WHERE company_id = ${companyId}::uuid
         AND deleted_at IS NULL
@@ -58,8 +58,8 @@ export async function getJobQueue(
         jc.id AS "jcId",
         jc.code AS "jcCode",
         op.machine_id AS "machineId",
-        COALESCE(i.code, jc.item_code_text) AS "itemCode",
-        COALESCE(i.name, jc.item_name_text) AS "itemName",
+        i.code AS "itemCode",
+        i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
         op.op_seq AS "opSeq",
