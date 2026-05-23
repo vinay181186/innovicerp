@@ -1430,7 +1430,7 @@ Migration 0041:
 ### Consequences
 
 - Positive: cross-company object access is closed at the Storage layer; signed-URL issuance (which checks SELECT RLS) is now company-scoped too. `service_role` still bypasses (server ops unaffected).
-- Testing: the policies can't be exercised in the vitest harness (they apply to the `authenticated` role via the Storage API with a real JWT; the harness connects as the migration role). Covered the helper logic instead (`storage-rls.test.ts`: correct company for a known sub, NULL for an unknown sub). End-to-end cross-company denial needs a manual/Playwright upload test.
+- Testing: the policies aren't in the vitest harness (they apply to the `authenticated` role via the Storage API with a real JWT; the harness connects as the migration role). Covered the helper logic in `storage-rls.test.ts` (correct company for a known sub, NULL for an unknown sub). **Plus a DB-level enforcement proof run 2026-05-24** (ad-hoc rolled-back script, since removed): impersonating the `authenticated` role with a real JWT sub against `storage.objects`, cross-company read was DENIED and own-company read ALLOWED, foreign-prefix INSERT DENIED and own-prefix INSERT ALLOWED — all ✓. The only residual gap vs a full Playwright run is the Supabase Storage HTTP wrapper around this RLS, which does not change the policy outcome.
 - Path discipline is now load-bearing: `uploadFile` MUST keep writing the company id as the first segment, or writes fail the INSERT check. Documented in `lib/storage.ts`.
 
 ---
