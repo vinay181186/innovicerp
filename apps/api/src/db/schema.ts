@@ -3785,3 +3785,68 @@ export type DesignDcr = typeof designDcrs.$inferSelect;
 export type NewDesignDcr = typeof designDcrs.$inferInsert;
 export type DesignDcn = typeof designDcns.$inferSelect;
 export type NewDesignDcn = typeof designDcns.$inferInsert;
+
+// ─── CAPA (Corrective & Preventive Action) — migration 0036 ───────────────
+// Mirrors legacy renderCAPA L22779 + _capaNew/_capaEdit (5-step process).
+export const capaRecords = pgTable(
+  'capa_records',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(), // CAPA-NNNN
+    type: text('type').notNull().default('Corrective'), // Corrective | Preventive
+    capaDate: date('capa_date').notNull(),
+    ncRefs: jsonb('nc_refs').notNull().default(sql`'[]'::jsonb`), // [ncNo, ...]
+    jcNo: text('jc_no'),
+    soNo: text('so_no'),
+    itemCode: text('item_code'),
+    operation: text('operation'),
+    problem: text('problem').notNull(),
+    rootCauseMethod: text('root_cause_method'),
+    rootCause: text('root_cause'),
+    correctiveAction: text('corrective_action'),
+    responsible: text('responsible'),
+    targetDate: date('target_date'),
+    verification: text('verification'),
+    verifiedBy: text('verified_by'),
+    verifiedDate: date('verified_date'),
+    preventiveAction: text('preventive_action'),
+    effectiveness: text('effectiveness'), // Effective | Not Effective | ''
+    reviewDate: date('review_date'),
+    status: text('status').notNull().default('Open'), // Open | In Progress | Verified | Closed
+    department: text('department'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('capa_records_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('capa_records_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('capa_records_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('capa_records_qc_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type CapaRecord = typeof capaRecords.$inferSelect;
+export type NewCapaRecord = typeof capaRecords.$inferInsert;

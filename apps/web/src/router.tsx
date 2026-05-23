@@ -76,6 +76,7 @@ import { qcDashboardRoute } from './modules/qc-dashboard/routes/index';
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
 import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
+import { capaListRoute } from './modules/capa/routes/list';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -218,6 +219,7 @@ const routeTree = rootRoute.addChildren([
     incomingQcRoute,
     qcHistoryRoute,
     qcCallRegisterRoute,
+    capaListRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,

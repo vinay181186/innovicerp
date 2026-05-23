@@ -5,7 +5,9 @@
 
 ---
 
-## Verdict: MISSING — full-stack build (register + 5-step workflow modal)
+## Verdict: BUILT ✅ (full-stack — `capa_records` migration `0036`, register + 5-step modal)
+
+> Migration numbered `0036` (not 0034) to avoid the Production re-audit plan's reserved 0034/0035 (`production-section.md`).
 
 ### List (L22779–22828)
 - Header "🛡 CAPA — Corrective & Preventive Action" + **"➕ New CAPA"** (purple, canEntry).

@@ -37,8 +37,8 @@ QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note
   - **Incoming QC** ✅ built (`f50ef48`) — GRN lines QC fields.
   - **QC History** ✅ built (`f160da5`) — op_log qc entries.
   - **QC Call Register** ✅ built (`ed4fe63`) — reuses qc-history data + op-entry submitQcLog.
-- **Wave 3 — MIGRATION-BEARING (BLOCKED, see below):**
-  - **CAPA** — new `capa_records` table + 5-step modal.
+- **Wave 3 — MIGRATION-BEARING (Design landed; resuming):**
+  - **CAPA** ✅ built — `capa_records` migration `0036` (0034/0035 reserved by Production re-audit) + 5-step modal.
   - **TPI Inspection** — new `tpi_records` table + entry page.
   - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
 - **Wave 4 — aggregation (depends on Wave 3 infra):**

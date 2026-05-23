@@ -33,6 +33,7 @@ export * from './schemas/machine-loading';
 export * from './schemas/production-dashboard';
 export * from './schemas/incoming-qc';
 export * from './schemas/qc-history';
+export * from './schemas/capa';
 export * from './schemas/operator';
 export * from './schemas/op-entry';
 export * from './schemas/sales-order';
