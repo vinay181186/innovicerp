@@ -1,6 +1,5 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useRealtimeRunningOps, useRunningOps } from '../api';
 import { RunningOpsBoard } from '../components/running-ops-board';
@@ -11,49 +10,56 @@ export const runningOpsRoute = createRoute({
   component: RunningOpsPage,
 });
 
-function RunningOpsPage() {
+function RunningOpsPage(): React.JSX.Element {
   useRealtimeRunningOps();
   const { data, isLoading, isFetching, isError, error } = useRunningOps();
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Live operations board</h1>
-            <p className="text-sm text-muted-foreground">
-              Real-time view of running shop-floor sessions.
-            </p>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            Live Operations Board
           </div>
-          <Button variant="outline" asChild>
-            <Link to="/op-entry">
-              <ArrowLeft />
-              Op Entry
-            </Link>
-          </Button>
+          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            Real-time view of running shop-floor sessions.
+          </div>
         </div>
-
-        {isLoading ? (
-          <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading…
-          </p>
-        ) : isError ? (
-          <p className="text-sm text-destructive">
-            {error instanceof Error ? error.message : 'Failed to load running ops'}
-          </p>
-        ) : (
-          <>
-            {isFetching ? (
-              <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Updating
-              </span>
-            ) : null}
-            <RunningOpsBoard rows={data ?? []} />
-          </>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isFetching && !isLoading ? (
+            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+            </span>
+          ) : null}
+          <Link to="/op-entry" className="btn btn-ghost btn-sm">
+            <ArrowLeft size={14} /> Op Entry
+          </Link>
+        </div>
       </div>
-    </main>
+
+      {isLoading ? (
+        <div className="panel">
+          <div className="empty-state">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
+          </div>
+        </div>
+      ) : isError ? (
+        <div className="panel">
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load running ops'}
+          </div>
+        </div>
+      ) : (
+        <RunningOpsBoard rows={data ?? []} />
+      )}
+    </div>
   );
 }

@@ -1,3 +1,6 @@
+// Machine card — legacy look via inline tokens (legacy `.mach-card`; the class
+// itself isn't ported to the theme, so we use the legacy CSS variables).
+
 import type { Machine, RunningOp } from '@innovic/shared';
 
 interface Props {
@@ -7,26 +10,52 @@ interface Props {
   onSelect: () => void;
 }
 
-export function MachineCard({ machine, running, isSelected, onSelect }: Props) {
-  const accent = running ? 'border-green-500' : isSelected ? 'border-cyan-500' : 'border-border';
-  const tone = running ? 'text-green-700 dark:text-green-300' : 'text-muted-foreground';
+export function MachineCard({
+  machine,
+  running,
+  isSelected,
+  onSelect,
+}: Props): React.JSX.Element {
+  const accent = running ? 'var(--green)' : isSelected ? 'var(--cyan)' : 'var(--border2)';
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex min-w-[140px] flex-col items-start gap-1 rounded-lg border-2 ${accent} bg-card p-3 text-left transition-colors hover:bg-accent ${
-        isSelected ? 'ring-2 ring-cyan-500/40' : ''
-      }`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 3,
+        minWidth: 140,
+        border: `2px solid ${accent}`,
+        borderRadius: 10,
+        background: isSelected ? 'var(--bg4)' : 'var(--bg3)',
+        padding: 12,
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
     >
-      <span className="font-mono text-sm font-bold text-primary">{machine.code}</span>
-      <span className="text-[11px] text-muted-foreground">{machine.name}</span>
-      <span className={`text-[11px] font-semibold ${tone}`}>
+      <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
+        {machine.code}
+      </span>
+      <span className="text3" style={{ fontSize: 11 }}>
+        {machine.name}
+      </span>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: running ? 'var(--green)' : 'var(--text3)',
+        }}
+      >
         {running ? '● Running' : '○ Idle'}
       </span>
       {running ? (
         <>
-          <span className="font-mono text-[11px]">{running.jobCardCode}</span>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="mono" style={{ fontSize: 11 }}>
+            {running.jobCardCode}
+          </span>
+          <span className="text3" style={{ fontSize: 10 }}>
             Op {running.opSeq}: {running.operation}
           </span>
         </>

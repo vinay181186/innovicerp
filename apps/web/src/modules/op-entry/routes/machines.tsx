@@ -3,16 +3,6 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Play } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
@@ -89,66 +79,86 @@ function MachineOpEntryPage() {
   }
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Machine Op Entry</h1>
-            <p className="text-sm text-muted-foreground">
-              Pick a machine to log work; running machines show the active session.
-            </p>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            Machine Op Entry
           </div>
-          <Button variant="outline" asChild>
-            <Link to="/op-entry">
-              <ArrowLeft />
-              JC-wise entry
-            </Link>
-          </Button>
+          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            Pick a machine to log work; running machines show the active session.
+          </div>
         </div>
-
-        {machines.isLoading ? (
-          <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading machines…
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-            {(machines.data?.machines ?? []).map((m) => (
-              <MachineCard
-                key={m.id}
-                machine={m}
-                running={runningByMachine.get(m.id) ?? null}
-                isSelected={m.id === selectedMachineId}
-                onSelect={() => selectMachine(m.id === selectedMachineId ? null : m.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        {selectedMachine ? (
-          selectedRunning && runningOpRow ? (
-            <section className="space-y-3">
-              <h2 className="text-lg font-semibold">
-                {selectedMachine.code} — <span className="text-green-600">● Running</span>
-              </h2>
-              <OpEntryForm op={runningOpRow} activeRunningId={selectedRunning.id} />
-            </section>
-          ) : selectedRunning ? (
-            <p className="text-sm text-muted-foreground">Loading running op…</p>
-          ) : (
-            <PendingOpsSection
-              machineCode={selectedMachine.code}
-              ops={pendingOps}
-              isLoading={machineOps.isLoading}
-            />
-          )
-        ) : (
-          <p className="rounded-md border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
-            Select a machine above to view its session or pending jobs.
-          </p>
-        )}
+        <Link to="/op-entry" className="btn btn-ghost btn-sm">
+          <ArrowLeft size={14} /> JC-wise entry
+        </Link>
       </div>
-    </main>
+
+      {machines.isLoading ? (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="empty-state">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading machines…
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+            gap: 10,
+            marginBottom: 16,
+          }}
+        >
+          {(machines.data?.machines ?? []).map((m) => (
+            <MachineCard
+              key={m.id}
+              machine={m}
+              running={runningByMachine.get(m.id) ?? null}
+              isSelected={m.id === selectedMachineId}
+              onSelect={() => selectMachine(m.id === selectedMachineId ? null : m.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {selectedMachine ? (
+        selectedRunning && runningOpRow ? (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <span className="mono fw-700" style={{ fontSize: 15 }}>
+                {selectedMachine.code}
+              </span>{' '}
+              <span style={{ color: 'var(--green)', fontWeight: 700 }}>● Running</span>
+            </div>
+            <OpEntryForm op={runningOpRow} activeRunningId={selectedRunning.id} />
+          </div>
+        ) : selectedRunning ? (
+          <div className="text3" style={{ fontSize: 13 }}>
+            Loading running op…
+          </div>
+        ) : (
+          <PendingOpsSection
+            machineCode={selectedMachine.code}
+            ops={pendingOps}
+            isLoading={machineOps.isLoading}
+          />
+        )
+      ) : (
+        <div className="panel">
+          <div className="empty-state">
+            Select a machine above to view its session or pending jobs.
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -169,54 +179,60 @@ function PendingOpsSection({ machineCode, ops, isLoading }: PendingOpsSectionPro
     });
   }
   return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">
-        {machineCode} — <span className="text-muted-foreground">○ Idle</span>
-      </h2>
-      <div className="rounded-md border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>JC</TableHead>
-              <TableHead>Op</TableHead>
-              <TableHead>Operation</TableHead>
-              <TableHead className="text-right">Available</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+    <div className="panel">
+      <div className="panel-hdr">
+        <span className="panel-title">
+          <span className="mono fw-700">{machineCode}</span> —{' '}
+          <span className="text3">○ Idle</span>
+        </span>
+      </div>
+      <div className="tbl-wrap">
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th>JC</th>
+              <th>Op</th>
+              <th>Operation</th>
+              <th style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
             {isLoading ? (
-              <TableEmpty colSpan={5}>
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading pending jobs…
-                </span>
-              </TableEmpty>
+              <tr>
+                <td colSpan={5} className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading pending jobs…
+                </td>
+              </tr>
             ) : ops.length === 0 ? (
-              <TableEmpty colSpan={5}>No pending jobs assigned to this machine.</TableEmpty>
+              <tr>
+                <td colSpan={5} className="empty-state">
+                  No pending jobs assigned to this machine.
+                </td>
+              </tr>
             ) : (
               ops.map((op) => (
-                <TableRow key={op.id}>
-                  <TableCell className="font-mono text-sm font-medium text-primary">
-                    {op.jobCardCode}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{op.opSeq}</TableCell>
-                  <TableCell>{op.operation}</TableCell>
-                  <TableCell className="text-right font-mono text-sm font-semibold">
-                    {op.available}
-                  </TableCell>
-                  <TableCell>
-                    <Button size="sm" onClick={() => handleStart(op.id)} disabled={start.isPending}>
-                      <Play />
-                      Start
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <tr key={op.id}>
+                  <td className="td-code cyan">{op.jobCardCode}</td>
+                  <td className="mono">{op.opSeq}</td>
+                  <td>{op.operation}</td>
+                  <td className="td-ctr mono fw-700 amber">{op.available}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleStart(op.id)}
+                      disabled={start.isPending}
+                    >
+                      <Play size={13} /> Start
+                    </button>
+                  </td>
+                </tr>
               ))
             )}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
-    </section>
+    </div>
   );
 }
