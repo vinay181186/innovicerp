@@ -138,23 +138,37 @@ const SECTIONS: readonly NavSection[] = [
     label: 'Production',
     modClass: 'production',
     icon: '🏭',
+    // Mirrors legacy sidebar L453–470 verbatim. Order matches legacy.
     groups: [
       {
         label: 'Entry',
         items: [
-          { to: '/production-dashboard', label: 'Production Dashboard', icon: '🏭' },
-          { to: '/job-cards', label: 'Job Cards', icon: '🏭' },
-          { to: '/op-entry', label: 'Op Entry (JC)', icon: '🔧' },
-          { to: '/op-entry/machines', label: 'Op Entry (Machine)', icon: '⚙️' },
-          { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
-          { to: '/machine-loading', label: 'Machine Loading', icon: '⚙' },
+          { to: '/op-entry', label: 'Op Entry', icon: '✚' },
+          { to: '/op-entry/machines', label: 'Machine Op Entry', icon: '⚙' },
+          { to: '/jc-ops', label: 'JC Operations', icon: '⨯' },
+          { to: '/daily-report', label: 'Daily Report', icon: '📊' },
         ],
       },
       {
         label: 'Master',
         items: [
-          { to: '/machines', label: 'Machines', icon: '⚙️' },
-          { to: '/operators', label: 'Operators', icon: '👷' },
+          { to: '/job-cards', label: 'Job Cards', icon: '▭' },
+          { to: '/machines', label: 'Machine Master', icon: '⚙' },
+          { to: '/operators', label: 'Operator Master', icon: '👷' },
+        ],
+      },
+      {
+        label: 'Report',
+        items: [
+          { to: '/production-dashboard', label: 'Production Dashboard', icon: '📊' },
+          { to: '/shop-floor', label: 'Shop Floor', icon: '🏭' },
+          { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
+          { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
+          { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
+          { to: '/production-schedule', label: 'Production Schedule (Gantt)', icon: '📅' },
+          { to: '/prod-so-list', label: 'SO List', icon: '📋' },
+          { to: '/prod-jw-list', label: 'JW List', icon: '📋' },
+          { to: '/reports?group=Production', label: 'Production Reports', icon: '📊' },
         ],
       },
     ],
@@ -198,7 +212,10 @@ const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙' }],
+        items: [
+          { to: '/qc-processes', label: 'QC Process Master', icon: '⚙' },
+          { to: '/report-master', label: 'Report Master', icon: '📄' },
+        ],
       },
     ],
   },

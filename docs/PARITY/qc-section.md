@@ -43,7 +43,7 @@ QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note
   - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
 - **Wave 4 — aggregation (depends on Wave 3 infra):**
   - **SO QC Status** + **QC Command Center** roll up 4 QC stages (QC ops + GRN QC + **TPI** + **Docs**). QC ops + GRN QC exist; TPI + Docs need Wave 3. Interim 2-stage version possible (see qc-so-status.md).
-- **Wave 5:** Report Master (likely the Reports module).
+- **Wave 5:** Report Master ✅ built — `report_types` master CRUD (migration `0038`), `/report-master`. (It's a distinct master, not the Reports module.)
 
 ### ⚠️ Concurrent-migration blocker (2026-05-23)
 All Wave 3-4 pages are migration-bearing or depend on migration-bearing infra

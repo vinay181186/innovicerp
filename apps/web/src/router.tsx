@@ -78,6 +78,7 @@ import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
 import { capaListRoute } from './modules/capa/routes/list';
 import { tpiRoute } from './modules/tpi/routes/index';
+import { reportTypesListRoute } from './modules/report-types/routes/list';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -110,6 +111,13 @@ import { designProjectsListRoute } from './modules/design-projects/routes/list';
 import { designProjectDetailRoute } from './modules/design-projects/routes/detail';
 import { designIssuesListRoute } from './modules/design-issues/routes/list';
 import { designWorkLogListRoute } from './modules/design-work-log/routes/list';
+import { prodSoListRoute } from './modules/prod-so-list/routes/list';
+import { prodJwListRoute } from './modules/prod-jw-list/routes/list';
+import { dailyReportRoute } from './modules/daily-report/routes/list';
+import { jcOpsRoute } from './modules/jc-ops/routes/list';
+import { shopFloorRoute } from './modules/shop-floor/routes/list';
+import { jobQueueRoute } from './modules/job-queue/routes/list';
+import { productionScheduleRoute } from './modules/production-schedule/routes/list';
 import { vendorsListRoute } from './modules/vendors/routes/list';
 import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
@@ -168,6 +176,13 @@ const routeTree = rootRoute.addChildren([
     designProjectDetailRoute,
     designIssuesListRoute,
     designWorkLogListRoute,
+    prodSoListRoute,
+    prodJwListRoute,
+    dailyReportRoute,
+    jcOpsRoute,
+    shopFloorRoute,
+    jobQueueRoute,
+    productionScheduleRoute,
     soOverviewListRoute,
     soPlanningWorkflowRoute,
     planningDashboardRoute,
@@ -222,6 +237,7 @@ const routeTree = rootRoute.addChildren([
     qcCallRegisterRoute,
     capaListRoute,
     tpiRoute,
+    reportTypesListRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,

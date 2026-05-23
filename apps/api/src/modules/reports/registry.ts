@@ -21,6 +21,8 @@ import { jcStatusSummaryReport } from './definitions/jc-status-summary';
 import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
 import { operatorProductivityReport } from './definitions/operator-productivity';
+import { productionItemTrackerReport } from './definitions/production-item-tracker';
+import { productionSoLineTrackerReport } from './definitions/production-so-line-tracker';
 import { soOpenBacklogReport } from './definitions/so-open-backlog';
 import { stockMovementLogReport } from './definitions/stock-movement-log';
 import { vendorPoSummaryReport } from './definitions/vendor-po-summary';
@@ -58,6 +60,8 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [designProjectSummaryReport.definition.slug]: designProjectSummaryReport,
   [designEngineerWorkloadReport.definition.slug]: designEngineerWorkloadReport,
   [designIssueAgingReport.definition.slug]: designIssueAgingReport,
+  [productionItemTrackerReport.definition.slug]: productionItemTrackerReport,
+  [productionSoLineTrackerReport.definition.slug]: productionSoLineTrackerReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

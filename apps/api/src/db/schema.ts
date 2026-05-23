@@ -787,6 +787,11 @@ export const jcOps = pgTable(
     outsourceSentQty: integer('outsource_sent_qty').notNull().default(0),
     outsourceSentDate: date('outsource_sent_date'),
     outsourceReturnedQty: integer('outsource_returned_qty').notNull().default(0),
+    // Production-scheduling columns added by migration 0034 (Production
+    // slices F + G). All nullable — NULL queue_position sorts to end.
+    queuePosition: integer('queue_position'),
+    plannedStart: date('planned_start'),
+    plannedEnd: date('planned_end'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3859,3 +3864,48 @@ export const capaRecords = pgTable(
 
 export type CapaRecord = typeof capaRecords.$inferSelect;
 export type NewCapaRecord = typeof capaRecords.$inferInsert;
+
+// ─── Report / Document Master — migration 0038 ────────────────────────────
+// Mirrors legacy renderReportMaster L23677. Report/document types that appear
+// as QC document-requirement options in SO/JW Planning.
+export const reportTypes = pgTable(
+  'report_types',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    name: text('name').notNull(),
+    description: text('description'),
+    defaultMandatory: boolean('default_mandatory').notNull().default(false),
+    status: text('status').notNull().default('Active'), // Active | Inactive
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('report_types_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('report_types_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('report_types_qc_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type ReportType = typeof reportTypes.$inferSelect;
+export type NewReportType = typeof reportTypes.$inferInsert;

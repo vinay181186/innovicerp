@@ -12,12 +12,7 @@ import type {
   ListJcOpsBoardResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
