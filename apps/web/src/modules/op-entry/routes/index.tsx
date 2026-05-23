@@ -2,9 +2,6 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowRight, Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useJcOpsEnriched,
@@ -83,101 +80,120 @@ function OpEntryPage() {
   }
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Op Entry</h1>
-            <p className="text-sm text-muted-foreground">Log shop-floor work against a job card.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" asChild>
-              <Link to="/op-entry/machines">
-                <ArrowRight />
-                Machine view
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link to="/op-entry/running">
-                <ArrowRight />
-                Live ops board
-              </Link>
-            </Button>
-          </div>
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Operation Entry
         </div>
-
-        <form onSubmit={handleJcSubmit} className="flex flex-col gap-3 md:flex-row md:items-end">
-          <div className="space-y-1 md:flex-1 md:max-w-sm">
-            <Label htmlFor="jc-input">Job Card No.</Label>
-            <Input
-              id="jc-input"
-              value={jcInput}
-              onChange={(e) => setJcInput(e.target.value)}
-              placeholder="e.g. IN-JC-00002"
-              autoFocus
-            />
-          </div>
-          <Button type="submit">
-            <Search />
-            Load
-          </Button>
-        </form>
-
-        {search.jc ? (
-          <section className="space-y-4">
-            <header className="flex items-baseline gap-3">
-              <h2 className="text-lg font-semibold">
-                <span className="font-mono text-primary">{search.jc}</span>
-              </h2>
-              {ops.isFetching && !ops.isLoading ? (
-                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Updating
-                </span>
-              ) : null}
-            </header>
-
-            {ops.isLoading ? (
-              <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading ops…
-              </p>
-            ) : ops.isError ? (
-              <p className="text-sm text-destructive">
-                {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
-              </p>
-            ) : (
-              <div className="rounded-md border bg-card">
-                <JcOpsTable
-                  ops={ops.data ?? []}
-                  selectedOpId={search.op ?? null}
-                  onSelect={handleSelectOp}
-                />
-              </div>
-            )}
-
-            {selectedOp ? (
-              <div className="grid gap-4 md:grid-cols-5">
-                <div className="md:col-span-3">
-                  <OpEntryForm op={selectedOp} activeRunningId={activeRunningId} />
-                </div>
-                <div className="md:col-span-2">
-                  <div className="rounded-md border bg-card p-4">
-                    <h3 className="mb-3 text-sm font-semibold">Recent log</h3>
-                    <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
-                  </div>
-                </div>
-              </div>
-            ) : ops.data && ops.data.length > 0 ? (
-              <p className="text-sm text-muted-foreground">Select an op above to log entries.</p>
-            ) : null}
-          </section>
-        ) : (
-          <p className="rounded-md border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
-            Enter a job card number to load its ops.
-          </p>
-        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <Link to="/op-entry/machines" className="btn btn-ghost btn-sm">
+            <ArrowRight size={14} /> Machine view
+          </Link>
+          <Link to="/op-entry/running" className="btn btn-ghost btn-sm">
+            <ArrowRight size={14} /> Live ops board
+          </Link>
+        </div>
       </div>
-    </main>
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-body">
+          <form
+            onSubmit={handleJcSubmit}
+            style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
+          >
+            <div className="form-grp" style={{ marginBottom: 0, minWidth: 260 }}>
+              <label className="form-label" htmlFor="jc-input">
+                Job Card No.
+              </label>
+              <input
+                id="jc-input"
+                className="innovic-input"
+                value={jcInput}
+                onChange={(e) => setJcInput(e.target.value)}
+                placeholder="🔍 e.g. IN-JC-00002"
+                autoFocus
+              />
+            </div>
+            <button type="submit" className="btn btn-primary">
+              <Search size={14} /> Load
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {search.jc ? (
+        <div>
+          <div
+            style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}
+          >
+            <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
+              {search.jc}
+            </span>
+            {ops.isFetching && !ops.isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+          </div>
+
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="panel-hdr">
+              <span className="panel-title">Operations — click a row to log entries</span>
+            </div>
+            {ops.isError ? (
+              <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+              </div>
+            ) : ops.isLoading ? (
+              <div className="empty-state">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
+              </div>
+            ) : (
+              <JcOpsTable
+                ops={ops.data ?? []}
+                selectedOpId={search.op ?? null}
+                onSelect={handleSelectOp}
+              />
+            )}
+          </div>
+
+          {selectedOp ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
+                gap: 16,
+              }}
+            >
+              <div>
+                <OpEntryForm op={selectedOp} activeRunningId={activeRunningId} />
+              </div>
+              <div className="panel">
+                <div className="panel-hdr">
+                  <span className="panel-title">Recent log</span>
+                </div>
+                <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+              </div>
+            </div>
+          ) : ops.data && ops.data.length > 0 ? (
+            <div className="text3" style={{ fontSize: 13 }}>
+              Select an op above to log entries.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="panel">
+          <div className="empty-state">Enter a job card number to load its ops.</div>
+        </div>
+      )}
+    </div>
   );
 }

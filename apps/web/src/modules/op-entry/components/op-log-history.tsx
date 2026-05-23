@@ -1,14 +1,7 @@
+// Op-log history — legacy chrome (.innovic-table).
+
 import type { OpLog } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 interface Props {
   logs: OpLog[];
@@ -21,48 +14,60 @@ const TYPE_LABEL: Record<OpLog['logType'], string> = {
   qc: 'QC',
 };
 
-export function OpLogHistory({ logs, isLoading }: Props) {
+export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Date</TableHead>
-          <TableHead>Shift</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead className="text-right">Qty</TableHead>
-          <TableHead className="text-right">Reject</TableHead>
-          <TableHead>Operator</TableHead>
-          <TableHead>Remarks</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {isLoading ? (
-          <TableEmpty colSpan={7}>
-            <span className="inline-flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading log…
-            </span>
-          </TableEmpty>
-        ) : logs.length === 0 ? (
-          <TableEmpty colSpan={7}>No log entries yet.</TableEmpty>
-        ) : (
-          logs.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell className="font-mono text-xs">{l.logDate}</TableCell>
-              <TableCell className="text-xs uppercase text-muted-foreground">{l.shift}</TableCell>
-              <TableCell className="text-xs uppercase text-muted-foreground">
-                {TYPE_LABEL[l.logType]}
-              </TableCell>
-              <TableCell className="text-right font-mono text-sm">{l.qty}</TableCell>
-              <TableCell className="text-right font-mono text-sm text-destructive">
-                {l.rejectQty || ''}
-              </TableCell>
-              <TableCell className="text-sm">{l.operatorName ?? '—'}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">{l.remarks ?? ''}</TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+    <div className="tbl-wrap">
+      <table className="innovic-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Shift</th>
+            <th>Type</th>
+            <th style={{ textAlign: 'center' }}>Qty</th>
+            <th style={{ textAlign: 'center' }}>Reject</th>
+            <th>Operator</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {isLoading ? (
+            <tr>
+              <td colSpan={7} className="empty-state">
+                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                Loading log…
+              </td>
+            </tr>
+          ) : logs.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="empty-state">
+                No log entries yet.
+              </td>
+            </tr>
+          ) : (
+            logs.map((l) => (
+              <tr key={l.id}>
+                <td className="mono" style={{ fontSize: 11 }}>
+                  {l.logDate}
+                </td>
+                <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                  {l.shift}
+                </td>
+                <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
+                  {TYPE_LABEL[l.logType]}
+                </td>
+                <td className="td-ctr mono">{l.qty}</td>
+                <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                  {l.rejectQty || ''}
+                </td>
+                <td style={{ fontSize: 12 }}>{l.operatorName ?? '—'}</td>
+                <td className="text3" style={{ fontSize: 11 }}>
+                  {l.remarks ?? ''}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
