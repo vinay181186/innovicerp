@@ -29,6 +29,7 @@ export * from './schemas/item';
 export * from './schemas/client';
 export * from './schemas/vendor';
 export * from './schemas/machine';
+export * from './schemas/machine-loading';
 export * from './schemas/operator';
 export * from './schemas/op-entry';
 export * from './schemas/sales-order';

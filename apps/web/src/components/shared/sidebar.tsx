@@ -146,6 +146,7 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/op-entry', label: 'Op Entry (JC)', icon: '🔧' },
           { to: '/op-entry/machines', label: 'Op Entry (Machine)', icon: '⚙️' },
           { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
+          { to: '/machine-loading', label: 'Machine Loading', icon: '⚙' },
         ],
       },
       {
