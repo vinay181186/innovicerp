@@ -95,7 +95,18 @@ export async function listJobCards(
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName"
+        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        sol.client_po_line_no AS "clientPoLineNo",
+        COALESCE((
+          SELECT vos.completed_qty FROM public.v_jc_op_status vos
+          WHERE vos.job_card_id = jc.id
+          ORDER BY vos.op_seq DESC LIMIT 1
+        ), 0)::int AS "lastOpCompletedQty",
+        (
+          SELECT COUNT(*) FROM public.running_ops ro
+          JOIN public.jc_ops jor ON jor.id = ro.jc_op_id
+          WHERE jor.job_card_id = jc.id AND ro.status = 'running'
+        )::int AS "runningCount"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
@@ -192,7 +203,18 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.id   AS "jwLineId",   jw.id  AS "jwId",
         jw.code  AS "jwCode",     jwl.line_no AS "jwLineNo",
         jwl.part_name AS "jwPartName",
-        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName"
+        COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
+        sol.client_po_line_no AS "clientPoLineNo",
+        COALESCE((
+          SELECT vos.completed_qty FROM public.v_jc_op_status vos
+          WHERE vos.job_card_id = jc.id
+          ORDER BY vos.op_seq DESC LIMIT 1
+        ), 0)::int AS "lastOpCompletedQty",
+        (
+          SELECT COUNT(*) FROM public.running_ops ro
+          JOIN public.jc_ops jor ON jor.id = ro.jc_op_id
+          WHERE jor.job_card_id = jc.id AND ro.status = 'running'
+        )::int AS "runningCount"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
@@ -272,6 +294,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     qcPendingOps: Number(r['qcPendingOps'] ?? 0),
     sourceLink: buildSourceLink(r),
     customerName: (r['customerName'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+    lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
+    runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),

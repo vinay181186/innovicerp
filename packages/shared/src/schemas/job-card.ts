@@ -72,6 +72,15 @@ export const jobCardListItemSchema = z.object({
   // Source link (or null for source-less JCs — allowed per ADR-012 #4
   // CHECK num_nonnulls(...) <= 1)
   sourceLink: jobCardSourceLinkSchema.nullable(),
+  // Legacy list columns (renderJobCards L5747-5773):
+  //   - clientPoLineNo: from the source SO line (`sol.client_po_line_no`);
+  //     null for JW-sourced or source-less JCs (JW lines have no CPO ref).
+  //   - lastOpCompletedQty: completed qty of the highest-op_seq op, mirrors
+  //     legacy `lastOp.completed` → drives the Completed/Pending columns.
+  //   - runningCount: count of this JC's ops with an active running session.
+  clientPoLineNo: z.string().nullable(),
+  lastOpCompletedQty: z.number().int().nonnegative(),
+  runningCount: z.number().int().nonnegative(),
   /** Customer name surfaced for the list view: prefers SO/JW source link's
    *  `customer_name`; falls back to the linked client's name when the source
    *  uses `client_id`. Null when no source link or no customer info at all. */

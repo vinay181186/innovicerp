@@ -13,9 +13,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
-import { JcSourceLink } from '../components/jc-source-link';
 import { JcStatusBadge } from '../components/jc-status-badge';
 
 const PAGE_SIZE = 25;
@@ -92,18 +92,28 @@ function JobCardsListPage(): React.JSX.Element {
   const { data: operatorsData } = useOperatorsList({ limit: 200, offset: 0 });
   const machines = machinesData?.machines ?? [];
   const operators = operatorsData?.operators ?? [];
+  const { data: me } = useSession();
+  // Legacy gates "+ Plan & Create Job Card" on canEntry(); mirror with the
+  // codebase's admin/manager write gate.
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
+  // Columns mirror legacy renderJobCards L5786 exactly (14 cols):
+  // JC No. · Date · SO/WO · CPO Ln · Item Code · Item Name · Order Qty ·
+  // Completed (bar) · Pending · Priority · Due Date · Ops Done · Status · Actions.
   const columns = useMemo<ColumnDef<JobCardListItem>[]>(
     () => [
       {
-        header: 'Code',
-        accessorKey: 'code',
+        header: 'JC No.',
         cell: ({ row }) => (
           <Link
             to="/op-entry"
             search={{ jc: row.original.code }}
             className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            style={{
+              color: 'var(--cyan)',
+              textDecoration: 'underline dotted',
+              whiteSpace: 'nowrap',
+            }}
             title="Open in Op Entry"
           >
             {row.original.code}
@@ -112,7 +122,6 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Date',
-        accessorKey: 'jcDate',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.jcDate}
@@ -120,56 +129,129 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Item',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
-            <span className="mono">{row.original.itemCode}</span>
-            {row.original.itemName ? (
-              <span className="text3" style={{ marginLeft: 6 }}>
-                — {row.original.itemName}
+        header: 'SO/WO',
+        cell: ({ row }) => {
+          const s = row.original.sourceLink;
+          if (!s)
+            return (
+              <span className="text3" style={{ fontSize: 11 }}>
+                —
               </span>
-            ) : null}
+            );
+          const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
+          const id = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
+          return (
+            <Link
+              to={to}
+              params={{ id }}
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: 'var(--cyan)',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {s.code}
+              {s.lineNo !== 1 ? (
+                <span style={{ fontSize: 9, color: 'var(--cyan)', marginLeft: 3 }}>
+                  /{s.lineNo}
+                </span>
+              ) : null}
+            </Link>
+          );
+        },
+      },
+      {
+        header: 'CPO Ln',
+        cell: ({ row }) => (
+          <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+            {row.original.clientPoLineNo ?? '—'}
           </span>
         ),
       },
       {
-        header: 'Customer',
+        header: 'Item Code',
         cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>{row.original.customerName ?? '—'}</span>
+          <span className="td-code" style={{ color: 'var(--purple)' }}>
+            {row.original.itemCode}
+          </span>
         ),
       },
       {
-        header: 'Source',
-        cell: ({ row }) => <JcSourceLink sourceLink={row.original.sourceLink} />,
+        header: 'Item Name',
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName || '—'}</span>,
       },
       {
-        header: 'Qty',
-        cell: ({ row }) => (
-          <span className="td-ctr mono fw-700">{row.original.orderQty}</span>
-        ),
+        header: 'Order Qty',
+        cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span>,
       },
       {
-        header: 'Ops',
+        id: 'completed',
+        header: () => <span style={{ color: 'var(--green)' }}>Completed</span>,
         cell: ({ row }) => {
-          const r = row.original;
-          const color =
-            r.totalOps > 0 && r.doneOps >= r.totalOps
-              ? 'var(--green2)'
-              : r.doneOps > 0
-                ? 'var(--amber2)'
-                : 'var(--text3)';
+          const done = row.original.lastOpCompletedQty;
+          const pct =
+            row.original.orderQty > 0
+              ? Math.min(100, Math.round((done / row.original.orderQty) * 100))
+              : 0;
           return (
-            <span className="td-ctr mono" style={{ color }}>
-              {r.doneOps}
-              <span className="text3" style={{ marginLeft: 2 }}>
-                /{r.totalOps}
+            <div className="td-ctr">
+              <span className="mono fw-700" style={{ color: 'var(--green)' }}>
+                {done}
               </span>
+              <div
+                style={{
+                  width: 52,
+                  height: 4,
+                  background: 'var(--bg5)',
+                  borderRadius: 2,
+                  margin: '3px auto 0',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${pct}%`,
+                    height: '100%',
+                    background: 'var(--green)',
+                    borderRadius: 2,
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', textAlign: 'center' }}>{pct}%</div>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'pending',
+        header: () => <span style={{ color: 'var(--red)' }}>Pending</span>,
+        cell: ({ row }) => {
+          const pending = Math.max(0, row.original.orderQty - row.original.lastOpCompletedQty);
+          return (
+            <span
+              className="td-ctr mono fw-700"
+              style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)' }}
+            >
+              {pending}
             </span>
           );
         },
       },
       {
-        header: 'Due',
+        header: 'Priority',
+        cell: ({ row }) => {
+          const high = row.original.priority === 'high';
+          return (
+            <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>
+              {high ? 'High' : 'Normal'}
+            </span>
+          );
+        },
+      },
+      {
+        header: 'Due Date',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.dueDate ?? '—'}
@@ -177,24 +259,39 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Priority',
+        header: 'Ops Done',
         cell: ({ row }) => (
-          <span
-            className="mono"
-            style={{
-              fontSize: 11,
-              textTransform: 'uppercase',
-              color: row.original.priority === 'high' ? 'var(--red2)' : 'var(--text3)',
-              fontWeight: row.original.priority === 'high' ? 700 : 400,
-            }}
-          >
-            {row.original.priority}
+          <span className="td-ctr text2">
+            {row.original.doneOps}/{row.original.totalOps}
           </span>
         ),
       },
       {
         header: 'Status',
-        cell: ({ row }) => <JcStatusBadge status={row.original.computedStatus} />,
+        cell: ({ row }) => (
+          <span style={{ whiteSpace: 'nowrap' }}>
+            <JcStatusBadge status={row.original.computedStatus} />
+            {row.original.runningCount > 0 ? (
+              <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginLeft: 4 }}>
+                ▶{row.original.runningCount}
+              </span>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        header: 'Actions',
+        cell: ({ row }) => (
+          <Link
+            to="/op-entry"
+            search={{ jc: row.original.code }}
+            className="btn btn-ghost btn-sm"
+            style={{ whiteSpace: 'nowrap' }}
+            title="Open in Op Entry"
+          >
+            👁 View
+          </Link>
+        ),
       },
     ],
     [],
@@ -241,11 +338,18 @@ function JobCardsListPage(): React.JSX.Element {
             code to open in Op Entry.
           </div>
         </div>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isFetching && !isLoading ? (
+            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+            </span>
+          ) : null}
+          {canWrite ? (
+            <Link to="/planning" className="btn btn-primary">
+              + Plan &amp; Create Job Card
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
