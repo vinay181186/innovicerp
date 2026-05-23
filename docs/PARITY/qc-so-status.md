@@ -5,7 +5,13 @@
 
 ---
 
-## Verdict: MISSING — blocked on TPI + QC Documents infrastructure
+## Verdict: BUILT ✅ (partial — 2 of 4 stages) — `/so-qc-status`
+
+SO selector → per-line rollup of **QC Ops + TPI** (cleanly attributable via
+`job_cards.source_so_line_id` → `v_jc_op_status` + `op_log.is_tpi`), with an
+Overall pill (Passed / In Progress / Pending / No QC). **GRN-QC + Docs columns
+show "—"**: GRN QC isn't attributable per SO line in the normalised model, and
+QC Documents isn't built. Full 4-stage parity tracked below.
 
 `renderSOQCStatus` is a per-SO, per-line QC rollup. For each SO line it gathers **four QC stages** and shows status pills + an Overall:
 
