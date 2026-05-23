@@ -162,21 +162,25 @@ export async function listDesignProjects(
 
     const sumRows = (await tx.execute(sql`
       SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE dp.status = 'Design Active')::int AS active,
-        COUNT(*) FILTER (WHERE dp.status = 'Released')::int AS released,
-        COUNT(*) FILTER (WHERE dp.status = 'On Hold')::int AS on_hold,
+        (SELECT COUNT(*)::int FROM public.design_projects
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL) AS total,
+        (SELECT COUNT(*)::int FROM public.design_projects
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+          AND status = 'Design Active') AS active,
+        (SELECT COUNT(*)::int FROM public.design_projects
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+          AND status = 'Released') AS released,
+        (SELECT COUNT(*)::int FROM public.design_projects
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+          AND status = 'On Hold') AS on_hold,
         (SELECT COUNT(*)::int FROM public.design_tasks
-          WHERE company_id = dp.company_id AND deleted_at IS NULL) AS total_tasks,
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL) AS total_tasks,
         (SELECT COUNT(*)::int FROM public.design_tasks
-          WHERE company_id = dp.company_id AND deleted_at IS NULL AND status = 'Completed') AS done_tasks,
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+          AND status = 'Completed') AS done_tasks,
         (SELECT COUNT(*)::int FROM public.design_issues
-          WHERE company_id = dp.company_id AND deleted_at IS NULL
+          WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
           AND status IN ('Open','In Progress')) AS open_issues
-      FROM public.design_projects dp
-      WHERE dp.company_id = ${companyId}::uuid
-        AND dp.deleted_at IS NULL
-      LIMIT 1
     `)) as unknown as Array<Record<string, unknown>>;
     const sum = sumRows[0] ?? {};
 
