@@ -33,13 +33,25 @@ Backend QC tables (per SCHEMA.md): `qc_inspections`, `qc_attachments`, `nc_regis
 QC inspection data lives in **`op_log` (log_type='qc')** + **`goods_receipt_note_lines` qc fields**. There is **no `qc_inspections` and no `capa_records` table**.
 
 - **Wave 1 — DONE:** qc-dashboard (qcengineer) chrome refactor (`6854672`); nc-register + qc-processes mapped/verified (`697f159`).
-- **Wave 2 — NO MIGRATION (most tractable):**
-  - **Incoming QC** — GRN lines already have `qc_status`/`qc_accepted_qty`/`qc_rejected_qty`/`qc_date`/`qc_remarks`. ✅ buildable now.
-  - **QC History** — read `op_log` qc entries. ✅ buildable now.
-  - **QC Call Register** (`qcdashboard`) — qc-pending ops + log-QC action (op_log). Mostly reuses op-entry QC write.
-- **Wave 3 — MIGRATION:** **CAPA** (new `capa_records` table) — coordinate migrations.
-- **Wave 4 — aggregation (no migration):** QC Command Center, SO QC Status (roll up qc stages over op_log qc + grn qc).
-- **Wave 5:** QC Documents (needs an attachments source — check `qc_attachments`/storage), TPI Inspection, Report Master (likely the Reports module).
+- **Wave 2 — DONE (no migration):**
+  - **Incoming QC** ✅ built (`f50ef48`) — GRN lines QC fields.
+  - **QC History** ✅ built (`f160da5`) — op_log qc entries.
+  - **QC Call Register** ✅ built (`ed4fe63`) — reuses qc-history data + op-entry submitQcLog.
+- **Wave 3 — MIGRATION-BEARING (BLOCKED, see below):**
+  - **CAPA** — new `capa_records` table + 5-step modal.
+  - **TPI Inspection** — new `tpi_records` table + entry page.
+  - **QC Documents** — QC-doc/attachment store (table + Supabase Storage) + page.
+- **Wave 4 — aggregation (depends on Wave 3 infra):**
+  - **SO QC Status** + **QC Command Center** roll up 4 QC stages (QC ops + GRN QC + **TPI** + **Docs**). QC ops + GRN QC exist; TPI + Docs need Wave 3. Interim 2-stage version possible (see qc-so-status.md).
+- **Wave 5:** Report Master (likely the Reports module).
+
+### ⚠️ Concurrent-migration blocker (2026-05-23)
+All Wave 3-4 pages are migration-bearing or depend on migration-bearing infra
+(`capa_records`, `tpi_records`, qc-doc storage). A **parallel session is
+actively editing `schema.ts` + adding migrations for the Design module** (landed
+`0033`). Adding QC migrations now risks Drizzle journal / schema.ts conflicts —
+**sequence the QC migration wave after Design migrations settle**, or coordinate.
+The 4 migration-free QC pages (Waves 1-2) are complete.
 
 ## Cross-cutting
 - Reuse the existing `qc-dashboard` service aggregation pattern before adding new endpoints.
