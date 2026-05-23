@@ -1342,6 +1342,38 @@ Three architectural questions surfaced before any DDL was written:
 
 ---
 
+## ADR-031: QC Command Center gets a backend module; `qc_assignments` for Pick-Up / Assign
+
+**Date:** 2026-05-24
+**Status:** Accepted
+
+### Context
+
+QC Command Center (legacy `renderQCCommandCenter` L18613) shipped frontend-only — it composed `/qc-history` + `/qc-dashboard`. Two tabs were placeholders: **First-Pass Yield** and **Rework Cycles**, both of which need per-op QC-attempt history (group `op_log` QC rows by op, count attempts, detect first-pass). The legacy **Pick-Up / Assign** queue actions (`_qccPickUp` / `_qccAssign`, backed by `db.qcAssignments`) were also unbuilt. The "qc resume" trigger points here as the only remaining QC work.
+
+Two questions: (1) where does the FPY/rework aggregation live, and (2) how do we model assignments?
+
+### Decision
+
+1. **Stand up a `qc-command` backend module** (`GET /qc-command` + `POST /qc-command/{pickup,assign}`), reversing the original frontend-only stance. FPY and rework are genuine aggregations and Pick-Up/Assign are writes — both are business logic, which CLAUDE.md Rule 1 keeps server-side. The analytics read pulls all company QC `op_log` rows once, groups by `jc_op_id` in JS (ordered oldest-first), and derives: attempt counts (→ queue + rework), first-pass yield (1 entry, 0 rejects — legacy rule L18339-18342), and rework rows. Pareto + Inspector tabs keep reading `/qc-dashboard` (already full) to avoid rewriting verified code.
+
+2. **`qc_assignments` table** (migration 0040), one ACTIVE row per op via a partial unique index `(company_id, jc_op_id) WHERE deleted_at IS NULL`; pick-up / re-assign **upsert** onto it (check-then-insert/update inside the txn, since ON CONFLICT against a partial index is awkward). Inspector stored as **both `inspector_user_id` FK and `inspector_name` text snapshot** (ADR-012 #10 pattern) so the queue renders without a join and survives renames. `assigned_by_text` snapshot for the audit trail.
+
+### Alternatives Considered
+
+- **Compute FPY/rework on the frontend** from a raw `op_log` dump — rejected: violates Rule 1, and ships a large unfiltered payload.
+- **Fold into `qc-history`** — rejected: `qc-history` is a focused read; assignments are writes with their own role rules. Section 4 prefers one folder per module.
+- **Inspector as name-only string** (legacy) — rejected: loses referential integrity and breaks on rename.
+
+### Consequences
+
+- Positive: FPY/Rework now real; queue shows Attempt + Assigned-To with Pick-Up/Assign; stats strip matches legacy (Rework Items + FPY%). 17/17 module tests green.
+- Negative: the all-QC-`op_log` scan is unbounded per company (matches legacy's all-time FPY). Fine at current scale; revisit with a rolling window if `op_log` QC rows grow large.
+- **Authorization split:** RLS gates `qc_assignments` writes to admin/manager/qc; the service additionally restricts **assign-to-another to admin only** (pick-up = self). Role check lives in the service per the ARCHITECTURE 3-layer model.
+- Minor DELTA logged in `docs/PARITY/qc-command-center.md`: Inspector "Current Load" column not yet wired (data now exists in `qc_assignments`).
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

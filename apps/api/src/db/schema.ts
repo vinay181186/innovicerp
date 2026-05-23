@@ -3965,3 +3965,58 @@ export const qcDocuments = pgTable(
 
 export type QcDocument = typeof qcDocuments.$inferSelect;
 export type NewQcDocument = typeof qcDocuments.$inferInsert;
+
+// ─── QC Assignments — migration 0040 ──────────────────────────────────────
+// Pick-Up / Assign for the QC Command Center queue (legacy db.qcAssignments,
+// _qccPickUp / _qccAssign L18719-18755). One ACTIVE assignment per jc_op
+// (unique partial index). Pick-Up assigns to self (any QC writer); assigning
+// to *another* inspector is admin-only — enforced in the service, not RLS.
+// inspector_name is a display snapshot alongside the FK so the queue renders
+// without a join and survives a later user rename.
+export const qcAssignments = pgTable(
+  'qc_assignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    jcOpId: uuid('jc_op_id')
+      .notNull()
+      .references(() => jcOps.id, { onDelete: 'cascade' }),
+    inspectorUserId: uuid('inspector_user_id').references(() => users.id),
+    inspectorName: text('inspector_name').notNull(),
+    note: text('note'),
+    assignedByText: text('assigned_by_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('qc_assignments_company_op_uq')
+      .on(t.companyId, t.jcOpId)
+      .where(sql`${t.deletedAt} is null`),
+    index('qc_assignments_company_inspector_idx')
+      .on(t.companyId, t.inspectorUserId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('qc_assignments_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('qc_assignments_qc_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager', 'qc') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type QcAssignment = typeof qcAssignments.$inferSelect;
+export type NewQcAssignment = typeof qcAssignments.$inferInsert;

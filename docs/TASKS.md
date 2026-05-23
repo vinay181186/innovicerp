@@ -82,6 +82,10 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** QC-CMD-1 (QC backlog partial — "qc resume" 2026-05-24)
+**Title:** QC Command Center — FPY + Rework tabs real + Pick-Up / Assign built (first `qc-command` backend module).
+**Status:** [x] Done 2026-05-24, NOT yet committed. Migration `0040_phase8_qc_assignments.sql` applied (ADR-031). New `qc-command` API module (`GET /qc-command` analytics over op_log QC groups + `POST /qc-command/{pickup,assign}`) + `qc_assignments` table. Web: real FPY/Rework tabs, queue Attempt + Assigned-To cols + Pick Up/Assign actions + Assign modal, stats strip realigned to legacy. 17/17 module tests green; full typecheck + lint clean. **Next QC:** SO QC Status GRN-QC + Docs stages (see [[project_qc_section_progress]]).
+
 **ID:** Phase B done — pick next direction (2026-05-21)
 **Title:** Phase B Planning module complete. All 5 slices shipped in one session.
 **Status:** [x] Phase B done 2026-05-21 (5 commits + 1 pending for PL-5; 112 tests green across the Phase B test surface; 2 migrations applied — `0024_phase8_plans.sql` + `0025_phase8_assembly_units.sql`; 7 new tables — plans + plan_ops + assembly_units + assembly_tracking + 3 helper enums).
