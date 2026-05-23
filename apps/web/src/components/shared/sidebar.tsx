@@ -190,6 +190,7 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/qc-dashboard', label: 'QC Dashboard', icon: '🛡️' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
+          { to: '/qc-history', label: 'QC History', icon: '📊' },
         ],
       },
       {

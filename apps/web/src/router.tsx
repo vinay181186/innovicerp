@@ -74,6 +74,7 @@ import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { qcDashboardRoute } from './modules/qc-dashboard/routes/index';
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
+import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -214,6 +215,7 @@ const routeTree = rootRoute.addChildren([
     activityLogListRoute,
     qcDashboardRoute,
     incomingQcRoute,
+    qcHistoryRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,
