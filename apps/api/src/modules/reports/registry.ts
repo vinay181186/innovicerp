@@ -10,6 +10,9 @@
 
 import type { DbTransaction } from '../../db/with-user-context';
 import { dailyOpLogReport } from './definitions/daily-op-log';
+import { designEngineerWorkloadReport } from './definitions/design-engineer-workload';
+import { designIssueAgingReport } from './definitions/design-issue-aging';
+import { designProjectSummaryReport } from './definitions/design-project-summary';
 import { grnQcLogReport } from './definitions/grn-qc-log';
 import { itemTrackerReport } from './definitions/item-tracker';
 import { itemsOnHandReport } from './definitions/items-on-hand';
@@ -52,6 +55,9 @@ export const REPORTS: Record<string, RegisteredReport> = {
   [stockMovementLogReport.definition.slug]: stockMovementLogReport,
   [jcAgeingReport.definition.slug]: jcAgeingReport,
   [grnQcLogReport.definition.slug]: grnQcLogReport,
+  [designProjectSummaryReport.definition.slug]: designProjectSummaryReport,
+  [designEngineerWorkloadReport.definition.slug]: designEngineerWorkloadReport,
+  [designIssueAgingReport.definition.slug]: designIssueAgingReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {
