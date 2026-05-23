@@ -53,6 +53,7 @@ import { opEntryRoute } from './modules/op-entry/routes/index';
 import { machineOpEntryRoute } from './modules/op-entry/routes/machines';
 import { runningOpsRoute } from './modules/op-entry/routes/running';
 import { machineLoadingRoute } from './modules/machine-loading/routes/list';
+import { productionDashboardRoute } from './modules/production-dashboard/routes/index';
 import { operatorsListRoute } from './modules/operators/routes/list';
 import { operatorDetailRoute } from './modules/operators/routes/detail';
 import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
@@ -137,6 +138,7 @@ const routeTree = rootRoute.addChildren([
     runningOpsRoute,
     machineOpEntryRoute,
     machineLoadingRoute,
+    productionDashboardRoute,
     salesOrdersListRoute,
     salesOrderNewRoute,
     salesOrderDetailRoute,

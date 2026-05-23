@@ -12,7 +12,7 @@ Canonical Production pages (legacy `render()` dispatch L2382, dept `production`)
 | Op Entry | `renderOpEntry` L5202 | `/op-entry` | ⚠️ **functional, chrome refactor needed** |
 | Shop Floor / Machine Op Entry | `renderShopFloor` L10286 | `/op-entry/machines` + `/op-entry/running` | ⚠️ **functional, chrome refactor needed** |
 | Machine Loading | `renderLoading` L5021 | `/machine-loading` | ✅ **built** (cards + ops/queue views + capacity) |
-| Production Dashboard | `renderDashboard` L3658 | — | ❌ **missing** (reuses machine-load aggregation) |
+| Production Dashboard | `renderDashboard` L3658 | `/production-dashboard` | ✅ **built** (stat tiles + open-JC cards + ready-to-process) |
 
 Per-page detail: `production-{job-cards,operators,machines,op-entry,shop-floor,machine-loading,dashboard}.md`.
 
@@ -23,7 +23,7 @@ Per-page detail: `production-{job-cards,operators,machines,op-entry,shop-floor,m
 - **Wave 1 (done):** JC list 14-col full-stack parity (`5687534`); Operator + Machine master parity/map (`d89feec`).
 - **Wave 2 (frontend-only, no migration):** Op Entry + Shop Floor legacy-chrome refactor (pages work; convert shadcn→`.panel`/`.innovic-table`/`.btn`); add Op-Entry preview card + global Ready-to-Process panel.
 - **Wave 3 (done):** Machine Loading page — service-layer machine-load aggregation (no migration) + cards + Operation/Job-Queue views + Capacity Summary. Backfill of Machine Master cols 7-8 + Shop-Floor card load bars can now reuse `getMachineLoading`.
-- **Wave 4 (full-stack):** Production Dashboard (reuses the machine-load aggregation).
+- **Wave 4 (done):** Production Dashboard — counters + open-JC cards + ready-to-process (raw SQL over v_jc_status + v_jc_op_status, no migration). Per-machine queue panels live on Machine Loading; JC op-chain viz deferred (POLISH).
 - **Wave 5 (full-stack):** JC create/edit modal + backend JC writes (ops routing builder, drawing + QC-doc upload), JC print, JC delete.
 
 ## Cross-cutting backend gaps
