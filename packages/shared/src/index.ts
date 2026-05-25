@@ -82,5 +82,6 @@ export * from './schemas/bom-master';
 export * from './schemas/route-card';
 export * from './schemas/qc-process';
 export * from './schemas/cost-center';
+export * from './schemas/print-template';
 export * from './schemas/user';
 export * from './schemas/company';

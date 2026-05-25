@@ -4020,3 +4020,85 @@ export const qcAssignments = pgTable(
 
 export type QcAssignment = typeof qcAssignments.$inferSelect;
 export type NewQcAssignment = typeof qcAssignments.$inferInsert;
+
+// ── Print Templates (0042) ──────────────────────────────────────────
+// Admin-customisable editable text blocks for PO / OSP DC / JW DC prints.
+// One active row per (company, template_key); absent ⇒ factory default
+// (PRINT_TEMPLATE_DEFAULTS in @innovic/shared). Admin-only writes.
+// Mirror of legacy db.printTemplates (renderPrintTemplates L14660).
+export const printTemplates = pgTable(
+  'print_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    templateKey: text('template_key').notNull(),
+    content: text('content').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('print_templates_company_key_uq')
+      .on(t.companyId, t.templateKey)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('print_templates_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('print_templates_admin_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type PrintTemplateRow = typeof printTemplates.$inferSelect;
+export type NewPrintTemplateRow = typeof printTemplates.$inferInsert;
+
+// Append-only revision history; service trims to last 5 per key.
+export const printTemplateRevisions = pgTable(
+  'print_template_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    templateKey: text('template_key').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    index('print_template_revisions_company_key_created_idx').on(
+      t.companyId,
+      t.templateKey,
+      t.createdAt,
+    ),
+    pgPolicy('print_template_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('print_template_revisions_admin_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type PrintTemplateRevisionRow = typeof printTemplateRevisions.$inferSelect;
+export type NewPrintTemplateRevisionRow = typeof printTemplateRevisions.$inferInsert;

@@ -1435,6 +1435,38 @@ Migration 0041:
 
 ---
 
+## ADR-034: Print Templates — admin-only customisable blocks + full revision history; print rendering client-side
+
+**Date:** 2026-05-25
+**Status:** Accepted — P1 shipped; P2 (PO/DC prints) + P3 (fixed-layout prints) follow.
+
+### Context
+
+Phase F "Print Templates" (LEGACY_AUDIT screen #81, deferred by ADR-023). The legacy `renderPrintTemplates` (HTML L14660) is an admin WYSIWYG editor for the editable prose blocks (header note / special notes / terms / footer / signature) of exactly **three** documents — PO, OSP DC, JW DC — with `{variable}` substitution and last-5-version rollback. The real print actions (`printPO`, `printChallan`, `_jwdcPrint`) consume those blocks; a separate family of fixed-layout `printX` functions (Job Card, Route Card, Invoice, Dispatch Register, Daily Report) do **not** use the editor. User approved full scope (A+B+C) 2026-05-25. See `docs/PARITY/print-templates.md`.
+
+### Decision
+
+1. **Two tables** (migration 0042): `print_templates` (one active row per `(company_id, template_key)`; absent ⇒ factory default) + `print_template_revisions` (append-only, `created_at`/`created_by` only, mirroring `route_card_revisions`).
+2. **Defaults + variable catalogue + substitution helper live in `packages/shared`** (`PRINT_TEMPLATE_DEFAULTS`, `PRINT_TEMPLATE_VARS`, `PRINT_TEMPLATE_META`, `substituteTemplateVars`). Single source of truth: the API falls back to defaults, the web editor previews with them, and the print windows substitute with them.
+3. **Admin-only writes** at every layer (RLS `admin_write` policy with `current_user_role() = 'admin'` + service `requireAdminRole`). Legacy gates on `isAdmin()`, not the broader manager-write role — honored exactly.
+4. **Full revision history retained; UI shows last 5.** Legacy hard-deletes revisions beyond 5. We never hard-delete (CLAUDE.md Rule #8) — keep all, `LIMIT 5` on read. "Reset to default" soft-deletes the customised row (after archiving its content) so the block falls back to the default with `isCustomised=false`.
+5. **Print/substitution HTML is presentation → web `@/lib` (P2/P3), not the API.** Template content + the data bag come from the API; the print window is a pure `window.open` + string build. Honors CLAUDE.md Rule #1 (no business logic in FE) because there is no validation/authorization/calculation in the print path — auth lives in the template-write service + RLS.
+
+### Alternatives Considered
+
+- **JSONB blob of all 15 blocks on a single `company_print_config` row** — rejected: loses per-block revision granularity and the natural unique-key upsert; the row-per-block table matches the legacy `templateKey` model and the existing master patterns.
+- **Hard-cap revisions at 5 (delete oldest)** — rejected: violates the no-hard-delete rule; keeping history is strictly better and the display cap costs nothing.
+- **Server-rendered print HTML (API returns a print document)** — rejected: the print layout is presentation; rendering client-side avoids shipping an HTML-templating concern into the API and keeps the data endpoints reusable. Reconsider only if we need server-side PDF generation later.
+- **`manager_write` to match other masters** — rejected: legacy is explicitly admin-only for print templates; broadening it would be a silent policy change.
+
+### Consequences
+
+- Positive: clean single-source defaults; admins customise vendor-facing docs without code; full audit trail; P2/P3 reuse the same substitution + (P3) a shared `printWindow` util.
+- Negative: print-window HTML is hand-built strings (no React) — acceptable for a print surface, but each fixed-layout print (P3) is its own body-builder.
+- Risks: company header data (name/GSTIN/address) must come from the `companies` row at print time (P2) — if absent, prints show blanks; mitigated by the Settings page already editing those fields.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

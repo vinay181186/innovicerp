@@ -22,6 +22,7 @@ import { costCenterEditRoute } from './modules/cost-centers/routes/edit';
 import { usersListRoute } from './modules/users/routes/list';
 import { userEditRoute } from './modules/users/routes/edit';
 import { settingsRoute } from './modules/settings/routes';
+import { printTemplatesRoute } from './modules/print-templates/routes/editor';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -270,6 +271,7 @@ const routeTree = rootRoute.addChildren([
     usersListRoute,
     userEditRoute,
     settingsRoute,
+    printTemplatesRoute,
   ]),
 ]);
 

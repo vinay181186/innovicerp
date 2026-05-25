@@ -82,6 +82,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** PT-1 (Print Templates P1 — Phase F, ADR-034, 2026-05-25)
+**Title:** Print Templates foundation — `print_templates` + `print_template_revisions` tables (migration 0042), shared defaults/vars/substitution lib, admin-only `print-templates` API module, admin `/print-templates` WYSIWYG editor + test print.
+**Status:** [x] P1 complete 2026-05-25. Scope A+B+C approved by user (full print feature incl. fixed-layout prints); P1 ships A (editor + store). 7/7 service tests green; api+web+shared typecheck + lint clean; migration applied to dev. Admin-only at RLS + service (legacy `isAdmin()` parity). Full revision history kept (Rule #8), UI shows last 5; reset-to-default soft-deletes the row. PARITY doc `docs/PARITY/print-templates.md`.
+**Next:** PT-2 (B) — `@/lib/print` window util + Print buttons on PO detail + JW-DC detail (+ OSP DC for Job-Work POs) consuming the templates with real data. Then PT-3 (C) — fixed-layout prints (Job Card, Route Card, Machine Queue, Dispatch Register, Daily Report, Invoice, Drawing) via a shared `printWindow` util, read each legacy `printX` fn at its step.
+
 **ID:** SEC-STORAGE-1 (security follow-up from ADR-032, 2026-05-24)
 **Title:** Harden qc-docs Storage bucket — per-company object RLS.
 **Status:** [x] Done 2026-05-24, NOT yet committed. Per ADR-033, migration `0041_phase8_qc_docs_company_rls.sql` (applied to dev). Replaced the permissive "any authenticated user" storage.objects policies with per-company `qc_docs_company_{read,insert,delete}` keyed on the object path's first segment vs the caller's company. New SECURITY DEFINER helper `current_auth_company_id()` derives company from `public.users` by JWT sub (the Supabase access token carries no company_id claim). 2/2 helper tests green; full Storage-policy enforcement needs a manual/Playwright upload test. Resolves the ADR-032 security DELTA.
