@@ -7,6 +7,7 @@ import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '../api';
@@ -244,12 +245,13 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>Shift</th>
                       <th>Inspector</th>
                       <th>Remarks</th>
+                      <th>Report</th>
                     </tr>
                   </thead>
                   <tbody>
                     {logs.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="empty-state">
+                        <td colSpan={12} className="empty-state">
                           No QC entries
                         </td>
                       </tr>
@@ -343,6 +345,13 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
       <td className="text3" style={{ fontSize: 10 }}>
         {l.remarks ?? '—'}
+      </td>
+      <td style={{ fontSize: 11 }}>
+        {l.qcReportPath ? (
+          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label="View" />
+        ) : (
+          '—'
+        )}
       </td>
     </tr>
   );
