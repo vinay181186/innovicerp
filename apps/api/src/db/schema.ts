@@ -861,6 +861,10 @@ export const opLog = pgTable(
     tpiInspector: text('tpi_inspector'),
     tpiOrganization: text('tpi_organization'),
     tpiCertNo: text('tpi_cert_no'),
+    // QC report attachment — Supabase Storage path (qc-docs bucket) + original
+    // file name for a report attached to this QC/TPI entry. Migration 0043.
+    qcReportPath: text('qc_report_path'),
+    qcReportName: text('qc_report_name'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1484,6 +1488,10 @@ export const goodsReceiptNoteLines = pgTable(
     qcDate: date('qc_date'),
     qcRemarks: text('qc_remarks'),
     qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
+    // Incoming-QC report attachment — Storage path (qc-docs bucket) + file name
+    // for the inspection report on this GRN line (legacy _viewQCReport). Mig 0043.
+    qcReportPath: text('qc_report_path'),
+    qcReportName: text('qc_report_name'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1644,6 +1652,8 @@ export const ncRegister = pgTable(
     itemNameText: text('item_name_text'),
     soCodeText: text('so_code_text'),
     machineCodeText: text('machine_code_text'),
+    // Operator who ran the rejected op — legacy Report-NC captured this. Mig 0043.
+    operatorText: text('operator_text'),
     rejectedQty: numeric('rejected_qty', { precision: 12, scale: 2 }).notNull(),
     reasonCategory: ncReasonCategoryEnum('reason_category').notNull().default('other'),
     reason: text('reason'),
@@ -3932,6 +3942,13 @@ export const qcDocuments = pgTable(
     fileName: text('file_name').notNull(),
     storagePath: text('storage_path').notNull(),
     uploadedByText: text('uploaded_by_text'),
+    // QC-completion matrix link (migration 0043): which JC QC op this doc
+    // certifies + the piece serial-range it covers. Drives the SO-pivoted
+    // matrix in renderQCDocuments (per-op column cells + serial tracking).
+    jcOpId: uuid('jc_op_id').references((): AnyPgColumn => jcOps.id),
+    qcOpName: text('qc_op_name'),
+    srFrom: integer('sr_from'),
+    srTo: integer('sr_to'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
