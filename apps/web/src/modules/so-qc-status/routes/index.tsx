@@ -12,6 +12,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
+import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoForQc, useSoQcStatus } from '../api';
 
@@ -397,6 +398,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th style={{ textAlign: 'center' }}>Rejected</th>
             <th style={{ textAlign: 'center' }}>Pending</th>
             <th style={{ textAlign: 'center' }}>Status</th>
+            <th style={{ textAlign: 'center' }}>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -428,6 +430,13 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                   {g.status === 'done' ? '✅ Accepted' : '⏳ Pending'}
                 </span>
               </td>
+              <td className="td-ctr">
+                {g.qcReportPath ? (
+                  <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="View" />
+                ) : (
+                  '—'
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -450,6 +459,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th style={{ textAlign: 'center' }}>Rejected</th>
             <th style={{ textAlign: 'center' }}>Date</th>
             <th style={{ textAlign: 'center' }}>Status</th>
+            <th style={{ textAlign: 'center' }}>Report</th>
           </tr>
         </thead>
         <tbody>
@@ -474,6 +484,13 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
                   {t.status === 'passed' ? '✅ Passed' : '⚠ Partial'}
                 </span>
+              </td>
+              <td className="td-ctr">
+                {t.qcReportPath ? (
+                  <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="View" />
+                ) : (
+                  '—'
+                )}
               </td>
             </tr>
           ))}

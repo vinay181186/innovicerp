@@ -7,6 +7,7 @@
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useIncomingQc } from '../api';
 
@@ -179,12 +180,13 @@ function IncomingQcPage(): React.JSX.Element {
                     <th style={{ textAlign: 'center', color: 'var(--red)' }}>Rejected</th>
                     <th>Disposition</th>
                     <th>Remarks</th>
+                    <th>Report</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.completed.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="empty-state">
+                      <td colSpan={13} className="empty-state">
                         No completed inspections yet.
                       </td>
                     </tr>
@@ -304,6 +306,13 @@ function CompletedRow({ r }: { r: IncomingQcCompletedRow }): React.JSX.Element {
       </td>
       <td className="text3" style={{ fontSize: 11 }}>
         {r.qcRemarks ?? '—'}
+      </td>
+      <td style={{ fontSize: 11 }}>
+        {r.qcReportPath ? (
+          <QcReportLink path={r.qcReportPath} name={r.qcReportName} label="View" />
+        ) : (
+          '—'
+        )}
       </td>
     </tr>
   );

@@ -35,6 +35,10 @@ export const tpiCompletedRowSchema = z.object({
   inspector: z.string().nullable(),
   organization: z.string().nullable(),
   certNo: z.string().nullable(),
+  // QC report attachment (migration 0043) — Storage path + file name for the
+  // TPI report (legacy _tpiAttachReport, HTML L21492).
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
 });
 export type TpiCompletedRow = z.infer<typeof tpiCompletedRowSchema>;
 

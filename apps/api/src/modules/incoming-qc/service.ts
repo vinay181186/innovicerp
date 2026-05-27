@@ -85,7 +85,8 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
-        l.qc_remarks AS "qcRemarks"
+        l.qc_remarks AS "qcRemarks",
+        l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"
       FROM public.goods_receipt_note_lines l
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
@@ -116,6 +117,8 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         rejectedQty,
         disposition: dispositionOf(acceptedQty, rejectedQty),
         qcRemarks: (r['qcRemarks'] as string | null) ?? null,
+        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+        qcReportName: (r['qcReportName'] as string | null) ?? null,
       };
     });
 

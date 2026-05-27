@@ -42,6 +42,10 @@ export const incomingQcCompletedRowSchema = z.object({
   rejectedQty: z.number().int(),
   disposition: incomingQcDispositionSchema,
   qcRemarks: z.string().nullable(),
+  // QC report attachment (migration 0043) — Storage path + file name for the
+  // inspection report on this GRN line (legacy _viewQCReport, HTML L23860).
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
 });
 export type IncomingQcCompletedRow = z.infer<typeof incomingQcCompletedRowSchema>;
 

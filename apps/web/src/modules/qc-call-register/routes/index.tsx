@@ -8,7 +8,9 @@ import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/print/doc-print';
+import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -201,6 +203,7 @@ function PendingCall(props: {
 }): React.JSX.Element {
   const { o, open, operatorNames, onToggle, onDone } = props;
   const submitQc = useSubmitQcLog();
+  const companyId = useSession().data?.companyId ?? null;
   const inspectorListId = `qc-inspectors-${o.jcOpId}`;
   const waitingDays = o.qcCallDate ? dayDiff(o.qcCallDate, todayIso()) : 0;
   const [logDate, setLogDate] = useState(todayIso());
@@ -209,6 +212,8 @@ function PendingCall(props: {
   const [reject, setReject] = useState('0');
   const [inspector, setInspector] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [qcReportPath, setQcReportPath] = useState<string | null>(null);
+  const [qcReportName, setQcReportName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function submit(): Promise<void> {
@@ -235,6 +240,7 @@ function PendingCall(props: {
       shift,
       ...(inspector.trim() ? { operatorName: inspector.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+      ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
     try {
       await submitQc.mutateAsync(input);
@@ -406,6 +412,20 @@ function PendingCall(props: {
                 placeholder="NC reason, observations…"
               />
             </div>
+            <div className="form-grp form-full">
+              <QcReportAttach
+                companyId={companyId}
+                fileName={qcReportName}
+                onUploaded={(path, name) => {
+                  setQcReportPath(path);
+                  setQcReportName(name);
+                }}
+                onClear={() => {
+                  setQcReportPath(null);
+                  setQcReportName(null);
+                }}
+              />
+            </div>
           </div>
           {err ? (
             <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
@@ -494,6 +514,9 @@ function CompletedLog({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
         <span>{l.shift ?? '—'}</span>
         <span>{l.inspector ?? '—'}</span>
         <span className="mono">{l.logNo}</span>
+        {l.qcReportPath ? (
+          <QcReportLink path={l.qcReportPath} name={l.qcReportName} label={l.qcReportName ?? '⬇'} />
+        ) : null}
         {l.remarks ? <span className="text2">{l.remarks}</span> : null}
       </div>
     </div>

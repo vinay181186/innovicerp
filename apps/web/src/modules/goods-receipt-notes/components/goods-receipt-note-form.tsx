@@ -11,6 +11,8 @@ import {
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { useSession } from '@/lib/session';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
@@ -28,6 +30,8 @@ interface LineFormValue {
   qcRejectedQty: number;
   qcDate?: string;
   qcRemarks?: string;
+  qcReportPath?: string | null;
+  qcReportName?: string | null;
   remarks?: string;
 }
 
@@ -95,8 +99,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, setValue, getValues } = form;
+  const { register, control, handleSubmit, formState, setValue, getValues, watch } = form;
   const errors = formState.errors;
+  const companyId = useSession().data?.companyId ?? null;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
@@ -169,6 +174,8 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         qcRejectedQty: Number(l.qcRejectedQty),
         qcDate: l.qcDate || undefined,
         qcRemarks: l.qcRemarks?.trim() || undefined,
+        qcReportPath: l.qcReportPath ?? undefined,
+        qcReportName: l.qcReportName ?? undefined,
         remarks: l.remarks?.trim() || undefined,
       };
     });
@@ -496,6 +503,28 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       {...register(`lines.${idx}.remarks` as const)}
                     />
                   </div>
+
+                  <div className="form-grp form-full">
+                    <label className="form-label">QC Report</label>
+                    {locked ? (
+                      <div className="text3" style={{ fontSize: 11 }}>
+                        {watch(`lines.${idx}.qcReportName`) ?? '— none —'}
+                      </div>
+                    ) : (
+                      <QcReportAttach
+                        companyId={companyId}
+                        fileName={watch(`lines.${idx}.qcReportName`) ?? null}
+                        onUploaded={(path, name) => {
+                          setValue(`lines.${idx}.qcReportPath`, path, { shouldDirty: true });
+                          setValue(`lines.${idx}.qcReportName`, name, { shouldDirty: true });
+                        }}
+                        onClear={() => {
+                          setValue(`lines.${idx}.qcReportPath`, null, { shouldDirty: true });
+                          setValue(`lines.${idx}.qcReportName`, null, { shouldDirty: true });
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {locked ? (
@@ -570,6 +599,8 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
         qcRejectedQty: l.qcRejectedQty,
         ...(l.qcDate ? { qcDate: l.qcDate } : {}),
         ...(l.qcRemarks ? { qcRemarks: l.qcRemarks } : {}),
+        ...(l.qcReportPath ? { qcReportPath: l.qcReportPath } : {}),
+        ...(l.qcReportName ? { qcReportName: l.qcReportName } : {}),
         ...(l.remarks ? { remarks: l.remarks } : {}),
       }),
     ),

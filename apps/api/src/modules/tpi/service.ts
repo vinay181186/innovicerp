@@ -69,7 +69,8 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
         jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
         CASE WHEN jo.qc_call_date IS NOT NULL THEN (ol.log_date - jo.qc_call_date)::int ELSE NULL END AS "respDays",
         ol.tpi_inspector AS "inspector", ol.tpi_organization AS "organization",
-        ol.tpi_cert_no AS "certNo"
+        ol.tpi_cert_no AS "certNo",
+        ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id AND jo.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -100,6 +101,8 @@ export async function getTpi(user: AuthContext): Promise<TpiResponse> {
       inspector: (r['inspector'] as string | null) ?? null,
       organization: (r['organization'] as string | null) ?? null,
       certNo: (r['certNo'] as string | null) ?? null,
+      qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+      qcReportName: (r['qcReportName'] as string | null) ?? null,
     }));
 
     return { pending, completed };

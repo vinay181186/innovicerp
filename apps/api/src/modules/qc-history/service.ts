@@ -82,7 +82,8 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         so.code AS "soCode", i.code AS "itemCode", jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
         ol.log_date AS "logDate", ol.shift, ol.operator_name AS "inspector", ol.remarks,
-        ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate"
+        ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
+        ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id AND jo.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -112,6 +113,8 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         remarks: (r['remarks'] as string | null) ?? null,
         logNo: (r['logNo'] as string | null) ?? '',
         qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
+        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+        qcReportName: (r['qcReportName'] as string | null) ?? null,
       }),
     );
 

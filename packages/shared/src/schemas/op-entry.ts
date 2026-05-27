@@ -162,6 +162,11 @@ export const submitQcLogInputSchema = z
     tpiInspector: z.string().max(120).optional(),
     tpiOrganization: z.string().max(160).optional(),
     tpiCertNo: z.string().max(80).optional(),
+    // QC report attachment (migration 0043) — Supabase Storage path (qc-docs
+    // bucket) + original file name for a report attached to this QC/TPI entry.
+    // Mirrors legacy _qcdAttachReport / _tpiAttachReport (HTML L4180 / L21492).
+    qcReportPath: z.string().nullable().optional(),
+    qcReportName: z.string().nullable().optional(),
   })
   .refine((i) => i.qty + i.rejectQty > 0, {
     message: 'Enter accepted qty and/or reject qty (legacy line 3895)',

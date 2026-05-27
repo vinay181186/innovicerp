@@ -44,6 +44,10 @@ export const qcHistoryLogRowSchema = z.object({
   // QC call date so the card can show Called → Attended — Response: N days.
   logNo: z.string(),
   qcCallDate: z.string().nullable(),
+  // QC report attachment (migration 0043) — Storage path + file name when the
+  // inspector attached a report (legacy L4216 📎 download link).
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
 });
 export type QcHistoryLogRow = z.infer<typeof qcHistoryLogRowSchema>;
 

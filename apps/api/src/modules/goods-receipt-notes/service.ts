@@ -417,6 +417,8 @@ export async function getGoodsReceiptNote(
         gnl.qc_date AS "qcDate",
         gnl.qc_remarks AS "qcRemarks",
         gnl.qc_inspected_by AS "qcInspectedBy",
+        gnl.qc_report_path AS "qcReportPath",
+        gnl.qc_report_name AS "qcReportName",
         gnl.remarks, gnl.created_at AS "createdAt", gnl.created_by AS "createdBy",
         gnl.updated_at AS "updatedAt", gnl.updated_by AS "updatedBy",
         gnl.deleted_at AS "deletedAt",
@@ -465,6 +467,8 @@ export async function getGoodsReceiptNote(
         qcDate: maybeDateLike(r['qcDate']),
         qcRemarks: (r['qcRemarks'] as string | null) ?? null,
         qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
+        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+        qcReportName: (r['qcReportName'] as string | null) ?? null,
         remarks: (r['remarks'] as string | null) ?? null,
         createdAt: tsLike(r['createdAt']),
         createdBy: r['createdBy'] as string,
@@ -559,6 +563,8 @@ export async function createGoodsReceiptNote(
         qcDate: l.qcDate ?? null,
         qcRemarks: l.qcRemarks ?? null,
         qcInspectedBy: l.qcStatus === 'completed' ? user.id : null,
+        qcReportPath: l.qcReportPath ?? null,
+        qcReportName: l.qcReportName ?? null,
         remarks: l.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -774,6 +780,8 @@ async function mergeLines(
     if (u.data.qcRejectedQty !== undefined) lineUpdate['qcRejectedQty'] = u.data.qcRejectedQty;
     if (u.data.qcDate !== undefined) lineUpdate['qcDate'] = u.data.qcDate ?? null;
     if (u.data.qcRemarks !== undefined) lineUpdate['qcRemarks'] = u.data.qcRemarks ?? null;
+    if (u.data.qcReportPath !== undefined) lineUpdate['qcReportPath'] = u.data.qcReportPath ?? null;
+    if (u.data.qcReportName !== undefined) lineUpdate['qcReportName'] = u.data.qcReportName ?? null;
     // qcInspectedBy auto-stamped on the completed transition.
     if (u.data.qcStatus === 'completed' && u.prev.qcStatus !== 'completed') {
       lineUpdate['qcInspectedBy'] = user.id;
@@ -835,6 +843,8 @@ async function mergeLines(
         qcDate: l.qcDate ?? null,
         qcRemarks: l.qcRemarks ?? null,
         qcInspectedBy: l.qcStatus === 'completed' ? user.id : null,
+        qcReportPath: l.qcReportPath ?? null,
+        qcReportName: l.qcReportName ?? null,
         remarks: l.remarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,

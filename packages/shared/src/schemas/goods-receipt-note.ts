@@ -56,6 +56,11 @@ export const goodsReceiptNoteLineSchema = z.object({
   qcDate: z.string().nullable(),
   qcRemarks: z.string().nullable(),
   qcInspectedBy: z.string().uuid().nullable(),
+  // Incoming-QC report attachment (migration 0043) — Storage path (qc-docs
+  // bucket) + original file name for the inspection report on this GRN line
+  // (legacy _viewQCReport, HTML L23860).
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -137,6 +142,10 @@ export const goodsReceiptNoteLineInputSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')
       .optional(),
     qcRemarks: z.string().max(2000).optional(),
+    // QC report attachment (migration 0043) — set when an inspector attaches a
+    // report on this GRN line. qcReportPath is the qc-docs Storage path.
+    qcReportPath: z.string().nullable().optional(),
+    qcReportName: z.string().nullable().optional(),
     remarks: z.string().max(2000).optional(),
   })
   .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {

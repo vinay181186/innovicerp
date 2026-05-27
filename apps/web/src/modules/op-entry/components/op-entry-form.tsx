@@ -13,6 +13,8 @@ import {
 } from '@innovic/shared';
 import { Loader2, Play, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { useSession } from '@/lib/session';
 import { useStartOp, useStopOp, useSubmitOpLog, useSubmitQcLog } from '../api';
 
 interface Props {
@@ -36,6 +38,7 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
   const submitQc = useSubmitQcLog();
   const start = useStartOp();
   const stop = useStopOp();
+  const companyId = useSession().data?.companyId ?? null;
 
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
@@ -44,6 +47,9 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
   const [operatorName, setOperatorName] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // QC report attachment (migration 0043) — only used on the QC sub-form.
+  const [qcReportPath, setQcReportPath] = useState<string | null>(null);
+  const [qcReportName, setQcReportName] = useState<string | null>(null);
 
   // Reset when the selected op changes.
   useEffect(() => {
@@ -51,6 +57,8 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
     setRejectQty('0');
     setRemarks('');
     setErrorMessage(null);
+    setQcReportPath(null);
+    setQcReportName(null);
   }, [op.id]);
 
   const isOutsource = op.opType === 'outsource';
@@ -125,12 +133,15 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
       shift,
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+      ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
     try {
       await submitQc.mutateAsync(input);
       setQty('');
       setRejectQty('0');
       setRemarks('');
+      setQcReportPath(null);
+      setQcReportName(null);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'QC submit failed');
     }
@@ -301,6 +312,20 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
                 />
               </div>
               {operatorAndRemarks}
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <QcReportAttach
+                companyId={companyId}
+                fileName={qcReportName}
+                onUploaded={(path, name) => {
+                  setQcReportPath(path);
+                  setQcReportName(name);
+                }}
+                onClear={() => {
+                  setQcReportPath(null);
+                  setQcReportName(null);
+                }}
+              />
             </div>
             {errorBanner}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>

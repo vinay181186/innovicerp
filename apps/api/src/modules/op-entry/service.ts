@@ -508,6 +508,10 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         tpiInspector: input.tpiInspector ?? null,
         tpiOrganization: input.tpiOrganization ?? null,
         tpiCertNo: input.tpiCertNo ?? null,
+        // QC report attachment (migration 0043) — persist the storage path +
+        // original file name when the inspector attached a report.
+        qcReportPath: input.qcReportPath ?? null,
+        qcReportName: input.qcReportName ?? null,
         createdBy: user.id,
       })
       .returning();

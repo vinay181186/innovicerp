@@ -14,6 +14,8 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useTpi } from '../api';
@@ -182,12 +184,13 @@ function TpiPage(): React.JSX.Element {
                     <th>Inspector</th>
                     <th>Organization</th>
                     <th>Cert No.</th>
+                    <th>Report</th>
                   </tr>
                 </thead>
                 <tbody>
                   {completed.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="empty-state">
+                      <td colSpan={14} className="empty-state">
                         No TPI records yet
                       </td>
                     </tr>
@@ -224,6 +227,13 @@ function TpiPage(): React.JSX.Element {
                         <td style={{ fontSize: 10, fontWeight: 700, color: 'var(--purple)' }}>
                           {l.certNo ?? '—'}
                         </td>
+                        <td style={{ fontSize: 11 }}>
+                          {l.qcReportPath ? (
+                            <QcReportLink path={l.qcReportPath} name={l.qcReportName} label="View" />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -245,6 +255,7 @@ function PendingTpi(props: {
 }): React.JSX.Element {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
+  const companyId = useSession().data?.companyId ?? null;
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
@@ -253,6 +264,8 @@ function PendingTpi(props: {
   const [organization, setOrganization] = useState('');
   const [certNo, setCertNo] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [qcReportPath, setQcReportPath] = useState<string | null>(null);
+  const [qcReportName, setQcReportName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   async function send(): Promise<void> {
@@ -287,6 +300,7 @@ function PendingTpi(props: {
       tpiOrganization: organization.trim(),
       ...(certNo.trim() ? { tpiCertNo: certNo.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
+      ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
     try {
       await submit.mutateAsync(input);
@@ -393,6 +407,20 @@ function PendingTpi(props: {
             <div className="form-grp">
               <label className="form-label">Remarks</label>
               <input className="innovic-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Observations…" />
+            </div>
+            <div className="form-grp form-full">
+              <QcReportAttach
+                companyId={companyId}
+                fileName={qcReportName}
+                onUploaded={(path, name) => {
+                  setQcReportPath(path);
+                  setQcReportName(name);
+                }}
+                onClear={() => {
+                  setQcReportPath(null);
+                  setQcReportName(null);
+                }}
+              />
             </div>
           </div>
           {err ? (

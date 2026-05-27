@@ -12,9 +12,9 @@
 //   • Docs   — qc_documents.job_card_id -> job_cards.source_so_line_id
 // Read-only, no migration. See docs/PARITY/qc-so-status.md.
 //
-// NOTE (deferred): the per-GRN-line / per-TPI "Report View" download link is
-// owned by a separate QC-report-attachment task and is intentionally NOT part
-// of these detail shapes.
+// The per-GRN-line / per-TPI "Report View" download link (legacy _viewQCReport)
+// is surfaced via qcReportPath/qcReportName on the GRN + TPI detail shapes
+// (migration 0043 columns).
 
 import { z } from 'zod';
 
@@ -72,6 +72,9 @@ export const soQcGrnDetailSchema = z.object({
   rejected: z.number().int(),
   pending: z.number().int(),
   status: z.enum(['done', 'pending']), // qc_status = 'completed'
+  // QC report attachment (migration 0043) on the GRN line.
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
 });
 export type SoQcGrnDetail = z.infer<typeof soQcGrnDetailSchema>;
 
@@ -84,6 +87,9 @@ export const soQcTpiDetailSchema = z.object({
   rejected: z.number().int(),
   date: z.string().nullable(),
   status: z.enum(['passed', 'partial']), // partial when rejected > 0
+  // QC report attachment (migration 0043) on the TPI op_log entry.
+  qcReportPath: z.string().nullable(),
+  qcReportName: z.string().nullable(),
 });
 export type SoQcTpiDetail = z.infer<typeof soQcTpiDetailSchema>;
 

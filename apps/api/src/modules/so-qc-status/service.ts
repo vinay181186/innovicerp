@@ -8,8 +8,9 @@
 // -> job_cards (source_so_line_id) -> v_jc_op_status + jc_ops + op_log (is_tpi),
 // goods_receipt_note_lines, qc_documents. RLS via base tables.
 //
-// Deferred: per-GRN-line / per-TPI "Report View" download link (owned by a
-// separate QC-report-attachment task) — detail arrays omit it.
+// The per-GRN-line / per-TPI "Report View" download link (legacy _viewQCReport)
+// is surfaced via qcReportPath/qcReportName on the GRN + TPI detail rows
+// (migration 0043 columns).
 
 import { sql } from 'drizzle-orm';
 import type {
@@ -242,7 +243,9 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         ol.tpi_inspector AS "inspector",
         ol.qty AS "accepted",
         ol.reject_qty AS "rejected",
-        ol.log_date AS "date"
+        ol.log_date AS "date",
+        ol.qc_report_path AS "qcReportPath",
+        ol.qc_report_name AS "qcReportName"
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -264,6 +267,8 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         rejected,
         date: dateLike(r['date']),
         status: rejected > 0 ? 'partial' : 'passed',
+        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+        qcReportName: (r['qcReportName'] as string | null) ?? null,
       };
       const arr = tpiByLine.get(lineId);
       if (arr) arr.push(detail);
@@ -284,7 +289,9 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         gl.qc_accepted_qty AS "accepted",
         gl.qc_rejected_qty AS "rejected",
         (gl.received_qty - gl.qc_accepted_qty - gl.qc_rejected_qty) AS "pending",
-        gl.qc_status AS "qcStatus"
+        gl.qc_status AS "qcStatus",
+        gl.qc_report_path AS "qcReportPath",
+        gl.qc_report_name AS "qcReportName"
       FROM public.goods_receipt_note_lines gl
       JOIN public.goods_receipt_notes grn
         ON grn.id = gl.goods_receipt_note_id AND grn.deleted_at IS NULL
@@ -324,6 +331,8 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         rejected: num(r['rejected']),
         pending: num(r['pending']),
         status,
+        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+        qcReportName: (r['qcReportName'] as string | null) ?? null,
       };
       const agg = grnByLine.get(lineId);
       if (agg) {
