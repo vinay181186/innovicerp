@@ -8,12 +8,14 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallansList } from '../api';
 import { DcStatusBadge } from '../components/dc-status-badge';
+import { printDispatchRegister } from '../lib/print-dispatch-register';
 
 const PAGE_SIZE = 25;
 
@@ -60,6 +62,23 @@ function DeliveryChallansListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
+  const { data: company } = useMyCompany();
+
+  const onPrintRegister = (): void => {
+    if (!data) return;
+    const parts: string[] = [];
+    if (search.search) parts.push(`search "${search.search}"`);
+    if (search.status) parts.push(`status ${search.status.replaceAll('_', ' ')}`);
+    const pages = Math.max(1, Math.ceil((data.total ?? 0) / PAGE_SIZE));
+    parts.push(`page ${search.page} of ${pages}`);
+    const ok = printDispatchRegister({
+      rows: data.items,
+      summary: data.summary,
+      filterLabel: parts.join(' · '),
+      company,
+    });
+    if (!ok) window.alert('Allow popups to print.');
+  };
 
   const columns = useMemo<ColumnDef<DeliveryChallanListItem>[]>(
     () => [
@@ -209,6 +228,15 @@ function DeliveryChallansListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onPrintRegister}
+            disabled={isLoading || !data}
+            title="Print the dispatch register for the current filter/page"
+          >
+            <Printer size={14} /> Print Register
+          </button>
           <Link to="/purchase-orders" className="btn btn-primary">
             <Plus size={14} /> New DC (via PO)
           </Link>

@@ -3,16 +3,18 @@
 // legacy viewItemDetail flow with the Innovic .panel / .form-grid
 // chrome.
 
-import type { Item } from '@innovic/shared';
+import type { Company, Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { signedUrl } from '@/lib/storage';
+import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
+import { printItemDrawing } from '../lib/print-drawing';
 
 export const itemDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -25,6 +27,7 @@ function ItemDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: item, isLoading, isError, error } = useItem(id);
   const { data: me } = useSession();
+  const { data: company } = useMyCompany();
   const softDelete = useSoftDeleteItem();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -155,7 +158,7 @@ function ItemDetailPage(): React.JSX.Element {
                 : 'Failed to delete item.'}
             </div>
           ) : null}
-          <DetailGrid item={item} />
+          <DetailGrid item={item} company={company} />
         </div>
       </div>
 
@@ -259,15 +262,15 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
   );
 }
 
-function DetailGrid(props: { item: Item }): React.JSX.Element {
-  const { item } = props;
+function DetailGrid(props: { item: Item; company: Company | undefined }): React.JSX.Element {
+  const { item, company } = props;
   return (
     <div className="form-grid">
       <Pair label="Item type" value={item.itemType} />
       <Pair label="UOM" value={item.uom} />
       <Pair label="Revision" value={item.revision} />
       <Pair label="Drawing no." value={item.drawingNo ?? '—'} />
-      <DrawingFilePair path={item.drawingFilePath} />
+      <DrawingFilePair item={item} company={company} />
       <Pair label="Material" value={item.material ?? '—'} />
       <Pair label="HSN code" value={item.hsnCode ?? '—'} />
       <div className="form-grp form-full">
@@ -287,7 +290,14 @@ function Pair(props: { label: string; value: string }): React.JSX.Element {
   );
 }
 
-function DrawingFilePair({ path }: { path: string | null }): React.JSX.Element {
+function DrawingFilePair({
+  item,
+  company,
+}: {
+  item: Item;
+  company: Company | undefined;
+}): React.JSX.Element {
+  const path = item.drawingFilePath;
   async function view(): Promise<void> {
     if (!path) return;
     try {
@@ -297,14 +307,28 @@ function DrawingFilePair({ path }: { path: string | null }): React.JSX.Element {
       window.alert(e instanceof Error ? e.message : 'Could not open file');
     }
   }
+  async function print(): Promise<void> {
+    if (!path) return;
+    try {
+      const ok = await printItemDrawing({ item, company });
+      if (!ok) window.alert('Allow popups to print.');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not open drawing for printing');
+    }
+  }
   return (
     <div className="form-grp">
       <span className="form-label">Drawing file</span>
-      <div style={{ fontWeight: 600 }}>
+      <div style={{ fontWeight: 600, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {path ? (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
-            📎 View drawing
-          </button>
+          <>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
+              📎 View drawing
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void print()}>
+              <Printer size={13} /> Print drawing
+            </button>
+          </>
         ) : (
           '—'
         )}

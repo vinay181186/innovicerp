@@ -5,11 +5,13 @@
 
 import type { MachineLoadCard, MachineLoadOp, MachineLoadStatus } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
+import { printMachineQueue } from '../lib/print-machine-queue';
 
 const searchSchema = z.object({
   m: z.string().uuid().optional(),
@@ -56,12 +58,19 @@ function MachineLoadingPage(): React.JSX.Element {
   const search = machineLoadingRoute.useSearch();
   const navigate = machineLoadingRoute.useNavigate();
   const { data, isLoading, isFetching, isError, error } = useMachineLoading();
+  const { data: company } = useMyCompany();
 
   const view = search.view ?? 'ops';
   const selMachineId = search.m ?? null;
 
   const machines = data?.machines ?? [];
   const allOps = data?.ops ?? [];
+
+  function onPrintQueue(machineId: string | null): void {
+    if (!printMachineQueue({ machines, ops: allOps, company, machineId })) {
+      window.alert('Allow popups to print.');
+    }
+  }
 
   const filteredOps = useMemo(
     () => (selMachineId ? allOps.filter((o) => o.machineId === selMachineId) : allOps),
@@ -144,6 +153,15 @@ function MachineLoadingPage(): React.JSX.Element {
               All Machines ×
             </button>
           ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => onPrintQueue(selMachineId)}
+            disabled={machines.length === 0}
+            title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
+          >
+            <Printer size={13} /> Print Queue
+          </button>
         </div>
       </div>
 
@@ -188,7 +206,7 @@ function MachineLoadingPage(): React.JSX.Element {
           {view === 'ops' ? (
             <OperationView ops={filteredOps} selMachineId={selMachineId} />
           ) : (
-            <JobQueueView machines={queueMachines} ops={allOps} />
+            <JobQueueView machines={queueMachines} ops={allOps} onPrint={onPrintQueue} />
           )}
 
           <CapacitySummary machines={machines} />
@@ -368,9 +386,11 @@ function OperationView({
 function JobQueueView({
   machines,
   ops,
+  onPrint,
 }: {
   machines: MachineLoadCard[];
   ops: MachineLoadOp[];
+  onPrint: (machineId: string) => void;
 }): React.JSX.Element {
   if (machines.length === 0) {
     return (
@@ -403,6 +423,14 @@ function JobQueueView({
                 <span className="mono" style={{ color: 'var(--amber)', fontSize: 11 }}>
                   {machOps.length} jobs
                 </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onPrint(m.machineId)}
+                  title={`Print ${m.machineCode} queue`}
+                >
+                  <Printer size={12} /> Print
+                </button>
               </span>
             </div>
             {machOps.length === 0 ? (

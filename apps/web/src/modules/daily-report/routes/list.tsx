@@ -1,11 +1,13 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
 
 import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Printer } from 'lucide-react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
+import { useMyCompany } from '../../settings/api';
 import { useDailyReport } from '../api';
+import { printDailyReport } from '../lib/print-daily-report';
 
 const searchSchema = z.object({
   date: z.string().optional(),
@@ -33,11 +35,26 @@ function DailyReportPage(): React.JSX.Element {
     limit: 200,
     offset: 0,
   });
+  const { data: company } = useMyCompany();
 
   const { data, isLoading, isError, error } = useDailyReport({
     date,
     machineId: machineId || undefined,
   });
+
+  const machineLabel = machineId
+    ? (() => {
+        const m = (machinesData?.machines ?? []).find((x) => x.id === machineId);
+        return m ? `${m.code} — ${m.name}` : 'Selected Machine';
+      })()
+    : 'All Machines';
+
+  const onPrint = (): void => {
+    if (!data) return;
+    if (!printDailyReport({ report: data, machineLabel, company })) {
+      window.alert('Allow popups to print.');
+    }
+  };
 
   const setDate = (next: string): void => {
     void navigate({ search: (prev) => ({ ...prev, date: next || undefined }) });
@@ -57,6 +74,15 @@ function DailyReportPage(): React.JSX.Element {
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">📊 Daily Production Report</div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={onPrint}
+          disabled={!data || data.groups.length === 0}
+          title="Print daily production report"
+        >
+          <Printer size={13} /> Print
+        </button>
       </div>
 
       <div className="panel" style={{ padding: 14, marginBottom: 14 }}>

@@ -17,6 +17,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
 import { JcStatusBadge } from '../components/jc-status-badge';
+import { PrintJcButton } from '../components/print-jc-button';
 
 const PAGE_SIZE = 25;
 
@@ -282,15 +283,18 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'Actions',
         cell: ({ row }) => (
-          <Link
-            to="/op-entry"
-            search={{ jc: row.original.code }}
-            className="btn btn-ghost btn-sm"
-            style={{ whiteSpace: 'nowrap' }}
-            title="Open in Op Entry"
-          >
-            👁 View
-          </Link>
+          <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
+            <Link
+              to="/op-entry"
+              search={{ jc: row.original.code }}
+              className="btn btn-ghost btn-sm"
+              style={{ whiteSpace: 'nowrap' }}
+              title="Open in Op Entry"
+            >
+              👁 View
+            </Link>
+            <PrintJcButton jc={row.original} />
+          </span>
         ),
       },
     ],
