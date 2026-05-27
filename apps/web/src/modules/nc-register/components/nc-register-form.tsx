@@ -4,15 +4,18 @@
 import {
   type CreateNcRegisterInput,
   NC_REASON_CATEGORIES,
+  NC_REASON_CATEGORY_LABELS,
   type NcReasonCategory,
   type NcRegister,
   type UpdateNcRegisterInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useItemsList } from '@/modules/items/api';
 import { useJobCardsList } from '@/modules/job-cards/api';
+import { useNcRegisterList } from '../api';
+import { useJcOpsEnriched } from '@/modules/op-entry/api';
 
 interface FormValues {
   code: string;
@@ -26,6 +29,7 @@ interface FormValues {
   itemNameText?: string;
   soCodeText?: string;
   machineCodeText?: string;
+  operatorText?: string;
   rejectedQty: number;
   reasonCategory: NcReasonCategory;
   reason?: string;
@@ -74,7 +78,40 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
 
+  // Pull recent NCs to auto-suggest the next code (legacy `_nextNCNo` assigns
+  // NC-NNNN from the running max). Only fetched in create mode.
+  const { data: recentNcs } = useNcRegisterList(
+    { limit: 200, offset: 0 },
+    { enabled: !isEdit },
+  );
+
   const selectedJcId = watch('jobCardId');
+
+  // Operation dropdown depends on the selected JC's ops (legacy `_ncFillJC`,
+  // HTML L22609). Reuses op-entry's enriched-ops hook (cross-module read hook).
+  const { data: jcOps } = useJcOpsEnriched(
+    { jobCardId: selectedJcId || undefined },
+    { enabled: !isEdit && Boolean(selectedJcId) },
+  );
+  const opsForJc = useMemo(
+    () => (jcOps ?? []).slice().sort((a, b) => a.opSeq - b.opSeq),
+    [jcOps],
+  );
+
+  // Pre-fill a suggested NC code once on mount (create mode only). Manual edit
+  // still allowed — server enforces uniqueness.
+  useEffect(() => {
+    if (isEdit) return;
+    if (!recentNcs?.items) return;
+    const current = watch('code');
+    if (current && current.trim().length > 0) return;
+    let max = 0;
+    for (const r of recentNcs.items) {
+      const num = Number.parseInt(String(r.code).replace(/\D/g, ''), 10);
+      if (!Number.isNaN(num) && num > max) max = num;
+    }
+    setValue('code', `NC-${String(max + 1).padStart(4, '0')}`, { shouldDirty: false });
+  }, [recentNcs, isEdit, setValue, watch]);
 
   useEffect(() => {
     if (isEdit) return;
@@ -86,6 +123,10 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         setValue('itemNameText', jc.itemName, { shouldDirty: true });
       }
     }
+    // Reset the op selection when the JC changes — legacy clears `fRejOp`.
+    setValue('jcOpId', undefined, { shouldDirty: false });
+    setValue('opSeq', undefined, { shouldDirty: false });
+    setValue('operationText', undefined, { shouldDirty: false });
   }, [selectedJcId, isEdit, jcs, setValue]);
 
   const onValid = async (values: FormValues): Promise<void> => {
@@ -95,6 +136,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         reasonCategory: values.reasonCategory,
         reason: values.reason?.trim() || undefined,
         reportedByText: values.reportedByText?.trim() || undefined,
+        operatorText: values.operatorText?.trim() || undefined,
       };
       await props.onSubmit(payload);
     } else {
@@ -116,9 +158,11 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         ...(values.machineCodeText?.trim()
           ? { machineCodeText: values.machineCodeText.trim() }
           : {}),
+        ...(values.operatorText?.trim() ? { operatorText: values.operatorText.trim() } : {}),
         rejectedQty: Number(values.rejectedQty),
         reasonCategory: values.reasonCategory,
-        ...(values.reason?.trim() ? { reason: values.reason.trim() } : {}),
+        // Defect description is required (legacy L22591) — validated by RHF below.
+        reason: values.reason?.trim() ?? '',
         ...(values.reportedByText?.trim() ? { reportedByText: values.reportedByText.trim() } : {}),
       };
       await props.onSubmit(payload);
@@ -224,27 +268,51 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             </div>
 
             <div className="form-grp">
-              <label className="form-label" htmlFor="opSeq">
-                Op seq
-              </label>
-              <input
-                id="opSeq"
-                type="number"
-                min={1}
-                className="innovic-input"
-                {...register('opSeq', { valueAsNumber: true })}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="operationText">
+              <label className="form-label" htmlFor="jcOpId">
                 Operation
               </label>
+              {opsForJc.length > 0 ? (
+                <select
+                  id="jcOpId"
+                  className="innovic-select"
+                  value={watch('jcOpId') ?? ''}
+                  onChange={(e) => {
+                    const opId = e.target.value;
+                    const op = opsForJc.find((o) => o.id === opId);
+                    setValue('jcOpId', opId || undefined, { shouldDirty: true });
+                    setValue('opSeq', op ? op.opSeq : undefined, { shouldDirty: true });
+                    setValue('operationText', op ? op.operation : undefined, {
+                      shouldDirty: true,
+                    });
+                  }}
+                >
+                  <option value="">{selectedJcId ? '— Select op —' : '— Pick a JC first —'}</option>
+                  {opsForJc.map((op) => (
+                    <option key={op.id} value={op.id}>
+                      Op{op.opSeq}: {op.operation}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id="operationText"
+                  className="innovic-input"
+                  autoComplete="off"
+                  placeholder={selectedJcId ? 'No ops on this JC — type one' : 'DIR / TURN / S1'}
+                  {...register('operationText')}
+                />
+              )}
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="operatorText">
+                Operator
+              </label>
               <input
-                id="operationText"
+                id="operatorText"
                 className="innovic-input"
                 autoComplete="off"
-                placeholder="DIR / TURN / S1"
-                {...register('operationText')}
+                placeholder="Operator who ran the op"
+                {...register('operatorText')}
               />
             </div>
             <div className="form-grp">
@@ -289,7 +357,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
           <select id="reasonCategory" className="innovic-select" {...register('reasonCategory')}>
             {NC_REASON_CATEGORIES.map((r) => (
               <option key={r} value={r}>
-                {r.replaceAll('_', ' ')}
+                {NC_REASON_CATEGORY_LABELS[r]}
               </option>
             ))}
           </select>
@@ -297,15 +365,21 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="reason">
-            Defect description
+            Problem / Defect description<span className="req">★</span>
           </label>
           <textarea
             id="reason"
             className="innovic-textarea"
             rows={3}
             placeholder="Describe the defect or problem in detail…"
-            {...register('reason')}
+            {...register('reason', {
+              validate: (v) =>
+                (v?.trim().length ?? 0) > 0 || 'Describe the problem/defect',
+            })}
           />
+          {errors.reason?.message ? (
+            <div className="form-error">{errors.reason.message}</div>
+          ) : null}
         </div>
       </div>
 
@@ -354,6 +428,7 @@ function detailToFormValues(detail: NcRegister): FormValues {
     ...(detail.itemNameText ? { itemNameText: detail.itemNameText } : {}),
     ...(detail.soCodeText ? { soCodeText: detail.soCodeText } : {}),
     ...(detail.machineCodeText ? { machineCodeText: detail.machineCodeText } : {}),
+    ...(detail.operatorText ? { operatorText: detail.operatorText } : {}),
     rejectedQty: Number(detail.rejectedQty),
     reasonCategory: detail.reasonCategory,
     ...(detail.reason ? { reason: detail.reason } : {}),

@@ -6,6 +6,7 @@ export {
   listNcRegisterQuerySchema,
   ncRegisterListItemSchema,
   ncRegisterSchema,
+  ncRegisterSummarySchema,
   updateNcRegisterInputSchema,
 } from '@innovic/shared';
 export type {
@@ -16,5 +17,6 @@ export type {
   ListNcRegisterResponse,
   NcRegister,
   NcRegisterListItem,
+  NcRegisterSummary,
   UpdateNcRegisterInput,
 } from '@innovic/shared';

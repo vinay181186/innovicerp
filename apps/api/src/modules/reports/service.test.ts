@@ -28,18 +28,26 @@ beforeAll(async () => {
 });
 
 describe('reports service', () => {
-  it('listReports returns 11 registered reports with stable shape', () => {
+  it('listReports returns all registered reports with stable shape', () => {
     const result = service.listReports();
     const slugs = result.reports.map((r) => r.slug).sort();
     expect(slugs).toEqual([
       'daily-op-log',
+      'design-engineer-workload',
+      'design-issue-aging',
+      'design-project-summary',
       'grn-qc-log',
+      'item-tracker',
       'items-on-hand',
       'jc-ageing',
       'jc-status-summary',
+      'nc-by-so-jc',
+      'nc-register-all',
       'nc-summary-by-reason',
       'open-po-ageing',
       'operator-productivity',
+      'production-item-tracker',
+      'production-so-line-tracker',
       'so-open-backlog',
       'stock-movement-log',
       'vendor-po-summary',

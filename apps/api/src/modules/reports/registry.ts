@@ -18,6 +18,8 @@ import { itemTrackerReport } from './definitions/item-tracker';
 import { itemsOnHandReport } from './definitions/items-on-hand';
 import { jcAgeingReport } from './definitions/jc-ageing';
 import { jcStatusSummaryReport } from './definitions/jc-status-summary';
+import { ncBySoJcReport } from './definitions/nc-by-so-jc';
+import { ncRegisterAllReport } from './definitions/nc-register-all';
 import { ncSummaryByReasonReport } from './definitions/nc-summary-by-reason';
 import { openPoAgeingReport } from './definitions/open-po-ageing';
 import { operatorProductivityReport } from './definitions/operator-productivity';
@@ -47,6 +49,8 @@ export interface RegisteredReport {
 export const REPORTS: Record<string, RegisteredReport> = {
   [dailyOpLogReport.definition.slug]: dailyOpLogReport,
   [ncSummaryByReasonReport.definition.slug]: ncSummaryByReasonReport,
+  [ncBySoJcReport.definition.slug]: ncBySoJcReport,
+  [ncRegisterAllReport.definition.slug]: ncRegisterAllReport,
   [openPoAgeingReport.definition.slug]: openPoAgeingReport,
   [itemsOnHandReport.definition.slug]: itemsOnHandReport,
   [itemTrackerReport.definition.slug]: itemTrackerReport,

@@ -18,7 +18,7 @@
 import { z } from 'zod';
 import { NC_DISPOSITIONS } from '../enums/nc-disposition';
 import { NC_REASON_CATEGORIES } from '../enums/nc-reason-category';
-import { NC_STATUSES } from '../enums/nc-status';
+import { type NcStatus, NC_STATUSES } from '../enums/nc-status';
 
 export const ncStatusSchema = z.enum(NC_STATUSES);
 export const ncDispositionSchema = z.enum(NC_DISPOSITIONS);
@@ -43,6 +43,7 @@ export const ncRegisterSchema = z.object({
   itemNameText: z.string().nullable(),
   soCodeText: z.string().nullable(),
   machineCodeText: z.string().nullable(),
+  operatorText: z.string().nullable(),
   rejectedQty: z.string(), // numeric stored as string
   reasonCategory: ncReasonCategorySchema,
   reason: z.string().nullable(),
@@ -57,6 +58,9 @@ export const ncRegisterSchema = z.object({
   status: ncStatusSchema,
   reportedByText: z.string().nullable(),
   timeLogged: z.string().nullable(),
+  // Cross-reference: code of the CAPA whose ncRefs contains this NC's code
+  // (legacy `_capaForNC`, HTML L22758). null = no CAPA links this NC yet.
+  linkedCapaCode: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -92,9 +96,13 @@ export const createNcRegisterInputSchema = z.object({
   itemNameText: z.string().max(255).optional(),
   soCodeText: z.string().max(64).optional(),
   machineCodeText: z.string().max(64).optional(),
+  operatorText: z.string().max(255).optional(),
   rejectedQty: z.coerce.number().positive(),
   reasonCategory: ncReasonCategorySchema.default('other'),
-  reason: z.string().max(2000).optional(),
+  // Defect/problem description is REQUIRED for manual NC entry (legacy
+  // `_addManualNC` validates this — HTML L22591). Auto-NCs from QC keep it
+  // optional at the DB level, but the Report-NC form enforces it here.
+  reason: z.string().min(1, 'Defect/problem description is required').max(2000),
   reportedByText: z.string().max(255).optional(),
 });
 export type CreateNcRegisterInput = z.infer<typeof createNcRegisterInputSchema>;
@@ -109,6 +117,7 @@ export const updateNcRegisterInputSchema = z.object({
   reasonCategory: ncReasonCategorySchema.optional(),
   reason: z.string().max(2000).optional(),
   reportedByText: z.string().max(255).optional(),
+  operatorText: z.string().max(255).optional(),
 });
 export type UpdateNcRegisterInput = z.infer<typeof updateNcRegisterInputSchema>;
 
@@ -157,3 +166,27 @@ export interface ListNcRegisterResponse {
   limit: number;
   offset: number;
 }
+
+// ─── Summary (company-wide stat cards) ───────────────────────────────────────
+// Mirrors the 5 cards in legacy `renderNCRegister` (HTML L22508-22519):
+//   Total (count), Pending (count), Total Qty (Σ rejected_qty),
+//   Rework qty (Σ rejected_qty where disposition='rework'),
+//   Scrap qty (Σ rejected_qty where disposition='scrap').
+// Company-wide aggregates — NOT affected by the list's filters/pagination.
+export const ncRegisterSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  pending: z.number().int().nonnegative(),
+  totalQty: z.number().nonnegative(),
+  reworkQty: z.number().nonnegative(),
+  scrapQty: z.number().nonnegative(),
+});
+export type NcRegisterSummary = z.infer<typeof ncRegisterSummarySchema>;
+
+// NC status display labels — legacy filter dropdown text (HTML L22555).
+// `rework_done` reads "Rework Complete" in the legacy UI.
+export const NC_STATUS_LABELS: Record<NcStatus, string> = {
+  pending: 'Pending',
+  disposed: 'Disposed',
+  rework_done: 'Rework Complete',
+  closed: 'Closed',
+};

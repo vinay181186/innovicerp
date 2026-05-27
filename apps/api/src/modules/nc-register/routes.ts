@@ -19,6 +19,13 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     return service.listNcRegister(query, req.user);
   });
 
+  // Company-wide stat cards (legacy HTML L22508-22519). Declared before
+  // `/:id` so "summary" isn't captured as an id param.
+  app.get('/nc-register/summary', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNcRegisterSummary(req.user);
+  });
+
   app.get('/nc-register/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

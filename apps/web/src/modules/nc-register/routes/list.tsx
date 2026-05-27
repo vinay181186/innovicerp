@@ -2,7 +2,11 @@
 
 import {
   type ListNcRegisterQuery,
+  NC_REASON_CATEGORIES,
+  NC_REASON_CATEGORY_LABELS,
+  NC_STATUS_LABELS,
   NC_STATUSES,
+  type NcReasonCategory,
   type NcRegisterListItem,
   type NcStatus,
 } from '@innovic/shared';
@@ -13,7 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useNcRegisterList } from '../api';
+import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcStatusBadge } from '../components/nc-status-badge';
 
@@ -22,6 +26,7 @@ const PAGE_SIZE = 25;
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(NC_STATUSES).optional(),
+  reasonCategory: z.enum(NC_REASON_CATEGORIES).optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -56,13 +61,15 @@ function NcRegisterListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       status: search.status,
+      reasonCategory: search.reasonCategory,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [search.search, search.status, search.reasonCategory, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useNcRegisterList(query);
+  const { data: summary } = useNcRegisterSummary();
   const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
 
   const columns = useMemo<ColumnDef<NcRegisterListItem>[]>(
@@ -91,13 +98,30 @@ function NcRegisterListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'JC',
+        header: 'JC No.',
         cell: ({ row }) => (
-          <span className="mono" style={{ fontSize: 11 }}>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
             {row.original.jcCode ?? '—'}
-            {row.original.opSeq != null ? ` · op ${row.original.opSeq}` : ''}
           </span>
         ),
+      },
+      {
+        header: 'Operation',
+        cell: ({ row }) => {
+          const seq = row.original.jcOpSeqResolved ?? row.original.opSeq;
+          const op =
+            row.original.jcOpOperation ??
+            row.original.operationText ??
+            row.original.qcOperationText;
+          if (seq == null && !op) return <span className="text3" style={{ fontSize: 11 }}>—</span>;
+          return (
+            <span style={{ fontSize: 11 }}>
+              {seq != null ? `Op${seq}` : ''}
+              {seq != null && op ? ': ' : ''}
+              {op ?? ''}
+            </span>
+          );
+        },
       },
       {
         header: 'Item',
@@ -134,6 +158,24 @@ function NcRegisterListPage(): React.JSX.Element {
         header: 'Status',
         accessorKey: 'status',
         cell: ({ row }) => <NcStatusBadge status={row.original.status} />,
+      },
+      {
+        header: 'CAPA',
+        cell: ({ row }) =>
+          row.original.linkedCapaCode ? (
+            <Link
+              to="/capa"
+              className="mono"
+              style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700, textDecoration: 'none' }}
+              title="Open linked CAPA"
+            >
+              {row.original.linkedCapaCode}
+            </Link>
+          ) : (
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
+          ),
       },
     ],
     [],
@@ -186,7 +228,30 @@ function NcRegisterListPage(): React.JSX.Element {
             <option value="">All statuses</option>
             {NC_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
+                {NC_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+          <select
+            className="innovic-select"
+            value={search.reasonCategory ?? ''}
+            onChange={(e) => {
+              const v = e.target.value as NcReasonCategory | '';
+              void navigate({
+                search: (prev) => ({
+                  ...prev,
+                  reasonCategory: v === '' ? undefined : v,
+                  page: 1,
+                }),
+                replace: true,
+              });
+            }}
+            style={{ width: 160, fontSize: 12 }}
+          >
+            <option value="">All reasons</option>
+            {NC_REASON_CATEGORIES.map((r) => (
+              <option key={r} value={r}>
+                {NC_REASON_CATEGORY_LABELS[r]}
               </option>
             ))}
           </select>
@@ -201,6 +266,14 @@ function NcRegisterListPage(): React.JSX.Element {
             </Link>
           ) : null}
         </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <StatCard label="Total" value={summary?.total} color="var(--red)" />
+        <StatCard label="Pending" value={summary?.pending} color="var(--amber)" />
+        <StatCard label="Total Qty" value={summary?.totalQty} />
+        <StatCard label="Rework" value={summary?.reworkQty} color="var(--cyan)" />
+        <StatCard label="Scrap" value={summary?.scrapQty} color="var(--red)" />
       </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -242,7 +315,7 @@ function NcRegisterListPage(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No NCs
+                    No NCs recorded. NCs are auto-created when QC rejects parts.
                   </td>
                 </tr>
               ) : (
@@ -307,6 +380,26 @@ function NcRegisterListPage(): React.JSX.Element {
             Next <ChevronRight size={14} />
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Company-wide stat card (legacy HTML L22508-22519). `value` undefined while
+// the summary query is loading → shows a dash.
+function StatCard(props: {
+  label: string;
+  value: number | undefined;
+  color?: string;
+}): React.JSX.Element {
+  return (
+    <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{props.label}</div>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 22, color: props.color ?? 'var(--text)' }}
+      >
+        {props.value == null ? '—' : Math.round(props.value)}
       </div>
     </div>
   );

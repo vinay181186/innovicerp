@@ -2,8 +2,10 @@
 
 import type { NcRegister } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, Loader2, Pencil, Stamp, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useCreateCapa } from '@/modules/capa/api';
+import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -30,10 +32,19 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
+  const createCapa = useCreateCapa();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showDispose, setShowDispose] = useState(false);
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [capaError, setCapaError] = useState<string | null>(null);
+
+  // Full op list for the NC's JC — drives the dispose panel's rework-op
+  // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637).
+  const { data: jcOps } = useJcOpsEnriched(
+    { jobCardId: detail?.jobCardId },
+    { enabled: Boolean(detail?.jobCardId) },
+  );
 
   if (isLoading) {
     return (
@@ -63,6 +74,41 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const isReworkDisposed = detail.status === 'disposed' && detail.disposition === 'rework';
   const canEdit = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
   const isAdmin = me?.role === 'admin';
+  // CAPA can be created/seen by admin/manager/qc (matches capa_records RLS).
+  const canCapa = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // "Create CAPA" only once the NC is disposed/closed and has no linked CAPA
+  // (legacy: button shows when status !== 'pending' && !_capaForNC(ncNo)).
+  const showCreateCapa = canCapa && !isPending && !detail.linkedCapaCode;
+
+  // Resolve op_seq → operation label for the rework dropdown.
+  const reworkOpOptions = (jcOps ?? [])
+    .slice()
+    .sort((a, b) => a.opSeq - b.opSeq)
+    .map((o) => ({ opSeq: o.opSeq, operation: o.operation }));
+
+  // JC code for the CAPA snapshot — the NC read shape only carries jobCardId,
+  // so resolve the human code from the loaded JC ops (jobCardCode is joined).
+  const jcCode = (jcOps ?? [])[0]?.jobCardCode ?? null;
+
+  const onCreateCapa = async (): Promise<void> => {
+    setCapaError(null);
+    const operation = detail.operationText ?? detail.qcOperationText;
+    try {
+      await createCapa.mutateAsync({
+        type: 'Corrective',
+        ncRefs: [detail.code],
+        ...(jcCode ? { jcNo: jcCode } : {}),
+        ...(detail.soCodeText ? { soNo: detail.soCodeText } : {}),
+        ...(detail.itemCodeText ? { itemCode: detail.itemCodeText } : {}),
+        ...(operation ? { operation } : {}),
+        problem: detail.reason ?? detail.reasonCategory.replaceAll('_', ' '),
+        department: 'QC',
+      });
+      void navigate({ to: '/capa' });
+    } catch (e) {
+      setCapaError(e instanceof Error ? e.message : 'Failed to create CAPA.');
+    }
+  };
 
   const onDelete = (): void => {
     softDelete.mutate(detail.id, {
@@ -102,6 +148,21 @@ function NcRegisterDetailPage(): React.JSX.Element {
             >
               {detail.itemNameText ?? detail.itemCodeText ?? 'Untitled item'}
               <NcStatusBadge status={detail.status} />
+              {detail.linkedCapaCode ? (
+                <Link
+                  to="/capa"
+                  className="mono"
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--purple)',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                  }}
+                  title="Open linked CAPA"
+                >
+                  🛡 {detail.linkedCapaCode}
+                </Link>
+              ) : null}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -146,6 +207,23 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   Close rework
                 </button>
               </>
+            ) : null}
+            {showCreateCapa ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--purple)' }}
+                onClick={() => void onCreateCapa()}
+                disabled={createCapa.isPending}
+                title="Open a Corrective Action prefilled from this NC"
+              >
+                {createCapa.isPending ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Shield size={13} />
+                )}
+                Create CAPA
+              </button>
             ) : null}
             {canEdit ? (
               <Link
@@ -233,6 +311,21 @@ function NcRegisterDetailPage(): React.JSX.Element {
               {closeError}
             </div>
           ) : null}
+          {capaError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid #fca5a5',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {capaError}
+            </div>
+          ) : null}
           <DetailGrid detail={detail} />
         </div>
       </div>
@@ -240,7 +333,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
       {showDispose ? (
         <DisposeNcPanel
           nc={detail}
-          jcOpSeqs={[]}
+          jcCode={jcCode}
+          jcOps={reworkOpOptions}
           pending={dispose.isPending}
           error={
             dispose.isError
@@ -294,6 +388,7 @@ function DetailGrid(props: { detail: NcRegister }): React.JSX.Element {
       <Pair label="Op seq" value={detail.opSeq != null ? String(detail.opSeq) : '—'} />
       <Pair label="Operation" value={detail.operationText ?? detail.qcOperationText ?? '—'} />
       <Pair label="Machine" value={detail.machineCodeText ?? '—'} />
+      <Pair label="Operator" value={detail.operatorText ?? '—'} />
       <Pair label="SO No." value={detail.soCodeText ?? '—'} />
       <Pair label="Rejected qty" value={Number(detail.rejectedQty).toFixed(2)} />
       <Pair label="Reason category" value={detail.reasonCategory.replaceAll('_', ' ')} />

@@ -5,6 +5,7 @@ import type {
   ListNcRegisterQuery,
   ListNcRegisterResponse,
   NcRegister,
+  NcRegisterSummary,
   UpdateNcRegisterInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -16,7 +17,19 @@ export const ncRegisterKeys = {
   list: (q: ListNcRegisterQuery) => [...ncRegisterKeys.lists(), q] as const,
   details: () => [...ncRegisterKeys.all, 'detail'] as const,
   detail: (id: string) => [...ncRegisterKeys.details(), id] as const,
+  summary: () => [...ncRegisterKeys.all, 'summary'] as const,
 };
+
+export function useNcRegisterSummary(
+  options?: Omit<UseQueryOptions<NcRegisterSummary>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<NcRegisterSummary>({
+    queryKey: ncRegisterKeys.summary(),
+    queryFn: () => apiFetch<NcRegisterSummary>('/nc-register/summary'),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
 
 function toQueryString(q: ListNcRegisterQuery): string {
   const params = new URLSearchParams();
@@ -57,6 +70,7 @@ export function useCreateNcRegister() {
     mutationFn: (input) => apiFetch<NcRegister>('/nc-register', { method: 'POST', json: input }),
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       qc.setQueryData(ncRegisterKeys.detail(created.id), created);
     },
   });
@@ -69,6 +83,7 @@ export function useUpdateNcRegister(id: string) {
       apiFetch<NcRegister>(`/nc-register/${id}`, { method: 'PATCH', json: input }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });
@@ -82,6 +97,7 @@ export function useSoftDeleteNcRegister() {
     },
     onSuccess: (_, id) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       qc.removeQueries({ queryKey: ncRegisterKeys.detail(id) });
     },
   });
@@ -110,6 +126,7 @@ export function useDisposeNcRegister(id: string) {
       }),
     onSuccess: (resp) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       qc.setQueryData(ncRegisterKeys.detail(id), resp.nc);
       // Cascade fanout: rework bumps jc_ops.rework_qty (op-entry caches);
       // make_fresh creates a new JC (job-cards caches); use_as_is appends
@@ -130,6 +147,7 @@ export function useCloseNcRework(id: string) {
       }),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
       qc.setQueryData(ncRegisterKeys.detail(id), updated);
     },
   });

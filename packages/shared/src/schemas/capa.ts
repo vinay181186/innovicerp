@@ -8,7 +8,7 @@ import { z } from 'zod';
 export const CAPA_TYPES = ['Corrective', 'Preventive'] as const;
 export const CAPA_STATUSES = ['Open', 'In Progress', 'Verified', 'Closed'] as const;
 export const CAPA_RC_METHODS = ['5-Why', 'Fishbone', 'Other'] as const;
-export const CAPA_EFFECTIVENESS = ['', 'Effective', 'Not Effective'] as const;
+export const CAPA_EFFECTIVENESS = ['', 'Effective', 'Not Effective', 'Monitoring'] as const;
 
 export const capaTypeSchema = z.enum(CAPA_TYPES);
 export const capaStatusSchema = z.enum(CAPA_STATUSES);

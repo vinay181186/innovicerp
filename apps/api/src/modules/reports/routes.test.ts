@@ -5,6 +5,7 @@ import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
+import { listReportDefinitions } from './registry';
 import { reportsRoutes } from './routes';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -45,13 +46,14 @@ describe('reports routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('GET /reports returns the 11 registered report definitions for any role', async () => {
+  it('GET /reports returns all registered report definitions for any role', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     app = await buildApp(viewer);
     const res = await app.inject({ method: 'GET', url: '/reports' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.reports).toHaveLength(11);
+    // Any role sees every registered report (no role-based filtering).
+    expect(body.reports).toHaveLength(listReportDefinitions().length);
   });
 
   it('GET /reports/:slug runs and returns rows + columns + filters', async () => {

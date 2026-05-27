@@ -15,6 +15,9 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
+import { useNcRegisterList } from '@/modules/nc-register/api';
+import { useOperatorsList } from '@/modules/operators/api';
+import { useUsersList } from '@/modules/users/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCapaList, useCreateCapa, useUpdateCapa } from '../api';
 
@@ -237,7 +240,9 @@ function CapaPage(): React.JSX.Element {
         </>
       )}
 
-      {modal.kind === 'new' ? <NewCapaModal onClose={() => setModal({ kind: 'none' })} /> : null}
+      {modal.kind === 'new' ? (
+        <NewCapaModal capas={items} onClose={() => setModal({ kind: 'none' })} />
+      ) : null}
       {modal.kind === 'edit' ? (
         <EditCapaModal
           capa={modal.capa}
@@ -295,15 +300,49 @@ function Overlay(props: { title: string; onClose: () => void; children: React.Re
   );
 }
 
-function NewCapaModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+function NewCapaModal({
+  capas,
+  onClose,
+}: {
+  capas: CapaRecord[];
+  onClose: () => void;
+}): React.JSX.Element {
   const create = useCreateCapa();
+  // NC Reference is a dropdown of NCs that don't yet have a CAPA (legacy
+  // _capaForNC filter, L22832). On pick, back-fill jc/so/item/operation from
+  // the chosen NC (legacy L22847-22850).
+  const ncQuery = useNcRegisterList({ limit: 200, offset: 0 });
+  const usedNcRefs = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of capas) for (const r of c.ncRefs) set.add(r);
+    return set;
+  }, [capas]);
+  const availableNcs = useMemo(
+    () => (ncQuery.data?.items ?? []).filter((nc) => !usedNcRefs.has(nc.code)),
+    [ncQuery.data, usedNcRefs],
+  );
+
   const [type, setType] = useState<(typeof CAPA_TYPES)[number]>('Corrective');
   const [capaDate, setCapaDate] = useState(new Date().toISOString().slice(0, 10));
-  const [ncRefs, setNcRefs] = useState('');
+  const [ncRef, setNcRef] = useState('');
   const [jcNo, setJcNo] = useState('');
+  const [soNo, setSoNo] = useState('');
+  const [itemCode, setItemCode] = useState('');
+  const [operation, setOperation] = useState('');
   const [department, setDepartment] = useState('QC');
   const [problem, setProblem] = useState('');
   const [err, setErr] = useState<string | null>(null);
+
+  function onPickNc(code: string): void {
+    setNcRef(code);
+    const nc = availableNcs.find((x) => x.code === code);
+    if (nc) {
+      setJcNo(nc.jcCode ?? '');
+      setSoNo(nc.soCodeText ?? '');
+      setItemCode(nc.itemCode ?? nc.itemCodeText ?? '');
+      setOperation(nc.jcOpOperation ?? nc.operationText ?? '');
+    }
+  }
 
   async function submit(): Promise<void> {
     setErr(null);
@@ -314,10 +353,13 @@ function NewCapaModal({ onClose }: { onClose: () => void }): React.JSX.Element {
     const input: CreateCapaInput = {
       type,
       capaDate,
-      ncRefs: ncRefs.split(',').map((s) => s.trim()).filter(Boolean),
+      ncRefs: ncRef.trim() ? [ncRef.trim()] : [],
       problem: problem.trim(),
       department,
       ...(jcNo.trim() ? { jcNo: jcNo.trim() } : {}),
+      ...(soNo.trim() ? { soNo: soNo.trim() } : {}),
+      ...(itemCode.trim() ? { itemCode: itemCode.trim() } : {}),
+      ...(operation.trim() ? { operation: operation.trim() } : {}),
     };
     try {
       await create.mutateAsync(input);
@@ -343,8 +385,20 @@ function NewCapaModal({ onClose }: { onClose: () => void }): React.JSX.Element {
           <input type="date" className="innovic-input" value={capaDate} onChange={(e) => setCapaDate(e.target.value)} />
         </div>
         <div className="form-grp">
-          <label className="form-label">NC Reference(s)</label>
-          <input className="innovic-input" value={ncRefs} onChange={(e) => setNcRefs(e.target.value)} placeholder="NC-0001, NC-0002" />
+          <label className="form-label">NC Reference</label>
+          <select
+            className="innovic-select"
+            value={ncRef}
+            onChange={(e) => onPickNc(e.target.value)}
+            disabled={ncQuery.isLoading}
+          >
+            <option value="">{ncQuery.isLoading ? 'Loading NCs…' : '— None —'}</option>
+            {availableNcs.map((nc) => (
+              <option key={nc.id} value={nc.code}>
+                {nc.code} — {nc.reasonCategory} — {nc.jcCode ?? ''}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="form-grp">
           <label className="form-label">JC / SO Reference</label>
@@ -386,6 +440,20 @@ function EditCapaModal({
   onClose: () => void;
 }): React.JSX.Element {
   const update = useUpdateCapa();
+  // Responsible is a select of operators + active users (legacy L22862).
+  const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
+  const usersQuery = useUsersList({ limit: 200, offset: 0, isActive: true });
+  const responsibleOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const o of operatorsQuery.data?.operators ?? []) {
+      if (o.name) names.add(o.name);
+    }
+    for (const u of usersQuery.data?.items ?? []) {
+      if (u.fullName) names.add(u.fullName);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [operatorsQuery.data, usersQuery.data]);
+
   const [f, setF] = useState<UpdateCapaInput>({
     problem: capa.problem,
     rootCauseMethod: (capa.rootCauseMethod as UpdateCapaInput['rootCauseMethod']) ?? '5-Why',
@@ -462,7 +530,21 @@ function EditCapaModal({
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Responsible</label>
-              <input className="innovic-input" value={f.responsible ?? ''} onChange={(e) => set('responsible', e.target.value)} />
+              <select
+                className="innovic-select"
+                value={f.responsible ?? ''}
+                onChange={(e) => set('responsible', e.target.value)}
+              >
+                <option value="">— Select —</option>
+                {f.responsible && !responsibleOptions.includes(f.responsible) ? (
+                  <option value={f.responsible}>{f.responsible}</option>
+                ) : null}
+                {responsibleOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-grp">
               <label className="form-label">Target Date</label>

@@ -100,6 +100,7 @@ describe('nc-register routes', () => {
         itemId: firstItemId,
         rejectedQty: 5,
         reasonCategory: 'dimensional',
+        reason: 'route create defect',
       },
     });
     expect(res.statusCode).toBe(201);
@@ -140,6 +141,7 @@ describe('nc-register routes', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'viewer route defect',
       },
     });
     expect(viewerRes.statusCode).toBe(403);
@@ -159,6 +161,7 @@ describe('nc-register routes', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'operator route defect',
       },
     });
     expect(opRes.statusCode).toBe(201);

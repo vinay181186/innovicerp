@@ -32,6 +32,7 @@ import type {
   ListNcRegisterResponse,
   NcRegister,
   NcRegisterListItem,
+  NcRegisterSummary,
   UpdateNcRegisterInput,
 } from './schema';
 
@@ -137,7 +138,10 @@ function maybeDateLike(v: unknown): string | null {
   return dateLike(v);
 }
 
-function toNcRegister(row: typeof ncRegister.$inferSelect): NcRegister {
+function toNcRegister(
+  row: typeof ncRegister.$inferSelect,
+  linkedCapaCode: string | null = null,
+): NcRegister {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -153,6 +157,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect): NcRegister {
     itemNameText: row.itemNameText,
     soCodeText: row.soCodeText,
     machineCodeText: row.machineCodeText,
+    operatorText: row.operatorText,
     rejectedQty: row.rejectedQty,
     reasonCategory: row.reasonCategory,
     reason: row.reason,
@@ -167,12 +172,34 @@ function toNcRegister(row: typeof ncRegister.$inferSelect): NcRegister {
     status: row.status,
     reportedByText: row.reportedByText,
     timeLogged: maybeTsLike(row.timeLogged),
+    linkedCapaCode,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: tsLike(row.updatedAt),
     updatedBy: row.updatedBy,
     deletedAt: maybeTsLike(row.deletedAt),
   };
+}
+
+// Look up the CAPA code whose ncRefs jsonb array contains this NC code.
+// Mirrors legacy `_capaForNC` (HTML L22758). nc_refs is jsonb (a JSON array),
+// so use the @> containment operator with a jsonb array literal.
+async function lookupLinkedCapaCode(
+  tx: DbTransaction,
+  companyId: string,
+  ncCode: string,
+): Promise<string | null> {
+  const rows = await tx.execute(sql`
+    SELECT code
+    FROM public.capa_records
+    WHERE company_id = ${companyId}::uuid
+      AND deleted_at IS NULL
+      AND nc_refs @> ${JSON.stringify([ncCode])}::jsonb
+    ORDER BY created_at ASC
+    LIMIT 1
+  `);
+  const list = rows as unknown as Array<{ code: string }>;
+  return list[0]?.code ?? null;
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -204,6 +231,7 @@ export async function listNcRegister(
         nc.item_id AS "itemId", nc.item_code_text AS "itemCodeText",
         nc.item_name_text AS "itemNameText",
         nc.so_code_text AS "soCodeText", nc.machine_code_text AS "machineCodeText",
+        nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
         nc.reason_category AS "reasonCategory", nc.reason,
         nc.disposition,
@@ -224,7 +252,8 @@ export async function listNcRegister(
         jo.op_seq AS "jcOpSeqResolved",
         jo.operation AS "jcOpOperation",
         i.code AS "itemCode",
-        i.name AS "itemName"
+        i.name AS "itemName",
+        cap.code AS "linkedCapaCode"
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc
         ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
@@ -232,6 +261,15 @@ export async function listNcRegister(
         ON jo.id = nc.jc_op_id AND jo.deleted_at IS NULL
       LEFT JOIN public.items i
         ON i.id = nc.item_id AND i.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT c.code
+        FROM public.capa_records c
+        WHERE c.company_id = nc.company_id
+          AND c.deleted_at IS NULL
+          AND c.nc_refs @> to_jsonb(ARRAY[nc.code])
+        ORDER BY c.created_at ASC
+        LIMIT 1
+      ) cap ON TRUE
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${searchFrag}
@@ -275,6 +313,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     itemNameText: (r['itemNameText'] as string | null) ?? null,
     soCodeText: (r['soCodeText'] as string | null) ?? null,
     machineCodeText: (r['machineCodeText'] as string | null) ?? null,
+    operatorText: (r['operatorText'] as string | null) ?? null,
     rejectedQty: r['rejectedQty'] as string,
     reasonCategory: r['reasonCategory'] as NcRegister['reasonCategory'],
     reason: (r['reason'] as string | null) ?? null,
@@ -289,6 +328,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     status: r['status'] as NcRegister['status'],
     reportedByText: (r['reportedByText'] as string | null) ?? null,
     timeLogged: maybeTsLike(r['timeLogged']),
+    linkedCapaCode: (r['linkedCapaCode'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
@@ -318,7 +358,35 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError(`NC ${id} not found`);
-    return toNcRegister(row);
+    const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
+    return toNcRegister(row, linkedCapaCode);
+  });
+}
+
+// ─── Summary (company-wide stat cards — legacy HTML L22508-22519) ───────────
+
+export async function getNcRegisterSummary(user: AuthContext): Promise<NcRegisterSummary> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT
+        COUNT(*)::int AS "total",
+        COUNT(*) FILTER (WHERE status = 'pending')::int AS "pending",
+        COALESCE(SUM(rejected_qty), 0)::float8 AS "totalQty",
+        COALESCE(SUM(rejected_qty) FILTER (WHERE disposition = 'rework'), 0)::float8 AS "reworkQty",
+        COALESCE(SUM(rejected_qty) FILTER (WHERE disposition = 'scrap'), 0)::float8 AS "scrapQty"
+      FROM public.nc_register
+      WHERE company_id = ${companyId}::uuid
+        AND deleted_at IS NULL
+    `);
+    const row = (result as unknown as Array<Record<string, unknown>>)[0] ?? {};
+    return {
+      total: Number(row['total'] ?? 0),
+      pending: Number(row['pending'] ?? 0),
+      totalQty: Number(row['totalQty'] ?? 0),
+      reworkQty: Number(row['reworkQty'] ?? 0),
+      scrapQty: Number(row['scrapQty'] ?? 0),
+    };
   });
 }
 
@@ -371,6 +439,7 @@ export async function createNcRegister(
         itemNameText: input.itemNameText ?? null,
         soCodeText: input.soCodeText ?? null,
         machineCodeText: input.machineCodeText ?? null,
+        operatorText: input.operatorText ?? null,
         rejectedQty: input.rejectedQty.toFixed(2),
         reasonCategory: input.reasonCategory,
         reason: input.reason ?? null,
@@ -433,6 +502,7 @@ export async function updateNcRegister(
     if (input.reason !== undefined) updates['reason'] = input.reason ?? null;
     if (input.reportedByText !== undefined)
       updates['reportedByText'] = input.reportedByText ?? null;
+    if (input.operatorText !== undefined) updates['operatorText'] = input.operatorText ?? null;
 
     await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, id));
 

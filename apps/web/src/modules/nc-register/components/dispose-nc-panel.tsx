@@ -10,9 +10,19 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+export interface JcOpOption {
+  opSeq: number;
+  operation: string;
+}
+
 interface Props {
   nc: NcRegister;
-  jcOpSeqs: number[];
+  // Human JC code (the NC read shape only carries jobCardId) for the context
+  // block. Resolved upstream from the JC's loaded ops.
+  jcCode?: string | null;
+  // Full op list of the NC's JC (legacy `_disposeNC` renders every op). Empty
+  // = fall back to a free number input / the NC's own op_seq.
+  jcOps: JcOpOption[];
   onSubmit: (input: DisposeNcInput) => Promise<void> | void;
   onCancel: () => void;
   pending: boolean;
@@ -20,17 +30,17 @@ interface Props {
 }
 
 export function DisposeNcPanel(props: Props): React.JSX.Element {
-  const { nc, jcOpSeqs, onSubmit, onCancel, pending, error } = props;
+  const { nc, jcCode, jcOps, onSubmit, onCancel, pending, error } = props;
 
   const [action, setAction] = useState<NcDisposition | ''>('');
   const [reworkOpSeq, setReworkOpSeq] = useState<number | ''>(nc.opSeq ?? '');
   const [scrapCost, setScrapCost] = useState<number | ''>('');
   const [remarks, setRemarks] = useState<string>('');
 
-  const reworkOps = useMemo(() => {
-    if (jcOpSeqs.length > 0) return jcOpSeqs;
-    return nc.opSeq != null ? [nc.opSeq] : [];
-  }, [jcOpSeqs, nc.opSeq]);
+  const reworkOps = useMemo<JcOpOption[]>(() => {
+    if (jcOps.length > 0) return jcOps;
+    return nc.opSeq != null ? [{ opSeq: nc.opSeq, operation: '' }] : [];
+  }, [jcOps, nc.opSeq]);
 
   const submit = (e: React.FormEvent): void => {
     e.preventDefault();
@@ -56,6 +66,41 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
         </span>
       </div>
       <div className="panel-body">
+        {/* Context block — legacy `_disposeNC` header (HTML L22621-22628). */}
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            marginBottom: 14,
+            display: 'flex',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <CtxField label="JC">
+            <span className="mono" style={{ color: 'var(--cyan)' }}>
+              {jcCode ?? '—'}
+            </span>
+          </CtxField>
+          <CtxField label="ITEM">
+            {nc.itemCodeText}
+            {nc.itemNameText ? ` ${nc.itemNameText}` : ''}
+          </CtxField>
+          <CtxField label="OPERATION">
+            {nc.opSeq != null ? `Op${nc.opSeq}` : ''}
+            {nc.opSeq != null && (nc.operationText ?? nc.qcOperationText) ? ': ' : ''}
+            {nc.operationText ?? nc.qcOperationText ?? (nc.opSeq == null ? '—' : '')}
+          </CtxField>
+          <CtxField label="REJECTED QTY">
+            <span style={{ color: 'var(--red)' }}>{Number(nc.rejectedQty).toFixed(0)} pcs</span>
+          </CtxField>
+          <CtxField label="REASON">
+            {nc.reasonCategory.replaceAll('_', ' ')}
+            {nc.reason ? ` — ${nc.reason}` : ''}
+          </CtxField>
+        </div>
         <form onSubmit={submit}>
           <div className="form-grid form-grid-3">
             <div className="form-grp">
@@ -95,9 +140,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                     <option value="">
                       {nc.opSeq != null ? `Defaults to op ${nc.opSeq}` : '— pick op —'}
                     </option>
-                    {reworkOps.map((s) => (
-                      <option key={s} value={s}>
-                        op {s}
+                    {reworkOps.map((o) => (
+                      <option key={o.opSeq} value={o.opSeq}>
+                        Op{o.opSeq}
+                        {o.operation ? `: ${o.operation}` : ''}
                       </option>
                     ))}
                   </select>
@@ -214,6 +260,16 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div>
+      <span style={{ fontSize: 10, color: 'var(--text3)' }}>{props.label}</span>
+      <br />
+      <b>{props.children}</b>
     </div>
   );
 }

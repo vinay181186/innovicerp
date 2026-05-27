@@ -103,6 +103,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'dup test defect',
       },
       admin,
     );
@@ -115,6 +116,7 @@ describe('nc-register service', () => {
           itemId: firstItemId,
           rejectedQty: 1,
           reasonCategory: 'other',
+          reason: 'dup test defect',
         },
         admin,
       ),
@@ -131,6 +133,7 @@ describe('nc-register service', () => {
           itemId: firstItemId,
           rejectedQty: 1,
           reasonCategory: 'other',
+          reason: 'bad-jc test defect',
         },
         admin,
       ),
@@ -144,6 +147,7 @@ describe('nc-register service', () => {
           itemId: '00000000-0000-0000-0000-000000000000',
           rejectedQty: 1,
           reasonCategory: 'other',
+          reason: 'bad-item test defect',
         },
         admin,
       ),
@@ -161,6 +165,7 @@ describe('nc-register service', () => {
           itemId: firstItemId,
           rejectedQty: 1,
           reasonCategory: 'other',
+          reason: 'viewer test defect',
         },
         viewer,
       ),
@@ -178,6 +183,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 2,
         reasonCategory: 'surface',
+        reason: 'operator test defect',
       },
       operator,
     );
@@ -195,6 +201,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 3,
         reasonCategory: 'process',
+        reason: 'get test defect',
       },
       admin,
     );
@@ -248,6 +255,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'update test defect',
       },
       admin,
     );
@@ -273,6 +281,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'lock test defect',
       },
       admin,
     );
@@ -293,6 +302,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'delete test defect',
       },
       admin,
     );
@@ -308,6 +318,7 @@ describe('nc-register service', () => {
         itemId: firstItemId,
         rejectedQty: 1,
         reasonCategory: 'other',
+        reason: 'delete2 test defect',
       },
       admin,
     );
