@@ -61,13 +61,29 @@ describe('so-qc-status service', () => {
       // GRN-QC
       expect(l.grnDone).toBeLessThanOrEqual(l.grnTotal);
       expect(l.grnAccepted + l.grnRejected).toBeLessThanOrEqual(l.grnReceived);
+      expect(l.grnDetail.length).toBe(l.grnTotal);
+      expect(l.grnDetail.filter((g) => g.status === 'done').length).toBe(l.grnDone);
       // Docs
       expect(l.docCount).toBeGreaterThanOrEqual(0);
+      expect(l.docDetail.length).toBe(l.docCount);
+      expect(l.docUploaded).toBeLessThanOrEqual(l.docCount);
+      // TPI detail array length matches the count.
+      expect(l.tpiDetail.length).toBe(l.tpiCount);
+      // Rich QC-stage cell: total ops across JCs == qcOpsTotal.
+      expect(l.jcQc.reduce((s, j) => s + j.ops.length, 0)).toBe(l.qcOpsTotal);
+      // Overall % bar is bounded.
+      expect(l.overallPct).toBeGreaterThanOrEqual(0);
+      expect(l.overallPct).toBeLessThanOrEqual(100);
       // Overall enum
       expect(['none', 'pending', 'in_progress', 'passed']).toContain(l.overall);
+      // hasAnyQc is true exactly when some stage exists.
+      expect(l.hasAnyQc).toBe(
+        l.qcOpsTotal > 0 || l.tpiCount > 0 || l.grnTotal > 0 || l.docCount > 0,
+      );
       // A line with no stage activity at all reads as 'none'.
       if (l.qcOpsTotal === 0 && l.tpiCount === 0 && l.grnTotal === 0 && l.docCount === 0) {
         expect(l.overall).toBe('none');
+        expect(l.hasAnyQc).toBe(false);
       }
     }
   });

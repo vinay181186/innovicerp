@@ -1,14 +1,16 @@
 // QC History & Tracking (QC Wave 2). Ports legacy renderQCHistory (HTML
 // L23531): All/Pending/Completed tabs + 4 stat cards + SO/JC/Item + date
-// filters + pending QC table + completed QC-entries table. Read-only, legacy
-// chrome. Excel export (legacy SheetJS) deferred — POLISH.
+// filters + pending QC table + completed QC-entries table + Excel export.
+// Read-only, legacy chrome.
 
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { fmtDate } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '../api';
+import { exportCompletedQc, exportPendingQc } from '../lib/export';
 
 export const qcHistoryRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -74,6 +76,22 @@ function QcHistoryPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" />
             </span>
           ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={logs.length === 0}
+            onClick={() => exportCompletedQc(logs)}
+          >
+            ⬇ Export Completed
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={pending.length === 0}
+            onClick={() => exportPendingQc(pending)}
+          >
+            ⬇ Export Pending
+          </button>
           {(['all', 'pending', 'completed'] as const).map((tb) => (
             <button
               key={tb}
@@ -264,7 +282,7 @@ function Stat(props: { label: string; value: number; color: string }): React.JSX
 
 function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
   return (
-    <tr>
+    <tr className={o.overdue ? 'qc-alert-blink' : undefined}>
       <td className="td-code cyan">{o.jcCode}</td>
       <td className="td-ctr mono">Op{o.opSeq}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
@@ -286,12 +304,12 @@ function PendRow({ o }: { o: QcHistoryPendingRow }): React.JSX.Element {
         {o.qcPending}
       </td>
       <td className="text3" style={{ fontSize: 10 }}>
-        {o.pendSince ?? '—'}
+        {o.pendSince ? fmtDate(o.pendSince) : '—'}
         {o.overdue ? <span style={{ color: 'var(--red)', fontWeight: 700 }}> ⚠</span> : null}
       </td>
       <td>
         <Link
-          to="/qc-dashboard"
+          to="/qc-call-register"
           className="btn btn-primary btn-sm"
           style={{ fontSize: 10, whiteSpace: 'nowrap' }}
         >
@@ -320,7 +338,7 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
         {l.rejected}
       </td>
-      <td style={{ fontSize: 11 }}>{l.logDate}</td>
+      <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>
       <td style={{ fontSize: 11 }}>{l.shift ?? '—'}</td>
       <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
       <td className="text3" style={{ fontSize: 10 }}>
