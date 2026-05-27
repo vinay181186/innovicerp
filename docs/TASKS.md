@@ -82,10 +82,14 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** PT-2 (Print Templates P2 — template-consuming prints, Phase F, ADR-034, 2026-05-27)
+**Title:** Real-data Print buttons on PO / OSP DC / JW DC consuming the `*_*` templates via `{var}` substitution.
+**Status:** [x] PT-2 complete 2026-05-27, NOT yet committed. New shared web print-window util `apps/web/src/lib/print/doc-print.ts` (generalised P1's sample-only builder to real line items + meta + PO tax totals + Indian amount-in-words, ported from legacy `printPO` L25933/L25950) + `lib/print/company.ts` (companies row → header). P1's `print-templates/lib/test-print.ts` refactored to delegate to it (one builder, no divergence). Per-doc assemblers: `purchase-orders/lib/print-po.ts`, `delivery-challans/lib/print-ospdc.ts`, `jw-dc/lib/print-jwdc.ts`. Print buttons on PO detail + OSP DC (delivery-challans) detail + a NEW JW DC outward detail page `jw-dc/routes/detail.tsx` (route registered; list now links to it, old view-modal removed). Vendor + company fetched client-side at print time (`useVendor`/`useMyCompany`) — no API/migration change. 8/8 new web unit tests (amount-in-words/inr/fmtDate/templatesToBlocks) + web typecheck + lint clean.
+**Next:** PT-3 (C) — fixed-layout prints (Job Card, Route Card, Machine Queue, Dispatch Register, Daily Report, Invoice, Drawing) via a shared `printWindow` util, read each legacy `printX` fn at its step.
+
 **ID:** PT-1 (Print Templates P1 — Phase F, ADR-034, 2026-05-25)
 **Title:** Print Templates foundation — `print_templates` + `print_template_revisions` tables (migration 0042), shared defaults/vars/substitution lib, admin-only `print-templates` API module, admin `/print-templates` WYSIWYG editor + test print.
-**Status:** [x] P1 complete 2026-05-25. Scope A+B+C approved by user (full print feature incl. fixed-layout prints); P1 ships A (editor + store). 7/7 service tests green; api+web+shared typecheck + lint clean; migration applied to dev. Admin-only at RLS + service (legacy `isAdmin()` parity). Full revision history kept (Rule #8), UI shows last 5; reset-to-default soft-deletes the row. PARITY doc `docs/PARITY/print-templates.md`.
-**Next:** PT-2 (B) — `@/lib/print` window util + Print buttons on PO detail + JW-DC detail (+ OSP DC for Job-Work POs) consuming the templates with real data. Then PT-3 (C) — fixed-layout prints (Job Card, Route Card, Machine Queue, Dispatch Register, Daily Report, Invoice, Drawing) via a shared `printWindow` util, read each legacy `printX` fn at its step.
+**Status:** [x] P1 complete 2026-05-25, committed `5abc6ba`. Scope A+B+C approved by user (full print feature incl. fixed-layout prints); P1 ships A (editor + store). 7/7 service tests green; api+web+shared typecheck + lint clean; migration applied to dev. Admin-only at RLS + service (legacy `isAdmin()` parity). Full revision history kept (Rule #8), UI shows last 5; reset-to-default soft-deletes the row. PARITY doc `docs/PARITY/print-templates.md`.
 
 **ID:** SEC-STORAGE-1 (security follow-up from ADR-032, 2026-05-24)
 **Title:** Harden qc-docs Storage bucket — per-company object RLS.

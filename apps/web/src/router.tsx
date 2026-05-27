@@ -110,6 +110,7 @@ import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
+import { jwDcOutwardDetailRoute } from './modules/jw-dc/routes/detail';
 import { designTrackerListRoute } from './modules/design-tracker/routes/list';
 import { designProjectsListRoute } from './modules/design-projects/routes/list';
 import { designProjectDetailRoute } from './modules/design-projects/routes/detail';
@@ -175,6 +176,7 @@ const routeTree = rootRoute.addChildren([
     partyMaterialsListRoute,
     partyGrnListRoute,
     jwDcListRoute,
+    jwDcOutwardDetailRoute,
     designTrackerListRoute,
     designProjectsListRoute,
     designProjectDetailRoute,

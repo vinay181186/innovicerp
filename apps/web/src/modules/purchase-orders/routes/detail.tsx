@@ -2,12 +2,16 @@
 
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Inbox, Loader2, Pencil, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Inbox, Loader2, Pencil, Printer, Send, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { usePrintTemplates } from '../../print-templates/api';
+import { useMyCompany } from '../../settings/api';
+import { useVendor } from '../../vendors/api';
 import { usePurchaseOrder, useSoftDeletePurchaseOrder } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
+import { printPurchaseOrder } from '../lib/print-po';
 
 export const purchaseOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,6 +24,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
   const { data: me } = useSession();
+  const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
+  const { data: company } = useMyCompany();
+  const { data: templates } = usePrintTemplates();
   const softDelete = useSoftDeletePurchaseOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -55,6 +62,17 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     });
   };
 
+  const onPrint = (): void => {
+    const ok = printPurchaseOrder({
+      po: detail,
+      vendor,
+      company,
+      templates: templates?.items ?? [],
+      currentUser: me?.email,
+    });
+    if (!ok) window.alert('Allow popups to print.');
+  };
+
   const canEdit = me?.role === 'admin' || me?.role === 'manager';
   const isAdmin = me?.role === 'admin';
   const canIssueOrReceive = ['draft', 'open', 'partial', 'qc_pending'].includes(detail.status);
@@ -87,6 +105,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
+              <Printer size={13} /> Print
+            </button>
             {canIssueOrReceive && detail.poType === 'job_work' && canEdit ? (
               <Link
                 to="/delivery-challans/new"

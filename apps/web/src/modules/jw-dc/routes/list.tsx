@@ -8,7 +8,7 @@ import {
   type CreateJwDcOutwardLineInput,
   type JwDcOutwardListItem,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -107,7 +107,6 @@ function OutwardView(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
-  const [viewId, setViewId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useJwDcOutwardList({
     search: search.trim() || undefined,
@@ -190,7 +189,7 @@ function OutwardView(): React.JSX.Element {
               </thead>
               <tbody>
                 {data.items.map((dc) => (
-                  <OutwardRow key={dc.id} dc={dc} onView={(id) => setViewId(id)} />
+                  <OutwardRow key={dc.id} dc={dc} />
                 ))}
               </tbody>
             </table>
@@ -243,20 +242,11 @@ function OutwardView(): React.JSX.Element {
       </div>
 
       {showModal ? <NewOutwardModal onClose={() => setShowModal(false)} /> : null}
-      {viewId ? (
-        <ViewOutwardModal id={viewId} onClose={() => setViewId(null)} />
-      ) : null}
     </div>
   );
 }
 
-function OutwardRow({
-  dc,
-  onView,
-}: {
-  dc: JwDcOutwardListItem;
-  onView: (id: string) => void;
-}): React.JSX.Element {
+function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
   const stColor =
     dc.returnStatus === 'fully_returned'
       ? 'var(--green)'
@@ -273,13 +263,14 @@ function OutwardRow({
   return (
     <tr>
       <td>
-        <span
+        <Link
+          to="/jw-dc/$id"
+          params={{ id: dc.id }}
           className="mono fw-700"
-          style={{ color: 'var(--purple)', cursor: 'pointer' }}
-          onClick={() => onView(dc.id)}
+          style={{ color: 'var(--purple)' }}
         >
           {dc.code}
-        </span>
+        </Link>
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
         {dc.dcDate}
@@ -308,14 +299,14 @@ function OutwardRow({
         <span style={{ fontWeight: 700, color: stColor }}>{stLabel}</span>
       </td>
       <td>
-        <button
-          type="button"
+        <Link
+          to="/jw-dc/$id"
+          params={{ id: dc.id }}
           className="btn btn-ghost btn-sm"
-          onClick={() => onView(dc.id)}
           style={{ fontSize: 10 }}
         >
           👁 View
-        </button>
+        </Link>
       </td>
     </tr>
   );
@@ -767,152 +758,6 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         saving={createMut.isPending}
         saveLabel="Save Outward DC"
       />
-    </ModalShell>
-  );
-}
-
-// ─── View Outward modal ───────────────────────────────────────────────────
-
-function ViewOutwardModal({
-  id,
-  onClose,
-}: {
-  id: string;
-  onClose: () => void;
-}): React.JSX.Element {
-  const { data, isLoading } = useJwDcOutwardDetail(id);
-
-  return (
-    <ModalShell
-      onClose={onClose}
-      title={`📤 Outward DC — ${data?.code ?? ''}`}
-    >
-      {isLoading || !data ? (
-        <div className="text3" style={{ fontSize: 12 }}>
-          <Loader2 size={14} className="inline animate-spin" /> Loading…
-        </div>
-      ) : (
-        <>
-          <div
-            style={{
-              padding: 12,
-              background: 'var(--bg3)',
-              borderRadius: 6,
-              marginBottom: 14,
-              display: 'flex',
-              gap: 16,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div>
-              <span className="text3" style={{ fontSize: 10 }}>
-                DC NO.
-              </span>
-              <br />
-              <b style={{ color: 'var(--purple)' }}>{data.code}</b>
-            </div>
-            <div>
-              <span className="text3" style={{ fontSize: 10 }}>
-                DATE
-              </span>
-              <br />
-              <b>{data.dcDate}</b>
-            </div>
-            <div>
-              <span className="text3" style={{ fontSize: 10 }}>
-                JWPO
-              </span>
-              <br />
-              <b style={{ color: 'var(--cyan)' }}>{data.jwpoCodeText ?? '—'}</b>
-            </div>
-            <div>
-              <span className="text3" style={{ fontSize: 10 }}>
-                VENDOR
-              </span>
-              <br />
-              <b>{data.vendorNameText ?? data.vendorCodeText ?? '—'}</b>
-            </div>
-            <div>
-              <span className="text3" style={{ fontSize: 10 }}>
-                TOTAL SENT
-              </span>
-              <br />
-              <b style={{ color: 'var(--purple)' }}>{data.totalSentQty} pcs</b>
-            </div>
-            {data.vehicleNo ? (
-              <div>
-                <span className="text3" style={{ fontSize: 10 }}>
-                  VEHICLE
-                </span>
-                <br />
-                <b>{data.vehicleNo}</b>
-              </div>
-            ) : null}
-          </div>
-
-          <table style={{ width: '100%' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg4)' }}>
-                <th style={{ padding: 6 }}>#</th>
-                <th style={{ padding: 6 }}>Item Code</th>
-                <th style={{ padding: 6 }}>Item Name</th>
-                <th style={{ padding: 6 }}>Process</th>
-                <th style={{ padding: 6 }}>PO Qty</th>
-                <th style={{ padding: 6, color: 'var(--cyan)' }}>Sent</th>
-                <th style={{ padding: 6, color: 'var(--green)' }}>Returned</th>
-                <th style={{ padding: 6, color: 'var(--amber)' }}>Pending</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.lines.map((l, i) => (
-                <tr
-                  key={l.id}
-                  style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
-                >
-                  <td style={{ padding: 6 }}>{l.lineNo}</td>
-                  <td style={{ padding: 6 }}>{l.itemCodeText}</td>
-                  <td style={{ padding: 6 }}>{l.itemNameText ?? '—'}</td>
-                  <td style={{ padding: 6, color: 'var(--purple)' }}>
-                    {l.processText ?? '—'}
-                  </td>
-                  <td className="td-ctr mono" style={{ padding: 6 }}>
-                    {l.poQty}
-                  </td>
-                  <td
-                    className="td-ctr mono fw-700"
-                    style={{ padding: 6, color: 'var(--cyan)' }}
-                  >
-                    {l.sentQty}
-                  </td>
-                  <td className="td-ctr mono" style={{ padding: 6, color: 'var(--green)' }}>
-                    {l.alreadyReturned}
-                  </td>
-                  <td
-                    className="td-ctr mono"
-                    style={{
-                      padding: 6,
-                      color: l.pending > 0 ? 'var(--amber)' : 'var(--green)',
-                    }}
-                  >
-                    {l.pending}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {data.remarks ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-              Remarks: {data.remarks}
-            </div>
-          ) : null}
-        </>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Close
-        </button>
-      </div>
     </ModalShell>
   );
 }

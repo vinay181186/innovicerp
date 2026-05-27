@@ -2,12 +2,16 @@
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Inbox, Loader2 } from 'lucide-react';
+import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { usePrintTemplates } from '../../print-templates/api';
+import { useMyCompany } from '../../settings/api';
+import { useVendor } from '../../vendors/api';
 import { useCancelDeliveryChallan, useDeliveryChallan } from '../api';
 import { DcStatusBadge } from '../components/dc-status-badge';
+import { printOspDc } from '../lib/print-ospdc';
 
 export const deliveryChallanDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -24,6 +28,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const { id } = deliveryChallanDetailRoute.useParams();
   const { data, isLoading, isError, error } = useDeliveryChallan(id);
   const { data: me } = useSession();
+  const { data: vendor } = useVendor(data?.vendorId ?? undefined);
+  const { data: company } = useMyCompany();
+  const { data: templates } = usePrintTemplates();
   const cancel = useCancelDeliveryChallan();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -87,6 +94,17 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     }
   };
 
+  const onPrint = (): void => {
+    const ok = printOspDc({
+      dc,
+      vendor,
+      company,
+      templates: templates?.items ?? [],
+      currentUser: me?.email,
+    });
+    if (!ok) window.alert('Allow popups to print.');
+  };
+
   return (
     <div>
       <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
@@ -108,6 +126,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
+              <Printer size={13} /> Print
+            </button>
             {canReceive ? (
               <Link
                 to="/delivery-challans/$id/receive"
