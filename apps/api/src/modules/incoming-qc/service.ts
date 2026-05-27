@@ -40,9 +40,11 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
-        GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays"
+        GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays",
+        COALESCE(pol.rate, 0) AS "rate"
       FROM public.goods_receipt_note_lines l
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
+      LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
       WHERE l.company_id = ${companyId}::uuid
@@ -51,9 +53,14 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         AND (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) > 0
       ORDER BY h.grn_date ASC, h.code ASC
     `);
-    const pending: IncomingQcPendingRow[] = (
-      pendingRows as unknown as Array<Record<string, unknown>>
-    ).map((r) => ({
+    const rawPending = pendingRows as unknown as Array<Record<string, unknown>>;
+    // Value stuck in QC pipeline: Σ pendingQty × po_lines.rate (legacy L23839).
+    // rate is null for manual GRN lines (no PO line) → treated as 0.
+    const valueInQc = rawPending.reduce(
+      (s, r) => s + Number(r['pendingQty'] ?? 0) * Number(r['rate'] ?? 0),
+      0,
+    );
+    const pending: IncomingQcPendingRow[] = rawPending.map((r) => ({
       grnLineId: r['grnLineId'] as string,
       grnId: r['grnId'] as string,
       grnNo: r['grnNo'] as string,
@@ -141,6 +148,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       avgWaitDays,
       oldestDays: oldest ? oldest.waitDays : 0,
       oldestGrnNo: oldest ? oldest.grnNo : null,
+      valueInQc: Math.round(valueInQc),
       todayAcceptedQty: Number(t['todayAcceptedQty'] ?? 0),
       todayAcceptedGrns: Number(t['todayAcceptedGrns'] ?? 0),
       todayRejectedQty: Number(t['todayRejectedQty'] ?? 0),

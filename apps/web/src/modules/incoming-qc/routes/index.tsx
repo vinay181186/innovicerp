@@ -102,6 +102,12 @@ function IncomingQcPage(): React.JSX.Element {
               {...(data.metrics.oldestGrnNo ? { sub: data.metrics.oldestGrnNo } : {})}
             />
             <Card
+              label="Value in QC"
+              value={`₹${data.metrics.valueInQc.toLocaleString('en-IN')}`}
+              color="var(--amber)"
+              valueFontSize={18}
+            />
+            <Card
               label="Today Accepted"
               value={data.metrics.todayAcceptedQty}
               color="var(--green)"
@@ -138,7 +144,7 @@ function IncomingQcPage(): React.JSX.Element {
                   {data.pending.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="empty-state">
-                        ✅ No GRNs awaiting QC.
+                        ✅ No items pending QC inspection
                       </td>
                     </tr>
                   ) : (
@@ -189,6 +195,15 @@ function IncomingQcPage(): React.JSX.Element {
               </table>
             </div>
           </div>
+
+          <div
+            className="text3"
+            style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}
+          >
+            💡 Items appear here automatically when GRN is done. Click <b>🔬 Inspect</b> to
+            accept/reject and optionally attach QC report. Accepted qty goes to Store stock,
+            rejected qty tracked for vendor action.
+          </div>
         </>
       )}
     </div>
@@ -200,13 +215,14 @@ function Card(props: {
   value: number | string;
   color: string;
   sub?: string;
+  valueFontSize?: number;
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
       <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
         {props.label}
       </div>
-      <div className="mono fw-700" style={{ fontSize: 24, color: props.color }}>
+      <div className="mono fw-700" style={{ fontSize: props.valueFontSize ?? 24, color: props.color }}>
         {props.value}
       </div>
       {props.sub ? (

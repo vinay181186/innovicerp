@@ -34,6 +34,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         jo.operation, jc.order_qty AS "orderQty",
         vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
+        jc.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
         (SELECT MAX(ol.log_date) FROM public.op_log ol
           WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "pendSince"
       FROM public.v_jc_op_status vos
@@ -69,6 +70,8 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         qcPending: Number(r['qcPending'] ?? 0),
         pendSince,
         overdue: pendSince !== null && pendSince < today,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+        qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
       };
     });
 
@@ -78,7 +81,8 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
         so.code AS "soCode", i.code AS "itemCode", jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
-        ol.log_date AS "logDate", ol.shift, ol.operator_name AS "inspector", ol.remarks
+        ol.log_date AS "logDate", ol.shift, ol.operator_name AS "inspector", ol.remarks,
+        ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate"
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id AND jo.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -106,6 +110,8 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         shift: (r['shift'] as string | null) ?? null,
         inspector: (r['inspector'] as string | null) ?? null,
         remarks: (r['remarks'] as string | null) ?? null,
+        logNo: (r['logNo'] as string | null) ?? '',
+        qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
       }),
     );
 

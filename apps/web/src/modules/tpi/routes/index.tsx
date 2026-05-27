@@ -8,6 +8,7 @@ import {
   SHIFT_LABELS,
   type Shift,
   type SubmitQcLogInput,
+  type TpiCompletedRow,
   type TpiPendingRow,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -25,6 +26,61 @@ export const tpiRoute = createRoute({
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Excel export of completed TPI records (legacy _tpiExport L21572 / "⬇ Excel"
+// button). Client-side from the loaded `completed` rows — columns mirror the
+// legacy completed table. xlsx is dynamic-imported so the cost only lands when
+// the user actually exports.
+async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
+  const { utils: xlsxUtils, write: xlsxWrite } = await import('xlsx');
+  const respLabel = (d: number | null): string =>
+    d === null ? '' : d <= 0 ? 'Same day' : `${d}d`;
+  const aoa: (string | number)[][] = [
+    [
+      'JC',
+      'OP',
+      'SO',
+      'Item',
+      'Operation',
+      'Acc',
+      'Rej',
+      'Call Date',
+      'Attended',
+      'Response',
+      'Inspector',
+      'Organization',
+      'Cert No.',
+    ],
+    ...rows.map((l) => [
+      l.jcCode,
+      `Op${l.opSeq}`,
+      l.soCode ?? '',
+      l.itemCode ?? '',
+      l.operation,
+      l.accepted,
+      l.rejected,
+      l.callDate ?? '',
+      l.attendedDate,
+      respLabel(l.respDays),
+      l.inspector ?? '',
+      l.organization ?? '',
+      l.certNo ?? '',
+    ]),
+  ];
+  const sheet = xlsxUtils.aoa_to_sheet(aoa);
+  const wb = xlsxUtils.book_new();
+  xlsxUtils.book_append_sheet(wb, sheet, 'TPI Records');
+  const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });
+  const blob = new Blob([buf], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `TPI_Records_${todayIso()}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function TpiPage(): React.JSX.Element {
@@ -99,6 +155,15 @@ function TpiPage(): React.JSX.Element {
                 <span style={{ color: 'var(--green)' }}>✅</span> TPI Completed Records (
                 {completed.length})
               </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 10 }}
+                disabled={completed.length === 0}
+                onClick={() => void exportTpiRecords(completed)}
+              >
+                ⬇ Export
+              </button>
             </div>
             <div className="tbl-wrap">
               <table className="innovic-table">

@@ -781,3 +781,19 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Overdue QC blink — ported verbatim from legacy CSS (HTML L252-253).
+   Applied to overdue pending QC rows/cards in QC History + QC Call Register. */
+@keyframes qcBlink {
+  0%,
+  100% {
+    background: rgba(239, 68, 68, 0.15);
+  }
+  50% {
+    background: rgba(239, 68, 68, 0.35);
+  }
+}
+.qc-alert-blink {
+  animation: qcBlink 1s ease-in-out infinite;
+  border-left: 3px solid var(--red) !important;
+}

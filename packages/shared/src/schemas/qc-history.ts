@@ -21,6 +21,9 @@ export const qcHistoryPendingRowSchema = z.object({
   qcPending: z.number().int().nonnegative(),
   pendSince: z.string().nullable(),
   overdue: z.boolean(),
+  // Legacy renderQCDashboard L4135/L4140: client PO line tag + QC call date.
+  clientPoLineNo: z.string().nullable(),
+  qcCallDate: z.string().nullable(),
 });
 export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;
 
@@ -37,6 +40,10 @@ export const qcHistoryLogRowSchema = z.object({
   shift: z.string().nullable(),
   inspector: z.string().nullable(),
   remarks: z.string().nullable(),
+  // Legacy renderQCDashboard L4215/L4198: completion log no (mono) + the op's
+  // QC call date so the card can show Called → Attended — Response: N days.
+  logNo: z.string(),
+  qcCallDate: z.string().nullable(),
 });
 export type QcHistoryLogRow = z.infer<typeof qcHistoryLogRowSchema>;
 
