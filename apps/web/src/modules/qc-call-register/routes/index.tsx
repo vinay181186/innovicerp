@@ -3,7 +3,7 @@
 // completed QC log. Frontend-only — data from the qc-history endpoint, the QC
 // write reuses op-entry's submitQcLog mutation. Legacy chrome.
 
-import { SHIFTS, type Shift, type SubmitQcLogInput } from '@innovic/shared';
+import { SHIFTS, SHIFT_LABELS, type Shift, type SubmitQcLogInput } from '@innovic/shared';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -233,7 +233,7 @@ function PendingCall(props: {
               >
                 {SHIFTS.map((s) => (
                   <option key={s} value={s}>
-                    {s === 'day' ? 'Day' : 'Night'}
+                    {SHIFT_LABELS[s]}
                   </option>
                 ))}
               </select>

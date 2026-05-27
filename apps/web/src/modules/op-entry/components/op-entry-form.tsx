@@ -5,6 +5,7 @@
 import {
   type JcOpEnriched,
   SHIFTS,
+  SHIFT_LABELS,
   type Shift,
   type StartOpInput,
   type SubmitOpLogInput,
@@ -189,7 +190,7 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
         >
           {SHIFTS.map((s) => (
             <option key={s} value={s}>
-              {s === 'day' ? 'Day' : 'Night'}
+              {SHIFT_LABELS[s]}
             </option>
           ))}
         </select>

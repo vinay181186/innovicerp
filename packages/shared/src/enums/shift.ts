@@ -3,3 +3,9 @@
 export const SHIFTS = ['day', 'night', 'general'] as const;
 
 export type Shift = (typeof SHIFTS)[number];
+
+export const SHIFT_LABELS: Record<Shift, string> = {
+  day: 'Day',
+  night: 'Night',
+  general: 'General',
+};

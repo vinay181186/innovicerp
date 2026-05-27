@@ -3,7 +3,13 @@
 // completed TPI records table. The submit reuses op-entry submitQcLog with
 // isTpi + tpi metadata (op_log, migration 0037). Legacy chrome.
 
-import { SHIFTS, type Shift, type SubmitQcLogInput, type TpiPendingRow } from '@innovic/shared';
+import {
+  SHIFTS,
+  SHIFT_LABELS,
+  type Shift,
+  type SubmitQcLogInput,
+  type TpiPendingRow,
+} from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -284,7 +290,7 @@ function PendingTpi(props: {
               <select className="innovic-select" value={shift} onChange={(e) => setShift(e.target.value as Shift)}>
                 {SHIFTS.map((s) => (
                   <option key={s} value={s}>
-                    {s === 'day' ? 'Day' : 'Night'}
+                    {SHIFT_LABELS[s]}
                   </option>
                 ))}
               </select>
