@@ -1,14 +1,14 @@
 // QC Command Center (legacy renderQCCommandCenter L18613). 5-tab QC control
 // board: Queue / First-Pass Yield / Rejection Pareto / Inspector Performance /
-// Rework. Queue + FPY + Rework + stats come from /qc-command (op_log QC groups
-// + qc_assignments). Pareto + Inspector reuse /qc-dashboard. Legacy chrome.
+// Rework. All five tabs + stats come from /qc-command (op_log QC groups +
+// qc_assignments + nc_register) — Pareto + Inspector are now real legacy-parity
+// reports, no longer reusing /qc-dashboard. Legacy chrome.
 
 import type { QcCommandQueueRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { useQcDashboard } from '@/modules/qc-dashboard/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePickUpQc, useQcCommand } from '../api';
@@ -51,7 +51,6 @@ function QcCommandPage(): React.JSX.Element {
   const tab: Tab = search.tab ?? 'queue';
 
   const cmd = useQcCommand();
-  const dash = useQcDashboard({});
   const { data: me } = useSession();
   const pickUp = usePickUpQc();
 
@@ -161,8 +160,10 @@ function QcCommandPage(): React.JSX.Element {
           ) : null}
           {tab === 'fpy' && cmd.data ? <FpyTab fpy={cmd.data.fpy} /> : null}
           {tab === 'rework' ? <ReworkTab rework={cmd.data?.rework ?? []} /> : null}
-          {tab === 'pareto' ? <ParetoTab reasons={dash.data?.topRejectionReasons ?? []} /> : null}
-          {tab === 'inspector' ? <InspectorTab perf={dash.data?.engineerPerf ?? []} /> : null}
+          {tab === 'pareto' && cmd.data ? <ParetoTab pareto={cmd.data.pareto} /> : null}
+          {tab === 'inspector' ? (
+            <InspectorTab perf={cmd.data?.inspectorPerf ?? []} />
+          ) : null}
         </>
       )}
 

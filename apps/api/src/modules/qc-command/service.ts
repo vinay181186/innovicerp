@@ -19,11 +19,14 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   QcAssignInput,
   QcAssignmentResult,
+  QcCommandPareto,
   QcCommandResponse,
   QcCommandQueueRow,
   QcFpyGroupRow,
   QcFpyItemRow,
   QcInspectorOption,
+  QcInspectorPerfRow,
+  QcParetoRow,
   QcPickUpInput,
   QcReworkRow,
   UserRole,
@@ -100,7 +103,7 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
   const today = new Date().toISOString().slice(0, 10);
 
   return withUserContext(user, async (tx) => {
-    const [pendingRes, logRes, assignRes, inspectorRes] = await Promise.all([
+    const [pendingRes, logRes, assignRes, inspectorRes, paretoRes] = await Promise.all([
       // 1. Pending QC ops (the queue base).
       tx.execute(sql`
         SELECT
@@ -158,6 +161,14 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         FROM public.users
         WHERE company_id = ${companyId}::uuid AND is_active = true AND deleted_at IS NULL
         ORDER BY "name"
+      `),
+
+      // 5. Every NC (for the rejection Pareto — ALL records, legacy L18835).
+      tx.execute(sql`
+        SELECT reason_category AS "reason", rejected_qty AS "rejectedQty",
+               item_code_text AS "itemCode"
+        FROM public.nc_register
+        WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
       `),
     ]);
 
@@ -270,6 +281,86 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
 
     const inspectors = inspectorRes as unknown as QcInspectorOption[];
 
+    // ── Rejection Pareto (legacy _qccRenderPareto: group ALL NCs by reason,
+    // sort by rejected qty desc, % of total qty, top-3 item codes) ──
+    interface NcRow {
+      reason: string | null;
+      rejectedQty: string | number | null;
+      itemCode: string | null;
+    }
+    const reasonAcc = new Map<string, { count: number; qty: number; items: Map<string, number> }>();
+    for (const nc of paretoRes as unknown as NcRow[]) {
+      const reason = nc.reason ?? 'other';
+      const acc = reasonAcc.get(reason) ?? { count: 0, qty: 0, items: new Map() };
+      acc.count += 1;
+      acc.qty += Number(nc.rejectedQty ?? 0);
+      if (nc.itemCode) acc.items.set(nc.itemCode, (acc.items.get(nc.itemCode) ?? 0) + 1);
+      reasonAcc.set(reason, acc);
+    }
+    const paretoSorted = [...reasonAcc.entries()].sort((a, b) => b[1].qty - a[1].qty);
+    const paretoTotalQty = paretoSorted.reduce((s, [, v]) => s + v.qty, 0);
+    const paretoRows: QcParetoRow[] = paretoSorted.map(([reason, v]) => ({
+      reason,
+      count: v.count,
+      rejectedQty: v.qty,
+      pct: paretoTotalQty > 0 ? Math.round((v.qty / paretoTotalQty) * 100) : 0,
+      topItems: [...v.items.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([code]) => code)
+        .join(', '),
+    }));
+    const pareto: QcCommandPareto = {
+      rows: paretoRows,
+      totalCount: paretoSorted.reduce((s, [, v]) => s + v.count, 0),
+      totalQty: paretoTotalQty,
+    };
+
+    // ── Inspector Performance (legacy _qccRenderInspector: per-inspector over
+    // ALL QC entries + current assigned load; Avg-Hrs dropped — no hours data) ──
+    const inspAcc = new Map<
+      string,
+      { inspections: number; accepted: number; rejected: number; jcs: Set<string> }
+    >();
+    for (const l of logs) {
+      const name = l.inspector || '(unknown)';
+      const acc = inspAcc.get(name) ?? {
+        inspections: 0,
+        accepted: 0,
+        rejected: 0,
+        jcs: new Set<string>(),
+      };
+      acc.inspections += 1;
+      acc.accepted += Number(l.qty);
+      acc.rejected += Number(l.rejectQty);
+      acc.jcs.add(l.jcCode);
+      inspAcc.set(name, acc);
+    }
+    const loadByInspector = new Map<string, number>();
+    for (const a of assignments) {
+      loadByInspector.set(a.inspectorName, (loadByInspector.get(a.inspectorName) ?? 0) + 1);
+    }
+    // Inspectors with a current load but no entries yet still appear (legacy).
+    for (const name of loadByInspector.keys()) {
+      if (!inspAcc.has(name)) {
+        inspAcc.set(name, { inspections: 0, accepted: 0, rejected: 0, jcs: new Set<string>() });
+      }
+    }
+    const inspectorPerf: QcInspectorPerfRow[] = [...inspAcc.entries()]
+      .map(([name, v]) => {
+        const tot = v.accepted + v.rejected;
+        return {
+          name,
+          inspections: v.inspections,
+          jcs: v.jcs.size,
+          accepted: v.accepted,
+          rejected: v.rejected,
+          rejRate: tot > 0 ? Math.round((v.rejected / tot) * 100) : 0,
+          currentLoad: loadByInspector.get(name) ?? 0,
+        };
+      })
+      .sort((a, b) => b.inspections - a.inspections);
+
     return {
       stats: {
         pendingOps: queue.length,
@@ -290,6 +381,8 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         byItem,
       },
       rework,
+      pareto,
+      inspectorPerf,
       inspectors,
     };
   });

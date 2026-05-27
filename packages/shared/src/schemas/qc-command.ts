@@ -69,6 +69,33 @@ export interface QcReworkRow {
   daysElapsed: number;
 }
 
+// ── Rejection Pareto tab (legacy _qccRenderPareto L18833) — ALL NCs ──
+export interface QcParetoRow {
+  reason: string; // nc_register.reason_category value
+  count: number; // NC count for this reason
+  rejectedQty: number; // Σ rejected_qty
+  pct: number; // % of total rejected qty
+  topItems: string; // top-3 item codes for this reason, comma-joined
+}
+export interface QcCommandPareto {
+  rows: QcParetoRow[]; // sorted by rejectedQty desc (rank order)
+  totalCount: number;
+  totalQty: number;
+}
+
+// ── Inspector Performance tab (legacy _qccRenderInspector L18873) — ALL QC ──
+// Avg-Hrs/Inspection intentionally dropped (op_log has no hours column; legacy
+// itself flagged it as mobile-entry-dependent).
+export interface QcInspectorPerfRow {
+  name: string;
+  inspections: number; // count of QC op_log entries
+  jcs: number; // distinct JCs inspected
+  accepted: number; // Σ accepted qty
+  rejected: number; // Σ rejected qty
+  rejRate: number; // rejected / (accepted+rejected) %
+  currentLoad: number; // active qc_assignments for this inspector
+}
+
 // ── Assignable inspector (Assign modal options) ──
 export interface QcInspectorOption {
   id: string;
@@ -81,6 +108,8 @@ export interface QcCommandResponse {
   queue: QcCommandQueueRow[];
   fpy: QcCommandFpy;
   rework: QcReworkRow[];
+  pareto: QcCommandPareto;
+  inspectorPerf: QcInspectorPerfRow[];
   inspectors: QcInspectorOption[];
 }
 

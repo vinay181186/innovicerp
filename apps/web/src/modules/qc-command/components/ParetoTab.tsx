@@ -1,62 +1,84 @@
-// Rejection Pareto tab. Top rejection reasons from the QC dashboard
-// (nc_register, current month), count + share bar (legacy _qccRenderPareto).
+// Rejection Pareto tab (legacy _qccRenderPareto L18833). ALL NCs grouped by
+// reason, sorted by rejected qty desc: rank #, NC count, rejected qty, % of
+// total qty, top-3 items, rank-colored distribution bar + header totals.
 
-export function ParetoTab({
-  reasons,
-}: {
-  reasons: { reasonCategory: string; count: number; pct: number }[];
-}): React.JSX.Element {
+import { NC_REASON_CATEGORY_LABELS, type QcCommandPareto } from '@innovic/shared';
+
+const RANK_COLORS = ['#EF4444', '#F59E0B', '#F97316', '#64748B'];
+function rankColor(i: number): string {
+  return RANK_COLORS[i] ?? '#64748B';
+}
+
+function reasonLabel(reason: string): string {
+  return (NC_REASON_CATEGORY_LABELS as Record<string, string>)[reason] ?? reason;
+}
+
+export function ParetoTab({ pareto }: { pareto: QcCommandPareto }): React.JSX.Element {
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <span className="panel-title">Top Rejection Reasons</span>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>Reason</th>
-              <th style={{ textAlign: 'center' }}>Count</th>
-              <th>Share</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reasons.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="empty-state">
-                  No rejections recorded.
-                </td>
-              </tr>
-            ) : (
-              reasons.map((r) => (
-                <tr key={r.reasonCategory}>
-                  <td className="fw-700" style={{ fontSize: 12, textTransform: 'capitalize' }}>
-                    {r.reasonCategory}
-                  </td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
-                    {r.count}
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+    <div>
+      <div className="panel">
+        <div className="panel-hdr">
+          <span className="panel-title">
+            Rejection Reason Pareto — Total: {pareto.totalCount} NCs, {pareto.totalQty} pcs rejected
+          </span>
+        </div>
+        {pareto.rows.length === 0 ? (
+          <div className="empty-state" style={{ color: 'var(--green)' }}>
+            ✅ No rejections recorded
+          </div>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Reason</th>
+                  <th className="td-ctr">NC Count</th>
+                  <th className="td-ctr">Rejected Qty</th>
+                  <th className="td-ctr">% of Total</th>
+                  <th>Top Items</th>
+                  <th style={{ width: 200 }}>Distribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pareto.rows.map((r, i) => (
+                  <tr key={r.reason}>
+                    <td className="td-ctr mono fw-700">{i + 1}</td>
+                    <td style={{ fontSize: 12, fontWeight: 600 }}>{reasonLabel(r.reason)}</td>
+                    <td className="td-ctr mono">{r.count}</td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
+                      {r.rejectedQty}
+                    </td>
+                    <td className="td-ctr mono fw-700" style={{ color: rankColor(i) }}>
+                      {r.pct}%
+                    </td>
+                    <td className="text3" style={{ fontSize: 11 }}>
+                      {r.topItems || '—'}
+                    </td>
+                    <td>
                       <div
                         style={{
-                          height: 14,
-                          width: `${Math.max(r.pct, 2)}%`,
-                          background: 'var(--red)',
-                          borderRadius: 3,
-                          minWidth: 4,
+                          background: 'var(--bg3)',
+                          borderRadius: 10,
+                          height: 18,
+                          overflow: 'hidden',
                         }}
-                      />
-                      <span className="text3" style={{ fontSize: 10 }}>
-                        {r.pct}%
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                      >
+                        <div
+                          style={{ background: rankColor(i), height: '100%', width: `${r.pct}%` }}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+        💡 Focus on the top 2-3 reasons to improve quality. The Pareto principle: often 80% of
+        rejections come from 20% of causes.
       </div>
     </div>
   );

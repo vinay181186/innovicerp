@@ -11,3 +11,13 @@ export const NC_REASON_CATEGORIES = [
   'other',
 ] as const;
 export type NcReasonCategory = (typeof NC_REASON_CATEGORIES)[number];
+
+export const NC_REASON_CATEGORY_LABELS: Record<NcReasonCategory, string> = {
+  dimensional: 'Dimensional',
+  surface: 'Surface',
+  material: 'Material',
+  process: 'Process',
+  operator_error: 'Operator Error',
+  machine_fault: 'Machine Fault',
+  other: 'Other',
+};
