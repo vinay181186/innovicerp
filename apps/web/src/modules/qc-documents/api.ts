@@ -2,7 +2,10 @@ import type {
   CreateQcDocumentInput,
   ListQcDocumentsQuery,
   ListQcDocumentsResponse,
+  ListQcMatrixSosResponse,
   QcDocument,
+  QcLineDetailResponse,
+  QcMatrixResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -11,6 +14,9 @@ import { signedUrl, uploadFile } from '@/lib/storage';
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
   list: (q: ListQcDocumentsQuery) => [...qcDocumentsKeys.all, 'list', q] as const,
+  soList: () => [...qcDocumentsKeys.all, 'so-list'] as const,
+  matrix: (soId: string) => [...qcDocumentsKeys.all, 'matrix', soId] as const,
+  lineDetail: (jcId: string) => [...qcDocumentsKeys.all, 'line-detail', jcId] as const,
 };
 
 function toQuery(q: ListQcDocumentsQuery): string {
@@ -39,6 +45,40 @@ export function uploadQcFile(file: File, companyId: string): Promise<string> {
 /** Issues a short-lived signed URL for a stored QC document. */
 export function signedUrlFor(storagePath: string): Promise<string> {
   return signedUrl(storagePath);
+}
+
+/** SO selector for the QC-completion matrix (legacy renderQCDocuments). */
+export function useQcMatrixSos() {
+  return useQuery<ListQcMatrixSosResponse>({
+    queryKey: qcDocumentsKeys.soList(),
+    queryFn: () => apiFetch<ListQcMatrixSosResponse>('/qc-documents/so-list'),
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** SO-pivoted QC-completion matrix for one SO. */
+export function useQcMatrix(salesOrderId: string | undefined) {
+  return useQuery<QcMatrixResponse>({
+    queryKey: qcDocumentsKeys.matrix(salesOrderId ?? ''),
+    queryFn: () =>
+      apiFetch<QcMatrixResponse>(
+        `/qc-documents/matrix?salesOrderId=${encodeURIComponent(salesOrderId ?? '')}`,
+      ),
+    enabled: !!salesOrderId,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** Per-JC line-detail (batches + per-doc-type sections) for the modal. */
+export function useQcLineDetail(jobCardId: string | undefined) {
+  return useQuery<QcLineDetailResponse>({
+    queryKey: qcDocumentsKeys.lineDetail(jobCardId ?? ''),
+    queryFn: () =>
+      apiFetch<QcLineDetailResponse>(
+        `/qc-documents/line-detail?jobCardId=${encodeURIComponent(jobCardId ?? '')}`,
+      ),
+    enabled: !!jobCardId,
+  });
 }
 
 export function useCreateQcDocument() {
