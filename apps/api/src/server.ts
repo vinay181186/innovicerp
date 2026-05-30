@@ -9,6 +9,7 @@ import { env } from './lib/env';
 import { AuthenticationError } from './lib/errors';
 import { logger } from './lib/logger';
 import { initSentry } from './lib/sentry';
+import { accessControlRoutes } from './modules/access-control/routes';
 import { activityLogRoutes } from './modules/activity-log/routes';
 import { assemblyRoutes } from './modules/assembly/routes';
 import { alertsRoutes } from './modules/alerts/routes';
@@ -192,6 +193,7 @@ await app.register(printTemplatesRoutes);
 await app.register(costCentersRoutes);
 await app.register(usersRoutes);
 await app.register(companiesRoutes);
+await app.register(accessControlRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

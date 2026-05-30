@@ -1467,6 +1467,37 @@ Phase F "Print Templates" (LEGACY_AUDIT screen #81, deferred by ADR-023). The le
 
 ---
 
+## ADR-035: Access Control matrix — UI-only enforcement, opt-in via "unconfigured ⇒ allow-all" fallback
+
+**Date:** 2026-05-30
+**Status:** Accepted
+
+### Context
+
+Legacy `renderAccessControl` (L13861) defines a per-user permission matrix on top of the role enum: `fullAccess` flag, departments map (sidebar gating), and a forms map of `{form_key: {view, entry, edit}}` for 35 form keys. Helpers `canView/canEdit/canEntry/_hasDeptAccess` (L13776-13803) are called **173×** across the legacy file. Build-first-audit-later mode demands shipping the matrix end-to-end without disrupting the live system: existing non-admin users must keep working on day one even with empty grants.
+
+### Decision
+
+Ship as a UI-only matrix in this slice. The `user_access` table persists the admin's intent, `getMyAccess` exposes effective access to the web shell, and a single shared helper set (`canViewForm` / `canEntryForm` / `canEditForm` / `hasDeptAccess` in `packages/shared/src/schemas/access-control.ts`) gates client-side buttons + sidebar sections. Per-form server-side write gating on the ~30 existing modules is deferred to the focused logic-correction audit pass per `feedback-build-first-audit-later`.
+
+Day-one rollout protection: client helpers treat an "unconfigured" matrix row (no full_access + empty departments + empty forms) as allow-all. The first time an admin saves *anything* for a user, that user moves into strict-mode gating. This isolates the rollout — admins enable the feature one user at a time rather than the whole company seeing an empty sidebar on the day the migration lands.
+
+### Alternatives Considered
+
+- **(B) Service-layer write gate** on every protected route — rejected for this slice: ~3-4 day cross-module refactor; regression risk on any route the gate misses; not needed because role-based RLS still secures writes. Kept as a deferred audit task.
+- **(C) Full RLS rewrite** keying off a SECURITY DEFINER `current_user_form_perms()` fn — rejected: ~5-7 day blast radius; threat model (admin attestation + role RLS) doesn't need it.
+- **Legacy backfill semantics (`full_access:true` for every user)** — rejected: replicates the legacy L1254 bug; secure-by-default is preferred for new users. The "unconfigured ⇒ allow-all" client fallback gives the same smooth rollout for existing users without baking the bug into stored state.
+- **Adding new role tiers (sr_engineer / engineer / jn_engineer)** to match legacy's 7-role dropdown — rejected: our 8-role enum is domain-specialised (qc / procurement / dispatch / design) and every existing RLS policy keys off it. Legacy tier roles can be mapped to `operator` / `viewer` at user-import time if/when needed.
+- **CSV / Excel user import** — skipped: Supabase Auth owns invitations, and the legacy CSV doesn't map cleanly. CSV template + JSON matrix paste (the lighter import path) is queued as a follow-up enhancement per the user's sign-off on Q4.
+
+### Consequences
+
+- Positive: matrix ships in one slice without disturbing other modules; existing non-admin users see no change until an admin explicitly grants/revokes; full audit-log emission on every save; the same shared helpers will plug into the deferred server-side gate when the audit pass runs.
+- Negative: the matrix is *advisory* on the server until the audit pass — a sophisticated client could PUT to a hidden endpoint and bypass the UI gate. Existing role-based RLS still prevents non-admins from doing things their role can't do.
+- Risks: admins forgetting to revisit a user after granting one perm could leave them stuck in strict mode with partial access — mitigated by the matrix list view showing dept and form counts per row.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

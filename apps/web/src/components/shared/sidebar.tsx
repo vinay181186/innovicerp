@@ -11,6 +11,7 @@
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { useState } from 'react';
+import { hasDeptAccess, useMyAccess, type AccessDeptKey } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 
 interface NavItem {
@@ -283,6 +284,7 @@ const SECTIONS: readonly NavSection[] = [
         label: 'Admin',
         items: [
           { to: '/users', label: 'User Management', icon: '👥' },
+          { to: '/access-control', label: 'Access Control', icon: '🔒' },
           { to: '/print-templates', label: 'Print Templates', icon: '📄' },
           { to: '/settings', label: 'Settings', icon: '⚙' },
         ],
@@ -299,9 +301,29 @@ function initials(email: string | undefined): string {
   return local.slice(0, 2).toUpperCase();
 }
 
+// Section keys that are NEVER dept-gated (always visible to authenticated
+// users regardless of matrix). 'tasks' has no equivalent dept key in the
+// legacy registry and is plumbing every role needs (alerts + activity log).
+const UNGATED_SECTIONS = new Set<string>(['tasks']);
+
+// Admin sees every section regardless of matrix (legacy behavior — admin
+// is the only role with implicit dept access on the home routing too).
+function shouldShowSection(
+  sectionKey: string,
+  isAdmin: boolean,
+  eff: Parameters<typeof hasDeptAccess>[0],
+): boolean {
+  if (isAdmin) return true;
+  if (UNGATED_SECTIONS.has(sectionKey)) return true;
+  // Section keys align 1:1 with ACCESS_DEPTS keys.
+  return hasDeptAccess(eff, sectionKey as AccessDeptKey);
+}
+
 export function Sidebar(): React.JSX.Element {
   const { data: me } = useSession();
   const { pathname } = useLocation();
+  const { data: eff } = useMyAccess();
+  const isAdmin = me?.role === 'admin';
 
   // Sections collapsed by default per legacy UX — but the section
   // containing the current route auto-opens so the active item is
@@ -355,7 +377,7 @@ export function Sidebar(): React.JSX.Element {
         </Link>
       </a>
 
-      {SECTIONS.map((sec) => {
+      {SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff)).map((sec) => {
         const open = openSections.has(sec.key);
         return (
           <div key={sec.key}>

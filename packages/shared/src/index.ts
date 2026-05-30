@@ -85,3 +85,5 @@ export * from './schemas/cost-center';
 export * from './schemas/print-template';
 export * from './schemas/user';
 export * from './schemas/company';
+export * from './enums/access-control';
+export * from './schemas/access-control';

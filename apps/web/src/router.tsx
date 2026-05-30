@@ -23,6 +23,7 @@ import { usersListRoute } from './modules/users/routes/list';
 import { userEditRoute } from './modules/users/routes/edit';
 import { settingsRoute } from './modules/settings/routes';
 import { printTemplatesRoute } from './modules/print-templates/routes/editor';
+import { accessControlListRoute } from './modules/access-control/routes/list';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
 import { clientEditRoute, clientNewRoute } from './modules/clients/routes/edit';
@@ -274,6 +275,7 @@ const routeTree = rootRoute.addChildren([
     userEditRoute,
     settingsRoute,
     printTemplatesRoute,
+    accessControlListRoute,
   ]),
 ]);
 

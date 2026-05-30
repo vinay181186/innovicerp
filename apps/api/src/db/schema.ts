@@ -4119,3 +4119,57 @@ export const printTemplateRevisions = pgTable(
 
 export type PrintTemplateRevisionRow = typeof printTemplateRevisions.$inferSelect;
 export type NewPrintTemplateRevisionRow = typeof printTemplateRevisions.$inferInsert;
+
+// ── Access Control matrix (0045) ────────────────────────────────────
+// Per-user fine-grained permissions on top of the role enum. One row per
+// user with `full_access` flag, `departments` map (sidebar gates), and
+// `forms` map of { form_key: { view, entry, edit } }. Mirror of legacy
+// db.userAccess (renderAccessControl L13861). Admin-only writes; self +
+// admin read. ADR-035: matrix is UI-only enforcement in this slice.
+export const userAccess = pgTable(
+  'user_access',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    fullAccess: boolean('full_access').notNull().default(false),
+    departments: jsonb('departments').notNull().default({}),
+    forms: jsonb('forms').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('user_access_user_uq').on(t.userId).where(sql`${t.deletedAt} is null`),
+    index('user_access_company_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('user_access_self_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`user_id = current_user_id()`,
+    }),
+    pgPolicy('user_access_admin_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+    }),
+    pgPolicy('user_access_admin_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type UserAccessRow = typeof userAccess.$inferSelect;
+export type NewUserAccessRow = typeof userAccess.$inferInsert;
