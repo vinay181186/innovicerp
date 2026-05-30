@@ -10,6 +10,8 @@ import { useForm } from 'react-hook-form';
 import { signOut, useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany, useUpdateMyCompany } from '../api';
+import { DataIntegrityPanel } from '../components/data-integrity-panel';
+import { OspProcessesPanel } from '../components/osp-processes-panel';
 
 export const settingsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -324,6 +326,9 @@ function SettingsPage(): React.JSX.Element {
           )}
         </div>
       </div>
+
+      <OspProcessesPanel />
+      <DataIntegrityPanel />
     </div>
   );
 }

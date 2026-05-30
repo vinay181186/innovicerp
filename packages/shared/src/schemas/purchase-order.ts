@@ -198,6 +198,31 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
 });
 export type CreatePurchaseOrderFromPrInput = z.infer<typeof createPurchaseOrderFromPrInputSchema>;
 
+/** "Create JW PO from N PRs" — Outsource Jobs page batch action.
+ *  Mirror of legacy `_ospCreatePO` L27131. Clubs N OSP PRs (typically
+ *  same vendor, possibly cross-SO) into a single PO header with one
+ *  line per PR. Each PR's status flips to 'po_created'. */
+export const createPurchaseOrderFromPrBatchInputSchema = z.object({
+  prIds: z.array(z.string().uuid()).min(1).max(50),
+  vendorId: z.string().uuid(),
+  header: z.object({
+    code: z.string().min(1).max(64).regex(codeRegex),
+    poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
+    poType: poTypeSchema.default('job_work'),
+    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD').optional(),
+    taxType: z.string().max(32).optional(),
+    sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
+    cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
+    igstPct: z.coerce.number().nonnegative().max(99.99).default(0),
+    remarks: z.string().max(2000).optional(),
+  }),
+  /** Per-PR rate override (₹/unit). Falls back to PR.estCost if omitted. */
+  rateOverrides: z.record(z.coerce.number().nonnegative()).optional(),
+});
+export type CreatePurchaseOrderFromPrBatchInput = z.infer<
+  typeof createPurchaseOrderFromPrBatchInputSchema
+>;
+
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listPurchaseOrdersQuerySchema = z.object({

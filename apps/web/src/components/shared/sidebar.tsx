@@ -228,17 +228,30 @@ const SECTIONS: readonly NavSection[] = [
     label: 'Purchase',
     modClass: 'purchase',
     icon: '🛒',
+    // Mirrors legacy sidebar Purchase block (HTML L520-525 area):
+    // PR / PO / Outsource Jobs / OSP DC / Service PO under Entry, Vendor under
+    // Master, SC Dashboard under Report.
     groups: [
       {
         label: 'Entry',
         items: [
           { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄' },
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
+          { to: '/outsource-jobs', label: 'Outsource Jobs', icon: '📦' },
+          { to: '/delivery-challans', label: 'OSP DC & Outward', icon: '🚛' },
+          { to: '/service-pos', label: 'Service PO', icon: '💳' },
         ],
       },
       {
         label: 'Master',
         items: [{ to: '/vendors', label: 'Vendor Master', icon: '🚚' }],
+      },
+      {
+        label: 'Report',
+        items: [
+          { to: '/sc-dashboard', label: 'Supply Chain Dashboard', icon: '🔗' },
+          { to: '/reports?group=Purchase', label: 'Purchase Reports', icon: '📊' },
+        ],
       },
     ],
   },
@@ -268,8 +281,12 @@ const SECTIONS: readonly NavSection[] = [
       },
     ],
   },
+  // Reports section — reporting tools only. Ungated (every authenticated
+  // role consumes reports). Note: per-dept Reports links (Sales Reports,
+  // Store Reports, etc.) live under their respective dept sections; this
+  // section is the cross-dept report runner + ad-hoc saved reports.
   {
-    key: 'system',
+    key: 'reports',
     label: 'Reports',
     modClass: 'system',
     icon: '📊',
@@ -280,13 +297,27 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/saved-reports', label: 'Saved Reports', icon: '✨' },
         ],
       },
+    ],
+  },
+  // System Settings — admin tooling. Mirror of legacy `⚙ System Settings`
+  // (HTML L516-524). Dept key `system` from ACCESS_DEPTS gates visibility
+  // for non-admin / non-fullAccess users. Admin always sees it.
+  {
+    key: 'system',
+    label: 'System Settings',
+    modClass: 'system',
+    icon: '⚙',
+    groups: [
       {
-        label: 'Admin',
         items: [
           { to: '/users', label: 'User Management', icon: '👥' },
           { to: '/access-control', label: 'Access Control', icon: '🔒' },
+          { to: '/approval-config', label: 'Approval Configuration', icon: '⚖' },
           { to: '/print-templates', label: 'Print Templates', icon: '📄' },
+          { to: '/op-log', label: 'Operation Log', icon: '☰' },
+          { to: '/trash', label: 'Trash', icon: '🗑' },
           { to: '/settings', label: 'Settings', icon: '⚙' },
+          { to: '/backup', label: 'Backup & Export', icon: '💾' },
         ],
       },
     ],
@@ -304,7 +335,9 @@ function initials(email: string | undefined): string {
 // Section keys that are NEVER dept-gated (always visible to authenticated
 // users regardless of matrix). 'tasks' has no equivalent dept key in the
 // legacy registry and is plumbing every role needs (alerts + activity log).
-const UNGATED_SECTIONS = new Set<string>(['tasks']);
+// 'reports' is also ungated — reporting tools are consumed by every role;
+// per-dept Reports links inside other sections still gate via their dept.
+const UNGATED_SECTIONS = new Set<string>(['tasks', 'reports']);
 
 // Admin sees every section regardless of matrix (legacy behavior — admin
 // is the only role with implicit dept access on the home routing too).

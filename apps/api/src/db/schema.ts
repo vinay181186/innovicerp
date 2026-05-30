@@ -16,6 +16,7 @@ import {
   PO_STATUSES,
   PO_TYPES,
   PR_STATUSES,
+  PR_TYPES,
   RUNNING_OP_STATUSES,
   SHIFTS,
   SO_STATUSES,
@@ -57,6 +58,8 @@ export const outsourceStatusEnum = pgEnum('outsource_status', OUTSOURCE_STATUSES
 export const runningOpStatusEnum = pgEnum('running_op_status', RUNNING_OP_STATUSES);
 export const shiftEnum = pgEnum('shift', SHIFTS);
 export const jcPriorityEnum = pgEnum('jc_priority', JC_PRIORITIES);
+
+export const prTypeEnum = pgEnum('pr_type', PR_TYPES);
 
 // ─── Phase 4 enums (T-029b) ───────────────────────────────────────────────
 export const soTypeEnum = pgEnum('so_type', SO_TYPES);
@@ -136,6 +139,10 @@ export const users = pgTable(
     role: userRoleEnum('role').notNull().default('viewer'),
     phone: text('phone'),
     isActive: boolean('is_active').notNull().default(false),
+    // Per-user PO approval limit (0046). NULL ⇒ fall back to
+    // approval_config.po_manager_limit for non-admin approvers.
+    // Admin is always unlimited per service-layer check.
+    approvalLimit: numeric('approval_limit', { precision: 14, scale: 2 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1215,6 +1222,7 @@ export const purchaseRequests = pgTable(
     code: text('code').notNull(),
     prDate: date('pr_date').notNull(),
     status: prStatusEnum('status').notNull().default('open'),
+    prType: prTypeEnum('pr_type').notNull().default('standard'),
     vendorId: uuid('vendor_id').references(() => vendors.id),
     vendorCodeText: text('vendor_code_text'),
     itemId: uuid('item_id').references(() => items.id),
@@ -1302,6 +1310,9 @@ export const purchaseOrders = pgTable(
     approvedBy: uuid('approved_by').references(() => users.id),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     approvalRemarks: text('approval_remarks'),
+    rejectedBy: uuid('rejected_by').references(() => users.id),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -4173,3 +4184,213 @@ export const userAccess = pgTable(
 
 export type UserAccessRow = typeof userAccess.$inferSelect;
 export type NewUserAccessRow = typeof userAccess.$inferInsert;
+
+// ── Approval Configuration (0046) ───────────────────────────────────
+// One row per company. PO/PR/Invoice approval toggles + manager amount
+// limit + explicit approvers list. Mirror of legacy db.approvalConfig
+// (renderApprovalConfig L21608). Admin-only writes; everyone in the
+// company reads (PO list needs to know which users can approve).
+export const approvalConfig = pgTable(
+  'approval_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    poApproval: boolean('po_approval').notNull().default(true),
+    poManagerLimit: numeric('po_manager_limit', { precision: 14, scale: 2 })
+      .notNull()
+      .default('100000'),
+    prApproval: boolean('pr_approval').notNull().default(true),
+    invoiceApproval: boolean('invoice_approval').notNull().default(false),
+    poApprovers: jsonb('po_approvers').notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('approval_config_company_uq').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('approval_config_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('approval_config_admin_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type ApprovalConfigRow = typeof approvalConfig.$inferSelect;
+export type NewApprovalConfigRow = typeof approvalConfig.$inferInsert;
+
+// ── OSP Process Configuration (0047) ────────────────────────────────
+// Outside-process name → preferred vendor + auto-PO + lead-time.
+// When an op_seq name matches one of these (case-insensitive substring
+// per legacy _isOspOperation), the system auto-creates a JW PR (and
+// optionally a draft PO if vendor + autoPO). Manager/admin writes.
+export const ospProcesses = pgTable(
+  'osp_processes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    processName: text('process_name').notNull(),
+    vendorId: uuid('vendor_id').references(() => vendors.id),
+    autoPo: boolean('auto_po').notNull().default(false),
+    leadDays: integer('lead_days').notNull().default(5),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('osp_processes_company_name_uq')
+      .on(t.companyId, sql`lower(${t.processName})`)
+      .where(sql`${t.deletedAt} is null`),
+    index('osp_processes_company_idx').on(t.companyId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('osp_processes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('osp_processes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type OspProcessRow = typeof ospProcesses.$inferSelect;
+export type NewOspProcessRow = typeof ospProcesses.$inferInsert;
+
+// ── Service POs (0049) ──────────────────────────────────────────────
+// Non-inventory purchase orders (labour / maintenance / calibration /
+// consultancy). Mirror of legacy db.servicePOs (renderServicePO L27504).
+// Manager/admin writes; admin approves.
+export const servicePoStatusEnum = pgEnum('service_po_status', [
+  'draft',
+  'pending',
+  'approved',
+  'completed',
+  'cancelled',
+]);
+export const servicePoCostCenterEnum = pgEnum('service_po_cost_center', ['so', 'general']);
+export const servicePoTaxTypeEnum = pgEnum('service_po_tax_type', ['sgst_cgst', 'igst']);
+
+export const servicePos = pgTable(
+  'service_pos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    spoNo: text('spo_no').notNull(),
+    spoDate: date('spo_date').notNull(),
+    vendorId: uuid('vendor_id').references(() => vendors.id),
+    vendorCodeText: text('vendor_code_text'),
+    expenseHead: text('expense_head').notNull().default('Other'),
+    costCenter: servicePoCostCenterEnum('cost_center').notNull().default('so'),
+    soRefId: uuid('so_ref_id').references((): AnyPgColumn => salesOrders.id),
+    soNoText: text('so_no_text'),
+    subtotal: numeric('subtotal', { precision: 14, scale: 2 }).notNull().default('0'),
+    taxType: servicePoTaxTypeEnum('tax_type').notNull().default('sgst_cgst'),
+    gstPct: numeric('gst_pct', { precision: 5, scale: 2 }).notNull().default('18'),
+    taxAmount: numeric('tax_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    total: numeric('total', { precision: 14, scale: 2 }).notNull().default('0'),
+    paymentTerms: text('payment_terms').notNull().default('Immediate'),
+    remarks: text('remarks'),
+    status: servicePoStatusEnum('status').notNull().default('draft'),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('service_pos_company_no_uq').on(t.companyId, t.spoNo).where(sql`${t.deletedAt} is null`),
+    index('service_pos_company_status_idx').on(t.companyId, t.status).where(sql`${t.deletedAt} is null`),
+    index('service_pos_company_date_idx').on(t.companyId, t.spoDate).where(sql`${t.deletedAt} is null`),
+    index('service_pos_vendor_idx').on(t.vendorId).where(sql`${t.deletedAt} is null`),
+    pgPolicy('service_pos_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('service_pos_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type ServicePoRow = typeof servicePos.$inferSelect;
+export type NewServicePoRow = typeof servicePos.$inferInsert;
+
+export const servicePoLines = pgTable(
+  'service_po_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    servicePoId: uuid('service_po_id')
+      .notNull()
+      .references(() => servicePos.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    description: text('description').notNull(),
+    qty: numeric('qty', { precision: 12, scale: 2 }).notNull().default('1'),
+    rate: numeric('rate', { precision: 14, scale: 2 }).notNull().default('0'),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('service_po_lines_po_lineno_uq').on(t.servicePoId, t.lineNo),
+    pgPolicy('service_po_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('service_po_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type ServicePoLineRow = typeof servicePoLines.$inferSelect;
+export type NewServicePoLineRow = typeof servicePoLines.$inferInsert;

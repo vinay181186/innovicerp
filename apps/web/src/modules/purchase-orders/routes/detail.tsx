@@ -2,14 +2,20 @@
 
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Inbox, Loader2, Pencil, Printer, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
+import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
-import { usePurchaseOrder, useSoftDeletePurchaseOrder } from '../api';
+import {
+  useApprovePurchaseOrder,
+  usePurchaseOrder,
+  useRejectPurchaseOrder,
+  useSoftDeletePurchaseOrder,
+} from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
 import { printPurchaseOrder } from '../lib/print-po';
 
@@ -28,7 +34,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
   const softDelete = useSoftDeletePurchaseOrder();
+  const approveMut = useApprovePurchaseOrder();
+  const rejectMut = useRejectPurchaseOrder();
+  const { data: approvalCfg } = useApprovalConfig();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [approveRemarks, setApproveRemarks] = useState('');
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -76,6 +90,40 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const canEdit = me?.role === 'admin' || me?.role === 'manager';
   const isAdmin = me?.role === 'admin';
   const canIssueOrReceive = ['draft', 'open', 'partial', 'qc_pending'].includes(detail.status);
+  const isApprover =
+    isAdmin || (me ? (approvalCfg?.poApprovers ?? []).includes(me.id) : false);
+  const showApprovalActions = detail.status === 'draft' && isApprover;
+
+  async function doApprove(): Promise<void> {
+    if (!detail) return;
+    setActionError(null);
+    try {
+      const trimmed = approveRemarks.trim();
+      const args: { id: string; remarks?: string } = { id: detail.id };
+      if (trimmed) args.remarks = trimmed;
+      await approveMut.mutateAsync(args);
+      setApproveOpen(false);
+      setApproveRemarks('');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Approve failed');
+    }
+  }
+
+  async function doReject(): Promise<void> {
+    if (!detail) return;
+    setActionError(null);
+    if (!rejectReason.trim()) {
+      setActionError('Rejection reason is required');
+      return;
+    }
+    try {
+      await rejectMut.mutateAsync({ id: detail.id, reason: rejectReason.trim() });
+      setRejectOpen(false);
+      setRejectReason('');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Reject failed');
+    }
+  }
 
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
@@ -104,7 +152,26 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               <PoStatusBadge status={detail.status} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {showApprovalActions ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
+                  onClick={() => setApproveOpen(true)}
+                >
+                  <Check size={13} /> Approve
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => setRejectOpen(true)}
+                >
+                  <X size={13} /> Reject
+                </button>
+              </>
+            ) : null}
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
               <Printer size={13} /> Print
             </button>
@@ -238,6 +305,243 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           </table>
         </div>
       </div>
+
+      {/* Approve modal */}
+      {approveOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setApproveOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.45)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '10vh 16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            className="panel"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(520px, 96vw)' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div className="fw-700" style={{ color: 'var(--green)' }}>
+                ✅ Approve PO — {detail.code}
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setApproveOpen(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+              <div
+                style={{
+                  background: 'var(--bg3)',
+                  padding: 12,
+                  borderRadius: 8,
+                  display: 'flex',
+                  gap: 16,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <span className="text3" style={{ fontSize: 10 }}>PO</span>
+                  <br />
+                  <b style={{ color: 'var(--cyan)' }}>{detail.code}</b>
+                </div>
+                <div>
+                  <span className="text3" style={{ fontSize: 10 }}>VENDOR</span>
+                  <br />
+                  <b>{detail.vendorName ?? detail.vendorCodeText ?? '—'}</b>
+                </div>
+                <div>
+                  <span className="text3" style={{ fontSize: 10 }}>LINES</span>
+                  <br />
+                  <b>{detail.lines.length}</b>
+                </div>
+                <div>
+                  <span className="text3" style={{ fontSize: 10 }}>VALUE</span>
+                  <br />
+                  <b style={{ color: 'var(--green)' }}>
+                    ₹{Math.round(totalValue).toLocaleString('en-IN')}
+                  </b>
+                </div>
+              </div>
+              <div className="form-grp">
+                <label className="form-label">Approval Remarks</label>
+                <input
+                  className="innovic-input"
+                  value={approveRemarks}
+                  onChange={(e) => setApproveRemarks(e.target.value)}
+                  placeholder="Optional comments…"
+                />
+              </div>
+              {actionError ? (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(239,68,68,0.06)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 6,
+                    color: 'var(--red)',
+                    fontSize: 12,
+                  }}
+                >
+                  {actionError}
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setApproveOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
+                  disabled={approveMut.isPending}
+                  onClick={() => void doApprove()}
+                >
+                  {approveMut.isPending ? (
+                    <>
+                      <Loader2 className="inline h-3 w-3 animate-spin" /> Approving…
+                    </>
+                  ) : (
+                    'Approve PO'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Reject modal */}
+      {rejectOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setRejectOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.45)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            padding: '10vh 16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            className="panel"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(520px, 96vw)' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div className="fw-700" style={{ color: 'var(--red)' }}>
+                ❌ Reject PO — {detail.code}
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setRejectOpen(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+              <div
+                style={{
+                  background: 'rgba(239,68,68,0.05)',
+                  padding: 12,
+                  border: '1px solid var(--red)',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  color: 'var(--text3)',
+                }}
+              >
+                PO will be cancelled and sent back to creator for correction.
+              </div>
+              <div className="form-grp">
+                <label className="form-label">
+                  Rejection Reason <span className="req">★</span>
+                </label>
+                <textarea
+                  className="innovic-input"
+                  rows={3}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Why is this PO being rejected…"
+                />
+              </div>
+              {actionError ? (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(239,68,68,0.06)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 6,
+                    color: 'var(--red)',
+                    fontSize: 12,
+                  }}
+                >
+                  {actionError}
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setRejectOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={rejectMut.isPending}
+                  onClick={() => void doReject()}
+                >
+                  {rejectMut.isPending ? (
+                    <>
+                      <Loader2 className="inline h-3 w-3 animate-spin" /> Rejecting…
+                    </>
+                  ) : (
+                    'Reject PO'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

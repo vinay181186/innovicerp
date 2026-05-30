@@ -20,6 +20,7 @@ function toQueryString(q: ListPurchaseRequestsQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.status) params.set('status', q.status);
+  if (q.prType) params.set('prType', q.prType);
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.sourceJcOpId) params.set('sourceJcOpId', q.sourceJcOpId);
   if (q.fromDate) params.set('fromDate', q.fromDate);

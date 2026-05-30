@@ -16,9 +16,10 @@
 //   - query: list filters (search, status, vendor, jc-op link, date range).
 
 import { z } from 'zod';
-import { PR_STATUSES } from '../enums/pr-status';
+import { PR_STATUSES, PR_TYPES } from '../enums/pr-status';
 
 export const prStatusSchema = z.enum(PR_STATUSES);
+export const prTypeSchema = z.enum(PR_TYPES);
 
 const codeRegex = /^[A-Za-z0-9._/-]+$/; // legacy prNo allows '-' (e.g. PR-00001)
 
@@ -30,6 +31,7 @@ export const purchaseRequestSchema = z.object({
   code: z.string().min(1),
   prDate: z.string(), // ISO date
   status: prStatusSchema,
+  prType: prTypeSchema.default('standard'),
   vendorId: z.string().uuid().nullable(),
   vendorCodeText: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
@@ -76,6 +78,8 @@ const _prInputBase = z.object({
     .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
   prDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'prDate must be YYYY-MM-DD'),
   status: prStatusSchema.default('open'),
+  /** Defaults to 'standard'; service overrides to 'jw_osp' when sourceJcOpId is set. */
+  prType: prTypeSchema.optional(),
   vendorId: z.string().uuid().optional(),
   vendorCodeText: z.string().min(1).max(64).optional(),
   itemId: z.string().uuid().optional(),
@@ -117,6 +121,7 @@ export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInp
 export const listPurchaseRequestsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(), // matches code / operation / item_name
   status: prStatusSchema.optional(),
+  prType: prTypeSchema.optional(),
   vendorId: z.string().uuid().optional(),
   /** Filter to PRs originating from a specific JC op (outsource workflow). */
   sourceJcOpId: z.string().uuid().optional(),

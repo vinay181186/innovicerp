@@ -87,3 +87,8 @@ export * from './schemas/user';
 export * from './schemas/company';
 export * from './enums/access-control';
 export * from './schemas/access-control';
+export * from './schemas/approval-config';
+export * from './schemas/osp-process';
+export * from './schemas/data-integrity';
+export * from './schemas/service-po';
+export * from './schemas/sc-dashboard';

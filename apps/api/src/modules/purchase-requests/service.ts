@@ -150,6 +150,7 @@ function toPurchaseRequest(row: typeof purchaseRequests.$inferSelect): PurchaseR
     code: row.code,
     prDate: row.prDate,
     status: row.status,
+    prType: row.prType,
     vendorId: row.vendorId,
     vendorCodeText: row.vendorCodeText,
     itemId: row.itemId,
@@ -244,6 +245,7 @@ export async function listPurchaseRequests(
       isNull(purchaseRequests.deletedAt),
     ];
     if (input.status) conditions.push(eq(purchaseRequests.status, input.status));
+    if (input.prType) conditions.push(eq(purchaseRequests.prType, input.prType));
     if (input.vendorId) conditions.push(eq(purchaseRequests.vendorId, input.vendorId));
     if (input.sourceJcOpId) conditions.push(eq(purchaseRequests.sourceJcOpId, input.sourceJcOpId));
     const totalRows = await tx
@@ -264,6 +266,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     code: r['code'] as string,
     prDate: dateLike(r['prDate']),
     status: r['status'] as PurchaseRequest['status'],
+    prType: ((r['prType'] as PurchaseRequest['prType'] | null) ?? 'standard'),
     vendorId: (r['vendorId'] as string | null) ?? null,
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     itemId: (r['itemId'] as string | null) ?? null,
@@ -351,6 +354,7 @@ export async function createPurchaseRequest(
         code: input.code,
         prDate: input.prDate,
         status: input.status ?? 'open',
+        prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
         vendorId: input.vendorId ?? null,
         vendorCodeText: input.vendorCodeText ?? null,
         itemId: input.itemId ?? null,

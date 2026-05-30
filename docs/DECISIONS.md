@@ -1498,6 +1498,79 @@ Day-one rollout protection: client helpers treat an "unconfigured" matrix row (n
 
 ---
 
+## ADR-036: System Settings sidebar — full legacy parity in one slice
+
+**Date:** 2026-05-31
+**Status:** Accepted
+
+### Context
+
+User goal 2026-05-31: build out the entire System Settings sidebar to match legacy 1:1, including all logic. Audit found six gaps vs legacy renderX functions: Approval Configuration (whole module missing), Operation Log (no dedicated viewer), Trash (deferred per ADR-023), Backup & Export (deferred — Supabase handled), OSP Process Configuration (not built), Data Integrity Check (not built). Plus sidebar mislabel ("Reports" section was actually System).
+
+### Decision
+
+Ship all six items in one session as a layered build:
+
+1. **Approval Configuration** — new `approval_config` table (one row per company, admin-only RLS) + `users.approval_limit` column. Editor surfaces PO/PR/Invoice toggles, manager amount limit, approvers picker, flow diagram, recent activity (`activity_log` filtered to `APPROVE`/`REJECT`/`PAYMENT`). Backend storage + UI only; actual draft/approve PO flow is a deferred audit task.
+2. **Operation Log** — read-only viewer of existing `op_log` table joined with jc_ops/job_cards/items/machines/users. Paginated + filtered. **No delete** — legacy `delLog` violates CLAUDE.md Rule #8 + breaks qty-done recalc.
+3. **Trash** — UNION ALL across 17 soft-deletable entity tables. Restore clears `deleted_at`; Permanent Delete is the documented admin hard-delete path per Rule #8 (typed confirmation, audit emitted before row vanishes).
+4. **OSP Process Configuration** — new `osp_processes` table (process name + vendor FK + auto-PO + lead-time). Manager/admin RLS write. Case-insensitive unique. Settings page panel CRUD. The op-name → auto-PR/PO trigger on op-entry start is deferred.
+5. **Data Integrity Check** — single `GET /data-integrity` endpoint runs 8 read-only SQL checks (orphan JCs, JC ops without machine, negative stock, stale Draft POs, stale Pending NCs, stale unconverted PRs, overdue JCs, zero-qty SO lines). Each result has severity + sample identifiers. Settings page panel renders coloured cards.
+6. **Backup & Export** — simplified. Stats endpoint + JSON download endpoint (cap 5,000 rows/table). Restore + Factory Reset are runbook ops, not in-app. Hash-verified backup deferred. The real backup discipline is unchanged (daily pg_dump → B2).
+
+Sidebar split out of the misnamed "Reports" section into two: Reports (ungated) + ⚙ System Settings (gated on `system` dept). Eight items under System Settings match legacy L516-524.
+
+### Alternatives Considered
+
+- **Multi-session, one item per slice** — rejected: user explicitly directed "build entirely, will test once module built". One session reduces context churn.
+- **Defer Approval Config + Trash** — rejected: both are real legacy parity items, not nice-to-haves.
+- **Port legacy `delLog` for op_log** — rejected: violates CLAUDE.md Rule #8 + breaks downstream calc.
+- **Hash-verified backup format** — rejected for now: requires backup-restore parity tooling we don't have. Daily pg_dump + B2 already covers integrity at a higher level.
+
+### Consequences
+
+- Positive: full System Settings module ships as one unit; user can test end-to-end. Sidebar finally semantic. New tables follow existing RLS patterns (admin-write, company-read). All deferred items have a clear "audit pass picks this up" trail.
+- Negative: Approval Config UI shows a flow diagram that doesn't yet wire to PO creation — the editor is honest but partial. Trash permanent-delete is irreversible (mitigated by typed-confirmation UX + audit log emit before delete).
+- Risks: Data Integrity Check sample queries are read-only but inspect-everything; on a 50 GB database they may be slow. Mitigated by `LIMIT 5` per check.
+
+---
+
+## ADR-037: Purchase module — full legacy parity in one slice
+
+**Date:** 2026-05-31
+**Status:** Accepted
+
+### Context
+
+User goal 2026-05-31 (second of the day): build out the entire Purchase sidebar to match legacy 1:1, including all logic. Audit found four gaps vs legacy renderX functions: Outsource Jobs (whole page missing), Service PO (whole module missing), Supply Chain Dashboard (whole page missing), plus the deferred PO Draft/Approve/Reject flow from ADR-036.
+
+### Decision
+
+Ship all four items in one session as a layered build:
+
+1. **PO Draft/Approve/Reject** — adds reject-side columns on `purchase_orders` to mirror existing approved-side. `createPurchaseOrder` consults `approval_config.po_approval` to set the initial status (`_poInitialStatus()` parity). Two new POST endpoints (`/:id/approve`, `/:id/reject`) gated on `admin || approval_config.po_approvers.includes(user.id)`. Approve flips `'draft' → 'open'`; reject flips `'draft' → 'cancelled'` and stores the reason. Activity log emits `APPROVE` / `REJECT` rows feeding the Approval Config recent-activity panel.
+
+2. **Outsource Jobs** — new `pr_type` enum (`standard` / `jw_osp` / `service`) lets us cleanly distinguish OSP PRs from regular PRs. New `/outsource-jobs` page lists every `pr_type='jw_osp'` PR with status cards + checkbox multi-select. New `POST /purchase-orders/from-pr-batch` endpoint clubs N PRs into one PO header with one line per PR; per-line rate is editable in the modal.
+
+3. **Service PO** — new tables `service_pos` + `service_po_lines` (header + lines). Manager/admin writes; admin approves. Five-status workflow (draft / pending / approved / completed / cancelled). 9 expense heads ported verbatim. Full CRUD + approve endpoint + soft-delete.
+
+4. **Supply Chain Dashboard** — one read-only `GET /sc-dashboard` endpoint that runs 6 SQL aggregates (summary, by-vendor, by-SO, PO-with-tax, pending-lines, recent-GRN). Page renders 9 cards + 5 tables. No full PO list shipped to the browser.
+
+### Alternatives Considered
+
+- **Add OSP PR auto-generation on JC op start** — deferred. Legacy `_autoGenerateOspPR` triggers from op-entry; wiring it requires consulting `osp_processes` + conditionally inserting a PR (+ optional draft PO) inside the op-entry create transaction. Out of scope for this session.
+- **Enforce po_manager_limit at approve time** — deferred. Would need PO subtotal × tax math at approve time. The approver-list gate already prevents arbitrary users from approving; the amount-limit gate is the second layer.
+- **Service PO print template** — deferred to Phase F (print-templates).
+- **Make PR creation default `pr_type` to `'jw_osp'` when sourceJcOpId is set** — done in the service.
+
+### Consequences
+
+- Positive: full Purchase module ships as one unit testable end-to-end. Draft/Approve flow finally wires Approval Config to its primary consumer. Outsource Jobs gives the shop floor a single bulk-PO surface. Service PO unblocks the labour/maintenance billing workflow. SC Dashboard gives procurement a one-glance vendor performance view.
+- Negative: the Approve flow still doesn't enforce per-user `approval_limit` — a manager added to po_approvers can approve POs of any size. Tagged for the deferred audit pass.
+- Risks: Service PO has its own status enum + tables but no print template — printing happens via the browser's native print until Phase F handles SPOs. Outsource Jobs auto-trigger from op-entry is the bigger missing piece; until that ships, OSP PRs must be created manually through SO/JW Planning or the standard PR flow.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

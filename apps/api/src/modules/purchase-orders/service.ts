@@ -16,6 +16,7 @@
 
 import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  approvalConfig,
   items,
   purchaseOrderLines,
   purchaseOrders,
@@ -408,7 +409,20 @@ export async function createPurchaseOrder(
     const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
     const lineNos = assignLineNos(input.lines, 1);
 
-    const headerStatus = input.header.status ?? 'draft';
+    // Legacy `_poInitialStatus()` L21589: 'draft' if PO approval enabled,
+    // else 'open'. Caller-passed status wins. APPROVAL_CONFIG_DEFAULTS has
+    // poApproval=true so the default path is to require approval.
+    let initialStatus: 'draft' | 'open' = 'draft';
+    if (!input.header.status) {
+      const cfgRows = await tx
+        .select({ poApproval: approvalConfig.poApproval })
+        .from(approvalConfig)
+        .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
+        .limit(1);
+      const poApprovalOn = cfgRows[0]?.poApproval ?? true;
+      initialStatus = poApprovalOn ? 'draft' : 'open';
+    }
+    const headerStatus = input.header.status ?? initialStatus;
     const headerType = input.header.poType ?? 'standard';
     const inserted = await tx
       .insert(purchaseOrders)
@@ -847,6 +861,371 @@ export async function createPurchaseOrderFromPr(
     return {
       ...toPurchaseOrder(header),
       vendorName: null,
+      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
+    };
+  });
+}
+
+// ─── Approval flow (ADR-036 follow-up, 2026-05-31) ─────────────────
+//
+// Mirror of legacy _approvePO L21716 + _rejectPO L21758. Eligibility:
+// (a) caller must be admin OR in approval_config.po_approvers; (b) PO
+// must currently be in 'draft' status. Amount-limit gate (legacy uses
+// po_manager_limit) is not yet wired — would need to sum lines + tax
+// per ADR-036's deferred audit item. Activity log + state change.
+
+async function loadApprovalContext(
+  tx: DbTransaction,
+  companyId: string,
+  userId: string,
+  userRole: string,
+): Promise<{ isApprover: boolean; isAdmin: boolean }> {
+  const isAdmin = userRole === 'admin';
+  if (isAdmin) return { isApprover: true, isAdmin: true };
+  const rows = await tx
+    .select({ poApprovers: approvalConfig.poApprovers })
+    .from(approvalConfig)
+    .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
+    .limit(1);
+  const approvers = Array.isArray(rows[0]?.poApprovers) ? (rows[0]!.poApprovers as string[]) : [];
+  return { isApprover: approvers.includes(userId), isAdmin: false };
+}
+
+async function getPurchaseOrderInternal(
+  tx: DbTransaction,
+  id: string,
+  companyId: string,
+): Promise<PurchaseOrderDetail> {
+  const rows = await tx
+    .select({ header: purchaseOrders, vendorName: vendors.name })
+    .from(purchaseOrders)
+    .leftJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
+    .where(
+      and(
+        eq(purchaseOrders.id, id),
+        eq(purchaseOrders.companyId, companyId),
+        isNull(purchaseOrders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new NotFoundError(`Purchase order ${id} not found`);
+
+  const lineRows = await tx
+    .select()
+    .from(purchaseOrderLines)
+    .where(
+      and(
+        eq(purchaseOrderLines.purchaseOrderId, id),
+        eq(purchaseOrderLines.companyId, companyId),
+      ),
+    )
+    .orderBy(asc(purchaseOrderLines.lineNo));
+
+  return {
+    ...toPurchaseOrder(row.header),
+    vendorName: row.vendorName,
+    lines: lineRows.map((r) => toPurchaseOrderLine(r)),
+  };
+}
+
+export async function approvePurchaseOrder(
+  id: string,
+  remarks: string | null,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const { isApprover } = await loadApprovalContext(tx, companyId, user.id, user.role);
+    if (!isApprover) {
+      throw new AuthorizationError(
+        'You are not authorized to approve POs. Ask an admin to add you to the approvers list.',
+      );
+    }
+
+    const existing = await tx
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const po = existing[0];
+    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (po.status !== 'draft') {
+      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be approved`);
+    }
+
+    await tx
+      .update(purchaseOrders)
+      .set({
+        status: 'open',
+        approvedBy: user.id,
+        approvedAt: new Date(),
+        approvalRemarks: remarks ?? null,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, id));
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'APPROVE',
+        entity: 'Purchase Order',
+        detail: po.code + ' approved by ' + (user.email ?? user.id) + (remarks ? ' — ' + remarks : ''),
+        refId: po.code,
+      },
+      companyId,
+      user,
+    );
+
+    return getPurchaseOrderInternal(tx, id, companyId);
+  });
+}
+
+export async function rejectPurchaseOrder(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  if (!reason || !reason.trim()) {
+    throw new ValidationError('Rejection reason is required');
+  }
+
+  return withUserContext(user, async (tx) => {
+    const { isApprover } = await loadApprovalContext(tx, companyId, user.id, user.role);
+    if (!isApprover) {
+      throw new AuthorizationError('You are not authorized to reject POs.');
+    }
+
+    const existing = await tx
+      .select()
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const po = existing[0];
+    if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
+    if (po.status !== 'draft') {
+      throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be rejected`);
+    }
+
+    await tx
+      .update(purchaseOrders)
+      .set({
+        status: 'cancelled',
+        rejectedBy: user.id,
+        rejectedAt: new Date(),
+        rejectionReason: reason.trim(),
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(purchaseOrders.id, id));
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'REJECT',
+        entity: 'Purchase Order',
+        detail: po.code + ' rejected: ' + reason.trim(),
+        refId: po.code,
+      },
+      companyId,
+      user,
+    );
+
+    return getPurchaseOrderInternal(tx, id, companyId);
+  });
+}
+
+// ─── Outsource Jobs batch convert (legacy _ospCreatePO L27131) ─────
+//
+// Clubs N OSP PRs into a single JW PO header with one line per PR.
+// All PRs must be open/approved + belong to same company. Vendor +
+// per-line rate overrides come from the form. PR rows are stamped
+// po_created with the new PO id. Activity log: one PO CREATE + one
+// PR_CONVERT per PR.
+
+export async function createPurchaseOrderFromPrBatch(
+  input: {
+    prIds: string[];
+    vendorId: string;
+    header: {
+      code: string;
+      poDate: string;
+      poType?: 'standard' | 'job_work' | 'outsource' | 'service' | undefined;
+      dueDate?: string | undefined;
+      taxType?: string | undefined;
+      sgstPct?: number | undefined;
+      cgstPct?: number | undefined;
+      igstPct?: number | undefined;
+      remarks?: string | undefined;
+    };
+    rateOverrides?: Record<string, number> | undefined;
+  },
+  user: AuthContext,
+): Promise<PurchaseOrderDetail> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // Load vendor (exists + in caller's company).
+    await assertVendorExists(tx, input.vendorId, companyId);
+    const vendorRow = (
+      await tx
+        .select({ code: vendors.code, name: vendors.name })
+        .from(vendors)
+        .where(eq(vendors.id, input.vendorId))
+        .limit(1)
+    )[0];
+    const vendorCodeText = vendorRow?.code ?? null;
+
+    // Code uniqueness on the new PO.
+    const dup = await tx
+      .select({ id: purchaseOrders.id })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.companyId, companyId),
+          eq(purchaseOrders.code, input.header.code),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (dup.length > 0) {
+      throw new ConflictError(`Purchase order code "${input.header.code}" already exists`);
+    }
+
+    // Load all PRs.
+    const prRows = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(
+        and(
+          inArray(purchaseRequests.id, input.prIds),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      );
+    if (prRows.length !== input.prIds.length) {
+      throw new NotFoundError('Some PR IDs not found in this company');
+    }
+    for (const pr of prRows) {
+      if (pr.status === 'po_created' || pr.poId !== null) {
+        throw new ConflictError(`PR ${pr.code} already linked to a PO`);
+      }
+      if (pr.status === 'cancelled') {
+        throw new ConflictError(`PR ${pr.code} is cancelled — cannot convert`);
+      }
+    }
+
+    // Sort PRs by created_at so line_no ordering is stable.
+    const sortedPrs = [...prRows].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
+
+    const insertedPos = await tx
+      .insert(purchaseOrders)
+      .values({
+        companyId,
+        code: input.header.code,
+        poDate: input.header.poDate,
+        poType: input.header.poType ?? 'job_work',
+        vendorId: input.vendorId,
+        vendorCodeText,
+        status: 'open',
+        dueDate: input.header.dueDate ?? null,
+        taxType: input.header.taxType ?? null,
+        sgstPct: String(input.header.sgstPct ?? 0),
+        cgstPct: String(input.header.cgstPct ?? 0),
+        igstPct: String(input.header.igstPct ?? 0),
+        prCodeText: sortedPrs.map((p) => p.code).join(', ').slice(0, 200),
+        remarks: input.header.remarks ?? `Batch from ${sortedPrs.length} OSP PR(s)`,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const header = insertedPos[0]!;
+
+    // Insert one line per PR. Apply rate override if provided.
+    const lineRows = sortedPrs.map((pr, i) => ({
+      companyId,
+      purchaseOrderId: header.id,
+      lineNo: i + 1,
+      itemId: pr.itemId,
+      itemCodeText: pr.itemCodeText,
+      itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
+      qty: pr.qty,
+      rate: String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost)),
+      receivedQty: 0,
+      dueDate: pr.requiredDate ?? null,
+      sourceSoLineId: pr.sourceSoLineId,
+      sourceJcOpId: pr.sourceJcOpId,
+      lineRemarks: pr.operation ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    }));
+    const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
+
+    // Stamp every PR.
+    for (const pr of sortedPrs) {
+      await tx
+        .update(purchaseRequests)
+        .set({
+          poId: header.id,
+          poCreatedAt: new Date(),
+          status: 'po_created',
+          vendorId: input.vendorId,
+          vendorCodeText,
+          updatedBy: user.id,
+        })
+        .where(eq(purchaseRequests.id, pr.id));
+    }
+
+    // Audit: one PO CREATE + one PR_CONVERT per PR.
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'PurchaseOrder',
+        detail: `${header.code} (JWPO-OSP) — ${sortedPrs.length} lines to ${vendorRow?.name ?? input.vendorId}`,
+        refId: header.code,
+      },
+      companyId,
+      user,
+    );
+    for (const pr of sortedPrs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'PR_CONVERT',
+          entity: 'PurchaseRequest',
+          detail: `${pr.code} → ${header.code}`,
+          refId: pr.code,
+        },
+        companyId,
+        user,
+      );
+    }
+
+    return {
+      ...toPurchaseOrder(header),
+      vendorName: vendorRow?.name ?? null,
       lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
     };
   });

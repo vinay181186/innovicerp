@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUsersList } from '../api';
 
 const PAGE_SIZE = 25;
@@ -70,6 +71,11 @@ function UsersListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useUsersList(query, {
     enabled: isAdmin,
   });
+  const { data: approvalCfg } = useApprovalConfig();
+  const approverSet = useMemo(
+    () => new Set(approvalCfg?.poApprovers ?? []),
+    [approvalCfg],
+  );
 
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
@@ -119,6 +125,27 @@ function UsersListPage(): React.JSX.Element {
         ),
       },
       {
+        header: 'Approver',
+        cell: ({ row }) => {
+          const isApprover =
+            row.original.role === 'admin' || approverSet.has(row.original.id);
+          return isApprover ? (
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--green)',
+                fontWeight: 700,
+              }}
+              title={row.original.role === 'admin' ? 'Admin always approves' : 'PO approver'}
+            >
+              ✅ PO
+            </span>
+          ) : (
+            <span className="text3" style={{ fontSize: 10 }}>—</span>
+          );
+        },
+      },
+      {
         header: 'Actions',
         cell: ({ row }) => (
           <Link
@@ -131,7 +158,7 @@ function UsersListPage(): React.JSX.Element {
         ),
       },
     ],
-    [],
+    [approverSet],
   );
 
   const table = useReactTable({

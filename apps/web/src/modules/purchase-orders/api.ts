@@ -107,3 +107,54 @@ export function useCreatePurchaseOrderFromPr() {
     },
   });
 }
+
+export function useApprovePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseOrderDetail, Error, { id: string; remarks?: string }>({
+    mutationFn: ({ id, remarks }) =>
+      apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}/approve`, {
+        method: 'POST',
+        json: remarks ? { remarks } : {},
+      }),
+    onSuccess: (po) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+    },
+  });
+}
+
+export function useRejectPurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseOrderDetail, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}/reject`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (po) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      qc.setQueryData(purchaseOrdersKeys.detail(po.id), po);
+    },
+  });
+}
+
+import type { CreatePurchaseOrderFromPrBatchInput } from '@innovic/shared';
+
+export function useCreatePurchaseOrderFromPrBatch() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderFromPrBatchInput>({
+    mutationFn: (input) =>
+      apiFetch<PurchaseOrderDetail>('/purchase-orders/from-pr-batch', {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: (created, vars) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      for (const prId of vars.prIds) {
+        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(prId) });
+      }
+    },
+  });
+}
