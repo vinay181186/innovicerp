@@ -20,7 +20,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, machines, opLog, runningOps } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireOpEntryRole } from '../../lib/auth';
+import { requireOpEntryRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -29,9 +29,12 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCreateNcFromQcReject } from '../nc-register/cascades';
+import { generateOspPrForOp } from './osp-cascade';
 import { tryApplyQcStockCascade } from './qc-stock-cascade';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
+  GenerateOspPrInput,
+  GenerateOspPrResult,
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
@@ -721,6 +724,20 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       endedAt: row.endedAt instanceof Date ? row.endedAt.toISOString() : null,
     } as RunningOp;
   });
+}
+
+// OSP auto-PR generation (ADR-039). Manager/admin only (PR/PO writes are
+// gated at RLS to admin/manager — a deliberate DELTA from legacy, where
+// operators trigger it on op-start). Delegates to generateOspPrForOp inside a
+// single transaction so the PR, optional PO, op link, and audit rows all
+// commit or roll back together.
+export async function generateOspPr(
+  input: GenerateOspPrInput,
+  user: AuthContext,
+): Promise<GenerateOspPrResult> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => generateOspPrForOp(tx, input.jcOpId, companyId, user));
 }
 
 export async function stopOp(runningOpId: string, user: AuthContext): Promise<RunningOp> {

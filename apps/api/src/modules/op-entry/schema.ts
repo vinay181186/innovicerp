@@ -2,6 +2,8 @@
 export {
   COMPUTED_JC_OP_STATUSES,
   computedJcOpStatusSchema,
+  generateOspPrInputSchema,
+  generateOspPrResultSchema,
   jcOpEnrichedSchema,
   listJcOpsQuerySchema,
   listOpLogQuerySchema,
@@ -14,6 +16,8 @@ export {
 } from '@innovic/shared';
 export type {
   ComputedJcOpStatus,
+  GenerateOspPrInput,
+  GenerateOspPrResult,
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,

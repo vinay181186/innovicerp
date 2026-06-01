@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  generateOspPrInputSchema,
   listJcOpsQuerySchema,
   listOpLogQuerySchema,
   listRunningOpsQuerySchema,
@@ -60,5 +61,14 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.stopOp(id, req.user);
+  });
+
+  // OSP auto-PR generation (ADR-039). Manager/admin only (enforced in service).
+  app.post('/op-entry/osp-pr', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = generateOspPrInputSchema.parse(req.body);
+    const result = await service.generateOspPr(body, req.user);
+    reply.code(201);
+    return result;
   });
 }

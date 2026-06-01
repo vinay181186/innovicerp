@@ -11,11 +11,18 @@ import {
   type SubmitOpLogInput,
   type SubmitQcLogInput,
 } from '@innovic/shared';
-import { Loader2, Play, ShieldCheck, Square } from 'lucide-react';
+import { Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { useSession } from '@/lib/session';
-import { useStartOp, useStopOp, useSubmitOpLog, useSubmitQcLog } from '../api';
+import {
+  useGenerateOspPr,
+  useStartOp,
+  useStopOp,
+  useSubmitOpLog,
+  useSubmitQcLog,
+} from '../api';
 
 interface Props {
   op: JcOpEnriched;
@@ -38,7 +45,10 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
   const submitQc = useSubmitQcLog();
   const start = useStartOp();
   const stop = useStopOp();
-  const companyId = useSession().data?.companyId ?? null;
+  const genOsp = useGenerateOspPr();
+  const session = useSession();
+  const companyId = session.data?.companyId ?? null;
+  const canWrite = session.data?.role === 'admin' || session.data?.role === 'manager';
 
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
@@ -50,6 +60,8 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
   // QC report attachment (migration 0043) — only used on the QC sub-form.
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
+  // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
+  const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // Reset when the selected op changes.
   useEffect(() => {
@@ -59,6 +71,7 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
     setErrorMessage(null);
     setQcReportPath(null);
     setQcReportName(null);
+    setOspMsg(null);
   }, [op.id]);
 
   const isOutsource = op.opType === 'outsource';
@@ -174,6 +187,17 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
     }
   }
 
+  // OSP auto-PR generation (ADR-039) — port of legacy _autoGenerateOspPR.
+  async function handleGenerateOsp(): Promise<void> {
+    setOspMsg(null);
+    try {
+      const res = await genOsp.mutateAsync({ jcOpId: op.id });
+      setOspMsg({ kind: 'ok', text: res.message });
+    } catch (err) {
+      setOspMsg({ kind: 'err', text: err instanceof Error ? err.message : 'Failed to generate OSP PR' });
+    }
+  }
+
   // Shared common fields (Date, Shift) — used by both forms.
   const commonFields = (
     <>
@@ -260,6 +284,95 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
       {errorMessage}
     </div>
   ) : null;
+
+  // OSP outsource op (ADR-039): instead of a shop-floor log/start form, show
+  // the auto-PR action. Once a PR/PO exists (outsource_status advanced past
+  // pending) the op is managed from Purchase → Outsource Jobs.
+  if (isOutsource) {
+    const alreadyRaised =
+      op.outsourceStatus != null && op.outsourceStatus !== 'pending';
+    const statusLabel: Record<string, string> = {
+      pending: 'Pending — no PR yet',
+      pr_raised: 'PR raised — awaiting PO',
+      po_created: 'Draft PO created — awaiting approval',
+      sent: 'Sent to vendor (DC out)',
+      received: 'Received back from vendor',
+    };
+    return (
+      <div className="panel">
+        <div className="panel-hdr">
+          <span className="panel-title">Outside processing</span>
+          <span className="text3" style={{ fontSize: 11 }}>
+            Op {op.opSeq} · <span className="mono">{op.operation}</span>
+          </span>
+        </div>
+        <div className="panel-body">
+          <div
+            style={{
+              marginBottom: 12,
+              padding: '8px 10px',
+              borderRadius: 6,
+              background: 'var(--bg4)',
+              border: '1px solid var(--border)',
+              fontSize: 12,
+            }}
+          >
+            Status:{' '}
+            <span className="fw-700">
+              {op.outsourceStatus ? (statusLabel[op.outsourceStatus] ?? op.outsourceStatus) : 'Pending — no PR yet'}
+            </span>
+          </div>
+
+          {alreadyRaised ? (
+            <div className="text2" style={{ fontSize: 13, lineHeight: 1.6 }}>
+              An OSP purchase request already exists for this operation. Manage it from{' '}
+              <Link to="/purchase-orders" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                Purchase → Outsource Jobs
+              </Link>
+              .
+            </div>
+          ) : !canWrite ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              Generating an OSP purchase request needs Manager or Admin access.
+            </div>
+          ) : (
+            <>
+              <p className="text2" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
+                If this operation matches a configured OSP process, generate a JW purchase
+                request (and a draft PO when the process has a vendor with auto-PO enabled).
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleGenerateOsp()}
+                disabled={genOsp.isPending}
+              >
+                {genOsp.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <PackagePlus size={14} />
+                )}
+                Generate OSP PR
+              </button>
+            </>
+          )}
+
+          {ospMsg ? (
+            <div
+              role="alert"
+              style={{
+                marginTop: 12,
+                fontSize: 12,
+                color: ospMsg.kind === 'ok' ? 'var(--green)' : 'var(--red)',
+              }}
+            >
+              {ospMsg.text}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   // T-040d: render the QC sub-form when the selected op is qc-bearing.
   if (isQcBearing) {

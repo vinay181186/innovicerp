@@ -1603,6 +1603,39 @@ Wire the gate into `approvePurchaseOrder` (no migration — columns exist):
 
 ---
 
+## ADR-039: OSP auto-PR generation on JC outsource op (manager-triggered)
+
+**Date:** 2026-06-01
+**Status:** Accepted
+
+### Context
+
+Deferred audit item from ADR-036/ADR-037 (SYS-1 b / PUR-1 b): the legacy `_autoGenerateOspPR` (HTML L13302) fires when an operator *starts* a JC operation whose name matches a configured OSP process — it auto-creates a JW purchase request and, when the process has a vendor with auto-PO on, a draft JW PO. The React build never wired this; `osp_processes` (migration 0047) existed but nothing consumed it at op time. Outsource PRs only arose via SO/JW Planning or manual entry.
+
+### Decision
+
+Add an explicit endpoint `POST /op-entry/osp-pr` (service `generateOspPr` → `op-entry/osp-cascade.ts:generateOspPrForOp`). **No migration** — the link uses existing columns (`jc_ops.outsource_pr_id` / `outsource_po_line_id` / `outsource_status`, `purchase_requests.source_jc_op_id` + `pr_type='jw_osp'`).
+
+- **Match**: `matchOspProcess` (pure, unit-tested) — first `osp_processes` row whose `processName` is a case-insensitive substring of the op's `operation` (legacy `_isOspOperation`). No match → `ValidationError` with guidance.
+- **Dup guard**: op already linked (`outsource_pr_id`) or an existing non-deleted `jw_osp` PR with `source_jc_op_id = op.id` → `ConflictError`.
+- **PR**: `IN-JWPR-NNNNN`, `pr_type='jw_osp'`, `status='open'`, qty = JC `order_qty`, item from the JC, `source_jc_op_id` + `source_so_line_id` carried, vendor from the matched process (sentinel `(vendor TBD)` in `vendor_code_text` when none, so `vendor_check` passes). Op linked + `outsource_status='pr_raised'`.
+- **Auto draft PO** when the process has a vendor and `auto_po`: `IN-JWPO-NNNNN`, `po_type='job_work'`, `status='draft'`, one line. PR follows the React invariant (`po_id` set ⇒ `status='po_created'`); op → `outsource_status='po_created'` + `outsource_po_line_id`.
+- Activity log: `CREATE PurchaseRequest` (+ `CREATE PurchaseOrder` when auto-PO), all in one transaction.
+
+### Alternatives Considered
+
+- **Trigger it from `startOp` like legacy** — rejected. `startOp` rejects outsource ops by design (the React build routes OSP through procurement, not the shop floor) and returns a `RunningOp`, a different shape. An explicit action is clearer and keeps `startOp` single-purpose.
+- **Let operators trigger it (legacy parity)** — rejected. PR/PO inserts are gated to admin/manager at RLS (`purchase_requests_manager_write`). Gating `generateOspPr` with `requireWriteRole` matches the rest of the procurement module. **Deliberate DELTA**: in legacy (localStorage, no RLS) an operator triggers it on op-start; here a manager triggers it from the op-entry outsource panel. The op-entry UI shows the "Generate OSP PR" button only to admin/manager.
+- **Keep PR `status='open'` after auto-PO (legacy keeps it 'Pending')** — rejected. The React build's PR→PO model is `po_id` set ⇒ `status='po_created'`; following it keeps Outsource Jobs / PR lists consistent.
+
+### Consequences
+
+- Positive: closes the last ADR-037 negative ("Outsource Jobs auto-trigger from op-entry is the bigger missing piece"). `osp_processes` config is now live. Managers get a one-click PR/PO from an outsource op.
+- Negative: manager-gated, so a pure operator can't self-serve (DELTA above). Acceptable given the RLS model.
+- Risks: none material — idempotent via the dup guard; whole flow is one transaction.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

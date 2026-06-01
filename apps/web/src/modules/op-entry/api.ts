@@ -7,6 +7,8 @@
 // reconciling any drift.
 
 import type {
+  GenerateOspPrInput,
+  GenerateOspPrResult,
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
@@ -163,6 +165,19 @@ export function useStartOp() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+    },
+  });
+}
+
+// OSP auto-PR generation (ADR-039). Invalidates jc-ops so the op's outsource
+// status flips to pr_raised / po_created in the table immediately.
+export function useGenerateOspPr() {
+  const qc = useQueryClient();
+  return useMutation<GenerateOspPrResult, Error, GenerateOspPrInput>({
+    mutationFn: (input) =>
+      apiFetch<GenerateOspPrResult>('/op-entry/osp-pr', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
     },
   });
 }

@@ -173,6 +173,28 @@ export const submitQcLogInputSchema = z
   });
 export type SubmitQcLogInput = z.infer<typeof submitQcLogInputSchema>;
 
+// OSP auto-PR generation (ADR-039). Mirror of legacy _autoGenerateOspPR
+// (HTML L13302): when a JC op whose name matches a configured OSP process is
+// "started", auto-create a JW_OSP purchase request (+ optional draft PO when
+// the process has a vendor with autoPo on). Input is just the target op; all
+// other fields are derived server-side from the op, its JC, and the matched
+// osp_processes row.
+export const generateOspPrInputSchema = z.object({
+  jcOpId: z.string().uuid(),
+});
+export type GenerateOspPrInput = z.infer<typeof generateOspPrInputSchema>;
+
+export const generateOspPrResultSchema = z.object({
+  prId: z.string().uuid(),
+  prCode: z.string(),
+  poId: z.string().uuid().nullable(),
+  poCode: z.string().nullable(),
+  vendorName: z.string().nullable(),
+  autoPoCreated: z.boolean(),
+  message: z.string(),
+});
+export type GenerateOspPrResult = z.infer<typeof generateOspPrResultSchema>;
+
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listJcOpsQuerySchema = z
