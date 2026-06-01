@@ -249,6 +249,6 @@ If sign-off lands on plan **(A) + recommended answers** above:
 
 - Service-layer write gating on the 30+ existing modules — deferred to the focused logic-correction audit per `feedback-build-first-audit-later`.
 - Form keys for modules not yet built (`oj_create`, `servicepo_create`) stay defined; their UI gating activates when those modules ship.
-- CSV template download + Excel import — skipped.
+- CSV user-import (legacy `_userImport` L14027) — skipped (creates users; incompatible with Supabase Auth owning invites). **Replaced 2026-06-01 (AUDIT-4) with a JSON matrix clone** in the Configure modal: "Copy matrix as JSON" (clipboard) + "Paste matrix JSON" (validated via `saveUserAccessInputSchema`, loaded into the editor, saved on Save Access). Lets an admin clone one user's permissions to another — the model-appropriate version of the deferred import.
 - Legacy `sr_engineer/engineer/jn_engineer` role tiers — not added; legacy user imports map to `operator`/`viewer`.
 - `_homeSpecialistView` role-routing on the home dashboard (L2511) — depends on this matrix existing; can wire as a follow-up once the matrix is live and populated.

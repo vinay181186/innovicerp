@@ -82,6 +82,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** AUDIT-4 (Access Control JSON matrix clone — AC-1 follow-up, 2026-06-01)
+**Title:** Fourth "wire the audit tasks" slice. The AC-1 follow-up "CSV template + JSON matrix paste import". Built the model-appropriate version (PARITY doc recommended skipping the legacy CSV *user-import*, which is incompatible with Supabase Auth owning invites).
+**Status:** [x] CODE-COMPLETE 2026-06-01, NOT yet committed. **Web-only, no API/schema/migration.** `access-control/components/configure-modal.tsx`: a toolbar with "Copy matrix as JSON" (→ clipboard; falls back to opening the paste box if clipboard blocked) + "Paste matrix JSON" (validates with the existing `saveUserAccessInputSchema`, loads into the editor; saved only on Save Access). Lets an admin clone one user's permission matrix to another. PARITY doc §13 updated (skip → JSON-clone). web typecheck + lint clean; presentational → no new test.
+**Next:** Commit. **Last audit-backlog item:** per-form server-side access gating — **reverses ADR-035 (AC matrix is intentionally UI-only). Needs an explicit decision before building; will surface it rather than silently rewriting authorization across 30+ modules.**
+
 **ID:** AUDIT-3 (SC Dashboard pending-lines chip filters — legacy parity, 2026-06-01)
 **Title:** Third "wire the audit tasks" slice. Add the legacy "Pending PO Tracker" Vendor / Item / SO-JW filters (renderSCDashboard L17030) to the React SC Dashboard.
 **Status:** [x] CODE-COMPLETE 2026-06-01, NOT yet committed. **Web-only, no API/schema/migration** — filters the already-fetched `pendingLines` client-side. `sc-dashboard/routes/page.tsx`: 3 datalist filter inputs (options derived from the pending lines) + Clear-filters button + live "Filtered: N lines · Pend Qty · Pend Value" totals line; empty-state distinguishes "no pending" vs "none match filters". Hooks (useState/useMemo) moved above the loading/error early-returns. New `FilterInput` helper. Presentational → no tests (CLAUDE.md §9). web typecheck + lint clean.

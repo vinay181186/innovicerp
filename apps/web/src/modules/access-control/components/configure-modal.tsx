@@ -16,8 +16,9 @@ import {
   USER_ROLES,
   type AccessFormPerms,
   type UserRole,
+  saveUserAccessInputSchema,
 } from '@innovic/shared';
-import { Loader2, X } from 'lucide-react';
+import { ClipboardPaste, Copy, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUpdateUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess } from '../api';
@@ -50,6 +51,13 @@ export function ConfigureAccessModal({
   const [departments, setDepartments] = useState<Record<string, boolean>>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // JSON matrix clone (AC-1 follow-up): export the current matrix / paste one
+  // copied from another user. Replaces the legacy CSV user-import, which does
+  // not fit the multi-tenant Supabase Auth model (see docs/PARITY/access-control.md).
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [copyFlash, setCopyFlash] = useState(false);
 
   // Seed once when the matrix loads.
   useEffect(() => {
@@ -90,6 +98,54 @@ export function ConfigureAccessModal({
       }
       return { ...prev, [key]: next };
     });
+  }
+
+  // Export the current matrix as a pretty JSON string + copy to clipboard.
+  function handleCopyJson(): void {
+    const payload = { fullAccess, departments, forms };
+    const text = JSON.stringify(payload, null, 2);
+    void navigator.clipboard?.writeText(text).then(
+      () => {
+        setCopyFlash(true);
+        window.setTimeout(() => setCopyFlash(false), 1800);
+      },
+      () => {
+        // Clipboard blocked — fall back to opening the paste box pre-filled so
+        // the admin can copy manually.
+        setImportText(text);
+        setShowImport(true);
+      },
+    );
+  }
+
+  // Parse + validate a pasted matrix and load it into the editor (not saved
+  // until the admin clicks Save Access). Unknown form keys are ignored; every
+  // known key is filled so the table renders fully.
+  function handleApplyJson(): void {
+    setImportError(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(importText);
+    } catch {
+      setImportError('Not valid JSON.');
+      return;
+    }
+    const result = saveUserAccessInputSchema.safeParse(parsed);
+    if (!result.success) {
+      setImportError('JSON does not match the access-matrix shape (fullAccess / departments / forms).');
+      return;
+    }
+    const m = result.data;
+    setFullAccess(m.fullAccess);
+    setDepartments({ ...m.departments });
+    const filled: Record<string, FormPerms> = {};
+    for (const f of ACCESS_FORMS) {
+      const existing = m.forms[f.key];
+      filled[f.key] = existing ? { ...existing } : emptyPerms();
+    }
+    setForms(filled);
+    setShowImport(false);
+    setImportText('');
   }
 
   async function onSave(): Promise<void> {
@@ -189,6 +245,78 @@ export function ConfigureAccessModal({
                 </select>
               </div>
             </div>
+
+            {/* Matrix clone toolbar — export current as JSON / paste another */}
+            <div
+              style={{
+                marginBottom: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
+                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy matrix as JSON'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setShowImport((v) => !v);
+                  setImportError(null);
+                }}
+              >
+                <ClipboardPaste size={13} /> Paste matrix JSON
+              </button>
+              <span className="text3" style={{ fontSize: 10 }}>
+                Clone permissions from another user — copy here, paste there, then Save.
+              </span>
+            </div>
+
+            {showImport ? (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                }}
+              >
+                <textarea
+                  className="innovic-input"
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder='{"fullAccess":false,"departments":{...},"forms":{...}}'
+                  rows={5}
+                  style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
+                />
+                {importError ? (
+                  <div style={{ marginTop: 6, color: 'var(--red)', fontSize: 11 }}>{importError}</div>
+                ) : null}
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setShowImport(false);
+                      setImportError(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleApplyJson}
+                    disabled={!importText.trim()}
+                  >
+                    Apply to editor
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Full Access banner */}
             <div
