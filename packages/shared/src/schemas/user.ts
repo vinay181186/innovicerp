@@ -20,6 +20,10 @@ export const userSchema = z.object({
   role: userRoleSchema,
   phone: z.string().nullable(),
   isActive: z.boolean(),
+  // Per-user PO approval ceiling (₹). numeric column → surfaced as a string
+  // (same convention as PO rate/qty). Null = no personal limit; the company
+  // approval_config.po_manager_limit applies instead. See ADR-038.
+  approvalLimit: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -34,6 +38,10 @@ export const updateUserInputSchema = z.object({
   role: userRoleSchema.optional(),
   phone: z.string().max(32).optional(),
   isActive: z.boolean().optional(),
+  // null clears the personal limit (falls back to company po_manager_limit);
+  // a non-negative number sets it. Mirror of legacy renderUsers approvalLimit
+  // field (L13579). See ADR-038.
+  approvalLimit: z.number().nonnegative().max(99999999).nullable().optional(),
 });
 export type UpdateUserInput = z.infer<typeof updateUserInputSchema>;
 

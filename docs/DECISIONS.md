@@ -1571,6 +1571,38 @@ Ship all four items in one session as a layered build:
 
 ---
 
+## ADR-038: PO approval amount-limit gate + per-user `approval_limit`
+
+**Date:** 2026-06-01
+**Status:** Accepted
+
+### Context
+
+ADR-036/ADR-037 shipped the PO Draft→Approve/Reject flow gated only on the approver list (admin OR in `approval_config.po_approvers`). Both ADRs explicitly deferred the amount-limit gate: a manager on the approvers list could approve a PO of any size. Legacy `_approvePO` (L21731) blocks a non-admin approver when the PO value exceeds the limit. The supporting columns already existed (`users.approval_limit` + `approval_config.po_manager_limit`, both from migration 0046) but the User-edit screen had no field for the per-user limit and `approvePurchaseOrder` never read either column.
+
+### Decision
+
+Wire the gate into `approvePurchaseOrder` (no migration — columns exist):
+
+1. **PO value** = `Σ(qty × rate)` over the PO's active lines — **no tax**, matching legacy `tVal` (L21727).
+2. **Effective ceiling** for a non-admin approver = personal `users.approval_limit` when set (>0), else company `approval_config.po_manager_limit`, else the legacy default `100000` — mirror of `_getUserApprovalLimit` (L21602). Admins are unlimited (bypass the gate entirely).
+3. Over-ceiling → `AuthorizationError` with the legacy message shape ("PO value ₹X exceeds your approval limit of ₹Y. Admin approval required.").
+4. **User-edit screen** gains a "PO approval limit (₹)" field (`updateUserInputSchema.approvalLimit`, nullable number; blank clears → falls back to company limit). The field is disabled for admins (always unlimited).
+
+### Alternatives Considered
+
+- **Include tax in the PO value** — rejected. Legacy `tVal` is the pre-tax line sum; matching it keeps parity and avoids re-deriving tax at approve time.
+- **Use the stricter of personal AND company limit** (legacy `_isPoApprover` checks personal; `_approvePO` checks company) — rejected in favour of `_getUserApprovalLimit`'s documented "personal overrides company" precedence, which is the single helper legacy uses to *describe* a user's limit. Simpler and matches the User screen's mental model.
+- **Surface `approval_limit` as a number in the read shape** — rejected. The `numeric` column comes back from Drizzle as a string; kept as a string in `userSchema` (same convention as PO `rate`/`qty`) rather than coercing through the `as unknown as User` cast.
+
+### Consequences
+
+- Positive: closes the ADR-037 negative ("a manager added to po_approvers can approve POs of any size"). Approval Config is now fully enforced — list membership AND amount ceiling.
+- Negative: the gate reads two extra rows (config + user) per approve call; negligible at this scale.
+- Risks: none material. Companies with no `approval_config` row fall back to the 100000 default ceiling for non-admins — same as legacy.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

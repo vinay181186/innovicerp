@@ -107,6 +107,10 @@ export async function updateUser(
     if (input.role !== undefined) updates.role = input.role;
     if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
+    // approval_limit is a numeric column → store as string; null clears it.
+    if (input.approvalLimit !== undefined) {
+      updates.approvalLimit = input.approvalLimit === null ? null : String(input.approvalLimit);
+    }
 
     const updated = await tx.update(users).set(updates).where(eq(users.id, id)).returning();
     return updated[0] as unknown as User;

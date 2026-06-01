@@ -21,6 +21,7 @@ import {
   purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
+  users,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -866,29 +867,78 @@ export async function createPurchaseOrderFromPr(
   });
 }
 
-// ─── Approval flow (ADR-036 follow-up, 2026-05-31) ─────────────────
+// ─── Approval flow (ADR-036/ADR-037 follow-up; limit gate ADR-038) ──
 //
 // Mirror of legacy _approvePO L21716 + _rejectPO L21758. Eligibility:
 // (a) caller must be admin OR in approval_config.po_approvers; (b) PO
-// must currently be in 'draft' status. Amount-limit gate (legacy uses
-// po_manager_limit) is not yet wired — would need to sum lines + tax
-// per ADR-036's deferred audit item. Activity log + state change.
+// must currently be in 'draft' status; (c) for a non-admin approver the
+// PO value must not exceed their approval ceiling (ADR-038).
+//
+// PO value = Σ(qty × rate) over the PO's active lines — no tax, matching
+// legacy `tVal` (L21727). Effective ceiling for a non-admin approver =
+// the caller's personal users.approval_limit when set (>0), else the
+// company approval_config.po_manager_limit, else the legacy default of
+// 100000 (_getUserApprovalLimit L21602). Admin = unlimited.
+
+const DEFAULT_PO_APPROVAL_LIMIT = 100_000;
+
+interface ApprovalContext {
+  isApprover: boolean;
+  isAdmin: boolean;
+  /** Effective ceiling for a non-admin approver (₹). Infinity for admins. */
+  approvalCeiling: number;
+}
 
 async function loadApprovalContext(
   tx: DbTransaction,
   companyId: string,
   userId: string,
   userRole: string,
-): Promise<{ isApprover: boolean; isAdmin: boolean }> {
+): Promise<ApprovalContext> {
   const isAdmin = userRole === 'admin';
-  if (isAdmin) return { isApprover: true, isAdmin: true };
-  const rows = await tx
-    .select({ poApprovers: approvalConfig.poApprovers })
+  if (isAdmin) return { isApprover: true, isAdmin: true, approvalCeiling: Infinity };
+
+  const cfgRows = await tx
+    .select({
+      poApprovers: approvalConfig.poApprovers,
+      poManagerLimit: approvalConfig.poManagerLimit,
+    })
     .from(approvalConfig)
     .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
     .limit(1);
-  const approvers = Array.isArray(rows[0]?.poApprovers) ? (rows[0]!.poApprovers as string[]) : [];
-  return { isApprover: approvers.includes(userId), isAdmin: false };
+  const approvers = Array.isArray(cfgRows[0]?.poApprovers)
+    ? (cfgRows[0]!.poApprovers as string[])
+    : [];
+
+  const userRows = await tx
+    .select({ approvalLimit: users.approvalLimit })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.companyId, companyId), isNull(users.deletedAt)))
+    .limit(1);
+
+  const personalLimit = Number(userRows[0]?.approvalLimit ?? 0);
+  const companyLimit = Number(cfgRows[0]?.poManagerLimit ?? 0);
+  const approvalCeiling =
+    personalLimit > 0 ? personalLimit : companyLimit > 0 ? companyLimit : DEFAULT_PO_APPROVAL_LIMIT;
+
+  return { isApprover: approvers.includes(userId), isAdmin: false, approvalCeiling };
+}
+
+/** Σ(qty × rate) over a PO's active lines — no tax (legacy `tVal` L21727). */
+async function sumPoLineValue(
+  tx: DbTransaction,
+  purchaseOrderId: string,
+): Promise<number> {
+  const lines = await tx
+    .select({ qty: purchaseOrderLines.qty, rate: purchaseOrderLines.rate })
+    .from(purchaseOrderLines)
+    .where(
+      and(
+        eq(purchaseOrderLines.purchaseOrderId, purchaseOrderId),
+        isNull(purchaseOrderLines.deletedAt),
+      ),
+    );
+  return lines.reduce((sum, l) => sum + Number(l.qty) * Number(l.rate), 0);
 }
 
 async function getPurchaseOrderInternal(
@@ -938,7 +988,12 @@ export async function approvePurchaseOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const { isApprover } = await loadApprovalContext(tx, companyId, user.id, user.role);
+    const { isApprover, isAdmin, approvalCeiling } = await loadApprovalContext(
+      tx,
+      companyId,
+      user.id,
+      user.role,
+    );
     if (!isApprover) {
       throw new AuthorizationError(
         'You are not authorized to approve POs. Ask an admin to add you to the approvers list.',
@@ -960,6 +1015,17 @@ export async function approvePurchaseOrder(
     if (!po) throw new NotFoundError(`Purchase order ${id} not found`);
     if (po.status !== 'draft') {
       throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be approved`);
+    }
+
+    // Amount-limit gate (legacy _approvePO L21731). Admins bypass.
+    if (!isAdmin) {
+      const poValue = await sumPoLineValue(tx, id);
+      if (poValue > approvalCeiling) {
+        const fmt = (v: number) => `₹${Math.round(v).toLocaleString('en-IN')}`;
+        throw new AuthorizationError(
+          `PO value ${fmt(poValue)} exceeds your approval limit of ${fmt(approvalCeiling)}. Admin approval required.`,
+        );
+      }
     }
 
     await tx

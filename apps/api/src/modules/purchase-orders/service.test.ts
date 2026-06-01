@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
   activityLog,
+  approvalConfig,
   items,
   purchaseOrderLines,
   purchaseOrders,
@@ -600,4 +601,128 @@ describe('purchase-orders service', () => {
     expect(prAudit[0]!.detail).toContain(prCode);
     expect(prAudit[0]!.detail).toContain(poCode);
   });
+});
+
+// ── PO approve amount-limit gate (ADR-038) ──────────────────────────
+//
+// Exercises the non-admin approval ceiling wired into approvePurchaseOrder.
+// We temporarily put the seed admin's id into approval_config.po_approvers
+// and set a known company limit, then drive approvals through a fabricated
+// non-admin (manager) AuthContext that reuses the admin's id (so it is a
+// real, in-company user row but treated as non-admin by the service). The
+// approval_config row + the user's approval_limit are captured and restored
+// so the shared singleton is left exactly as found.
+describe('approvePurchaseOrder — amount-limit gate (ADR-038)', () => {
+  const APPROVE_PREFIX = 'T036B-APP-';
+  const manager = (): AuthContext => ({ ...admin, role: 'manager' });
+
+  let cfgExisted = false;
+  let origApprovers: unknown = [];
+  let origLimit = '100000';
+  let origUserLimit: string | null = null;
+
+  async function createDraftPo(code: string, qty: number, rate: number) {
+    return service.createPurchaseOrder(
+      {
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+        lines: [{ itemId: firstItemId, itemName: 'X', qty, rate }],
+      },
+      admin,
+    );
+  }
+
+  beforeAll(async () => {
+    const rows = await db
+      .select()
+      .from(approvalConfig)
+      .where(and(eq(approvalConfig.companyId, admin.companyId!), isNull(approvalConfig.deletedAt)))
+      .limit(1);
+    if (rows[0]) {
+      cfgExisted = true;
+      origApprovers = rows[0].poApprovers;
+      origLimit = rows[0].poManagerLimit;
+      await db
+        .update(approvalConfig)
+        .set({ poApprovers: [admin.id], poManagerLimit: '50000' })
+        .where(eq(approvalConfig.id, rows[0].id));
+    } else {
+      await db.insert(approvalConfig).values({
+        companyId: admin.companyId!,
+        poApproval: true,
+        poManagerLimit: '50000',
+        prApproval: true,
+        invoiceApproval: false,
+        poApprovers: [admin.id],
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      });
+    }
+    const urows = await db
+      .select({ approvalLimit: users.approvalLimit })
+      .from(users)
+      .where(eq(users.id, admin.id))
+      .limit(1);
+    origUserLimit = urows[0]?.approvalLimit ?? null;
+  }, 180_000);
+
+  afterAll(async () => {
+    if (cfgExisted) {
+      await db
+        .update(approvalConfig)
+        .set({ poApprovers: origApprovers, poManagerLimit: origLimit })
+        .where(and(eq(approvalConfig.companyId, admin.companyId!), isNull(approvalConfig.deletedAt)));
+    } else {
+      await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
+    }
+    await db.update(users).set({ approvalLimit: origUserLimit }).where(eq(users.id, admin.id));
+  }, 180_000);
+
+  it('admin can approve a PO above any limit', async () => {
+    const po = await createDraftPo(`${APPROVE_PREFIX}ADM`, 100, 100000); // 10,000,000
+    const res = await service.approvePurchaseOrder(po.id, 'looks good', admin);
+    expect(res.status).toBe('open');
+    expect(res.approvedBy).toBe(admin.id);
+    expect(res.approvalRemarks).toBe('looks good');
+  }, 180_000);
+
+  it('non-admin approver can approve a PO at/below the company manager limit', async () => {
+    await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
+    const po = await createDraftPo(`${APPROVE_PREFIX}OK`, 10, 4000); // 40,000 ≤ 50,000
+    const res = await service.approvePurchaseOrder(po.id, null, manager());
+    expect(res.status).toBe('open');
+  }, 180_000);
+
+  it('non-admin approver is blocked when PO value exceeds the company limit', async () => {
+    await db.update(users).set({ approvalLimit: null }).where(eq(users.id, admin.id));
+    const po = await createDraftPo(`${APPROVE_PREFIX}OVER`, 10, 7000); // 70,000 > 50,000
+    await expect(service.approvePurchaseOrder(po.id, null, manager())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  }, 180_000);
+
+  it('personal approval_limit takes precedence over the company limit', async () => {
+    await db.update(users).set({ approvalLimit: '20000' }).where(eq(users.id, admin.id));
+    // 30,000 > personal 20,000 even though it is < company 50,000 → blocked.
+    const po = await createDraftPo(`${APPROVE_PREFIX}PERS`, 10, 3000);
+    await expect(service.approvePurchaseOrder(po.id, null, manager())).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+  }, 180_000);
+
+  it('rejects approval of a non-draft PO', async () => {
+    const po = await createDraftPo(`${APPROVE_PREFIX}ND`, 1, 100);
+    await service.approvePurchaseOrder(po.id, null, admin); // → open
+    await expect(service.approvePurchaseOrder(po.id, null, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  }, 180_000);
 });

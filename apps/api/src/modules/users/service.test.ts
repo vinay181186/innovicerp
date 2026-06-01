@@ -15,7 +15,13 @@ const VIEWER_EMAIL = 'viewer@innovic.test';
 
 let admin: AuthContext;
 let viewer: AuthContext;
-let viewerOriginal: { fullName: string | null; phone: string | null; role: string; isActive: boolean };
+let viewerOriginal: {
+  fullName: string | null;
+  phone: string | null;
+  role: string;
+  isActive: boolean;
+  approvalLimit: string | null;
+};
 
 beforeAll(async () => {
   const adminRows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -38,6 +44,7 @@ beforeAll(async () => {
     phone: v.phone,
     role: v.role,
     isActive: v.isActive,
+    approvalLimit: v.approvalLimit,
   };
 });
 
@@ -51,6 +58,7 @@ afterAll(async () => {
       phone: viewerOriginal.phone,
       role: viewerOriginal.role as never,
       isActive: viewerOriginal.isActive,
+      approvalLimit: viewerOriginal.approvalLimit,
       deletedAt: null,
       updatedBy: admin.id,
     })
@@ -126,6 +134,14 @@ describe('users service', () => {
     await expect(
       service.updateUser(viewer.id, { fullName: 'Hi' }, viewer),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('updateUser sets and clears approvalLimit (ADR-038)', async () => {
+    const set = await service.updateUser(viewer.id, { approvalLimit: 75000 }, admin);
+    // numeric column → string with 2dp
+    expect(set.approvalLimit).toBe('75000.00');
+    const cleared = await service.updateUser(viewer.id, { approvalLimit: null }, admin);
+    expect(cleared.approvalLimit).toBeNull();
   });
 
   it('softDeleteUser sets deletedAt; row no longer visible', async () => {

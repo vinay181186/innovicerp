@@ -22,6 +22,7 @@ interface FormValues {
   role: UserRole;
   phone: string;
   isActive: boolean;
+  approvalLimit: string;
 }
 
 function UserEditPage(): React.JSX.Element {
@@ -42,8 +43,9 @@ function UserEditPage(): React.JSX.Element {
           role: detail.role,
           phone: detail.phone ?? '',
           isActive: detail.isActive,
+          approvalLimit: detail.approvalLimit ?? '',
         }
-      : { fullName: '', role: 'viewer', phone: '', isActive: true },
+      : { fullName: '', role: 'viewer', phone: '', isActive: true, approvalLimit: '' },
   });
 
   if (!isAdmin) {
@@ -84,11 +86,16 @@ function UserEditPage(): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
+    // Empty field clears the personal limit (→ null); otherwise parse the
+    // number. A blank-after-set is meaningful, so we always send the key.
+    const trimmedLimit = values.approvalLimit.trim();
+    const approvalLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
     const payload: UpdateUserInput = {
       fullName: values.fullName.trim() || undefined,
       role: values.role,
       phone: values.phone.trim() || undefined,
       isActive: values.isActive,
+      approvalLimit: Number.isNaN(approvalLimit) ? null : approvalLimit,
     };
     try {
       await update.mutateAsync(payload);
@@ -253,6 +260,27 @@ function UserEditPage(): React.JSX.Element {
                   placeholder="+91-..."
                   {...register('phone', { maxLength: { value: 32, message: 'Max 32 chars' } })}
                 />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="approvalLimit">
+                  PO approval limit (₹)
+                </label>
+                <input
+                  id="approvalLimit"
+                  className="innovic-input"
+                  type="number"
+                  min={0}
+                  step={10000}
+                  autoComplete="off"
+                  placeholder="e.g. 100000"
+                  disabled={detail.role === 'admin'}
+                  {...register('approvalLimit')}
+                />
+                <div className="form-help">
+                  {detail.role === 'admin'
+                    ? 'Admins can approve any PO (unlimited).'
+                    : 'Max PO value this user can approve. Blank = use company manager limit.'}
+                </div>
               </div>
             </div>
 
