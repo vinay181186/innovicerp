@@ -7,7 +7,8 @@
 import type { ScDashboardResponse } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
@@ -35,6 +36,53 @@ function ScDashboardPage(): React.JSX.Element {
     queryFn: () => apiFetch<ScDashboardResponse>('/sc-dashboard'),
     staleTime: 30_000,
   });
+
+  // Pending PO Tracker filters (legacy renderSCDashboard L17030 — Vendor /
+  // Item / SO-JW). Client-side over the already-fetched pendingLines. Hooks
+  // run before the early returns; default to [] while data is loading.
+  const [fltVendor, setFltVendor] = useState('');
+  const [fltItem, setFltItem] = useState('');
+  const [fltSo, setFltSo] = useState('');
+
+  const pendingLines = data?.pendingLines ?? [];
+  const isFiltered = Boolean(fltVendor || fltItem || fltSo);
+
+  const filterOpts = useMemo(() => {
+    const vendors = new Set<string>();
+    const items = new Set<string>();
+    const sos = new Set<string>();
+    for (const p of pendingLines) {
+      const v = p.vendorName ?? p.vendorCode;
+      if (v) vendors.add(v);
+      if (p.itemCode) items.add(p.itemCode);
+      if (p.soCode) sos.add(p.soCode);
+    }
+    return {
+      vendors: [...vendors].sort(),
+      items: [...items].sort(),
+      sos: [...sos].sort(),
+    };
+  }, [pendingLines]);
+
+  const filteredPending = useMemo(() => {
+    const has = (hay: string | null | undefined, needle: string): boolean =>
+      needle.trim() === '' ? true : (hay ?? '').toLowerCase().includes(needle.trim().toLowerCase());
+    return pendingLines.filter(
+      (p) =>
+        has(p.vendorName ?? p.vendorCode, fltVendor) &&
+        has(p.itemCode, fltItem) &&
+        has(p.soCode, fltSo),
+    );
+  }, [pendingLines, fltVendor, fltItem, fltSo]);
+
+  const fltPendQty = filteredPending.reduce((s, p) => s + p.pendingQty, 0);
+  const fltPendVal = filteredPending.reduce((s, p) => s + p.pendingVal, 0);
+
+  function clearFilters(): void {
+    setFltVendor('');
+    setFltItem('');
+    setFltSo('');
+  }
 
   if (isLoading) {
     return (
@@ -259,8 +307,64 @@ function ScDashboardPage(): React.JSX.Element {
         </table>
       </Section>
 
-      {/* Pending PO lines */}
-      <Section title={`📌 Pending PO Lines (${data.pendingLines.length})`}>
+      {/* Pending PO Tracker (with Vendor / Item / SO filters) */}
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-hdr">
+          <span className="panel-title">🔍 Pending PO Tracker</span>
+          {isFiltered ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--red)', fontSize: 11 }}
+              onClick={clearFilters}
+            >
+              <X size={12} /> Clear filters
+            </button>
+          ) : null}
+        </div>
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'var(--bg3)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <FilterInput
+            label="Vendor"
+            listId="dlScVnd"
+            value={fltVendor}
+            onChange={setFltVendor}
+            options={filterOpts.vendors}
+            width={150}
+          />
+          <FilterInput
+            label="Item"
+            listId="dlScItm"
+            value={fltItem}
+            onChange={setFltItem}
+            options={filterOpts.items}
+            width={160}
+          />
+          <FilterInput
+            label="SO/JW"
+            listId="dlScSO"
+            value={fltSo}
+            onChange={setFltSo}
+            options={filterOpts.sos}
+            width={120}
+          />
+          <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
+            {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
+            {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pend Qty:{' '}
+            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span> · Pend Value:{' '}
+            <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+          </div>
+        </div>
+        <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
@@ -280,12 +384,14 @@ function ScDashboardPage(): React.JSX.Element {
             </tr>
           </thead>
           <tbody>
-            {data.pendingLines.length === 0 ? (
+            {filteredPending.length === 0 ? (
               <tr>
-                <td colSpan={13} className="empty-state">No pending lines</td>
+                <td colSpan={13} className="empty-state">
+                  {isFiltered ? 'No pending lines match the filters' : 'No pending lines'}
+                </td>
               </tr>
             ) : (
-              data.pendingLines.map((p) => {
+              filteredPending.map((p) => {
                 const sb = statusBadge(p.status);
                 return (
                   <tr key={`${p.poId}:${p.lineNo}`}>
@@ -327,7 +433,8 @@ function ScDashboardPage(): React.JSX.Element {
             )}
           </tbody>
         </table>
-      </Section>
+        </div>
+      </div>
 
       {/* Recent GRN */}
       <Section title="📦 Recent GRN (last 8)">
@@ -371,6 +478,45 @@ function Card({ label, value, color }: { label: string; value: string | number; 
       <div className="mono fw-700" style={{ fontSize: 20, color }}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function FilterInput({
+  label,
+  listId,
+  value,
+  onChange,
+  options,
+  width,
+}: {
+  label: string;
+  listId: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  width: number;
+}): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <label
+        style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, whiteSpace: 'nowrap' }}
+      >
+        {label}:
+      </label>
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+      <input
+        list={listId}
+        className="innovic-input"
+        value={value}
+        placeholder="🔍 All"
+        onChange={(e) => onChange(e.target.value)}
+        style={{ fontSize: 12, padding: '4px 8px', width }}
+      />
     </div>
   );
 }
