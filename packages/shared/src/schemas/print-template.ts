@@ -12,8 +12,8 @@
 
 import { z } from 'zod';
 
-// ── Document types (the only 3 with customisable templates) ──
-export const PRINT_DOC_TYPES = ['PO', 'OSP DC', 'JW DC'] as const;
+// ── Document types with customisable templates ──
+export const PRINT_DOC_TYPES = ['PO', 'SERVICE PO', 'OSP DC', 'JW DC'] as const;
 export type PrintDocType = (typeof PRINT_DOC_TYPES)[number];
 
 // ── The 5 editable blocks per document (in print order) ──
@@ -29,6 +29,7 @@ export type PrintTemplateBlock = (typeof PRINT_TEMPLATE_BLOCKS)[number];
 // docType → template-key prefix
 export const PRINT_DOC_KEY_PREFIX: Record<PrintDocType, string> = {
   PO: 'po',
+  'SERVICE PO': 'spo',
   'OSP DC': 'ospdc',
   'JW DC': 'jwdc',
 };
@@ -74,6 +75,7 @@ export function isPrintTemplateKey(key: string): boolean {
 }
 
 export function printTemplateDocType(key: string): PrintDocType | null {
+  if (key.startsWith('spo_')) return 'SERVICE PO';
   if (key.startsWith('po_')) return 'PO';
   if (key.startsWith('ospdc_')) return 'OSP DC';
   if (key.startsWith('jwdc_')) return 'JW DC';
@@ -91,6 +93,16 @@ export const PRINT_TEMPLATE_DEFAULTS: Record<string, string> = {
   po_footer:
     'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
   po_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
+
+  // SERVICE PURCHASE ORDER
+  spo_header_note:
+    'This Service Purchase Order is placed for the services described below. Quote our SPO number {spoNo} on all correspondence and invoices.',
+  spo_special_notes: '',
+  spo_terms:
+    '1. Services must be rendered as per the scope and specifications agreed.\n2. Payment will be made as per agreed terms ({paymentTerms}).\n3. Service completion timeline must be adhered to; delays may attract penalty.\n4. Invoices must quote this SPO number and the relevant expense head.\n5. All disputes are subject to V.U. Nagar jurisdiction only.',
+  spo_footer:
+    'E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document.',
+  spo_signature: 'For Innovic Technology\n\n\n\nAuthorised Signatory',
 
   // OSP DELIVERY CHALLAN
   ospdc_header_note:
@@ -131,6 +143,26 @@ export const PRINT_TEMPLATE_VARS: Record<PrintDocType, readonly string[]> = {
     'poDate',
     'paymentTerms',
     'deliveryTerms',
+    'vendorName',
+    'vendorAddress',
+    'vendorGSTIN',
+    'vendorContact',
+    'totalValue',
+    'totalQty',
+  ],
+  'SERVICE PO': [
+    'companyName',
+    'companyAddress',
+    'companyGSTIN',
+    'companyPhone',
+    'companyEmail',
+    'date',
+    'currentUser',
+    'spoNo',
+    'spoDate',
+    'expenseHead',
+    'costCenter',
+    'paymentTerms',
     'vendorName',
     'vendorAddress',
     'vendorGSTIN',

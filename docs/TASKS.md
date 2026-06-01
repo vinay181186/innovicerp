@@ -82,6 +82,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** AUDIT-5 (Service PO print template — PUR-1/ADR-037 deferred Phase F slot, 2026-06-01)
+**Title:** Fifth "wire the audit tasks" slice. Add a printable Service PO (the deferred "Service PO print template (Phase F slot)").
+**Status:** [x] CODE-COMPLETE 2026-06-01, NOT yet committed. **No migration** — added a 4th print-template doc type `SERVICE PO` (prefix `spo_`, 5 blocks + defaults + vars) to `packages/shared/src/schemas/print-template.ts`; templates seed lazily and `print_templates.template_key` has no enumerating CHECK, so it's code-only. `doc-print.ts` treats `SERVICE PO` like `PO` (priced table + totals + amount-in-words); `DOC_TITLE` + editor `DOC_COLOR`/`DOC_LABEL` extended (admin Print Templates editor now shows a SERVICE PO group automatically via PRINT_TEMPLATE_META). New `service-pos/lib/print-spo.ts` + Print button on the Service PO detail page (mirrors `print-po.ts`). Shared print-template test bumped 15→20 keys (5/5 green); web doc-print test still 8/8. PARITY doc updated. All 3 packages typecheck + lint clean.
+**Next:** Commit. **Last audit-backlog item:** per-form server-side access gating — **reverses ADR-035 (AC matrix is intentionally UI-only). Will surface for a decision before building.**
+
 **ID:** AUDIT-4 (Access Control JSON matrix clone — AC-1 follow-up, 2026-06-01)
 **Title:** Fourth "wire the audit tasks" slice. The AC-1 follow-up "CSV template + JSON matrix paste import". Built the model-appropriate version (PARITY doc recommended skipping the legacy CSV *user-import*, which is incompatible with Supabase Auth owning invites).
 **Status:** [x] CODE-COMPLETE 2026-06-01, NOT yet committed. **Web-only, no API/schema/migration.** `access-control/components/configure-modal.tsx`: a toolbar with "Copy matrix as JSON" (→ clipboard; falls back to opening the paste box if clipboard blocked) + "Paste matrix JSON" (validates with the existing `saveUserAccessInputSchema`, loads into the editor; saved only on Save Access). Lets an admin clone one user's permission matrix to another. PARITY doc §13 updated (skip → JSON-clone). web typecheck + lint clean; presentational → no new test.

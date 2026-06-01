@@ -10,9 +10,9 @@ import {
 } from './print-template';
 
 describe('print-template helpers', () => {
-  it('exposes exactly 15 keys (3 docs × 5 blocks) with a default each', () => {
-    expect(PRINT_TEMPLATE_KEYS).toHaveLength(15);
-    expect(PRINT_TEMPLATE_META).toHaveLength(15);
+  it('exposes exactly 20 keys (4 docs × 5 blocks) with a default each', () => {
+    expect(PRINT_TEMPLATE_KEYS).toHaveLength(20);
+    expect(PRINT_TEMPLATE_META).toHaveLength(20);
     for (const key of PRINT_TEMPLATE_KEYS) {
       expect(PRINT_TEMPLATE_DEFAULTS).toHaveProperty(key);
     }
@@ -20,6 +20,7 @@ describe('print-template helpers', () => {
 
   it('maps keys to doc types', () => {
     expect(printTemplateDocType('po_terms')).toBe('PO');
+    expect(printTemplateDocType('spo_terms')).toBe('SERVICE PO');
     expect(printTemplateDocType('ospdc_footer')).toBe('OSP DC');
     expect(printTemplateDocType('jwdc_signature')).toBe('JW DC');
     expect(printTemplateDocType('nonsense')).toBeNull();

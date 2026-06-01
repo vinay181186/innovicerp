@@ -1,11 +1,15 @@
 // Service PO detail. Read + Approve action for admin.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { usePrintTemplates } from '../../print-templates/api';
+import { useMyCompany } from '../../settings/api';
+import { useVendor } from '../../vendors/api';
 import { useApproveServicePo, useServicePo, useSoftDeleteServicePo } from '../api';
+import { printServicePo } from '../lib/print-spo';
 
 export const servicePosDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,8 +37,23 @@ function ServicePosDetailPage(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
   const approveMut = useApproveServicePo();
   const softDelete = useSoftDeleteServicePo();
+  const { data: vendor } = useVendor(po?.vendorId ?? undefined);
+  const { data: company } = useMyCompany();
+  const { data: templates } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  function onPrint(): void {
+    if (!po) return;
+    const ok = printServicePo({
+      spo: po,
+      vendor,
+      company,
+      templates: templates?.items ?? [],
+      currentUser: me?.email,
+    });
+    if (!ok) window.alert('Allow popups to print.');
+  }
 
   if (isLoading) {
     return (
@@ -105,6 +124,9 @@ function ServicePosDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
+              <Printer size={13} /> Print
+            </button>
             {po.status === 'pending' && isAdmin ? (
               <button
                 type="button"

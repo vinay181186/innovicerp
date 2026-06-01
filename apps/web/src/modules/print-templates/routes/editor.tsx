@@ -28,11 +28,13 @@ export const printTemplatesRoute = createRoute({
 
 const DOC_COLOR: Record<PrintDocType, string> = {
   PO: '#1E4DB3',
+  'SERVICE PO': '#0e7490',
   'OSP DC': '#7c3aed',
   'JW DC': '#c47a00',
 };
 const DOC_LABEL: Record<PrintDocType, string> = {
   PO: 'Purchase Order',
+  'SERVICE PO': 'Service Purchase Order',
   'OSP DC': 'OSP Delivery Challan',
   'JW DC': 'Job Work DC',
 };

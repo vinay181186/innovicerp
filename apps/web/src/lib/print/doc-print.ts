@@ -126,6 +126,7 @@ export interface DocPrintModel {
 
 const DOC_TITLE: Record<PrintDocType, string> = {
   PO: 'PURCHASE ORDER',
+  'SERVICE PO': 'SERVICE PURCHASE ORDER',
   'OSP DC': 'OSP DELIVERY CHALLAN',
   'JW DC': 'JOB WORK DELIVERY CHALLAN',
 };
@@ -157,7 +158,9 @@ const DOC_STYLE = `
 
 export function buildDocHtml(model: DocPrintModel): string {
   const { doc, blocks, data, company, recipient, meta, lines, totals, opts } = model;
-  const isPo = doc === 'PO';
+  // PO + Service PO both render the priced goods table, totals, and amount in
+  // words. The two DC docs render a qty-only table without amounts.
+  const isPo = doc === 'PO' || doc === 'SERVICE PO';
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
   const headerNote = sub('header_note');
