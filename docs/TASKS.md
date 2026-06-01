@@ -82,6 +82,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** AUDIT-6 (Audit backlog close-out — per-form server-side gating non-goal, ADR-040, 2026-06-01)
+**Title:** Final "wire the audit tasks" decision. Whether to add per-form server-side access gating across the modules (reverses ADR-035).
+**Status:** [x] CLOSED 2026-06-01 (docs-only). User decision (AskUserQuestion): **keep enforcement UI-only + RLS — per-form server-side gating is an intentional non-goal**, not a deferral. Rationale: legacy's own canView/canEdit checks are client-side; RLS already enforces company isolation + role-based writes (the real boundary); the genuinely sensitive write paths are already admin/manager-gated at RLS + service; full per-form gating would exceed legacy fidelity and risk lockouts under the "unconfigured ⇒ allow-all" fallback. ADR-040 added; AC-1 PARITY §13 updated.
+**→ AUDIT backlog COMPLETE.** All six "wire the audit tasks" items closed: AUDIT-1 (PO approval limit, ADR-038, pushed), AUDIT-2 (OSP auto-PR, ADR-039, pushed), AUDIT-3 (SC dashboard filters), AUDIT-4 (AC JSON matrix clone), AUDIT-5 (Service PO print), AUDIT-6 (server-gating non-goal, ADR-040). AUDIT-3/4/5/6 committed locally, **not yet pushed**.
+
 **ID:** AUDIT-5 (Service PO print template — PUR-1/ADR-037 deferred Phase F slot, 2026-06-01)
 **Title:** Fifth "wire the audit tasks" slice. Add a printable Service PO (the deferred "Service PO print template (Phase F slot)").
 **Status:** [x] CODE-COMPLETE 2026-06-01, NOT yet committed. **No migration** — added a 4th print-template doc type `SERVICE PO` (prefix `spo_`, 5 blocks + defaults + vars) to `packages/shared/src/schemas/print-template.ts`; templates seed lazily and `print_templates.template_key` has no enumerating CHECK, so it's code-only. `doc-print.ts` treats `SERVICE PO` like `PO` (priced table + totals + amount-in-words); `DOC_TITLE` + editor `DOC_COLOR`/`DOC_LABEL` extended (admin Print Templates editor now shows a SERVICE PO group automatically via PRINT_TEMPLATE_META). New `service-pos/lib/print-spo.ts` + Print button on the Service PO detail page (mirrors `print-po.ts`). Shared print-template test bumped 15→20 keys (5/5 green); web doc-print test still 8/8. PARITY doc updated. All 3 packages typecheck + lint clean.

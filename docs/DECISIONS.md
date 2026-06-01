@@ -1636,6 +1636,39 @@ Add an explicit endpoint `POST /op-entry/osp-pr` (service `generateOspPr` → `o
 
 ---
 
+## ADR-040: Access Control enforcement stays UI-only + RLS — per-form server-side gating is a non-goal
+
+**Date:** 2026-06-01
+**Status:** Accepted (closes the AUDIT backlog)
+
+### Context
+
+ADR-035 shipped the Access Control matrix as UI-only enforcement (sidebar/dept gating + `canView/canEntry/canEdit` form helpers on the client) with an "unconfigured ⇒ allow-all" fallback for day-one rollout. The AC-1 PARITY doc §13 listed "service-layer write gating on the 30+ existing modules" as deferred to a focused audit. The final "wire the audit tasks" question was whether to add per-form access checks to every module's service layer.
+
+### Decision
+
+**Keep enforcement UI-only + RLS. Per-form server-side gating is an intentional non-goal**, not a deferral. Decided with the user 2026-06-01 (AskUserQuestion).
+
+### Rationale
+
+- **Legacy's own access checks are client-side.** The legacy app is a single HTML file with no server; its 173 `canView/canEdit` calls run in the browser. ADR-035's UI-only model is therefore *faithful* to legacy, not a shortcut.
+- **RLS already enforces the real boundaries server-side** — company isolation on every table + role-based write policies (`*_manager_write`, admin-only on settings/users/access-control/approval-config). That is strictly more than legacy ever had.
+- **Full per-form gating would be stricter than legacy and risks lockouts**, especially given the "unconfigured ⇒ allow-all" fallback (most non-admins are unconfigured on day one). Layering a fail-open server gate on top adds surface area without changing the effective boundary.
+- The per-form matrix's job is to *tailor the UI* (hide forms/depts a user shouldn't see). That job is done client-side by design.
+
+### Alternatives Considered
+
+- **Focused gate on sensitive ops** (one `requireFormAccess()` helper on a few high-value write paths) — rejected for now; the genuinely sensitive paths (PO approve, user/access-control/approval-config/settings writes) are *already* admin/manager-gated at RLS + service `requireAdminRole`/`requireWriteRole`. No incremental boundary gained.
+- **Full server-side gating across all 30+ modules** — rejected: most invasive, highest lockout risk, partially redundant with RLS, and exceeds legacy fidelity.
+
+### Consequences
+
+- Positive: closes the AUDIT backlog cleanly; no lockout risk; authorization model stays simple (RLS = boundary, matrix = UI tailoring).
+- Negative: a determined non-admin who bypasses the UI and crafts raw API calls is still bounded by RLS/role but not by their per-form matrix. Accepted — the matrix is a UI affordance, and RLS is the security boundary.
+- Re-open trigger: if a future requirement needs a hard per-form boundary (e.g. a compliance audit), revisit with the "focused gate" option as the starting point.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
