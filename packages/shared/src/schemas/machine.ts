@@ -11,6 +11,7 @@ export const machineSchema = z.object({
   capacityPerShift: z.number().int().nullable(),
   shiftsPerDay: z.number().int().positive(),
   status: z.string().min(1).max(32),
+  hourRate: z.number().nonnegative(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -30,6 +31,7 @@ export const createMachineInputSchema = z.object({
   capacityPerShift: z.coerce.number().int().nonnegative().optional(),
   shiftsPerDay: z.coerce.number().int().positive().default(1),
   status: z.string().min(1).max(32).default('Idle'),
+  hourRate: z.coerce.number().nonnegative().optional(),
 });
 export type CreateMachineInput = z.infer<typeof createMachineInputSchema>;
 

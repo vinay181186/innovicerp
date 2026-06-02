@@ -11,6 +11,9 @@ export default tseslint.config(
       'legacy/**',
       'migration/_docx_extract/**',
       '**/*.d.ts',
+      // Scratch / throwaway scripts follow the `_*` gitignore convention and
+      // are never committed — don't lint them (e.g. ad-hoc smoke runners).
+      '**/_*.ts',
     ],
   },
   js.configs.recommended,

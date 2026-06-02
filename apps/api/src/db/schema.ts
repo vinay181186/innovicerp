@@ -1,8 +1,10 @@
 import {
   BOM_LINE_TYPES,
   BOM_STATUSES,
+  CUSTOMER_DISPATCH_STATUSES,
   DC_STATUSES,
   GRN_QC_STATUSES,
+  INVOICE_STATUSES,
   ITEM_TYPES,
   JC_PRIORITIES,
   NC_DISPOSITIONS,
@@ -78,6 +80,13 @@ export const ncStatusEnum = pgEnum('nc_status', NC_STATUSES);
 export const ncDispositionEnum = pgEnum('nc_disposition', NC_DISPOSITIONS);
 export const ncReasonCategoryEnum = pgEnum('nc_reason_category', NC_REASON_CATEGORIES);
 export const dcStatusEnum = pgEnum('dc_status', DC_STATUSES);
+
+// ─── Phase 8 Finance enums (0050) ─────────────────────────────────────────
+export const invoiceStatusEnum = pgEnum('invoice_status', INVOICE_STATUSES);
+export const customerDispatchStatusEnum = pgEnum(
+  'customer_dispatch_status',
+  CUSTOMER_DISPATCH_STATUSES,
+);
 
 // ─── Phase 8 BOM Master enums (BOM-1) ─────────────────────────────────────
 export const bomStatusEnum = pgEnum('bom_status', BOM_STATUSES);
@@ -348,6 +357,8 @@ export const machines = pgTable(
     capacityPerShift: integer('capacity_per_shift'),
     shiftsPerDay: integer('shifts_per_day').notNull().default(1),
     status: text('status').notNull().default('Idle'),
+    // Hourly machine rate (₹/hr) for SO Costing machine-time (migration 0050).
+    hourRate: numeric('hour_rate', { precision: 12, scale: 2 }).notNull().default('0'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1051,6 +1062,9 @@ export const salesOrderLines = pgTable(
     orderQty: integer('order_qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
     dueDate: date('due_date'),
+    // Cumulative customer-dispatched qty (migration 0050). Maintained by the
+    // customer-dispatches service; drives pending-dispatch + invoice gating.
+    dispatchedQty: integer('dispatched_qty').notNull().default(0),
     clientPoLineNo: text('client_po_line_no'),
     status: soStatusEnum('status').notNull().default('open'),
     // BOM-8 cascade source: when set, SO line creation walks the BOM lines
@@ -3620,8 +3634,20 @@ export const invoices = pgTable(
       .notNull()
       .references(() => salesOrders.id, { onDelete: 'cascade' }),
     soCodeText: text('so_code_text'),
+    // Client snapshot (migration 0050) — invoice prints from these even if the
+    // client master later changes. clientId for the live link.
+    clientId: uuid('client_id').references(() => clients.id),
+    clientNameText: text('client_name_text'),
+    clientCodeText: text('client_code_text'),
+    clientGstText: text('client_gst_text'),
+    subtotal: numeric('subtotal', { precision: 14, scale: 2 }).notNull().default('0'),
+    gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
+    gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull().default('0'),
     totalPaid: numeric('total_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    paymentTermsDays: integer('payment_terms_days').notNull().default(45),
+    dueDate: date('due_date'),
+    status: invoiceStatusEnum('status').notNull().default('unpaid'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -3642,6 +3668,9 @@ export const invoices = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('invoices_company_date_idx')
       .on(t.companyId, t.invoiceDate)
+      .where(sql`${t.deletedAt} is null`),
+    index('invoices_company_status_idx')
+      .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('invoices_company_read', {
       for: 'select',
@@ -3700,6 +3729,158 @@ export const invoiceLines = pgTable(
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('invoice_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Finance: invoice payments (migration 0050) ───────────────────────────
+// One row per receipt against an invoice. invoices.total_paid + status are
+// maintained by the invoices service on payment insert/cancel.
+export const invoicePayments = pgTable(
+  'invoice_payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => invoices.id, { onDelete: 'cascade' }),
+    paymentDate: date('payment_date').notNull(),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    mode: text('mode').notNull().default('NEFT'),
+    refNo: text('ref_no'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('invoice_payments_invoice_idx')
+      .on(t.invoiceId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('invoice_payments_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('invoice_payments_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Customer dispatch (migration 0050) ───────────────────────────────────
+// Records dispatch of ready (produced + QC-accepted) qty against SO lines —
+// the customer Dispatch Register. The line service maintains
+// sales_order_lines.dispatched_qty (increment on create, decrement on cancel).
+export const customerDispatches = pgTable(
+  'customer_dispatches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    dispatchDate: date('dispatch_date').notNull(),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id),
+    soCodeText: text('so_code_text'),
+    customerText: text('customer_text'),
+    transport: text('transport'),
+    vehicleNo: text('vehicle_no'),
+    status: customerDispatchStatusEnum('status').notNull().default('dispatched'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('customer_dispatches_company_code_uq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('customer_dispatches_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('customer_dispatches_company_date_idx')
+      .on(t.companyId, t.dispatchDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('customer_dispatches_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('customer_dispatches_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const customerDispatchLines = pgTable(
+  'customer_dispatch_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    customerDispatchId: uuid('customer_dispatch_id')
+      .notNull()
+      .references(() => customerDispatches.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
+    qty: integer('qty').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('customer_dispatch_lines_line_uq')
+      .on(t.customerDispatchId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    index('customer_dispatch_lines_so_line_idx')
+      .on(t.salesOrderLineId)
+      .where(sql`${t.salesOrderLineId} is not null and ${t.deletedAt} is null`),
+    check('customer_dispatch_lines_qty_positive', sql`${t.qty} > 0`),
+    pgPolicy('customer_dispatch_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('customer_dispatch_lines_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,

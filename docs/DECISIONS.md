@@ -1702,6 +1702,38 @@ LEGACY_AUDIT.md flagged three cross-cutting report screens still missing (rows 9
 
 ---
 
+## ADR-042: Finance module — customer dispatch gates invoicing; full invoices + SO costing + stock valuation (migration 0050)
+
+**Date:** 2026-06-02
+**Status:** Accepted
+
+### Context
+
+Finance was the last largely-unbuilt sidebar section (LEGACY_AUDIT rows 9/71/72/74). Cost Center Master already shipped. User directed building the entire Finance module to legacy parity with all logic (2026-06-02 /goal). Legacy screens read: `renderInvoices` (L21096), `renderSOCosting` (L17249), `renderStockValuation` (L20927), plus the implicit customer-dispatch step. Three data-model conflicts were resolved with the user before building (AskUserQuestion 2026-06-02).
+
+### Decision
+
+Migration 0050 (additive + idempotent; existing data untouched) + four new modules: **customer-dispatches**, **invoices**, **so-costing**, **stock-valuation**.
+
+1. **Customer dispatch gates invoicing (user direction).** Legacy gated invoice qty on `salesOrderLine.dispatchedQty`, which our model lacked. Built a customer Dispatch step + register: `customer_dispatches` (+`_lines`) records dispatch of **ready (produced + QC-accepted) qty** against SO lines and maintains a new `sales_order_lines.dispatched_qty` (service-incremented on create, decremented on cancel). "Ready" = final-op effective output (QC-accepted for QC/qc-required ops, received for completed outsource, else completed) via `v_jc_op_status`, minus dispatched. This also fills the long-standing customer Dispatch Register gap (our `/delivery-challans` is the *OSP/vendor* DC). **Dispatch also reduces on-hand stock** (user direction 2026-06-02): each line inserts a `store_transactions` row (`txn_type='out'`, `source_type='dispatch'`); the existing `apply_store_txn_to_balance` trigger (migration 0020) decrements `item_stock_balances`. Cancel inserts the `in` reversal. Free-text lines (no `item_id`) skip stock. Closes the produce+QC→stock-in (`qc_accept`) → dispatch→stock-out loop.
+2. **Invoices.** Fleshed out the empty `invoices` table (subtotal/GST/due/status/client snapshot) + new `invoice_payments`. Create is gated on **dispatched − already-invoiced** qty per line; payments roll up `total_paid` + flip status unpaid→partial→paid; tax-invoice print (IGST vs SGST/CGST by client GSTIN state). `invoice_status` enum.
+3. **SO Costing.** Material = with-material PO lines linked to the SO line (`source_so_line_id`, `po_type<>'job_work'`); Outsource = `jc_ops.outsource_po_line_id`; **Machine-Time = (cycle_min/60) × completed × machine.hour_rate** — added `machines.hour_rate` (₹/hr, default 0) + a Machine Master form field.
+4. **Stock Valuation.** Value = `item_stock_balances.on_hand_qty` × rate, where rate = PO-line rate behind the latest GRN → latest PO-line rate → "No Rate" (GRN lines carry no rate in our model). Grouped by `item_type` (component/assembly), since our items lack the legacy 6-category facet.
+
+### Alternatives Considered
+
+- Invoice against ordered qty (no dispatch tracking) — rejected by user; per-line dispatch qty is wanted to track pending dispatch.
+- Omit machine-time from costing — rejected by user; added hour_rate instead.
+- Add a 6-value `category` to Item Master for valuation — rejected by user; group by existing itemType.
+
+### Consequences
+
+- Positive: Finance section at legacy parity; a real SO→Dispatch→Invoice→Payment chain with qty control; closes the customer Dispatch Register gap; reuses `v_jc_op_status`.
+- Negative: dispatch readiness under-reports for outsource-ending JCs (edge); stock valuation rate depends on PO-linked GRNs (manual GRNs without a PO line show "No Rate"); machine-time is 0 until rates are entered.
+- Validation: full typecheck + lint clean; all read SQL smoke-validated on dev DB; write paths (insert/update/RLS) validated via a transaction-rollback smoke (0 rows committed). End-to-end user testing pending per /goal.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

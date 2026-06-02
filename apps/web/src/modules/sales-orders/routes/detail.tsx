@@ -184,6 +184,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <th>Material</th>
                 <th>Drawing</th>
                 <th className="td-right">Qty</th>
+                <th className="td-right" style={{ color: 'var(--green)' }}>Dispatched</th>
+                <th className="td-right" style={{ color: 'var(--cyan)' }}>Billed</th>
+                <th className="td-right" style={{ color: 'var(--amber)' }}>Pending</th>
                 <th>UOM</th>
                 <th className="td-right">Rate</th>
                 <th>Due date</th>
@@ -193,7 +196,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">
+                  <td colSpan={13} className="empty-state">
                     No lines on this SO yet.
                   </td>
                 </tr>
@@ -224,6 +227,14 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
         {l.drawingNo ?? '—'}
       </td>
       <td className="td-right mono">{l.orderQty}</td>
+      <td className="td-right mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>
+      <td className="td-right mono" style={{ color: 'var(--cyan)' }}>{l.billedQty}</td>
+      <td
+        className="td-right mono fw-700"
+        style={{ color: l.orderQty - l.billedQty > 0 ? 'var(--amber)' : 'var(--green)' }}
+      >
+        {l.orderQty - l.billedQty}
+      </td>
       <td>{l.uom}</td>
       <td className="td-right mono">
         {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}

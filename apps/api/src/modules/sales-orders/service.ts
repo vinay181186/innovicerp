@@ -12,7 +12,14 @@
 // avoids the footgun where a header-only PATCH would wipe lines.
 
 import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { clients, items, salesOrderLines, salesOrders } from '../../db/schema';
+import {
+  clients,
+  invoiceLines,
+  invoices,
+  items,
+  salesOrderLines,
+  salesOrders,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import {
@@ -312,9 +319,32 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
 
+    // Billed qty per SO line = Σ non-deleted invoice-line qty (ADR-042).
+    const billedRows = await tx
+      .select({
+        lineId: invoiceLines.salesOrderLineId,
+        billed: sql<number>`coalesce(sum(${invoiceLines.qty}), 0)::int`,
+      })
+      .from(invoiceLines)
+      .innerJoin(invoices, eq(invoices.id, invoiceLines.invoiceId))
+      .where(
+        and(
+          eq(invoices.salesOrderId, id),
+          isNull(invoices.deletedAt),
+          isNull(invoiceLines.deletedAt),
+        ),
+      )
+      .groupBy(invoiceLines.salesOrderLineId);
+    const billedByLine = new Map(
+      billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
+    );
+
     return {
       ...toSalesOrder(header),
-      lines: lineRows.map((r) => toSalesOrderLine(r.row, r.itemCode)),
+      lines: lineRows.map((r) => ({
+        ...toSalesOrderLine(r.row, r.itemCode),
+        billedQty: billedByLine.get(r.row.id) ?? 0,
+      })),
     };
   });
 }
@@ -364,6 +394,8 @@ function toSalesOrderLine(
     drawingNo: row.drawingNo,
     uom: row.uom,
     orderQty: row.orderQty,
+    dispatchedQty: row.dispatchedQty,
+    billedQty: 0,
     rate: row.rate,
     dueDate: row.dueDate,
     clientPoLineNo: row.clientPoLineNo,

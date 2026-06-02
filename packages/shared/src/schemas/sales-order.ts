@@ -52,6 +52,11 @@ export const salesOrderLineSchema = z.object({
   drawingNo: z.string().nullable(),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
+  // Billing status (migration 0050 / ADR-042). dispatchedQty is the cumulative
+  // customer-dispatched qty; billedQty is Σ invoice-line qty (populated on the
+  // SO detail read, 0 elsewhere). Pending-to-bill = orderQty − billedQty.
+  dispatchedQty: z.number().int().nonnegative().default(0),
+  billedQty: z.number().int().nonnegative().default(0),
   rate: z.string(), // numeric stored as string
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),

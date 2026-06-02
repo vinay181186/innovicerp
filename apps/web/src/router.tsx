@@ -31,6 +31,14 @@ import { outsourceJobsRoute } from './modules/outsource-jobs/routes/list';
 import { scDashboardRoute } from './modules/sc-dashboard/routes/page';
 import { soCycleTimeRoute } from './modules/so-cycle-time/routes/page';
 import { stuckDashboardRoute } from './modules/stuck-dashboard/routes/page';
+import { stockValuationRoute } from './modules/stock-valuation/routes/page';
+import { soCostingListRoute } from './modules/so-costing/routes/list';
+import { soCostingDetailRoute } from './modules/so-costing/routes/detail';
+import { customerDispatchListRoute } from './modules/customer-dispatches/routes/list';
+import { customerDispatchNewRoute } from './modules/customer-dispatches/routes/create';
+import { invoiceListRoute } from './modules/invoices/routes/list';
+import { invoiceNewRoute } from './modules/invoices/routes/create';
+import { invoiceDetailRoute } from './modules/invoices/routes/detail';
 import { servicePosListRoute } from './modules/service-pos/routes/list';
 import { servicePosNewRoute } from './modules/service-pos/routes/new';
 import { servicePosDetailRoute } from './modules/service-pos/routes/detail';
@@ -294,6 +302,14 @@ const routeTree = rootRoute.addChildren([
     scDashboardRoute,
     soCycleTimeRoute,
     stuckDashboardRoute,
+    stockValuationRoute,
+    soCostingListRoute,
+    soCostingDetailRoute,
+    customerDispatchListRoute,
+    customerDispatchNewRoute,
+    invoiceListRoute,
+    invoiceNewRoute,
+    invoiceDetailRoute,
     servicePosListRoute,
     servicePosNewRoute,
     servicePosDetailRoute,

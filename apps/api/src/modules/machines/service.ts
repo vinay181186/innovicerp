@@ -22,6 +22,12 @@ function emptyToNull(s: string | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+// numeric columns come back as strings from postgres.js — coerce hour_rate.
+function toMachine(row: unknown): Machine {
+  const r = row as { hourRate: string | number };
+  return { ...(row as object), hourRate: Number(r.hourRate) || 0 } as Machine;
+}
+
 export async function listMachines(
   input: ListMachinesQuery,
   user: AuthContext,
@@ -52,7 +58,7 @@ export async function listMachines(
     ]);
 
     return {
-      machines: rows as unknown as Machine[],
+      machines: rows.map(toMachine),
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,
@@ -70,7 +76,7 @@ export async function getMachine(id: string, user: AuthContext): Promise<Machine
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError(`Machine ${id} not found`);
-    return row as unknown as Machine;
+    return toMachine(row);
   });
 }
 
@@ -106,11 +112,12 @@ export async function createMachine(
         capacityPerShift: input.capacityPerShift ?? null,
         shiftsPerDay: input.shiftsPerDay,
         status: input.status,
+        hourRate: String(input.hourRate ?? 0),
         createdBy: user.id,
         updatedBy: user.id,
       })
       .returning();
-    return inserted[0] as unknown as Machine;
+    return toMachine(inserted[0]);
   });
 }
 
@@ -136,9 +143,10 @@ export async function updateMachine(
       updates.capacityPerShift = input.capacityPerShift ?? null;
     if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
     if (input.status !== undefined) updates.status = input.status;
+    if (input.hourRate !== undefined) updates.hourRate = String(input.hourRate);
 
     const updated = await tx.update(machines).set(updates).where(eq(machines.id, id)).returning();
-    return updated[0] as unknown as Machine;
+    return toMachine(updated[0]);
   });
 }
 

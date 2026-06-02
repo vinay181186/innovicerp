@@ -276,8 +276,23 @@ const SECTIONS: readonly NavSection[] = [
     icon: '💰',
     groups: [
       {
+        label: 'Entry',
+        items: [
+          { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
+          { to: '/invoices', label: 'Invoices', icon: '📄' },
+        ],
+      },
+      {
         label: 'Master',
         items: [{ to: '/cost-centers', label: 'Cost Center Master', icon: '🏢' }],
+      },
+      {
+        label: 'Report',
+        items: [
+          { to: '/so-costing', label: 'SO Costing', icon: '💰' },
+          { to: '/stock-valuation', label: 'Stock Valuation', icon: '📦' },
+          { to: '/reports?group=Finance', label: 'Finance Reports', icon: '📊' },
+        ],
       },
     ],
   },

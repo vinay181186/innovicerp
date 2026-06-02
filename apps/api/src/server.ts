@@ -19,6 +19,10 @@ import { ospProcessesRoutes } from './modules/osp-processes/routes';
 import { scDashboardRoutes } from './modules/sc-dashboard/routes';
 import { soCycleTimeRoutes } from './modules/so-cycle-time/routes';
 import { stuckDashboardRoutes } from './modules/stuck-dashboard/routes';
+import { customerDispatchesRoutes } from './modules/customer-dispatches/routes';
+import { invoicesRoutes } from './modules/invoices/routes';
+import { soCostingRoutes } from './modules/so-costing/routes';
+import { stockValuationRoutes } from './modules/stock-valuation/routes';
 import { servicePosRoutes } from './modules/service-pos/routes';
 import { trashRoutes } from './modules/trash/routes';
 import { assemblyRoutes } from './modules/assembly/routes';
@@ -214,6 +218,10 @@ await app.register(servicePosRoutes);
 await app.register(scDashboardRoutes);
 await app.register(soCycleTimeRoutes);
 await app.register(stuckDashboardRoutes);
+await app.register(customerDispatchesRoutes);
+await app.register(invoicesRoutes);
+await app.register(soCostingRoutes);
+await app.register(stockValuationRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

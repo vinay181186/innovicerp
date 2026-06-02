@@ -1,8 +1,7 @@
 // Machine create + edit form (UI-003-03). Field order matches legacy
 // machineForm (legacy/InnovicERP_v82_12_3.html L13113): Machine ID,
-// Machine Name, Type (full), Capacity/Shift, Shifts/Day, Status.
-// Hour Rate + Maintenance fields from legacy are NOT in the current
-// shared schema and are deferred to a Phase C extension.
+// Machine Name, Type (full), Capacity/Shift, Shifts/Day, Status, Machine
+// Rate (₹/hr — feeds SO Costing machine-time, migration 0050 / ADR-041).
 
 import {
   type CreateMachineInput,
@@ -44,6 +43,7 @@ const CREATE_DEFAULTS: CreateMachineInput = {
   capacityPerShift: undefined,
   shiftsPerDay: 1,
   status: 'Idle',
+  hourRate: 0,
 };
 
 function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
@@ -53,6 +53,7 @@ function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
     capacityPerShift: m.capacityPerShift ?? undefined,
     shiftsPerDay: m.shiftsPerDay,
     status: m.status,
+    hourRate: m.hourRate,
   };
 }
 
@@ -122,6 +123,23 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="hourRate">
+            Machine Rate (₹/hr)
+          </label>
+          <input
+            id="hourRate"
+            className="innovic-input"
+            type="number"
+            min={0}
+            step="0.01"
+            autoComplete="off"
+            placeholder="0"
+            {...register('hourRate')}
+          />
+          <div className="form-help">Used by SO Costing to value machine time.</div>
         </div>
       </div>
 
@@ -196,6 +214,23 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="hourRate">
+            Machine Rate (₹/hr)
+          </label>
+          <input
+            id="hourRate"
+            className="innovic-input"
+            type="number"
+            min={0}
+            step="0.01"
+            autoComplete="off"
+            placeholder="0"
+            {...register('hourRate')}
+          />
+          <div className="form-help">Used by SO Costing to value machine time.</div>
         </div>
       </div>
 
