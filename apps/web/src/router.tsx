@@ -29,6 +29,8 @@ import { backupRoute } from './modules/backup/routes/page';
 import { opLogListRoute } from './modules/op-log/routes/list';
 import { outsourceJobsRoute } from './modules/outsource-jobs/routes/list';
 import { scDashboardRoute } from './modules/sc-dashboard/routes/page';
+import { soCycleTimeRoute } from './modules/so-cycle-time/routes/page';
+import { stuckDashboardRoute } from './modules/stuck-dashboard/routes/page';
 import { servicePosListRoute } from './modules/service-pos/routes/list';
 import { servicePosNewRoute } from './modules/service-pos/routes/new';
 import { servicePosDetailRoute } from './modules/service-pos/routes/detail';
@@ -290,6 +292,8 @@ const routeTree = rootRoute.addChildren([
     opLogListRoute,
     outsourceJobsRoute,
     scDashboardRoute,
+    soCycleTimeRoute,
+    stuckDashboardRoute,
     servicePosListRoute,
     servicePosNewRoute,
     servicePosDetailRoute,

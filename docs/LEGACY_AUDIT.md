@@ -6,6 +6,13 @@
 
 ---
 
+> ⚠️ **Headline counts below are the 2026-05-20 snapshot and are now badly stale.** Since then
+> Store, Production, QC, Design, Print Templates, System Settings, Purchase, Access Control and the
+> AUDIT-1..6 backlog all shipped. As of **2026-06-02** ~81/93 screens are shipped; the genuinely
+> remaining gaps are **CRM (3), Finance (3: invoices/SO costing/stock valuation), Tasks (2), SO
+> Documents, and Time Tracker (deferred)**. The per-row Status column has been kept current for the
+> rows touched since; treat the aggregate tables as historical. See TASKS.md RPT-1 for the live list.
+
 ## Headline numbers
 
 - **Legacy screens (`render*` functions):** ~85 distinct pages, organised into 12 sidebar sections
@@ -118,9 +125,9 @@
 | 87  | Tasks               | `dailyreports`     | `renderDailyReports` (14141)             | —                                                          | ❌ Missing (daily user-submitted task reports — what they did today)                                                                                                    |
 | 88  | Tasks               | `actlog`           | `renderActivityLog` (11270)              | `/activity-log`                                            | ✅ Shipped                                                                                                                                                              |
 | 89  | Reports             | `reports`          | `renderReports` (20047)                  | `/reports`                                                 | ✅ Shipped                                                                                                                                                              |
-| 90  | Reports             | `stuckdashboard`   | `renderStuckDashboard` (18017)           | —                                                          | ❌ Missing (cross-module dashboard of "stuck" entities — JCs idle >N days, SOs without dispatch, POs unreceived)                                                        |
-| 91  | Reports             | `socycletime`      | `renderSOCycleTime` (18176)              | —                                                          | ❌ Missing (SO order → dispatch cycle-time analysis with bottleneck stage breakdown)                                                                                    |
-| 92  | Reports             | `timetracker`      | `renderTimeTracker` (18954)              | —                                                          | ❌ Missing (time-tracking — who worked on what, when, for how long)                                                                                                     |
+| 90  | Reports             | `stuckdashboard`   | `renderStuckDashboard` (18017)           | `/stuck-dashboard`                                         | ✅ Shipped 2026-06-02 (RPT-1 / ADR-041) — phase + op-level stuck rules via shared `so-phase-data` engine + `v_jc_op_status`                                             |
+| 91  | Reports             | `socycletime`      | `renderSOCycleTime` (18176)              | `/so-cycle-time`                                           | ✅ Shipped 2026-06-02 (RPT-1 / ADR-041) — per-SO phase durations + filtered-set averages + Excel export                                                                 |
+| 92  | Reports             | `timetracker`      | `renderTimeTracker` (18954)              | —                                                          | ❌ DEFERRED (ADR-041) — `op_log` has no hours-worked field; only design_time_log has real hours. Build when hours-capture exists.                                       |
 | 93  | Reports             | `reportbuilder`    | `renderReportBuilder` (17526)            | `/saved-reports`                                           | ✅ Shipped (T-041b drag-and-drop builder)                                                                                                                               |
 
 ---

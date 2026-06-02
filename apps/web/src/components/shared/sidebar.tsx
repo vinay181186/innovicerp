@@ -295,6 +295,8 @@ const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/reports', label: 'Reports', icon: '📊' },
           { to: '/saved-reports', label: 'Saved Reports', icon: '✨' },
+          { to: '/stuck-dashboard', label: 'Stuck Dashboard', icon: '⚠' },
+          { to: '/so-cycle-time', label: 'SO Cycle Time', icon: '⏱' },
         ],
       },
     ],

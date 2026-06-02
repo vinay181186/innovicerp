@@ -17,6 +17,8 @@ import { dataIntegrityRoutes } from './modules/data-integrity/routes';
 import { opLogViewerRoutes } from './modules/op-log-viewer/routes';
 import { ospProcessesRoutes } from './modules/osp-processes/routes';
 import { scDashboardRoutes } from './modules/sc-dashboard/routes';
+import { soCycleTimeRoutes } from './modules/so-cycle-time/routes';
+import { stuckDashboardRoutes } from './modules/stuck-dashboard/routes';
 import { servicePosRoutes } from './modules/service-pos/routes';
 import { trashRoutes } from './modules/trash/routes';
 import { assemblyRoutes } from './modules/assembly/routes';
@@ -210,6 +212,8 @@ await app.register(trashRoutes);
 await app.register(backupRoutes);
 await app.register(servicePosRoutes);
 await app.register(scDashboardRoutes);
+await app.register(soCycleTimeRoutes);
+await app.register(stuckDashboardRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

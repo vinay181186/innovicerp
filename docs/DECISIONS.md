@@ -1669,6 +1669,39 @@ ADR-035 shipped the Access Control matrix as UI-only enforcement (sidebar/dept g
 
 ---
 
+## ADR-041: Cross-cutting reports — shared SO phase-data engine; Stuck + SO Cycle Time shipped, Time Tracker deferred
+
+**Date:** 2026-06-02
+**Status:** Accepted
+
+### Context
+
+LEGACY_AUDIT.md flagged three cross-cutting report screens still missing (rows 90–92): Stuck Dashboard (`renderStuckDashboard` L18017), SO Cycle Time (`renderSOCycleTime` L18176), Time Tracker (`renderTimeTracker` L18954). The first two share one legacy engine, `_soPhaseData(soNo)` (L17870), which derives per-SO phase-transition timestamps and the day-gaps between them. User directed "build report" (2026-06-02). Parity spec: `docs/PARITY/reports-cross-cutting.md`.
+
+### Decision
+
+- **Shared engine** `apps/api/src/lib/so-phase-data.ts` (`loadSoPhaseData` + pure `computeDurations`/`diffDays`) — one correlated-subquery pass per SO over design_tracker / plans / job_cards / purchase_requests / goods_receipt_notes / op_log / assembly_units / invoices. Consumed by both report services. Read-only, no migration.
+- **Stuck Dashboard** (`/stuck-dashboard`): 6 phase-level rules from the engine + 2 op-level rules (Production Op / QC Pending) from the existing `v_jc_op_status` view. Pure rule helpers extracted to `modules/stuck-dashboard/rules.ts` (DB-free → unit-tested).
+- **SO Cycle Time** (`/so-cycle-time`): full phase/duration matrix + filtered-set averages (filters + averages client-side, matching legacy's per-render recompute) + client-side Excel export.
+- **Time Tracker DEFERRED** — `op_log` has no `hours_worked` column (legacy sourced Production/QC hours from a mobile entry never built here). Only `design_time_log` has real hours. Build later "if required" once hours-capture exists (user direction 2026-06-02).
+
+### Decisions within
+
+- **Dispatch timestamp** = `assembly_units.dispatch_date` (real), falling back to SO `status IN (dispatched,closed)` → `updated_at::date` for SOs that skip assembly. Faithful for assembled equipment, approximate for pure component SOs.
+- **Stuck thresholds** ship as constants (`DEFAULT_STUCK_THRESHOLDS`, legacy defaults) — no `stuck_thresholds` config store yet; legacy's editable-threshold modal is a follow-up. The legacy `db.stuckThresholds` had no server.
+
+### Alternatives Considered
+
+- Derive Time Tracker production hours from `running_ops` elapsed (start→ended_at) — rejected for now: elapsed ≠ hand-entered worked-hours, and the screen would still show 0 QC hours.
+- Materialize phase data into a table/view — rejected: correlated subqueries are fine at our SO scale (hundreds); revisit if perf data warrants (ties to ADR-018 / T-042).
+
+### Consequences
+
+- Positive: two more legacy screens at parity; reusable phase engine for any future SO-lifecycle report; pure rule logic is unit-tested (16 tests) without a DB.
+- Negative: Time Tracker remains a gap; dispatch phase is approximate for non-assembled SOs.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
