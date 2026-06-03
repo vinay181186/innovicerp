@@ -1734,6 +1734,41 @@ Migration 0050 (additive + idempotent; existing data untouched) + four new modul
 
 ---
 
+## ADR-043: Tasks module — Task Board + Daily Task Reports (migration 0051)
+
+**Date:** 2026-06-03
+**Status:** Accepted
+
+### Context
+
+Tasks was the next unbuilt sidebar section after Finance (the legacy "Tasks" group: `taskboard` L14255 + `dailyreports` L14141). User directed building the entire Tasks section to legacy parity with all logic (2026-06-03 /goal), test once fully built, no per-step commit prompts, only surface genuine data conflicts. Both legacy `render*` functions + their helpers were read directly; PARITY spec at `docs/PARITY/tasks.md`. No data conflicts arose.
+
+Distinct from the existing `daily-report` module, which is the **production** op-log machine report (singular `renderDailyReport` L10823) — a different screen reading `op_log`.
+
+### Decision
+
+Migration 0051 (additive + idempotent) + two new modules: **tasks** (Task Board) and **daily-task-reports**.
+
+1. **Embedded arrays → own rows (CLAUDE.md anti-pattern #1).** Legacy stored `task.comments[]` and `report.tasks[]` as JSON arrays inside the Firestore blob. We split them: `tasks` + `task_comments`; `daily_reports` + `daily_report_lines`. The task's `linkedRef` value-object (contextual assignment) stays as four columns on `tasks` (it's a single embedded object, not an array, and the columns are queryable).
+2. **Overdue is derived, never stored.** A task is overdue when `status != completed && due_date < today (IST)`. The status count cards count an overdue row ONLY as overdue (legacy L14270). The board's three real-status cards filter server-side; the Overdue card filters client-side on the derived flag (legacy clicking Overdue showed an empty list — a quirk; we make it usefully show the overdue rows that the count represents).
+3. **Authorization.** Read = company isolation (RLS). Assign a task = admin/manager (`requireWriteRole`); legacy's board "+Assign" button is admin-only while context-assign allows admin/manager — unified to admin/manager so managers aren't locked out, matching our RLS manager-write convention. Update status / comment = the assignee OR admin/manager. Daily report create/edit = the owner OR admin (legacy `canEditThis = isAdmin || r.userId === userId`). RLS write policies use `current_user_id()` (migration 0016 helper): `tasks` self = `assigned_to`; comments/report-lines self = `created_by`; `daily_reports` self = `user_id`.
+4. **Unread tracking.** A task assigned to me, `viewed_at IS NULL`, not completed → unread dot + header count. The board calls `POST /tasks/mark-viewed` once on mount (mirrors legacy `_markTasksViewed` on home render). The legacy one-per-session login toast is deferred (no global toast bus on web); the unread badge replaces it.
+5. **Contextual assignment** (`_assignTaskFromContext`): the create endpoint accepts an optional `linkedRef {type,id,display,navPage}`; the source-module "Assign to user" buttons (PR/PO/SO/NC/CAPA/JC/GRN/DESIGN) are a per-screen follow-up — the data model + create path support them now.
+
+### Alternatives Considered
+
+- Keep comments/lines as JSONB columns (closer to legacy storage) — rejected: violates anti-pattern #1; rows are queryable/aggregatable (total-hours, counts).
+- Store an `overdue` status — rejected: it's a function of due_date + today, would need a daily sweep to stay correct; derive on read instead.
+- Reuse the existing `daily-report` module name — rejected: that's the production op-log report; named the new one `daily-task-reports` to avoid collision.
+
+### Consequences
+
+- Positive: Tasks section at legacy parity; assignee-self-service status updates with timeline + comment thread; per-user daily time reporting with hours roll-up; contextual-assignment-ready data model.
+- Negative: My Work / home task surfacing (`wlRule_myTasks`) + the source-module assign buttons + a login toast remain follow-ups; no realtime (ADR-004 lists Task Allocation as a realtime candidate — deferred, polling is fine at scale).
+- Validation: full typecheck + lint clean (4 pkgs); migration 0051 applied to dev DB; **16-check end-to-end smoke green** against the real dev DB (create/assign, status transitions setting started/completed dates, comments, unread + mark-viewed, non-writer authz block, daily-report create/edit/list with hours + counts), with full cleanup. End-to-end UI testing pending per user direction.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

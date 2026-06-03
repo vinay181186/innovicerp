@@ -2,6 +2,7 @@ import {
   BOM_LINE_TYPES,
   BOM_STATUSES,
   CUSTOMER_DISPATCH_STATUSES,
+  DAILY_REPORT_LINE_STATUSES,
   DC_STATUSES,
   GRN_QC_STATUSES,
   INVOICE_STATUSES,
@@ -25,6 +26,8 @@ import {
   SO_TYPES,
   STORE_TXN_SOURCE_TYPES,
   STORE_TXN_TYPES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   UOMS,
   USER_ROLES,
 } from '@innovic/shared';
@@ -95,6 +98,14 @@ export const bomLineTypeEnum = pgEnum('bom_line_type', BOM_LINE_TYPES);
 // ─── Phase B Planning enums (PL-3) ───────────────────────────────────────
 export const planStatusEnum = pgEnum('plan_status', PLAN_STATUSES);
 export const planTypeEnum = pgEnum('plan_type', PLAN_TYPES);
+
+// ─── Phase 8 Tasks enums (0051) ───────────────────────────────────────────
+export const taskStatusEnum = pgEnum('task_status', TASK_STATUSES);
+export const taskPriorityEnum = pgEnum('task_priority', TASK_PRIORITIES);
+export const dailyReportLineStatusEnum = pgEnum(
+  'daily_report_line_status',
+  DAILY_REPORT_LINE_STATUSES,
+);
 
 export const companies = pgTable(
   'companies',
@@ -3885,6 +3896,199 @@ export const customerDispatchLines = pgTable(
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Tasks: Task Board (migration 0051) ───────────────────────────────────
+// Mirror of legacy taskAllocations / renderTaskBoard. Overdue is DERIVED
+// (status != 'completed' && due_date < today), never stored.
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    assignedTo: uuid('assigned_to').references(() => users.id),
+    assignedBy: uuid('assigned_by').references(() => users.id),
+    priority: taskPriorityEnum('priority').notNull().default('medium'),
+    dueDate: date('due_date').notNull(),
+    status: taskStatusEnum('status').notNull().default('todo'),
+    startedDate: date('started_date'),
+    completedDate: date('completed_date'),
+    // Contextual link to a source record (PR/PO/SO/NC/CAPA/JC/GRN/DESIGN).
+    linkedRefType: text('linked_ref_type'),
+    linkedRefId: text('linked_ref_id'),
+    linkedRefDisplay: text('linked_ref_display'),
+    linkedRefNavPage: text('linked_ref_nav_page'),
+    // Null = unread by the assignee. Stamped when the assignee opens the board.
+    viewedAt: timestamp('viewed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('tasks_company_code_uq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('tasks_company_assignee_idx')
+      .on(t.companyId, t.assignedTo)
+      .where(sql`${t.deletedAt} is null`),
+    index('tasks_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('tasks_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Assignee may update their own task (status/comments keep assigned_to
+    // unchanged); admin/manager may assign/edit anything.
+    pgPolicy('tasks_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (assigned_to = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (assigned_to = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+export const taskComments = pgTable(
+  'task_comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    commentDate: date('comment_date').notNull(),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('task_comments_task_idx')
+      .on(t.taskId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('task_comments_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('task_comments_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Tasks: Daily Task Reports (migration 0051) ───────────────────────────
+// Mirror of legacy dailyReports / renderDailyReports. User-submitted "what I
+// did today" reports. DISTINCT from the production op-log daily report.
+export const dailyReports = pgTable(
+  'daily_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    reportDate: date('report_date').notNull(),
+    shift: shiftEnum('shift').notNull().default('day'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('daily_reports_company_user_idx')
+      .on(t.companyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('daily_reports_company_date_idx')
+      .on(t.companyId, t.reportDate)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('daily_reports_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('daily_reports_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
+export const dailyReportLines = pgTable(
+  'daily_report_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    dailyReportId: uuid('daily_report_id')
+      .notNull()
+      .references(() => dailyReports.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    description: text('description').notNull(),
+    ref: text('ref'),
+    hours: numeric('hours', { precision: 6, scale: 2 }).notNull().default('0'),
+    status: dailyReportLineStatusEnum('status').notNull().default('completed'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('daily_report_lines_line_uq')
+      .on(t.dailyReportId, t.lineNo)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('daily_report_lines_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('daily_report_lines_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (created_by = current_user_id() OR current_user_role() IN ('admin','manager'))`,
     }),
   ],
 ).enableRLS();

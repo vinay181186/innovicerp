@@ -21,6 +21,8 @@ import { soCycleTimeRoutes } from './modules/so-cycle-time/routes';
 import { stuckDashboardRoutes } from './modules/stuck-dashboard/routes';
 import { customerDispatchesRoutes } from './modules/customer-dispatches/routes';
 import { invoicesRoutes } from './modules/invoices/routes';
+import { tasksRoutes } from './modules/tasks/routes';
+import { dailyTaskReportsRoutes } from './modules/daily-task-reports/routes';
 import { soCostingRoutes } from './modules/so-costing/routes';
 import { stockValuationRoutes } from './modules/stock-valuation/routes';
 import { servicePosRoutes } from './modules/service-pos/routes';
@@ -222,6 +224,8 @@ await app.register(customerDispatchesRoutes);
 await app.register(invoicesRoutes);
 await app.register(soCostingRoutes);
 await app.register(stockValuationRoutes);
+await app.register(tasksRoutes);
+await app.register(dailyTaskReportsRoutes);
 
 try {
   await app.listen({ port: env.PORT ?? env.API_PORT, host: '0.0.0.0' });

@@ -263,6 +263,8 @@ const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
+          { to: '/task-board', label: 'Task Board', icon: '📋' },
+          { to: '/daily-task-reports', label: 'Daily Task Reports', icon: '📝' },
           { to: '/alerts', label: 'Alerts', icon: '🔔' },
           { to: '/activity-log', label: 'Activity Log', icon: '📜' },
         ],
