@@ -105,3 +105,5 @@ export * from './schemas/so-costing';
 export * from './schemas/stock-valuation';
 export * from './schemas/task';
 export * from './schemas/daily-task-report';
+export * from './schemas/dashboard-home';
+export * from './schemas/dashboard-registry';

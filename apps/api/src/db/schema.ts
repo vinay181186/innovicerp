@@ -4093,6 +4093,50 @@ export const dailyReportLines = pgTable(
   ],
 ).enableRLS();
 
+// ─── Dashboard: per-user home layout preference (migration 0052) ───────────
+// Mirror of legacy db.dashboardConfig = [{userId, widgets:[keys], quickLinks:
+// [pages]}]. widgets/quick_links are ordered lists of UI keys (layout
+// preference) — jsonb, not the entity-blob anti-pattern. null = show all.
+export const dashboardConfig = pgTable(
+  'dashboard_config',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    widgets: jsonb('widgets').$type<string[]>(),
+    quickLinks: jsonb('quick_links').$type<string[]>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('dashboard_config_company_user_uq')
+      .on(t.companyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('dashboard_config_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('dashboard_config_self_or_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+      withCheck: sql`company_id = current_company_id() AND (user_id = current_user_id() OR current_user_role() IN ('admin','manager'))`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;

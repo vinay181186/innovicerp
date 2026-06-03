@@ -1769,6 +1769,39 @@ Migration 0051 (additive + idempotent) + two new modules: **tasks** (Task Board)
 
 ---
 
+## ADR-044: Dashboard (home) module — role-aware landing + My Work + Widgets + Customize (migration 0052)
+
+**Date:** 2026-06-03
+**Status:** Accepted
+
+### Context
+
+The home landing page (`legacy renderHome` L2486) was still the thin welcome + KPI-tiles grid; the legacy home is a rich, role-aware dashboard. User directed building the entire Dashboard to legacy parity with all logic (2026-06-03 /goal), test once fully built, no per-step commit prompts, only surface data conflicts. PARITY spec at `docs/PARITY/dashboard.md`. (Note: `renderDashboard` L3658 is the **Production Dashboard**, already shipped — the "Dashboard" here is the home page.)
+
+### Decision
+
+Migration 0052 (`dashboard_config`) + an extended `dashboard` API module + a rewritten web home, all computed server-side (Rule #1/#6), reusing existing infrastructure.
+
+1. **Role-aware home** (`GET /dashboard/home`). Layout resolved from `getMyAccess` (access-control): operator role → operator view; non-admin/non-manager with `!fullAccess` and a detected primary dept → specialist view (qc/purchase/design panels); else admin KPI view. Admin layout returns headline KPIs (active/overdue/due-week SOs, open/overdue JCs, machines running, today's output), a Today snapshot (GRNs/dispatches/ops running/completed), and a hand-rolled Needs Attention list (legacy L2630). Operator returns running ops + ready-to-work table + my-output. Specialist returns dept KPIs + panels.
+2. **My Work engine** (`GET /dashboard/work-list`) — 9 dept-gated rules (legacy `_buildWorkList` L3196): PO-approval, PR-conversion, pending-QC, BOM-pending, my-tasks, my-CAPAs, overdue-JCs, overdue-PO, stuck-running-ops. Sorted by severity then age; each rule guarded so one failure can't sink the panel. Pure-SQL aggregation over `v_jc_op_status` + the source tables.
+3. **Widgets view** (`GET /dashboard/widgets`) — 13 server-computed data widgets (numbers/bars/rows) in the user's saved order; `my_alerts` (reuses `/alerts`) + `quick_links` (registry) are composed client-side. `machine_loading` reuses the existing `getMachineLoading` utilization. Visibility gated by dept access.
+4. **Per-user layout config** (`dashboard_config`, `GET`/`PUT /dashboard/config`) — `widgets` + `quick_links` as **jsonb ordered key-lists** (UI layout preference, not entity records → not the JSON-blob anti-pattern #1; null = show all). One row per user; RLS company_read + self_or_manager_write via `current_user_id()`. Customize screen reorders/toggles widgets + toggles quick links.
+5. **Reuse over rebuild:** `getMyAccess` (role/dept detection + work-list gating), `v_jc_op_status` view (op/JC aggregates), `runAllAlerts` (Alerts view + my_alerts widget), `getMachineLoading` (loading widget), tasks/capa tables (My Work). The home also calls `POST /tasks/mark-viewed` on mount (legacy `_markTasksViewed`).
+
+### Alternatives Considered
+
+- Compute the dashboard client-side from raw data (legacy `calcEngine`) — rejected: violates "no business logic in the frontend"; everything aggregated server-side.
+- `dashboard_config` as child tables (one row per selected widget) — rejected: widgets/quick-links are an ordered preference list of enum-like keys, not business records; jsonb mirrors legacy 1:1 and is queryable enough. Documented as an internal layout-preference choice, not a data conflict.
+- Build a fresh alert engine for Needs Attention — rejected: Needs Attention is the legacy hand-rolled admin list (distinct from the `/alerts` registry which powers the Alerts view + my_alerts widget); both kept as in legacy.
+
+### Consequences
+
+- Positive: home at legacy parity — role-aware KPIs/operator/specialist, a cross-module My Work list, configurable Widgets + Quick Links with per-user persistence, classic Alerts view. Heavy reuse keeps it thin.
+- Negative: operator/specialist layouts depend on access-control dept flags being set (else everyone gets the admin view — a safe default); `quickFill` deep-link into Op Entry from operator rows navigates to `/op-entry` without prefill (follow-up); login toast deferred (unread badge covers it).
+- Validation: full typecheck + lint clean (4 pkgs); migration 0052 applied to dev DB; end-to-end smoke green against the real dev DB (home admin layout with real KPIs [2 active SOs/1 overdue/2 open JCs/12 machines], 9-rule work-list sorted, 15 widgets computed, config screen 15 widgets + 30 quick links, save/read/revert, widgets respect saved order). End-to-end UI testing pending per user direction.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
