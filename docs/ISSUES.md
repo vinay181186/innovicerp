@@ -205,3 +205,37 @@ Pure rename — no data conversion needed since the stored unit was always hours
 4. As a one-off fix, manually `DELETE` the orphan ledger row (admin SQL via Supabase studio, NOT app code).
 
 Defer to audit phase OR when this flake blocks a release. Not caused by route-cards (route-cards module doesn't touch `store_transactions`).
+
+## ISSUE-013 — SO Master: Client-PO file link (📎) on rows
+
+- **Surfaced:** 2026-06-03 (screen-by-screen parity review, SO Master)
+- **Severity:** P3 (convenience; the client-PO *number* already shows)
+- **Status:** [ ] open
+
+**Gap:** Legacy `renderSOmaster` (L11866) renders a 📎 link next to the Client-PO number when `clientPoFileUrl` is set, opening the uploaded client-PO document. Our SO Master shows the PO number but has no file link.
+
+**Why deferred:** We don't store a client-PO file anywhere — there's no `client_po_file_url` column on `sales_orders`, no upload UI in the SO create/edit form, and no Supabase Storage wiring for it. This is a small feature, not a one-line fix.
+
+**Fix sketch:**
+1. Add `client_po_file_url text` (or a `client_po_file_path` + storage object) to `sales_orders` (migration).
+2. Add a file upload to the SO create/edit form (reuse the QC-docs Supabase Storage pattern from `qc-documents`).
+3. Render the 📎 link in the SO Master "Client PO" cell when set.
+
+~80-120 LOC + a migration + storage bucket policy. Defer until file-attachment UX is prioritised.
+
+## ISSUE-014 — Contextual "Assign to user" (👤+) across record screens
+
+- **Surfaced:** 2026-06-03 (screen-by-screen parity review, SO Master) — but it spans many screens
+- **Severity:** P3 (the Task Board already lets you assign tasks manually)
+- **Status:** [ ] open
+
+**Gap:** Legacy `_assignTaskFromContext` (L14360) adds an "Assign to user 👤+" button on records across **SO Master, Purchase Requests, Purchase Orders, NC Register, CAPA, Job Cards, GRN/Incoming-QC, and Design Issues**. It opens the task modal pre-filled with a `linkedRef` {type,id,display,navPage} so the assignee sees a direct link in their My Work list. None of these buttons are wired in our build.
+
+**Why deferred:** The data path already exists — the Tasks module's create endpoint accepts an optional `linkedRef` (built in TASK-1/ADR-043), and the My Work engine already renders linked tasks. What's missing is the per-screen UI button + a small "assign task from this record" modal, repeated across ~8 screens.
+
+**Fix sketch:**
+1. Build one reusable `<AssignTaskButton linkedRef={...} suggestedTitle=... />` component that opens a compact assign modal (reuse `AssignTaskModal` from the tasks module, pre-filling `linkedRef`).
+2. Drop it into each record row/detail: SO Master, PR, PO, NC, CAPA, JC, GRN, Design Issues — mirroring the legacy `_assignTaskFromContext(...)` call sites.
+3. Gate to admin/manager (legacy gate).
+
+~40 LOC for the shared button + ~1-2 lines per screen. Do as a single cross-screen pass once the per-screen parity review is done.
