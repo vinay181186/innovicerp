@@ -1802,6 +1802,38 @@ Migration 0052 (`dashboard_config`) + an extended `dashboard` API module + a rew
 
 ---
 
+## ADR-045: JW Master — client material moved to header + per-line rate (migration 0053)
+
+**Date:** 2026-06-04
+**Status:** Accepted
+
+### Context
+
+Screen-by-screen parity review of JW Master (legacy `renderJWMaster` L12642, `jwHeaderForm` L12784). Two model gaps vs legacy, both confirmed with the user (AskUserQuestion + /goal "build same as HTML"): (1) legacy has ONE header-level "CLIENT MATERIAL DETAILS" section per JW; our model stored the 4 material fields per-line. (2) Legacy JW lines carry a Rate ₹ + Amount (processing charge); our line had no `rate`.
+
+### Decision
+
+Migration 0053 (additive, non-destructive):
+1. **Client material → header.** Added `client_material`, `client_material_qty`, `material_received_date`, `material_received_qty` to `job_work_orders`. Existing per-line material is copied up (SUM qtys, first material, max date). The old per-line columns are **left orphaned** (Drizzle no longer maps them) rather than dropped — non-destructive per rule #8 spirit.
+2. **Per-line rate.** Added `rate numeric(12,2) default 0` to `job_work_order_lines`; the form/detail show Rate ₹ + Amount (qty×rate); JW value total = Σ line amounts.
+
+Shared schema, service, web form/list/detail all refactored to the header-material + line-rate model. The JW create form gained the consistency features from the SO form (auto `IN-JW-#####`, client + New, item + `-rm` datalists, per-line amount).
+
+**List = ONE ROW PER LINE (legacy parity).** Per the user's "same column / sequence / count / font" requirement (screenshot 23), the JW Master list was flattened to one row per `job_work_order_line` joined to its header — columns in exact legacy order: JW NO. · LINE · DATE · CLIENT · CLIENT PO · ITEM CODE · PART NAME · QTY · JC QTY · MATERIAL · DUE · STATUS · REMARKS · (Edit/Del). MATERIAL renders as legacy colored TEXT (✓ Full green / ◑ Partial amber / ✕ Not Received red) keyed on header `material_received_qty` vs the line's `order_qty` (legacy L12648). `listJobWorkOrders` returns line rows (`JobWorkOrderListItem` redefined: jwId/lineId/code/lineNo/itemCode/partName/orderQty/jcQty/dueDate/status/remarks/header-material); the party-grn JW picker dedupes by `jwId`.
+
+### Alternatives Considered
+
+- Keep material per-line (more granular) — rejected by user; legacy is header-level and that matches the real workflow (one client-material batch per JW order).
+- Drop the orphaned per-line material columns — deferred; leaving them is non-destructive and they're ignored by the ORM. Can drop in a later cleanup migration.
+
+### Consequences
+
+- Positive: JW Master 1:1 with legacy — header CLIENT MATERIAL DETAILS section, per-line Rate + Amount, JW order value. Material status correct from header.
+- Negative: 4 orphaned columns remain on `job_work_order_lines` (cosmetic DB debt).
+- Validation: typecheck + lint clean (3 pkgs); JW service test updated to the new model; migration 0053 applied to dev DB; 8-check end-to-end smoke green (header material persist/format, per-line rate, list aggregates + material badge, update merge). End-to-end UI test pending per /goal.
+
+---
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

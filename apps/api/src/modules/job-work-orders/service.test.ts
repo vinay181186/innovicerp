@@ -71,6 +71,11 @@ describe('job-work-orders service', () => {
           jwDate: '2026-05-02',
           customerName: 'JW Acme',
           status: 'open',
+          // Client material is header-level (migration 0053).
+          clientMaterial: 'EN8 Round Bar 50mm',
+          clientMaterialQty: 12.5,
+          materialReceivedDate: '2026-05-01',
+          materialReceivedQty: 10,
         },
         lines: [
           {
@@ -78,10 +83,7 @@ describe('job-work-orders service', () => {
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 10,
-            clientMaterial: 'EN8 Round Bar 50mm',
-            clientMaterialQty: 12.5,
-            materialReceivedDate: '2026-05-01',
-            materialReceivedQty: 10,
+            rate: 35.5,
           },
           {
             partName: 'Bracket',
@@ -100,10 +102,11 @@ describe('job-work-orders service', () => {
     expect(detail.lines[0]?.lineNo).toBe(1);
     expect(detail.lines[0]?.itemId).toBe(firstItemId);
     expect(detail.lines[0]?.itemCodeText).toBeNull();
-    // numeric formatting
-    expect(detail.lines[0]?.clientMaterialQty).toBe('12.50');
-    expect(detail.lines[0]?.materialReceivedQty).toBe('10.00');
-    expect(detail.lines[0]?.materialReceivedDate).toBe('2026-05-01');
+    // line rate + header material numeric formatting
+    expect(detail.lines[0]?.rate).toBe('35.50');
+    expect(detail.clientMaterialQty).toBe('12.50');
+    expect(detail.materialReceivedQty).toBe('10.00');
+    expect(detail.materialReceivedDate).toBe('2026-05-01');
     // ADR-012 #10 fallback
     expect(detail.lines[1]?.itemId).toBeNull();
     expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-BRK');
@@ -171,28 +174,22 @@ describe('job-work-orders service', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('listJobWorkOrders returns aggregates incl. material totals + status filter', async () => {
+  it('listJobWorkOrders returns one row per line incl. header material + status filter', async () => {
     const code = `${TEST_PREFIX}LST`;
     await service.createJobWorkOrder(
       {
-        header: { code, jwDate: '2026-05-02', customerName: 'Listable', status: 'open' },
+        header: {
+          code,
+          jwDate: '2026-05-02',
+          customerName: 'Listable',
+          status: 'open',
+          // Client material is header-level (migration 0053).
+          clientMaterialQty: 12,
+          materialReceivedQty: 4,
+        },
         lines: [
-          {
-            partName: 'A',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 4,
-            clientMaterialQty: 5,
-            materialReceivedQty: 4,
-          },
-          {
-            partName: 'B',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 6,
-            clientMaterialQty: 7,
-            materialReceivedQty: 0,
-          },
+          { partName: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 10 },
+          { partName: 'B', itemId: firstItemId, uom: 'NOS', orderQty: 6, rate: 20 },
         ],
       },
       admin,
@@ -201,14 +198,15 @@ describe('job-work-orders service', () => {
       { search: 'T031-LST', status: 'open', limit: 50, offset: 0 },
       admin,
     );
-    expect(result.items.length).toBeGreaterThanOrEqual(1);
-    const found = result.items.find((j) => j.code === code);
-    expect(found?.lineCount).toBe(2);
-    expect(found?.totalQty).toBe(10);
-    // numeric → string aggregation
-    expect(Number(found?.clientMaterialQtyTotal)).toBe(12);
-    expect(Number(found?.materialReceivedQtyTotal)).toBe(4);
-    expect(found?.jcQty).toBe(0);
+    // One row per line (2 lines for this JW), each carrying header material.
+    const rowsForJw = result.items.filter((j) => j.code === code).sort((a, b) => a.lineNo - b.lineNo);
+    expect(rowsForJw).toHaveLength(2);
+    expect(rowsForJw[0]?.lineNo).toBe(1);
+    expect(rowsForJw[0]?.orderQty).toBe(4);
+    expect(rowsForJw[1]?.orderQty).toBe(6);
+    expect(Number(rowsForJw[0]?.clientMaterialQty)).toBe(12);
+    expect(Number(rowsForJw[0]?.materialReceivedQty)).toBe(4);
+    expect(rowsForJw[0]?.jcQty).toBe(0);
   });
 
   it('updateJobWorkOrder header-only does NOT touch lines', async () => {

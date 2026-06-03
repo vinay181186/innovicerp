@@ -10,7 +10,7 @@
 // The merge helper is duplicated rather than abstracted out — rule of three.
 // If a third module (T-032 / T-038) needs the same logic, extract then.
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { clients, items, jobWorkOrderLines, jobWorkOrders } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -145,69 +145,47 @@ export async function listJobWorkOrders(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
+    // Match JW / client / item code / part name (legacy "Search JW, client, item").
     const searchFrag = term
-      ? sql`AND (jw.code ILIKE ${term} OR jw.customer_name ILIKE ${term} OR jw.client_po_no ILIKE ${term})`
+      ? sql`AND (jw.code ILIKE ${term} OR jw.customer_name ILIKE ${term} OR jw.client_po_no ILIKE ${term}
+                 OR COALESCE(it.code, jwl.item_code_text) ILIKE ${term} OR jwl.part_name ILIKE ${term})`
       : sql``;
     const statusFrag = input.status ? sql`AND jw.status = ${input.status}::so_status` : sql``;
     const clientFrag = input.clientId ? sql`AND jw.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND jw.jw_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
 
-    // Single-shot: header + line aggregates (count, total qty, material totals)
-    // + JC qty (job_cards.source_jw_line_id back-reference). Mirrors legacy
-    // renderJWMaster line 12648 (material status) + line 12645 (jcQty).
+    // ONE ROW PER LINE (legacy renderJWMaster lists one row per JW line). Each
+    // row joins its header + the line's own JC qty (source_jw_line_id).
+    const baseFrom = sql`
+      FROM public.job_work_order_lines jwl
+      JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.items it ON it.id = jwl.item_id AND it.deleted_at IS NULL
+      LEFT JOIN (
+        SELECT source_jw_line_id, SUM(order_qty) AS jc_qty
+        FROM public.job_cards WHERE deleted_at IS NULL AND source_jw_line_id IS NOT NULL
+        GROUP BY source_jw_line_id
+      ) jc ON jc.source_jw_line_id = jwl.id
+      WHERE jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL
+        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}`;
+
     const result = await tx.execute(sql`
       SELECT
-        jw.id, jw.company_id AS "companyId", jw.code, jw.jw_date AS "jwDate",
-        jw.client_id AS "clientId", jw.customer_name AS "customerName",
-        jw.client_po_no AS "clientPoNo", jw.status, jw.remarks,
-        jw.created_at AS "createdAt", jw.created_by AS "createdBy",
-        jw.updated_at AS "updatedAt", jw.updated_by AS "updatedBy",
-        jw.deleted_at AS "deletedAt",
-        COALESCE(line_agg.line_count, 0)::int AS "lineCount",
-        COALESCE(line_agg.total_qty, 0)::int  AS "totalQty",
-        COALESCE(line_agg.client_mat_qty, 0)::text AS "clientMaterialQtyTotal",
-        COALESCE(line_agg.material_recv_qty, 0)::text AS "materialReceivedQtyTotal",
-        line_agg.earliest_due_date::text      AS "earliestDueDate",
-        COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty"
-      FROM public.job_work_orders jw
-      LEFT JOIN (
-        SELECT job_work_order_id,
-               COUNT(*) AS line_count,
-               SUM(order_qty) AS total_qty,
-               SUM(COALESCE(client_material_qty, 0)) AS client_mat_qty,
-               SUM(COALESCE(material_received_qty, 0)) AS material_recv_qty,
-               MIN(due_date) AS earliest_due_date
-        FROM public.job_work_order_lines
-        WHERE deleted_at IS NULL
-        GROUP BY job_work_order_id
-      ) line_agg ON line_agg.job_work_order_id = jw.id
-      LEFT JOIN (
-        SELECT jwl.job_work_order_id, SUM(jc.order_qty) AS jc_qty
-        FROM public.job_cards jc
-        JOIN public.job_work_order_lines jwl ON jc.source_jw_line_id = jwl.id
-        WHERE jc.deleted_at IS NULL
-        GROUP BY jwl.job_work_order_id
-      ) jc_agg ON jc_agg.job_work_order_id = jw.id
-      WHERE jw.company_id = ${companyId}::uuid
-        AND jw.deleted_at IS NULL
-        ${searchFrag}
-        ${statusFrag}
-        ${clientFrag}
-        ${fromFrag}
-        ${toFrag}
-      ORDER BY jw.code ASC
+        jw.id AS "jwId", jwl.id AS "lineId", jw.code, jwl.line_no AS "lineNo",
+        jw.jw_date AS "jwDate", jw.client_id AS "clientId", jw.customer_name AS "customerName",
+        jw.client_po_no AS "clientPoNo",
+        COALESCE(it.code, jwl.item_code_text) AS "itemCode", jwl.part_name AS "partName",
+        jwl.order_qty AS "orderQty", COALESCE(jc.jc_qty, 0)::int AS "jcQty",
+        jwl.due_date::text AS "dueDate", jw.status, jw.remarks,
+        jw.client_material_qty::text AS "clientMaterialQty",
+        jw.material_received_qty::text AS "materialReceivedQty"
+      ${baseFrom}
+      ORDER BY jw.code ASC, jwl.line_no ASC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const conditions = [eq(jobWorkOrders.companyId, companyId), isNull(jobWorkOrders.deletedAt)];
-    if (input.status) conditions.push(eq(jobWorkOrders.status, input.status));
-    if (input.clientId) conditions.push(eq(jobWorkOrders.clientId, input.clientId));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(jobWorkOrders)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    const totalRows = await tx.execute(sql`SELECT COUNT(*)::int AS c ${baseFrom}`);
+    const total = Number((totalRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
@@ -216,36 +194,28 @@ export async function listJobWorkOrders(
 
 function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
   return {
-    id: r['id'] as string,
-    companyId: r['companyId'] as string,
+    jwId: r['jwId'] as string,
+    lineId: r['lineId'] as string,
     code: r['code'] as string,
+    lineNo: Number(r['lineNo'] ?? 0),
     jwDate: dateLike(r['jwDate']),
     clientId: (r['clientId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     clientPoNo: (r['clientPoNo'] as string | null) ?? null,
+    itemCode: (r['itemCode'] as string | null) ?? null,
+    partName: (r['partName'] as string | null) ?? '',
+    orderQty: Number(r['orderQty'] ?? 0),
+    jcQty: Number(r['jcQty'] ?? 0),
+    dueDate: (r['dueDate'] as string | null) ?? null,
     status: r['status'] as JobWorkOrder['status'],
     remarks: (r['remarks'] as string | null) ?? null,
-    createdAt: tsLike(r['createdAt']),
-    createdBy: r['createdBy'] as string,
-    updatedAt: tsLike(r['updatedAt']),
-    updatedBy: r['updatedBy'] as string,
-    deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
-    lineCount: Number(r['lineCount'] ?? 0),
-    totalQty: Number(r['totalQty'] ?? 0),
-    jcQty: Number(r['jcQty'] ?? 0),
-    clientMaterialQtyTotal: String(r['clientMaterialQtyTotal'] ?? '0'),
-    materialReceivedQtyTotal: String(r['materialReceivedQtyTotal'] ?? '0'),
-    earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
+    clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
+    materialReceivedQty: (r['materialReceivedQty'] as string | null) ?? null,
   };
 }
 
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v);
-}
-
-function tsLike(v: unknown): string {
-  if (v instanceof Date) return v.toISOString();
   return String(v);
 }
 
@@ -290,6 +260,10 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
     clientPoNo: row.clientPoNo,
     status: row.status,
     remarks: row.remarks,
+    clientMaterial: row.clientMaterial,
+    clientMaterialQty: row.clientMaterialQty,
+    materialReceivedDate: row.materialReceivedDate,
+    materialReceivedQty: row.materialReceivedQty,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -315,11 +289,8 @@ function toJobWorkOrderLine(row: typeof jobWorkOrderLines.$inferSelect): JobWork
     drawingNo: row.drawingNo,
     uom: row.uom,
     orderQty: row.orderQty,
+    rate: row.rate,
     dueDate: row.dueDate,
-    clientMaterial: row.clientMaterial,
-    clientMaterialQty: row.clientMaterialQty,
-    materialReceivedDate: row.materialReceivedDate,
-    materialReceivedQty: row.materialReceivedQty,
     status: row.status,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
@@ -382,6 +353,10 @@ export async function createJobWorkOrder(
         clientPoNo: input.header.clientPoNo ?? null,
         status: headerStatus,
         remarks: input.header.remarks ?? null,
+        clientMaterial: input.header.clientMaterial ?? null,
+        clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
+        materialReceivedDate: input.header.materialReceivedDate ?? null,
+        materialReceivedQty: numToStringOrNull(input.header.materialReceivedQty),
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -401,11 +376,8 @@ export async function createJobWorkOrder(
         drawingNo: l.drawingNo ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
+        rate: (l.rate ?? 0).toFixed(2),
         dueDate: l.dueDate ?? null,
-        clientMaterial: l.clientMaterial ?? null,
-        clientMaterialQty: numToStringOrNull(l.clientMaterialQty),
-        materialReceivedDate: l.materialReceivedDate ?? null,
-        materialReceivedQty: numToStringOrNull(l.materialReceivedQty),
         status: l.status ?? headerStatus,
         createdBy: user.id,
         updatedBy: user.id,
@@ -467,6 +439,13 @@ export async function updateJobWorkOrder(
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.status !== undefined) updates['status'] = h.status;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
+    if (h.clientMaterial !== undefined) updates['clientMaterial'] = h.clientMaterial ?? null;
+    if (h.clientMaterialQty !== undefined)
+      updates['clientMaterialQty'] = numToStringOrNull(h.clientMaterialQty);
+    if (h.materialReceivedDate !== undefined)
+      updates['materialReceivedDate'] = h.materialReceivedDate ?? null;
+    if (h.materialReceivedQty !== undefined)
+      updates['materialReceivedQty'] = numToStringOrNull(h.materialReceivedQty);
 
     await tx.update(jobWorkOrders).set(updates).where(eq(jobWorkOrders.id, id));
 
@@ -567,15 +546,8 @@ async function mergeLines(
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
+    if (u.data.rate !== undefined) lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
-    if (u.data.clientMaterial !== undefined)
-      lineUpdate['clientMaterial'] = u.data.clientMaterial ?? null;
-    if (u.data.clientMaterialQty !== undefined)
-      lineUpdate['clientMaterialQty'] = numToStringOrNull(u.data.clientMaterialQty);
-    if (u.data.materialReceivedDate !== undefined)
-      lineUpdate['materialReceivedDate'] = u.data.materialReceivedDate ?? null;
-    if (u.data.materialReceivedQty !== undefined)
-      lineUpdate['materialReceivedQty'] = numToStringOrNull(u.data.materialReceivedQty);
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
 
     await tx.update(jobWorkOrderLines).set(lineUpdate).where(eq(jobWorkOrderLines.id, u.id));
@@ -600,11 +572,8 @@ async function mergeLines(
         drawingNo: l.drawingNo ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
+        rate: (l.rate ?? 0).toFixed(2),
         dueDate: l.dueDate ?? null,
-        clientMaterial: l.clientMaterial ?? null,
-        clientMaterialQty: numToStringOrNull(l.clientMaterialQty),
-        materialReceivedDate: l.materialReceivedDate ?? null,
-        materialReceivedQty: numToStringOrNull(l.materialReceivedQty),
         status: l.status ?? 'open',
         createdBy: user.id,
         updatedBy: user.id,

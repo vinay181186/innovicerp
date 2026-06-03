@@ -8,11 +8,11 @@
 // Differences from `sales-order.ts`:
 //   - Header: no `type`, no `gstPercent`, no `costCenter`, no BOM fields.
 //     Status uses the same `so_status` enum (ADR-012 #5 — semantics identical).
-//   - Lines: no `rate`, no `clientPoLineNo`. Add 4 client-material fields:
-//     `clientMaterial`, `clientMaterialQty`, `materialReceivedDate`,
-//     `materialReceivedQty`. (Legacy form puts these at header level since
-//     all current JWs are single-line; our DB stores them per-line for
-//     forward-compat with multi-line JWs.)
+//     Carries the 4 HEADER-level client-material fields (migration 0053,
+//     matching legacy CLIENT MATERIAL DETAILS L12839): `clientMaterial`,
+//     `clientMaterialQty`, `materialReceivedDate`, `materialReceivedQty`.
+//   - Lines: `rate` (processing charge per unit, migration 0053) + no
+//     `clientPoLineNo`. Material fields moved off the line to the header.
 //
 // Same write contracts:
 //   - `createJobWorkOrderInputSchema` and `updateJobWorkOrderInputSchema`
@@ -44,11 +44,8 @@ export const jobWorkOrderLineSchema = z.object({
   drawingNo: z.string().nullable(),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
+  rate: z.string(), // processing charge per unit; numeric stored as string
   dueDate: z.string().nullable(), // ISO date
-  clientMaterial: z.string().nullable(),
-  clientMaterialQty: z.string().nullable(), // numeric stored as string
-  materialReceivedDate: z.string().nullable(),
-  materialReceivedQty: z.string().nullable(),
   status: jwStatusSchema,
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -68,6 +65,12 @@ export const jobWorkOrderSchema = z.object({
   clientPoNo: z.string().nullable(),
   status: jwStatusSchema,
   remarks: z.string().nullable(),
+  // Client material details (header-level, per legacy CLIENT MATERIAL DETAILS
+  // L12839). Client supplies raw material → we process → deliver finished parts.
+  clientMaterial: z.string().nullable(),
+  clientMaterialQty: z.string().nullable(), // numeric stored as string
+  materialReceivedDate: z.string().nullable(),
+  materialReceivedQty: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -81,20 +84,31 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
 });
 export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
 
-/** List row: header + aggregates from job_work_order_lines + linked job_cards.
- *  Mirrors legacy renderJWMaster columns line 12685 (Qty, JC Qty, Material, Due). */
-export const jobWorkOrderListItemSchema = jobWorkOrderSchema.extend({
-  lineCount: z.number().int().nonnegative(),
-  totalQty: z.number().int().nonnegative(),
+/** List ROW = one job_work_order_line joined to its header (legacy
+ *  renderJWMaster L12644-12671 lists one row per line). Columns, in order:
+ *  JW NO. · LINE · DATE · CLIENT · CLIENT PO · ITEM CODE · PART NAME · QTY ·
+ *  JC QTY · MATERIAL · DUE · STATUS · REMARKS. Material status reads the
+ *  header materialReceivedQty vs the line orderQty (legacy L12648). */
+export const jobWorkOrderListItemSchema = z.object({
+  jwId: z.string().uuid(),
+  lineId: z.string().uuid(),
+  code: z.string(),
+  lineNo: z.number().int(),
+  jwDate: z.string(),
+  clientId: z.string().uuid().nullable(),
+  customerName: z.string().nullable(),
+  clientPoNo: z.string().nullable(),
+  itemCode: z.string().nullable(),
+  partName: z.string(),
+  orderQty: z.number().int().nonnegative(),
+  /** Σ job_cards.order_qty whose source_jw_line_id = this line. */
   jcQty: z.number().int().nonnegative(),
-  /** Sum of materialReceivedQty across all lines (numeric string). Renders
-   *  the legacy "Material" column: ✓ Full / ◑ Partial / ✕ Not Received. */
-  materialReceivedQtyTotal: z.string(),
-  /** Sum of clientMaterialQty across all lines. */
-  clientMaterialQtyTotal: z.string(),
-  /** MIN(line.due_date) across non-deleted lines. Drives the "Due" col +
-   *  red-when-overdue colour. */
-  earliestDueDate: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  status: jwStatusSchema,
+  remarks: z.string().nullable(),
+  /** Header-level client material (drives the MATERIAL column). */
+  clientMaterialQty: z.string().nullable(),
+  materialReceivedQty: z.string().nullable(),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 
@@ -111,17 +125,11 @@ export const jobWorkOrderLineInputSchema = z
     drawingNo: z.string().max(64).optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 in DB too
+    rate: z.coerce.number().nonnegative().optional(),
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
-    clientMaterial: z.string().max(255).optional(),
-    clientMaterialQty: z.coerce.number().nonnegative().optional(),
-    materialReceivedDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'materialReceivedDate must be YYYY-MM-DD')
-      .optional(),
-    materialReceivedQty: z.coerce.number().nonnegative().optional(),
     status: jwStatusSchema.optional(),
   })
   .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
@@ -141,6 +149,14 @@ const _jwHeaderInputBase = z.object({
   clientPoNo: z.string().max(64).optional(),
   status: jwStatusSchema.default('open'),
   remarks: z.string().max(2000).optional(),
+  // Client material details (header-level).
+  clientMaterial: z.string().max(255).optional(),
+  clientMaterialQty: z.coerce.number().nonnegative().optional(),
+  materialReceivedDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'materialReceivedDate must be YYYY-MM-DD')
+    .optional(),
+  materialReceivedQty: z.coerce.number().nonnegative().optional(),
 });
 
 /** CREATE — `{header, lines}`. Header + ≥ 1 line (no Equipment exception

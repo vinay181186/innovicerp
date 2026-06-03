@@ -82,6 +82,12 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** JW-1 (JW Master — header client material + per-line rate, ADR-045, migration 0053, 2026-06-04)
+**Title:** Build JW Master (Job Work — Material from Client) to 1:1 legacy parity, all logic (per /goal 2026-06-04). Move client material to header (legacy CLIENT MATERIAL DETAILS), add per-line Rate + Amount, plus SO-form-style consistency (auto JW#, client +New, item/-rm datalists).
+**Status:** [x] CODE-COMPLETE 2026-06-04, NOT yet committed (user tests whole screen first). **Migration 0053 applied to dev DB** (additive, non-destructive: header material cols + line rate; per-line material copied up; old line material cols left orphaned). Data conflicts resolved with user (header material + line rate, both approved). No PARITY doc (in-place review).
+**Built:** Shared `job-work-order.ts` (material → header, line `rate`, list item drops `*Total`). DB schema + migration 0053. API service refactor (header material read/write, line rate, list SQL reads header material, mappers). Web: form rewritten (header CLIENT MATERIAL DETAILS w/ `-rm` picker + auto `IN-JW-#####` + client +New + item datalist + per-line Rate/Amount), list Material badge from header, detail shows header material section + line Rate/Amount + JW value total. Service test updated to new model. **Verified:** typecheck + lint clean (3 pkgs); **8-check end-to-end smoke green** (`apps/api/src/_smoke_jw.ts`, gitignored). **End-to-end UI test pending.**
+**Follow-up (backlog):** drop the 4 orphaned per-line material columns in a later cleanup migration; client-PO file upload (ISSUE-013) applies to JW too.
+
 **ID:** DASH-1 (Dashboard / home landing — role-aware, ADR-044, migration 0052, 2026-06-03)
 **Title:** Build the entire home Dashboard to legacy parity with all logic (per /goal 2026-06-03). Role-aware home (`renderHome` L2486) + My Work + Widgets + Customize + Alerts views. (`renderDashboard` L3658 = Production Dashboard, already shipped.)
 **Status:** [x] CODE-COMPLETE 2026-06-03, NOT yet committed (user tests whole module first). **Migration 0052 applied to dev DB** (additive, new `dashboard_config` table only). No data conflicts. PARITY: `docs/PARITY/dashboard.md`.

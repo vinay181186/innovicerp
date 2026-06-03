@@ -60,8 +60,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
-  const clientMatTotal = detail.lines.reduce((s, l) => s + Number(l.clientMaterialQty ?? 0), 0);
-  const matRecvTotal = detail.lines.reduce((s, l) => s + Number(l.materialReceivedQty ?? 0), 0);
+  // Client material is header-level (migration 0053).
+  const clientMatTotal = Number(detail.clientMaterialQty ?? 0);
+  const matRecvTotal = Number(detail.materialReceivedQty ?? 0);
+  const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (
     <div>
@@ -161,6 +163,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           <div className="panel-title">Line items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
+            {lineValueTotal > 0 ? (
+              <>
+                {' '}· value <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
+              </>
+            ) : null}
             {clientMatTotal > 0 ? (
               <>
                 {' '}
@@ -183,9 +190,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>Drawing</th>
                 <th className="td-right">Qty</th>
                 <th>UOM</th>
+                <th className="td-right" style={{ color: 'var(--green)' }}>Rate ₹</th>
+                <th className="td-right" style={{ color: 'var(--green)' }}>Amount</th>
                 <th>Due</th>
-                <th>Client material</th>
-                <th>Mat. status</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -224,24 +231,12 @@ function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
       </td>
       <td className="td-right mono">{l.orderQty}</td>
       <td>{l.uom}</td>
+      <td className="td-right mono" style={{ color: 'var(--green)' }}>{Number(l.rate).toFixed(2)}</td>
+      <td className="td-right mono fw-700" style={{ color: 'var(--green)' }}>
+        {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
+      </td>
       <td className="text2" style={{ fontSize: 11 }}>
         {l.dueDate ?? '—'}
-      </td>
-      <td style={{ fontSize: 11 }}>
-        {l.clientMaterial ? (
-          <span className="mono">
-            {l.clientMaterial}
-            {l.clientMaterialQty ? ` (${l.clientMaterialQty})` : ''}
-          </span>
-        ) : (
-          '—'
-        )}
-      </td>
-      <td>
-        <JwMaterialStatusBadge
-          receivedQty={Number(l.materialReceivedQty ?? 0)}
-          expectedQty={Number(l.clientMaterialQty ?? 0)}
-        />
       </td>
       <td>
         <SoStatusBadge status={l.status} />
@@ -256,10 +251,13 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
     <div className="form-grid form-grid-3">
       <Pair label="Date" value={detail.jwDate} />
       <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
+      <Pair label="Status" value={<SoStatusBadge status={detail.status} />} />
+      <Pair label="🟢 Client Material" value={detail.clientMaterial ?? '—'} />
       <Pair
-        label="Status"
-        value={<SoStatusBadge status={detail.status} />}
+        label="Material Qty / Received"
+        value={`${Number(detail.clientMaterialQty ?? 0)} / ${Number(detail.materialReceivedQty ?? 0)}`}
       />
+      <Pair label="Material Received Date" value={detail.materialReceivedDate ?? '—'} />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>

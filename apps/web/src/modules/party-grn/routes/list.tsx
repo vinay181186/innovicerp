@@ -286,9 +286,14 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
     limit: 50,
     offset: 0,
   });
+  // The JW list returns one row per line; dedupe to one entry per JW header.
+  const jwHeaders = useMemo(() => {
+    const seen = new Set<string>();
+    return (jwData?.items ?? []).filter((j) => (seen.has(j.jwId) ? false : (seen.add(j.jwId), true)));
+  }, [jwData]);
   const selectedJw = useMemo(
-    () => jwData?.items.find((j) => j.id === jwId) ?? null,
-    [jwData, jwId],
+    () => jwHeaders.find((j) => j.jwId === jwId) ?? null,
+    [jwHeaders, jwId],
   );
 
   const { data: pmData } = usePartyMaterialsList({
@@ -428,8 +433,8 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               />
               {!jwId && jwSearch && jwData ? (
                 <Picklist
-                  items={jwData.items.slice(0, 20).map((j) => ({
-                    id: j.id,
+                  items={jwHeaders.slice(0, 20).map((j) => ({
+                    id: j.jwId,
                     label: `${j.code} — ${j.customerName ?? ''}`,
                     sub: j.clientPoNo ?? null,
                   }))}

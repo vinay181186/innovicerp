@@ -1136,6 +1136,11 @@ export const jobWorkOrders = pgTable(
     clientPoNo: text('client_po_no'),
     status: soStatusEnum('status').notNull().default('open'),
     remarks: text('remarks'),
+    // Client material details (header-level, migration 0053).
+    clientMaterial: text('client_material'),
+    clientMaterialQty: numeric('client_material_qty', { precision: 12, scale: 2 }),
+    materialReceivedDate: date('material_received_date'),
+    materialReceivedQty: numeric('material_received_qty', { precision: 12, scale: 2 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1188,11 +1193,8 @@ export const jobWorkOrderLines = pgTable(
     drawingNo: text('drawing_no'),
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
+    rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
     dueDate: date('due_date'),
-    clientMaterial: text('client_material'),
-    clientMaterialQty: numeric('client_material_qty', { precision: 12, scale: 2 }),
-    materialReceivedDate: date('material_received_date'),
-    materialReceivedQty: numeric('material_received_qty', { precision: 12, scale: 2 }),
     status: soStatusEnum('status').notNull().default('open'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

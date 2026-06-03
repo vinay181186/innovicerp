@@ -1,4 +1,8 @@
-// JW Master list (UI-003-04). Ports legacy renderJWMaster L12642.
+// JW Master list — 1:1 with legacy renderJWMaster (L12642). ONE ROW PER LINE,
+// columns in legacy order: JW NO. · LINE · DATE · CLIENT · CLIENT PO · ITEM
+// CODE · PART NAME · QTY · JC QTY · MATERIAL · DUE · STATUS · REMARKS · (Edit
+// Del). Material is colored text (✓ Full / ◑ Partial / ✕ Not Received) keyed on
+// header materialReceivedQty vs line orderQty (legacy L12648).
 
 import {
   type JobWorkOrderListItem,
@@ -8,14 +12,13 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
-import { JwMaterialStatusBadge } from '../components/jw-material-status';
 
 const PAGE_SIZE = 25;
 
@@ -31,6 +34,17 @@ export const jobWorkOrdersListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: JobWorkOrdersListPage,
 });
+
+// Material status as legacy colored text (L12648-12650): received vs line qty.
+function MaterialCell({ received, orderQty }: { received: number; orderQty: number }): React.JSX.Element {
+  if (orderQty > 0 && received >= orderQty) {
+    return <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Full</span>;
+  }
+  if (received > 0) {
+    return <span style={{ color: 'var(--amber)', fontWeight: 700 }}>◑ Partial ({received})</span>;
+  }
+  return <span style={{ color: 'var(--red)', fontWeight: 700 }}>✕ Not Received</span>;
+}
 
 function JobWorkOrdersListPage(): React.JSX.Element {
   const search = jobWorkOrdersListRoute.useSearch();
@@ -65,6 +79,11 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const deleteMut = useSoftDeleteJobWorkOrder();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const onDelete = (jwId: string, code: string): void => {
+    if (confirm(`Move JW ${code} to Trash?`)) deleteMut.mutate(jwId);
+  };
 
   const columns = useMemo<ColumnDef<JobWorkOrderListItem>[]>(
     () => [
@@ -72,67 +91,28 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         header: 'JW No.',
         accessorKey: 'code',
         cell: ({ row }) => (
-          <Link
-            to="/job-work-orders/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
+          <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} className="td-code cyan" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
             {row.original.code}
           </Link>
         ),
       },
-      {
-        header: 'Date',
-        accessorKey: 'jwDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.jwDate}
-          </span>
-        ),
-      },
-      {
-        header: 'Client',
-        cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span>,
-      },
-      {
-        // Legacy renderJWMaster L12656 — Client PO col with purple mono text.
-        header: 'Client PO',
-        cell: ({ row }) => (
-          <span
-            className="td-code mono"
-            style={{ fontSize: 11, color: 'var(--purple)' }}
-          >
-            {row.original.clientPoNo ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Lines',
-        cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span>,
-      },
-      {
-        header: 'Total Qty',
-        cell: ({ row }) => <span className="td-ctr mono">{row.original.totalQty}</span>,
-      },
+      { header: 'Line', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineNo}</span> },
+      { header: 'Date', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
+      { header: 'Client', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
+      { header: 'Client PO', cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
+      { header: 'Item Code', cell: ({ row }) => <span className="td-code" style={{ color: 'var(--text2)' }}>{row.original.itemCode ?? '—'}</span> },
+      { header: 'Part Name', cell: ({ row }) => row.original.partName },
+      { header: 'Qty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span> },
       {
         header: 'JC Qty',
         cell: ({ row }) => {
           const jc = row.original.jcQty;
-          const total = row.original.totalQty;
-          const color =
-            jc >= total && total > 0
-              ? 'var(--green)'
-              : jc > 0
-                ? 'var(--amber)'
-                : 'var(--text3)';
+          const tot = row.original.orderQty;
+          const color = jc >= tot && tot > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
           return (
-            <span className="td-ctr mono" style={{ color, fontWeight: 700 }}>
-              {jc}
-              <span className="text3" style={{ fontSize: 10 }}>
-                {' '}
-                /{total}
-              </span>
+            <span className="td-ctr mono" style={{ fontSize: 11 }}>
+              <span style={{ color }}>{jc}</span>
+              <span className="text3" style={{ fontSize: 10 }}> /{tot}</span>
             </span>
           );
         },
@@ -140,139 +120,66 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {
         header: 'Material',
         cell: ({ row }) => (
-          <JwMaterialStatusBadge
-            receivedQty={Number(row.original.materialReceivedQtyTotal)}
-            expectedQty={Number(row.original.clientMaterialQtyTotal)}
-          />
+          <span className="td-ctr" style={{ fontSize: 11 }}>
+            <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} orderQty={row.original.orderQty} />
+          </span>
         ),
       },
       {
-        // Legacy renderJWMaster L12664 — Due col, red when overdue.
         header: 'Due',
         cell: ({ row }) => {
-          const due = row.original.earliestDueDate;
-          if (!due) return <span className="text3">—</span>;
-          const today = new Date().toISOString().slice(0, 10);
-          const overdue = due < today && row.original.status === 'open';
-          return (
-            <span
-              className="text2"
-              style={{
-                fontSize: 11,
-                color: overdue ? 'var(--red)' : undefined,
-                fontWeight: overdue ? 700 : undefined,
-              }}
-            >
-              {due}
-              {overdue ? ' ⚠' : ''}
-            </span>
-          );
+          const due = row.original.dueDate;
+          const overdue = !!due && due < today && row.original.status === 'open';
+          return <span className="text2 td-ctr" style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due ?? '—'}</span>;
         },
       },
+      { header: 'Status', accessorKey: 'status', cell: ({ row }) => <SoStatusBadge status={row.original.status} /> },
       {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: ({ row }) => <SoStatusBadge status={row.original.status} />,
+        header: 'Remarks',
+        cell: ({ row }) => (
+          <span className="text3" style={{ fontSize: 11, maxWidth: 110, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
+            {row.original.remarks ?? ''}
+          </span>
+        ),
       },
       ...(canWrite
-        ? [
-            {
-              // Legacy renderJWMaster L12667–12670 — per-row Edit + Del.
-              header: '',
-              id: 'actions',
-              cell: ({ row }) => (
-                <JwRowActions
-                  id={row.original.id}
-                  code={row.original.code}
-                  onDelete={(id) =>
-                    deleteMut.mutate(id, {
-                      onError: (err) =>
-                        window.alert(
-                          err instanceof Error ? err.message : 'Failed to delete JW',
-                        ),
-                    })
-                  }
-                  busy={deleteMut.isPending}
-                />
-              ),
-            } satisfies ColumnDef<JobWorkOrderListItem>,
-          ]
+        ? [{
+            header: '',
+            id: 'actions',
+            cell: ({ row }: { row: { original: JobWorkOrderListItem } }) => (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Link to="/job-work-orders/$id/edit" params={{ id: row.original.jwId }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
+                <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} disabled={deleteMut.isPending} onClick={() => onDelete(row.original.jwId, row.original.code)}>Del</button>
+              </div>
+            ),
+          } as ColumnDef<JobWorkOrderListItem>]
         : []),
     ],
-    [canWrite, deleteMut],
+    [canWrite, today],
   );
 
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
+  const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          JW Master — Job Work (Material from Client)
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>JW Master — Job Work (Material from Client)</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Search JW, client, item…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as SoStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 140, fontSize: 12 }}
-          >
+          <input className="innovic-input" placeholder="Search JW, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+          <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
             <option value="">All statuses</option>
-            {SO_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
+            {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <Link to="/job-work-orders/new" className="btn btn-primary">
-              <Plus size={14} /> New JW Order
-            </Link>
-          ) : null}
+          {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
+          {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JW Order</Link> : null}
         </div>
       </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            📌 <b style={{ color: 'var(--green)' }}>Job Work:</b> Client provides raw material → we
-            machine / process it → deliver finished parts back to client.
-          </span>
-        </div>
+      <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
+        📌 <b style={{ color: 'var(--green)' }}>Job Work:</b> Client provides raw material → we machine/process it → deliver finished parts back to client. Track client material receipt here.
       </div>
 
       <div className="panel">
@@ -280,48 +187,19 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
+                <tr key={hg.id}>{hg.headers.map((h) => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>
               ))}
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
+                <tr><td colSpan={columns.length} className="empty-state"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</td></tr>
               ) : isError ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
-                    {error instanceof Error ? error.message : 'Failed to load job-work orders'}
-                  </td>
-                </tr>
+                <tr><td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load job work orders'}</td></tr>
               ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No Job Work orders — click <strong>+ New JW Order</strong>
-                  </td>
-                </tr>
+                <tr><td colSpan={columns.length} className="empty-state">No Job Work orders — click + New JW Order</td></tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
+                  <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>
                 ))
               )}
             </tbody>
@@ -329,107 +207,13 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <PaginationFooter
-        total={total}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={PAGE_SIZE}
-        emptyLabel="No job-work orders"
-        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-      />
-    </div>
-  );
-}
-
-function JwRowActions({
-  id,
-  code,
-  onDelete,
-  busy,
-}: {
-  id: string;
-  code: string;
-  onDelete: (id: string) => void;
-  busy: boolean;
-}): React.JSX.Element {
-  const handleDelete = (): void => {
-    if (window.confirm(`Move JW ${code} to Trash?`)) onDelete(id);
-  };
-  return (
-    <div style={{ display: 'flex', gap: 4 }}>
-      <Link
-        to="/job-work-orders/$id/edit"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ fontSize: 11 }}
-      >
-        Edit
-      </Link>
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={handleDelete}
-        disabled={busy}
-        style={{
-          fontSize: 11,
-          background: 'var(--red)',
-          color: '#fff',
-          fontWeight: 700,
-          opacity: busy ? 0.5 : 1,
-        }}
-        title="Soft-delete (move to Trash)"
-      >
-        Del
-      </button>
-    </div>
-  );
-}
-
-function PaginationFooter(props: {
-  total: number;
-  currentPage: number;
-  totalPages: number;
-  pageSize: number;
-  emptyLabel: string;
-  onPage: (page: number) => void;
-}): React.JSX.Element {
-  const { total, currentPage, totalPages, pageSize, emptyLabel, onPage } = props;
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 8,
-        fontSize: 12,
-        color: 'var(--text3)',
-      }}
-    >
-      <span>
-        {total === 0
-          ? emptyLabel
-          : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, total)} of ${total}`}
-      </span>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={currentPage <= 1}
-          onClick={() => onPage(Math.max(1, currentPage - 1))}
-        >
-          <ChevronLeft size={14} /> Prev
-        </button>
-        <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-          Page {currentPage} / {totalPages}
-        </span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={currentPage >= totalPages}
-          onClick={() => onPage(Math.min(totalPages, currentPage + 1))}
-        >
-          Next <ChevronRight size={14} />
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
+        <span>{total === 0 ? 'No lines' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage <= 1} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }), replace: true })}><ChevronLeft size={14} /> Prev</button>
+          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>Page {currentPage} / {totalPages}</span>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }), replace: true })}>Next <ChevronRight size={14} /></button>
+        </div>
       </div>
     </div>
   );
