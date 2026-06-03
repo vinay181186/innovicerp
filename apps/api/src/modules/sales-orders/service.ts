@@ -17,6 +17,7 @@ import {
   invoiceLines,
   invoices,
   items,
+  jobCards,
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
@@ -339,11 +340,26 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       billedRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.billed)]),
     );
 
+    // JC qty per SO line = Σ job_cards.order_qty whose source_so_line_id = line.
+    const jcRows = await tx
+      .select({
+        lineId: jobCards.sourceSoLineId,
+        jcQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`,
+      })
+      .from(jobCards)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(jobCards.deletedAt)))
+      .groupBy(jobCards.sourceSoLineId);
+    const jcByLine = new Map(
+      jcRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.jcQty)]),
+    );
+
     return {
       ...toSalesOrder(header),
       lines: lineRows.map((r) => ({
         ...toSalesOrderLine(r.row, r.itemCode),
         billedQty: billedByLine.get(r.row.id) ?? 0,
+        jcQty: jcByLine.get(r.row.id) ?? 0,
       })),
     };
   });
@@ -396,6 +412,7 @@ function toSalesOrderLine(
     orderQty: row.orderQty,
     dispatchedQty: row.dispatchedQty,
     billedQty: 0,
+    jcQty: 0,
     rate: row.rate,
     dueDate: row.dueDate,
     clientPoLineNo: row.clientPoLineNo,

@@ -57,6 +57,9 @@ export const salesOrderLineSchema = z.object({
   // SO detail read, 0 elsewhere). Pending-to-bill = orderQty − billedQty.
   dispatchedQty: z.number().int().nonnegative().default(0),
   billedQty: z.number().int().nonnegative().default(0),
+  // Σ job_cards.order_qty whose source_so_line_id = this line (SO detail read,
+  // 0 elsewhere). Drives the JC-Qty / Balance columns on the SO Master expand.
+  jcQty: z.number().int().nonnegative().default(0),
   rate: z.string(), // numeric stored as string
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),
