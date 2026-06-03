@@ -239,3 +239,20 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 3. Gate to admin/manager (legacy gate).
 
 ~40 LOC for the shared button + ~1-2 lines per screen. Do as a single cross-screen pass once the per-screen parity review is done.
+
+## ISSUE-015 — SO form: Delivery Schedule / Milestones (lots)
+
+- **Surfaced:** 2026-06-03 (screen-by-screen parity review, New Sales Order form)
+- **Severity:** P3 (planning aid; not required to create/produce an SO)
+- **Status:** [ ] open
+
+**Gap:** Legacy `soHeaderForm` (L12294-12300) has a "📅 Delivery Schedule / Milestones" section on component SOs — repeatable lots of `{lot#, qty, dueDate, remarks}` (`_soMilestones`). Stored on the SO and used as a delivery plan. Our SO form has no milestones section.
+
+**Why deferred:** Needs a new data model — there's no `so_milestones` table or jsonb field on `sales_orders` (the shared schema even notes "milestones[] (#8, no current data)"). Per user direction 2026-06-03, items 1-9 of the SO-form parity were built; milestones (10) + client-PO upload (11, see ISSUE-013) were backlogged as they each need a migration.
+
+**Fix sketch:**
+1. Migration: `so_milestones` (id, company_id, sales_order_id FK cascade, lot_no int, qty int, due_date date, remarks text, + audit cols, RLS company_read + manager_write). One row per lot.
+2. Shared schema + API: include milestones in the SO create/update input (merge by id like lines) and in the SO detail read.
+3. Web: a "Delivery Schedule" repeatable section in `sales-order-form.tsx` (+ Add Lot / remove), shown for non-Equipment SOs.
+
+~1 migration + ~120-160 LOC. Do alongside any other SO-form deepening.

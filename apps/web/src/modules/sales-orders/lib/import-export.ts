@@ -33,6 +33,62 @@ const TYPE_MAP: Record<string, SoType> = {
   'with material': 'with_material',
 };
 
+// ── In-form line-items import (adds lines to the SO being created/edited) ──
+const LINE_COLUMNS = ['Item Code', 'Part Name', 'Material', 'Drawing No', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
+
+export interface SoLineImportRow {
+  itemCodeText: string;
+  partName: string;
+  material?: string | undefined;
+  drawingNo?: string | undefined;
+  clientPoLineNo?: string | undefined;
+  orderQty: number;
+  rate: number;
+  dueDate?: string | undefined;
+}
+
+export function downloadSoLineTemplate(): void {
+  const sample = ['ITM-001', 'Shaft 12mm', 'EN8', 'DRG-001', '1', '100', '250', '2026-07-01'];
+  const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'SO Lines');
+  XLSX.writeFile(wb, 'so-line-items-template.xlsx');
+}
+
+export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportRow[]; errors: string[] }> {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]!];
+  if (!ws) return { rows: [], errors: ['Workbook has no sheets'] };
+  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const errors: string[] = [];
+  const rows: SoLineImportRow[] = [];
+  raw.forEach((r, i) => {
+    const itemCodeText = String(r['Item Code'] ?? '').trim();
+    const partName = String(r['Part Name'] ?? '').trim() || itemCodeText;
+    const orderQty = Math.round(Number(r['Qty']));
+    if (!itemCodeText && !partName) {
+      errors.push(`Row ${i + 2}: missing Item Code and Part Name — skipped`);
+      return;
+    }
+    if (!Number.isFinite(orderQty) || orderQty <= 0) {
+      errors.push(`Row ${i + 2}: Qty must be a positive number — skipped`);
+      return;
+    }
+    rows.push({
+      itemCodeText,
+      partName,
+      material: String(r['Material'] ?? '').trim() || undefined,
+      drawingNo: String(r['Drawing No'] ?? '').trim() || undefined,
+      clientPoLineNo: String(r['CPO Line'] ?? '').trim() || undefined,
+      orderQty,
+      rate: Number(r['Rate']) || 0,
+      dueDate: toDate(r['Due Date']),
+    });
+  });
+  return { rows, errors };
+}
+
 export function downloadSoTemplate(): void {
   const sample = [
     'SO-EXAMPLE-1', '2026-06-03', 'Acme Industries', 'PO-9001', 'component',

@@ -1,4 +1,9 @@
-// Sales Order form (UI-003-05) — header + dynamic line items.
+// Sales Order form — header + type-branching body. Mirror of legacy
+// soHeaderForm (L12183): Equipment SOs show an Equipment Details section
+// (Part No / Description / Qty / Due / SO Total Value / BOM picker) and no
+// line table; Component / With-Material SOs show the line-items table with a
+// per-line Amount, an SO Totals box, and an in-form Excel Template / Import.
+// Header has an auto-suggested SO number + searchable client + item datalist.
 
 import {
   type CreateSalesOrderInput,
@@ -11,23 +16,29 @@ import {
   type Uom,
   UOMS,
 } from '@innovic/shared';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
+import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList } from '@/modules/clients/api';
+import { useItemsList } from '@/modules/items/api';
+import { useSalesOrdersList } from '../api';
+import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
 
 interface LineFormValue {
-  id?: string;
-  itemId?: string;
+  id?: string | undefined;
+  itemId?: string | undefined;
   itemCodeText: string;
   partName: string;
-  material?: string;
-  drawingNo?: string;
+  material?: string | undefined;
+  drawingNo?: string | undefined;
   uom: Uom;
   orderQty: number;
   rate: number;
-  dueDate?: string;
-  clientPoLineNo?: string;
-  status?: SoStatus;
+  dueDate?: string | undefined;
+  clientPoLineNo?: string | undefined;
+  status?: SoStatus | undefined;
 }
 
 interface FormValues {
@@ -55,14 +66,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: 18,
 };
-
-const NEW_LINE: LineFormValue = {
-  itemCodeText: '',
-  partName: '',
-  uom: 'NOS',
-  orderQty: 1,
-  rate: 0,
-};
+const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
 
 type CreateMode = {
   mode: 'create';
@@ -71,7 +75,6 @@ type CreateMode = {
   submitError?: string | null;
   onCancel?: () => void;
 };
-
 type EditMode = {
   mode: 'edit';
   detail: SalesOrderDetail;
@@ -80,7 +83,6 @@ type EditMode = {
   submitError?: string | null;
   onCancel?: () => void;
 };
-
 export type SalesOrderFormProps = CreateMode | EditMode;
 
 export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
@@ -90,29 +92,70 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, watch } = form;
+  const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
   const errors = formState.errors;
-
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
   const { data: clientsData } = useClientsList({ limit: 200, offset: 0 });
   const clients = clientsData?.clients ?? [];
+  const { data: bomsData } = useBomMastersList({ status: 'active', limit: 200, offset: 0 });
+  const boms = bomsData?.items ?? [];
+  const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
+  const items = itemsData?.items ?? [];
+  const { data: soListData } = useSalesOrdersList({ limit: 200, offset: 0 });
 
   const headerType = watch('header.type');
+  const isEquip = headerType === 'equipment';
+  const watchedLines = watch('lines');
+  const gstPercent = Number(watch('header.gstPercent')) || 0;
+
+  // Auto-suggest the next IN-SO-##### on a fresh create form.
+  useEffect(() => {
+    if (isEdit || getValues('header.code')) return;
+    const codes = soListData?.items.map((i) => i.code) ?? [];
+    let max = 0;
+    for (const c of codes) {
+      const m = c.match(/IN-SO-(\d+)\s*$/i);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+    setValue('header.code', `IN-SO-${String(max + 1).padStart(5, '0')}`);
+  }, [soListData, isEdit, getValues, setValue]);
+
+  // In-form line import.
+  const lineFileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  async function onImportLines(file: File): Promise<void> {
+    try {
+      const { rows, errors: errs } = await parseSoLineFile(file);
+      for (const r of rows) append({ ...NEW_LINE, ...r });
+      setImportMsg(`Added ${rows.length} line(s)${errs.length ? ` · ${errs.length} skipped` : ''}.`);
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      if (lineFileRef.current) lineFileRef.current.value = '';
+    }
+  }
+
+  const subtotal = (watchedLines ?? []).reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
+  const gstAmt = subtotal * (gstPercent / 100);
+  const grand = subtotal + gstAmt;
 
   const onValid = async (values: FormValues): Promise<void> => {
+    const equip = values.header.type === 'equipment';
     const headerOut = {
       ...values.header,
       customerName: values.header.customerName?.trim() || undefined,
       clientId: values.header.clientId || undefined,
       clientPoNo: values.header.clientPoNo?.trim() || undefined,
-      bomMasterId: values.header.bomMasterId?.trim() || undefined,
-      bomStatus: values.header.bomStatus?.trim() || undefined,
+      bomMasterId: equip ? values.header.bomMasterId?.trim() || undefined : undefined,
+      bomStatus: equip ? (values.header.bomMasterId?.trim() ? 'BOM Assigned' : 'BOM Pending') : undefined,
       costCenter: values.header.costCenter?.trim() || undefined,
       remarks: values.header.remarks?.trim() || undefined,
     };
 
-    const linesOut = values.lines.map((l) => {
+    // Equipment → a single line carrying the equipment; Component → all lines.
+    const srcLines = equip ? values.lines.slice(0, 1) : values.lines;
+    const linesOut = srcLines.map((l) => {
       const trimmedCode = l.itemCodeText.trim();
       const refs: { itemId?: string; itemCodeText?: string } = trimmedCode
         ? { itemCodeText: trimmedCode }
@@ -145,352 +188,199 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
+      <datalist id="dlSoItems">
+        {items.map((it) => (
+          <option key={it.id} value={it.code}>{it.name}</option>
+        ))}
+      </datalist>
+
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
         <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            SO/WO No.<span className="req">★</span>
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            {...register('header.code', { required: 'SO/WO No. is required' })}
-          />
+          <label className="form-label" htmlFor="code">SO/WO No.<span className="req">★</span></label>
+          <input id="code" className="innovic-input" autoFocus={!isEdit} autoComplete="off" readOnly={isEdit} {...register('header.code', { required: 'SO/WO No. is required' })} />
           {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
-          {errors.header?.code?.message ? (
-            <div className="form-error">{errors.header.code.message}</div>
-          ) : null}
+          {errors.header?.code?.message ? <div className="form-error">{errors.header.code.message}</div> : null}
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="soDate">
-            Date<span className="req">★</span>
-          </label>
-          <input
-            id="soDate"
-            type="date"
-            className="innovic-input"
-            {...register('header.soDate', { required: 'Date is required' })}
-          />
+          <label className="form-label" htmlFor="soDate">Date<span className="req">★</span></label>
+          <input id="soDate" type="date" className="innovic-input" {...register('header.soDate', { required: 'Date is required' })} />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="type">
-            Type
-          </label>
+          <label className="form-label" htmlFor="type">Type<span className="req">★</span></label>
           <select id="type" className="innovic-select" {...register('header.type')}>
-            {SO_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t.replaceAll('_', ' ')}
-              </option>
-            ))}
+            {SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
           </select>
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Status
-          </label>
+          <label className="form-label" htmlFor="status">Status</label>
           <select id="status" className="innovic-select" {...register('header.status')}>
-            {SO_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
+            {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="gstPercent">
-            GST %
-          </label>
-          <select
-            id="gstPercent"
-            className="innovic-select"
-            {...register('header.gstPercent', { valueAsNumber: true })}
-          >
-            {[0, 5, 12, 18, 28].map((g) => (
-              <option key={g} value={g}>
-                {g}%
-              </option>
-            ))}
+          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
+          <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
+            {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="costCenter">
-            Cost center
-          </label>
-          <input
-            id="costCenter"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.costCenter')}
-          />
+          <label className="form-label" htmlFor="costCenter">🏢 Cost Center</label>
+          <input id="costCenter" className="innovic-input" autoComplete="off" placeholder="Cost center" {...register('header.costCenter')} />
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="clientId">
-            Client
-          </label>
-          <select id="clientId" className="innovic-select" {...register('header.clientId')}>
-            <option value="">— Free-text customer below —</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} — {c.name}
-              </option>
-            ))}
-          </select>
+          <label className="form-label" htmlFor="clientId">Client</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <select id="clientId" className="innovic-select" style={{ flex: 1 }} {...register('header.clientId')}>
+              <option value="">— Free-text customer below —</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+            </select>
+            <Link to="/clients/new" className="btn btn-ghost btn-sm" title="Add a new client" style={{ whiteSpace: 'nowrap' }}>+ New</Link>
+          </div>
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="customerName">
-            Customer name (fallback)
-          </label>
-          <input
-            id="customerName"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Required if no client picked"
-            {...register('header.customerName')}
-          />
+          <label className="form-label" htmlFor="customerName">Customer name (fallback)</label>
+          <input id="customerName" className="innovic-input" autoComplete="off" placeholder="Required if no client picked" {...register('header.customerName')} />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="clientPoNo">
-            Client PO No.
-          </label>
-          <input
-            id="clientPoNo"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.clientPoNo')}
-          />
+          <label className="form-label" htmlFor="clientPoNo">Client PO No.</label>
+          <input id="clientPoNo" className="innovic-input" autoComplete="off" {...register('header.clientPoNo')} />
         </div>
-
-        {headerType === 'equipment' ? (
-          <>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="bomMasterId">
-                BOM master id (forward)
-              </label>
-              <input
-                id="bomMasterId"
-                className="innovic-input"
-                autoComplete="off"
-                {...register('header.bomMasterId')}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="bomStatus">
-                BOM status
-              </label>
-              <input
-                id="bomStatus"
-                className="innovic-input"
-                autoComplete="off"
-                {...register('header.bomStatus')}
-              />
-            </div>
-          </>
-        ) : null}
 
         <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          <textarea
-            id="remarks"
-            className="innovic-textarea"
-            rows={2}
-            {...register('header.remarks')}
-          />
+          <label className="form-label" htmlFor="remarks">Remarks</label>
+          <textarea id="remarks" className="innovic-textarea" rows={2} {...register('header.remarks')} />
         </div>
       </div>
 
-      {/* Lines */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 8,
-        }}
-      >
-        <div
-          className="form-label"
-          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
-        >
-          Line items
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => append({ ...NEW_LINE })}
-        >
-          <Plus size={13} /> Add line
-        </button>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
-          No lines yet. Equipment SOs can be saved without lines (BOM expansion lands later);
-          otherwise click <strong>Add line</strong>.
+      {isEquip ? (
+        /* ── Equipment Details (legacy L12258) ── */
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '4px 0 8px' }}>▸ EQUIPMENT DETAILS</div>
+          <div className="form-grid form-grid-3">
+            <div className="form-grp">
+              <label className="form-label">Equipment / Part No.<span className="req">★</span></label>
+              <input className="innovic-input" autoComplete="off" placeholder="Equipment ID" {...register('lines.0.itemCodeText', { required: isEquip ? 'Part No. is required' : false })} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Description<span className="req">★</span></label>
+              <input className="innovic-input" autoComplete="off" placeholder="Equipment description" {...register('lines.0.partName', { required: isEquip ? 'Description is required' : false })} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Order Qty<span className="req">★</span></label>
+              <input type="number" min={1} className="innovic-input" {...register('lines.0.orderQty', { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Due Date</label>
+              <input type="date" className="innovic-input" {...register('lines.0.dueDate')} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" style={{ color: 'var(--green)' }}>💰 SO Value (₹ / unit)</label>
+              <input type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { valueAsNumber: true })} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">📦 BOM (Bill of Materials)</label>
+              <select className="innovic-select" {...register('header.bomMasterId')}>
+                <option value="">— No BOM (BOM Pending) —</option>
+                {boms.map((b) => <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName} (Rev {b.revision}, {b.lineCount} items)</option>)}
+              </select>
+              <div className="form-help">Select an active BOM from BOM Master. Equipment value total = SO Value × Order Qty.</div>
+            </div>
+          </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {fields.map((field, idx) => (
-            <div
-              key={field.id}
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: 10,
-                background: 'var(--bg2)',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 8,
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                  fontFamily: 'var(--mono)',
-                  textTransform: 'uppercase',
-                  fontWeight: 700,
-                }}
-              >
-                <span>Line {idx + 1}</span>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm btn-icon"
-                  onClick={() => remove(idx)}
-                  aria-label={`Remove line ${idx + 1}`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-
-              <div className="form-grid form-grid-3">
-                <div className="form-grp">
-                  <label className="form-label">Item Code</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    placeholder="ITM-001"
-                    {...register(`lines.${idx}.itemCodeText` as const)}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">
-                    Part Name<span className="req">★</span>
-                  </label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.partName` as const, {
-                      required: 'Part name is required',
-                    })}
-                  />
-                  {errors.lines?.[idx]?.partName?.message ? (
-                    <div className="form-error">{errors.lines[idx]?.partName?.message}</div>
-                  ) : null}
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Material</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.material` as const)}
-                  />
-                </div>
-
-                <div className="form-grp">
-                  <label className="form-label">Drawing No.</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.drawingNo` as const)}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">UOM</label>
-                  <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
-                    {UOMS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">
-                    Qty<span className="req">★</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="innovic-input"
-                    {...register(`lines.${idx}.orderQty` as const, {
-                      valueAsNumber: true,
-                      min: { value: 1, message: 'Min 1' },
-                    })}
-                  />
-                </div>
-
-                <div className="form-grp">
-                  <label className="form-label">Rate</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    className="innovic-input"
-                    {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Due date</label>
-                  <input
-                    type="date"
-                    className="innovic-input"
-                    {...register(`lines.${idx}.dueDate` as const)}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Client PO line</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.clientPoLineNo` as const)}
-                  />
-                </div>
-              </div>
+        /* ── Component / With-Material line items ── */
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>▸ Line Items</div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadSoLineTemplate()}>⬇ Template</button>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
+              <input ref={lineFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportLines(f); }} />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add line</button>
             </div>
-          ))}
+          </div>
+          {importMsg ? <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>{importMsg} <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button></div> : null}
+
+          {fields.length === 0 ? (
+            <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>No lines yet. Click <strong>Add line</strong> or import from Excel.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {fields.map((field, idx) => {
+                const amt = (Number(watchedLines?.[idx]?.orderQty) || 0) * (Number(watchedLines?.[idx]?.rate) || 0);
+                return (
+                  <div key={field.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', fontWeight: 700 }}>
+                      <span>Line {idx + 1}</span>
+                      <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <span style={{ color: 'var(--green)' }}>Amount ₹{amt.toFixed(2)}</span>
+                        <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
+                      </span>
+                    </div>
+                    <div className="form-grid form-grid-3">
+                      <div className="form-grp">
+                        <label className="form-label">Item Code</label>
+                        <input className="innovic-input" autoComplete="off" list="dlSoItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const)} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Part Name<span className="req">★</span></label>
+                        <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
+                        {errors.lines?.[idx]?.partName?.message ? <div className="form-error">{errors.lines[idx]?.partName?.message}</div> : null}
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Material</label>
+                        <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.material` as const)} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Drawing No.</label>
+                        <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.drawingNo` as const)} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">UOM</label>
+                        <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
+                          {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Qty<span className="req">★</span></label>
+                        <input type="number" min={1} className="innovic-input" {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Rate</label>
+                        <input type="number" step="0.01" min={0} className="innovic-input" {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Due date</label>
+                        <input type="date" className="innovic-input" {...register(`lines.${idx}.dueDate` as const)} />
+                      </div>
+                      <div className="form-grp">
+                        <label className="form-label">Client PO line</label>
+                        <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.clientPoLineNo` as const)} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* SO Totals (legacy L12291) */}
+          <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '10px 16px', background: 'rgba(34,197,94,0.03)', display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Tot label="Subtotal" value={subtotal} />
+            <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
+            <Tot label="Grand Total" value={grand} bold />
+          </div>
         </div>
       )}
 
       <div style={{ marginTop: 16 }}>
         {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red)',
-              background: 'var(--red3)',
-              border: '1px solid #fca5a5',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
-          </div>
+          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? (
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-          ) : null}
+          {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create SO')}
@@ -498,6 +388,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
       </div>
     </form>
+  );
+}
+
+function Tot({ label, value, bold }: { label: string; value: number; bold?: boolean }): React.JSX.Element {
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
+      <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{value.toFixed(2)}</div>
+    </div>
   );
 }
 
@@ -517,21 +416,22 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
       ...(detail.costCenter ? { costCenter: detail.costCenter } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
-    lines: detail.lines.map(
-      (l): LineFormValue => ({
-        id: l.id,
-        ...(l.itemId ? { itemId: l.itemId } : {}),
-        itemCodeText: l.itemCodeText ?? '',
-        partName: l.partName,
-        ...(l.material ? { material: l.material } : {}),
-        ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-        uom: l.uom,
-        orderQty: l.orderQty,
-        rate: Number(l.rate),
-        ...(l.dueDate ? { dueDate: l.dueDate } : {}),
-        ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
-        status: l.status,
-      }),
-    ),
+    lines:
+      detail.lines.length > 0
+        ? detail.lines.map((l): LineFormValue => ({
+            id: l.id,
+            ...(l.itemId ? { itemId: l.itemId } : {}),
+            itemCodeText: l.itemCodeText ?? '',
+            partName: l.partName,
+            ...(l.material ? { material: l.material } : {}),
+            ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+            uom: l.uom,
+            orderQty: l.orderQty,
+            rate: Number(l.rate),
+            ...(l.dueDate ? { dueDate: l.dueDate } : {}),
+            ...(l.clientPoLineNo ? { clientPoLineNo: l.clientPoLineNo } : {}),
+            status: l.status,
+          }))
+        : [{ ...NEW_LINE }],
   };
 }
