@@ -194,7 +194,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📦 Dispatch Register
+          🚛 OSP / JW Outward DC
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input

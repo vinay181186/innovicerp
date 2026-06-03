@@ -80,7 +80,10 @@ const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/sales-orders', label: 'SO Master', icon: '📋' },
           { to: '/job-work-orders', label: 'JW Master', icon: '🔧' },
-          { to: '/delivery-challans', label: 'Dispatch Register', icon: '📦' },
+          // Finished-goods customer dispatch (bills against SO lines). The
+          // vendor job-work outward DC register lives under Purchase →
+          // "OSP / JW Outward DC" (/delivery-challans), not here.
+          { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
         ],
       },
       {
@@ -238,7 +241,7 @@ const SECTIONS: readonly NavSection[] = [
           { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄' },
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
           { to: '/outsource-jobs', label: 'Outsource Jobs', icon: '📦' },
-          { to: '/delivery-challans', label: 'OSP DC & Outward', icon: '🚛' },
+          { to: '/delivery-challans', label: 'OSP / JW Outward DC', icon: '🚛' },
           { to: '/service-pos', label: 'Service PO', icon: '💳' },
         ],
       },
