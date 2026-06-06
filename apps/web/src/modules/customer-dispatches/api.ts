@@ -13,6 +13,7 @@ export const dispatchKeys = {
   all: ['customer-dispatches'] as const,
   list: () => [...dispatchKeys.all, 'list'] as const,
   register: () => [...dispatchKeys.all, 'register'] as const,
+  detail: (id: string) => [...dispatchKeys.all, 'detail', id] as const,
   soOptions: () => [...dispatchKeys.all, 'so-options'] as const,
   dispatchable: (soId: string) => [...dispatchKeys.all, 'dispatchable', soId] as const,
 };
@@ -22,6 +23,15 @@ export function useDispatchList() {
     queryKey: dispatchKeys.list(),
     queryFn: () => apiFetch<ListCustomerDispatchesResponse>('/customer-dispatches'),
     staleTime: 15_000,
+  });
+}
+
+// Single dispatch w/ lines — used by the invoice form to prefill from a dispatch.
+export function useDispatchDetail(id: string | undefined) {
+  return useQuery<CustomerDispatchDetail>({
+    queryKey: id ? dispatchKeys.detail(id) : dispatchKeys.detail('__none__'),
+    queryFn: () => apiFetch<CustomerDispatchDetail>(`/customer-dispatches/${id}`),
+    enabled: Boolean(id),
   });
 }
 

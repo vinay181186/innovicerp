@@ -1,15 +1,21 @@
 // New Invoice — pick an SO, invoice up to the available (dispatched − invoiced)
 // qty per line. Mirror of legacy _createInvoice (L21152).
+// `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects
+// the dispatch's SO and prefills line qtys from that dispatch (user flow
+// 2026-06-06: dispatch → invoice the same, via pre-filled form).
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo } from '../api';
 
 export const invoiceNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices/new',
+  validateSearch: z.object({ dispatchId: z.string().uuid().optional() }),
   component: InvoiceNewPage,
 });
 
@@ -17,6 +23,7 @@ const todayStr = (): string => new Date().toISOString().slice(0, 10);
 
 function InvoiceNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const { dispatchId } = invoiceNewRoute.useSearch();
   const { data: soOpts } = useFinanceSoOptions();
   const create = useCreateInvoice();
 
@@ -31,17 +38,37 @@ function InvoiceNewPage(): React.JSX.Element {
 
   const { data: inv } = useInvoiceableSo(soId || undefined);
 
+  // Invoicing a specific dispatch: preselect its SO + tag the remarks.
+  const { data: fromDispatch } = useDispatchDetail(dispatchId);
+  useEffect(() => {
+    if (!fromDispatch || fromDispatch.status === 'cancelled') return;
+    setSoId((prev) => prev || fromDispatch.salesOrderId);
+    setRemarks((prev) => prev || `Against dispatch ${fromDispatch.code}`);
+  }, [fromDispatch]);
+
   useEffect(() => {
     if (!inv) return;
+    // Qty per dispatch line when invoicing a dispatch (clamped to available);
+    // otherwise default every line to its full available qty.
+    const dispatchQty = new Map<string, number>();
+    if (fromDispatch && fromDispatch.status !== 'cancelled' && fromDispatch.salesOrderId === inv.salesOrderId) {
+      for (const dl of fromDispatch.lines) {
+        if (dl.salesOrderLineId) {
+          dispatchQty.set(dl.salesOrderLineId, (dispatchQty.get(dl.salesOrderLineId) ?? 0) + dl.qty);
+        }
+      }
+    }
     const q: Record<string, number> = {};
     const r: Record<string, number> = {};
     for (const l of inv.lines) {
-      q[l.salesOrderLineId] = l.availableQty;
+      q[l.salesOrderLineId] = dispatchQty.size
+        ? Math.min(dispatchQty.get(l.salesOrderLineId) ?? 0, l.availableQty)
+        : l.availableQty;
       r[l.salesOrderLineId] = l.rate;
     }
     setQtys(q);
     setRates(r);
-  }, [inv]);
+  }, [inv, fromDispatch]);
 
   const lines = (inv?.lines ?? []).map((l) => ({
     ...l,
@@ -84,6 +111,22 @@ function InvoiceNewPage(): React.JSX.Element {
           <span className="panel-title">📄 Create Invoice</span>
         </div>
         <div className="panel-body">
+          {fromDispatch && fromDispatch.status !== 'cancelled' ? (
+            <div
+              style={{
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 12,
+                marginBottom: 12,
+              }}
+            >
+              🚚 Invoicing dispatch{' '}
+              <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and line qtys
+              prefilled from this dispatch (editable below).
+            </div>
+          ) : null}
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Sales Order ★</label>
