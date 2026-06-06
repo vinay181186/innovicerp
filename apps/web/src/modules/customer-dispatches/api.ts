@@ -1,6 +1,7 @@
 import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
+  CustomerDispatchRegisterResponse,
   DispatchableSoResponse,
   FinanceSoOption,
   ListCustomerDispatchesResponse,
@@ -11,6 +12,7 @@ import { apiFetch } from '@/lib/api';
 export const dispatchKeys = {
   all: ['customer-dispatches'] as const,
   list: () => [...dispatchKeys.all, 'list'] as const,
+  register: () => [...dispatchKeys.all, 'register'] as const,
   soOptions: () => [...dispatchKeys.all, 'so-options'] as const,
   dispatchable: (soId: string) => [...dispatchKeys.all, 'dispatchable', soId] as const,
 };
@@ -19,6 +21,15 @@ export function useDispatchList() {
   return useQuery<ListCustomerDispatchesResponse>({
     queryKey: dispatchKeys.list(),
     queryFn: () => apiFetch<ListCustomerDispatchesResponse>('/customer-dispatches'),
+    staleTime: 15_000,
+  });
+}
+
+// Line-grain register (legacy renderDispatchRegister grain).
+export function useDispatchRegister() {
+  return useQuery<CustomerDispatchRegisterResponse>({
+    queryKey: dispatchKeys.register(),
+    queryFn: () => apiFetch<CustomerDispatchRegisterResponse>('/customer-dispatches/register'),
     staleTime: 15_000,
   });
 }

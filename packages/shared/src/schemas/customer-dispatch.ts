@@ -80,6 +80,37 @@ export const listCustomerDispatchesResponseSchema = z.object({
 });
 export type ListCustomerDispatchesResponse = z.infer<typeof listCustomerDispatchesResponseSchema>;
 
+// Line-grain register row — legacy renderDispatchRegister iterated db.dispatchLog
+// one row per dispatched item line (Date / JC / SO / CPO Ln / Item / Qty / UOM /
+// Customer / Dispatched By / Remarks / Stock B→A). Flattened from dispatch docs.
+export const customerDispatchRegisterRowSchema = z.object({
+  dispatchId: z.string().uuid(),
+  dispatchCode: z.string(),
+  status: z.enum(CUSTOMER_DISPATCH_STATUSES),
+  date: z.string(),
+  jcNo: z.string().nullable(), // codes of the JC(s) feeding the SO line
+  soNo: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  itemCode: z.string().nullable(),
+  itemName: z.string(),
+  qty: z.number().int(),
+  uom: z.string().nullable(),
+  customer: z.string().nullable(),
+  dispatchedBy: z.string().nullable(),
+  remarks: z.string().nullable(),
+  stockBefore: z.number().int().nullable(),
+  stockAfter: z.number().int().nullable(),
+  currentStock: z.number().int().nullable(), // item on-hand now (summary panel)
+});
+export type CustomerDispatchRegisterRow = z.infer<typeof customerDispatchRegisterRowSchema>;
+
+export const customerDispatchRegisterResponseSchema = z.object({
+  rows: z.array(customerDispatchRegisterRowSchema),
+});
+export type CustomerDispatchRegisterResponse = z.infer<
+  typeof customerDispatchRegisterResponseSchema
+>;
+
 // SO dropdown option for the dispatch + invoice create forms.
 export const financeSoOptionSchema = z.object({
   salesOrderId: z.string().uuid(),

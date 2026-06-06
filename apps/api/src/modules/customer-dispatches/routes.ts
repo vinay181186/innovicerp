@@ -12,6 +12,11 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
     return service.listDispatches(req.user);
   });
 
+  app.get('/customer-dispatches/register', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.listDispatchRegister(req.user);
+  });
+
   app.get('/customer-dispatches/so-options', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return { options: await service.listFinanceSoOptions(req.user) };

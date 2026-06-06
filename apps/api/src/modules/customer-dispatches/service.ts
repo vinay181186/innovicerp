@@ -7,6 +7,7 @@ import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
   CustomerDispatchLineRow,
+  CustomerDispatchRegisterResponse,
   CustomerDispatchRow,
   DispatchableLine,
   DispatchableSoResponse,
@@ -247,6 +248,88 @@ export async function listDispatches(user: AuthContext): Promise<ListCustomerDis
         const a = agg.get(h.id) ?? { cnt: 0, qty: 0 };
         return rowToHeader(h, a.cnt, a.qty);
       }),
+    };
+  });
+}
+
+type RegisterRow = {
+  dispatch_id: string;
+  dispatch_code: string;
+  status: 'dispatched' | 'cancelled';
+  dispatch_date: string;
+  jc_no: string | null;
+  so_no: string | null;
+  client_po_line_no: string | null;
+  item_code: string | null;
+  item_name: string;
+  qty: number;
+  uom: string | null;
+  customer: string | null;
+  dispatched_by: string | null;
+  remarks: string | null;
+  stock_before: number | null;
+  stock_after: number | null;
+  current_stock: number | null;
+};
+
+// Line-grain register (legacy renderDispatchRegister grain). One row per
+// dispatched line: CPO Ln + UOM from the SO line, Dispatched By = the dispatch
+// creator, Stock B→A from the store_transactions row createDispatch wrote,
+// JC No. derived from the JCs feeding the SO line, current stock for the
+// item-wise summary panel.
+export async function listDispatchRegister(
+  user: AuthContext,
+): Promise<CustomerDispatchRegisterResponse> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const res = await tx.execute(sql`
+      SELECT h.id AS dispatch_id, h.code AS dispatch_code, h.status,
+        h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
+        h.customer_text AS customer, h.remarks,
+        l.item_code_text AS item_code, l.item_name, l.qty,
+        sol.client_po_line_no, sol.uom::text AS uom,
+        u.full_name AS dispatched_by,
+        st.stock_before, st.stock_after,
+        vis.on_hand_qty::int AS current_stock,
+        jcs.jc_codes AS jc_no
+      FROM customer_dispatch_lines l
+      JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
+      LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
+      LEFT JOIN public.users u ON u.id = h.created_by
+      LEFT JOIN store_transactions st ON st.company_id = h.company_id
+        AND st.source_type = 'dispatch' AND st.txn_type = 'out'
+        AND st.source_ref = h.code || ' / ln ' || l.line_no
+      LEFT JOIN v_item_stock vis
+        ON vis.company_id = h.company_id AND vis.item_id = l.item_id
+      LEFT JOIN LATERAL (
+        SELECT string_agg(jc.code, ', ' ORDER BY jc.code) AS jc_codes
+        FROM job_cards jc
+        WHERE jc.source_so_line_id = l.sales_order_line_id AND jc.deleted_at IS NULL
+      ) jcs ON TRUE
+      WHERE h.company_id = ${companyId}::uuid
+        AND h.deleted_at IS NULL AND l.deleted_at IS NULL
+      ORDER BY h.dispatch_date DESC, h.created_at DESC, l.line_no
+    `);
+    return {
+      rows: (res as unknown as RegisterRow[]).map((r) => ({
+        dispatchId: r.dispatch_id,
+        dispatchCode: r.dispatch_code,
+        status: r.status,
+        date: r.dispatch_date,
+        jcNo: r.jc_no,
+        soNo: r.so_no,
+        clientPoLineNo: r.client_po_line_no,
+        itemCode: r.item_code,
+        itemName: r.item_name,
+        qty: Math.round(n(r.qty)),
+        uom: r.uom,
+        customer: r.customer,
+        dispatchedBy: r.dispatched_by,
+        remarks: r.remarks,
+        stockBefore: r.stock_before === null ? null : Math.round(n(r.stock_before)),
+        stockAfter: r.stock_after === null ? null : Math.round(n(r.stock_after)),
+        currentStock: r.current_stock === null ? null : Math.round(n(r.current_stock)),
+      })),
     };
   });
 }
