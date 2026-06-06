@@ -256,3 +256,15 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 3. Web: a "Delivery Schedule" repeatable section in `sales-order-form.tsx` (+ Add Lot / remove), shown for non-Equipment SOs.
 
 ~1 migration + ~120-160 LOC. Do alongside any other SO-form deepening.
+
+## ISSUE-016 — Master lists: click-to-sort column headers (legacy sTh/sArr)
+
+- **Surfaced:** 2026-06-06 (screen-by-screen parity review, Client Master)
+- **Severity:** P4 (cosmetic/convenience; search + pagination cover the need)
+- **Status:** [ ] open
+
+**Gap:** Legacy master lists use `sTh(collection, field, label)` headers + `sArr()` to click-sort by column (e.g. Client Master sorts by Code / Client Name, L12991). None of our ported lists have click-sort — TanStack Table is wired with `getCoreRowModel` only.
+
+**Why deferred:** POLISH across every list screen, not specific to one parity pass; no ported list has it, so doing it per-screen would be inconsistent.
+
+**Fix sketch:** one shared pass — enable `getSortedRowModel` + a sortable-header cell (▲/▼ indicator) in the TanStack lists, or `ORDER BY` params on the server-paginated ones (clients, items, vendors). Do as a single cross-screen pass after the parity review.

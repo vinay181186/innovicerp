@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useClientsList } from '../api';
+import { useClientsList, useSoftDeleteClient } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -63,6 +63,7 @@ function ClientsListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
+  const softDelete = useSoftDeleteClient();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   const columns = useMemo<ColumnDef<Client>[]>(
@@ -141,11 +142,25 @@ function ClientsListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={softDelete.isPending}
+                onClick={() => {
+                  if (confirm(`Move client ${row.original.name} to Trash?`)) {
+                    softDelete.mutate(row.original.id);
+                  }
+                }}
+              >
+                Del
+              </button>
+            ) : null}
           </div>
         ),
       },
     ],
-    [canWrite],
+    [canWrite, softDelete],
   );
 
   const table = useReactTable({
