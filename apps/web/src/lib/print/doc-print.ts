@@ -16,6 +16,7 @@ import {
   type PrintDocType,
   substituteTemplateVars,
 } from '@innovic/shared';
+import { letterheadFooterHtml, letterheadHeaderHtml } from './letterhead';
 
 // ── escaping ──
 export function esc(s: string): string {
@@ -132,7 +133,7 @@ const DOC_TITLE: Record<PrintDocType, string> = {
 };
 
 const DOC_STYLE = `
-  @media print{@page{margin:10mm}.no-print{display:none!important}}
+  @media print{@page{size:A4 portrait;margin:10mm}.no-print{display:none!important}}
   body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;margin:20px}
   .doc-border{border:2px solid #333;padding:0}
   .doc-hdr{display:flex;align-items:center;padding:14px;border-bottom:2px solid #333}
@@ -168,11 +169,6 @@ export function buildDocHtml(model: DocPrintModel): string {
   const terms = sub('terms');
   const footer = sub('footer');
   const signature = sub('signature');
-
-  const companyAddr = company.addressLines
-    .filter(Boolean)
-    .map((l) => `<div style="font-size:10px;color:#475569">${esc(l)}</div>`)
-    .join('');
 
   const recipientLines = recipient.lines
     .filter(Boolean)
@@ -221,16 +217,7 @@ export function buildDocHtml(model: DocPrintModel): string {
     <button onclick="window.close()" style="padding:8px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">✕ Close</button>
   </div>
   <div class="doc-border">
-    <div class="doc-hdr">
-      <div style="font-size:28px;font-weight:900;color:#1E4DB3;margin-right:18px">INNOVIC</div>
-      <div style="flex:1;text-align:center">
-        <div style="font-size:18px;font-weight:800;color:#1E4DB3">${esc(company.name)}</div>
-        ${companyAddr}
-        ${company.gstin ? `<div style="font-size:10px;color:#475569">GSTIN: ${esc(company.gstin)}</div>` : ''}
-        ${company.phone ? `<div style="font-size:10px;color:#475569">Phone: ${esc(company.phone)}</div>` : ''}
-        ${company.email ? `<div style="font-size:10px;color:#475569">E-Mail: ${esc(company.email)}</div>` : ''}
-      </div>
-    </div>
+    ${letterheadHeaderHtml({ name: company.name, gstin: company.gstin })}
     <div class="title-bar">${esc(DOC_TITLE[doc])}</div>
     <div class="addr-row">
       <div class="addr-box">
@@ -257,6 +244,7 @@ export function buildDocHtml(model: DocPrintModel): string {
       <div style="padding:14px;font-size:10px;flex:1">Company's PAN: <b>AQKPM4121A</b><br><span style="font-style:italic;color:#666">E. &amp; O.E.</span></div>
       <div style="flex:1;padding:14px;text-align:right"><div class="note-block">${signature || 'For ' + esc(company.name) + '<br><br><br>Authorised Signatory'}</div></div>
     </div>
+    ${letterheadFooterHtml({ addressLines: company.addressLines, email: company.email, phone: company.phone })}
   </div>`;
 }
 

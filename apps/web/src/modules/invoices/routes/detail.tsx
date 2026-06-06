@@ -1,12 +1,15 @@
 // Invoice detail — mirror of legacy _viewInvoice (L21273) + _addPayment.
-// Header stats, lines, payments, inline add-payment, print.
+// Shows the invoice as an A4-portrait paper preview (the EXACT markup the
+// print produces — user direction 2026-06-06: screen = print), plus header
+// stats, inline add-payment and the payments panel.
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useMyCompany } from '@/modules/settings/api';
 import { useAddPayment, useInvoice } from '../api';
-import { printInvoice } from '../lib/print';
+import { invoiceDocHtml, printInvoice } from '../lib/print';
 
 export const invoiceDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,7 +23,12 @@ const todayStr = (): string => new Date().toISOString().slice(0, 10);
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();
   const { data: inv, isLoading, isError, error } = useInvoice(id);
+  const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
+  const docHtml = useMemo(
+    () => (inv ? invoiceDocHtml(inv, company) : ''),
+    [inv, company],
+  );
 
   const [payOpen, setPayOpen] = useState(false);
   const [payDate, setPayDate] = useState(todayStr());
@@ -90,7 +98,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               💳 Add Payment
             </button>
           ) : null}
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => printInvoice(inv)}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => printInvoice(inv, company)}>
             🖨 Print
           </button>
         </div>
@@ -154,34 +162,20 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel" style={{ marginBottom: 14 }}>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Item</th>
-                <th>Name</th>
-                <th className="td-ctr">Qty</th>
-                <th className="td-ctr">Rate</th>
-                <th className="td-ctr">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inv.lines.map((l) => (
-                <tr key={l.id}>
-                  <td className="td-ctr mono">{l.lineNo}</td>
-                  <td style={{ color: 'var(--purple)', fontWeight: 700 }}>{l.itemCode ?? '—'}</td>
-                  <td>{l.itemName}</td>
-                  <td className="td-ctr mono fw-700">{l.qty}</td>
-                  <td className="td-ctr mono">₹{l.rate.toFixed(2)}</td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>₹{l.lineAmount.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* A4-portrait paper preview — identical markup to the print output. */}
+      <div
+        style={{
+          maxWidth: 794, // A4 @96dpi: 794 × 1123
+          minHeight: 1123,
+          margin: '0 auto 14px',
+          background: '#fff',
+          boxShadow: '0 2px 14px rgba(0,0,0,.25)',
+          borderRadius: 4,
+          overflow: 'hidden',
+        }}
+        // Self-built, esc()'d document HTML shared with the print window.
+        dangerouslySetInnerHTML={{ __html: docHtml }}
+      />
 
       {inv.payments.length > 0 ? (
         <div className="panel">

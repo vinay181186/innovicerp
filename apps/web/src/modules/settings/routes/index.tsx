@@ -23,6 +23,7 @@ interface FormValues {
   name: string;
   gstNumber: string;
   phone: string;
+  email: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -45,6 +46,7 @@ function SettingsPage(): React.JSX.Element {
       name: '',
       gstNumber: '',
       phone: '',
+      email: '',
       addressLine1: '',
       addressLine2: '',
       city: '',
@@ -59,6 +61,7 @@ function SettingsPage(): React.JSX.Element {
       name: company.name,
       gstNumber: company.gstNumber ?? '',
       phone: company.phone ?? '',
+      email: company.email ?? '',
       addressLine1: company.addressLine1 ?? '',
       addressLine2: company.addressLine2 ?? '',
       city: company.city ?? '',
@@ -74,6 +77,7 @@ function SettingsPage(): React.JSX.Element {
       name: values.name.trim() || undefined,
       gstNumber: values.gstNumber.trim() || undefined,
       phone: values.phone.trim() || undefined,
+      email: values.email.trim() || undefined,
       addressLine1: values.addressLine1.trim() || undefined,
       addressLine2: values.addressLine2.trim() || undefined,
       city: values.city.trim() || undefined,
@@ -201,6 +205,21 @@ function SettingsPage(): React.JSX.Element {
                       placeholder="+91-..."
                       {...register('phone', {
                         maxLength: { value: 32, message: 'Max 32 chars' },
+                      })}
+                    />
+                  </div>
+                  <div className="form-grp">
+                    <label className="form-label" htmlFor="email">
+                      E-mail
+                    </label>
+                    <input
+                      id="email"
+                      className="innovic-input"
+                      type="email"
+                      autoComplete="off"
+                      placeholder="company@domain.com"
+                      {...register('email', {
+                        maxLength: { value: 255, message: 'Max 255 chars' },
                       })}
                     />
                   </div>

@@ -48,6 +48,7 @@ export async function updateMyCompany(
     if (input.name !== undefined) updates.name = input.name.trim();
     if (input.gstNumber !== undefined) updates.gstNumber = emptyToNull(input.gstNumber);
     if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
+    if (input.email !== undefined) updates.email = emptyToNull(input.email);
     if (input.addressLine1 !== undefined) updates.addressLine1 = emptyToNull(input.addressLine1);
     if (input.addressLine2 !== undefined) updates.addressLine2 = emptyToNull(input.addressLine2);
     if (input.city !== undefined) updates.city = emptyToNull(input.city);

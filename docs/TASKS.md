@@ -83,6 +83,30 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** LH-1 (Company letterhead + A4 on all printed docs, migration 0054, 2026-06-06)
+**Title:** User request: invoice must be A4; use `Screen shots/Innovic.docx` (logo + footer address line) as the letterhead on all transaction prints. User decisions: full letterhead on OUTWARD docs only (PO / Service PO / OSP DC / JW DC / Invoice); internal docs (Job Card, Route Card, registers, reports via print-window) get the LOGO only; company DB row updated to the docx footer data.
+**Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **Migration 0054 applied to dev DB** (additive: `companies.email`); company row set to docx data (address/pincode/email/phone).
+**Built:** logo extracted from docx → `apps/web/src/assets/innovic-logo.jpeg` + base64 module `lib/print/letterhead-logo.ts` (renders without load race in popups/previews, legacy pattern). New `lib/print/letterhead.ts` (`letterheadHeaderHtml` logo+name+GSTIN / `letterheadFooterHtml` Address·e-mail·M: line / `letterheadLogoHtml`). Wired: `doc-print.ts` (4 template docs: letterhead header + footer strip + `@page A4 portrait`), `print-window.ts` (logo replaces text mark + A4 — covers JC/RC/machine-queue/daily-report/drawing/register prints), invoice doc (letterhead + footer; preview now true A4 794×1123). `companies.email` through the stack: drizzle schema + shared companySchema/update input + companies service update + Settings form E-mail field + `buildDocCompany`.
+**Verified:** full typecheck + lint clean (4 pkgs); web doc-print tests 8/8 green. User UI test pending.
+
+**ID:** CD-3 (Dispatch Register — expandable per-dispatch rows + Excel export, 2026-06-06)
+**Title:** User feedback during testing (screenshot): log should be ONE ROW PER DISPATCH, click to expand its items (SO-Master pattern); Export Excel of all dispatches incl. all lines; SO-wise filter for filtered export. Layout user-approved before build.
+**Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **No migration/API change** (groups the register rows client-side).
+**Built:** list rebuilt — header row per dispatch (▸/▾, Dispatch No., Date, SO No., Customer, Lines, Total Qty, Dispatched By, Remarks, Status, 🧾 Invoice/✖ Cancel; row-click toggles, action cell stops propagation) + expanded inner line table (#, JC No., CPO Ln, Item Code, Item Name, −Qty, UOM, Stock B→A). New SO filter dropdown (distinct soNo) — applies to screen AND export; text search screen-only (matches header+line fields). New `lib/export-excel.ts` `exportDispatchRegister` — one Excel row per line w/ header cols repeated, incl. cancelled (Status col); filename `dispatch-register[-SO]-date.xlsx`. KPI tiles/Item-wise Summary/🖨 Print unchanged (active rows). Dispatch Entries KPI now counts dispatches (not lines).
+**Verified:** web typecheck + lint clean. User UI test pending.
+
+**ID:** INV-1 (Invoice print portrait + screen-as-print preview, 2026-06-06)
+**Title:** User feedback during dispatch→invoice testing: print format poor / must be portrait, and the invoice detail page must show the invoice exactly as it prints.
+**Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **No migration/API change.**
+**Built:** `lib/print.ts` rebuilt around shared `invoiceDocHtml(inv, company)` — full TAX INVOICE document with inline styles only (company letterhead w/ GSTIN via `companyAddressLines`, Bill To/Invoice Details boxes, lines, SGST+CGST/IGST split, amount-in-words, signatory). `printInvoice` window now pins `@page{size:A4 portrait;margin:10mm}` and renders that same markup. Detail page replaced its lines table with an A4-width (794px) white paper preview rendering the identical HTML (dangerouslySetInnerHTML of self-built esc()'d markup); stats strip + Add Payment + payments panel kept around it.
+**Verified:** web typecheck + lint clean. User UI test pending.
+
+**ID:** CD-2 (Dispatch → Invoice pre-filled flow, 2026-06-06)
+**Title:** Per-dispatch "🧾 Invoice" action on the Dispatch Register (user request 2026-06-06, screenshot 25.jpg). User chose **pre-filled form** over fully-auto (AskUserQuestion): click → invoice form opens with the dispatch's SO preselected + line qtys prefilled from that dispatch (clamped to dispatched−invoiced available), remarks "Against dispatch DSP-…", GST/terms/date confirmable before Create.
+**Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **No migration, no API change** (reuses GET /customer-dispatches/:id + existing invoice create).
+**Built:** `useDispatchDetail` hook (customer-dispatches api); invoice create route takes `?dispatchId=` (validateSearch) + prefill effects + context banner; 🧾 Invoice link on active register rows.
+**Verified:** web typecheck + lint clean. User UI test pending.
+
 **ID:** CM-1 (Client Master — parity review, 2026-06-06)
 **Title:** Screen-by-screen parity review: `/clients` vs legacy `renderClients` (L12969) + `clientForm`/`addClient`/`editClient`/`delClient`.
 **Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **No migration.**

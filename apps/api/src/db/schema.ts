@@ -115,6 +115,8 @@ export const companies = pgTable(
     slug: text('slug').notNull(),
     gstNumber: text('gst_number'),
     phone: text('phone'),
+    // Letterhead footer e-mail (migration 0054) — printed on outward docs.
+    email: text('email'),
     addressLine1: text('address_line1'),
     addressLine2: text('address_line2'),
     city: text('city'),

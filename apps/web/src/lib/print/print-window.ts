@@ -14,6 +14,7 @@
 import type { Company } from '@innovic/shared';
 import { companyAddressLines } from './company';
 import { esc } from './doc-print';
+import { letterheadLogoHtml } from './letterhead';
 
 const PRINT_STYLE = `
   *{margin:0;padding:0;box-sizing:border-box}
@@ -43,14 +44,16 @@ const PRINT_STYLE = `
   .sign-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-top:36px}
   .sign-box{border-top:1px solid #333;padding-top:6px;text-align:center;font-size:11px;color:#666}
   .no-print{margin-bottom:12px}
-  @media print{.no-print{display:none}body{padding:10px}}
+  @media print{@page{size:A4 portrait;margin:10mm}.no-print{display:none}body{padding:10px}}
 `;
 
+// Internal docs get the LOGO only (no letterhead footer) — user direction
+// 2026-06-06; full letterhead is reserved for outward/transaction docs.
 function companyHeader(company: Company | null | undefined): string {
   const name = company?.name ?? 'Innovic Technology';
   const addr = companyAddressLines(company);
   return `<div class="company-hdr">
-    <div class="co-mark">INNOVIC</div>
+    ${letterheadLogoHtml(44)}
     <div class="company-right">
       <div class="co-name-big">${esc(name)}</div>
       ${addr.map((l) => `<div class="co-addr">${esc(l)}</div>`).join('')}

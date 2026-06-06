@@ -21,5 +21,6 @@ export function buildDocCompany(company: Company | null | undefined): DocCompany
   };
   if (company?.gstNumber) c.gstin = company.gstNumber;
   if (company?.phone) c.phone = company.phone;
+  if (company?.email) c.email = company.email;
   return c;
 }

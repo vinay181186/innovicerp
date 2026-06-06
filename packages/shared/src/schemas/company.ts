@@ -15,6 +15,8 @@ export const companySchema = z.object({
   slug: z.string(),
   gstNumber: z.string().nullable(),
   phone: z.string().nullable(),
+  // Letterhead footer e-mail (migration 0054) — printed on outward docs.
+  email: z.string().nullable(),
   addressLine1: z.string().nullable(),
   addressLine2: z.string().nullable(),
   city: z.string().nullable(),
@@ -32,6 +34,7 @@ export const updateCompanyInputSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   gstNumber: z.string().max(32).optional(),
   phone: z.string().max(32).optional(),
+  email: z.string().max(255).optional(),
   addressLine1: z.string().max(255).optional(),
   addressLine2: z.string().max(255).optional(),
   city: z.string().max(64).optional(),
