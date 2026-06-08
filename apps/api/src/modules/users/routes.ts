@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { listUsersQuerySchema, updateUserInputSchema } from './schema';
+import { createUserInputSchema, listUsersQuerySchema, updateUserInputSchema } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -11,6 +11,14 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listUsersQuerySchema.parse(req.query);
     return service.listUsers(query, req.user);
+  });
+
+  app.post('/users', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = createUserInputSchema.parse(req.body);
+    const created = await service.createUser(body, req.user);
+    reply.code(201);
+    return created;
   });
 
   app.get('/users/:id', async (req) => {

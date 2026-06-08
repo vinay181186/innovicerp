@@ -7,11 +7,30 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
+import { supabaseAdmin } from '../../lib/supabase-admin';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const VIEWER_EMAIL = 'viewer@innovic.test';
+// Disposable account for the createUser happy-path. Cleaned up before + after.
+const ADD_TEST_EMAIL = 'add-test-optiona@innovic.test';
+
+// Remove a leftover auth.users + public.users row for an email (idempotent).
+// Used so a re-run after a crashed test doesn't trip the duplicate-email guard.
+async function purgeByEmail(email: string): Promise<void> {
+  const { data } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
+  const found = data?.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  if (found) await supabaseAdmin.auth.admin.deleteUser(found.id);
+  // FK users.id -> auth.users.id is ON DELETE CASCADE, but delete defensively
+  // in case the cascade isn't present in this environment.
+  await db.delete(users).where(eq(users.email, email));
+}
 
 let admin: AuthContext;
 let viewer: AuthContext;
@@ -46,9 +65,13 @@ beforeAll(async () => {
     isActive: v.isActive,
     approvalLimit: v.approvalLimit,
   };
+
+  await purgeByEmail(ADD_TEST_EMAIL);
 });
 
 afterAll(async () => {
+  await purgeByEmail(ADD_TEST_EMAIL);
+
   // Restore the viewer row exactly. The deletedAt clear handles the
   // softDelete test's residue. updatedBy must reference a real user.
   await db
@@ -93,6 +116,48 @@ describe('users service', () => {
       admin,
     );
     expect(result.items.every((u) => u.role === 'admin')).toBe(true);
+  });
+
+  it('createUser is admin-only', async () => {
+    await expect(
+      service.createUser(
+        { email: ADD_TEST_EMAIL, password: 'password123', fullName: 'X', role: 'viewer', isActive: true },
+        viewer,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('createUser rejects a duplicate email with ConflictError', async () => {
+    await expect(
+      service.createUser(
+        { email: ADMIN_EMAIL, password: 'password123', fullName: 'Dup', role: 'viewer', isActive: true },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('createUser provisions an auth account + promotes the row into the company', async () => {
+    const created = await service.createUser(
+      {
+        email: ADD_TEST_EMAIL,
+        password: 'password123',
+        fullName: 'Add Test',
+        role: 'operator',
+        phone: '+91-9999999999',
+        approvalLimit: 50000,
+        isActive: true,
+      },
+      admin,
+    );
+    expect(created.email).toBe(ADD_TEST_EMAIL);
+    expect(created.fullName).toBe('Add Test');
+    expect(created.role).toBe('operator');
+    expect(created.companyId).toBe(admin.companyId);
+    expect(created.isActive).toBe(true);
+    expect(created.approvalLimit).toBe('50000.00');
+    // Now visible in the admin's company-scoped list.
+    const list = await service.listUsers({ search: ADD_TEST_EMAIL, limit: 50, offset: 0 }, admin);
+    expect(list.items.some((u) => u.id === created.id)).toBe(true);
   });
 
   it('getUser throws NotFoundError for unknown id', async () => {

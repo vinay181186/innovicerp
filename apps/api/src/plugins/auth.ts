@@ -1,10 +1,9 @@
 import type { UserRole } from '@innovic/shared';
-import { createClient } from '@supabase/supabase-js';
 import { and, eq, isNull } from 'drizzle-orm';
 import fp from 'fastify-plugin';
 import { db } from '../db/client';
 import { users } from '../db/schema';
-import { env } from '../lib/env';
+import { supabaseAdmin } from '../lib/supabase-admin';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -18,10 +17,6 @@ declare module 'fastify' {
   }
 }
 
-const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
-
 export const authPlugin = fp(async (app) => {
   app.addHook('onRequest', async (req) => {
     const header = req.headers.authorization;
@@ -29,7 +24,7 @@ export const authPlugin = fp(async (app) => {
     const token = header.slice('Bearer '.length).trim();
     if (!token) return;
 
-    const { data, error } = await supabase.auth.getUser(token);
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !data.user) return;
 
     const rows = await db

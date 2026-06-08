@@ -1,4 +1,5 @@
 import type {
+  CreateUserInput,
   ListUsersQuery,
   ListUsersResponse,
   UpdateUserInput,
@@ -42,6 +43,16 @@ export function useUser(id: string | undefined) {
     queryKey: id ? usersKeys.detail(id) : usersKeys.detail('__missing__'),
     queryFn: () => apiFetch<User>(`/users/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation<User, Error, CreateUserInput>({
+    mutationFn: (input) => apiFetch<User>('/users', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: usersKeys.lists() });
+    },
   });
 }
 

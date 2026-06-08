@@ -83,6 +83,12 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** SYS-2 (User Management "+ Add User" — onboard a user end-to-end, ADR-046, 2026-06-09)
+**Title:** Screen-by-screen parity: System Settings → User Management. Legacy had "+ Add User" (`_addUserFull`); our rebuild had view/edit/deactivate only. Real gap: the `on_auth_user_created` trigger seeds a `public.users` row but with `company_id=NULL` → invisible in the company-scoped admin list → onboarding needed raw SQL. User chose admin-sets-initial-password over email-invite (no Auth SMTP configured).
+**Status:** [x] CODE-COMPLETE 2026-06-09, NOT yet committed (user tests first). **No migration** (trigger + columns already existed).
+**Built:** shared `createUserInputSchema`/`CreateUserInput`; `lib/supabase-admin.ts` (service-role client extracted, reused by auth plugin); service `createUser` → `auth.admin.createUser({email_confirm:true})` then promotes the trigger row (sets company/role/full_name/phone/is_active/approval_limit) via RLS-bypassing `db`; `POST /users` (201, admin-only); web `useCreateUser` + new `users/new` route (create.tsx mirrors edit form + email + password fields) + "+ Add User" button on list + corrected subtitle.
+**Verified:** typecheck + lint clean (4 pkgs); api users service tests **16/16 green** node-direct (incl. 3 new: admin-only, duplicate→ConflictError, happy-path provision+promote+list-visible with beforeAll/afterAll auth purge). User UI test pending.
+
 **ID:** LH-1 (Company letterhead + A4 on all printed docs, migration 0054, 2026-06-06)
 **Title:** User request: invoice must be A4; use `Screen shots/Innovic.docx` (logo + footer address line) as the letterhead on all transaction prints. User decisions: full letterhead on OUTWARD docs only (PO / Service PO / OSP DC / JW DC / Invoice); internal docs (Job Card, Route Card, registers, reports via print-window) get the LOGO only; company DB row updated to the docx footer data.
 **Status:** [x] CODE-COMPLETE 2026-06-06, NOT yet committed (user tests first). **Migration 0054 applied to dev DB** (additive: `companies.email`); company row set to docx data (address/pincode/email/phone).

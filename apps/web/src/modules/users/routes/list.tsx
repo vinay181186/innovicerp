@@ -4,7 +4,7 @@
 import { USER_ROLES, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
@@ -197,8 +197,8 @@ function UsersListPage(): React.JSX.Element {
             👥 User Management
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Manage team — rename, change role, deactivate. New users are invited via Supabase Auth;
-            once they sign in, they appear here.
+            Manage team — add a user, rename, change role, deactivate. Click <b>+ Add User</b> to
+            create a login and app account in one step.
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -253,6 +253,9 @@ function UsersListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
+          <Link to="/users/new" className="btn btn-primary btn-sm">
+            <Plus size={14} /> Add User
+          </Link>
         </div>
       </div>
 

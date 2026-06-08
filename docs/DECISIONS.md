@@ -1834,6 +1834,48 @@ Shared schema, service, web form/list/detail all refactored to the header-materi
 
 ---
 
+## ADR-046: "+ Add User" creates the Supabase Auth account from the API (admin sets initial password)
+
+**Date:** 2026-06-09
+**Status:** Accepted
+
+### Context
+
+User Management (legacy `renderUsers` / `_addUserFull`) had a "+ Add User" button; our
+rebuild dropped it on the theory "Supabase Auth owns invites." The `on_auth_user_created`
+trigger (`0001_post_init.sql`) does seed a `public.users` row on every auth signup — but with
+`company_id=NULL`, `is_active=false`, `role=viewer`. The admin list is company-scoped
+(`where company_id = <admin company>`), so a freshly-provisioned user is **invisible and
+unassignable through the UI** — onboarding required raw SQL. The screen's own subtitle ("once
+they sign in, they appear here") was therefore misleading.
+
+### Decision
+
+Add `POST /users` (admin-only). The service calls `supabaseAdmin.auth.admin.createUser(...)`
+with `email_confirm: true` and the admin-supplied password; the insert fires the existing
+trigger, then the service **promotes** that row (sets `company_id`, `role`, `full_name`,
+`phone`, `is_active`, `approval_limit`) via the RLS-bypassing `db` client — needed because the
+row's `company_id` is still NULL and a company-scoped context can't see it. The Supabase
+service-role client was extracted to `lib/supabase-admin.ts` and reused by the auth plugin.
+New web route `users/new`. Access matrix + PO-approver flag stay on their own screens (same
+split as legacy).
+
+**Credential method:** admin sets an initial password (handed to the user directly) rather
+than email-invite links — the factory's Supabase Auth SMTP isn't configured, and an
+email-dependent flow would block onboarding entirely.
+
+### Alternatives Considered
+
+- **Email invite link (`inviteUserByEmail`)** — rejected: requires Supabase Auth SMTP, not set up; no email = no onboarding.
+- **Auto-provision into a company on first login (change `auth.ts`)** — rejected: users land with zero access until edited, and `company_id` assignment from a login event is ambiguous in a multi-company schema.
+- **Leave as-is, document the SQL** — rejected: onboarding a user is an admin task, not a developer task.
+
+### Consequences
+
+- Positive: full legacy parity; admin onboards end-to-end in one screen; no SQL.
+- Negative: API now holds the create-auth-user capability (already had the service-role key for token verification, so no new secret/surface).
+- Risks: initial passwords are admin-chosen — operational hygiene (rotate on first login) is a training point, not enforced.
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

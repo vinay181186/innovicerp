@@ -1,11 +1,12 @@
 // User Management shared schemas (Phase A item 5a — Legacy parity build).
 //
 // Backed by the existing `users` table (schema.ts L123). Mirror of legacy
-// renderUsers L13435 — admin-only. Insert is NOT exposed; new users are
-// invited via Supabase Auth (db-trigger seeds the row on auth.users insert
-// per 0001_post_init.sql). This screen handles the lifecycle from there:
-// rename / change role / change phone / deactivate / reactivate / soft-
-// delete.
+// renderUsers L13435 — admin-only. The `on_auth_user_created` trigger
+// (0001_post_init.sql) seeds a public.users row on every auth signup with
+// company_id=NULL/viewer/inactive. Create (ADR-046) provisions the auth
+// account from the API and promotes that row into the admin's company; the
+// rest of the lifecycle is rename / change role / change phone / deactivate /
+// reactivate / soft-delete.
 
 import { z } from 'zod';
 import { USER_ROLES } from '../enums/user-role';
@@ -31,6 +32,24 @@ export const userSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 export type User = z.infer<typeof userSchema>;
+
+// Create — admin onboards a new user end-to-end. The API creates the Supabase
+// Auth account (admin sets the initial password) and promotes the trigger-
+// seeded public.users row into the admin's company with the chosen role.
+// Mirror of legacy renderUsers "+ Add User" (_addUserFull / _saveUnifiedUser).
+export const createUserInputSchema = z.object({
+  email: z.string().email().max(255),
+  // Supabase bcrypts the password (72-byte ceiling). 8-char floor is a sane
+  // minimum for an internal tool; the admin hands this to the user directly.
+  password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+  fullName: z.string().min(1).max(255),
+  role: userRoleSchema,
+  phone: z.string().max(32).optional(),
+  approvalLimit: z.number().nonnegative().max(99999999).nullable().optional(),
+  // Defaults to active — an admin adding a user expects them usable at once.
+  isActive: z.boolean().default(true),
+});
+export type CreateUserInput = z.infer<typeof createUserInputSchema>;
 
 // Update only — no create (Supabase Auth owns the invite flow).
 export const updateUserInputSchema = z.object({
