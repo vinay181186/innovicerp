@@ -1,20 +1,23 @@
-// Vendor Master list (UI-003-02).
+// Vendor Master list (UI-003-02; parity pass 2026-06-11).
 // Ports legacy renderVendors (legacy/InnovicERP_v82_12_3.html L27734) to
 // Innovic chrome. Columns: Code | Name | Contact | Phone | Email | GST No.
-// | Materials | Rating | Status | Actions. The legacy "Rating" column has
+// | Address | Materials | Rating | Status | Actions. Materials is our
+// addition; Address restored to match legacy. The legacy "Rating" column has
 // auto-computed grade (A/B/C/D); we render whatever the rating string
-// holds (the auto-computation is a Phase D backend cascade not yet
-// shipped). PO/GRN count column also deferred (needs cascade joins).
+// holds (the auto-computation + PO/GRN count column remain a backend cascade
+// not yet shipped — DELTA backlog). Excel Template + Import and a per-row
+// Del→Trash button added in this pass.
 
 import type { ListVendorsQuery, Vendor } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useVendorsList } from '../api';
+import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
+import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -77,6 +80,43 @@ function VendorsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
+  const softDelete = useSoftDeleteVendor();
+
+  // Excel import — parse the workbook, then create each vendor sequentially
+  // (each success invalidates the list via the mutation hook).
+  const createVendor = useCreateVendor();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function onImportFile(file: File): Promise<void> {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const { payloads, errors } = await parseVendorImportFile(file);
+      let ok = 0;
+      const fails: string[] = [];
+      for (const p of payloads) {
+        try {
+          await createVendor.mutateAsync(p);
+          ok += 1;
+        } catch (e) {
+          fails.push(`${p.code}: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      setImportMsg(
+        `Imported ${ok}/${payloads.length} vendor(s).` +
+          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
+          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
+      );
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
   const columns = useMemo<ColumnDef<Vendor>[]>(
     () => [
       {
@@ -125,6 +165,25 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
       {
+        header: 'Address',
+        cell: ({ row }) => (
+          <span
+            className="text3"
+            style={{
+              fontSize: 11,
+              maxWidth: 150,
+              display: 'inline-block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={row.original.addressLine1 ?? undefined}
+          >
+            {row.original.addressLine1 ?? '—'}
+          </span>
+        ),
+      },
+      {
         header: 'Materials',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11 }}>
@@ -168,11 +227,25 @@ function VendorsListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={softDelete.isPending}
+                onClick={() => {
+                  if (confirm(`Move vendor ${row.original.code} — ${row.original.name} to Trash?`)) {
+                    softDelete.mutate(row.original.id);
+                  }
+                }}
+              >
+                Del
+              </button>
+            ) : null}
           </div>
         ),
       },
     ],
-    [canWrite],
+    [canWrite, softDelete],
   );
 
   const table = useReactTable({
@@ -229,12 +302,58 @@ function VendorsListPage(): React.JSX.Element {
             </span>
           ) : null}
           {canWrite ? (
-            <Link to="/vendors/new" className="btn btn-primary">
-              <Plus size={14} /> Add Vendor
-            </Link>
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12 }}
+                title="Download Excel template"
+                onClick={() => downloadVendorTemplate()}
+              >
+                ⬇ Template
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12 }}
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onImportFile(f);
+                }}
+              />
+              <Link to="/vendors/new" className="btn btn-primary">
+                <Plus size={14} /> Add Vendor
+              </Link>
+            </>
           ) : null}
         </div>
       </div>
+
+      {importMsg ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
+            {importMsg}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 10 }}
+              onClick={() => setImportMsg(null)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="tbl-wrap">
