@@ -9,12 +9,15 @@
 import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useItemsList } from '../api';
+import { useMyCompany } from '@/modules/settings/api';
+import { useCreateItem, useItemsList, useSoftDeleteItem } from '../api';
+import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
+import { printItemDrawing } from '../lib/print-drawing';
 
 const PAGE_SIZE = 25;
 
@@ -64,6 +67,58 @@ function ItemsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
 
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  const softDelete = useSoftDeleteItem();
+  const { data: company } = useMyCompany();
+
+  // Drw column print — opens the stored drawing in a print window (legacy
+  // printDrawingFile). Company gives the letterhead; falls back gracefully.
+  const printDrawing = useCallback(
+    async (item: Item): Promise<void> => {
+      try {
+        const ok = await printItemDrawing({ item, company });
+        if (!ok) window.alert('Allow popups to print.');
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : 'Could not open drawing for printing');
+      }
+    },
+    [company],
+  );
+
+  // Excel import — parse the workbook, then create each item sequentially
+  // (each success invalidates the list via the mutation hook).
+  const createItem = useCreateItem();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function onImportFile(file: File): Promise<void> {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const { payloads, errors } = await parseItemImportFile(file);
+      let ok = 0;
+      const fails: string[] = [];
+      for (const p of payloads) {
+        try {
+          await createItem.mutateAsync(p);
+          ok += 1;
+        } catch (e) {
+          fails.push(`${p.code}: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      setImportMsg(
+        `Imported ${ok}/${payloads.length} item(s).` +
+          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
+          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
+      );
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   const columns = useMemo<ColumnDef<Item>[]>(
     () => [
@@ -119,9 +174,15 @@ function ItemsListPage(): React.JSX.Element {
         header: 'Drw',
         cell: ({ row }) =>
           row.original.drawingFilePath ? (
-            <span title="Drawing file attached" style={{ fontSize: 14 }}>
-              📎
-            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11 }}
+              title="View/Print drawing"
+              onClick={() => void printDrawing(row.original)}
+            >
+              <Printer size={12} /> Print
+            </button>
           ) : (
             <span className="text3">—</span>
           ),
@@ -142,11 +203,25 @@ function ItemsListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={softDelete.isPending}
+                onClick={() => {
+                  if (confirm(`Move item ${row.original.code} — ${row.original.name} to Trash?`)) {
+                    softDelete.mutate(row.original.id);
+                  }
+                }}
+              >
+                Del
+              </button>
+            ) : null}
           </div>
         ),
       },
     ],
-    [canWrite],
+    [canWrite, softDelete, printDrawing],
   );
 
   const table = useReactTable({
@@ -206,12 +281,58 @@ function ItemsListPage(): React.JSX.Element {
             </span>
           ) : null}
           {canWrite ? (
-            <Link to="/items/new" className="btn btn-primary">
-              <Plus size={14} /> Add Item
-            </Link>
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12 }}
+                title="Download Excel template"
+                onClick={() => downloadItemTemplate()}
+              >
+                ⬇ Template
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12 }}
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onImportFile(f);
+                }}
+              />
+              <Link to="/items/new" className="btn btn-primary">
+                <Plus size={14} /> Add Item
+              </Link>
+            </>
           ) : null}
         </div>
       </div>
+
+      {importMsg ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
+            {importMsg}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 10 }}
+              onClick={() => setImportMsg(null)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
