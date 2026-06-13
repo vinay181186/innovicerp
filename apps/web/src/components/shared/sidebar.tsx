@@ -46,7 +46,7 @@ interface NavSection {
 // Section + item structure mirrors legacy HTML L399–500. Items that
 // don't have a shipped route in /apps/web yet are omitted; we add them
 // as routes ship rather than rendering dead links.
-const SECTIONS: readonly NavSection[] = [
+export const SECTIONS: readonly NavSection[] = [
   {
     key: 'planning',
     label: 'Planning',
