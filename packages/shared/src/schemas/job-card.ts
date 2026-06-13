@@ -224,3 +224,48 @@ export const jobCardSourceOptionSchema = z.object({
   remaining: z.number().int(),
 });
 export type JobCardSourceOption = z.infer<typeof jobCardSourceOptionSchema>;
+
+// ─── Edit model (repopulates the create/edit modal with the full op detail) ──
+// Op routing rows carry every editable field (the op-entry enriched read omits
+// program/tool/cost) plus `hasStarted` so the form can lock started ops.
+export const jobCardOpEditSchema = z.object({
+  id: z.string().uuid(),
+  opSeq: z.number().int(),
+  machineCode: z.string().nullable(),
+  operation: z.string(),
+  opType: jcOpInputTypeSchema,
+  cycleTimeMin: z.number().nonnegative(),
+  program: z.string().nullable(),
+  toolNo: z.string().nullable(),
+  toolDetails: z.string().nullable(),
+  qcRequired: z.boolean(),
+  outsourceVendorCode: z.string().nullable(),
+  outsourceCost: z.number().nonnegative(),
+  hasStarted: z.boolean(),
+});
+export type JobCardOpEdit = z.infer<typeof jobCardOpEditSchema>;
+
+export const jobCardDocSchema = z.object({
+  id: z.string().uuid(),
+  docType: z.string(),
+  fileName: z.string(),
+  storagePath: z.string(),
+  fileSize: z.number().int().nullable(),
+});
+export type JobCardDoc = z.infer<typeof jobCardDocSchema>;
+
+export const jobCardEditModelSchema = z.object({
+  id: z.string().uuid(),
+  code: z.string(),
+  jcDate: z.string(),
+  sourceSoLineId: z.string().uuid().nullable(),
+  sourceJwLineId: z.string().uuid().nullable(),
+  itemCode: z.string(),
+  orderQty: z.number().int(),
+  priority: jcPrioritySchema,
+  dueDate: z.string().nullable(),
+  drawingFilePath: z.string().nullable(),
+  ops: z.array(jobCardOpEditSchema),
+  qcDocs: z.array(jobCardDocSchema),
+});
+export type JobCardEditModel = z.infer<typeof jobCardEditModelSchema>;

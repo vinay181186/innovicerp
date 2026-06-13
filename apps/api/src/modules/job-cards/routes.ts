@@ -31,6 +31,12 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     return service.listJobCardSourceOptions(req.user);
   });
 
+  app.get('/job-cards/:id/edit', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getJobCardEditModel(id, req.user);
+  });
+
   app.get('/job-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

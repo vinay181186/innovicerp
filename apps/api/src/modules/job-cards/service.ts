@@ -29,6 +29,7 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { emitActivityLog } from '../activity-log/service';
 import type {
   JcOpInput,
+  JobCardEditModel,
   JobCardListItem,
   JobCardSourceLink,
   JobCardSourceOption,
@@ -371,6 +372,88 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         remaining: Math.max(0, orderQty - inJc),
       };
     });
+  });
+}
+
+// ─── Edit model (repopulates the modal — full op detail + qc docs) ──────────
+
+export async function getJobCardEditModel(id: string, user: AuthContext): Promise<JobCardEditModel> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headRows = (await tx.execute(sql`
+      SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
+        jc.source_so_line_id AS "sourceSoLineId", jc.source_jw_line_id AS "sourceJwLineId",
+        jc.order_qty AS "orderQty", jc.priority, jc.due_date AS "dueDate",
+        jc.drawing_file_path AS "drawingFilePath", i.code AS "itemCode"
+      FROM public.job_cards jc
+      LEFT JOIN public.items i ON i.id = jc.item_id
+      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const h = headRows[0];
+    if (!h) throw new NotFoundError(`Job card ${id} not found`);
+
+    const opRows = (await tx.execute(sql`
+      SELECT o.id, o.op_seq AS "opSeq",
+        COALESCE(m.code, o.machine_code_text) AS "machineCode",
+        o.operation, o.op_type AS "opType", o.cycle_time_min AS "cycleTimeMin",
+        o.program, o.tool_no AS "toolNo", o.tool_details AS "toolDetails",
+        o.qc_required AS "qcRequired",
+        COALESCE(v.code, o.outsource_vendor_text) AS "outsourceVendorCode",
+        o.outsource_cost AS "outsourceCost",
+        (
+          EXISTS (SELECT 1 FROM public.op_log ol WHERE ol.jc_op_id = o.id)
+          OR EXISTS (SELECT 1 FROM public.running_ops ro WHERE ro.jc_op_id = o.id AND ro.status = 'running')
+        ) AS "hasStarted"
+      FROM public.jc_ops o
+      LEFT JOIN public.machines m ON m.id = o.machine_id
+      LEFT JOIN public.vendors v ON v.id = o.outsource_vendor_id
+      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+      ORDER BY o.op_seq
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    const docRows = (await tx.execute(sql`
+      SELECT id, doc_type AS "docType", file_name AS "fileName",
+        storage_path AS "storagePath", file_size AS "fileSize"
+      FROM public.file_registry
+      WHERE job_card_id = ${id}::uuid AND category = 'qc-docs' AND deleted_at IS NULL
+      ORDER BY created_at
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    return {
+      id: h['id'] as string,
+      code: h['code'] as string,
+      jcDate: dateLike(h['jcDate']),
+      sourceSoLineId: (h['sourceSoLineId'] as string | null) ?? null,
+      sourceJwLineId: (h['sourceJwLineId'] as string | null) ?? null,
+      itemCode: (h['itemCode'] as string | null) ?? '',
+      orderQty: Number(h['orderQty'] ?? 0),
+      priority: h['priority'] as JobCardEditModel['priority'],
+      dueDate: h['dueDate'] != null ? dateLike(h['dueDate']) : null,
+      drawingFilePath: (h['drawingFilePath'] as string | null) ?? null,
+      ops: opRows.map((o) => ({
+        id: o['id'] as string,
+        opSeq: Number(o['opSeq'] ?? 0),
+        machineCode: (o['machineCode'] as string | null) ?? null,
+        operation: (o['operation'] as string | null) ?? '',
+        opType: o['opType'] as JobCardEditModel['ops'][number]['opType'],
+        cycleTimeMin: Number(o['cycleTimeMin'] ?? 0),
+        program: (o['program'] as string | null) ?? null,
+        toolNo: (o['toolNo'] as string | null) ?? null,
+        toolDetails: (o['toolDetails'] as string | null) ?? null,
+        qcRequired: Boolean(o['qcRequired']),
+        outsourceVendorCode: (o['outsourceVendorCode'] as string | null) ?? null,
+        outsourceCost: Number(o['outsourceCost'] ?? 0),
+        hasStarted: Boolean(o['hasStarted']),
+      })),
+      qcDocs: docRows.map((d) => ({
+        id: d['id'] as string,
+        docType: (d['docType'] as string | null) ?? 'Other',
+        fileName: (d['fileName'] as string | null) ?? '',
+        storagePath: (d['storagePath'] as string | null) ?? '',
+        fileSize: d['fileSize'] != null ? Number(d['fileSize']) : null,
+      })),
+    };
   });
 }
 
