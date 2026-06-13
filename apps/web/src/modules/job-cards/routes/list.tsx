@@ -20,7 +20,6 @@ import { useJobCardsList } from '../api';
 import { ExcelJcButton } from '../components/excel-jc-button';
 import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
-import { JcStatusModal } from '../components/jc-status-modal';
 import { PrintJcButton } from '../components/print-jc-button';
 
 const PAGE_SIZE = 25;
@@ -52,8 +51,6 @@ function JobCardsListPage(): React.JSX.Element {
   const search = jobCardsListRoute.useSearch();
   const navigate = jobCardsListRoute.useNavigate();
 
-  // JC Status modal (legacy viewJCStatus opens over the list).
-  const [statusJc, setStatusJc] = useState<{ id: string; code: string } | null>(null);
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
     setSearchInput(search.search ?? '');
@@ -112,24 +109,19 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'JC No.',
         cell: ({ row }) => (
-          <button
-            type="button"
+          <Link
+            to="/job-cards/$id"
+            params={{ id: row.original.id }}
             className="td-code"
-            onClick={() => setStatusJc({ id: row.original.id, code: row.original.code })}
             style={{
               color: 'var(--cyan)',
               textDecoration: 'underline dotted',
               whiteSpace: 'nowrap',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              font: 'inherit',
             }}
             title="View job card status"
           >
             {row.original.code}
-          </button>
+          </Link>
         ),
       },
       {
@@ -295,15 +287,15 @@ function JobCardsListPage(): React.JSX.Element {
         header: 'Actions',
         cell: ({ row }) => (
           <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
-            <button
-              type="button"
-              onClick={() => setStatusJc({ id: row.original.id, code: row.original.code })}
+            <Link
+              to="/job-cards/$id"
+              params={{ id: row.original.id }}
               className="btn btn-ghost btn-sm"
               style={{ whiteSpace: 'nowrap' }}
               title="View job card status"
             >
               👁 View
-            </button>
+            </Link>
             <PrintJcButton jc={row.original} />
             <ExcelJcButton jc={row.original} />
             <JcRowWriteActions jc={row.original} />
@@ -320,7 +312,7 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [setStatusJc],
+    [],
   );
 
   const table = useReactTable({
@@ -568,10 +560,6 @@ function JobCardsListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
-
-      {statusJc ? (
-        <JcStatusModal id={statusJc.id} code={statusJc.code} onClose={() => setStatusJc(null)} />
-      ) : null}
     </div>
   );
 }

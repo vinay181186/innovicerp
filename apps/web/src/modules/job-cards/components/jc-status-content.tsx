@@ -1,7 +1,7 @@
 // JC Status content (legacy viewJCStatus L11020 body): drawing + Print, 6 stat
 // cards, OPERATION FLOW stepper, OPERATIONS DETAIL (per-op recent logs + Start/
-// Log/QC actions), and the completion-log timeline. Shared by the modal
-// (jc-status-modal) and the deep-link page (routes/status).
+// Log/QC actions), and the completion-log timeline. Rendered by the JC Status
+// page (routes/status).
 import type { OpLog } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
