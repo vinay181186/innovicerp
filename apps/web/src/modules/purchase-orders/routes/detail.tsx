@@ -336,7 +336,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <div
             className="panel"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(520px, 96vw)' }}
+            style={{ width: 'min(1100px, 96vw)' }}
           >
             <div
               style={{
@@ -464,7 +464,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <div
             className="panel"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(520px, 96vw)' }}
+            style={{ width: 'min(1100px, 96vw)' }}
           >
             <div
               style={{

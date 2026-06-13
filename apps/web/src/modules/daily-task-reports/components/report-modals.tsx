@@ -23,7 +23,7 @@ export function Overlay(props: { title: string; onClose: () => void; children: R
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 50, padding: 24, overflowY: 'auto' }}
       onClick={props.onClose}
     >
-      <div className="panel" style={{ width: props.wide ? 'min(820px, 100%)' : 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="panel" style={{ width: props.wide ? 'min(1100px, 96vw)' : 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
         <div className="panel-hdr">
           <span className="panel-title">{props.title}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={props.onClose}>

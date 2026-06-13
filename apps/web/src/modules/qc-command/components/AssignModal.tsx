@@ -32,7 +32,7 @@ function Overlay({
     >
       <div
         className="panel"
-        style={{ width: 'min(520px, 100%)', maxWidth: 520 }}
+        style={{ width: 'min(1100px, 96vw)', maxWidth: 1100 }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">

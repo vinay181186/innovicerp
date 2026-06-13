@@ -335,7 +335,7 @@ function ChangeMachineModal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: 20,
-          width: 'min(480px, 95vw)',
+          width: 'min(1100px, 96vw)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

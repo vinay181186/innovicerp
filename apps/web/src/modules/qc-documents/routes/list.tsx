@@ -584,7 +584,7 @@ function LineDetailModal({
     >
       <div
         className="panel"
-        style={{ width: 'min(720px, 100%)' }}
+        style={{ width: 'min(1100px, 96vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
@@ -1216,7 +1216,7 @@ function UploadModal({
       }}
       onClick={onClose}
     >
-      <div className="panel" style={{ width: 'min(520px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
         <div className="panel-hdr">
           <span className="panel-title">📎 Upload QC Document</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>

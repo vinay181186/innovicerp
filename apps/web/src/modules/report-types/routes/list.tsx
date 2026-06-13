@@ -220,7 +220,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
     >
       <div
         className="panel"
-        style={{ width: 'min(520px, 100%)' }}
+        style={{ width: 'min(1100px, 96vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">

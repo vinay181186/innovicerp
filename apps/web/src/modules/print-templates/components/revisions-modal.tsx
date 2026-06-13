@@ -36,7 +36,7 @@ export function RevisionsModal({ templateKey, blockName, onClose, onRestore }: P
       <div
         className="panel"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(760px, 96vw)', maxHeight: '84vh', overflow: 'auto' }}
+        style={{ width: 'min(1100px, 96vw)', maxHeight: '84vh', overflow: 'auto' }}
       >
         <div
           style={{

@@ -583,7 +583,7 @@ function UploadDialog({
     >
       <div
         className="panel"
-        style={{ width: 'min(560px, 100%)' }}
+        style={{ width: 'min(1100px, 96vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">

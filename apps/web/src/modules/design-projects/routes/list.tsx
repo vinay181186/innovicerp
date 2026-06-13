@@ -493,7 +493,7 @@ function Modal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: 20,
-          width: 'min(720px, 95vw)',
+          width: 'min(1100px, 96vw)',
           maxHeight: '90vh',
           overflowY: 'auto',
         }}

@@ -297,7 +297,7 @@ function Overlay(props: { title: string; onClose: () => void; children: React.Re
     >
       <div
         className="panel"
-        style={{ width: 'min(640px, 100%)', maxWidth: 640 }}
+        style={{ width: 'min(1100px, 96vw)', maxWidth: 1100 }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
