@@ -10,8 +10,6 @@
 // do NOT add an endpoint for them):
 //   - Drawing No. + Material: live on `items` (items.drawing / items.material),
 //     not on the JC list row (which only carries drawingFilePath). Rendered "—".
-//   - Operation Routing "Program" + "Tool No." columns: stored on jc_ops but
-//     not selected by the op-entry jc-ops enriched read. Rendered "—".
 //   - Production Log (last ~20 op_log rows for the JC): no per-JC op_log
 //     endpoint exists (`/op-entry/op-log` is keyed by a single jcOpId). The
 //     whole section is omitted. See the data-gap note in the build report.
@@ -78,8 +76,8 @@ export function printJobCard(args: {
       <td>${esc(machineLabel(o))}</td>
       <td>${esc(o.operation)}</td>
       <td style="text-align:center">${Number(o.cycleTimeMin) || '—'}</td>
-      <td style="font-family:monospace">—</td>
-      <td>—</td>
+      <td style="font-family:monospace">${esc(o.program || '—')}</td>
+      <td>${esc(o.toolNo || '—')}</td>
       <td style="text-align:center">${o.inputAvail}</td>
       <td style="text-align:center;color:#16a34a;font-weight:700">${o.completedQty}</td>
       <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>

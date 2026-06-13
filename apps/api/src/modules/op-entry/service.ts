@@ -82,6 +82,8 @@ export async function listJcOpsEnriched(
         o.operation,
         o.op_type              AS "opType",
         o.cycle_time_min::text AS "cycleTimeMin",
+        o.program,
+        o.tool_no              AS "toolNo",
         o.qc_required          AS "qcRequired",
         o.qc_call_date         AS "qcCallDate",
         o.qc_attended_date     AS "qcAttendedDate",

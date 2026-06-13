@@ -57,6 +57,8 @@ export const jcOpEnrichedSchema = z.object({
   operation: z.string(),
   opType: opTypeSchema,
   cycleTimeMin: z.string(), // numeric stored as string
+  program: z.string().nullable(),
+  toolNo: z.string().nullable(),
   qcRequired: z.boolean(),
   qcCallDate: z.string().nullable(),
   qcAttendedDate: z.string().nullable(),
