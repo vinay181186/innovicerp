@@ -17,6 +17,7 @@ import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
+import { ExcelJcButton } from '../components/excel-jc-button';
 import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { JcStatusModal } from '../components/jc-status-modal';
@@ -304,6 +305,7 @@ function JobCardsListPage(): React.JSX.Element {
               👁 View
             </button>
             <PrintJcButton jc={row.original} />
+            <ExcelJcButton jc={row.original} />
             <JcRowWriteActions jc={row.original} />
             <AssignTaskButton
               linkedRef={{

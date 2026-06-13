@@ -4,7 +4,7 @@
 // (jc-status-modal) and the deep-link page (routes/status).
 import type { OpLog } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
-import { Loader2, Printer } from 'lucide-react';
+import { Download, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { signedUrl } from '@/lib/storage';
@@ -12,6 +12,7 @@ import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useJobCard } from '../api';
 import { JcStatusBadge } from './jc-status-badge';
+import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 
 const OP_STATUS: Record<string, { label: string; cls: string }> = {
@@ -106,8 +107,16 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => printJobCard({ jc, ops, logs, company })}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => printJobCard({ jc, ops, company })}>
           <Printer size={13} /> Print Job Card
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => exportJobCardExcel({ jc, ops, logs })}
+          title="Download Excel (with production log)"
+        >
+          <Download size={13} /> Excel
         </button>
         <button type="button" className="btn btn-primary btn-sm" onClick={openOpEntry}>
           ▶ Open in Op Entry
