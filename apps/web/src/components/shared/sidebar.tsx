@@ -347,6 +347,27 @@ export const SECTIONS: readonly NavSection[] = [
   },
 ] as const;
 
+// Sidebar section display order (user preference 2026-06-14 — overrides the
+// legacy menu order). Dashboard is the fixed top item, then:
+// Sales, Design, Planning, Production, Purchase, QC, Store, Finance, Tasks,
+// Reports, Settings.
+const SECTION_ORDER: readonly string[] = [
+  'sales',
+  'design',
+  'planning',
+  'production',
+  'purchase',
+  'qc',
+  'store',
+  'finance',
+  'tasks',
+  'reports',
+  'system',
+];
+const ORDERED_SECTIONS: readonly NavSection[] = [...SECTIONS].sort(
+  (a, b) => SECTION_ORDER.indexOf(a.key) - SECTION_ORDER.indexOf(b.key),
+);
+
 function initials(email: string | undefined): string {
   if (!email) return '??';
   const local = email.split('@')[0] ?? '';
@@ -433,7 +454,7 @@ export function Sidebar(): React.JSX.Element {
         </Link>
       </a>
 
-      {SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff)).map((sec) => {
+      {ORDERED_SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff)).map((sec) => {
         const open = openSections.has(sec.key);
         return (
           <div key={sec.key}>
