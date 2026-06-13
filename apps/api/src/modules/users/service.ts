@@ -120,9 +120,12 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
     const profile = (await db.select().from(users).where(eq(users.id, existingAuth.id)).limit(1))[0];
     const canRevive = !profile || profile.deletedAt !== null || profile.companyId === null;
     if (!canRevive) throw new ConflictError('A user with this email already exists');
-    // Reset the password to the new one the admin just entered.
+    // Reset the password to the new one the admin just entered, and confirm the
+    // email — admin-provisioned accounts have no verification flow, so an
+    // unconfirmed revived account would hit "email not confirmed" at login.
     const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(existingAuth.id, {
       password: input.password,
+      email_confirm: true,
     });
     if (pwErr) throw new ValidationError(pwErr.message);
     userId = existingAuth.id;
@@ -249,7 +252,12 @@ export async function setUserPassword(
     if (!row || row.companyId !== user.companyId) throw new NotFoundError(`User ${id} not found`);
   });
 
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password: input.password });
+  // email_confirm: true so a never-confirmed account becomes login-ready too —
+  // admin-set passwords have no separate email-verification step.
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, {
+    password: input.password,
+    email_confirm: true,
+  });
   if (error) throw new ValidationError(error.message);
   return { ok: true };
 }
