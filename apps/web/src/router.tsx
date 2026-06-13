@@ -69,6 +69,7 @@ import {
 import { jobCardEditRoute } from './modules/job-cards/routes/edit';
 import { jobCardsListRoute } from './modules/job-cards/routes/list';
 import { jobCardNewRoute } from './modules/job-cards/routes/new';
+import { jobCardStatusRoute } from './modules/job-cards/routes/status';
 import { jobWorkOrdersListRoute } from './modules/job-work-orders/routes/list';
 import { jobWorkOrderDetailRoute } from './modules/job-work-orders/routes/detail';
 import { jobWorkOrderEditRoute, jobWorkOrderNewRoute } from './modules/job-work-orders/routes/edit';
@@ -233,6 +234,7 @@ const routeTree = rootRoute.addChildren([
     jobCardsListRoute,
     jobCardNewRoute,
     jobCardEditRoute,
+    jobCardStatusRoute,
     purchaseRequestsListRoute,
     purchaseRequestNewRoute,
     purchaseRequestDetailRoute,

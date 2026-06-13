@@ -210,10 +210,17 @@ export const listJcOpsQuerySchema = z
   });
 export type ListJcOpsQuery = z.infer<typeof listJcOpsQuerySchema>;
 
-export const listOpLogQuerySchema = z.object({
-  jcOpId: z.string().uuid(),
-  limit: z.coerce.number().int().positive().max(500).default(100),
-});
+export const listOpLogQuerySchema = z
+  .object({
+    jcOpId: z.string().uuid().optional(),
+    /** All op_log rows across a whole JC's ops (status timeline + print log). */
+    jobCardId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().positive().max(500).default(100),
+  })
+  .refine((q) => Boolean(q.jcOpId || q.jobCardId), {
+    message: 'Provide jcOpId or jobCardId',
+    path: ['jcOpId'],
+  });
 export type ListOpLogQuery = z.infer<typeof listOpLogQuerySchema>;
 
 export const listRunningOpsQuerySchema = z.object({

@@ -55,12 +55,13 @@ export function useOpLog(
   options?: Omit<UseQueryOptions<OpLog[]>, 'queryKey' | 'queryFn'>,
 ) {
   const params = new URLSearchParams();
-  params.set('jcOpId', query.jcOpId);
+  if (query.jcOpId) params.set('jcOpId', query.jcOpId);
+  if (query.jobCardId) params.set('jobCardId', query.jobCardId);
   params.set('limit', String(query.limit ?? 100));
   return useQuery<OpLog[]>({
     queryKey: opEntryKeys.opLog(query),
     queryFn: () => apiFetch<OpLog[]>(`/op-entry/op-log?${params.toString()}`),
-    enabled: Boolean(query.jcOpId),
+    enabled: Boolean(query.jcOpId || query.jobCardId),
     ...options,
   });
 }

@@ -123,10 +123,13 @@ export async function listJcOpsEnriched(
 export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promise<OpLog[]> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    const scope = input.jobCardId
+      ? sql`${opLog.jcOpId} IN (SELECT id FROM public.jc_ops WHERE job_card_id = ${input.jobCardId}::uuid AND deleted_at IS NULL)`
+      : sql`${opLog.jcOpId} = ${input.jcOpId!}::uuid`;
     const rows = await tx
       .select()
       .from(opLog)
-      .where(and(eq(opLog.companyId, companyId), eq(opLog.jcOpId, input.jcOpId)))
+      .where(and(eq(opLog.companyId, companyId), scope))
       .orderBy(desc(opLog.createdAt))
       .limit(input.limit);
     return rows.map((r) => ({

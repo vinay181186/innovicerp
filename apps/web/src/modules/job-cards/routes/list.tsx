@@ -109,15 +109,15 @@ function JobCardsListPage(): React.JSX.Element {
         header: 'JC No.',
         cell: ({ row }) => (
           <Link
-            to="/op-entry"
-            search={{ jc: row.original.code }}
+            to="/job-cards/$id"
+            params={{ id: row.original.id }}
             className="td-code"
             style={{
               color: 'var(--cyan)',
               textDecoration: 'underline dotted',
               whiteSpace: 'nowrap',
             }}
-            title="Open in Op Entry"
+            title="View job card status"
           >
             {row.original.code}
           </Link>
@@ -287,11 +287,11 @@ function JobCardsListPage(): React.JSX.Element {
         cell: ({ row }) => (
           <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
             <Link
-              to="/op-entry"
-              search={{ jc: row.original.code }}
+              to="/job-cards/$id"
+              params={{ id: row.original.id }}
               className="btn btn-ghost btn-sm"
               style={{ whiteSpace: 'nowrap' }}
-              title="Open in Op Entry"
+              title="View job card status"
             >
               👁 View
             </Link>
