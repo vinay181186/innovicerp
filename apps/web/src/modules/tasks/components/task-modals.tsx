@@ -28,11 +28,7 @@ export function Overlay(props: {
       }}
       onClick={props.onClose}
     >
-      <div
-        className="panel"
-        style={{ width: props.wide ? 'min(720px, 100%)' : 'min(560px, 100%)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="panel app-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="panel-hdr">
           <span className="panel-title">{props.title}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={props.onClose}>

@@ -583,23 +583,36 @@
   background: rgba(0, 0, 0, 0.7);
   z-index: 500;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 20px;
+  padding: 2vh 2vw;
   backdrop-filter: blur(2px);
 }
+/* Full-window page-style modal (2026-06-14): popups should feel like a full
+   window, not a cramped centred box. Wide + tall + internal scroll. */
 .modal {
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: var(--radius2);
   width: 100%;
-  max-width: 560px;
-  max-height: 94vh;
+  max-width: min(1100px, 96vw);
+  min-height: min(86vh, 640px);
+  max-height: 96vh;
   overflow-y: auto;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
 }
+/* App-wide full-window sheet for inline (non-.modal) overlays — opt in by
+   adding class="app-sheet" to the inner panel of a fixed overlay so its inline
+   width cap is overridden. */
+.app-sheet {
+  width: min(1100px, 96vw) !important;
+  max-width: min(1100px, 96vw) !important;
+  min-height: min(86vh, 640px);
+  max-height: 96vh;
+  overflow-y: auto;
+}
 .modal-lg {
-  max-width: min(1140px, 96vw);
+  max-width: min(1320px, 96vw);
 }
 .modal-hdr {
   display: flex;
