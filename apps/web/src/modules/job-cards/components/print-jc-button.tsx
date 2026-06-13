@@ -11,7 +11,7 @@
 import type { JobCardListItem } from '@innovic/shared';
 import { Loader2, Printer } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useJcOpsEnriched } from '@/modules/op-entry/api';
+import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { printJobCard } from '../lib/print-job-card';
 
@@ -25,6 +25,7 @@ export function PrintJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Elemen
 
   const { data: company } = useMyCompany();
   const opsQuery = useJcOpsEnriched({ jobCardId: jc.id }, { enabled: armed });
+  const logsQuery = useOpLog({ jobCardId: jc.id, limit: 200 }, { enabled: armed });
 
   useEffect(() => {
     if (!pending || printedRef.current) return;
@@ -37,12 +38,12 @@ export function PrintJcButton({ jc }: { jc: JobCardListItem }): React.JSX.Elemen
       );
       return;
     }
-    if (!opsQuery.data) return; // still loading
+    if (!opsQuery.data || logsQuery.isFetching) return; // still loading
     printedRef.current = true;
     setPending(false);
-    const ok = printJobCard({ jc, ops: opsQuery.data, company });
+    const ok = printJobCard({ jc, ops: opsQuery.data, logs: logsQuery.data ?? [], company });
     if (!ok) window.alert('Allow popups to print.');
-  }, [pending, opsQuery.data, opsQuery.isError, opsQuery.error, jc, company]);
+  }, [pending, opsQuery.data, opsQuery.isError, opsQuery.error, logsQuery.data, logsQuery.isFetching, jc, company]);
 
   const onClick = (e: React.MouseEvent): void => {
     e.stopPropagation();

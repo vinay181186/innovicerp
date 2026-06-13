@@ -10,11 +10,16 @@
 // do NOT add an endpoint for them):
 //   - Drawing No. + Material: live on `items` (items.drawing / items.material),
 //     not on the JC list row (which only carries drawingFilePath). Rendered "—".
-//   - Production Log (last ~20 op_log rows for the JC): no per-JC op_log
-//     endpoint exists (`/op-entry/op-log` is keyed by a single jcOpId). The
-//     whole section is omitted. See the data-gap note in the build report.
+//   - Drawing image + Material/Drawing No.: drawing lives in Storage (needs an
+//     async signed URL) and Material/Drawing No. live on `items`; both omitted.
 
-import type { Company, ComputedJcOpStatus, JcOpEnriched, JobCardListItem } from '@innovic/shared';
+import type {
+  Company,
+  ComputedJcOpStatus,
+  JcOpEnriched,
+  JobCardListItem,
+  OpLog,
+} from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -59,12 +64,26 @@ function fmt(d: string | null | undefined): string {
 export function printJobCard(args: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
+  logs?: OpLog[];
   company: Company | null | undefined;
 }): boolean {
   const { jc, company } = args;
   // Order by op_seq so the routing prints in process order (the enriched read
   // is not guaranteed ordered).
   const ops = [...args.ops].sort((a, b) => a.opSeq - b.opSeq);
+  const opById = new Map(ops.map((o) => [o.id, o]));
+
+  // Production Log (legacy L10600): non-'start' op_log rows, last 20 chrono.
+  const logs = [...(args.logs ?? [])]
+    .filter((l) => l.logType !== 'start')
+    .sort((a, b) => (a.logDate + (a.startTime ?? '')).localeCompare(b.logDate + (b.startTime ?? '')))
+    .slice(-20);
+  const logRows = logs
+    .map((l) => {
+      const op = opById.get(l.jcOpId);
+      return `<tr><td>${esc(l.logDate)}</td><td>${esc(l.shift)}</td><td>${op ? `Op${op.opSeq}: ${esc(op.operation)}` : '—'}</td><td style="text-align:center;font-weight:700">${l.qty}</td><td>${esc(l.operatorName || '—')}</td><td>${esc(l.remarks || '')}</td></tr>`;
+    })
+    .join('');
 
   const qtyDone = jc.lastOpCompletedQty;
   const pending = Math.max(0, jc.orderQty - qtyDone);
@@ -115,6 +134,11 @@ export function printJobCard(args: {
     <h2>Operation Routing</h2>
     <table><thead><tr><th>#</th><th>Machine</th><th>Operation</th><th>Cycle(h)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
     <tbody>${opRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
+    ${
+      logRows
+        ? `<h2>Production Log</h2><table><thead><tr><th>Date</th><th>Shift</th><th>Operation</th><th>Qty</th><th>Operator</th><th>Remarks</th></tr></thead><tbody>${logRows}</tbody></table>`
+        : ''
+    }
     <div class="sign-row">
       <div class="sign-box">Prepared By</div>
       <div class="sign-box">Checked By</div>
