@@ -12,6 +12,7 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { useState } from 'react';
 import { hasDeptAccess, useMyAccess, type AccessDeptKey } from '@/lib/access-control';
+import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { useSession } from '@/lib/session';
 
 interface NavItem {
@@ -434,6 +435,11 @@ export function Sidebar(): React.JSX.Element {
     <aside id="sidebar">
       <div className="sb-logo">
         <Link to="/" className="block no-underline">
+          <img
+            src={INNOVIC_LOGO_DATA_URI}
+            alt="Innovic"
+            style={{ display: 'block', maxWidth: '100%', maxHeight: 72, height: 'auto', margin: '0 auto 8px' }}
+          />
           <div className="sb-company">INNOVIC ERP</div>
           <div className="sb-sub">manufacturing</div>
         </Link>

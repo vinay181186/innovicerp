@@ -8,6 +8,7 @@
 
 import { useLocation } from '@tanstack/react-router';
 import { LogOut } from 'lucide-react';
+import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut } from '@/lib/session';
 
 const TITLE_MAP: Record<string, string> = {
@@ -56,6 +57,11 @@ export function TopBar(): React.JSX.Element {
 
   return (
     <div id="topbar">
+      <img
+        src={INNOVIC_LOGO_DATA_URI}
+        alt="Innovic"
+        style={{ height: 30, width: 'auto', flexShrink: 0 }}
+      />
       <div className="tb-title" id="pageTitle">
         {title}
       </div>
