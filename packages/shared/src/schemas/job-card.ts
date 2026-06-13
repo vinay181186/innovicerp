@@ -122,3 +122,82 @@ export interface ListJobCardsResponse {
   limit: number;
   offset: number;
 }
+
+// ─── Write shapes (parity: addJC L6020 / editJC L6076 / jcModalBody L5943) ──
+//
+// Mirror of the legacy JC create/edit modal. Machine + outsource vendor are
+// chosen by CODE in the modal (datalist) and resolved to IDs server-side, with
+// the code kept as a text fallback (jc_ops.machine_code_text /
+// outsource_vendor_text). QC documents register into the unified file_registry
+// (ADR-047) linked to the new JC. Drawing is uploaded to Storage first; only its
+// path travels in the payload. See ADR-051.
+
+/** One operation routing row. opType drives which fields apply:
+ *  - process : machineCode + operation required (in-house machining step)
+ *  - outsource: outsourceVendorCode required; machine optional
+ *  - qc      : QC inspection step; operation = QC process name; no machine
+ *  (Legacy auto-classified some process ops to 'OSP' from the operation name;
+ *   in this system OSP is handled at op-entry start via the osp_processes
+ *   cascade, not at JC create, and jc_ops.op_type has no 'osp' value.) */
+export const JC_OP_INPUT_TYPES = ['process', 'qc', 'outsource'] as const;
+export const jcOpInputTypeSchema = z.enum(JC_OP_INPUT_TYPES);
+export type JcOpInputType = z.infer<typeof jcOpInputTypeSchema>;
+
+export const jcOpInputSchema = z.object({
+  /** Present when editing an existing op — preserved so op_log stays linked. */
+  id: z.string().uuid().optional(),
+  /** machines.code; resolved to machine_id server-side (text kept as fallback). */
+  machineCode: z.string().max(64).nullable().optional(),
+  operation: z.string().min(1, 'Operation name is required').max(255),
+  opType: jcOpInputTypeSchema.default('process'),
+  cycleTimeMin: z.coerce.number().nonnegative().default(0),
+  program: z.string().max(255).nullable().optional(),
+  toolNo: z.string().max(120).nullable().optional(),
+  toolDetails: z.string().max(2000).nullable().optional(),
+  qcRequired: z.boolean().default(false),
+  /** vendors.code; resolved to outsource_vendor_id server-side. */
+  outsourceVendorCode: z.string().max(64).nullable().optional(),
+  outsourceCost: z.coerce.number().nonnegative().default(0),
+});
+export type JcOpInput = z.infer<typeof jcOpInputSchema>;
+
+/** A QC document to register into file_registry against the JC (category
+ *  'qc-docs'). The file is uploaded to Storage by the client first. */
+export const jcDocInputSchema = z.object({
+  docType: z.string().min(1).max(120),
+  docName: z.string().max(255).nullable().optional(),
+  fileName: z.string().min(1).max(255),
+  storagePath: z.string().min(1).max(512),
+  fileSize: z.number().int().nonnegative().nullable().optional(),
+});
+export type JcDocInput = z.infer<typeof jcDocInputSchema>;
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
+
+export const jobCardWriteInputSchema = z
+  .object({
+    jcDate: isoDate,
+    /** At most one source link (mirrors the CHECK num_nonnulls(...) <= 1). */
+    sourceSoLineId: z.string().uuid().nullable().optional(),
+    sourceJwLineId: z.string().uuid().nullable().optional(),
+    /** items.code — resolved to item_id server-side (must exist in Item Master). */
+    itemCode: z.string().min(1, 'Item Code is required').max(64),
+    orderQty: z.coerce.number().int().positive('Order Qty must be greater than 0'),
+    priority: jcPrioritySchema.default('normal'),
+    dueDate: isoDate.nullable().optional(),
+    drawingFilePath: z.string().max(512).nullable().optional(),
+    ops: z.array(jcOpInputSchema).default([]),
+    qcDocs: z.array(jcDocInputSchema).default([]),
+  })
+  .refine((d) => !(d.sourceSoLineId && d.sourceJwLineId), {
+    message: 'A Job Card can link to at most one SO or JW line',
+    path: ['sourceJwLineId'],
+  });
+export type JobCardWriteInput = z.infer<typeof jobCardWriteInputSchema>;
+
+// Create and edit submit the same shape (JC No. is auto-generated on create and
+// immutable on edit, so it never travels in the payload).
+export const jobCardCreateInputSchema = jobCardWriteInputSchema;
+export type JobCardCreateInput = JobCardWriteInput;
+export const jobCardUpdateInputSchema = jobCardWriteInputSchema;
+export type JobCardUpdateInput = JobCardWriteInput;

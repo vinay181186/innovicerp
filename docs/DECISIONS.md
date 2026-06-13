@@ -2051,6 +2051,49 @@ user. `createUser` now also sets `deleted_at = null` on the promote/update.
 - Risks: low — company/active guard prevents cross-company or live-duplicate
   takeover. 19/19 users service tests green (+1 revive test).
 
+## ADR-051: Job Cards write layer — legacy parity for create/edit/delete
+
+**Date:** 2026-06-13
+**Status:** Accepted (in progress — create + delete shipped; update + React modal next)
+
+### Context
+
+Job Cards was read-only (list + view + print). Legacy has a full create/edit
+modal (`jcModalBody` L5943, `addJC` L6020, `editJC` L6076) with SO/JW cascade +
+balance validation, operation routing (machine/QC/outsource), QC documents,
+route-card auto-load/save, and admin delete (`delJC`). Goal: build Job Cards 1:1
+with legacy including all logic.
+
+### Decision
+
+Add a write layer to the job-cards module mirroring the legacy logic, mapped to
+the relational schema:
+- **Codes:** `IN-JC-#####` series, per company (legacy `nextJCNo`).
+- **Source link + balance:** input carries `sourceSoLineId` XOR `sourceJwLineId`;
+  qty validated against `line.order_qty − Σ(other active JCs on that line)`
+  (legacy `CASCADE.orderBalance`, now per-line not per-order — the relational model
+  links a JC to a specific SO/JW line).
+- **Ops:** machine + outsource vendor chosen by CODE in the modal, resolved to IDs
+  server-side with the code kept as text fallback (`machine_code_text` /
+  `outsource_vendor_text`). Validations mirror `addJC` (process ⇒ machine+op, qc ⇒
+  op name, outsource ⇒ vendor).
+- **opType:** `process | qc | outsource` only — `jc_ops.op_type` has no `osp`
+  value. Legacy's create-time OSP reclassification is intentionally dropped: OSP is
+  handled at **op-entry start** via the existing `osp_processes` cascade
+  (`op-entry/osp-cascade.ts`), the correct place in this architecture.
+- **Drawing → Storage** (`drawing_file_path`); **QC docs → unified file_registry**
+  (ADR-047, `job_card_id` link, category `qc-docs`). Both uploaded client-side first.
+- **Delete:** admin-only **soft** delete of the JC + its ops; op_log is never
+  hard-deleted (FK `op_log.jc_op_id` is ON DELETE CASCADE), preserving history.
+
+### Consequences
+
+- Positive: JC create/delete reach legacy parity with full server-side validation;
+  no schema migration needed (tables already supported it).
+- Negative: route-card auto-save and the update (ops-replace) path are follow-ups
+  in this same ADR; update must guard ops that have started (`_hasOpStarted`).
+- Risks: low — additive endpoints, 11/11 job-cards service tests green (+ create/delete).
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

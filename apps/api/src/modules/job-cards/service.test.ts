@@ -3,12 +3,12 @@
 // source_so_line_id backfilled to SO-436 lines. Read-only — no test
 // fixtures inserted; we just assert the service exposes the data correctly.
 
-import { eq } from 'drizzle-orm';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { users } from '../../db/schema';
+import { items, jcOps, jobCards, machines, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -128,5 +128,113 @@ describe('job-cards service', () => {
     await expect(
       service.listJobCards({ limit: 10, offset: 0 }, noCompanyUser),
     ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+describe('job-cards service — writes (ADR-051)', () => {
+  const createdIds: string[] = [];
+  let itemCode: string | null = null;
+  let machineCode: string | null = null;
+
+  beforeAll(async () => {
+    const it = (
+      await db
+        .select({ code: items.code })
+        .from(items)
+        .where(and(eq(items.companyId, admin.companyId!), isNull(items.deletedAt)))
+        .limit(1)
+    )[0];
+    itemCode = it?.code ?? null;
+    const m = (
+      await db
+        .select({ code: machines.code })
+        .from(machines)
+        .where(and(eq(machines.companyId, admin.companyId!), isNull(machines.deletedAt)))
+        .limit(1)
+    )[0];
+    machineCode = m?.code ?? null;
+  });
+
+  afterAll(async () => {
+    // Hard-cleanup the test JCs (none have op_log) so we don't leave
+    // soft-deleted rows polluting the IN-JC series on the dev DB.
+    if (createdIds.length > 0) {
+      await db.delete(jcOps).where(inArray(jcOps.jobCardId, createdIds));
+      await db.delete(jobCards).where(inArray(jobCards.id, createdIds));
+    }
+  });
+
+  it('createJobCard creates a JC with IN-JC series code + ops', async () => {
+    if (!itemCode || !machineCode) return; // no master data on this DB
+    const jc = await service.createJobCard(
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        ops: [
+          {
+            operation: 'CNC Turning',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 1.5,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
+          { operation: 'Final Inspection', opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    createdIds.push(jc.id);
+    expect(jc.code).toMatch(/^IN-JC-\d{5}$/);
+    expect(jc.itemCode).toBe(itemCode);
+    expect(jc.orderQty).toBe(5);
+    expect(jc.totalOps).toBe(2);
+  });
+
+  it('createJobCard rejects an unknown item', async () => {
+    await expect(
+      service.createJobCard(
+        {
+          jcDate: '2026-06-13',
+          itemCode: 'NOPE-NOT-AN-ITEM-ZZZ',
+          orderQty: 1,
+          priority: 'normal',
+          ops: [],
+          qcDocs: [],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('createJobCard is write-role gated (viewer rejected)', async () => {
+    const viewer: AuthContext = { ...admin, role: 'viewer' };
+    await expect(
+      service.createJobCard(
+        {
+          jcDate: '2026-06-13',
+          itemCode: itemCode ?? 'X',
+          orderQty: 1,
+          priority: 'normal',
+          ops: [],
+          qcDocs: [],
+        },
+        viewer,
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('deleteJobCard soft-deletes (admin) then the JC 404s', async () => {
+    if (!itemCode) return;
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 2, priority: 'normal', ops: [], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    await service.deleteJobCard(jc.id, admin);
+    await expect(service.getJobCard(jc.id, admin)).rejects.toBeInstanceOf(NotFoundError);
   });
 });

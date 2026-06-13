@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { listJobCardsQuerySchema } from './schema';
+import { jobCardCreateInputSchema, listJobCardsQuerySchema } from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -13,9 +13,25 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     return service.listJobCards(query, req.user);
   });
 
+  app.post('/job-cards', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = jobCardCreateInputSchema.parse(req.body);
+    const created = await service.createJobCard(body, req.user);
+    reply.code(201);
+    return created;
+  });
+
   app.get('/job-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getJobCard(id, req.user);
+  });
+
+  app.delete('/job-cards/:id', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    await service.deleteJobCard(id, req.user);
+    reply.code(204);
+    return null;
   });
 }
