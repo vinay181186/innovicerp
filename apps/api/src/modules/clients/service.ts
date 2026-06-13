@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { clients } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -42,12 +42,16 @@ export async function listClients(
 
     const where = and(...conditions);
 
+    const dir = input.sortDir === 'desc' ? desc : asc;
+    const sortCol = input.sortBy === 'name' ? clients.name : clients.code;
+    const orderBy = dir(sortCol);
+
     const [rows, totals] = await Promise.all([
       tx
         .select()
         .from(clients)
         .where(where)
-        .orderBy(asc(clients.code))
+        .orderBy(orderBy)
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(clients).where(where),

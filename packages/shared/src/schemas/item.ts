@@ -49,9 +49,14 @@ export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 export const updateItemInputSchema = createItemInputSchema.partial().omit({ code: true });
 export type UpdateItemInput = z.infer<typeof updateItemInputSchema>;
 
+export const itemSortFieldSchema = z.enum(['code', 'name']);
+export type ItemSortField = z.infer<typeof itemSortFieldSchema>;
+
 export const listItemsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   itemType: itemTypeSchema.optional(),
+  sortBy: itemSortFieldSchema.optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

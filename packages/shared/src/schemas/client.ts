@@ -46,9 +46,14 @@ export type CreateClientInput = z.infer<typeof createClientInputSchema>;
 export const updateClientInputSchema = createClientInputSchema.partial().omit({ code: true });
 export type UpdateClientInput = z.infer<typeof updateClientInputSchema>;
 
+export const clientSortFieldSchema = z.enum(['code', 'name']);
+export type ClientSortField = z.infer<typeof clientSortFieldSchema>;
+
 export const listClientsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: z.coerce.boolean().optional(),
+  sortBy: clientSortFieldSchema.optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

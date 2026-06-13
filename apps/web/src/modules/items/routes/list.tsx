@@ -12,6 +12,7 @@ import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tan
 import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
@@ -24,6 +25,8 @@ const PAGE_SIZE = 25;
 const listSearchSchema = z.object({
   search: z.string().optional(),
   itemType: z.enum(ITEM_TYPES).optional(),
+  sortBy: z.enum(['code', 'name']).optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -58,15 +61,25 @@ function ItemsListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       itemType: search.itemType,
+      sortBy: search.sortBy,
+      sortDir: search.sortDir,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.itemType, search.page],
+    [search.search, search.itemType, search.sortBy, search.sortDir, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
 
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  const toggleSort = useCallback(
+    (field: 'code' | 'name') => {
+      const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
+      void navigate({ search: (prev) => ({ ...prev, ...next, page: 1 }), replace: true });
+    },
+    [navigate, search.sortBy, search.sortDir],
+  );
 
   const softDelete = useSoftDeleteItem();
   const { data: company } = useMyCompany();
@@ -123,7 +136,15 @@ function ItemsListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<Item>[]>(
     () => [
       {
-        header: 'Item Code',
+        header: () => (
+          <SortTh
+            label="Item Code"
+            field="code"
+            sortBy={search.sortBy}
+            sortDir={search.sortDir}
+            onSort={toggleSort}
+          />
+        ),
         accessorKey: 'code',
         cell: ({ row }) => (
           <Link
@@ -137,7 +158,15 @@ function ItemsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: () => (
+          <SortTh
+            label="Name"
+            field="name"
+            sortBy={search.sortBy}
+            sortDir={search.sortDir}
+            onSort={toggleSort}
+          />
+        ),
         accessorKey: 'name',
         cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
       },
@@ -221,7 +250,7 @@ function ItemsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [canWrite, softDelete, printDrawing],
+    [canWrite, softDelete, printDrawing, search.sortBy, search.sortDir, toggleSort],
   );
 
   const table = useReactTable({

@@ -12,8 +12,9 @@ import type { ListVendorsQuery, Vendor } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
@@ -24,6 +25,8 @@ const PAGE_SIZE = 25;
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
+  sortBy: z.enum(['code', 'name']).optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().positive().default(1),
 });
 
@@ -71,14 +74,24 @@ function VendorsListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       isActive: isActiveFilter,
+      sortBy: search.sortBy,
+      sortDir: search.sortDir,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [search.search, isActiveFilter, search.page],
+    [search.search, isActiveFilter, search.sortBy, search.sortDir, search.page],
   );
 
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  const toggleSort = useCallback(
+    (field: 'code' | 'name') => {
+      const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
+      void navigate({ search: (prev) => ({ ...prev, ...next, page: 1 }), replace: true });
+    },
+    [navigate, search.sortBy, search.sortDir],
+  );
 
   const softDelete = useSoftDeleteVendor();
 
@@ -120,7 +133,15 @@ function VendorsListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<Vendor>[]>(
     () => [
       {
-        header: 'Code',
+        header: () => (
+          <SortTh
+            label="Code"
+            field="code"
+            sortBy={search.sortBy}
+            sortDir={search.sortDir}
+            onSort={toggleSort}
+          />
+        ),
         accessorKey: 'code',
         cell: ({ row }) => (
           <Link
@@ -134,7 +155,15 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Name',
+        header: () => (
+          <SortTh
+            label="Name"
+            field="name"
+            sortBy={search.sortBy}
+            sortDir={search.sortDir}
+            onSort={toggleSort}
+          />
+        ),
         accessorKey: 'name',
         cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
       },
@@ -245,7 +274,7 @@ function VendorsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [canWrite, softDelete],
+    [canWrite, softDelete, search.sortBy, search.sortDir, toggleSort],
   );
 
   const table = useReactTable({

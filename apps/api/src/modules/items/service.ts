@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { items } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -42,7 +42,7 @@ export async function listItems(
         .select()
         .from(items)
         .where(where)
-        .orderBy(asc(items.code))
+        .orderBy((input.sortDir === 'desc' ? desc : asc)(input.sortBy === 'name' ? items.name : items.code))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(items).where(where),

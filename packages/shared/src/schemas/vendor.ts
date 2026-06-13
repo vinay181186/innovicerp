@@ -50,9 +50,14 @@ export type CreateVendorInput = z.infer<typeof createVendorInputSchema>;
 export const updateVendorInputSchema = createVendorInputSchema.partial().omit({ code: true });
 export type UpdateVendorInput = z.infer<typeof updateVendorInputSchema>;
 
+export const vendorSortFieldSchema = z.enum(['code', 'name']);
+export type VendorSortField = z.infer<typeof vendorSortFieldSchema>;
+
 export const listVendorsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   isActive: z.coerce.boolean().optional(),
+  sortBy: vendorSortFieldSchema.optional(),
+  sortDir: z.enum(['asc', 'desc']).optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

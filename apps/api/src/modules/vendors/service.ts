@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -47,7 +47,7 @@ export async function listVendors(
         .select()
         .from(vendors)
         .where(where)
-        .orderBy(asc(vendors.code))
+        .orderBy((input.sortDir === 'desc' ? desc : asc)(input.sortBy === 'name' ? vendors.name : vendors.code))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(vendors).where(where),
