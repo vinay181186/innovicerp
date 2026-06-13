@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useSession } from '@/lib/session';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
 import { JcStatusBadge } from '../components/jc-status-badge';
@@ -294,6 +295,15 @@ function JobCardsListPage(): React.JSX.Element {
               👁 View
             </Link>
             <PrintJcButton jc={row.original} />
+            <AssignTaskButton
+              linkedRef={{
+                type: 'job_card',
+                id: row.original.id,
+                display: `JC ${row.original.code}`,
+                navPage: '/job-cards',
+              }}
+              suggestedTitle={`Follow up on JC ${row.original.code}`}
+            />
           </span>
         ),
       },

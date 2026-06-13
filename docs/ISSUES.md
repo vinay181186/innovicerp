@@ -210,7 +210,7 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 
 - **Surfaced:** 2026-06-03 (screen-by-screen parity review, SO Master)
 - **Severity:** P3 (convenience; the client-PO *number* already shows)
-- **Status:** [ ] open
+- **Status:** [x] RESOLVED 2026-06-13 — client-PO file stored in `file_registry` (category `client_po`, no new SO column); upload + ⬇View on the SO detail (`ClientPoFileBar`), 📎 link in SO Master (list service LATERAL-joins the latest active client_po file → `clientPoFilePath`). Create-form-time upload deferred (SO id only exists post-create) — upload from detail covers it.
 
 **Gap:** Legacy `renderSOmaster` (L11866) renders a 📎 link next to the Client-PO number when `clientPoFileUrl` is set, opening the uploaded client-PO document. Our SO Master shows the PO number but has no file link.
 
@@ -227,7 +227,7 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 
 - **Surfaced:** 2026-06-03 (screen-by-screen parity review, SO Master) — but it spans many screens
 - **Severity:** P3 (the Task Board already lets you assign tasks manually)
-- **Status:** [ ] open
+- **Status:** [x] RESOLVED 2026-06-13 — reusable `<AssignTaskButton linkedRef suggestedTitle />` (wraps `AssignTaskModal`, lazy user-options fetch, self-gates to admin/manager) wired into all 8 screens: SO/PR/PO/NC/GRN detail headers + CAPA/Job-Cards/Design-Issues list rows. Uses the existing Tasks `linkedRef` path (ADR-043).
 
 **Gap:** Legacy `_assignTaskFromContext` (L14360) adds an "Assign to user 👤+" button on records across **SO Master, Purchase Requests, Purchase Orders, NC Register, CAPA, Job Cards, GRN/Incoming-QC, and Design Issues**. It opens the task modal pre-filled with a `linkedRef` {type,id,display,navPage} so the assignee sees a direct link in their My Work list. None of these buttons are wired in our build.
 
@@ -244,7 +244,7 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 
 - **Surfaced:** 2026-06-03 (screen-by-screen parity review, New Sales Order form)
 - **Severity:** P3 (planning aid; not required to create/produce an SO)
-- **Status:** [ ] open
+- **Status:** [x] RESOLVED 2026-06-13 — new `so_milestones` table (migration 0056, applied to dev): SO-level lots {lotNo, qty, dueDate, remarks}, merged like lines (id→update / new→insert / absent→soft-delete). Repeatable "📅 Delivery Schedule / Milestones" section in the SO form (component SOs); read-only Delivery Schedule panel on the SO detail.
 
 **Gap:** Legacy `soHeaderForm` (L12294-12300) has a "📅 Delivery Schedule / Milestones" section on component SOs — repeatable lots of `{lot#, qty, dueDate, remarks}` (`_soMilestones`). Stored on the SO and used as a delivery plan. Our SO form has no milestones section.
 
@@ -261,7 +261,7 @@ Defer to audit phase OR when this flake blocks a release. Not caused by route-ca
 
 - **Surfaced:** 2026-06-06 (screen-by-screen parity review, Client Master)
 - **Severity:** P4 (cosmetic/convenience; search + pagination cover the need)
-- **Status:** [ ] open
+- **Status:** [x] RESOLVED 2026-06-13 (master lists) — server-side `ORDER BY` (lists are server-paginated, so client-side sort would only reorder the visible page). Added `sortBy`/`sortDir` to clients/items/vendors list query + service; reusable `<SortTh>` header (asc→desc→none, ▲/▼) drives URL search params. Other minor lists not swept (each is its own list; extend on demand using `SortTh`).
 
 **Gap:** Legacy master lists use `sTh(collection, field, label)` headers + `sArr()` to click-sort by column (e.g. Client Master sorts by Code / Client Name, L12991). None of our ported lists have click-sort — TanStack Table is wired with `getCoreRowModel` only.
 

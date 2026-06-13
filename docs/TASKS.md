@@ -83,6 +83,16 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** BACKLOG-1 (ISSUES 013–016 cleanup, ADR-048, migration 0056, 2026-06-13)
+**Title:** Clear four backlogged parity gaps in one pass (user: "complete all issue at once").
+**Status:** [x] BUILT + verified 2026-06-13 (typecheck + lint clean ×4 pkgs; **11/11 SO service tests green**). **NOT committed** — awaiting user test + "commit". Migration 0056 applied to dev DB (`_apply_0056.ts`).
+**Built:**
+- **016** Click-to-sort master lists — server-side `ORDER BY` (lists are server-paginated). `sortBy`/`sortDir` on clients/items/vendors list query + service; reusable `apps/web/src/components/shared/sortable-th.tsx` (`SortTh` + `nextSort`, asc→desc→none, ▲/▼) wired to URL search params on the 3 master lists.
+- **014** Contextual "Assign to user 👤+" — `apps/web/src/modules/tasks/components/assign-task-button.tsx` (wraps `AssignTaskModal`, lazy user-options, self-gates admin/manager); `AssignTaskModal` extended with `linkedRef`/`suggestedTitle`. Wired into SO/PR/PO/NC/GRN detail headers + CAPA/Job-Cards/Design-Issues list rows (8 screens). Reuses Tasks `linkedRef` (ADR-043).
+- **015** SO Delivery Schedule / Milestones — `so_milestones` table (migration 0056); shared `soMilestoneSchema` + `salesOrderMilestoneInputSchema` + `milestones` on create/update/detail; service insert + `mergeMilestones` + `readMilestones`; repeatable form section (component SOs) + read-only detail panel.
+- **013** SO Master client-PO 📎 — reused `file_registry` (new `client_po` category, no SO column). `ClientPoFileBar` upload + ⬇View on SO detail; SO list LATERAL-joins latest active client_po file → `clientPoFilePath` → 📎 link in Client PO cell.
+**Scoped OUT → backlog:** 016 across the other ~50 minor lists (extend via `SortTh` on demand); 013 upload at SO-create time (SO id only exists post-create — upload-from-detail covers it).
+
 **ID:** SODOC-1 (SO Documents module — unified file_registry, ADR-047, migration 0055, 2026-06-11)
 **Title:** Screen-by-screen parity: Sales → SO Documents (legacy `renderSODocs` L19478). User chose the largest of three architecture options: a system-wide unified `file_registry` table (not per-module), plus surfacing existing QC docs read-only.
 **Status:** [x] DONE 2026-06-13 — user-tested `/so-documents` and approved; **committed + pushed**. **Migration 0055 applied to dev DB** (additive, new `file_registry` table only — via gitignored `apps/api/src/_apply_0055.ts`).

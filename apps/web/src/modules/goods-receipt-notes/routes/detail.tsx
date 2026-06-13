@@ -4,6 +4,7 @@ import type { GoodsReceiptNoteDetail, GoodsReceiptNoteLineDetail } from '@innovi
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
@@ -80,6 +81,15 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <AssignTaskButton
+              linkedRef={{
+                type: 'grn',
+                id: detail.id,
+                display: `GRN ${detail.code}`,
+                navPage: `/goods-receipt-notes/${detail.id}`,
+              }}
+              suggestedTitle={`Follow up on GRN ${detail.code}`}
+            />
             {detail.purchaseOrderId ? (
               <Link
                 to="/purchase-orders/$id"

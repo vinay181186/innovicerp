@@ -21,6 +21,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
+import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
 import {
@@ -34,6 +35,16 @@ import { SoStatusBadge } from '../components/so-status-badge';
 import { downloadSoTemplate, parseSoImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
+
+/** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
+async function openClientPoFile(storagePath: string): Promise<void> {
+  try {
+    const url = await soDocSignedUrl(storagePath);
+    window.open(url, '_blank', 'noopener');
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : 'Could not open file');
+  }
+}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -177,7 +188,22 @@ function SalesOrdersListPage(): React.JSX.Element {
       { header: 'Customer', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
       {
         header: 'Client PO',
-        cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>,
+        cell: ({ row }) => (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>
+            {row.original.clientPoFilePath ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '0 4px', fontSize: 12 }}
+                title="View client PO document"
+                onClick={() => void openClientPoFile(row.original.clientPoFilePath!)}
+              >
+                📎
+              </button>
+            ) : null}
+          </span>
+        ),
       },
       {
         header: 'Type',

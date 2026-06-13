@@ -73,6 +73,18 @@ export const salesOrderLineSchema = z.object({
 });
 export type SalesOrderLine = z.infer<typeof salesOrderLineSchema>;
 
+/** SO delivery-schedule milestone (ISSUE-015). One delivery lot planned for the
+ *  SO (legacy `_soMilestones` row). SO-level, not per-line. */
+export const soMilestoneSchema = z.object({
+  id: z.string().uuid(),
+  salesOrderId: z.string().uuid(),
+  lotNo: z.number().int(),
+  qty: z.number().int().nonnegative(),
+  dueDate: z.string().nullable(), // ISO date
+  remarks: z.string().nullable(),
+});
+export type SoMilestone = z.infer<typeof soMilestoneSchema>;
+
 export const salesOrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
@@ -96,9 +108,14 @@ export const salesOrderSchema = z.object({
 });
 export type SalesOrder = z.infer<typeof salesOrderSchema>;
 
-/** Detail response: header + ordered lines (open lines first, then by lineNo). */
+/** Detail response: header + ordered lines (open lines first, then by lineNo)
+ *  + delivery-schedule milestones (ordered by lotNo). */
 export const salesOrderDetailSchema = salesOrderSchema.extend({
   lines: z.array(salesOrderLineSchema),
+  milestones: z.array(soMilestoneSchema).default([]),
+  // Storage path of the latest active client-PO file in file_registry (ISSUE-013),
+  // null when none uploaded. UI renders a 📎 view link + an upload control.
+  clientPoFilePath: z.string().nullable().default(null),
 });
 export type SalesOrderDetail = z.infer<typeof salesOrderDetailSchema>;
 
@@ -110,6 +127,10 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
   totalQty: z.number().int().nonnegative(),
   jcQty: z.number().int().nonnegative(),
   earliestDueDate: z.string().nullable(),
+  // 📎 client-PO file link (ISSUE-013): latest active file_registry row with
+  // category 'client_po' for this SO; null when none. Mirrors legacy
+  // renderSOmaster clientPoFileUrl paperclip (L11866).
+  clientPoFilePath: z.string().nullable().default(null),
 });
 export type SalesOrderListItem = z.infer<typeof salesOrderListItemSchema>;
 
@@ -148,6 +169,20 @@ export const salesOrderLineInputSchema = z
   });
 export type SalesOrderLineInput = z.infer<typeof salesOrderLineInputSchema>;
 
+/** Per-milestone input (ISSUE-015). `id` set when updating an existing lot;
+ *  rows absent from an update payload are soft-deleted (line-merge semantics). */
+export const salesOrderMilestoneInputSchema = z.object({
+  id: z.string().uuid().optional(),
+  lotNo: z.number().int().positive(),
+  qty: z.coerce.number().int().nonnegative().default(0),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
+    .optional(),
+  remarks: z.string().max(500).optional(),
+});
+export type SalesOrderMilestoneInput = z.infer<typeof salesOrderMilestoneInputSchema>;
+
 const _soHeaderInputBase = z.object({
   code: z
     .string()
@@ -179,6 +214,7 @@ export const createSalesOrderInputSchema = z
       { message: 'clientId or customerName is required (per ADR-012 #9)' },
     ),
     lines: z.array(salesOrderLineInputSchema).default([]),
+    milestones: z.array(salesOrderMilestoneInputSchema).optional(),
   })
   .refine((i) => i.header.type === 'equipment' || i.lines.length > 0, {
     message: 'At least one line is required for non-Equipment SOs (legacy line 12442)',
@@ -205,6 +241,7 @@ export const updateSalesOrderInputSchema = z.object({
       { message: 'clientId or customerName must remain populated' },
     ),
   lines: z.array(salesOrderLineInputSchema).optional(),
+  milestones: z.array(salesOrderMilestoneInputSchema).optional(),
 });
 export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
 

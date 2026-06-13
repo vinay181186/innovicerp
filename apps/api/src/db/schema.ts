@@ -1124,6 +1124,56 @@ export const salesOrderLines = pgTable(
   ],
 ).enableRLS();
 
+// SO Delivery Schedule / Milestones (ISSUE-015, migration 0056). Legacy
+// soHeaderForm "📅 Delivery Schedule / Milestones": repeatable delivery lots
+// {lot#, qty, dueDate, remarks} planned against an SO (`_soMilestones`). SO-level
+// (not per-line). Child rows merged like sales_order_lines — soft-delete rows
+// absent from an update payload.
+export const soMilestones = pgTable(
+  'so_milestones',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    lotNo: integer('lot_no').notNull(),
+    qty: integer('qty').notNull().default(0),
+    dueDate: date('due_date'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('so_milestones_so_idx')
+      .on(t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('so_milestones_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('so_milestones_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type SoMilestoneRow = typeof soMilestones.$inferSelect;
+export type NewSoMilestoneRow = typeof soMilestones.$inferInsert;
+
 export const jobWorkOrders = pgTable(
   'job_work_orders',
   {

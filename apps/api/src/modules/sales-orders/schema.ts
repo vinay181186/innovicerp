@@ -19,5 +19,7 @@ export type {
   SalesOrderLine,
   SalesOrderLineInput,
   SalesOrderListItem,
+  SalesOrderMilestoneInput,
+  SoMilestone,
   UpdateSalesOrderInput,
 } from '@innovic/shared';

@@ -46,11 +46,12 @@ export function useTaskDetail(id: string | undefined) {
   });
 }
 
-export function useTaskUserOptions() {
+export function useTaskUserOptions(enabled = true) {
   return useQuery<{ options: TaskUserOption[] }>({
     queryKey: taskKeys.userOptions(),
     queryFn: () => apiFetch<{ options: TaskUserOption[] }>('/tasks/user-options'),
     staleTime: 60_000,
+    enabled,
   });
 }
 

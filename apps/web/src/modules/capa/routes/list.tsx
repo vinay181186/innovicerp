@@ -15,6 +15,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useUsersList } from '@/modules/users/api';
@@ -212,23 +213,34 @@ function CapaPage(): React.JSX.Element {
                           </span>
                         </td>
                         <td>
-                          {canWrite && c.status !== 'Closed' ? (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setModal({ kind: 'edit', capa: c })}
-                            >
-                              ✏ Edit
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setModal({ kind: 'edit', capa: c })}
-                            >
-                              👁 View
-                            </button>
-                          )}
+                          <span style={{ display: 'inline-flex', gap: 4 }}>
+                            {canWrite && c.status !== 'Closed' ? (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setModal({ kind: 'edit', capa: c })}
+                              >
+                                ✏ Edit
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setModal({ kind: 'edit', capa: c })}
+                              >
+                                👁 View
+                              </button>
+                            )}
+                            <AssignTaskButton
+                              linkedRef={{
+                                type: 'capa',
+                                id: c.id,
+                                display: `CAPA ${c.code}`,
+                                navPage: '/capa',
+                              }}
+                              suggestedTitle={`Action CAPA ${c.code}`}
+                            />
+                          </span>
                         </td>
                       </tr>
                     ))

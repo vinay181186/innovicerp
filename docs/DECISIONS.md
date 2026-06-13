@@ -1916,6 +1916,51 @@ via the JC's `source_so_line_id`) — not duplicated into the registry. Other pr
 - Negative: two file-metadata tables co-exist (`qc_documents` + `file_registry`) until/unless QC migrates; SO Documents must UNION them.
 - Risks: registry isn't yet the single source of truth (only SO-docs uploads + read-only QC today); ZIP/archive power features deferred to backlog.
 
+## ADR-048: Backlog cleanup pass — ISSUES 013–016 (migration 0056)
+
+**Date:** 2026-06-13
+**Status:** Accepted
+
+### Context
+
+Four backlogged parity gaps were cleared in one pass after the user asked to "complete all
+issue at once": 013 (SO Master client-PO 📎), 014 (contextual "Assign to user 👤+"), 015
+(SO delivery-schedule milestones), 016 (click-to-sort master list headers).
+
+### Decision
+
+- **016 — server-side sort, not client.** The master lists are server-paginated, so
+  `getSortedRowModel` would reorder only the visible 25 rows. Added `sortBy`/`sortDir` to the
+  clients/items/vendors list query + service (`ORDER BY` on code|name, default code asc) and a
+  reusable `<SortTh>` header (asc→desc→none) driving URL search params. Scoped to the three
+  canonical master lists where the gap surfaced; other lists extend on demand via `SortTh`.
+- **014 — reuse the Tasks `linkedRef` path (ADR-043), build only the UI.** One reusable
+  `<AssignTaskButton>` (wraps `AssignTaskModal`, lazy user-options fetch so it costs no request
+  until opened, self-gates to admin/manager) dropped into all 8 legacy `_assignTaskFromContext`
+  call sites.
+- **015 — dedicated `so_milestones` table (migration 0056).** SO-level lots {lotNo, qty,
+  dueDate, remarks}, merged with the same id→update / new→insert / absent→soft-delete semantics
+  as sales_order_lines. Repeatable form section (component SOs) + read-only detail panel.
+- **013 — reuse `file_registry`, no new SO column.** Client-PO file is a `file_registry` row
+  with the new `client_po` category. Upload + ⬇View on the SO detail (`ClientPoFileBar`); SO
+  Master list LATERAL-joins the latest active client_po file → 📎 link. Create-form-time upload
+  deferred (the SO id only exists post-create); upload-from-detail covers the gap.
+
+### Alternatives Considered
+
+- 013 add `client_po_file_url` columns to `sales_orders` — rejected: `file_registry` (ADR-047)
+  already models exactly this; a column would fork file storage again.
+- 015 store milestones as jsonb on `sales_orders` — rejected: violates the no-JSON-blob rule
+  (CLAUDE.md §12); a child table merges cleanly and is queryable.
+- 016 client-side `getSortedRowModel` — rejected: only sorts the loaded page, misleading on
+  paginated data.
+
+### Consequences
+
+- Positive: four parity gaps closed; reusable `SortTh` + `AssignTaskButton` primitives for the rest of the app; `file_registry` gains its second producer (client-PO), validating the ADR-047 unified-registry bet.
+- Negative: `so_milestones` is a new table to back up/migrate; sort is only on three lists so far (inconsistent until others adopt `SortTh`).
+- Risks: low — all additive; 11/11 SO service tests green after the SO read/write changes.
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

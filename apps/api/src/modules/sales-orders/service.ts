@@ -11,15 +11,17 @@
 // is omitted, only the header is updated; existing lines untouched. This
 // avoids the footgun where a header-only PATCH would wipe lines.
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   clients,
+  fileRegistry,
   invoiceLines,
   invoices,
   items,
   jobCards,
   salesOrderLines,
   salesOrders,
+  soMilestones,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -44,6 +46,8 @@ import type {
   SalesOrderLine,
   SalesOrderLineInput,
   SalesOrderListItem,
+  SalesOrderMilestoneInput,
+  SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
 
@@ -206,7 +210,8 @@ export async function listSalesOrders(
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
         line_agg.earliest_due_date::text      AS "earliestDueDate",
-        COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty"
+        COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty",
+        cpo_file.storage_path                 AS "clientPoFilePath"
       FROM public.sales_orders so
       LEFT JOIN (
         SELECT sales_order_id,
@@ -224,6 +229,16 @@ export async function listSalesOrders(
         WHERE jc.deleted_at IS NULL
         GROUP BY sol.sales_order_id
       ) jc_agg ON jc_agg.sales_order_id = so.id
+      LEFT JOIN LATERAL (
+        SELECT fr.storage_path
+        FROM public.file_registry fr
+        WHERE fr.sales_order_id = so.id
+          AND fr.category = 'client_po'
+          AND fr.status = 'active'
+          AND fr.deleted_at IS NULL
+        ORDER BY fr.created_at DESC
+        LIMIT 1
+      ) cpo_file ON true
       WHERE so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
         ${searchFrag}
@@ -280,6 +295,7 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     totalQty: Number(r['totalQty'] ?? 0),
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
+    clientPoFilePath: (r['clientPoFilePath'] as string | null) ?? null,
   };
 }
 
@@ -354,6 +370,9 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       jcRows.filter((r) => r.lineId).map((r) => [r.lineId as string, Number(r.jcQty)]),
     );
 
+    const milestones = await readMilestones(tx, id);
+    const clientPoFilePath = await readClientPoFilePath(tx, id);
+
     return {
       ...toSalesOrder(header),
       lines: lineRows.map((r) => ({
@@ -361,6 +380,8 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         billedQty: billedByLine.get(r.row.id) ?? 0,
         jcQty: jcByLine.get(r.row.id) ?? 0,
       })),
+      milestones,
+      clientPoFilePath,
     };
   });
 }
@@ -428,6 +449,48 @@ function toSalesOrderLine(
         : String(row.deletedAt)
       : null,
   };
+}
+
+function toSoMilestone(row: typeof soMilestones.$inferSelect): SoMilestone {
+  return {
+    id: row.id,
+    salesOrderId: row.salesOrderId,
+    lotNo: row.lotNo,
+    qty: row.qty,
+    dueDate: row.dueDate,
+    remarks: row.remarks,
+  };
+}
+
+/** Read non-deleted milestones for an SO, ordered by lot number. */
+async function readMilestones(tx: DbTransaction, salesOrderId: string): Promise<SoMilestone[]> {
+  const rows = await tx
+    .select()
+    .from(soMilestones)
+    .where(and(eq(soMilestones.salesOrderId, salesOrderId), isNull(soMilestones.deletedAt)))
+    .orderBy(asc(soMilestones.lotNo));
+  return rows.map(toSoMilestone);
+}
+
+/** Latest active client-PO file path from the unified registry (ISSUE-013). */
+async function readClientPoFilePath(
+  tx: DbTransaction,
+  salesOrderId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ storagePath: fileRegistry.storagePath })
+    .from(fileRegistry)
+    .where(
+      and(
+        eq(fileRegistry.salesOrderId, salesOrderId),
+        eq(fileRegistry.category, 'client_po'),
+        eq(fileRegistry.status, 'active'),
+        isNull(fileRegistry.deletedAt),
+      ),
+    )
+    .orderBy(desc(fileRegistry.createdAt))
+    .limit(1);
+  return rows[0]?.storagePath ?? null;
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -543,9 +606,32 @@ export async function createSalesOrder(
       }
     }
 
+    // Insert delivery-schedule milestones (ISSUE-015).
+    const inputMilestones = input.milestones ?? [];
+    let insertedMilestones: Array<typeof soMilestones.$inferSelect> = [];
+    if (inputMilestones.length > 0) {
+      insertedMilestones = await tx
+        .insert(soMilestones)
+        .values(
+          inputMilestones.map((m) => ({
+            companyId,
+            salesOrderId: header.id,
+            lotNo: m.lotNo,
+            qty: m.qty,
+            dueDate: m.dueDate ?? null,
+            remarks: m.remarks ?? null,
+            createdBy: user.id,
+            updatedBy: user.id,
+          })),
+        )
+        .returning();
+    }
+
     return {
       ...toSalesOrder(header),
       lines: insertedLines.map((row) => toSalesOrderLine(row)),
+      milestones: insertedMilestones.map(toSoMilestone),
+      clientPoFilePath: null,
     };
   });
 }
@@ -599,6 +685,11 @@ export async function updateSalesOrder(
       await mergeLines(tx, id, companyId, input.lines, user);
     }
 
+    // Milestones merge — same option-C semantics (only when provided).
+    if (input.milestones !== undefined) {
+      await mergeMilestones(tx, id, companyId, input.milestones, user);
+    }
+
     // Re-read for response
     const updatedHdrRows = await tx
       .select()
@@ -610,6 +701,8 @@ export async function updateSalesOrder(
       .from(salesOrderLines)
       .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)))
       .orderBy(asc(salesOrderLines.lineNo));
+    const milestones = await readMilestones(tx, id);
+    const clientPoFilePath = await readClientPoFilePath(tx, id);
 
     const updatedHdr = updatedHdrRows[0]!;
     await emitActivityLog(
@@ -627,8 +720,74 @@ export async function updateSalesOrder(
     return {
       ...toSalesOrder(updatedHdr),
       lines: lineRows.map((row) => toSalesOrderLine(row)),
+      milestones,
+      clientPoFilePath,
     };
   });
+}
+
+/** Merge SO milestones with the same id-match → update / new → insert /
+ *  absent → soft-delete semantics as mergeLines (ISSUE-015). */
+async function mergeMilestones(
+  tx: DbTransaction,
+  salesOrderId: string,
+  companyId: string,
+  inputMilestones: SalesOrderMilestoneInput[],
+  user: AuthContext,
+): Promise<void> {
+  const existing = await tx
+    .select({ id: soMilestones.id })
+    .from(soMilestones)
+    .where(and(eq(soMilestones.salesOrderId, salesOrderId), isNull(soMilestones.deletedAt)));
+  const existingIds = new Set(existing.map((e) => e.id));
+
+  const seenInputIds = new Set<string>();
+  const toInsert: SalesOrderMilestoneInput[] = [];
+  const toUpdate: Array<{ id: string; data: SalesOrderMilestoneInput }> = [];
+  for (const m of inputMilestones) {
+    if (m.id && existingIds.has(m.id)) {
+      seenInputIds.add(m.id);
+      toUpdate.push({ id: m.id, data: m });
+    } else {
+      toInsert.push(m);
+    }
+  }
+
+  const absentIds = [...existingIds].filter((eid) => !seenInputIds.has(eid));
+  if (absentIds.length > 0) {
+    await tx
+      .update(soMilestones)
+      .set({ deletedAt: new Date(), updatedBy: user.id })
+      .where(inArray(soMilestones.id, absentIds));
+  }
+
+  for (const u of toUpdate) {
+    await tx
+      .update(soMilestones)
+      .set({
+        lotNo: u.data.lotNo,
+        qty: u.data.qty,
+        dueDate: u.data.dueDate ?? null,
+        remarks: u.data.remarks ?? null,
+        updatedBy: user.id,
+      })
+      .where(eq(soMilestones.id, u.id));
+  }
+
+  if (toInsert.length > 0) {
+    await tx.insert(soMilestones).values(
+      toInsert.map((m) => ({
+        companyId,
+        salesOrderId,
+        lotNo: m.lotNo,
+        qty: m.qty,
+        dueDate: m.dueDate ?? null,
+        remarks: m.remarks ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })),
+    );
+  }
 }
 
 async function mergeLines(

@@ -41,6 +41,14 @@ interface LineFormValue {
   status?: SoStatus | undefined;
 }
 
+interface MilestoneFormValue {
+  id?: string | undefined;
+  lotNo: number;
+  qty: number;
+  dueDate?: string | undefined;
+  remarks?: string | undefined;
+}
+
 interface FormValues {
   header: {
     code: string;
@@ -57,6 +65,7 @@ interface FormValues {
     remarks?: string;
   };
   lines: LineFormValue[];
+  milestones: MilestoneFormValue[];
 }
 
 const HEADER_DEFAULTS: FormValues['header'] = {
@@ -67,6 +76,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   gstPercent: 18,
 };
 const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
+const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
 type CreateMode = {
   mode: 'create';
@@ -89,12 +99,17 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
-    : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
+    : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }], milestones: [] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
   const errors = formState.errors;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const {
+    fields: msFields,
+    append: appendMs,
+    remove: removeMs,
+  } = useFieldArray({ control, name: 'milestones' });
 
   const { data: clientsData } = useClientsList({ limit: 200, offset: 0 });
   const clients = clientsData?.clients ?? [];
@@ -177,12 +192,27 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       };
     });
 
+    // Delivery-schedule milestones (ISSUE-015) — component SOs only.
+    const milestonesOut = equip
+      ? []
+      : (values.milestones ?? []).map((m) => ({
+          ...(m.id ? { id: m.id } : {}),
+          lotNo: Number(m.lotNo) || 1,
+          qty: Number(m.qty) || 0,
+          dueDate: m.dueDate || undefined,
+          remarks: m.remarks?.trim() || undefined,
+        }));
+
     if (isEdit) {
       const { code: _drop, ...headerNoCode } = headerOut;
       void _drop;
-      await props.onSubmit({ header: headerNoCode, lines: linesOut });
+      await props.onSubmit({ header: headerNoCode, lines: linesOut, milestones: milestonesOut });
     } else {
-      await props.onSubmit({ header: headerOut, lines: linesOut } as CreateSalesOrderInput);
+      await props.onSubmit({
+        header: headerOut,
+        lines: linesOut,
+        milestones: milestonesOut,
+      } as CreateSalesOrderInput);
     }
   };
 
@@ -372,6 +402,41 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
             <Tot label="Grand Total" value={grand} bold />
           </div>
+
+          {/* Delivery Schedule / Milestones (ISSUE-015, legacy L12294) */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>📅 Delivery Schedule / Milestones</div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
+            </div>
+            {msFields.length === 0 ? (
+              <div className="text3" style={{ fontSize: 11 }}>No delivery lots planned. Optional — click <strong>Add Lot</strong> to schedule partial deliveries.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {msFields.map((field, idx) => (
+                  <div key={field.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, background: 'var(--bg2)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div className="form-grp" style={{ width: 80 }}>
+                      <label className="form-label">Lot #</label>
+                      <input type="number" min={1} className="innovic-input" {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} />
+                    </div>
+                    <div className="form-grp" style={{ width: 110 }}>
+                      <label className="form-label">Qty</label>
+                      <input type="number" min={0} className="innovic-input" {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} />
+                    </div>
+                    <div className="form-grp" style={{ width: 160 }}>
+                      <label className="form-label">Due Date</label>
+                      <input type="date" className="innovic-input" {...register(`milestones.${idx}.dueDate` as const)} />
+                    </div>
+                    <div className="form-grp" style={{ flex: 1, minWidth: 160 }}>
+                      <label className="form-label">Remarks</label>
+                      <input className="innovic-input" autoComplete="off" {...register(`milestones.${idx}.remarks` as const)} />
+                    </div>
+                    <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -433,5 +498,12 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
             status: l.status,
           }))
         : [{ ...NEW_LINE }],
+    milestones: detail.milestones.map((m): MilestoneFormValue => ({
+      id: m.id,
+      lotNo: m.lotNo,
+      qty: m.qty,
+      ...(m.dueDate ? { dueDate: m.dueDate } : {}),
+      ...(m.remarks ? { remarks: m.remarks } : {}),
+    })),
   };
 }

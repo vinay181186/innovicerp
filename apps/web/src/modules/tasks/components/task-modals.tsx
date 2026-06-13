@@ -2,7 +2,7 @@
 // (assignee or manager). Mirror of legacy _addTask / _viewTask /
 // _updateTaskStatus.
 
-import type { TaskDetail, TaskRow, TaskUserOption } from '@innovic/shared';
+import type { TaskDetail, TaskLinkedRef, TaskRow, TaskUserOption } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '@innovic/shared';
 import { useState } from 'react';
 import { useCreateTask, useTaskDetail, useUpdateTaskStatus } from '../api';
@@ -46,16 +46,22 @@ export function Overlay(props: {
 }
 
 // ── Assign Task (admin/manager) ──
+// `linkedRef` + `suggestedTitle` let other record screens open this modal
+// pre-filled so the assignee gets a direct link in My Work (ISSUE-014).
 export function AssignTaskModal({
   users,
   onClose,
+  linkedRef,
+  suggestedTitle,
 }: {
   users: TaskUserOption[];
   onClose: () => void;
+  linkedRef?: TaskLinkedRef | null | undefined;
+  suggestedTitle?: string | undefined;
 }): React.JSX.Element {
   const create = useCreateTask();
   const [assignedTo, setAssignedTo] = useState(users[0]?.id ?? '');
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(suggestedTitle ?? '');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<(typeof TASK_PRIORITIES)[number]>('medium');
   const [dueDate, setDueDate] = useState('');
@@ -73,6 +79,7 @@ export function AssignTaskModal({
         assignedTo,
         priority,
         dueDate,
+        linkedRef: linkedRef ?? undefined,
       });
       onClose();
     } catch (e) {
@@ -82,6 +89,11 @@ export function AssignTaskModal({
 
   return (
     <Overlay title="📋 Assign Task" onClose={onClose}>
+      {linkedRef ? (
+        <div style={{ marginBottom: 10, fontSize: 11, color: 'var(--text2)' }}>
+          🔗 Linked to: <b>{linkedRef.display}</b>
+        </div>
+      ) : null}
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">Assign To ★</label>

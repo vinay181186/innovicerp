@@ -4,6 +4,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignIssuesAll } from '../api';
 
@@ -117,6 +118,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
                   <th>Assigned To</th>
                   <th>Date</th>
                   <th>Age</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -150,6 +152,17 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}
                       >
                         {i.ageDays}d
+                      </td>
+                      <td>
+                        <AssignTaskButton
+                          linkedRef={{
+                            type: 'design_issue',
+                            id: i.id,
+                            display: `Design issue: ${i.title}`,
+                            navPage: `/design-projects/${i.designProjectId}`,
+                          }}
+                          suggestedTitle={`Resolve design issue: ${i.title}`}
+                        />
                       </td>
                     </tr>
                   );

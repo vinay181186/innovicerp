@@ -4,6 +4,7 @@ import type { PurchaseRequest } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseRequest, useSoftDeletePurchaseRequest } from '../api';
@@ -80,6 +81,15 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <AssignTaskButton
+              linkedRef={{
+                type: 'purchase_request',
+                id: detail.id,
+                display: `PR ${detail.code}`,
+                navPage: `/purchase-requests/${detail.id}`,
+              }}
+              suggestedTitle={`Follow up on PR ${detail.code}`}
+            />
             {(detail.status === 'open' || detail.status === 'approved') && canWrite(me?.role) ? (
               <Link
                 to="/purchase-orders/from-pr"

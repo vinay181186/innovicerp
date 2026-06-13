@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -153,6 +154,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <AssignTaskButton
+              linkedRef={{
+                type: 'purchase_order',
+                id: detail.id,
+                display: `PO ${detail.code}`,
+                navPage: `/purchase-orders/${detail.id}`,
+              }}
+              suggestedTitle={`Follow up on PO ${detail.code}`}
+            />
             {showApprovalActions ? (
               <>
                 <button

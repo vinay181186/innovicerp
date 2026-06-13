@@ -6,6 +6,7 @@ import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 
 import { useState } from 'react';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -166,6 +167,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <AssignTaskButton
+              linkedRef={{
+                type: 'nc',
+                id: detail.id,
+                display: `NC ${detail.code}`,
+                navPage: `/nc-register/${detail.id}`,
+              }}
+              suggestedTitle={`Action NC ${detail.code}`}
+            />
             {isPending && canEdit ? (
               <button
                 type="button"

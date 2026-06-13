@@ -1,13 +1,26 @@
 // Sales Order detail (UI-003-05).
 
 import type { SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSalesOrder, useSoftDeleteSalesOrder } from '../api';
+import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
+
+/** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
+async function openClientPoFile(storagePath: string): Promise<void> {
+  try {
+    const url = await soDocSignedUrl(storagePath);
+    window.open(url, '_blank', 'noopener');
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : 'Could not open file');
+  }
+}
 
 export const salesOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -82,6 +95,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
+            <AssignTaskButton
+              linkedRef={{
+                type: 'sales_order',
+                id: detail.id,
+                display: `SO ${detail.code}`,
+                navPage: `/sales-orders/${detail.id}`,
+              }}
+              suggestedTitle={`Follow up on SO ${detail.code}`}
+            />
             <Link
               to="/sales-orders/$id/status"
               params={{ id: detail.id }}
@@ -161,6 +183,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
+      <ClientPoFileBar detail={detail} canEdit={canEdit} companyId={me?.companyId ?? null} />
+
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title">Line items ({detail.lines.length})</div>
@@ -206,6 +230,131 @@ function SalesOrderDetailPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {detail.milestones.length > 0 ? (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-hdr">
+            <div className="panel-title">📅 Delivery Schedule ({detail.milestones.length})</div>
+          </div>
+          <div className="panel-body">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>Lot #</th>
+                  <th>Qty</th>
+                  <th>Due Date</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.milestones.map((m) => (
+                  <tr key={m.id}>
+                    <td className="mono fw-700">{m.lotNo}</td>
+                    <td className="mono">{m.qty}</td>
+                    <td style={{ fontSize: 12 }}>{m.dueDate ?? '—'}</td>
+                    <td style={{ fontSize: 12 }}>{m.remarks ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Client-PO document bar (ISSUE-013). Stores the client PO file in the unified
+// file_registry (category 'client_po') via the SO Documents producer, then
+// refreshes this SO's detail so the 📎 link + SO Master paperclip light up.
+function ClientPoFileBar({
+  detail,
+  canEdit,
+  companyId,
+}: {
+  detail: SalesOrderDetail;
+  canEdit: boolean;
+  companyId: string | null;
+}): React.JSX.Element {
+  const createDoc = useCreateSoDocument();
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onPick(file: File): Promise<void> {
+    if (!companyId) {
+      setErr('No company on session — cannot upload.');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const storagePath = await uploadSoDocFile(file, companyId);
+      await createDoc.mutateAsync({
+        salesOrderId: detail.id,
+        soCodeText: detail.code,
+        category: 'client_po',
+        docType: 'Client PO',
+        fileName: file.name,
+        storagePath,
+        fileSize: file.size,
+        fileType: file.type || undefined,
+      });
+      await qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(detail.id) });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  return (
+    <div className="panel" style={{ marginBottom: 14 }}>
+      <div
+        className="panel-body"
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', flexWrap: 'wrap' }}
+      >
+        <span className="form-label" style={{ marginBottom: 0, fontSize: 12 }}>
+          📎 Client PO Document
+        </span>
+        {detail.clientPoFilePath ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => void openClientPoFile(detail.clientPoFilePath!)}
+          >
+            ⬇ View
+          </button>
+        ) : (
+          <span className="text3" style={{ fontSize: 12 }}>
+            None uploaded
+          </span>
+        )}
+        {canEdit ? (
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy ? 'Uploading…' : detail.clientPoFilePath ? 'Replace' : 'Upload'}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onPick(f);
+              }}
+            />
+          </>
+        ) : null}
+        {err ? <span style={{ color: 'var(--red)', fontSize: 11 }}>{err}</span> : null}
       </div>
     </div>
   );
