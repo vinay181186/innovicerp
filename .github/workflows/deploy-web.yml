@@ -60,9 +60,13 @@ jobs:
       - name: Build web
         run: pnpm --filter @innovic/web build
 
+      # Run wrangler via `pnpm dlx` (isolated download) rather than
+      # cloudflare/wrangler-action: the action does `pnpm add wrangler` at the
+      # workspace root, which pnpm refuses (ERR_PNPM_ADDING_TO_ROOT). dlx is
+      # exactly the command proven locally. Token + account id via env.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/web/dist --project-name=innovic-erp --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: pnpm dlx wrangler@latest pages deploy apps/web/dist --project-name=innovic-erp --branch=main
