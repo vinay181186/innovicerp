@@ -83,6 +83,12 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** GO-LIVE-1 (trial-run deployment to innovicerp.com, 2026-06-13)
+**Title:** Deploy the web app to Cloudflare Pages on `innovicerp.com` for a 15–20 person team trial; API already live on Railway.
+**Status:** [~] PLANNED — **runbook in [`docs/GO_LIVE.md`](GO_LIVE.md)**. On "resume"/"go live"/"deploy", READ that file and start from Phase 0 (DB decision). Web build verified locally 2026-06-13 (`pnpm --filter @innovic/web build` → `apps/web/dist`).
+**Next actions Claude can do without dashboards:** (1) demo-data purge SQL, (2) migration-status checker for the live DB, (3) `.github/workflows/backup.yml`, (4) root `.npmrc` engine-strict guard. User handles Cloudflare/Railway/Supabase/Backblaze dashboards.
+**Deferred:** CRM (Leads/Reminders/Customer-360) — build after the trial run with the team.
+
 **ID:** BACKLOG-1 (ISSUES 013–016 cleanup, ADR-048, migration 0056, 2026-06-13)
 **Title:** Clear four backlogged parity gaps in one pass (user: "complete all issue at once").
 **Status:** [x] BUILT + verified 2026-06-13 (typecheck + lint clean ×4 pkgs; **11/11 SO service tests green**). **NOT committed** — awaiting user test + "commit". Migration 0056 applied to dev DB (`_apply_0056.ts`).
