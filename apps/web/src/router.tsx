@@ -154,11 +154,13 @@ import { authCallbackRoute } from './routes/auth-callback';
 import { authenticatedRoute } from './routes/_authenticated';
 import { indexRoute } from './routes/index';
 import { loginRoute } from './routes/login';
+import { resetPasswordRoute } from './routes/reset-password';
 import { rootRoute } from './routes/__root';
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
+  resetPasswordRoute,
   authenticatedRoute.addChildren([
     indexRoute,
     itemsListRoute,
