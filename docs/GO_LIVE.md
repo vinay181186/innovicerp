@@ -4,7 +4,12 @@
 > source of truth for the trial-run deployment (it lives in the repo, so it
 > travels to any machine via git — unlike the local `.claude` auto-memory).
 >
-> Status: **planned, not yet executed.** Last updated 2026-06-13.
+> Status: **WEB IS LIVE on https://innovic-erp.pages.dev (trial URL)** as of
+> 2026-06-13. API live on Railway at `https://api-production-06c90.up.railway.app`.
+> `ALLOWED_ORIGINS` on Railway already includes the pages.dev origin (verified:
+> CORS permits it, rejects others). Remaining: Phase 1 DB purge/migration-check,
+> Phase 5 onboarding, Phase 7 backups, and the custom domain (Phase 3, deferred
+> to after the trial — see GoDaddy note below). Last updated 2026-06-13.
 > CRM (Leads/Reminders/Customer-360) is intentionally **deferred** until after
 > the team trial run — do go-live first.
 
@@ -59,45 +64,92 @@ real data already entered), purge demo rows first after a backup.
 ## Phase 1 — Database prep (Supabase dashboard + Claude)
 
 1. **Back up first** — confirm Supabase daily backup, or run `pg_dump`.
-2. **Purge demo data** (Option A only) — Claude generates the SQL (`SO-DEMO-100`,
-   `DEMO-*` items, smoke users).
-3. **Verify migrations 0001–0056 are all applied** to the live project — Claude
-   can write a quick checker.
+2. **Purge demo data** (Option A only) — paste **`docs/sql/purge-demo-data.sql`**
+   into the Supabase SQL Editor and Run. Soft-deletes (reversible) `SO-DEMO-100`,
+   `SO-SMOKE-001`, `JC-DEMO-*`/`JC-SMOKE-001`, `DEMO-*` items, `CLI-DEMO`, and
+   linked dispatches/invoices/docs. Review the "purge summary" result (all 0).
+   Deactivate any throwaway test logins via System Settings → User Management.
+3. **Verify migrations are applied** — paste **`docs/sql/check-migrations.sql`**
+   into the SQL Editor and Run. Every row must read PASS (covers the recent,
+   highest-lag-risk set 0050–0056). Any MISSING → apply that migration first.
 
-## Phase 2 — Deploy web (Cloudflare dashboard — user)
+## Phase 2 — Deploy web — ✅ DONE 2026-06-13 (wrangler direct upload)
 
-4. Cloudflare → Workers & Pages → Create → Pages → Connect to Git → repo
-   `vinay181186/innovicerp`, branch `main`.
-5. Build settings (pnpm monorepo):
-   - Build command: `pnpm --filter @innovic/web build`
-   - Build output directory: `apps/web/dist`
-   - Root directory: `/`
-6. Build environment variables:
-   - `VITE_API_URL` = Railway API URL (`https://<service>.up.railway.app`)
-   - `VITE_SUPABASE_URL` = prod project URL
-   - `VITE_SUPABASE_ANON_KEY` = prod project anon key
-   - `NODE_VERSION` = `22` (repo declares Node 24, but the WEB build doesn't need
-     it and Cloudflare's image tops out lower. If install fails an engine check,
-     add a root `.npmrc` with `engine-strict=false` — there is none today.)
-7. Deploy → get the `*.pages.dev` URL.
+Done via Cloudflare API token (`cfat_` account token in `.env.local`) + wrangler,
+NOT the dashboard Git-connect flow (that needs GitHub OAuth, impossible by token).
+Reproduce / redeploy from the repo root:
 
-## Phase 3 — Domain (Cloudflare — user)
+```bash
+# token + account id read from .env.local (gitignored)
+export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
+# prod API URL override lives in .env.production.local (gitignored):
+#   VITE_API_URL=https://api-production-06c90.up.railway.app
+pnpm --filter @innovic/web build          # bakes prod VITE_* into the bundle
+pnpm dlx wrangler@latest pages deploy apps/web/dist \
+  --project-name=innovic-erp --branch=main --commit-dirty=true
+```
 
-8. Pages → Custom domains → add `innovicerp.com` (recommended: root, one URL for
-   the team). DNS already on Cloudflare = couple clicks + auto SSL; else add the
-   CNAME at the registrar.
-9. Keep the API on its Railway URL for the trial (skip `api.innovicerp.com`).
+- Project: **innovic-erp** (production branch `main`). Live: **https://innovic-erp.pages.dev**.
+- Verified post-build: no `localhost` in the bundle; Railway + Supabase URLs baked in.
+- SPA deep-link fallback (`_redirects`) confirmed working (deep route → 200).
+- Future deploys: re-run the two commands above, OR add the auto-deploy GitHub
+  Action (see Follow-ups) so every push to `main` redeploys.
 
-## Phase 4 — Connect API ↔ web (Railway — user) ⚠️ CRITICAL
+## Phase 3 — Custom domain (DEFERRED to after the trial)
 
-10. Railway → API service → Variables → set
-    `ALLOWED_ORIGINS=https://innovicerp.com` (add `https://www.innovicerp.com` if
-    used). API will not boot in prod without it. Railway auto-redeploys on save.
+Domain `innovicerp.com` is registered at **GoDaddy** (not Cloudflare). Trial runs
+on `innovic-erp.pages.dev` first to de-risk launch. When ready to attach the domain:
+- **Recommended:** move DNS to Cloudflare (change the 2 nameservers at GoDaddy →
+  Cloudflare). Free, auto-SSL, apex works, and DNS becomes token-manageable.
+  ⚠️ Before the NS switch propagates, confirm Cloudflare imported any existing
+  MX/TXT records so email/other services don't break.
+- **Alternative:** keep DNS at GoDaddy, add a CNAME to the pages.dev host (apex is
+  awkward over CNAME — prefer `www` or GoDaddy forwarding).
+- Then: Cloudflare Pages → project → Custom domains → add the domain, AND append
+  the new origin to Railway `ALLOWED_ORIGINS` (see Phase 4).
+
+## Phase 4 — Connect API ↔ web (Railway) — ✅ DONE 2026-06-13
+
+`ALLOWED_ORIGINS` on Railway already includes `https://innovic-erp.pages.dev`
+(verified 2026-06-13: OPTIONS preflight from that origin returns
+`access-control-allow-origin`; a bogus origin returns none → real allowlist, not
+a wildcard echo). When the custom domain is added later, append it here too.
 
 ## Phase 5 — Onboard the team (in the app — user)
 
 11. Login as admin → User Management → + Add User for each of the 15–20 people
     (admin sets each initial password). Hand out email + password.
+
+### Login & onboarding — USE PASSWORDS, not magic links (lesson 2026-06-13)
+
+The login page offers two modes: **password** (email + password) and **magic link**
+(email OTP). **Tell the team to use password login.** Magic link failed on the
+first live attempt with `{"code":403,"error_code":"otp_expired"}` because:
+
+- **Email link scanners consume the single-use token before the human clicks.**
+  The office runs eScan/Seclore DLP and Gmail also pre-scans links — opening the
+  one-time link first burns it, so by the time you click you get `otp_expired`.
+- **Magic-link redirect must be allow-listed in Supabase** (see below) or the
+  callback to `…pages.dev/auth/callback` never completes.
+
+Password login sidesteps all of it and is what **+ Add User** (SYS-2) was built
+for — admin sets each person's initial password, hands out email + password, done.
+On the login screen click **"Sign in with password instead"**. Because the trial
+runs on the **same Supabase project** used during testing (Option A), existing
+credentials work on `…pages.dev` unchanged.
+
+### Supabase Auth URL configuration (do this once — fixes magic link + password-reset emails)
+
+Supabase Dashboard → **Authentication → URL Configuration**. After go-live these
+likely still point at `localhost` from dev:
+
+- **Site URL** → `https://innovic-erp.pages.dev`
+- **Redirect URLs** (allowlist) → add `https://innovic-erp.pages.dev/auth/callback`
+  and `https://innovic-erp.pages.dev/**`
+
+Even with passwords-only, set these now: password-**reset** emails (which the team
+will eventually need) redirect through the same allowlist, and will fail the same
+way if it's wrong. When the custom domain is added later, add its URLs here too.
 
 ## Phase 6 — Smoke test before announcing (user, ~15 min)
 
@@ -108,17 +160,26 @@ real data already entered), purge demo rows first after a backup.
 
 ## Phase 7 — Backups (don't skip for a real trial — Claude + user)
 
-15. Create a Backblaze B2 bucket + app key. Claude commits
-    `.github/workflows/backup.yml` (design in `RUNBOOK.md`); user adds GitHub
-    secrets (`B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET`, `BACKUP_DATABASE_URL`,
-    `BACKUP_HEARTBEAT_URL`). Daily `pg_dump` → B2.
+15. **`.github/workflows/backup.yml` is committed** (daily 02:00 IST `pg_dump` →
+    B2, manual `workflow_dispatch` for restore drills). User: create a Backblaze
+    B2 bucket + app key, set a 30-day lifecycle rule on the bucket, then add the
+    GitHub repo secrets `B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET`,
+    `BACKUP_DATABASE_URL` (Supabase **Direct connection** string, port 5432 — not
+    the pooler), and optional `BACKUP_HEARTBEAT_URL` (Better Stack). Trigger one
+    manual run to confirm before relying on it.
 
 ## What Claude can do right now (offer these)
 
-1. Demo-data **purge SQL** (after Option A confirmed).
-2. **Migration-status checker** (confirm 0001–0056 on the live DB before launch).
-3. Commit the **`backup.yml`** GitHub Action.
-4. Add the **`.npmrc`** `engine-strict=false` guard preemptively.
+**ALL DONE 2026-06-13** (Option A confirmed) — committed alongside this update:
+
+1. ✅ Demo-data **purge SQL** → `docs/sql/purge-demo-data.sql` (soft-delete, reversible).
+2. ✅ **Migration-status checker** → `docs/sql/check-migrations.sql` (0050–0056).
+3. ✅ **`backup.yml`** GitHub Action committed (daily `pg_dump` → B2).
+4. ✅ Root **`.npmrc`** with `engine-strict=false`.
+
+Remaining is all dashboard work (next section) — Claude has nothing left to build
+for the launch itself; the next major Claude task is **CRM, deferred until after
+the trial**.
 
 ## What only the user can do (dashboard logins Claude lacks)
 
