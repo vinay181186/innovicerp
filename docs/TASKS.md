@@ -90,6 +90,17 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 **User-side remaining (dashboards):** backup → run purge SQL → run migration checker → Cloudflare Pages connect+build+domain → Railway `ALLOWED_ORIGINS=https://innovicerp.com` → onboard team (+ Add User) → smoke test → B2 bucket+secrets for backup.yml. User handles Cloudflare/Railway/Supabase/Backblaze dashboards.
 **Deferred:** CRM (Leads/Reminders/Customer-360) — build after the trial run with the team.
 
+**ID:** JC-1 (Job Cards 1:1 legacy-parity build — write layer + create/edit modal, ADR-051, 2026-06-13)
+**Title:** `/goal`: map all of Job Cards from legacy HTML, build remaining differences 1:1 incl. all logic. Legacy: renderJobCards L5739, jcModalBody L5943, addJC L6020, editJC L6076, viewJCStatus L11020, printJobCard L10582, delJC L10955, cascade L1737/1866.
+**Status:** [~] IN PROGRESS — core write parity DONE + pushed (`origin/main` @ `3623a42`). Backend 12/12 service tests green; web typecheck+lint+build clean. Remaining: viewJCStatus read view (largely covered by Op Entry), printJobCard parity check.
+**Done (gaps 5/7/8/10/11/12/14 from the comparison matrix):**
+- **Backend write layer** (`91b2ad4`+`46c5375`): `POST`/`PATCH`/`DELETE /job-cards` mirroring addJC/editJC/delJC — IN-JC-##### codes, SO/JW line balance validation (CASCADE.orderBalance, per-line), machine/vendor code→id resolution, op routing (process/qc/outsource), QC docs→file_registry, activity log, started-op guard on update (op_log FK safety), admin soft-delete.
+- **Cascade** (`3a76a2d`): `GET /job-cards/source-options` — open SO+JW lines + per-line balance (allOpenOrders+orderBalance).
+- **Edit-model** (`cc019b2`): `GET /job-cards/:id/edit` — full op detail + qc docs + hasStarted to repopulate the form.
+- **React form** (`3623a42`): `components/job-card-form.tsx` (details+cascade+balance banner+drawing+ops-routing table w/ reorder+outsource+QC ops+QC docs); routes `/job-cards/new`+`/job-cards/$id/edit`; list `+ New Job Card` + per-row Edit (canWrite) + Delete (admin). api hooks added.
+- ADR-051 records mapping (opType has no 'osp' → OSP handled at op-entry; drawing→Storage; QC docs→file_registry).
+**Remaining (this goal):** (3) viewJCStatus dedicated status view — per-op enriched table + op-log/NC/OSP timeline (Op Entry currently serves "View"); (4) printJobCard parity check vs `lib/print-job-card.ts`. No data conflicts hit so far. No migration (tables already supported writes).
+
 **ID:** SYS-3 (auth: forgot-password + admin set/reset password, ADR-049, 2026-06-13)
 **Title:** Go-live auth gaps surfaced during the trial: (a) no self-service password reset, (b) Supabase email rate-limit blocked recovery, (c) no first-admin password to log in with.
 **Status:** [x] DONE 2026-06-13 — built, typecheck+lint clean ×4 pkgs, **18/18 users service tests green** (+2), web rebuilt + redeployed to pages.dev. Committed + pushed with this batch.
