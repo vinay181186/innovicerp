@@ -70,6 +70,19 @@ export async function listUsers(
   });
 }
 
+// Find an existing Supabase Auth user by email (paginate the admin list).
+async function findAuthUserByEmail(email: string): Promise<{ id: string } | undefined> {
+  const target = email.toLowerCase();
+  for (let page = 1; page <= 50; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new ValidationError(error.message);
+    const hit = data.users.find((u) => (u.email ?? '').toLowerCase() === target);
+    if (hit) return { id: hit.id };
+    if (data.users.length < 200) break; // last page
+  }
+  return undefined;
+}
+
 export async function createUser(input: CreateUserInput, user: AuthContext): Promise<User> {
   requireAdminRole(user);
   const companyId = requireCompany(user);
@@ -88,21 +101,40 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
     user_metadata: { full_name: input.fullName },
   });
 
+  let userId: string;
   if (error || !data.user) {
     const msg = error?.message ?? 'Failed to create the auth account';
     // Supabase returns 422 with this wording when the email already has a login.
-    if (/already.*regist|already.*been.*regist|already.*exist/i.test(msg)) {
-      throw new ConflictError('A user with this email already exists');
+    if (!/already.*regist|already.*been.*regist|already.*exist/i.test(msg)) {
+      throw new ValidationError(msg);
     }
-    throw new ValidationError(msg);
+    // The Auth identity already exists. Our "delete user" is a SOFT delete of
+    // public.users — the auth account is never removed (and Trash doesn't cover
+    // users), so re-adding a previously-deleted email lands here. REVIVE it
+    // rather than dead-ending — but only when the existing profile is
+    // soft-deleted or orphaned (company_id NULL). A live, company-assigned user
+    // is a genuine duplicate: refuse, so we never silently reset a colleague's
+    // password or steal another company's user. See ADR-050.
+    const existingAuth = await findAuthUserByEmail(email);
+    if (!existingAuth) throw new ConflictError('A user with this email already exists');
+    const profile = (await db.select().from(users).where(eq(users.id, existingAuth.id)).limit(1))[0];
+    const canRevive = !profile || profile.deletedAt !== null || profile.companyId === null;
+    if (!canRevive) throw new ConflictError('A user with this email already exists');
+    // Reset the password to the new one the admin just entered.
+    const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(existingAuth.id, {
+      password: input.password,
+    });
+    if (pwErr) throw new ValidationError(pwErr.message);
+    userId = existingAuth.id;
+  } else {
+    userId = data.user.id;
   }
 
-  const newId = data.user.id;
-
-  // 2. Promote the trigger-seeded row into this company with the chosen role.
-  //    Touch it via the plain (RLS-bypassing) `db` client: the row's
-  //    company_id is still NULL, so a company-scoped context can't see it yet.
-  //    Authorization was already enforced above (requireAdminRole/Company).
+  // 2. Promote/revive the row into this company with the chosen role. Touch it
+  //    via the plain (RLS-bypassing) `db` client: a fresh trigger row has
+  //    company_id NULL (and a revived row may be soft-deleted), so a
+  //    company-scoped context can't see it yet. Authorization was already
+  //    enforced above (requireAdminRole/Company). deletedAt:null un-deletes.
   const updates = {
     companyId,
     email,
@@ -114,17 +146,18 @@ export async function createUser(input: CreateUserInput, user: AuthContext): Pro
       input.approvalLimit === undefined || input.approvalLimit === null
         ? null
         : String(input.approvalLimit),
+    deletedAt: null,
     updatedBy: user.id,
     updatedAt: new Date(),
   };
 
-  const updated = await db.update(users).set(updates).where(eq(users.id, newId)).returning();
+  const updated = await db.update(users).set(updates).where(eq(users.id, userId)).returning();
   let row = updated[0];
   if (!row) {
     // Defensive: trigger somehow didn't seed the row — insert it ourselves.
     const inserted = await db
       .insert(users)
-      .values({ id: newId, createdBy: user.id, ...updates })
+      .values({ id: userId, createdBy: user.id, ...updates })
       .returning();
     row = inserted[0];
   }

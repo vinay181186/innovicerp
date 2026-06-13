@@ -96,6 +96,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 **Built:** (1) **Forgot-password** link in login password mode → `resetPasswordForEmail` → new public `/auth/reset-password` page (verifies recovery token, sets new password, handles expired links); login default mode switched to password. (2) **Admin Set/reset password** (no email, rate-limit-immune): shared `setUserPasswordInputSchema`; service `setUserPassword` (admin-only, company-scoped target check, `auth.admin.updateUserById`); `POST /users/:id/set-password`; web `useSetUserPassword` + "Set / reset password" panel on user edit. (3) **First-admin bootstrap:** gitignored `apps/api/src/_set_password.ts` (service-role, sets any user's password from `.env.local`). No migration.
 **Note:** self-service reset email still needs real SMTP (Resend + GoDaddy DNS) — DEFERRED post-trial; admin-set passwords are the reliable path for onboarding now. Supabase Auth URL Configuration (Site URL + Redirect URLs → pages.dev) must be set for reset emails to land.
 
+**ID:** SYS-4 (auth: revive soft-deleted user on re-add same email, ADR-050, 2026-06-13)
+**Title:** Onboarding bug — deleting a user then re-adding the same email errored "A user with this email already exists" (soft delete leaves the Supabase Auth account; Trash doesn't cover users).
+**Status:** [x] DONE 2026-06-13 — built, typecheck+lint clean, **19/19 users service tests green** (+1 revive). API-only change → auto-deploys via Railway on push. No migration.
+**Built:** `createUser` now, on Supabase "already registered", looks up the existing auth user + its `public.users` row and REVIVES it (clear `deleted_at`, re-promote into company, reset password) when the profile is soft-deleted or orphaned (`company_id` NULL); a live company-assigned user still returns ConflictError. Added `findAuthUserByEmail` (paginated). `deleted_at:null` added to the promote/update.
+
 **ID:** BACKLOG-1 (ISSUES 013–016 cleanup, ADR-048, migration 0056, 2026-06-13)
 **Title:** Clear four backlogged parity gaps in one pass (user: "complete all issue at once").
 **Status:** [x] BUILT + verified 2026-06-13 (typecheck + lint clean ×4 pkgs; **11/11 SO service tests green**). **NOT committed** — awaiting user test + "commit". Migration 0056 applied to dev DB (`_apply_0056.ts`).

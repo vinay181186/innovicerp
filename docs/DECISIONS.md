@@ -2010,6 +2010,47 @@ instead of email invites) to the whole password lifecycle.
 - Risks: low — admin-only, company-scoped target check, same Admin API already
   trusted by create (ADR-046). 18/18 users service tests green (+2).
 
+## ADR-050: Re-adding a soft-deleted user's email revives the account
+
+**Date:** 2026-06-13
+**Status:** Accepted
+
+### Context
+
+During trial onboarding, an admin deleted a user ("japan") then tried to + Add
+User with the same email and got "A user with this email already exists." Cause:
+`softDeleteUser` only sets `public.users.deleted_at` (rule #8 — no hard deletes);
+the **Supabase Auth account is never removed**, and Trash (ADR-036) doesn't cover
+users. So the email stays registered in `auth.users`, `createUser`'s
+`auth.admin.createUser` collides, and the deleted profile is unreachable (hidden
+from the list, not restorable via Trash).
+
+### Decision
+
+When `createUser` hits "already registered", look up the existing auth user and
+the matching `public.users` row, and **revive** it (clear `deleted_at`, re-promote
+into the admin's company with the new role, reset the password to the one just
+entered) — but ONLY if the existing profile is soft-deleted or orphaned
+(`company_id` NULL). A live, company-assigned user still returns `ConflictError`,
+so we never silently reset a colleague's password or absorb another company's
+user. `createUser` now also sets `deleted_at = null` on the promote/update.
+
+### Alternatives Considered
+
+- Hard-delete the auth account on user delete — rejected: violates the
+  soft-delete-only rule and destroys the audit/identity link irreversibly.
+- Add "User" to the Trash registry for restore — viable later, but doesn't fix
+  the "re-add same email" reflex the admin actually used; revive-on-recreate is
+  the expected UX. May still add Trash support separately.
+
+### Consequences
+
+- Positive: delete-then-re-add an email "just works"; no orphaned-auth dead-end.
+- Negative: a deleted user's history rides along on revive (same row/id) — usually
+  desirable, but it's not a clean-slate account.
+- Risks: low — company/active guard prevents cross-company or live-duplicate
+  takeover. 19/19 users service tests green (+1 revive test).
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

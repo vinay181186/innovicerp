@@ -160,6 +160,30 @@ describe('users service', () => {
     expect(list.items.some((u) => u.id === created.id)).toBe(true);
   });
 
+  it('createUser revives a soft-deleted user with the same email (ADR-049)', async () => {
+    // ADD_TEST_EMAIL exists from the previous test. Soft-delete it, then re-add
+    // the same email — the auth account persists, so it must revive (same id,
+    // deletedAt cleared, new role/password) instead of throwing ConflictError.
+    const before = await service.listUsers({ search: ADD_TEST_EMAIL, limit: 1, offset: 0 }, admin);
+    const existingId = before.items[0]!.id;
+    await service.softDeleteUser(existingId, admin);
+
+    const revived = await service.createUser(
+      {
+        email: ADD_TEST_EMAIL,
+        password: 'newpassword123',
+        fullName: 'Revived Name',
+        role: 'qc',
+        isActive: true,
+      },
+      admin,
+    );
+    expect(revived.id).toBe(existingId); // same auth account reused
+    expect(revived.deletedAt).toBeNull();
+    expect(revived.fullName).toBe('Revived Name');
+    expect(revived.role).toBe('qc');
+  });
+
   it('getUser throws NotFoundError for unknown id', async () => {
     await expect(
       service.getUser('00000000-0000-0000-0000-000000000000', admin),
