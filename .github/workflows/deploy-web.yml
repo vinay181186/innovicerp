@@ -1,0 +1,68 @@
+name: Deploy Web → Cloudflare Pages
+
+# Auto-deploys the React web app to Cloudflare Pages on every push to main
+# (mirrors how Railway auto-deploys the API). Direct-upload via wrangler — the
+# project is not git-connected on Cloudflare's side, so this workflow is the
+# auto-deploy path. See docs/GO_LIVE.md.
+#
+# Required GitHub repo secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN   — account token with Cloudflare Pages: Edit (cfat_…)
+#   CLOUDFLARE_ACCOUNT_ID  — Cloudflare account id
+#   VITE_API_URL           — https://api-production-06c90.up.railway.app
+#   VITE_SUPABASE_URL      — prod Supabase project URL
+#   VITE_SUPABASE_ANON_KEY — prod Supabase anon key (public-safe; baked into bundle)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'packages/shared/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch: {} # manual "Run workflow" — redeploys current main regardless of paths
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build + deploy web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version comes from `packageManager` in package.json — don't also set version here.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Vite (envDir = repo root) loads .env.production.local over .env.local in
+      # production mode. Writing it from secrets mirrors the local build exactly,
+      # so VITE_* are baked into the bundle deterministically. Gitignored + ephemeral.
+      - name: Write build env
+        run: |
+          cat > .env.production.local <<'EOF'
+          VITE_API_URL=${{ secrets.VITE_API_URL }}
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          EOF
+
+      - name: Build web
+        run: pnpm --filter @innovic/web build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy apps/web/dist --project-name=innovic-erp --branch=main

@@ -188,8 +188,13 @@ Backblaze account.
 
 ## Follow-ups beyond MVP launch
 
-- Cloudflare native Git auto-deploy is preferred over a `deploy-web.yml` workflow
-  (mirrors how Railway auto-deploys the API — no workflow file needed).
+- ✅ DONE 2026-06-13: web auto-deploys via `.github/workflows/deploy-web.yml`
+  (build + `cloudflare/wrangler-action` on push to main, path-filtered to
+  apps/web/packages/shared). Needs repo secrets `CLOUDFLARE_API_TOKEN`,
+  `CLOUDFLARE_ACCOUNT_ID`, `VITE_API_URL`, `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_ANON_KEY`. So now ONE push to main updates both API (Railway) and
+  web (this Action). Native Cloudflare Git-connect would also work but needs the
+  dashboard OAuth step; the Action avoids it.
 - Activate Sentry + Better Stack (set DSNs / uptime monitor on `/readyz`).
 - Region note (non-blocking): Supabase Mumbai + Railway Singapore (~50–80 ms
   cross-region) — fine at this scale.
