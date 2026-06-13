@@ -1,5 +1,17 @@
-import type { JobCardListItem, ListJobCardsQuery, ListJobCardsResponse } from '@innovic/shared';
-import { type UseQueryOptions, useQuery } from '@tanstack/react-query';
+import type {
+  JobCardEditModel,
+  JobCardListItem,
+  JobCardSourceOption,
+  JobCardWriteInput,
+  ListJobCardsQuery,
+  ListJobCardsResponse,
+} from '@innovic/shared';
+import {
+  type UseQueryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 
 export const jobCardsKeys = {
@@ -40,5 +52,59 @@ export function useJobCard(id: string | undefined) {
     queryKey: id ? jobCardsKeys.detail(id) : jobCardsKeys.detail('__missing__'),
     queryFn: () => apiFetch<JobCardListItem>(`/job-cards/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/** Full write-shaped JC (header + ops + qc docs) to repopulate the edit form. */
+export function useJobCardEditModel(id: string | undefined) {
+  return useQuery<JobCardEditModel>({
+    queryKey: id ? ([...jobCardsKeys.detail(id), 'edit'] as const) : (['job-cards', 'edit', '__missing__'] as const),
+    queryFn: () => apiFetch<JobCardEditModel>(`/job-cards/${id}/edit`),
+    enabled: Boolean(id),
+  });
+}
+
+/** Open SO + JW lines (with JC-allocated balance) for the create/edit cascade. */
+export function useJobCardSourceOptions(enabled = true) {
+  return useQuery<JobCardSourceOption[]>({
+    queryKey: [...jobCardsKeys.all, 'source-options'] as const,
+    queryFn: () => apiFetch<JobCardSourceOption[]>(`/job-cards/source-options`),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateJobCard() {
+  const qc = useQueryClient();
+  return useMutation<JobCardListItem, Error, JobCardWriteInput>({
+    mutationFn: (input) => apiFetch<JobCardListItem>('/job-cards', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
+    },
+  });
+}
+
+export function useUpdateJobCard(id: string) {
+  const qc = useQueryClient();
+  return useMutation<JobCardListItem, Error, JobCardWriteInput>({
+    mutationFn: (input) =>
+      apiFetch<JobCardListItem>(`/job-cards/${id}`, { method: 'PATCH', json: input }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
+      qc.setQueryData(jobCardsKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useDeleteJobCard() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      await apiFetch<null>(`/job-cards/${id}`, { method: 'DELETE' });
+    },
+    onSuccess: (_, id) => {
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
+      qc.removeQueries({ queryKey: jobCardsKeys.detail(id) });
+    },
   });
 }

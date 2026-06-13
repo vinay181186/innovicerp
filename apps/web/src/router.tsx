@@ -66,7 +66,9 @@ import {
   goodsReceiptNoteEditRoute,
   goodsReceiptNoteNewRoute,
 } from './modules/goods-receipt-notes/routes/edit';
+import { jobCardEditRoute } from './modules/job-cards/routes/edit';
 import { jobCardsListRoute } from './modules/job-cards/routes/list';
+import { jobCardNewRoute } from './modules/job-cards/routes/new';
 import { jobWorkOrdersListRoute } from './modules/job-work-orders/routes/list';
 import { jobWorkOrderDetailRoute } from './modules/job-work-orders/routes/detail';
 import { jobWorkOrderEditRoute, jobWorkOrderNewRoute } from './modules/job-work-orders/routes/edit';
@@ -229,6 +231,8 @@ const routeTree = rootRoute.addChildren([
     jobWorkOrderDetailRoute,
     jobWorkOrderEditRoute,
     jobCardsListRoute,
+    jobCardNewRoute,
+    jobCardEditRoute,
     purchaseRequestsListRoute,
     purchaseRequestNewRoute,
     purchaseRequestDetailRoute,

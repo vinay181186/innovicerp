@@ -17,6 +17,7 @@ import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
+import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
@@ -295,6 +296,7 @@ function JobCardsListPage(): React.JSX.Element {
               👁 View
             </Link>
             <PrintJcButton jc={row.original} />
+            <JcRowWriteActions jc={row.original} />
             <AssignTaskButton
               linkedRef={{
                 type: 'job_card',
@@ -359,9 +361,14 @@ function JobCardsListPage(): React.JSX.Element {
             </span>
           ) : null}
           {canWrite ? (
-            <Link to="/planning" className="btn btn-primary">
-              + Plan &amp; Create Job Card
-            </Link>
+            <>
+              <Link to="/planning" className="btn btn-ghost">
+                + Plan &amp; Create Job Card
+              </Link>
+              <Link to="/job-cards/new" className="btn btn-primary">
+                + New Job Card
+              </Link>
+            </>
           ) : null}
         </div>
       </div>
