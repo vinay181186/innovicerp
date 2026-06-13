@@ -551,6 +551,184 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
   return getJobCard(newId, user);
 }
 
+/** ids of this JC's active ops that have started (any op_log row OR a running
+ *  session) — legacy `_hasOpStarted`. Such ops can't be removed or retyped. */
+async function startedOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<string>> {
+  const rows = (await tx.execute(sql`
+    SELECT o.id::text AS id
+    FROM public.jc_ops o
+    WHERE o.job_card_id = ${jobCardId}::uuid
+      AND o.deleted_at IS NULL
+      AND (
+        EXISTS (SELECT 1 FROM public.op_log ol WHERE ol.jc_op_id = o.id)
+        OR EXISTS (SELECT 1 FROM public.running_ops ro WHERE ro.jc_op_id = o.id AND ro.status = 'running')
+      )
+  `)) as unknown as Array<{ id: string }>;
+  return new Set(rows.map((r) => r.id));
+}
+
+export async function updateJobCard(
+  id: string,
+  input: JobCardWriteInput,
+  user: AuthContext,
+): Promise<JobCardListItem> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  await withUserContext(user, async (tx) => {
+    const headRows = await tx
+      .select({ code: jobCards.code })
+      .from(jobCards)
+      .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
+      .limit(1);
+    const head = headRows[0];
+    if (!head) throw new NotFoundError(`Job card ${id} not found`);
+
+    const item = await resolveItem(tx, input.itemCode, companyId);
+    await assertLineBalance(tx, input, companyId, id);
+    const types = validateOps(input.ops);
+    const machineMap = await resolveCodeMap(
+      tx,
+      machines,
+      input.ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
+      companyId,
+      'Machine',
+    );
+    const vendorMap = await resolveCodeMap(
+      tx,
+      vendors,
+      input.ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
+      companyId,
+      'Vendor',
+    );
+
+    // Existing ops + which have started.
+    const existing = await tx
+      .select({ id: jcOps.id, opType: jcOps.opType })
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
+    const existingById = new Map(existing.map((o) => [o.id, o]));
+    const started = await startedOpIds(tx, id);
+    const payloadIds = new Set(input.ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
+
+    // Guard: a started op may not be removed or have its type changed (legacy
+    // blocks the outsource toggle once an op has started; we extend it to
+    // removal + any type change, since op_log is FK-bound to the op row).
+    for (const ex of existing) {
+      if (!started.has(ex.id)) continue;
+      if (!payloadIds.has(ex.id)) {
+        throw new ValidationError('Cannot remove an operation that already has logged work.');
+      }
+      const inPayload = input.ops.find((o) => o.id === ex.id);
+      if (inPayload && inPayload.opType !== ex.opType) {
+        throw new ValidationError('Cannot change the type of an operation that already has logged work.');
+      }
+    }
+
+    const now = new Date();
+    // 1. Soft-delete removed ops (all guaranteed un-started by the guard above).
+    const removedIds = existing.filter((o) => !payloadIds.has(o.id)).map((o) => o.id);
+    if (removedIds.length > 0) {
+      await tx
+        .update(jcOps)
+        .set({ deletedAt: now, updatedBy: user.id })
+        .where(inArray(jcOps.id, removedIds));
+    }
+    // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
+    //    while we renumber (jc_ops unique on (job_card_id, op_seq)).
+    const keptIds = input.ops.map((o) => o.id).filter((x): x is string => Boolean(x) && existingById.has(x!));
+    if (keptIds.length > 0) {
+      await tx
+        .update(jcOps)
+        .set({ opSeq: sql`${jcOps.opSeq} + 100000` })
+        .where(inArray(jcOps.id, keptIds));
+    }
+    // 3. Upsert ops in payload order (final op_seq = index + 1).
+    for (let i = 0; i < input.ops.length; i += 1) {
+      const o = input.ops[i]!;
+      const t = types[i]!;
+      const vals = {
+        machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
+        machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
+        operation: o.operation,
+        opType: t,
+        cycleTimeMin: NUM(o.cycleTimeMin || 0),
+        program: o.program ?? null,
+        toolNo: o.toolNo ?? null,
+        toolDetails: o.toolDetails ?? null,
+        qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
+        outsourceVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
+        outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
+        outsourceCost: NUM(t === 'outsource' ? (o.outsourceCost || 0) : 0),
+        updatedBy: user.id,
+        updatedAt: now,
+      };
+      if (o.id && existingById.has(o.id)) {
+        await tx
+          .update(jcOps)
+          .set({ ...vals, opSeq: i + 1 })
+          .where(eq(jcOps.id, o.id));
+      } else {
+        await tx.insert(jcOps).values({
+          companyId,
+          jobCardId: id,
+          opSeq: i + 1,
+          ...vals,
+          createdBy: user.id,
+        });
+      }
+    }
+
+    // 4. Header.
+    await tx
+      .update(jobCards)
+      .set({
+        jcDate: input.jcDate,
+        itemId: item.id,
+        orderQty: input.orderQty,
+        priority: input.priority,
+        dueDate: input.dueDate ?? null,
+        drawingFilePath: input.drawingFilePath ?? null,
+        sourceSoLineId: input.sourceSoLineId ?? null,
+        sourceJwLineId: input.sourceJwLineId ?? null,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(jobCards.id, id));
+
+    // 5. QC docs — register any new ones (dedup by storage path). Removal of an
+    //    existing doc is done via the file_registry/SO-Documents delete UI.
+    if (input.qcDocs.length > 0) {
+      const have = await tx
+        .select({ p: fileRegistry.storagePath })
+        .from(fileRegistry)
+        .where(and(eq(fileRegistry.jobCardId, id), isNull(fileRegistry.deletedAt)));
+      const havePaths = new Set(have.map((r) => r.p));
+      const fresh = input.qcDocs.filter((d) => !havePaths.has(d.storagePath));
+      await registerQcDocs(tx, { ...input, qcDocs: fresh }, {
+        companyId,
+        jobCardId: id,
+        jcCode: head.code,
+        userId: user.id,
+      });
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'Job Card',
+        detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}`,
+        refId: head.code,
+      },
+      companyId,
+      user,
+    );
+  });
+
+  return getJobCard(id, user);
+}
+
 export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireAdminRole(user);
   const companyId = requireCompany(user);

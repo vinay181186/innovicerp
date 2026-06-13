@@ -194,6 +194,42 @@ describe('job-cards service — writes (ADR-051)', () => {
     expect(jc.totalOps).toBe(2);
   });
 
+  it('updateJobCard changes header + replaces ops (renumbered)', async () => {
+    if (!itemCode || !machineCode) return;
+    const jc = await service.createJobCard(
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        ops: [
+          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          { operation: 'Op B', opType: 'process', machineCode, cycleTimeMin: 2, qcRequired: false, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const updated = await service.updateJobCard(
+      jc.id,
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 9,
+        priority: 'high',
+        ops: [
+          { operation: 'Op A only', opType: 'process', machineCode, cycleTimeMin: 3, qcRequired: false, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    expect(updated.orderQty).toBe(9);
+    expect(updated.priority).toBe('high');
+    expect(updated.totalOps).toBe(1);
+  });
+
   it('createJobCard rejects an unknown item', async () => {
     await expect(
       service.createJobCard(
