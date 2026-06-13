@@ -83,6 +83,20 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** SODOC-1 (SO Documents module — unified file_registry, ADR-047, migration 0055, 2026-06-11)
+**Title:** Screen-by-screen parity: Sales → SO Documents (legacy `renderSODocs` L19478). User chose the largest of three architecture options: a system-wide unified `file_registry` table (not per-module), plus surfacing existing QC docs read-only.
+**Status:** [x] DONE 2026-06-13 — user-tested `/so-documents` and approved; **committed + pushed**. **Migration 0055 applied to dev DB** (additive, new `file_registry` table only — via gitignored `apps/api/src/_apply_0055.ts`).
+**Built:** Shared `so-document.ts` (categories + labels/order, `SoDocumentFile`/`SoDocumentOverviewRow`/`SoDocumentLine`/`SoDocumentDetailResponse`, `createSoDocumentInputSchema`). DB `file_registry` table + migration 0055 + RLS (read=company, write=non-viewer). API module `so-documents`: service (`listSoDocumentOverview`, `getSoDocumentDetail` — file_registry rows + QC docs UNION'd read-only via JC `source_so_line_id`, `createSoDocument`, `deleteSoDocument`) + routes (`GET /overview`, `GET /detail`, `POST`, `DELETE /:id`) + registered in server.ts. Web module `so-documents`: api hooks (`useSoDocOverview`/`useSoDocDetail`/`useCreateSoDocument`/`useDeleteSoDocument` + `uploadSoDocFile` to `so-docs/` Storage folder + `soDocSignedUrl`), `/so-documents` route (SO selector + all-SOs overview table + per-SO detail: stat cards, Upload dialog [line/category/docType/multi-file], files grouped by line→category, SO-level unlinked section, ⬇View signed-url, ✕delete registry-only, QC rows read-only tag) + router + sidebar (Sales & CRM → Entry, 📁).
+**Verified:** typecheck + lint clean (4 pkgs); api `so-documents` service tests **7/7 green** node-direct (viewer-write guard, create, detail, overview, delete, NotFound paths; self-cleaning afterAll). **User UI test pending (tomorrow).**
+**Scoped OUT → backlog:** ZIP "Download All", Archive & Purge / Restore; wiring item-drawing/dispatch/PO uploads into the registry (table ready, incremental).
+
+**ID:** MASTERS-1 (Item + Vendor Master parity pass, 2026-06-11)
+**Title:** Screen-by-screen parity: `/items` vs `renderItems` (L11481) + `/vendors` vs `renderVendors` (L27734). User scope: "Small fixes + Excel import/template".
+**Status:** [x] Done 2026-06-11, **committed (not pushed):** items `2c39694`, vendors `a0c94d3`. **No migration.**
+**Built:** New `items/lib/import-export.ts` + `vendors/lib/import-export.ts` (SheetJS, mirror SO importer; validate UOM/Item Type enums, dedup codes, map vendor Address/City/State/PIN to separate cols, Status→isActive). Items list: ⬇ Template + 📄 Import Excel toolbar + result banner; Drw col 📎 → 🖨 Print (printItemDrawing + useMyCompany); per-row admin/manager Del→Trash (CM-1 pattern, existing `useSoftDeleteItem` + Trash 'Item'). Vendors list: same Template/Import; restored Address column (kept Materials); per-row Del→Trash (`useSoftDeleteVendor` + Trash 'Vendor').
+**Findings / scoped OUT (backlog DELTAs):** vendor auto-rating grade + ⭐ scorecard modal + PO/GRN count column (need PO/GRN/QC backend cascade — legacy `_calcVendorRating`/`_showVendorScore`); click-sort headers on both → ISSUE-016.
+**Verified:** typecheck + lint clean. User UI test pending.
+
 **ID:** SYS-2 (User Management "+ Add User" — onboard a user end-to-end, ADR-046, 2026-06-09)
 **Title:** Screen-by-screen parity: System Settings → User Management. Legacy had "+ Add User" (`_addUserFull`); our rebuild had view/edit/deactivate only. Real gap: the `on_auth_user_created` trigger seeds a `public.users` row but with `company_id=NULL` → invisible in the company-scoped admin list → onboarding needed raw SQL. User chose admin-sets-initial-password over email-invite (no Auth SMTP configured).
 **Status:** [x] CODE-COMPLETE 2026-06-09, NOT yet committed (user tests first). **No migration** (trigger + columns already existed).

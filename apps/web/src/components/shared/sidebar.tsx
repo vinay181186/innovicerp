@@ -84,6 +84,7 @@ const SECTIONS: readonly NavSection[] = [
           // vendor job-work outward DC register lives under Purchase →
           // "OSP / JW Outward DC" (/delivery-challans), not here.
           { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
+          { to: '/so-documents', label: 'SO Documents', icon: '📁' },
         ],
       },
       {

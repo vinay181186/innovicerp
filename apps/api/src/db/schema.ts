@@ -4427,6 +4427,80 @@ export const qcDocuments = pgTable(
 export type QcDocument = typeof qcDocuments.$inferSelect;
 export type NewQcDocument = typeof qcDocuments.$inferInsert;
 
+// ─── File Registry — migration 0055 (SO Documents, ADR-047) ───────────────
+// Unified general-purpose file metadata store. Legacy kept ONE db.fileRegistry
+// aggregating every uploaded file system-wide, keyed (among others) by soNo +
+// soLineNo; renderSODocs reads it. Our architecture stores files per-module, so
+// this is the canonical registry going forward — the SO Documents screen is its
+// first producer/consumer. Files themselves live in the `qc-docs` Storage
+// bucket (client uploads direct, then registers metadata here). QC docs keep
+// their own qc_documents table (QC matrix columns) and are surfaced read-only on
+// the SO Documents page via UNION — not duplicated here. Other producers
+// (item drawings, dispatch, PO) can register here incrementally.
+export const fileRegistry = pgTable(
+  'file_registry',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
+    soCodeText: text('so_code_text'),
+    soLineId: uuid('so_line_id').references((): AnyPgColumn => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    soLineNo: integer('so_line_no'),
+    jobCardId: uuid('job_card_id').references((): AnyPgColumn => jobCards.id, {
+      onDelete: 'set null',
+    }),
+    jcCodeText: text('jc_code_text'),
+    // Free-text category (drawing/qc-docs/inspection/tpi/incoming-qc/po-docs/
+    // design/dispatch/other) — same vocabulary as legacy fileRegistry.category.
+    category: text('category').notNull().default('other'),
+    docType: text('doc_type'),
+    fileName: text('file_name').notNull(),
+    storagePath: text('storage_path').notNull(),
+    fileSize: integer('file_size'),
+    fileType: text('file_type'),
+    // active | archived (legacy fileRegistry.status). Archive flow is backlog.
+    status: text('status').notNull().default('active'),
+    uploadedByText: text('uploaded_by_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('file_registry_company_so_idx')
+      .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('file_registry_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('file_registry_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // Documents are broadly editable — any company member except read-only
+    // viewers (legacy canEdit('sodocs')). Service still records the uploader.
+    pgPolicy('file_registry_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() <> 'viewer' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() <> 'viewer' AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export type FileRegistryRow = typeof fileRegistry.$inferSelect;
+export type NewFileRegistryRow = typeof fileRegistry.$inferInsert;
+
 // ─── QC Assignments — migration 0040 ──────────────────────────────────────
 // Pick-Up / Assign for the QC Command Center queue (legacy db.qcAssignments,
 // _qccPickUp / _qccAssign L18719-18755). One ACTIVE assignment per jc_op

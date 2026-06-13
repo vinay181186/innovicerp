@@ -106,6 +106,7 @@ import { reportTypesListRoute } from './modules/report-types/routes/list';
 import { soQcStatusRoute } from './modules/so-qc-status/routes/index';
 import { qcCommandRoute } from './modules/qc-command/routes/index';
 import { qcDocumentsListRoute } from './modules/qc-documents/routes/list';
+import { soDocumentsRoute } from './modules/so-documents/routes/page';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
@@ -270,6 +271,7 @@ const routeTree = rootRoute.addChildren([
     soQcStatusRoute,
     qcCommandRoute,
     qcDocumentsListRoute,
+    soDocumentsRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,

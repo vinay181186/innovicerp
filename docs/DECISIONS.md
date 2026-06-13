@@ -1876,6 +1876,46 @@ email-dependent flow would block onboarding entirely.
 - Negative: API now holds the create-auth-user capability (already had the service-role key for token verification, so no new secret/surface).
 - Risks: initial passwords are admin-chosen — operational hygiene (rotate on first login) is a training point, not enforced.
 
+## ADR-047: SO Documents on a unified `file_registry` table (migration 0055)
+
+**Date:** 2026-06-11
+**Status:** Accepted
+
+### Context
+
+Legacy `renderSODocs` (L19478) reads ONE system-wide `db.fileRegistry` array that
+aggregates every uploaded file (drawings, QC docs, inspection, TPI, PO docs, dispatch…)
+keyed — among other ids — by `soNo` + `soLineNo`. Our architecture instead stores files
+per-module (item `drawing_file_path`, the `qc_documents` table), so there was no place to
+back an SO Documents screen. User was presented three options (extend `qc_documents`, a
+dedicated `so_documents` table, or a full unified registry) and chose the **full unified
+registry** plus surfacing existing QC docs read-only.
+
+### Decision
+
+New `file_registry` table — the canonical general-purpose file-metadata store going forward
+(nullable links: `sales_order_id`, `so_line_id`, `so_line_no`, `job_card_id` + `*_code_text`
+snapshots; `category`, `doc_type`, `file_name`, `storage_path`, `file_size`, `file_type`,
+`status` active|archived; audit + soft-delete). RLS: company read; write to any company
+member except `viewer`. Files live in the existing `qc-docs` Storage bucket (`so-docs/`
+folder); the client uploads direct then POSTs metadata. The **SO Documents screen is the
+registry's first producer/consumer**. `qc_documents` keeps its own table (it carries the QC
+matrix columns) and is **UNION'd read-only** into the SO Documents detail (matched to a line
+via the JC's `source_so_line_id`) — not duplicated into the registry. Other producers
+(item drawings, dispatch, PO) can register here incrementally; not rewired in this pass.
+
+### Alternatives Considered
+
+- **Extend `qc_documents`** — rejected: overloads QC semantics and inherits its qc/admin/manager-only write policy for general docs.
+- **Dedicated `so_documents` table** — rejected by user in favour of a single registry that other modules can grow into.
+- **Rewire every upload path at once** — deferred: large multi-module change; the table is ready, producers wire in incrementally so we ship a testable slice now.
+
+### Consequences
+
+- Positive: legacy SO-Documents parity (one pane per SO, files by line→category); a real registry other modules can adopt.
+- Negative: two file-metadata tables co-exist (`qc_documents` + `file_registry`) until/unless QC migrates; SO Documents must UNION them.
+- Risks: registry isn't yet the single source of truth (only SO-docs uploads + read-only QC today); ZIP/archive power features deferred to backlog.
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
