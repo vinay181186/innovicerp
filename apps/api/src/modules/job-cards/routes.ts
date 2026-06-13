@@ -25,6 +25,12 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     return created;
   });
 
+  // Static route registered before the parametric :id route.
+  app.get('/job-cards/source-options', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.listJobCardSourceOptions(req.user);
+  });
+
   app.get('/job-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

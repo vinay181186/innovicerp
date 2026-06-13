@@ -201,3 +201,26 @@ export const jobCardCreateInputSchema = jobCardWriteInputSchema;
 export type JobCardCreateInput = JobCardWriteInput;
 export const jobCardUpdateInputSchema = jobCardWriteInputSchema;
 export type JobCardUpdateInput = JobCardWriteInput;
+
+// ─── Cascade source options (parity: CASCADE.allOpenOrders + orderBalance) ──
+// Open SO + JW lines a new JC can be raised against, each with its JC-allocated
+// balance. Drives the modal's "SO / WO / JW No." search + auto-fill + balance
+// banner (legacy _jcCascadeFromOrder L1874).
+export const jobCardSourceOptionSchema = z.object({
+  type: z.enum(['so', 'jw']),
+  orderId: z.string().uuid(),
+  lineId: z.string().uuid(),
+  code: z.string(),
+  lineNo: z.number().int(),
+  partName: z.string().nullable(),
+  itemCode: z.string().nullable(),
+  customerName: z.string().nullable(),
+  orderQty: z.number().int(),
+  dueDate: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  /** Σ order_qty of active JCs already on this line. */
+  inJc: z.number().int().nonnegative(),
+  /** max(0, orderQty − inJc). */
+  remaining: z.number().int(),
+});
+export type JobCardSourceOption = z.infer<typeof jobCardSourceOptionSchema>;

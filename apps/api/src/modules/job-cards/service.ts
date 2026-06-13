@@ -31,6 +31,7 @@ import type {
   JcOpInput,
   JobCardListItem,
   JobCardSourceLink,
+  JobCardSourceOption,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
@@ -315,6 +316,62 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
   };
+}
+
+// ─── Cascade source options (parity: CASCADE.allOpenOrders + orderBalance) ──
+
+export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCardSourceOption[]> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const result = (await tx.execute(sql`
+      SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
+        sol.line_no AS "lineNo", sol.part_name AS "partName",
+        COALESCE(i.code, sol.item_code_text) AS "itemCode",
+        COALESCE(so.customer_name, cli.name) AS "customerName",
+        sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
+        sol.client_po_line_no AS "clientPoLineNo",
+        COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+          WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.items i ON i.id = sol.item_id
+      LEFT JOIN public.clients cli ON cli.id = so.client_id
+      WHERE sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL AND so.status != 'closed'
+      UNION ALL
+      SELECT 'jw' AS type, jw.id, jwl.id, jw.code, jwl.line_no, jwl.part_name,
+        COALESCE(i2.code, jwl.item_code_text),
+        COALESCE(jw.customer_name, cli2.name),
+        jwl.order_qty, jwl.due_date, NULL,
+        COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+          WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int
+      FROM public.job_work_order_lines jwl
+      JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+      LEFT JOIN public.items i2 ON i2.id = jwl.item_id
+      LEFT JOIN public.clients cli2 ON cli2.id = jw.client_id
+      WHERE jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL AND jw.status != 'closed'
+      ORDER BY type, code, "lineNo"
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    return result.map((r): JobCardSourceOption => {
+      const orderQty = Number(r['orderQty'] ?? 0);
+      const inJc = Number(r['inJc'] ?? 0);
+      return {
+        type: r['type'] as 'so' | 'jw',
+        orderId: r['orderId'] as string,
+        lineId: r['lineId'] as string,
+        code: r['code'] as string,
+        lineNo: Number(r['lineNo'] ?? 0),
+        partName: (r['partName'] as string | null) ?? null,
+        itemCode: (r['itemCode'] as string | null) ?? null,
+        customerName: (r['customerName'] as string | null) ?? null,
+        orderQty,
+        dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
+        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+        inJc,
+        remaining: Math.max(0, orderQty - inJc),
+      };
+    });
+  });
 }
 
 // ─── Writes (parity: addJC L6020 / editJC L6076 / delJC L10955) ─────────────
