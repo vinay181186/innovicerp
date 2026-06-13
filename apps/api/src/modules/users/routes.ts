@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { createUserInputSchema, listUsersQuerySchema, updateUserInputSchema } from './schema';
+import {
+  createUserInputSchema,
+  listUsersQuerySchema,
+  setUserPasswordInputSchema,
+  updateUserInputSchema,
+} from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -32,6 +37,15 @@ export async function usersRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const body = updateUserInputSchema.parse(req.body);
     return service.updateUser(id, body, req.user);
+  });
+
+  app.post('/users/:id/set-password', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = setUserPasswordInputSchema.parse(req.body);
+    await service.setUserPassword(id, body, req.user);
+    reply.code(204);
+    return null;
   });
 
   app.delete('/users/:id', async (req, reply) => {

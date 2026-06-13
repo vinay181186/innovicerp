@@ -2,6 +2,7 @@ import type {
   CreateUserInput,
   ListUsersQuery,
   ListUsersResponse,
+  SetUserPasswordInput,
   UpdateUserInput,
   User,
 } from '@innovic/shared';
@@ -63,6 +64,14 @@ export function useUpdateUser(id: string) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: usersKeys.lists() });
       qc.setQueryData(usersKeys.detail(id), updated);
+    },
+  });
+}
+
+export function useSetUserPassword(id: string) {
+  return useMutation<void, Error, SetUserPasswordInput>({
+    mutationFn: async (input) => {
+      await apiFetch<null>(`/users/${id}/set-password`, { method: 'POST', json: input });
     },
   });
 }

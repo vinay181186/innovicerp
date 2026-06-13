@@ -4,12 +4,12 @@
 
 import { USER_ROLES, type UpdateUserInput, type UserRole } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
 
 export const userEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,8 +33,11 @@ function UserEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
   const update = useUpdateUser(id);
   const softDelete = useSoftDeleteUser();
+  const setPassword = useSetUserPassword(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const { register, handleSubmit, formState } = useForm<FormValues>({
     values: detail
@@ -111,6 +114,24 @@ function UserEditPage(): React.JSX.Element {
         void navigate({ to: '/users', replace: true });
       },
     });
+  };
+
+  const onSetPassword = async (): Promise<void> => {
+    setPwMsg(null);
+    if (newPassword.length < 8) {
+      setPwMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      return;
+    }
+    try {
+      await setPassword.mutateAsync({ password: newPassword });
+      setNewPassword('');
+      setPwMsg({
+        kind: 'ok',
+        text: `Password set for ${detail.email}. Hand it over directly — no email is sent.`,
+      });
+    } catch (e) {
+      setPwMsg({ kind: 'err', text: e instanceof Error ? e.message : 'Failed to set password.' });
+    }
   };
 
   return (
@@ -321,6 +342,62 @@ function UserEditPage(): React.JSX.Element {
               </div>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div className="panel" style={{ marginTop: 12 }}>
+        <div className="panel-hdr">
+          <div className="panel-title">
+            <KeyRound size={14} style={{ display: 'inline', marginRight: 4 }} />
+            Set / reset password
+          </div>
+        </div>
+        <div className="panel-body">
+          <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
+            Sets this user&rsquo;s password directly — <strong>no email is sent</strong>, so it
+            works regardless of mail delivery or rate limits. Type a new password and hand it to{' '}
+            {isSelf ? 'note it for yourself' : detail.email} directly.
+          </div>
+          {pwMsg ? (
+            <div
+              style={{
+                color: pwMsg.kind === 'ok' ? 'var(--green)' : 'var(--red)',
+                background: pwMsg.kind === 'ok' ? 'var(--green3, #dcfce7)' : 'var(--red3)',
+                border: `1px solid ${pwMsg.kind === 'ok' ? '#86efac' : '#fca5a5'}`,
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {pwMsg.text}
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="form-grp" style={{ minWidth: 240 }}>
+              <label className="form-label" htmlFor="newPassword">
+                New password
+              </label>
+              <input
+                id="newPassword"
+                className="innovic-input"
+                type="password"
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void onSetPassword()}
+              disabled={setPassword.isPending || newPassword.length === 0}
+            >
+              {setPassword.isPending ? <Loader2 size={13} className="animate-spin" /> : null}
+              Set password
+            </button>
+          </div>
         </div>
       </div>
     </div>

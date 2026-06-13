@@ -10,7 +10,14 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { supabaseAdmin } from '../../lib/supabase-admin';
-import type { CreateUserInput, ListUsersQuery, ListUsersResponse, UpdateUserInput, User } from './schema';
+import type {
+  CreateUserInput,
+  ListUsersQuery,
+  ListUsersResponse,
+  SetUserPasswordInput,
+  UpdateUserInput,
+  User,
+} from './schema';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -183,6 +190,35 @@ export async function updateUser(
     const updated = await tx.update(users).set(updates).where(eq(users.id, id)).returning();
     return updated[0] as unknown as User;
   });
+}
+
+// Admin sets/resets another user's Supabase Auth password directly. No email is
+// sent, so this is immune to Supabase's email rate limit (the reason this exists
+// — see ADR-049). public.users.id == auth.users.id (the on_auth_user_created
+// trigger seeds the row with the auth uid), so the same id addresses both.
+export async function setUserPassword(
+  id: string,
+  input: SetUserPasswordInput,
+  user: AuthContext,
+): Promise<{ ok: true }> {
+  requireAdminRole(user);
+  requireCompany(user);
+
+  // Confirm the target is a live user in the admin's company BEFORE touching
+  // Auth — prevents an admin in company A from resetting a user in company B.
+  await withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(users)
+      .where(and(eq(users.id, id), isNull(users.deletedAt)))
+      .limit(1);
+    const row = rows[0];
+    if (!row || row.companyId !== user.companyId) throw new NotFoundError(`User ${id} not found`);
+  });
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { password: input.password });
+  if (error) throw new ValidationError(error.message);
+  return { ok: true };
 }
 
 export async function softDeleteUser(id: string, user: AuthContext): Promise<{ ok: true }> {

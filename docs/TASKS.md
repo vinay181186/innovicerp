@@ -90,6 +90,12 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 **User-side remaining (dashboards):** backup → run purge SQL → run migration checker → Cloudflare Pages connect+build+domain → Railway `ALLOWED_ORIGINS=https://innovicerp.com` → onboard team (+ Add User) → smoke test → B2 bucket+secrets for backup.yml. User handles Cloudflare/Railway/Supabase/Backblaze dashboards.
 **Deferred:** CRM (Leads/Reminders/Customer-360) — build after the trial run with the team.
 
+**ID:** SYS-3 (auth: forgot-password + admin set/reset password, ADR-049, 2026-06-13)
+**Title:** Go-live auth gaps surfaced during the trial: (a) no self-service password reset, (b) Supabase email rate-limit blocked recovery, (c) no first-admin password to log in with.
+**Status:** [x] DONE 2026-06-13 — built, typecheck+lint clean ×4 pkgs, **18/18 users service tests green** (+2), web rebuilt + redeployed to pages.dev. Committed + pushed with this batch.
+**Built:** (1) **Forgot-password** link in login password mode → `resetPasswordForEmail` → new public `/auth/reset-password` page (verifies recovery token, sets new password, handles expired links); login default mode switched to password. (2) **Admin Set/reset password** (no email, rate-limit-immune): shared `setUserPasswordInputSchema`; service `setUserPassword` (admin-only, company-scoped target check, `auth.admin.updateUserById`); `POST /users/:id/set-password`; web `useSetUserPassword` + "Set / reset password" panel on user edit. (3) **First-admin bootstrap:** gitignored `apps/api/src/_set_password.ts` (service-role, sets any user's password from `.env.local`). No migration.
+**Note:** self-service reset email still needs real SMTP (Resend + GoDaddy DNS) — DEFERRED post-trial; admin-set passwords are the reliable path for onboarding now. Supabase Auth URL Configuration (Site URL + Redirect URLs → pages.dev) must be set for reset emails to land.
+
 **ID:** BACKLOG-1 (ISSUES 013–016 cleanup, ADR-048, migration 0056, 2026-06-13)
 **Title:** Clear four backlogged parity gaps in one pass (user: "complete all issue at once").
 **Status:** [x] BUILT + verified 2026-06-13 (typecheck + lint clean ×4 pkgs; **11/11 SO service tests green**). **NOT committed** — awaiting user test + "commit". Migration 0056 applied to dev DB (`_apply_0056.ts`).

@@ -1961,6 +1961,55 @@ issue at once": 013 (SO Master client-PO 📎), 014 (contextual "Assign to user 
 - Negative: `so_milestones` is a new table to back up/migrate; sort is only on three lists so far (inconsistent until others adopt `SortTh`).
 - Risks: low — all additive; 11/11 SO service tests green after the SO read/write changes.
 
+## ADR-049: Admin sets/resets passwords directly (no email); first-admin bootstrap script
+
+**Date:** 2026-06-13
+**Status:** Accepted
+
+### Context
+
+During the trial-run go-live, Supabase password-recovery emails failed with
+`email rate limit exceeded`. Supabase's built-in email service is testing-only:
+a low per-hour cap, sends only to addresses in the project org, no delivery SLA.
+Resend (the stack's intended provider) is not yet configured (empty creds), and
+wiring real SMTP requires a Resend account + DNS domain verification at GoDaddy.
+The team needs to log in now. The login-link flow is also unreliable here because
+eScan/Seclore + Gmail link-scanners consume the single-use OTP before the user
+clicks (the earlier `otp_expired`).
+
+### Decision
+
+Add an admin-only **Set / reset password** action that sets a user's Supabase
+Auth password directly via the service-role Admin API
+(`auth.admin.updateUserById`) — no email, so it's immune to the email rate limit.
+- API: `POST /users/:id/set-password` (admin-only; verifies the target is a live
+  user in the admin's company before touching Auth). `public.users.id` ==
+  `auth.users.id`, so one id addresses both.
+- Web: a "Set / reset password" panel on the user edit screen.
+- First-admin bootstrap (chicken-and-egg: you must be logged in to use the
+  feature): gitignored `apps/api/src/_set_password.ts` sets any user's password
+  via service role from `.env.local` — run once to set the admin's password.
+
+This extends the create-flow choice (ADR-046: admin sets the initial password
+instead of email invites) to the whole password lifecycle.
+
+### Alternatives Considered
+
+- Custom SMTP via Resend now — rejected for the trial: needs a Resend account +
+  GoDaddy DNS verification; deferred to post-trial. Still the long-term fix so the
+  self-service "Forgot password?" link (shipped) works for everyone.
+- Raise Supabase's built-in email rate limit — rejected: the built-in service
+  caps regardless and only sends to org addresses; not a real fix.
+
+### Consequences
+
+- Positive: team can be onboarded + recovered with zero email dependency; works
+  behind DLP link-scanners; no rate limit.
+- Negative: admins handle password distribution manually (acceptable for an
+  internal tool at this scale); self-service reset still needs SMTP later.
+- Risks: low — admin-only, company-scoped target check, same Admin API already
+  trusted by create (ADR-046). 18/18 users service tests green (+2).
+
 ## Pending Decisions
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.

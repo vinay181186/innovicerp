@@ -201,6 +201,18 @@ describe('users service', () => {
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 
+  it('setUserPassword blocked for non-admin caller', async () => {
+    await expect(
+      service.setUserPassword(viewer.id, { password: 'longenough123' }, viewer),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('setUserPassword throws NotFoundError for unknown id (no Auth call)', async () => {
+    await expect(
+      service.setUserPassword('00000000-0000-0000-0000-000000000000', { password: 'longenough123' }, admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
   it('updateUser sets and clears approvalLimit (ADR-038)', async () => {
     const set = await service.updateUser(viewer.id, { approvalLimit: 75000 }, admin);
     // numeric column → string with 2dp

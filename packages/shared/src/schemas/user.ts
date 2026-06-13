@@ -64,6 +64,14 @@ export const updateUserInputSchema = z.object({
 });
 export type UpdateUserInput = z.infer<typeof updateUserInputSchema>;
 
+// Admin sets/resets another user's password directly — no email, no Supabase
+// email-rate-limit. Mirrors the create flow's admin-sets-password approach
+// (ADR-046) for the lifecycle case where a user is locked out. See ADR-049.
+export const setUserPasswordInputSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+});
+export type SetUserPasswordInput = z.infer<typeof setUserPasswordInputSchema>;
+
 export const listUsersQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   role: userRoleSchema.optional(),
