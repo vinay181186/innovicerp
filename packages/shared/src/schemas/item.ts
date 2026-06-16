@@ -57,7 +57,10 @@ export const listItemsQuerySchema = z.object({
   itemType: itemTypeSchema.optional(),
   sortBy: itemSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
-  limit: z.coerce.number().int().positive().max(200).default(50),
+  // Max 1000: line-editor autocompletes (BOM, Route Card, Job Card) pull the
+  // whole item master into a <datalist>. Capped at 200 the API 400'd those
+  // requests and the dropdown silently showed nothing. 1000 covers our scale.
+  limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListItemsQuery = z.infer<typeof listItemsQuerySchema>;
