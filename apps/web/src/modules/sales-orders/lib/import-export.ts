@@ -115,12 +115,23 @@ export interface SoImportResult {
   errors: string[];
 }
 
-export async function parseSoImportFile(file: File): Promise<SoImportResult> {
+export async function parseSoImportFile(
+  file: File,
+  // Client master — the "Client" column is resolved against this (by name or
+  // code). SOs must reference a real client, so unmatched rows are skipped.
+  clients: ReadonlyArray<{ id: string; code: string; name: string }>,
+): Promise<SoImportResult> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]!];
   if (!ws) return { payloads: [], rowCount: 0, errors: ['Workbook has no sheets'] };
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+
+  const clientByKey = new Map<string, string>();
+  for (const c of clients) {
+    clientByKey.set(c.name.trim().toLowerCase(), c.id);
+    clientByKey.set(c.code.trim().toLowerCase(), c.id);
+  }
 
   const errors: string[] = [];
   const groups = new Map<string, { header: Record<string, unknown>; lines: Record<string, unknown>[] }>();
@@ -152,16 +163,21 @@ export async function parseSoImportFile(file: File): Promise<SoImportResult> {
     const h = grp.header;
     const typeRaw = String(h['Type'] ?? '').trim().toLowerCase();
     const type = TYPE_MAP[typeRaw] ?? 'component_manufacturing';
-    const customerName = String(h['Client'] ?? '').trim();
-    if (!customerName) {
+    const clientCell = String(h['Client'] ?? '').trim();
+    if (!clientCell) {
       errors.push(`${soNo}: missing "Client" — SO skipped`);
+      continue;
+    }
+    const clientId = clientByKey.get(clientCell.toLowerCase());
+    if (!clientId) {
+      errors.push(`${soNo}: client "${clientCell}" not found in client master — SO skipped`);
       continue;
     }
     const payload: CreateSalesOrderInput = {
       header: {
         code: soNo,
         soDate: toDate(h['SO Date']) ?? new Date().toISOString().slice(0, 10),
-        customerName,
+        clientId,
         clientPoNo: String(h['Client PO'] ?? '').trim() || undefined,
         type,
         status: 'open',

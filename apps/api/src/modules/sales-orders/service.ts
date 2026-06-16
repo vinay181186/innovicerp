@@ -58,15 +58,16 @@ const requireCompany = (user: AuthContext): string => {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-/** Resolve `clientId` if provided. Throws ValidationError if it doesn't
- *  exist (or doesn't belong to the company / is soft-deleted). */
+/** Resolve `clientId`. Throws ValidationError if it doesn't exist (or doesn't
+ *  belong to the company / is soft-deleted). Returns the master client name so
+ *  the caller can snapshot customer_name from the master (not free text). */
 async function assertClientExists(
   tx: DbTransaction,
   clientId: string,
   companyId: string,
-): Promise<void> {
+): Promise<string> {
   const rows = await tx
-    .select({ id: clients.id })
+    .select({ id: clients.id, name: clients.name })
     .from(clients)
     .where(
       and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
@@ -75,6 +76,7 @@ async function assertClientExists(
   if (rows.length === 0) {
     throw new ValidationError(`Client ${clientId} not found in this company`);
   }
+  return rows[0]!.name;
 }
 
 /** For a batch of line inputs, resolve itemId from itemCodeText where the
@@ -519,8 +521,11 @@ export async function createSalesOrder(
       throw new ConflictError(`Sales order code "${input.header.code}" already exists`);
     }
 
+    // Client master link is enforced by the create schema (route boundary).
+    // Snapshot the master client name into customer_name when a client is set.
+    let clientName: string | null = null;
     if (input.header.clientId) {
-      await assertClientExists(tx, input.header.clientId, companyId);
+      clientName = await assertClientExists(tx, input.header.clientId, companyId);
     }
 
     // Line FK pre-resolution
@@ -542,7 +547,7 @@ export async function createSalesOrder(
         code: input.header.code,
         soDate: input.header.soDate,
         clientId: input.header.clientId ?? null,
-        customerName: input.header.customerName ?? null,
+        customerName: clientName ?? input.header.customerName ?? null,
         clientPoNo: input.header.clientPoNo ?? null,
         type: headerType,
         status: headerStatus,
@@ -659,8 +664,10 @@ export async function updateSalesOrder(
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError(`Sales order ${id} not found`);
 
+    // When the client changes, snapshot the customer name from the master.
+    let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      await assertClientExists(tx, input.header.clientId, companyId);
+      snapshotClientName = await assertClientExists(tx, input.header.clientId, companyId);
     }
 
     // Header update — only set the fields the caller provided.
@@ -668,7 +675,8 @@ export async function updateSalesOrder(
     const h = input.header;
     if (h.soDate !== undefined) updates['soDate'] = h.soDate;
     if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
-    if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
+    if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
+    else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) updates['type'] = h.type;
     if (h.status !== undefined) updates['status'] = h.status;

@@ -159,7 +159,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     const equip = values.header.type === 'equipment';
     const headerOut = {
       ...values.header,
-      customerName: values.header.customerName?.trim() || undefined,
+      // customerName is snapshotted server-side from the client master.
+      customerName: undefined,
       clientId: values.header.clientId || undefined,
       clientPoNo: values.header.clientPoNo?.trim() || undefined,
       bomMasterId: equip ? values.header.bomMasterId?.trim() || undefined : undefined,
@@ -261,18 +262,27 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="clientId">Client</label>
+          <label className="form-label" htmlFor="clientId">
+            Client<span className="req">★</span>
+          </label>
           <div style={{ display: 'flex', gap: 6 }}>
-            <select id="clientId" className="innovic-select" style={{ flex: 1 }} {...register('header.clientId')}>
-              <option value="">— Free-text customer below —</option>
+            <select
+              id="clientId"
+              className="innovic-select"
+              style={{ flex: 1 }}
+              {...register('header.clientId', { required: 'Pick a client from the master' })}
+            >
+              <option value="">— Select a client —</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
             </select>
             <Link to="/clients/new" className="btn btn-ghost btn-sm" title="Add a new client" style={{ whiteSpace: 'nowrap' }}>+ New</Link>
           </div>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="customerName">Customer name (fallback)</label>
-          <input id="customerName" className="innovic-input" autoComplete="off" placeholder="Required if no client picked" {...register('header.customerName')} />
+          {errors.header?.clientId?.message ? (
+            <div className="form-error">{errors.header.clientId.message}</div>
+          ) : null}
+          <div className="form-help">
+            Sales Orders must reference a client from the master. Not listed? Use <b>+ New</b>.
+          </div>
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="clientPoNo">Client PO No.</label>

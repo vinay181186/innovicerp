@@ -21,6 +21,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
+import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
@@ -124,6 +125,8 @@ function SalesOrdersListPage(): React.JSX.Element {
   // Excel import — parse the workbook, then create each grouped SO sequentially
   // (each success invalidates the list via the mutation hook).
   const createSo = useCreateSalesOrder();
+  // Client master for resolving the import's "Client" column → clientId.
+  const { data: clientsData } = useClientsList({ limit: 1000, offset: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -132,7 +135,10 @@ function SalesOrdersListPage(): React.JSX.Element {
     setImporting(true);
     setImportMsg(null);
     try {
-      const { payloads, rowCount, errors } = await parseSoImportFile(file);
+      const { payloads, rowCount, errors } = await parseSoImportFile(
+        file,
+        clientsData?.clients ?? [],
+      );
       let ok = 0;
       const fails: string[] = [];
       for (const p of payloads) {
@@ -140,7 +146,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           await createSo.mutateAsync(p);
           ok += 1;
         } catch (e) {
-          fails.push(`${p.header.customerName ?? '?'}: ${e instanceof Error ? e.message : 'failed'}`);
+          fails.push(`${p.header.code}: ${e instanceof Error ? e.message : 'failed'}`);
         }
       }
       setImportMsg(

@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, salesOrderLines, salesOrders, users } from '../../db/schema';
+import { clients, items, salesOrderLines, salesOrders, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { salesOrdersRoutes } from './routes';
@@ -12,6 +12,7 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
 let firstItemId: string;
+let testClientId: string;
 
 async function buildApp(user: AuthContext | null): Promise<FastifyInstance> {
   const app = Fastify();
@@ -46,6 +47,20 @@ beforeAll(async () => {
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');
   firstItemId = it.id;
+
+  const cli = (
+    await db
+      .insert(clients)
+      .values({
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}CLI`,
+        name: 'Routes Test Client',
+        createdBy: u.id,
+        updatedBy: u.id,
+      })
+      .returning()
+  )[0]!;
+  testClientId = cli.id;
 });
 
 afterAll(async () => {
@@ -60,6 +75,7 @@ afterAll(async () => {
     }
     await db.delete(salesOrders).where(like(salesOrders.code, `${TEST_PREFIX}%`));
   }
+  await db.delete(clients).where(like(clients.code, `${TEST_PREFIX}%`));
 });
 
 describe('sales-orders routes', () => {
@@ -96,7 +112,7 @@ describe('sales-orders routes', () => {
         header: {
           code,
           soDate: '2026-05-02',
-          customerName: 'Routes Customer',
+          clientId: testClientId,
           type: 'component_manufacturing',
           status: 'open',
           gstPercent: 18,
@@ -142,7 +158,7 @@ describe('sales-orders routes', () => {
         header: {
           code: `${TEST_PREFIX}V`,
           soDate: '2026-05-02',
-          customerName: 'Viewer Block',
+          clientId: testClientId,
           type: 'component_manufacturing',
           status: 'open',
           gstPercent: 18,

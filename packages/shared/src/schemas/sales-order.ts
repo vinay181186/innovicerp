@@ -209,10 +209,12 @@ const _soHeaderInputBase = z.object({
  *  is allowed; non-Equipment requires ≥ 1 line). */
 export const createSalesOrderInputSchema = z
   .object({
-    header: _soHeaderInputBase.refine(
-      (h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()),
-      { message: 'clientId or customerName is required (per ADR-012 #9)' },
-    ),
+    // Client master link is mandatory (supersedes ADR-012 #9 for SO): an SO
+    // must reference a real client; the free-text customerName fallback is
+    // removed. The server snapshots customerName from the client master.
+    header: _soHeaderInputBase.refine((h) => Boolean(h.clientId), {
+      message: 'A client (from the client master) is required for a Sales Order.',
+    }),
     lines: z.array(salesOrderLineInputSchema).default([]),
     milestones: z.array(salesOrderMilestoneInputSchema).optional(),
   })
