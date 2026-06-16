@@ -114,12 +114,39 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     const plannedMap = new Map<string, number>();
     for (const r of plannedAgg) plannedMap.set(r.soId, Number(r.plannedQty));
 
+    // 2b. Direct (plan-less) Job Card qty per SO — JCs on open SO lines not
+    // linked to any non-cancelled plan. Folded into coverage so the dot/pct
+    // reflect production that bypassed planning (matches SO Status Review).
+    const directAgg = await tx
+      .select({
+        soId: salesOrders.id,
+        directQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`.as('direct_qty'),
+      })
+      .from(jobCards)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+      .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+      .leftJoin(
+        plans,
+        and(
+          eq(plans.jcId, jobCards.id),
+          isNull(plans.deletedAt),
+          sql`${plans.planStatus} <> 'cancelled'`,
+        ),
+      )
+      .where(
+        and(inArray(salesOrders.id, soIds), isNull(jobCards.deletedAt), isNull(plans.id)),
+      )
+      .groupBy(salesOrders.id);
+    const directMap = new Map<string, number>();
+    for (const r of directAgg) directMap.set(r.soId, Number(r.directQty));
+
     return {
       generatedAt: new Date().toISOString(),
       items: soRows.map((r) => {
         const totalQty = Number(r.totalQty);
         const plannedQty = plannedMap.get(r.soId) ?? 0;
-        const pct = totalQty > 0 ? Math.min(100, Math.round((plannedQty / totalQty) * 100)) : 0;
+        const coveredQty = plannedQty + (directMap.get(r.soId) ?? 0);
+        const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
         return {
           soId: r.soId,
           soCode: r.soCode,
@@ -303,13 +330,46 @@ export async function getPlanningSoDetail(
     const bomPartsMap = new Map<string, number>();
     for (const r of bomPartsAgg) bomPartsMap.set(r.bomMasterId, Number(r.c));
 
+    // 7b. Job Cards created directly against these SO lines WITHOUT a plan
+    // (sourceSoLineId set, not referenced by any non-cancelled plan.jcId).
+    // These are real production the plans table can't see — counted as covered
+    // so Planning stops reporting "yet to plan" while SO Status shows progress.
+    const linkedJcIds = new Set(
+      planRows.map((r) => r.plan.jcId).filter((id): id is string => id !== null),
+    );
+    const jcRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: jobCards.id,
+              code: jobCards.code,
+              soLineId: jobCards.sourceSoLineId,
+              orderQty: jobCards.orderQty,
+            })
+            .from(jobCards)
+            .where(and(inArray(jobCards.sourceSoLineId, lineIds), isNull(jobCards.deletedAt)))
+            .orderBy(asc(jobCards.code));
+    const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
+    for (const jc of jcRows) {
+      if (!jc.soLineId || linkedJcIds.has(jc.id)) continue;
+      const entry = directJcByLine.get(jc.soLineId) ?? { qty: 0, codes: [] };
+      entry.qty += jc.orderQty;
+      entry.codes.push(jc.code);
+      directJcByLine.set(jc.soLineId, entry);
+    }
+
     // 8. Compose lines.
     const lines: PlanningLine[] = lineRows.map((r) => {
       const linePlans = plansByLine.get(r.line.id) ?? [];
       const totalPlanned = linePlans.reduce((s, p) => s + p.planQty, 0);
       const orderQty = r.line.orderQty;
-      const remaining = Math.max(0, orderQty - totalPlanned);
-      const pct = orderQty > 0 ? Math.round((totalPlanned / orderQty) * 100) : 0;
+      const direct = directJcByLine.get(r.line.id);
+      const directJcQty = direct?.qty ?? 0;
+      const directJcCodes = direct?.codes ?? [];
+      const coveredQty = totalPlanned + directJcQty;
+      const remaining = Math.max(0, orderQty - coveredQty);
+      const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
       const hasAssemblyBom =
@@ -336,6 +396,8 @@ export async function getPlanningSoDetail(
         dueDate: r.line.dueDate,
         plans: linePlans,
         totalPlanned,
+        directJcQty,
+        directJcCodes,
         remaining,
         lineStatus: classifyPlanningPct(pct),
         hasEquipmentBom,

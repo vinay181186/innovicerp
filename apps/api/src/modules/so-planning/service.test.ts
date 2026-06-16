@@ -11,6 +11,7 @@ import { db } from '../../db/client';
 import {
   activityLog,
   items,
+  jobCards,
   planOps,
   plans,
   salesOrderLines,
@@ -27,6 +28,7 @@ let admin: AuthContext;
 let itemId: string;
 let soAId: string;
 let soBId: string;
+let soCId: string;
 let lineA1Id: string;
 
 async function teardown(): Promise<void> {
@@ -39,6 +41,8 @@ async function teardown(): Promise<void> {
     await db.delete(planOps).where(inArray(planOps.planId, planIds));
     await db.delete(plans).where(inArray(plans.id, planIds));
   }
+  // Job cards reference items (no cascade) — delete before items/SOs.
+  await db.delete(jobCards).where(like(jobCards.code, `${PREFIX}%`));
   const sos = await db
     .select({ id: salesOrders.id })
     .from(salesOrders)
@@ -165,6 +169,50 @@ beforeAll(async () => {
       updatedBy: admin.id,
     })
     .returning();
+
+  // SO C — 1 line qty 10, covered by a plan-less Job Card (qty 4). No plan
+  // row exists; the JC links via source_so_line_id. Exercises directJcQty.
+  const soC = await db
+    .insert(salesOrders)
+    .values({
+      companyId: admin.companyId!,
+      code: `${PREFIX}SO-C`,
+      soDate: '2026-05-03',
+      customerName: 'Planning Customer C',
+      type: 'component_manufacturing',
+      status: 'open',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  soCId = soC[0]!.id;
+
+  const linesC = await db
+    .insert(salesOrderLines)
+    .values({
+      companyId: admin.companyId!,
+      salesOrderId: soCId,
+      lineNo: 1,
+      itemId,
+      partName: 'PL-4b Part C1',
+      orderQty: 10,
+      status: 'open',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const lineC1Id = linesC[0]!.id;
+
+  await db.insert(jobCards).values({
+    companyId: admin.companyId!,
+    code: `${PREFIX}JC-C1`,
+    jcDate: '2026-05-03',
+    itemId,
+    orderQty: 4,
+    sourceSoLineId: lineC1Id,
+    createdBy: admin.id,
+    updatedBy: admin.id,
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -191,6 +239,17 @@ describe('so-planning — left pane list', () => {
     expect(b!.planningPct).toBe(0);
     expect(b!.planningStatus).toBe('unplanned');
   });
+
+  it('folds plan-less Job Card qty into coverage % (SO C: 4/10 = 40%)', async () => {
+    const out = await service.getPlanningSoList(admin);
+    const c = out.items.find((r) => r.soCode === `${PREFIX}SO-C`);
+    expect(c).toBeDefined();
+    expect(c!.totalQty).toBe(10);
+    // totalPlannedQty stays plans-only (0); the % reflects the direct JC.
+    expect(c!.totalPlannedQty).toBe(0);
+    expect(c!.planningPct).toBe(40);
+    expect(c!.planningStatus).toBe('partial');
+  });
 });
 
 describe('so-planning — right pane detail', () => {
@@ -211,6 +270,17 @@ describe('so-planning — right pane detail', () => {
     expect(l2.plans).toHaveLength(0);
     expect(l2.remaining).toBe(20);
     expect(l2.lineStatus).toBe('unplanned');
+  });
+
+  it('counts plan-less Job Cards as covered (directJcQty) so the line is not "unplanned"', async () => {
+    const out = await service.getPlanningSoDetail(soCId, admin);
+    const l = out.lines.find((x) => x.lineNo === 1)!;
+    expect(l.plans).toHaveLength(0); // no plan row exists
+    expect(l.totalPlanned).toBe(0);
+    expect(l.directJcQty).toBe(4); // JC qty counts toward coverage
+    expect(l.directJcCodes).toContain(`${PREFIX}JC-C1`);
+    expect(l.remaining).toBe(6); // 10 - 0 plans - 4 direct JC
+    expect(l.lineStatus).toBe('partial'); // 40% covered, not 'unplanned'
   });
 
   it('throws NotFoundError for unknown SO', async () => {

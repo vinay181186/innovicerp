@@ -236,16 +236,24 @@ function RightPane({
             totalQty > 0 ? Math.min(100, Math.round((line.totalPlanned / totalQty) * 100)) : 0;
           const barColor =
             pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--cyan)' : 'var(--text3)';
+          const hasDirectJc = line.directJcQty > 0;
+          // A line fully covered only by plan-less Job Cards is "In Production
+          // (no plan)" — real production that bypassed planning, not "Fully
+          // Planned". Covered = plans + direct JCs (so remaining already nets it).
           const lineStatusLabel =
             line.remaining <= 0
-              ? 'Fully Planned'
-              : line.plans.length > 0
+              ? line.plans.length === 0 && hasDirectJc
+                ? 'In Production (no plan)'
+                : 'Fully Planned'
+              : line.plans.length > 0 || hasDirectJc
                 ? `Partial (${line.remaining} left)`
                 : 'Unplanned';
           const lineStatusColor =
             line.remaining <= 0
-              ? 'var(--green)'
-              : line.plans.length > 0
+              ? line.plans.length === 0 && hasDirectJc
+                ? 'var(--cyan)'
+                : 'var(--green)'
+              : line.plans.length > 0 || hasDirectJc
                 ? 'var(--amber)'
                 : 'var(--text3)';
           return (
@@ -372,6 +380,42 @@ function RightPane({
                       }}
                     />
                   ))}
+                </div>
+              )}
+              {/* Plan-less Job Cards created from SO Status — shown so planners
+                  see production that bypassed planning and don't double-issue. */}
+              {hasDirectJc && (
+                <div style={{ padding: '6px 14px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 10px',
+                      margin: '4px 0',
+                      background: 'rgba(34,211,238,0.06)',
+                      borderRadius: 6,
+                      border: '1px solid rgba(34,211,238,0.3)',
+                    }}
+                  >
+                    <span style={{ fontSize: 11 }}>🏭</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)' }}>
+                      In Production (no plan)
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                      {line.directJcQty} pcs
+                    </span>
+                    <span
+                      className="mono"
+                      style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 'auto' }}
+                    >
+                      {line.directJcCodes.join(', ')}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text3)' }}>
+                    Job Card(s) created directly from SO Status — counted as covered.
+                    {line.remaining > 0 ? ` Plan only the remaining ${line.remaining} pcs.` : ''}
+                  </div>
                 </div>
               )}
               {/* Footer actions */}

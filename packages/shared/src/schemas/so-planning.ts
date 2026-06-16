@@ -59,9 +59,18 @@ export const planningLineSchema = z.object({
   plans: z.array(planningPlanSummarySchema),
   /** Sum of all non-cancelled plan_qty for this SO line. */
   totalPlanned: z.number().int().nonnegative(),
-  /** max(0, orderQty - totalPlanned). */
+  /**
+   * Qty covered by Job Cards created directly against this SO line WITHOUT a
+   * plan (sourceSoLineId set, not referenced by any plan.jcId). These are real
+   * production not visible to the plans table, so they're counted as covered to
+   * stop the "yet to plan" mismatch vs. SO Status Review.
+   */
+  directJcQty: z.number().int().nonnegative(),
+  /** Codes of those plan-less Job Cards, for the "In Production (no plan)" indicator. */
+  directJcCodes: z.array(z.string()),
+  /** max(0, orderQty - totalPlanned - directJcQty). */
   remaining: z.number().int().nonnegative(),
-  /** 'fully_planned' / 'partial' / 'unplanned'. */
+  /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */
   hasEquipmentBom: z.boolean(),
