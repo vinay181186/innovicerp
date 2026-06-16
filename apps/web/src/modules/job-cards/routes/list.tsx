@@ -364,11 +364,15 @@ function JobCardsListPage(): React.JSX.Element {
           ) : null}
           {canWrite ? (
             <>
-              <Link to="/planning" className="btn btn-ghost">
+              <Link to="/planning" className="btn btn-primary">
                 + Plan &amp; Create Job Card
               </Link>
-              <Link to="/job-cards/new" className="btn btn-primary">
-                + New Job Card
+              <Link
+                to="/job-cards/new"
+                className="btn btn-ghost"
+                title="Job Work (JW) orders only. Sales Order items are created via Planning."
+              >
+                + New JW Job Card
               </Link>
             </>
           ) : null}

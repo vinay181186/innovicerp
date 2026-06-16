@@ -627,6 +627,16 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
   requireWriteRole(user);
   const companyId = requireCompany(user);
 
+  // Governance: direct Job Cards are disabled. SO/item Job Cards must originate
+  // from a Plan (Planning → execute). Manual creation is permitted only for
+  // Job Work (JW) orders, until JW is supported in Planning. Plan execution,
+  // NC rework and BOM cascade insert JCs internally and bypass this entry point.
+  if (!input.sourceJwLineId) {
+    throw new ValidationError(
+      'Direct Job Cards are disabled — create the Job Card from Planning (execute a Plan). Manual creation is allowed only for Job Work (JW) orders.',
+    );
+  }
+
   const newId = await withUserContext(user, async (tx) => {
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertLineBalance(tx, input, companyId, null);

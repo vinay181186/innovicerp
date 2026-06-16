@@ -84,6 +84,11 @@ export function JobCardForm({
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
 
+  // Governance: direct SO/item Job Cards are disabled. Manual creation is
+  // JW-only — SO items go through Planning (execute a plan). Edit mode keeps
+  // whatever source the JC already has (incl. legacy SO-linked JCs).
+  const availableSources = isEdit ? sourceOptions : sourceOptions.filter((o) => o.type === 'jw');
+
   const create = useCreateJobCard();
   const update = useUpdateJobCard(model?.id ?? '');
 
@@ -138,9 +143,9 @@ export function JobCardForm({
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
-    for (const o of sourceOptions) m.set(sourceLabel(o), o);
+    for (const o of availableSources) m.set(sourceLabel(o), o);
     return m;
-  }, [sourceOptions]);
+  }, [availableSources]);
   const selectedSource = sourceLineId
     ? sourceOptions.find((o) => o.lineId === sourceLineId)
     : undefined;
@@ -253,6 +258,13 @@ export function JobCardForm({
 
   const onSubmit = async (): Promise<void> => {
     setError(null);
+    // Governance: manual create is JW-only. SO items go via Planning.
+    if (!isEdit && (sourceType !== 'jw' || !sourceLineId)) {
+      setError(
+        'Pick a Job Work (JW) order. Sales Order items are created via Planning (execute a plan), not here.',
+      );
+      return;
+    }
     const qty = Number(orderQty);
     if (!itemCode || !qty || qty <= 0) {
       setError('Fill Item Code and a positive Order Qty.');
@@ -327,7 +339,7 @@ export function JobCardForm({
         ))}
       </datalist>
       <datalist id="dlJcSource">
-        {sourceOptions.map((o) => (
+        {availableSources.map((o) => (
           <option key={o.lineId} value={sourceLabel(o)} />
         ))}
       </datalist>
@@ -378,12 +390,28 @@ export function JobCardForm({
               </select>
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">SO / WO / JW No. (type to search)</label>
+              <label className="form-label">
+                {isEdit ? 'SO / WO / JW No. (type to search)' : 'Job Work (JW) No. (type to search)'}
+                {!isEdit ? <span className="req">★</span> : null}
+              </label>
+              {!isEdit ? (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--amber)',
+                    marginBottom: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  ⓘ Manual Job Cards are for Job Work (JW) orders only. For Sales Order items, use
+                  Planning → execute a plan.
+                </div>
+              ) : null}
               <input
                 className="innovic-input"
                 list="dlJcSource"
                 value={sourceText}
-                placeholder="🔍 Search SO/WO/JW number…"
+                placeholder={isEdit ? '🔍 Search SO/WO/JW number…' : '🔍 Search JW number…'}
                 onChange={(e) => onSourceChange(e.target.value)}
               />
               {selectedSource ? (

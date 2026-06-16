@@ -6,7 +6,15 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jcOps, jobCards, machines, users } from '../../db/schema';
+import {
+  items,
+  jcOps,
+  jobCards,
+  jobWorkOrderLines,
+  jobWorkOrders,
+  machines,
+  users,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import * as service from './service';
@@ -135,11 +143,15 @@ describe('job-cards service — writes (ADR-051)', () => {
   const createdIds: string[] = [];
   let itemCode: string | null = null;
   let machineCode: string | null = null;
+  // Manual JC creation is now JW-only (governance), so the write tests need a
+  // Job Work line to attach to. Created + torn down here (prefix TJC-).
+  let jwOrderId: string | null = null;
+  let jwLineId: string | null = null;
 
   beforeAll(async () => {
     const it = (
       await db
-        .select({ code: items.code })
+        .select({ id: items.id, code: items.code })
         .from(items)
         .where(and(eq(items.companyId, admin.companyId!), isNull(items.deletedAt)))
         .limit(1)
@@ -153,6 +165,42 @@ describe('job-cards service — writes (ADR-051)', () => {
         .limit(1)
     )[0];
     machineCode = m?.code ?? null;
+
+    if (it) {
+      const jw = (
+        await db
+          .insert(jobWorkOrders)
+          .values({
+            companyId: admin.companyId!,
+            code: 'TJC-JW-001',
+            jwDate: '2026-06-13',
+            customerName: 'JC write-test JW',
+            status: 'open',
+            createdBy: admin.id,
+            updatedBy: admin.id,
+          })
+          .returning()
+      )[0]!;
+      jwOrderId = jw.id;
+      const line = (
+        await db
+          .insert(jobWorkOrderLines)
+          .values({
+            companyId: admin.companyId!,
+            jobWorkOrderId: jw.id,
+            lineNo: 1,
+            itemId: it.id,
+            partName: 'JC write-test JW line',
+            uom: 'NOS',
+            orderQty: 100,
+            status: 'open',
+            createdBy: admin.id,
+            updatedBy: admin.id,
+          })
+          .returning()
+      )[0]!;
+      jwLineId = line.id;
+    }
   });
 
   afterAll(async () => {
@@ -162,16 +210,21 @@ describe('job-cards service — writes (ADR-051)', () => {
       await db.delete(jcOps).where(inArray(jcOps.jobCardId, createdIds));
       await db.delete(jobCards).where(inArray(jobCards.id, createdIds));
     }
+    if (jwOrderId) {
+      await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, jwOrderId));
+      await db.delete(jobWorkOrders).where(eq(jobWorkOrders.id, jwOrderId));
+    }
   });
 
   it('createJobCard creates a JC with IN-JC series code + ops', async () => {
-    if (!itemCode || !machineCode) return; // no master data on this DB
+    if (!itemCode || !machineCode || !jwLineId) return; // no master data on this DB
     const jc = await service.createJobCard(
       {
         jcDate: '2026-06-13',
         itemCode,
         orderQty: 5,
         priority: 'normal',
+        sourceJwLineId: jwLineId,
         ops: [
           {
             operation: 'CNC Turning',
@@ -195,13 +248,14 @@ describe('job-cards service — writes (ADR-051)', () => {
   });
 
   it('updateJobCard changes header + replaces ops (renumbered)', async () => {
-    if (!itemCode || !machineCode) return;
+    if (!itemCode || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
       {
         jcDate: '2026-06-13',
         itemCode,
         orderQty: 5,
         priority: 'normal',
+        sourceJwLineId: jwLineId,
         ops: [
           { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
           { operation: 'Op B', opType: 'process', machineCode, cycleTimeMin: 2, qcRequired: false, outsourceCost: 0 },
@@ -230,7 +284,25 @@ describe('job-cards service — writes (ADR-051)', () => {
     expect(updated.totalOps).toBe(1);
   });
 
-  it('createJobCard rejects an unknown item', async () => {
+  it('createJobCard rejects a direct (non-JW) Job Card (governance)', async () => {
+    await expect(
+      service.createJobCard(
+        {
+          jcDate: '2026-06-13',
+          itemCode: itemCode ?? 'X',
+          orderQty: 1,
+          priority: 'normal',
+          // no sourceJwLineId → direct JC, must be rejected
+          ops: [],
+          qcDocs: [],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('createJobCard rejects an unknown item (with a valid JW source)', async () => {
+    if (!jwLineId) return;
     await expect(
       service.createJobCard(
         {
@@ -238,6 +310,7 @@ describe('job-cards service — writes (ADR-051)', () => {
           itemCode: 'NOPE-NOT-AN-ITEM-ZZZ',
           orderQty: 1,
           priority: 'normal',
+          sourceJwLineId: jwLineId,
           ops: [],
           qcDocs: [],
         },
@@ -264,9 +337,17 @@ describe('job-cards service — writes (ADR-051)', () => {
   });
 
   it('deleteJobCard soft-deletes (admin) then the JC 404s', async () => {
-    if (!itemCode) return;
+    if (!itemCode || !jwLineId) return;
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 2, priority: 'normal', ops: [], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 2,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
