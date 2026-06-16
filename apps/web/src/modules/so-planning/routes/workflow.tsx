@@ -237,14 +237,26 @@ function RightPane({
           const barColor =
             pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--cyan)' : 'var(--text3)';
           const hasDirectJc = line.directJcQty > 0;
-          // A line fully covered only by plan-less Job Cards is "In Production
-          // (no plan)" — real production that bypassed planning, not "Fully
-          // Planned". Covered = plans + direct JCs (so remaining already nets it).
+          // The line header reflects the plan LIFECYCLE, not just coverage:
+          //  - covered but plan still a draft (no JC/PR executed) → "In Planning"
+          //  - covered AND every plan executed (JC created / PR raised / in prod)
+          //    → "Fully Planned"
+          //  - covered only by a plan-less direct JC → "In Production (no plan)"
+          // "Fully Planned" must mean work is actually allocated, not that a draft
+          // plan merely exists for the full qty.
+          const planExecuted = (s: string): boolean =>
+            s === 'jc_created' || s === 'pr_created' || s === 'in_production' || s === 'complete';
+          const allPlansExecuted =
+            line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
+          const coveredByDraftPlans =
+            line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
           const lineStatusLabel =
             line.remaining <= 0
               ? line.plans.length === 0 && hasDirectJc
                 ? 'In Production (no plan)'
-                : 'Fully Planned'
+                : coveredByDraftPlans
+                  ? 'In Planning'
+                  : 'Fully Planned'
               : line.plans.length > 0 || hasDirectJc
                 ? `Partial (${line.remaining} left)`
                 : 'Unplanned';
@@ -252,7 +264,9 @@ function RightPane({
             line.remaining <= 0
               ? line.plans.length === 0 && hasDirectJc
                 ? 'var(--cyan)'
-                : 'var(--green)'
+                : coveredByDraftPlans
+                  ? 'var(--amber)'
+                  : 'var(--green)'
               : line.plans.length > 0 || hasDirectJc
                 ? 'var(--amber)'
                 : 'var(--text3)';
