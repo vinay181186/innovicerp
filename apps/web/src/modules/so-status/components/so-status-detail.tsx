@@ -154,6 +154,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           <LinePanel
             key={line.id}
             line={line}
+            soId={header.id}
             planningLine={planningLines.get(line.id)}
             onCreatePlan={() => setModal({ kind: 'create', soLineId: line.id })}
             onAssemblyBom={() => setModal({ kind: 'assembly-bom', soLineId: line.id })}
@@ -354,11 +355,13 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
 
 function LinePanel({
   line,
+  soId,
   planningLine,
   onCreatePlan,
   onAssemblyBom,
 }: {
   line: SoStatusLine;
+  soId: string;
   planningLine: PlanningLine | undefined;
   onCreatePlan: () => void;
   onAssemblyBom: () => void;
@@ -366,14 +369,22 @@ function LinePanel({
   const navigate = useNavigate();
   const jcIssuedQty = line.chips.jcIssued.qty;
   const lineBalance = Math.max(0, line.orderQty - jcIssuedQty);
-  // Plan actions mirror the Planning screen's per-line buttons:
+  // Plan-first flow: this line plans through "+ Plan" (no direct Job Card).
   //  - assembly BOM line → open BOM-planning modal
-  //  - plain line with planning remaining → "+ Plan N pcs" (create plan)
-  // Equipment-BOM lines are planned via the header banner, not per line.
+  //  - equipment-BOM line → planned via the header banner, not per line
+  //  - plain line → "+ Plan N pcs" (create plan inline, or divert to Planning)
   const showAssemblyBom = planningLine?.hasAssemblyBom === true;
-  const planRemaining = planningLine?.remaining ?? 0;
-  const showCreatePlan =
-    !!planningLine && !planningLine.hasEquipmentBom && !showAssemblyBom && planRemaining > 0;
+  const isEquipmentLine = planningLine?.hasEquipmentBom === true;
+  // Use planning remaining once loaded (nets plans + direct JCs); fall back to
+  // the SO balance so the button still shows before planning data arrives.
+  const remainingToPlan = planningLine ? planningLine.remaining : lineBalance;
+  const showPlan = !showAssemblyBom && !isEquipmentLine && remainingToPlan > 0;
+  const onPlan = (): void => {
+    // Inline Create-Plan modal when planning data is loaded; otherwise divert
+    // to the SO/JW Planning screen for this SO.
+    if (planningLine && planningLine.remaining > 0) onCreatePlan();
+    else navigate({ to: '/planning', search: { soId } });
+  };
   return (
     <div className="panel">
       <div className="panel-hdr">
@@ -429,7 +440,7 @@ function LinePanel({
           )}
         </div>
 
-        {/* Per-line action footer: Plan + Create Job Card + Create PO (legacy L4459-4462) */}
+        {/* Per-line action footer: Plan (no direct Job Card) + Create PO. */}
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {showAssemblyBom ? (
             <button
@@ -441,28 +452,19 @@ function LinePanel({
               📦 BOM Planning ({planningLine?.bomPartsCount ?? 0} parts)
             </button>
           ) : null}
-          {showCreatePlan ? (
+          {showPlan ? (
             <button
               type="button"
               className="btn btn-sm"
               style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
-              onClick={onCreatePlan}
+              onClick={onPlan}
+              title="Create a plan for this line (planning → execute → Job Card)"
             >
-              <Plus size={12} /> Plan {planRemaining} pcs
+              <Plus size={12} /> Plan {remainingToPlan} pcs
             </button>
+          ) : !showAssemblyBom && !isEquipmentLine ? (
+            <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully planned</span>
           ) : null}
-          {lineBalance > 0 ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ background: 'rgba(34,211,238,0.1)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
-              onClick={() => navigate({ to: '/job-cards/new', search: { sourceLineId: line.id } })}
-            >
-              <Plus size={12} /> Create Job Card ({lineBalance} pcs balance)
-            </button>
-          ) : (
-            <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully allocated</span>
-          )}
           <button
             type="button"
             className="btn btn-sm"
