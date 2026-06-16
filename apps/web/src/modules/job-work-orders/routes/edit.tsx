@@ -38,12 +38,12 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JW Master
+        <ArrowLeft size={14} /> Back to JWSO Master
       </Link>
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New JW Order</div>
+            <div className="panel-title">+ New JWSO Order</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Customer-supplied raw material → we machine and deliver.
             </div>
@@ -112,7 +112,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
         className="btn btn-ghost btn-sm"
         style={{ marginBottom: 10 }}
       >
-        <ArrowLeft size={14} /> Back to JW
+        <ArrowLeft size={14} /> Back to JWSO
       </Link>
       <div className="panel">
         <div className="panel-hdr">

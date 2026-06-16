@@ -23,11 +23,11 @@ function ProdJwListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📦 JW List (Production View)</div>
+        <div className="section-hdr m-0">📦 JWSO List (Production View)</div>
         <input
           type="text"
           className="innovic-input"
-          placeholder="🔍 Search JW, customer…"
+          placeholder="🔍 Search JWSO, customer…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 280, fontSize: 12 }}
@@ -48,14 +48,14 @@ function ProdJwListPage(): React.JSX.Element {
           </div>
         ) : data && data.items.length === 0 ? (
           <div className="panel-body">
-            <div className="empty-state">No JW orders found</div>
+            <div className="empty-state">No JWSO orders found</div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>JW No</th>
+                  <th>JWSO No</th>
                   <th>Customer</th>
                   <th className="td-ctr">Lines</th>
                   <th className="td-ctr">Total Qty</th>

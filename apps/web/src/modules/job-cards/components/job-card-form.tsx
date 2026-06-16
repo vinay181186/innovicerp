@@ -55,7 +55,7 @@ interface FormDoc {
 const today = (): string => new Date().toISOString().slice(0, 10);
 
 function sourceLabel(o: JobCardSourceOption): string {
-  const tag = o.type === 'jw' ? '[JW]' : '[SO]';
+  const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
   const ln = o.lineNo && o.lineNo !== 1 ? ` / L${o.lineNo}` : '';
   const part = o.partName ? ` (${o.partName})` : '';
   return `${tag} ${o.code}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
@@ -261,7 +261,7 @@ export function JobCardForm({
     // Governance: manual create is JW-only. SO items go via Planning.
     if (!isEdit && (sourceType !== 'jw' || !sourceLineId)) {
       setError(
-        'Pick a Job Work (JW) order. Sales Order items are created via Planning (execute a plan), not here.',
+        'Pick a Job Work Sales Order (JWSO). Sales Order items are created via Planning (execute a plan), not here.',
       );
       return;
     }
@@ -391,7 +391,7 @@ export function JobCardForm({
             </div>
             <div className="form-grp form-full">
               <label className="form-label">
-                {isEdit ? 'SO / WO / JW No. (type to search)' : 'Job Work (JW) No. (type to search)'}
+                {isEdit ? 'SO / WO / JWSO No. (type to search)' : 'Job Work Sales Order (JWSO) No. (type to search)'}
                 {!isEdit ? <span className="req">★</span> : null}
               </label>
               {!isEdit ? (
@@ -403,15 +403,15 @@ export function JobCardForm({
                     fontWeight: 600,
                   }}
                 >
-                  ⓘ Manual Job Cards are for Job Work (JW) orders only. For Sales Order items, use
-                  Planning → execute a plan.
+                  ⓘ Manual Job Cards are for Job Work Sales Orders (JWSO) only. For Sales Order
+                  items, use Planning → execute a plan.
                 </div>
               ) : null}
               <input
                 className="innovic-input"
                 list="dlJcSource"
                 value={sourceText}
-                placeholder={isEdit ? '🔍 Search SO/WO/JW number…' : '🔍 Search JW number…'}
+                placeholder={isEdit ? '🔍 Search SO/WO/JWSO number…' : '🔍 Search JWSO number…'}
                 onChange={(e) => onSourceChange(e.target.value)}
               />
               {selectedSource ? (

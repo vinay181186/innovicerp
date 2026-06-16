@@ -61,7 +61,7 @@ export const SECTIONS: readonly NavSection[] = [
       {
         items: [
           { to: '/planning-dashboard', label: 'Planning Dashboard', icon: '📊' },
-          { to: '/planning', label: 'SO/JW Planning', icon: '📋' },
+          { to: '/planning', label: 'SO/JWSO Planning', icon: '📋' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
           { to: '/so-status', label: 'SO Status Review', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
@@ -80,10 +80,12 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Entry',
         items: [
           { to: '/sales-orders', label: 'SO Master', icon: '📋' },
-          { to: '/job-work-orders', label: 'JW Master', icon: '🔧' },
+          { to: '/job-work-orders', label: 'JWSO Master', icon: '🔧' },
           // Finished-goods customer dispatch (bills against SO lines). The
           // vendor job-work outward DC register lives under Purchase →
-          // "OSP / JW Outward DC" (/delivery-challans), not here.
+          // "OSP Outward DC" (/delivery-challans), not here. NOTE: "JWSO" =
+          // sales job-work (client supplies material); the vendor/OSP side
+          // keeps "JW"/"OSP" wording to stay distinct.
           { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
           { to: '/so-documents', label: 'SO Documents', icon: '📁' },
         ],
@@ -173,7 +175,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
           { to: '/production-schedule', label: 'Production Schedule (Gantt)', icon: '📅' },
           { to: '/prod-so-list', label: 'SO List', icon: '📋' },
-          { to: '/prod-jw-list', label: 'JW List', icon: '📋' },
+          { to: '/prod-jw-list', label: 'JWSO List', icon: '📋' },
           { to: '/reports?group=Production', label: 'Production Reports', icon: '📊' },
         ],
       },
@@ -243,7 +245,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄' },
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
           { to: '/outsource-jobs', label: 'Outsource Jobs', icon: '📦' },
-          { to: '/delivery-challans', label: 'OSP / JW Outward DC', icon: '🚛' },
+          { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛' },
           { to: '/service-pos', label: 'Service PO', icon: '💳' },
         ],
       },

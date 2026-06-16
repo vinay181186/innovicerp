@@ -190,8 +190,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
         <div className="form-grp">
-          <label className="form-label" htmlFor="code">JW No.<span className="req">★</span></label>
-          <input id="code" className="innovic-input" autoFocus={!isEdit} autoComplete="off" readOnly={isEdit} {...register('header.code', { required: 'JW No. is required' })} />
+          <label className="form-label" htmlFor="code">JWSO No.<span className="req">★</span></label>
+          <input id="code" className="innovic-input" autoFocus={!isEdit} autoComplete="off" readOnly={isEdit} {...register('header.code', { required: 'JWSO No. is required' })} />
           {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
           {errors.header?.code?.message ? <div className="form-error">{errors.header.code.message}</div> : null}
         </div>
@@ -268,7 +268,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
       {/* Line items */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>▸ JW Line Items</div>
+        <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>▸ JWSO Line Items</div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadJwLineTemplate()}>⬇ Template</button>
           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
@@ -344,7 +344,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create JW')}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create JWSO')}
           </button>
         </div>
       </div>

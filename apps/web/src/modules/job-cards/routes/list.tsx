@@ -370,9 +370,9 @@ function JobCardsListPage(): React.JSX.Element {
               <Link
                 to="/job-cards/new"
                 className="btn btn-ghost"
-                title="Job Work (JW) orders only. Sales Order items are created via Planning."
+                title="Job Work Sales Orders (JWSO) only. Sales Order items are created via Planning."
               >
-                + New JW Job Card
+                + New JWSO Job Card
               </Link>
             </>
           ) : null}
@@ -392,7 +392,7 @@ function JobCardsListPage(): React.JSX.Element {
           >
             <input
               className="innovic-input"
-              placeholder="Search code, item, customer, SO/JW…"
+              placeholder="Search code, item, customer, SO/JWSO…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               style={{ width: 280, fontSize: 12 }}

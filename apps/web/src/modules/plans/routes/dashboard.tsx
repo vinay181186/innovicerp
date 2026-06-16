@@ -188,7 +188,7 @@ function NeedsPlanningTable({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>SO/JW</th>
+                <th>SO/JWSO</th>
                 <th className="td-ctr">Line</th>
                 <th>Item</th>
                 <th>Part Name</th>

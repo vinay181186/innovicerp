@@ -68,7 +68,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   return (
     <div>
       <Link to="/job-work-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JW Master
+        <ArrowLeft size={14} /> Back to JWSO Master
       </Link>
 
       <div className="panel">

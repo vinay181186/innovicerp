@@ -88,7 +88,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<JobWorkOrderListItem>[]>(
     () => [
       {
-        header: 'JW No.',
+        header: 'JWSO No.',
         accessorKey: 'code',
         cell: ({ row }) => (
           <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} className="td-code cyan" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
@@ -166,15 +166,15 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
-        <div className="section-hdr" style={{ marginBottom: 0 }}>JW Master — Job Work (Material from Client)</div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input className="innovic-input" placeholder="Search JW, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+          <input className="innovic-input" placeholder="Search JWSO, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
           <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
             <option value="">All statuses</option>
             {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-          {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JW Order</Link> : null}
+          {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
         </div>
       </div>
 
@@ -196,7 +196,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr><td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load job work orders'}</td></tr>
               ) : table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length} className="empty-state">No Job Work orders — click + New JW Order</td></tr>
+                <tr><td colSpan={columns.length} className="empty-state">No Job Work Sales Orders — click + New JWSO Order</td></tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>
