@@ -8,7 +8,9 @@ import {
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
 interface FormValues {
@@ -59,11 +61,33 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, handleSubmit, formState } = form;
+  const { register, handleSubmit, formState, setValue } = form;
   const errors = formState.errors;
 
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const vendors = vendorsData?.vendors ?? [];
+
+  // Item master drives the code autosuggest + name auto-fill. PR still accepts
+  // off-master free text, so a non-matching code is left as-is.
+  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  const items = itemsData?.items ?? [];
+  const itemsByCode = useMemo(() => {
+    const m = new Map<string, (typeof items)[number]>();
+    for (const it of items) m.set(it.code.toUpperCase(), it);
+    return m;
+  }, [items]);
+
+  const itemCodeReg = register('itemCodeText');
+  const onItemCodeChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    void itemCodeReg.onChange(e);
+    const match = itemsByCode.get(e.target.value.trim().toUpperCase());
+    if (match) {
+      setValue('itemId', match.id, { shouldDirty: true });
+      setValue('itemName', match.name, { shouldDirty: true });
+    } else {
+      setValue('itemId', undefined, { shouldDirty: true });
+    }
+  };
 
   const onValid = async (values: FormValues): Promise<void> => {
     const trimmedItemCode = values.itemCodeText?.trim();
@@ -183,9 +207,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           <input
             id="itemCodeText"
             className="innovic-input"
+            list="dlPrItems"
             autoComplete="off"
-            placeholder="ITM-001"
-            {...register('itemCodeText')}
+            placeholder="🔍 ITM-001"
+            {...itemCodeReg}
+            onChange={onItemCodeChange}
           />
         </div>
         <div className="form-grp">
@@ -254,6 +280,14 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           />
         </div>
       </div>
+
+      <datalist id="dlPrItems">
+        {items.map((it) => (
+          <option key={it.id} value={it.code}>
+            {it.name}
+          </option>
+        ))}
+      </datalist>
 
       <div style={{ marginTop: 16 }}>
         {props.submitError ? (

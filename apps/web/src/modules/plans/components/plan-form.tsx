@@ -5,7 +5,8 @@
 
 import type { CreatePlanInput, PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useItemsList } from '@/modules/items/api';
 import { useDefaultRouteOps } from '../api';
 
 export interface PlanFormValues {
@@ -172,6 +173,25 @@ export function PlanForm({
     setValues((v) => ({ ...v, [key]: val }));
   };
 
+  // Item master drives the code autosuggest + name/id auto-fill. Plans still
+  // accept off-master free text, so a non-matching code is left as typed.
+  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  const items = itemsData?.items ?? [];
+  const itemsByCode = useMemo(() => {
+    const m = new Map<string, (typeof items)[number]>();
+    for (const it of items) m.set(it.code.toUpperCase(), it);
+    return m;
+  }, [items]);
+
+  const onItemCodeChange = (code: string): void => {
+    const match = itemsByCode.get(code.trim().toUpperCase());
+    setValues((v) => ({
+      ...v,
+      itemCodeText: code,
+      ...(match ? { itemId: match.id, itemNameText: match.name } : {}),
+    }));
+  };
+
   const handleLoadDefaultOps = (): void => {
     if (!defaultOps || defaultOps.ops.length === 0) return;
     setValues((v) => ({
@@ -307,10 +327,19 @@ export function PlanForm({
           <Field label="Item code *">
             <input
               className="innovic-input"
+              list="dlPlanItems"
               required
+              placeholder="🔍 search code…"
               value={values.itemCodeText}
-              onChange={(e) => update('itemCodeText', e.target.value)}
+              onChange={(e) => onItemCodeChange(e.target.value)}
             />
+            <datalist id="dlPlanItems">
+              {items.map((it) => (
+                <option key={it.id} value={it.code}>
+                  {it.name}
+                </option>
+              ))}
+            </datalist>
           </Field>
           <Field label="Item name">
             <input

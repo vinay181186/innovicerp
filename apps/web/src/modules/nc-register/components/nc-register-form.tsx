@@ -26,6 +26,7 @@ interface FormValues {
   operationText?: string;
   qcOperationText?: string;
   itemId: string;
+  itemCodeText?: string;
   itemNameText?: string;
   soCodeText?: string;
   machineCodeText?: string;
@@ -75,8 +76,23 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const { data: jcData } = useJobCardsList({ limit: 200, offset: 0 });
   const jcs = jcData?.items ?? [];
 
-  const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
+  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
+
+  const itemsByCode = useMemo(() => {
+    const m = new Map<string, (typeof items)[number]>();
+    for (const it of items) m.set(it.code.toUpperCase(), it);
+    return m;
+  }, [items]);
+
+  // Typed item picker: resolve the typed code to a master item id + name so the
+  // payload keeps `itemId`. Keeps both text + id so partial typing is visible.
+  const onItemCodeChange = (code: string): void => {
+    setValue('itemCodeText', code, { shouldDirty: true });
+    const match = itemsByCode.get(code.trim().toUpperCase());
+    setValue('itemId', match?.id ?? '', { shouldDirty: true, shouldValidate: true });
+    setValue('itemNameText', match?.name ?? undefined, { shouldDirty: true });
+  };
 
   // Pull recent NCs to auto-suggest the next code (legacy `_nextNCNo` assigns
   // NC-NNNN from the running max). Only fetched in create mode.
@@ -119,6 +135,9 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     const jc = jcs.find((j) => j.id === selectedJcId);
     if (jc?.itemId) {
       setValue('itemId', jc.itemId, { shouldDirty: true });
+      if (jc.itemCode) {
+        setValue('itemCodeText', jc.itemCode, { shouldDirty: true });
+      }
       if (jc.itemName) {
         setValue('itemNameText', jc.itemName, { shouldDirty: true });
       }
@@ -235,21 +254,29 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="itemId">
+              <label className="form-label" htmlFor="itemCodeText">
                 Item<span className="req">★</span>
               </label>
-              <select
-                id="itemId"
-                className="innovic-select"
-                {...register('itemId', { required: 'Item is required' })}
-              >
-                <option value="">— Auto-fills from JC —</option>
-                {items.map((it) => (
-                  <option key={it.id} value={it.id}>
-                    {it.code} — {it.name}
-                  </option>
-                ))}
-              </select>
+              <input
+                id="itemCodeText"
+                className="innovic-input"
+                list="dlNcItems"
+                autoComplete="off"
+                placeholder="🔍 Auto-fills from JC, or search code…"
+                value={watch('itemCodeText') ?? ''}
+                onChange={(e) => onItemCodeChange(e.target.value)}
+              />
+              {/* itemId is the submitted value; hidden so RHF can validate it. */}
+              <input type="hidden" {...register('itemId', { required: 'Item is required' })} />
+              {watch('itemId') ? (
+                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                  ✓ {watch('itemNameText') ?? ''}
+                </div>
+              ) : watch('itemCodeText')?.trim() ? (
+                <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 2 }}>
+                  ⚠ not found in item master
+                </div>
+              ) : null}
               {errors.itemId?.message ? (
                 <div className="form-error">{errors.itemId.message}</div>
               ) : null}
@@ -382,6 +409,14 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
           ) : null}
         </div>
       </div>
+
+      <datalist id="dlNcItems">
+        {items.map((it) => (
+          <option key={it.id} value={it.code}>
+            {it.name}
+          </option>
+        ))}
+      </datalist>
 
       <div style={{ marginTop: 16 }}>
         {props.submitError ? (

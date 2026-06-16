@@ -10,7 +10,9 @@ import {
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { useMemo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
+import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
 interface LineFormValue {
@@ -88,12 +90,22 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
     : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState } = form;
+  const { register, control, handleSubmit, formState, setValue } = form;
   const errors = formState.errors;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const vendors = vendorsData?.vendors ?? [];
+
+  // Item master drives the per-line code autosuggest + name auto-fill. PO still
+  // accepts off-master free text, so a non-matching code is left untouched.
+  const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
+  const items = itemsData?.items ?? [];
+  const itemsByCode = useMemo(() => {
+    const m = new Map<string, (typeof items)[number]>();
+    for (const it of items) m.set(it.code.toUpperCase(), it);
+    return m;
+  }, [items]);
 
   const onValid = async (values: FormValues): Promise<void> => {
     const headerOut = {
@@ -371,12 +383,35 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
               <div className="form-grid form-grid-3">
                 <div className="form-grp">
                   <label className="form-label">Item Code</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    placeholder="ITM-001"
-                    {...register(`lines.${idx}.itemCodeText` as const)}
-                  />
+                  {(() => {
+                    const lineCodeReg = register(`lines.${idx}.itemCodeText` as const);
+                    return (
+                      <input
+                        className="innovic-input"
+                        list="dlPoItems"
+                        autoComplete="off"
+                        placeholder="🔍 ITM-001"
+                        {...lineCodeReg}
+                        onChange={(e) => {
+                          void lineCodeReg.onChange(e);
+                          const match = itemsByCode.get(e.target.value.trim().toUpperCase());
+                          if (match) {
+                            setValue(`lines.${idx}.itemId` as const, match.id, {
+                              shouldDirty: true,
+                            });
+                            setValue(`lines.${idx}.itemName` as const, match.name, {
+                              shouldDirty: true,
+                              shouldValidate: true,
+                            });
+                          } else {
+                            setValue(`lines.${idx}.itemId` as const, undefined, {
+                              shouldDirty: true,
+                            });
+                          }
+                        }}
+                      />
+                    );
+                  })()}
                 </div>
                 <div className="form-grp">
                   <label className="form-label">
@@ -452,6 +487,14 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           ))}
         </div>
       )}
+
+      <datalist id="dlPoItems">
+        {items.map((it) => (
+          <option key={it.id} value={it.code}>
+            {it.name}
+          </option>
+        ))}
+      </datalist>
 
       <div style={{ marginTop: 16 }}>
         {props.submitError ? (
