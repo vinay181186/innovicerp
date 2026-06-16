@@ -96,7 +96,8 @@ export function emptyValues(): PlanFormValues {
 
 export function toCreateInput(v: PlanFormValues): CreatePlanInput {
   return {
-    code: v.code,
+    // Blank → server auto-numbers the next PLN-NNNN.
+    code: v.code.trim() || undefined,
     planDate: v.planDate,
     planType: v.planType,
     soLineId: v.soLineId ?? null,
@@ -272,11 +273,11 @@ export function PlanForm({
             gap: 10,
           }}
         >
-          <Field label="Plan code *">
+          <Field label="Plan code">
             <input
               className="innovic-input"
-              required
               readOnly={isEdit}
+              placeholder={isEdit ? undefined : 'PLN-NNNN (auto if blank)'}
               value={values.code}
               onChange={(e) => update('code', e.target.value)}
             />

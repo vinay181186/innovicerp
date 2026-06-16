@@ -32,11 +32,6 @@ type RowState = {
   qty: number;
 };
 
-function nextPlanCode(): string {
-  const ts = Date.now().toString(36).toUpperCase().slice(-6);
-  return `PLN-${ts}`;
-}
-
 export function BomPlanningModal({
   mode,
   soId,
@@ -80,7 +75,7 @@ export function BomPlanningModal({
         const planType: 'manufacture' | 'direct_purchase' =
           c.bomType === 'purchase' ? 'direct_purchase' : 'manufacture';
         const input: CreatePlanInput = {
-          code: nextPlanCode() + '-' + plansCreated.toString(36).toUpperCase(),
+          // code omitted → server assigns the next sequential PLN-NNNN.
           planDate: new Date().toISOString().slice(0, 10),
           planType,
           soLineId,
@@ -99,7 +94,7 @@ export function BomPlanningModal({
       }
       if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
         const input: CreatePlanInput = {
-          code: nextPlanCode() + '-ASSY',
+          // code omitted → server assigns the next sequential PLN-NNNN.
           planDate: new Date().toISOString().slice(0, 10),
           planType: 'assembly',
           soLineId,

@@ -157,7 +157,8 @@ const planOpInputSchema = z.object({
 export type PlanOpInput = z.infer<typeof planOpInputSchema>;
 
 export const createPlanInputSchema = z.object({
-  code: z.string().trim().min(1).max(40),
+  // Optional — server auto-numbers the next PLN-NNNN when blank/omitted.
+  code: z.string().trim().max(40).optional(),
   planDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   planType: planTypeSchema,
 

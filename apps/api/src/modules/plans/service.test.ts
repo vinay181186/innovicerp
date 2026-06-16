@@ -2,7 +2,7 @@
 // uses unique plan codes so they don't trample each other. Cleanup is
 // per-prefix in afterAll + relies on global-setup for killed-run cruft.
 
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
@@ -29,8 +29,15 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
 let itemId: string;
+// Auto-numbered plans (PLN-NNNN) don't carry TEST_PREFIX, so track + delete by
+// id — important because the test DB is shared with the live trial.
+let autoPlanIds: string[] = [];
 
 async function teardown(): Promise<void> {
+  if (autoPlanIds.length > 0) {
+    await db.delete(plans).where(inArray(plans.id, autoPlanIds));
+    autoPlanIds = [];
+  }
   // PL-4 ordering: plans MUST go before JCs/PRs they reference. The schema's
   // ON DELETE SET NULL on jc_id / dp_pr_id / fo_pr_id would null those out
   // on JC/PR delete, then the CHECK `plans_status_fk_check` would trip
@@ -127,6 +134,25 @@ describe('plans service — create', () => {
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('auto-numbers PLN-NNNN sequentially when code is omitted', async () => {
+    const first = await service.createPlan(
+      { planDate: '2026-05-21', planType: 'manufacture', itemId, orderQty: 5, planQty: 5 },
+      admin,
+    );
+    autoPlanIds.push(first.id);
+    const second = await service.createPlan(
+      { planDate: '2026-05-21', planType: 'manufacture', itemId, orderQty: 5, planQty: 5 },
+      admin,
+    );
+    autoPlanIds.push(second.id);
+
+    expect(first.code).toMatch(/^PLN-\d{4}$/);
+    expect(second.code).toMatch(/^PLN-\d{4}$/);
+    const n1 = Number(first.code.slice(4));
+    const n2 = Number(second.code.slice(4));
+    expect(n2).toBe(n1 + 1);
   });
 
   it('rejects viewer role with AuthorizationError (RLS leak guard)', async () => {

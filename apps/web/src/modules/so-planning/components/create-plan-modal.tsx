@@ -20,15 +20,6 @@ interface Props {
   onCreated: (planId: string) => void;
 }
 
-function nextPlanCode(): string {
-  // Server is the source of truth, but legacy keeps a client-side counter.
-  // We just construct a placeholder using a timestamp; the DB unique constraint
-  // catches collisions and the user retries (extremely unlikely under any
-  // human typing rate).
-  const ts = Date.now().toString(36).toUpperCase().slice(-6);
-  return `PLN-${ts}`;
-}
-
 export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.Element {
   const remaining = line.remaining;
   const [planQty, setPlanQty] = useState<number>(remaining);
@@ -46,7 +37,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     }
     setErr(null);
     const input: CreatePlanInput = {
-      code: nextPlanCode(),
+      // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: new Date().toISOString().slice(0, 10),
       planType: 'manufacture',
       soLineId: line.soLineId,

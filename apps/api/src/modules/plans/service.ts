@@ -56,6 +56,27 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+/**
+ * Next sequential plan code PLN-NNNN, scoped to the company. Only codes that
+ * match the strict PLN-<digits> shape count toward the max, so any legacy
+ * timestamp/random codes are ignored and the series stays clean.
+ */
+async function nextPlanCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: plans.code })
+    .from(plans)
+    .where(eq(plans.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = /^PLN-(\d+)$/.exec(r.code ?? '');
+    if (m) {
+      const n = Number(m[1]);
+      if (n > max) max = n;
+    }
+  }
+  return `PLN-${String(max + 1).padStart(4, '0')}`;
+}
+
 function numericToString(v: number | null | undefined): string | null {
   return v == null ? null : v.toFixed(2);
 }
@@ -172,26 +193,27 @@ export async function createPlan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Blank/omitted code → auto-number the next PLN-NNNN. A user-supplied code
+    // is still honoured (and dup-checked).
+    const code =
+      input.code && input.code.trim().length > 0
+        ? input.code.trim()
+        : await nextPlanCode(tx, companyId);
+
     const dup = await tx
       .select({ id: plans.id })
       .from(plans)
-      .where(
-        and(
-          eq(plans.companyId, companyId),
-          eq(plans.code, input.code),
-          isNull(plans.deletedAt),
-        ),
-      )
+      .where(and(eq(plans.companyId, companyId), eq(plans.code, code), isNull(plans.deletedAt)))
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Plan code "${input.code}" already exists`);
+      throw new ConflictError(`Plan code "${code}" already exists`);
     }
 
     const inserted = await tx
       .insert(plans)
       .values({
         companyId,
-        code: input.code,
+        code,
         planDate: input.planDate,
         planStatus: 'in_planning',
         planType: input.planType,
