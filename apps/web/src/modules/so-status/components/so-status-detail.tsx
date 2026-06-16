@@ -105,7 +105,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
       {lines.length === 0 ? (
         <div className="panel"><div className="panel-body"><div className="empty-state">No lines on this SO yet.</div></div></div>
       ) : (
-        lines.map((line) => <LinePanel key={line.id} line={line} soId={header.id} />)
+        lines.map((line) => <LinePanel key={line.id} line={line} />)
       )}
 
       {bomItems.length > 0 ? (
@@ -225,7 +225,7 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
   );
 }
 
-function LinePanel({ line, soId }: { line: SoStatusLine; soId: string }): React.JSX.Element {
+function LinePanel({ line }: { line: SoStatusLine }): React.JSX.Element {
   const navigate = useNavigate();
   const jcIssuedQty = line.chips.jcIssued.qty;
   const lineBalance = Math.max(0, line.orderQty - jcIssuedQty);
@@ -291,7 +291,7 @@ function LinePanel({ line, soId }: { line: SoStatusLine; soId: string }): React.
               type="button"
               className="btn btn-sm"
               style={{ background: 'rgba(34,211,238,0.1)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
-              onClick={() => navigate({ to: '/planning', search: { soId } })}
+              onClick={() => navigate({ to: '/job-cards/new', search: { sourceLineId: line.id } })}
             >
               <Plus size={12} /> Create Job Card ({lineBalance} pcs balance)
             </button>

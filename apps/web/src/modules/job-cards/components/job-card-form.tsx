@@ -11,7 +11,7 @@ import type {
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
@@ -61,7 +61,16 @@ function sourceLabel(o: JobCardSourceOption): string {
   return `${tag} ${o.code}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
 }
 
-export function JobCardForm({ model }: { model?: JobCardEditModel }): React.JSX.Element {
+export function JobCardForm({
+  model,
+  initialSourceLineId,
+}: {
+  model?: JobCardEditModel;
+  // Create mode only: pre-select this SO/JW source line (deep-linked from
+  // SO Status Review's "Create Job Card"). Cascades item/qty/due once the
+  // source options load. Ignored in edit mode (model wins).
+  initialSourceLineId?: string | undefined;
+}): React.JSX.Element {
   const isEdit = Boolean(model);
   const navigate = useNavigate();
   const { data: me } = useSession();
@@ -151,6 +160,30 @@ export function JobCardForm({ model }: { model?: JobCardEditModel }): React.JSX.
     if (opt.remaining > 0 && !orderQty) setOrderQty(String(opt.remaining));
     if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
   };
+
+  // One-time prefill when deep-linked with a source line (create mode). Waits
+  // for source options to load, then applies the same cascade as a manual pick.
+  const [appliedInitialSource, setAppliedInitialSource] = useState(false);
+  useEffect(() => {
+    if (isEdit || appliedInitialSource || !initialSourceLineId) return;
+    const opt = sourceOptions.find((o) => o.lineId === initialSourceLineId);
+    if (!opt) return;
+    setSourceText(sourceLabel(opt));
+    setSourceLineId(opt.lineId);
+    setSourceType(opt.type);
+    if (opt.itemCode && !itemCode) setItemCode(opt.itemCode);
+    if (opt.remaining > 0 && !orderQty) setOrderQty(String(opt.remaining));
+    if (opt.dueDate && !dueDate) setDueDate(opt.dueDate);
+    setAppliedInitialSource(true);
+  }, [
+    isEdit,
+    appliedInitialSource,
+    initialSourceLineId,
+    sourceOptions,
+    itemCode,
+    orderQty,
+    dueDate,
+  ]);
 
   const setOp = (i: number, patch: Partial<FormOp>): void => {
     setOps((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)));
