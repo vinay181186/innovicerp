@@ -5,6 +5,7 @@
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
 import type {
+  PlanningLine,
   SoStatusBomItem,
   SoStatusEquipmentInfo,
   SoStatusJc,
@@ -16,8 +17,24 @@ import type {
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { usePlan } from '@/modules/plans/api';
+import { usePlanningSoDetail } from '@/modules/so-planning/api';
+import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-modal';
+import { CreatePlanModal } from '@/modules/so-planning/components/create-plan-modal';
+import { EditPlanModal } from '@/modules/so-planning/components/edit-plan-modal';
 import { useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
+
+// Inline component-planning modal state — lets the planner create/plan
+// components straight from SO Status Review instead of bouncing to /planning.
+// Reuses the so-planning modals + plan write hooks verbatim.
+type PlanModal =
+  | { kind: 'none' }
+  | { kind: 'create'; soLineId: string }
+  | { kind: 'edit'; planId: string }
+  | { kind: 'equip-bom'; soLineId: string }
+  | { kind: 'assembly-bom'; soLineId: string };
 
 const TYPE_LABEL: Record<string, string> = {
   component_manufacturing: 'Component',
@@ -30,7 +47,18 @@ function todayStr(): string {
 }
 
 export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useSoStatus(soId);
+  const { data, isLoading, isError, error, refetch } = useSoStatus(soId);
+  // Planning detail powers the inline plan actions (remaining qty, BOM flags).
+  const planning = usePlanningSoDetail(soId);
+  const [modal, setModal] = useState<PlanModal>({ kind: 'none' });
+  // Mirrors the planning workflow: usePlan fires with '' when not editing
+  // (harmless background 404) and EditPlanModal renders only once data arrives.
+  const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
+
+  const refreshAll = (): void => {
+    void refetch();
+    void planning.refetch();
+  };
 
   if (isLoading) {
     return (
@@ -49,6 +77,13 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
 
   const { header, lines, bomItems } = data;
   const dueOverdue = !!header.dueDate && header.dueDate < todayStr() && header.status !== 'closed';
+
+  // Join planning lines (remaining qty + BOM flags) to status lines by soLineId.
+  const planningLines = new Map<string, PlanningLine>();
+  for (const l of planning.data?.lines ?? []) planningLines.set(l.soLineId, l);
+  // Equipment BOM hangs off the first SO line (service derives equipmentInfo
+  // from it); used as the soLineId for the equipment BOM-planning modal.
+  const equipmentSoLineId = lines[0]?.id ?? null;
 
   return (
     <div>
@@ -96,7 +131,17 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           </div>
           {header.type === 'equipment' && header.equipmentInfo ? (
             <div style={{ flexBasis: '100%' }}>
-              <EquipmentBomBanner soId={header.id} info={header.equipmentInfo} bomStatus={header.bomStatus} bomLinked={!!header.bomMasterId} />
+              <EquipmentBomBanner
+                soId={header.id}
+                info={header.equipmentInfo}
+                bomStatus={header.bomStatus}
+                bomLinked={!!header.bomMasterId}
+                onPlanBom={
+                  equipmentSoLineId
+                    ? () => setModal({ kind: 'equip-bom', soLineId: equipmentSoLineId })
+                    : null
+                }
+              />
             </div>
           ) : null}
         </div>
@@ -105,11 +150,78 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
       {lines.length === 0 ? (
         <div className="panel"><div className="panel-body"><div className="empty-state">No lines on this SO yet.</div></div></div>
       ) : (
-        lines.map((line) => <LinePanel key={line.id} line={line} />)
+        lines.map((line) => (
+          <LinePanel
+            key={line.id}
+            line={line}
+            planningLine={planningLines.get(line.id)}
+            onCreatePlan={() => setModal({ kind: 'create', soLineId: line.id })}
+            onAssemblyBom={() => setModal({ kind: 'assembly-bom', soLineId: line.id })}
+          />
+        ))
       )}
 
       {bomItems.length > 0 ? (
         <BomItemsTable bomNo={header.equipmentInfo?.bomNo ?? ''} equipmentQty={header.equipmentInfo?.equipmentQty ?? 0} items={bomItems} />
+      ) : null}
+
+      {/* ── Inline component-planning modals (reused from so-planning) ── */}
+      {modal.kind === 'create' && planning.data
+        ? (() => {
+            const line = planningLines.get(modal.soLineId);
+            if (!line) return null;
+            return (
+              <CreatePlanModal
+                so={planning.data}
+                line={line}
+                onClose={() => setModal({ kind: 'none' })}
+                onCreated={(planId) => {
+                  setModal({ kind: 'edit', planId });
+                  refreshAll();
+                }}
+              />
+            );
+          })()
+        : null}
+
+      {modal.kind === 'edit' && editingPlan.data ? (
+        <EditPlanModal
+          plan={editingPlan.data}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            refreshAll();
+            void editingPlan.refetch();
+          }}
+        />
+      ) : null}
+
+      {modal.kind === 'equip-bom' ? (
+        <BomPlanningModal
+          mode="equipment"
+          soId={header.id}
+          soCode={header.code}
+          soLineId={modal.soLineId}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            refreshAll();
+          }}
+        />
+      ) : null}
+
+      {modal.kind === 'assembly-bom' ? (
+        <BomPlanningModal
+          mode="assembly"
+          soId={header.id}
+          soCode={header.code}
+          soLineId={modal.soLineId}
+          onClose={() => setModal({ kind: 'none' })}
+          onSaved={() => {
+            setModal({ kind: 'none' });
+            refreshAll();
+          }}
+        />
       ) : null}
     </div>
   );
@@ -130,11 +242,15 @@ function EquipmentBomBanner({
   info,
   bomStatus,
   bomLinked,
+  onPlanBom,
 }: {
   soId: string;
   info: SoStatusEquipmentInfo;
   bomStatus: string | null;
   bomLinked: boolean;
+  // When set, "Plan BOM Items" opens the BOM-planning modal in place; null
+  // falls back to navigating to the Planning screen (e.g. planning not loaded).
+  onPlanBom: (() => void) | null;
 }): React.JSX.Element {
   const bomStatusCls = bomStatus === 'BOM Pending' ? 'b-amber' : bomStatus === 'BOM Planned' ? 'b-green' : 'b-cyan';
   return (
@@ -159,9 +275,20 @@ function EquipmentBomBanner({
             <div className="text3" style={{ fontSize: 11 }}>{info.bomName} ({info.bomPartsCount} items)</div>
           </div>
           <div style={{ marginLeft: 'auto' }}>
-            <Link to="/planning" search={{ soId }} className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>
-              📦 Plan BOM Items
-            </Link>
+            {onPlanBom ? (
+              <button
+                type="button"
+                onClick={onPlanBom}
+                className="btn btn-sm"
+                style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
+              >
+                📦 Plan BOM Items
+              </button>
+            ) : (
+              <Link to="/planning" search={{ soId }} className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>
+                📦 Plan BOM Items
+              </Link>
+            )}
           </div>
         </>
       ) : (
@@ -225,10 +352,28 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
   );
 }
 
-function LinePanel({ line }: { line: SoStatusLine }): React.JSX.Element {
+function LinePanel({
+  line,
+  planningLine,
+  onCreatePlan,
+  onAssemblyBom,
+}: {
+  line: SoStatusLine;
+  planningLine: PlanningLine | undefined;
+  onCreatePlan: () => void;
+  onAssemblyBom: () => void;
+}): React.JSX.Element {
   const navigate = useNavigate();
   const jcIssuedQty = line.chips.jcIssued.qty;
   const lineBalance = Math.max(0, line.orderQty - jcIssuedQty);
+  // Plan actions mirror the Planning screen's per-line buttons:
+  //  - assembly BOM line → open BOM-planning modal
+  //  - plain line with planning remaining → "+ Plan N pcs" (create plan)
+  // Equipment-BOM lines are planned via the header banner, not per line.
+  const showAssemblyBom = planningLine?.hasAssemblyBom === true;
+  const planRemaining = planningLine?.remaining ?? 0;
+  const showCreatePlan =
+    !!planningLine && !planningLine.hasEquipmentBom && !showAssemblyBom && planRemaining > 0;
   return (
     <div className="panel">
       <div className="panel-hdr">
@@ -284,8 +429,28 @@ function LinePanel({ line }: { line: SoStatusLine }): React.JSX.Element {
           )}
         </div>
 
-        {/* Per-line action footer: Create Job Card + Create PO (legacy L4459-4462) */}
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
+        {/* Per-line action footer: Plan + Create Job Card + Create PO (legacy L4459-4462) */}
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {showAssemblyBom ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
+              onClick={onAssemblyBom}
+            >
+              📦 BOM Planning ({planningLine?.bomPartsCount ?? 0} parts)
+            </button>
+          ) : null}
+          {showCreatePlan ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
+              onClick={onCreatePlan}
+            >
+              <Plus size={12} /> Plan {planRemaining} pcs
+            </button>
+          ) : null}
           {lineBalance > 0 ? (
             <button
               type="button"
