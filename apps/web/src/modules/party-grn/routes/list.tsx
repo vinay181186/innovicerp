@@ -48,7 +48,7 @@ function PartyGrnListPage(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search JW, client, material…"
+            placeholder="🔍 Search JWSO, client, material…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -109,7 +109,7 @@ function PartyGrnListPage(): React.JSX.Element {
                   <th>GRN No.</th>
                   <th>Date</th>
                   <th>Client</th>
-                  <th>JW No.</th>
+                  <th>JWSO No.</th>
                   <th>Client PO</th>
                   <th>DC No.</th>
                   <th className="td-ctr">Lines</th>
@@ -216,7 +216,7 @@ function PartyGrnListPage(): React.JSX.Element {
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
         💡 Party Material GRN records raw material received from clients for Job Work. Received qty
-        is added to Party Material stock. Linked to JW No. / Client PO.
+        is added to Party Material stock. Linked to JWSO No. / Client PO.
       </div>
 
       {showModal ? <NewPartyGrnModal onClose={() => setShowModal(false)} /> : null}
@@ -323,7 +323,7 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   const onSave = (): void => {
     setErr(null);
     if (!jwId) {
-      setErr('Select a JW');
+      setErr('Select a JWSO');
       return;
     }
     const validLines: CreatePartyGrnLineInput[] = [];
@@ -416,11 +416,11 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
           </Field>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JW No. ★ (type to search)">
+            <Field label="JWSO No. ★ (type to search)">
               <input
                 type="text"
                 className="innovic-input"
-                placeholder="🔍 Type JW number…"
+                placeholder="🔍 Type JWSO number…"
                 value={
                   selectedJw
                     ? `${selectedJw.code} — ${selectedJw.customerName ?? ''}`
@@ -520,7 +520,7 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
               <thead>
                 <tr style={{ background: 'var(--bg4)' }}>
                   <th style={{ padding: 6, fontSize: 11 }}>#</th>
-                  <th style={{ padding: 6, fontSize: 11, width: 80 }}>JW Line</th>
+                  <th style={{ padding: 6, fontSize: 11, width: 80 }}>JWSO Line</th>
                   <th style={{ padding: 6, fontSize: 11, minWidth: 220 }}>
                     Material (Party Material Master) ★
                   </th>
