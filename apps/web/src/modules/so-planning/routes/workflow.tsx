@@ -232,8 +232,11 @@ function RightPane({
       ) : (
         so.lines.map((line) => {
           const totalQty = line.orderQty;
-          const pct =
-            totalQty > 0 ? Math.min(100, Math.round((line.totalPlanned / totalQty) * 100)) : 0;
+          // Bar reflects COVERED qty = planned + in-production (plan-less JCs),
+          // so a line fully made by a direct Job Card fills the bar instead of
+          // sitting at 0% just because no plan row exists.
+          const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
+          const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
           const barColor =
             pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--cyan)' : 'var(--text3)';
           const hasDirectJc = line.directJcQty > 0;
@@ -350,8 +353,14 @@ function RightPane({
                 >
                   <span style={{ fontSize: 10, color: 'var(--text3)' }}>
                     Planned:{' '}
-                    <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b> /{' '}
-                    {line.orderQty} pcs ({pct}%)
+                    <b style={{ color: 'var(--cyan)' }}>{line.totalPlanned}</b>
+                    {hasDirectJc ? (
+                      <>
+                        {' '}
+                        + <b style={{ color: 'var(--cyan)' }}>{line.directJcQty}</b> in prod
+                      </>
+                    ) : null}{' '}
+                    / {line.orderQty} pcs ({pct}%)
                   </span>
                   <span
                     style={{ fontSize: 10, fontWeight: 700, color: lineStatusColor }}
