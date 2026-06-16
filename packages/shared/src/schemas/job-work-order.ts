@@ -162,8 +162,11 @@ const _jwHeaderInputBase = z.object({
 /** CREATE — `{header, lines}`. Header + ≥ 1 line (no Equipment exception
  *  on JWs); service runs both inserts in one transaction. */
 export const createJobWorkOrderInputSchema = z.object({
-  header: _jwHeaderInputBase.refine((h) => Boolean(h.clientId) || Boolean(h.customerName?.trim()), {
-    message: 'clientId or customerName is required (per ADR-012 #9)',
+  // Client master link is mandatory (supersedes ADR-012 #9 for JW): a JW must
+  // reference a real client; the free-text customerName fallback is removed.
+  // The server snapshots customerName from the client master record.
+  header: _jwHeaderInputBase.refine((h) => Boolean(h.clientId), {
+    message: 'A client (from the client master) is required for a Job Work order.',
   }),
   lines: z.array(jobWorkOrderLineInputSchema).min(1, 'At least one line is required'),
 });

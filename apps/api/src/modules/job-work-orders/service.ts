@@ -44,13 +44,15 @@ function jwDetail(code: string, customerName: string | null | undefined): string
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+/** Validates the client exists in this company and returns its master name
+ *  (used to snapshot customer_name from the master, not free text). */
 async function assertClientExists(
   tx: DbTransaction,
   clientId: string,
   companyId: string,
-): Promise<void> {
+): Promise<string> {
   const rows = await tx
-    .select({ id: clients.id })
+    .select({ id: clients.id, name: clients.name })
     .from(clients)
     .where(
       and(eq(clients.id, clientId), eq(clients.companyId, companyId), isNull(clients.deletedAt)),
@@ -59,6 +61,7 @@ async function assertClientExists(
   if (rows.length === 0) {
     throw new ValidationError(`Client ${clientId} not found in this company`);
   }
+  return rows[0]!.name;
 }
 
 async function resolveItemCodes(
@@ -329,8 +332,12 @@ export async function createJobWorkOrder(
       throw new ConflictError(`Job work order code "${input.header.code}" already exists`);
     }
 
+    // Client master link is enforced by the create schema (route boundary).
+    // When a client is set, snapshot its master name into customer_name so the
+    // stored customer always mirrors the master (no free text).
+    let clientName: string | null = null;
     if (input.header.clientId) {
-      await assertClientExists(tx, input.header.clientId, companyId);
+      clientName = await assertClientExists(tx, input.header.clientId, companyId);
     }
 
     const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
@@ -349,7 +356,7 @@ export async function createJobWorkOrder(
         code: input.header.code,
         jwDate: input.header.jwDate,
         clientId: input.header.clientId ?? null,
-        customerName: input.header.customerName ?? null,
+        customerName: clientName ?? input.header.customerName ?? null,
         clientPoNo: input.header.clientPoNo ?? null,
         status: headerStatus,
         remarks: input.header.remarks ?? null,
@@ -427,15 +434,18 @@ export async function updateJobWorkOrder(
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError(`Job work order ${id} not found`);
 
+    // When the client changes, snapshot the customer name from the master.
+    let snapshotClientName: string | null = null;
     if (input.header.clientId !== undefined && input.header.clientId !== null) {
-      await assertClientExists(tx, input.header.clientId, companyId);
+      snapshotClientName = await assertClientExists(tx, input.header.clientId, companyId);
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     const h = input.header;
     if (h.jwDate !== undefined) updates['jwDate'] = h.jwDate;
     if (h.clientId !== undefined) updates['clientId'] = h.clientId ?? null;
-    if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
+    if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
+    else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.status !== undefined) updates['status'] = h.status;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;

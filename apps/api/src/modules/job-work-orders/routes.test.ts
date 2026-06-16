@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
+import { clients, items, jobWorkOrderLines, jobWorkOrders, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { jobWorkOrdersRoutes } from './routes';
@@ -12,6 +12,7 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
 let firstItemId: string;
+let testClientId: string;
 
 async function buildApp(user: AuthContext | null): Promise<FastifyInstance> {
   const app = Fastify();
@@ -46,6 +47,20 @@ beforeAll(async () => {
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');
   firstItemId = it.id;
+
+  const cli = (
+    await db
+      .insert(clients)
+      .values({
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}CLI`,
+        name: 'Routes Test Client',
+        createdBy: u.id,
+        updatedBy: u.id,
+      })
+      .returning()
+  )[0]!;
+  testClientId = cli.id;
 });
 
 afterAll(async () => {
@@ -60,6 +75,7 @@ afterAll(async () => {
     }
     await db.delete(jobWorkOrders).where(like(jobWorkOrders.code, `${TEST_PREFIX}%`));
   }
+  await db.delete(clients).where(like(clients.code, `${TEST_PREFIX}%`));
 });
 
 describe('job-work-orders routes', () => {
@@ -93,7 +109,7 @@ describe('job-work-orders routes', () => {
       url: '/job-work-orders',
       headers: { 'content-type': 'application/json' },
       payload: {
-        header: { code, jwDate: '2026-05-02', customerName: 'Routes JW', status: 'open' },
+        header: { code, jwDate: '2026-05-02', clientId: testClientId, status: 'open' },
         lines: [{ partName: 'Routed Part', itemId: firstItemId, uom: 'NOS', orderQty: 5 }],
       },
     });
@@ -129,7 +145,7 @@ describe('job-work-orders routes', () => {
         header: {
           code: `${TEST_PREFIX}V`,
           jwDate: '2026-05-02',
-          customerName: 'Viewer',
+          clientId: testClientId,
           status: 'open',
         },
         lines: [{ partName: 'X', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
