@@ -69,8 +69,15 @@ function SoStatusIndexPage(): React.JSX.Element {
 
   return (
     <div
-      // Break out of #content's 20px padding; fill the area below the 54px topbar.
-      style={{ display: 'flex', height: 'calc(100vh - 54px)', margin: -20, overflow: 'hidden' }}
+      // Break out of #content's 20px padding on sides + bottom only (NOT top —
+      // a negative top margin would pull the pane up over the breadcrumb and
+      // hide it). Height nets the topbar + content top padding + breadcrumb row.
+      style={{
+        display: 'flex',
+        height: 'calc(100vh - 104px)',
+        margin: '0 -20px -20px',
+        overflow: 'hidden',
+      }}
     >
       {/* Left selector pane */}
       <div style={{ width: 270, minWidth: 270, borderRight: '1px solid var(--border)', overflowY: 'auto', background: 'var(--bg2)' }}>
