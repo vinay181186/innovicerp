@@ -399,13 +399,9 @@ function RightPane({
                         // refetch handled by mutation onSuccess invalidation
                       }}
                       onViewJc={() => {
-                        // Navigate to JC detail by jcCode if present
-                        // (existing /job-cards/:id is by id, not code, so use list filter as fallback)
-                        if (p.jcCode) {
-                          void navigate({
-                            to: '/op-entry',
-                            search: { jc: p.jcCode } as never,
-                          });
+                        // Open the Job Card page (not Operation Entry).
+                        if (p.jcId) {
+                          void navigate({ to: '/job-cards/$id', params: { id: p.jcId } });
                         }
                       }}
                     />

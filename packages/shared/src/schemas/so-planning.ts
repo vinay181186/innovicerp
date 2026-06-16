@@ -39,6 +39,7 @@ export const planningPlanSummarySchema = z.object({
   opsCount: z.number().int().nonnegative(),
   hasOutsourceOp: z.boolean(),
   /** Plan-type-specific labels for the per-card status footer. */
+  jcId: z.string().uuid().nullable(),
   jcCode: z.string().nullable(),
   dpPrCode: z.string().nullable(),
   foPrCode: z.string().nullable(),
