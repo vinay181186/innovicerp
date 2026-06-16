@@ -232,27 +232,34 @@ function RightPane({
       ) : (
         so.lines.map((line) => {
           const totalQty = line.orderQty;
-          // Bar reflects COVERED qty = planned + in-production (plan-less JCs),
-          // so a line fully made by a direct Job Card fills the bar instead of
-          // sitting at 0% just because no plan row exists.
-          const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
-          const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
-          const barColor =
-            pct >= 100 ? 'var(--green)' : pct > 0 ? 'var(--cyan)' : 'var(--text3)';
           const hasDirectJc = line.directJcQty > 0;
-          // The line header reflects the plan LIFECYCLE, not just coverage:
-          //  - covered but plan still a draft (no JC/PR executed) → "In Planning"
-          //  - covered AND every plan executed (JC created / PR raised / in prod)
-          //    → "Fully Planned"
+          // Plan/line lifecycle (shared by the header label AND the bar colour):
+          //  - "executed" = work actually allocated: JC created, outsource/direct
+          //    PR raised, in production, or complete.
+          //  - covered but plan still a draft (in_planning/planned) → "In Planning"
+          //  - covered AND every plan executed → "Fully Planned"
           //  - covered only by a plan-less direct JC → "In Production (no plan)"
-          // "Fully Planned" must mean work is actually allocated, not that a draft
-          // plan merely exists for the full qty.
+          // Green must mean executed, NOT "a draft plan exists for the full qty".
           const planExecuted = (s: string): boolean =>
             s === 'jc_created' || s === 'pr_created' || s === 'in_production' || s === 'complete';
           const allPlansExecuted =
             line.plans.length > 0 && line.plans.every((p) => planExecuted(p.planStatus));
           const coveredByDraftPlans =
             line.remaining <= 0 && line.plans.length > 0 && !allPlansExecuted;
+
+          // Bar FILL = covered qty (plans + in-production direct JCs).
+          const coveredQty = Math.min(totalQty, line.totalPlanned + line.directJcQty);
+          const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
+          // Bar COLOUR follows execution, not just coverage: amber while covered
+          // only by draft plans (in planning, nothing allocated yet), green once
+          // executed (JC/PR) or in production, cyan when partial, grey when none.
+          const barColor = coveredByDraftPlans
+            ? 'var(--amber)'
+            : pct >= 100
+              ? 'var(--green)'
+              : pct > 0
+                ? 'var(--cyan)'
+                : 'var(--text3)';
           const lineStatusLabel =
             line.remaining <= 0
               ? line.plans.length === 0 && hasDirectJc
