@@ -508,7 +508,7 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
   return (
     <tr>
       <td>
-        <Link to="/op-entry" search={{ jc: jc.code }} className="td-code" style={{ color: 'var(--cyan)' }}>{jc.code}</Link>
+        <Link to="/job-cards/$id" params={{ id: jc.id }} className="td-code" style={{ color: 'var(--cyan)' }}>{jc.code}</Link>
       </td>
       <td><span className="text3" style={{ fontSize: 12 }}>{jc.itemCode ?? '—'}</span></td>
       <td className="td-right">{jc.orderQty}</td>
