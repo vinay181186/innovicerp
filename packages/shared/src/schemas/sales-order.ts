@@ -116,6 +116,9 @@ export const salesOrderDetailSchema = salesOrderSchema.extend({
   // Storage path of the latest active client-PO file in file_registry (ISSUE-013),
   // null when none uploaded. UI renders a 📎 view link + an upload control.
   clientPoFilePath: z.string().nullable().default(null),
+  // Display name of the user who raised the SO (users.full_name joined on
+  // created_by), null when unresolved. UI shows "raised by + date/time".
+  createdByName: z.string().nullable().default(null),
 });
 export type SalesOrderDetail = z.infer<typeof salesOrderDetailSchema>;
 
@@ -131,6 +134,9 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
   // category 'client_po' for this SO; null when none. Mirrors legacy
   // renderSOmaster clientPoFileUrl paperclip (L11866).
   clientPoFilePath: z.string().nullable().default(null),
+  // Display name of the user who raised the SO (users.full_name joined on
+  // created_by), null when unresolved. Shown as the "Raised By" column.
+  createdByName: z.string().nullable().default(null),
 });
 export type SalesOrderListItem = z.infer<typeof salesOrderListItemSchema>;
 

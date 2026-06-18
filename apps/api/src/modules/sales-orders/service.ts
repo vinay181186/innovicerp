@@ -22,6 +22,7 @@ import {
   salesOrderLines,
   salesOrders,
   soMilestones,
+  users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -209,12 +210,14 @@ export async function listSalesOrders(
         so.created_at AS "createdAt", so.created_by AS "createdBy",
         so.updated_at AS "updatedAt", so.updated_by AS "updatedBy",
         so.deleted_at AS "deletedAt",
+        cu.full_name                          AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::int AS "totalQty",
         line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty",
         cpo_file.storage_path                 AS "clientPoFilePath"
       FROM public.sales_orders so
+      LEFT JOIN public.users cu ON cu.id = so.created_by
       LEFT JOIN (
         SELECT sales_order_id,
                COUNT(*) AS line_count,
@@ -290,6 +293,7 @@ function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
@@ -309,6 +313,16 @@ function dateLike(v: unknown): string {
 function tsLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString();
   return String(v);
+}
+
+/** Resolve a user's display name (users.full_name) for the SO "raised by" field. */
+async function resolveUserName(tx: DbTransaction, userId: string): Promise<string | null> {
+  const rows = await tx
+    .select({ name: users.fullName })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return rows[0]?.name ?? null;
 }
 
 export async function getSalesOrder(id: string, user: AuthContext): Promise<SalesOrderDetail> {
@@ -375,8 +389,11 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
     const milestones = await readMilestones(tx, id);
     const clientPoFilePath = await readClientPoFilePath(tx, id);
 
+    const createdByName = await resolveUserName(tx, header.createdBy);
+
     return {
       ...toSalesOrder(header),
+      createdByName,
       lines: lineRows.map((r) => ({
         ...toSalesOrderLine(r.row, r.itemCode),
         billedQty: billedByLine.get(r.row.id) ?? 0,
@@ -634,6 +651,7 @@ export async function createSalesOrder(
 
     return {
       ...toSalesOrder(header),
+      createdByName: await resolveUserName(tx, header.createdBy),
       lines: insertedLines.map((row) => toSalesOrderLine(row)),
       milestones: insertedMilestones.map(toSoMilestone),
       clientPoFilePath: null,
@@ -727,6 +745,7 @@ export async function updateSalesOrder(
 
     return {
       ...toSalesOrder(updatedHdr),
+      createdByName: await resolveUserName(tx, updatedHdr.createdBy),
       lines: lineRows.map((row) => toSalesOrderLine(row)),
       milestones,
       clientPoFilePath,

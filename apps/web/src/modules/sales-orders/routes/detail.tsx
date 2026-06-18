@@ -411,12 +411,34 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
         label="BOM master"
         value={detail.bomMasterId ? `${detail.bomMasterId} (${detail.bomStatus ?? '—'})` : '—'}
       />
+      <Pair
+        label="SO raised by"
+        value={
+          (detail.createdByName ?? '—') +
+          (detail.createdAt ? ` · ${fmtIstDateTime(detail.createdAt)}` : '')
+        }
+      />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
       </div>
     </div>
   );
+}
+
+/** Format a stored UTC timestamp as IST date + time (e.g. "16 Jun 2026, 02:30 PM"). */
+function fmtIstDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {

@@ -8,8 +8,8 @@
 import {
   type CreateSalesOrderInput,
   type SalesOrderDetail,
+  SELECTABLE_SO_TYPES,
   SO_STATUSES,
-  SO_TYPES,
   type SoStatus,
   type SoType,
   type UpdateSalesOrderInput,
@@ -240,7 +240,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         <div className="form-grp">
           <label className="form-label" htmlFor="type">Type<span className="req">★</span></label>
           <select id="type" className="innovic-select" {...register('header.type')}>
-            {SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+            {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
           </select>
         </div>
 

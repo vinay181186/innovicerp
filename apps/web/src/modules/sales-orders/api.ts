@@ -41,6 +41,14 @@ export function useSalesOrdersList(
   });
 }
 
+/** One-shot fetch of SO list rows for export (no React Query cache). The caller
+ *  passes a large limit + current filters to pull every matching row. */
+export function fetchSalesOrdersForExport(
+  query: ListSalesOrdersQuery,
+): Promise<ListSalesOrdersResponse> {
+  return apiFetch<ListSalesOrdersResponse>(`/sales-orders?${toQueryString(query)}`);
+}
+
 export function useSalesOrder(id: string | undefined) {
   return useQuery<SalesOrderDetail>({
     queryKey: id ? salesOrdersKeys.detail(id) : salesOrdersKeys.detail('__missing__'),

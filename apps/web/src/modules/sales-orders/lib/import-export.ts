@@ -2,8 +2,54 @@
 // soImportTemplate (download a blank template) + soImportExcel (parse an .xlsx
 // of SO lines, grouped by SO No, into create payloads). Uses SheetJS.
 
-import type { CreateSalesOrderInput, SoType } from '@innovic/shared';
+import type { CreateSalesOrderInput, SalesOrderListItem, SoType } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+
+/** Format a stored UTC timestamp as IST date + time for export/display. */
+function fmtIst(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+// Export the SO Master list (already filtered/searched by the caller) to an
+// .xlsx — one row per SO, summary columns matching the on-screen table.
+export function exportSoListExcel(rows: SalesOrderListItem[]): void {
+  const header = [
+    'SO No', 'Date', 'Customer', 'Client PO', 'Type', 'Lines', 'Total Qty',
+    'JC Qty', 'Earliest Due', 'Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'Remarks',
+  ];
+  const body = rows.map((r) => [
+    r.code,
+    r.soDate,
+    r.customerName ?? '',
+    r.clientPoNo ?? '',
+    r.type.replaceAll('_', ' '),
+    r.lineCount,
+    r.totalQty,
+    r.jcQty,
+    r.earliestDueDate ?? '',
+    r.status,
+    r.bomStatus ?? '',
+    r.createdByName ?? '',
+    fmtIst(r.createdAt),
+    r.remarks ?? '',
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `sales-orders-${stamp}.xlsx`);
+}
 
 // Column order = the template header row. One row per SO LINE; rows sharing an
 // "SO No" are grouped into one SO (header taken from the first row).
