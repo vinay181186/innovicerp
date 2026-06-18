@@ -486,7 +486,11 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
         ? detail.lines.map((l): LineFormValue => ({
             id: l.id,
             ...(l.itemId ? { itemId: l.itemId } : {}),
-            itemCodeText: l.itemCodeText ?? '',
+            // Picked items store the link in itemId and leave itemCodeText null;
+            // the resolved code comes back in itemCode. Follow the schema's
+            // documented render rule (itemCode ?? itemCodeText) so the code box
+            // is populated on edit instead of showing blank.
+            itemCodeText: l.itemCode ?? l.itemCodeText ?? '',
             partName: l.partName,
             ...(l.material ? { material: l.material } : {}),
             ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
