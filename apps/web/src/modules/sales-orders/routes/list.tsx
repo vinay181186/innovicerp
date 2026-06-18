@@ -10,6 +10,7 @@ import {
   type SalesOrderLine,
   type SalesOrderLineInput,
   type SalesOrderListItem,
+  SELECTABLE_SO_TYPES,
   SO_STATUSES,
   SO_TYPES,
   type SoStatus,
@@ -17,7 +18,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
@@ -26,6 +27,7 @@ import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
 import {
+  fetchSalesOrdersForExport,
   useCreateSalesOrder,
   useSalesOrder,
   useSalesOrdersList,
@@ -33,7 +35,7 @@ import {
   useUpdateSalesOrder,
 } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
-import { downloadSoTemplate, parseSoImportFile } from '../lib/import-export';
+import { downloadSoTemplate, exportSoListExcel, parseSoImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -162,6 +164,31 @@ function SalesOrdersListPage(): React.JSX.Element {
     }
   }
 
+  // Export the whole filtered list to Excel — pulls every matching row (not just
+  // the visible page) using the current search/type/status filter.
+  const [exporting, setExporting] = useState(false);
+  async function onExport(): Promise<void> {
+    setExporting(true);
+    try {
+      const res = await fetchSalesOrdersForExport({
+        search: search.search,
+        status: search.status,
+        type: search.type,
+        limit: 10000,
+        offset: 0,
+      });
+      if (res.items.length === 0) {
+        setImportMsg('Nothing to export for the current filter.');
+        return;
+      }
+      exportSoListExcel(res.items);
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const columns = useMemo<ColumnDef<SalesOrderListItem>[]>(
     () => [
       {
@@ -172,7 +199,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           return (
             <button
               type="button"
-              onClick={() => toggleExpand(row.original.id)}
+              onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.id); }}
               aria-label={isExpanded ? 'Collapse' : 'Expand'}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, display: 'inline-flex', alignItems: 'center' }}
             >
@@ -192,6 +219,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       },
       { header: 'Date', accessorKey: 'soDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.soDate}</span> },
       { header: 'Customer', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
+      { header: 'Raised By', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.createdByName ?? '—'}</span> },
       {
         header: 'Client PO',
         cell: ({ row }) => (
@@ -203,7 +231,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 style={{ padding: '0 4px', fontSize: 12 }}
                 title="View client PO document"
-                onClick={() => void openClientPoFile(row.original.clientPoFilePath!)}
+                onClick={(e) => { e.stopPropagation(); void openClientPoFile(row.original.clientPoFilePath!); }}
               >
                 📎
               </button>
@@ -212,8 +240,26 @@ function SalesOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Type',
+        id: 'type',
         accessorKey: 'type',
+        header: () => (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            Type
+            <select
+              value={search.type ?? ''}
+              title="Filter by type"
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const v = e.target.value as SoType | '';
+                void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true });
+              }}
+              style={{ fontSize: 10, padding: '0 2px', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
+            >
+              <option value="">▾ All</option>
+              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+            </select>
+          </span>
+        ),
         cell: ({ row }) => <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{row.original.type.replaceAll('_', ' ')}</span>,
       },
       { header: 'Lines', cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span> },
@@ -280,7 +326,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           } as ColumnDef<SalesOrderListItem>]
         : []),
     ],
-    [expandedId, canWrite],
+    [expandedId, canWrite, search.type, navigate],
   );
 
   const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
@@ -301,8 +347,11 @@ function SalesOrdersListPage(): React.JSX.Element {
           </select>
           <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
             <option value="">All types</option>
-            {SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+            {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
           </select>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
+            {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
+          </button>
           {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
           {canWrite ? (
             <>
@@ -346,7 +395,10 @@ function SalesOrdersListPage(): React.JSX.Element {
                   const isExpanded = expandedId === row.original.id;
                   return (
                     <Fragment key={row.id}>
-                      <tr style={{ background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}>
+                      <tr
+                        onClick={() => void navigate({ to: '/sales-orders/$id', params: { id: row.original.id } })}
+                        style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
+                      >
                         {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
                       </tr>
                       {isExpanded ? (
@@ -374,7 +426,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click the chevron to expand an SO and view its line items. Use <b>+ Line</b> to add or edit lines.
+        💡 Click a row to open the SO. Click the chevron to expand line items inline. Use <b>+ Line</b> to add or edit lines.
       </div>
     </div>
   );
