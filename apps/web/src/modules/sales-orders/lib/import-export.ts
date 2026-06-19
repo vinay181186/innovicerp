@@ -21,9 +21,19 @@ function fmtIst(iso: string | null | undefined): string {
   });
 }
 
+// Minimal type for the File System Access API (Chromium-only), used to pop a
+// real "Save As" file-explorer dialog. Absent in Firefox/Safari → we fall back.
+type SaveFilePicker = (opts: {
+  suggestedName?: string;
+  types?: { description?: string; accept: Record<string, string[]> }[];
+}) => Promise<{ createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> }>;
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 // Export the SO Master list (already filtered/searched by the caller) to an
-// .xlsx — one row per SO, summary columns matching the on-screen table.
-export function exportSoListExcel(rows: SalesOrderListItem[]): void {
+// .xlsx — one row per SO, the same columns shown in the on-screen table. Opens
+// a Save-As dialog where the browser supports it, else downloads to Downloads.
+export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<void> {
   const header = [
     'SO No', 'Date', 'Customer', 'Client PO', 'Type', 'Lines', 'Total Qty',
     'JC Qty', 'Earliest Due', 'Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'Remarks',
@@ -47,8 +57,40 @@ export function exportSoListExcel(rows: SalesOrderListItem[]): void {
   const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
+
   const stamp = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `sales-orders-${stamp}.xlsx`);
+  const filename = `sales-orders-${stamp}.xlsx`;
+  const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+  const blob = new Blob([buffer], { type: XLSX_MIME });
+
+  // Preferred path (Chrome/Edge): a native Save-As dialog so the user picks the
+  // folder and confirms the .xlsx name.
+  const picker = (window as unknown as { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
+  if (typeof picker === 'function') {
+    try {
+      const handle = await picker({
+        suggestedName: filename,
+        types: [{ description: 'Excel Workbook', accept: { [XLSX_MIME]: ['.xlsx'] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (e) {
+      // User cancelled the dialog → stop quietly. Any other error → fall back.
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+    }
+  }
+
+  // Fallback (Firefox/Safari, or picker failed): trigger a normal download.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // Column order = the template header row. One row per SO LINE; rows sharing an

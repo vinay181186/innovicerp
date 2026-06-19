@@ -181,7 +181,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         setImportMsg('Nothing to export for the current filter.');
         return;
       }
-      exportSoListExcel(res.items);
+      await exportSoListExcel(res.items);
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Export failed');
     } finally {

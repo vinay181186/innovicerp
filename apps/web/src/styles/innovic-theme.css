@@ -378,6 +378,7 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-control);
   vertical-align: middle;
+  white-space: nowrap;
 }
 .innovic-table tbody tr:nth-child(even) td {
   background: var(--bg3);
