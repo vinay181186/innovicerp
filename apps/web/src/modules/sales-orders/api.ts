@@ -41,12 +41,27 @@ export function useSalesOrdersList(
   });
 }
 
-/** One-shot fetch of SO list rows for export (no React Query cache). The caller
- *  passes a large limit + current filters to pull every matching row. */
-export function fetchSalesOrdersForExport(
+/** Fetch every SO row matching the current filters, for export. The list API
+ *  caps `limit` at 200, so we page through in 200-row requests until we've
+ *  pulled all `total` rows (instead of one oversized request the API rejects). */
+export async function fetchSalesOrdersForExport(
   query: ListSalesOrdersQuery,
 ): Promise<ListSalesOrdersResponse> {
-  return apiFetch<ListSalesOrdersResponse>(`/sales-orders?${toQueryString(query)}`);
+  const PAGE = 200;
+  const items: ListSalesOrdersResponse['items'] = [];
+  let offset = 0;
+  let total = 0;
+  // Hard ceiling so a bad `total` can never loop forever (10k SOs max export).
+  for (let guard = 0; guard < 50; guard += 1) {
+    const res = await apiFetch<ListSalesOrdersResponse>(
+      `/sales-orders?${toQueryString({ ...query, limit: PAGE, offset })}`,
+    );
+    items.push(...res.items);
+    total = res.total;
+    offset += PAGE;
+    if (res.items.length < PAGE || items.length >= total) break;
+  }
+  return { items, total, limit: items.length, offset: 0 };
 }
 
 export function useSalesOrder(id: string | undefined) {
