@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { clients } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
@@ -80,30 +80,40 @@ export async function getClient(id: string, user: AuthContext): Promise<Client> 
   });
 }
 
+/** Next CLI-### code in the company series. Server-authoritative so client
+ *  codes auto-generate instead of being typed manually (bug 5.1). */
+async function nextClientCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: clients.code })
+    .from(clients)
+    .where(eq(clients.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/CLI-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `CLI-${String(max + 1).padStart(3, '0')}`;
+}
+
 export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    const code = input.code?.trim() || (await nextClientCode(tx, companyId));
     const existing = await tx
       .select({ id: clients.id })
       .from(clients)
-      .where(
-        and(
-          eq(clients.companyId, companyId),
-          eq(clients.code, input.code),
-          isNull(clients.deletedAt),
-        ),
-      )
+      .where(and(eq(clients.companyId, companyId), eq(clients.code, code), isNull(clients.deletedAt)))
       .limit(1);
     if (existing.length > 0) {
-      throw new ConflictError(`Client code "${input.code}" already exists`);
+      throw new ConflictError(`Client code "${code}" already exists`);
     }
 
     const inserted = await tx
       .insert(clients)
       .values({
         companyId,
-        code: input.code,
+        code,
         name: input.name,
         contactPerson: emptyToNull(input.contactPerson),
         email: emptyToNull(input.email),

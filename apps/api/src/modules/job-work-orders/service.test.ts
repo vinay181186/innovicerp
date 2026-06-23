@@ -16,6 +16,7 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
 let firstItemId: string;
+let firstItemCode: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -34,7 +35,7 @@ beforeAll(async () => {
   // op-entry's afterAll would delete a test item still referenced by a JW
   // line. Migrated seed items predate any test-created item.
   const itemRow = await db
-    .select({ id: items.id })
+    .select({ id: items.id, code: items.code })
     .from(items)
     .where(
       and(eq(items.companyId, u.companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
@@ -44,6 +45,7 @@ beforeAll(async () => {
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');
   firstItemId = it.id;
+  firstItemCode = it.code;
 });
 
 afterAll(async () => {
@@ -101,7 +103,9 @@ describe('job-work-orders service', () => {
     expect(detail.lines).toHaveLength(2);
     expect(detail.lines[0]?.lineNo).toBe(1);
     expect(detail.lines[0]?.itemId).toBe(firstItemId);
-    expect(detail.lines[0]?.itemCodeText).toBeNull();
+    // Bug 1.3/1.4: a line matched to a master item now surfaces the readable
+    // master code on read (instead of null), so the detail/edit form shows it.
+    expect(detail.lines[0]?.itemCodeText).toBe(firstItemCode);
     // line rate + header material numeric formatting
     expect(detail.lines[0]?.rate).toBe('35.50');
     expect(detail.clientMaterialQty).toBe('12.50');
@@ -111,6 +115,20 @@ describe('job-work-orders service', () => {
     expect(detail.lines[1]?.itemId).toBeNull();
     expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-BRK');
     expect(detail.lines[1]?.lineNo).toBe(2);
+  });
+
+  it('createJobWorkOrder auto-generates the next IN-JW code when omitted (bug 1.2)', async () => {
+    const detail = await service.createJobWorkOrder(
+      {
+        header: { jwDate: '2026-05-03', customerName: 'Auto Code Co', status: 'open' },
+        lines: [{ partName: 'Auto', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+      },
+      admin,
+    );
+    expect(detail.code).toMatch(/^IN-JW-\d{5}$/);
+    // Generated codes don't carry TEST_PREFIX, so clean up explicitly.
+    await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, detail.id));
+    await db.delete(jobWorkOrders).where(eq(jobWorkOrders.id, detail.id));
   });
 
   it('createJobWorkOrder rejects duplicate code in same company', async () => {

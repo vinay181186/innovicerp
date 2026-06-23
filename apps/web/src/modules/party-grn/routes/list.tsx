@@ -295,6 +295,12 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
     () => jwHeaders.find((j) => j.jwId === jwId) ?? null,
     [jwHeaders, jwId],
   );
+  // Bug 3.3: once a JWSO is picked, surface ITS line item codes (the JW list
+  // returns one row per line) so the user can see/pick them in the JW Line box.
+  const jwLinesForSelected = useMemo(
+    () => (jwId ? (jwData?.items ?? []).filter((j) => j.jwId === jwId) : []),
+    [jwData, jwId],
+  );
 
   const { data: pmData } = usePartyMaterialsList({
     search: undefined,
@@ -328,8 +334,21 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
     }
     const validLines: CreatePartyGrnLineInput[] = [];
     for (const [i, l] of lines.entries()) {
-      if (!l.partyMaterialId) {
-        setErr(`Line ${i + 1}: select a material`);
+      // Bug 3.4: a typed-but-not-clicked material left partyMaterialId null and
+      // blocked save. Resolve the typed text to a material id by exact code/name
+      // match (case-insensitive) before giving up.
+      let pmId = l.partyMaterialId;
+      if (!pmId) {
+        const typed = l.materialSearch.trim().toLowerCase();
+        const match = typed
+          ? pmAll.find((p) => p.code.toLowerCase() === typed || p.name.toLowerCase() === typed)
+          : undefined;
+        if (match) pmId = match.id;
+      }
+      if (!pmId) {
+        setErr(
+          `Line ${i + 1}: pick a material from the list, or type an exact material code. Not listed? Add it in Party Material Master first.`,
+        );
         return;
       }
       const q = Number(l.receivedQty);
@@ -338,7 +357,7 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         return;
       }
       const ln: CreatePartyGrnLineInput = {
-        partyMaterialId: l.partyMaterialId,
+        partyMaterialId: pmId,
         receivedQty: q,
       };
       if (l.jwLineNoText.trim()) ln.jwLineNoText = l.jwLineNoText.trim();
@@ -391,6 +410,15 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         <div className="section-hdr" style={{ marginBottom: 14 }}>
           📥 New Party Material GRN
         </div>
+
+        {/* JW line codes for the selected JWSO (bug 3.3) — feeds the JW Line box. */}
+        <datalist id="dlPGrnJwLine">
+          {jwLinesForSelected.map((j) => (
+            <option key={j.lineId} value={String(j.lineNo)}>
+              L{j.lineNo} · {j.itemCode ?? ''} · {j.partName}
+            </option>
+          ))}
+        </datalist>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="GRN No.">
@@ -647,6 +675,7 @@ function LineRow({
         <input
           type="text"
           className="innovic-input"
+          list="dlPGrnJwLine"
           placeholder="Line"
           value={line.jwLineNoText}
           onChange={(e) => onChange({ jwLineNoText: e.target.value })}

@@ -280,6 +280,10 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Open the pickers on focus (not only after typing) so they read as
+  // dropdowns, not free-text boxes (bugs 3.1 item, 3.2 client).
+  const [itemFocused, setItemFocused] = useState(false);
+  const [clientFocused, setClientFocused] = useState(false);
 
   const nextCodeQ = useNextPartyMaterialCode();
   useEffect(() => {
@@ -380,18 +384,20 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
         </Field>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Select from Item Master (optional — type to search)">
+          <Field label="Select from Item Master (optional — click to pick)">
             <input
               type="text"
               className="innovic-input"
-              placeholder="🔍 Type item code or name…"
+              placeholder="🔍 Click to browse or type item code / name…"
               value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
+              onFocus={() => setItemFocused(true)}
+              onBlur={() => setTimeout(() => setItemFocused(false), 150)}
               onChange={(e) => {
                 setItemId(null);
                 setItemSearch(e.target.value);
               }}
             />
-            {!itemId && itemSearch && itemsData ? (
+            {!itemId && (itemSearch || itemFocused) && itemsData ? (
               <Picklist
                 items={itemsData.items.slice(0, 20).map((it) => ({
                   id: it.id,
@@ -452,20 +458,22 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Client ★ (who supplies this material)">
+          <Field label="Client ★ (who supplies this material — click to pick)">
             <input
               type="text"
               className="innovic-input"
-              placeholder="🔍 Type client code or name…"
+              placeholder="🔍 Click to browse or type client code / name…"
               value={
                 selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
               }
+              onFocus={() => setClientFocused(true)}
+              onBlur={() => setTimeout(() => setClientFocused(false), 150)}
               onChange={(e) => {
                 setClientId(null);
                 setClientSearch(e.target.value);
               }}
             />
-            {!clientId && clientSearch && clientsData ? (
+            {!clientId && (clientSearch || clientFocused) && clientsData ? (
               <Picklist
                 items={clientsData.clients.slice(0, 20).map((c) => ({
                   id: c.id,
@@ -514,6 +522,7 @@ function EditPartyMaterialModal({
   const [clientSearch, setClientSearch] = useState('');
   const [clientId, setClientId] = useState<string | null>(row.clientId);
   const [err, setErr] = useState<string | null>(null);
+  const [clientFocused, setClientFocused] = useState(false);
 
   const { data: clientsData } = useClientsList({
     search: clientSearch.trim() || undefined,
@@ -625,18 +634,20 @@ function EditPartyMaterialModal({
             <input
               type="text"
               className="innovic-input"
-              placeholder="🔍 Type client code or name to change…"
+              placeholder="🔍 Click to browse or type client code / name to change…"
               value={
                 selectedClient
                   ? `${selectedClient.code} — ${selectedClient.name}`
                   : clientSearch
               }
+              onFocus={() => setClientFocused(true)}
+              onBlur={() => setTimeout(() => setClientFocused(false), 150)}
               onChange={(e) => {
                 setClientId(null);
                 setClientSearch(e.target.value);
               }}
             />
-            {!clientId && clientSearch && clientsData ? (
+            {!clientId && (clientSearch || clientFocused) && clientsData ? (
               <Picklist
                 items={clientsData.clients.slice(0, 20).map((c) => ({
                   id: c.id,

@@ -2098,3 +2098,46 @@ the relational schema:
 
 - **ADR-020 (pending):** Domain name and transactional email-from address.
 - **ADR-021 (pending):** How to handle Seclore FileSecure DLP tagging on legacy spec source and migration scripts (egress policy).
+
+## ADR-052: Bug-report fixes — server-authoritative codes, read-side item-code resolution, dropdown/auto-fill UX
+
+**Date:** 2026-06-23
+**Status:** Accepted
+
+### Context
+
+Bug report (Vinay, 23 Jun 2026) — 16 listed / 12 documented issues across JWSO, Item
+Master, Party Material, Outward DC, Client, Sales Order. Root themes: codes generated
+only in the frontend (race/blank), item codes lost on read after write-time resolution,
+and type-to-search pickers that read as free-text and silently failed to commit a value.
+
+### Decision
+
+- **Codes are server-authoritative** (Rule 6.1 — no business logic in frontend).
+  `nextJwCode` (IN-JW-#####) and `nextClientCode` (CLI-###) added, mirroring `nextJcCode`.
+  `code` made optional on the JWSO + Client **create** schemas; server generates when
+  blank, still honours a caller-supplied code. Frontend code fields are read-only.
+- **Read-side item-code resolution** (bugs 1.3/1.4): `job-work-orders` get/update/create
+  reads back-resolve `item_id → items.code` and surface it on `itemCodeText`, so the
+  detail page and edit form show the readable code (was null / "— linked —"). Round-trips
+  safely — the write path re-resolves code → id.
+- **Line auto-fill** (2.1/6.1): SO + JWO item-code change fills Part Name / Material /
+  Drawing / UOM from the master, fill-only (never clobbers manual edits). No "Buy" field
+  exists in the SO schema — 6.2 maps to these item-derived fields.
+- **Picker UX** (3.1/3.2/3.4/4.1): Party-material item/client pickers open on focus;
+  Party-GRN save resolves typed material code → id before failing; JWPO converted to a
+  native `<select>`; JW-line item codes surfaced via datalist after JWSO select (3.3).
+
+### Alternatives Considered
+
+- Frontend-only code preview kept as authoritative — rejected: violates Rule 6.1, races
+  across concurrent users (the original bug).
+- New `resolvedItemCode` field on the line read shape — rejected: overloading the existing
+  `itemCodeText` round-trips cleanly with the write path and needs no schema/UI churn.
+
+### Consequences
+
+- Positive: codes never blank, item codes always visible, pickers behave as dropdowns,
+  Party-GRN saves. Typecheck + lint clean.
+- Negative / Risks: `MAX+1` code generation is not concurrency-proof (established repo
+  convention; acceptable at 15–20 users). DB-backed service tests run in CI only.

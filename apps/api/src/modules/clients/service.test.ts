@@ -42,6 +42,13 @@ describe('clients service', () => {
     expect(c.isActive).toBe(true);
   });
 
+  it('createClient auto-generates the next CLI- code when omitted (bug 5.1)', async () => {
+    const c = await service.createClient({ name: 'Auto Code Client', isActive: true }, admin);
+    expect(c.code).toMatch(/^CLI-\d{3,}$/);
+    // Generated codes don't carry TEST_PREFIX, so clean up explicitly.
+    await db.delete(clients).where(eq(clients.id, c.id));
+  });
+
   it('createClient rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createClient({ code, name: 'First', isActive: true }, admin);

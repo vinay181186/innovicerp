@@ -14,11 +14,10 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useClientsList } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
-import { useJobWorkOrdersList } from '../api';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
 
 interface LineFormValue {
@@ -92,7 +91,19 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const rmItems = items.filter((it) => it.code.toLowerCase().includes('-rm'));
-  const { data: jwListData } = useJobWorkOrdersList({ limit: 200, offset: 0 });
+  // Code → master item, for auto-filling the line from the item master (bug 2.1).
+  const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
+
+  /** On item-code change, fill empty line fields from the master (fill-only, so
+   *  manual edits are never clobbered); UOM mirrors the master. */
+  function fillLineFromItem(idx: number, codeValue: string): void {
+    const it = itemsByCode.get(codeValue.trim().toUpperCase());
+    if (!it) return;
+    if (!getValues(`lines.${idx}.partName`)) setValue(`lines.${idx}.partName`, it.name);
+    if (!getValues(`lines.${idx}.material`)) setValue(`lines.${idx}.material`, it.material ?? '');
+    if (!getValues(`lines.${idx}.drawingNo`)) setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
+    setValue(`lines.${idx}.uom`, it.uom);
+  }
 
   const watchedLines = watch('lines');
 
@@ -111,22 +122,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     }
   }
 
-  // Auto-suggest the next IN-JW-##### on a fresh create form.
-  useEffect(() => {
-    if (isEdit || getValues('header.code')) return;
-    const codes = jwListData?.items.map((i) => i.code) ?? [];
-    let max = 0;
-    for (const c of codes) {
-      const m = c.match(/IN-JW-(\d+)\s*$/i);
-      if (m) max = Math.max(max, Number(m[1]));
-    }
-    setValue('header.code', `IN-JW-${String(max + 1).padStart(5, '0')}`);
-  }, [jwListData, isEdit, getValues, setValue]);
-
   const onValid = async (values: FormValues): Promise<void> => {
     const h = values.header;
     const headerOut = {
       ...h,
+      // Code is generated server-side in series; never send a client value on
+      // create (an empty string would fail the schema's min-length check).
+      code: h.code?.trim() || undefined,
       // customerName is snapshotted server-side from the client master.
       customerName: undefined,
       clientId: h.clientId || undefined,
@@ -190,9 +192,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
         <div className="form-grp">
-          <label className="form-label" htmlFor="code">JWSO No.<span className="req">★</span></label>
-          <input id="code" className="innovic-input" autoFocus={!isEdit} autoComplete="off" readOnly={isEdit} {...register('header.code', { required: 'JWSO No. is required' })} />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          <label className="form-label" htmlFor="code">JWSO No.</label>
+          <input id="code" className="innovic-input" autoComplete="off" readOnly placeholder={isEdit ? undefined : 'Auto-generated on save'} {...register('header.code')} />
+          <div className="form-help">{isEdit ? 'Code cannot be changed after creation.' : 'Generated automatically in series (IN-JW-…) when you save.'}</div>
           {errors.header?.code?.message ? <div className="form-error">{errors.header.code.message}</div> : null}
         </div>
         <div className="form-grp">
@@ -296,7 +298,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 <div className="form-grid form-grid-3">
                   <div className="form-grp">
                     <label className="form-label">Item Code</label>
-                    <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const)} />
+                    <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
                   </div>
                   <div className="form-grp">
                     <label className="form-label">Part Name<span className="req">★</span></label>

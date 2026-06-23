@@ -490,16 +490,15 @@ interface OutwardLineUi {
 function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [poId, setPoId] = useState<string | null>(null);
-  const [poSearch, setPoSearch] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<OutwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
+  // Job-work POs for the JWPO dropdown (bug 4.1 — was a free-text picker).
   const { data: poData } = usePurchaseOrdersList({
     poType: 'job_work',
-    search: poSearch.trim() || undefined,
-    limit: 50,
+    limit: 200,
     offset: 0,
   });
   const selectedPo = useMemo(
@@ -575,34 +574,19 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         </Field>
         <div></div>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JWPO ★ (type to search)">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Type JWPO number…"
-              value={
-                selectedPo
-                  ? `${selectedPo.code} — ${selectedPo.vendorName ?? selectedPo.vendorCodeText ?? ''}`
-                  : poSearch
-              }
-              onChange={(e) => {
-                setPoId(null);
-                setPoSearch(e.target.value);
-              }}
-            />
-            {!poId && poSearch && poData ? (
-              <Picklist
-                items={poData.items.slice(0, 20).map((p) => ({
-                  id: p.id,
-                  label: `${p.code} — ${p.vendorName ?? p.vendorCodeText ?? ''}`,
-                  sub: null,
-                }))}
-                onPick={(id) => {
-                  setPoId(id);
-                  setPoSearch('');
-                }}
-              />
-            ) : null}
+          <Field label="JWPO ★">
+            <select
+              className="innovic-select"
+              value={poId ?? ''}
+              onChange={(e) => setPoId(e.target.value || null)}
+            >
+              <option value="">— Select a JWPO —</option>
+              {(poData?.items ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
         <Field label="Vehicle No.">
@@ -1176,45 +1160,6 @@ function Field({
         {label}
       </div>
       {children}
-    </div>
-  );
-}
-
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
-        </div>
-      ))}
     </div>
   );
 }

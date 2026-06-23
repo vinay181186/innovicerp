@@ -81,6 +81,41 @@ async function resolveItemCodes(
   return map;
 }
 
+/** Reverse of resolveItemCodes: itemId → master item code. Used on READ so the
+ *  detail/edit form can show the readable code for lines that were resolved to
+ *  an itemId at write time (their item_code_text is null). Fixes bugs 1.3/1.4. */
+async function resolveItemCodesById(
+  tx: DbTransaction,
+  itemIds: Array<string | null>,
+  companyId: string,
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(itemIds.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: items.id, code: items.code })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
+  const map = new Map<string, string>();
+  for (const r of rows) map.set(r.id, r.code);
+  return map;
+}
+
+/** Next IN-JW-##### code in the company series (mirrors job-cards nextJcCode).
+ *  Server-authoritative so the code no longer depends on a frontend useEffect
+ *  (fixes bug 1.2). The MAX+1 scan matches the established repo convention. */
+async function nextJwCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: jobWorkOrders.code })
+    .from(jobWorkOrders)
+    .where(eq(jobWorkOrders.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/IN-JW-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `IN-JW-${String(max + 1).padStart(5, '0')}`;
+}
+
 async function assertItemIdsExist(
   tx: DbTransaction,
   itemIds: string[],
@@ -245,9 +280,10 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
+    const codeMap = await resolveItemCodesById(tx, lineRows.map((l) => l.itemId), companyId);
     return {
       ...toJobWorkOrder(header),
-      lines: lineRows.map(toJobWorkOrderLine),
+      lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });
 }
@@ -279,14 +315,21 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
   };
 }
 
-function toJobWorkOrderLine(row: typeof jobWorkOrderLines.$inferSelect): JobWorkOrderLine {
+function toJobWorkOrderLine(
+  row: typeof jobWorkOrderLines.$inferSelect,
+  codeByItemId?: Map<string, string>,
+): JobWorkOrderLine {
+  // On write, a line matched to a master item stores item_id and nulls
+  // item_code_text. On read we surface the readable code (from the master) so
+  // the detail page and edit form show it instead of a blank / "— linked —".
+  const resolvedCode = row.itemCodeText ?? (row.itemId ? codeByItemId?.get(row.itemId) ?? null : null);
   return {
     id: row.id,
     companyId: row.companyId,
     jobWorkOrderId: row.jobWorkOrderId,
     lineNo: row.lineNo,
     itemId: row.itemId,
-    itemCodeText: row.itemCodeText,
+    itemCodeText: resolvedCode,
     partName: row.partName,
     material: row.material,
     drawingNo: row.drawingNo,
@@ -317,19 +360,25 @@ export async function createJobWorkOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Code is server-authoritative: when the client omits it (or sends blank),
+    // generate the next IN-JW-##### in the company series (fixes bug 1.2). A
+    // caller-supplied code is still honoured (and duplicate-checked) for parity
+    // with the legacy manual-entry path.
+    const code = input.header.code?.trim() || (await nextJwCode(tx, companyId));
+
     const dup = await tx
       .select({ id: jobWorkOrders.id })
       .from(jobWorkOrders)
       .where(
         and(
           eq(jobWorkOrders.companyId, companyId),
-          eq(jobWorkOrders.code, input.header.code),
+          eq(jobWorkOrders.code, code),
           isNull(jobWorkOrders.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Job work order code "${input.header.code}" already exists`);
+      throw new ConflictError(`Job work order code "${code}" already exists`);
     }
 
     // Client master link is enforced by the create schema (route boundary).
@@ -353,7 +402,7 @@ export async function createJobWorkOrder(
       .insert(jobWorkOrders)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         jwDate: input.header.jwDate,
         clientId: input.header.clientId ?? null,
         customerName: clientName ?? input.header.customerName ?? null,
@@ -391,6 +440,7 @@ export async function createJobWorkOrder(
       };
     });
     const insertedLines = await tx.insert(jobWorkOrderLines).values(lineValues).returning();
+    const codeMap = await resolveItemCodesById(tx, insertedLines.map((l) => l.itemId), companyId);
 
     await emitActivityLog(
       tx,
@@ -406,7 +456,7 @@ export async function createJobWorkOrder(
 
     return {
       ...toJobWorkOrder(header),
-      lines: insertedLines.map(toJobWorkOrderLine),
+      lines: insertedLines.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });
 }
@@ -475,6 +525,7 @@ export async function updateJobWorkOrder(
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
     const updatedHdr = updatedHdrRows[0]!;
+    const codeMap = await resolveItemCodesById(tx, lineRows.map((l) => l.itemId), companyId);
     await emitActivityLog(
       tx,
       {
@@ -489,7 +540,7 @@ export async function updateJobWorkOrder(
 
     return {
       ...toJobWorkOrder(updatedHdr),
-      lines: lineRows.map(toJobWorkOrderLine),
+      lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });
 }

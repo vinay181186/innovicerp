@@ -117,7 +117,21 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const boms = bomsData?.items ?? [];
   const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
+  // Code → master item, for auto-filling a line from the item master (bug 6.1):
+  // selecting an item code fills Part Name / Material / Drawing / UOM.
+  const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
   const { data: soListData } = useSalesOrdersList({ limit: 200, offset: 0 });
+
+  /** Fill empty line fields from the master on item-code change (fill-only so
+   *  manual edits are preserved); UOM mirrors the master. */
+  function fillLineFromItem(idx: number, codeValue: string): void {
+    const it = itemsByCode.get(codeValue.trim().toUpperCase());
+    if (!it) return;
+    if (!getValues(`lines.${idx}.partName`)) setValue(`lines.${idx}.partName`, it.name);
+    if (!getValues(`lines.${idx}.material`)) setValue(`lines.${idx}.material`, it.material ?? '');
+    if (!getValues(`lines.${idx}.drawingNo`)) setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
+    setValue(`lines.${idx}.uom`, it.uom);
+  }
 
   const headerType = watch('header.type');
   const isEquip = headerType === 'equipment';
@@ -302,7 +316,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <div className="form-grid form-grid-3">
             <div className="form-grp">
               <label className="form-label">Equipment / Part No.<span className="req">★</span></label>
-              <input className="innovic-input" autoComplete="off" placeholder="Equipment ID" {...register('lines.0.itemCodeText', { required: isEquip ? 'Part No. is required' : false })} />
+              <input className="innovic-input" autoComplete="off" list="dlSoItems" placeholder="Equipment ID" {...register('lines.0.itemCodeText', { required: isEquip ? 'Part No. is required' : false, onChange: (e) => fillLineFromItem(0, e.target.value) })} />
             </div>
             <div className="form-grp">
               <label className="form-label">Description<span className="req">★</span></label>
@@ -362,7 +376,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     <div className="form-grid form-grid-3">
                       <div className="form-grp">
                         <label className="form-label">Item Code</label>
-                        <input className="innovic-input" autoComplete="off" list="dlSoItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const)} />
+                        <input className="innovic-input" autoComplete="off" list="dlSoItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
                       </div>
                       <div className="form-grp">
                         <label className="form-label">Part Name<span className="req">★</span></label>

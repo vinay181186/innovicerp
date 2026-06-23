@@ -25,11 +25,14 @@ export const clientSchema = z.object({
 export type Client = z.infer<typeof clientSchema>;
 
 export const createClientInputSchema = z.object({
+  // Optional: the server auto-generates the next CLI-### in the company series
+  // when omitted (bug 5.1). A caller may still pass an explicit code.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen, ampersand'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen, ampersand')
+    .optional(),
   name: z.string().min(1).max(255),
   contactPerson: z.string().max(255).optional(),
   email: z.string().email().max(255).optional().or(z.literal('')),

@@ -138,11 +138,14 @@ export const jobWorkOrderLineInputSchema = z
 export type JobWorkOrderLineInput = z.infer<typeof jobWorkOrderLineInputSchema>;
 
 const _jwHeaderInputBase = z.object({
+  // Optional on create: the server auto-generates the next IN-JW-##### in the
+  // company series when omitted (bug 1.2). A caller may still pass a code.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+    .optional(),
   jwDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'jwDate must be YYYY-MM-DD'),
   clientId: z.string().uuid().optional(),
   customerName: z.string().max(255).optional(),

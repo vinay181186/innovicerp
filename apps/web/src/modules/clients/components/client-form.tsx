@@ -35,7 +35,9 @@ type EditMode = {
 type ClientFormProps = CreateMode | EditMode;
 
 const CREATE_DEFAULTS: CreateClientInput = {
-  code: '',
+  // Code is auto-generated server-side; never seed an empty string (it would
+  // fail the schema's min-length check). Leave it undefined.
+  code: undefined,
   name: '',
   contactPerson: undefined,
   email: undefined,
@@ -85,16 +87,17 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Client Code<span className="req">★</span>
+            Client Code
           </label>
-          <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="e.g. CLI-001" {...register('code')} />
+          <input id="code" className="innovic-input" readOnly autoComplete="off" placeholder="Auto-generated on save" {...register('code')} />
+          <div className="form-help">Generated automatically in series (CLI-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
             Client Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" placeholder="Full company name" {...register('name')} />
+          <input id="name" className="innovic-input" autoFocus autoComplete="off" placeholder="Full company name" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
