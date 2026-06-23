@@ -32,7 +32,9 @@ type EditMode = {
 type VendorFormProps = CreateMode | EditMode;
 
 const CREATE_DEFAULTS: CreateVendorInput = {
-  code: '',
+  // Code is auto-generated server-side; never seed an empty string (it would
+  // fail the schema's min-length check). Leave it undefined.
+  code: undefined,
   name: '',
   contactPerson: undefined,
   email: undefined,
@@ -86,16 +88,17 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Vendor Code<span className="req">★</span>
+            Vendor Code
           </label>
-          <input id="code" className="innovic-input" autoFocus autoComplete="off" {...register('code')} />
+          <input id="code" className="innovic-input" readOnly autoComplete="off" placeholder="Auto-generated on save" {...register('code')} />
+          <div className="form-help">Generated automatically in series (VND-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
             Vendor Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+          <input id="name" className="innovic-input" autoFocus autoComplete="off" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 

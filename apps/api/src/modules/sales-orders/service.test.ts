@@ -16,6 +16,7 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
 let admin: AuthContext;
 let firstItemId: string;
+let firstItemCode: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -35,7 +36,7 @@ beforeAll(async () => {
   // test's JW/SO lines still reference. Migrated seed items predate any
   // test-created item, so ordering by createdAt ASC is stable.
   const itemRow = await db
-    .select({ id: items.id })
+    .select({ id: items.id, code: items.code })
     .from(items)
     .where(
       and(
@@ -49,6 +50,7 @@ beforeAll(async () => {
   const it = itemRow[0];
   if (!it) throw new Error('No items in seed company — run migration load first');
   firstItemId = it.id;
+  firstItemCode = it.code;
 });
 
 afterAll(async () => {
@@ -113,6 +115,60 @@ describe('sales-orders service', () => {
     // Unresolved itemCodeText is preserved per ADR-012 #10.
     expect(detail.lines[1]?.itemId).toBeNull();
     expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-CODE');
+  });
+
+  it('SO detail lines include the resolved itemCode (bug 1)', async () => {
+    const created = await service.createSalesOrder(
+      {
+        header: {
+          code: `${TEST_PREFIX}ITEMCODE`,
+          soDate: '2026-05-02',
+          customerName: 'ItemCode Co',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
+        lines: [{ partName: 'Coded', itemId: firstItemId, uom: 'NOS', orderQty: 3, rate: 10 }],
+      },
+      admin,
+    );
+    // Create response carries the readable code (back-resolved from item_id).
+    expect(created.lines[0]?.itemCode).toBe(firstItemCode);
+    // Detail GET also returns itemCode on every line.
+    const detail = await service.getSalesOrder(created.id, admin);
+    expect(detail.lines[0]?.itemId).toBe(firstItemId);
+    expect(detail.lines[0]?.itemCode).toBe(firstItemCode);
+  });
+
+  it('createSalesOrder auto-generates distinct sequential IN-SO codes (bug 2)', async () => {
+    const mk = () =>
+      service.createSalesOrder(
+        {
+          header: {
+            soDate: '2026-05-02',
+            customerName: 'Auto SO Co',
+            type: 'component_manufacturing',
+            status: 'open',
+            gstPercent: 18,
+          },
+          lines: [{ partName: 'Auto', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+        },
+        admin,
+      );
+    const a = await mk();
+    const b = await mk();
+    expect(a.code).toMatch(/^IN-SO-\d{5}$/);
+    expect(b.code).toMatch(/^IN-SO-\d{5}$/);
+    expect(a.code).not.toBe(b.code);
+    // Sequential: second number is first + 1.
+    const na = Number(a.code.slice(-5));
+    const nb = Number(b.code.slice(-5));
+    expect(nb).toBe(na + 1);
+    // Generated codes don't carry TEST_PREFIX, so clean up explicitly.
+    for (const id of [a.id, b.id]) {
+      await db.delete(salesOrderLines).where(eq(salesOrderLines.salesOrderId, id));
+      await db.delete(salesOrders).where(eq(salesOrders.id, id));
+    }
   });
 
   it('createSalesOrder rejects duplicate code in same company', async () => {

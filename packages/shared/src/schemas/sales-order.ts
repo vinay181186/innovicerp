@@ -190,11 +190,14 @@ export const salesOrderMilestoneInputSchema = z.object({
 export type SalesOrderMilestoneInput = z.infer<typeof salesOrderMilestoneInputSchema>;
 
 const _soHeaderInputBase = z.object({
+  // Optional on create: the server auto-generates the next IN-SO-##### in the
+  // company series when omitted. A caller may still pass an explicit code.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+    .optional(),
   soDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'soDate must be YYYY-MM-DD'),
   clientId: z.string().uuid().optional(),
   customerName: z.string().max(255).optional(),

@@ -26,6 +26,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { withUniqueRetry } from '../../lib/db-retry';
 import {
   AuthorizationError,
   ConflictError,
@@ -140,6 +141,23 @@ function resolveLineItemRefs(
   }
   const found = resolved.get(code);
   return found ? { itemId: found, itemCodeText: null } : { itemId: null, itemCodeText: code };
+}
+
+/** itemId → master item code, for surfacing the readable `itemCode` on the
+ *  create/update responses (the detail GET already joins items; these two
+ *  response builders re-read plain line rows, so back-resolve here too). */
+async function resolveItemCodesById(
+  tx: DbTransaction,
+  itemIds: Array<string | null>,
+  companyId: string,
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(itemIds.filter((x): x is string => Boolean(x))));
+  if (unique.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: items.id, code: items.code })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
+  return new Map(rows.map((r) => [r.id, r.code]));
 }
 
 /** Auto-assign / validate lineNo across an array of lines. Mirrors the
@@ -514,6 +532,20 @@ async function readClientPoFilePath(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+/** Next IN-SO-##### code in the company series (mirrors nextJwCode). */
+async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: salesOrders.code })
+    .from(salesOrders)
+    .where(eq(salesOrders.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/IN-SO-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `IN-SO-${String(max + 1).padStart(5, '0')}`;
+}
+
 export async function createSalesOrder(
   input: CreateSalesOrderInput,
   user: AuthContext,
@@ -521,142 +553,155 @@ export async function createSalesOrder(
   requireWriteRole(user);
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    // Header uniqueness
-    const dup = await tx
-      .select({ id: salesOrders.id })
-      .from(salesOrders)
-      .where(
-        and(
-          eq(salesOrders.companyId, companyId),
-          eq(salesOrders.code, input.header.code),
-          isNull(salesOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`Sales order code "${input.header.code}" already exists`);
-    }
+  // Code is server-authoritative: generate the next IN-SO-##### when the client
+  // omits it. withUniqueRetry re-runs in a fresh transaction if two concurrent
+  // creates collide on sales_orders_company_code_uniq (23505).
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      const code = input.header.code?.trim() || (await nextSoCode(tx, companyId));
+      // Header uniqueness (fast 409 for an explicit caller-supplied duplicate).
+      const dup = await tx
+        .select({ id: salesOrders.id })
+        .from(salesOrders)
+        .where(
+          and(
+            eq(salesOrders.companyId, companyId),
+            eq(salesOrders.code, code),
+            isNull(salesOrders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (dup.length > 0) {
+        throw new ConflictError(`Sales order code "${code}" already exists`);
+      }
 
-    // Client master link is enforced by the create schema (route boundary).
-    // Snapshot the master client name into customer_name when a client is set.
-    let clientName: string | null = null;
-    if (input.header.clientId) {
-      clientName = await assertClientExists(tx, input.header.clientId, companyId);
-    }
+      // Client master link is enforced by the create schema (route boundary).
+      // Snapshot the master client name into customer_name when a client is set.
+      let clientName: string | null = null;
+      if (input.header.clientId) {
+        clientName = await assertClientExists(tx, input.header.clientId, companyId);
+      }
 
-    // Line FK pre-resolution
-    const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
-    await assertItemIdsExist(tx, directIds, companyId);
-    const codesToResolve = input.lines
-      .filter((l) => !l.itemId && l.itemCodeText)
-      .map((l) => l.itemCodeText!.trim());
-    const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
-    const lineNos = assignLineNos(input.lines, 1);
+      // Line FK pre-resolution
+      const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
+      await assertItemIdsExist(tx, directIds, companyId);
+      const codesToResolve = input.lines
+        .filter((l) => !l.itemId && l.itemCodeText)
+        .map((l) => l.itemCodeText!.trim());
+      const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+      const lineNos = assignLineNos(input.lines, 1);
 
-    // Insert header
-    const headerStatus = input.header.status ?? 'open';
-    const headerType = input.header.type ?? 'component_manufacturing';
-    const inserted = await tx
-      .insert(salesOrders)
-      .values({
-        companyId,
-        code: input.header.code,
-        soDate: input.header.soDate,
-        clientId: input.header.clientId ?? null,
-        customerName: clientName ?? input.header.customerName ?? null,
-        clientPoNo: input.header.clientPoNo ?? null,
-        type: headerType,
-        status: headerStatus,
-        gstPercent: gstToString(input.header.gstPercent ?? 18),
-        bomMasterId: input.header.bomMasterId ?? null,
-        bomStatus: input.header.bomStatus ?? null,
-        costCenter: input.header.costCenter ?? null,
-        remarks: input.header.remarks ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const header = inserted[0]!;
-
-    // Insert lines
-    let insertedLines: Array<typeof salesOrderLines.$inferSelect> = [];
-    if (input.lines.length > 0) {
-      const lineValues = input.lines.map((l, i) => {
-        const refs = resolveLineItemRefs(l, resolved);
-        return {
+      // Insert header
+      const headerStatus = input.header.status ?? 'open';
+      const headerType = input.header.type ?? 'component_manufacturing';
+      const inserted = await tx
+        .insert(salesOrders)
+        .values({
           companyId,
-          salesOrderId: header.id,
-          lineNo: lineNos[i]!,
-          itemId: refs.itemId,
-          itemCodeText: refs.itemCodeText,
-          partName: l.partName,
-          material: l.material ?? null,
-          drawingNo: l.drawingNo ?? null,
-          uom: l.uom,
-          orderQty: l.orderQty,
-          rate: rateToString(l),
-          dueDate: l.dueDate ?? null,
-          clientPoLineNo: l.clientPoLineNo ?? null,
-          status: l.status ?? headerStatus,
-          sourceBomMasterId: l.sourceBomMasterId ?? null,
+          code,
+          soDate: input.header.soDate,
+          clientId: input.header.clientId ?? null,
+          customerName: clientName ?? input.header.customerName ?? null,
+          clientPoNo: input.header.clientPoNo ?? null,
+          type: headerType,
+          status: headerStatus,
+          gstPercent: gstToString(input.header.gstPercent ?? 18),
+          bomMasterId: input.header.bomMasterId ?? null,
+          bomStatus: input.header.bomStatus ?? null,
+          costCenter: input.header.costCenter ?? null,
+          remarks: input.header.remarks ?? null,
           createdBy: user.id,
           updatedBy: user.id,
-        };
-      });
-      insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
-    }
+        })
+        .returning();
+      const header = inserted[0]!;
 
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'SalesOrder',
-        detail: soDetail(header.code, header.customerName),
-        refId: header.code,
-      },
-      companyId,
-      user,
-    );
-
-    // BOM-8 cascade: for every freshly-inserted line that links a BOM,
-    // walk the BOM's lines and spawn child JCs / PRs. Runs in the same
-    // tx as the SO insert so a cascade failure rolls back the SO.
-    for (const line of insertedLines) {
-      if (line.sourceBomMasterId) {
-        await cascadeBomToSoLine(tx, line.id, user);
-      }
-    }
-
-    // Insert delivery-schedule milestones (ISSUE-015).
-    const inputMilestones = input.milestones ?? [];
-    let insertedMilestones: Array<typeof soMilestones.$inferSelect> = [];
-    if (inputMilestones.length > 0) {
-      insertedMilestones = await tx
-        .insert(soMilestones)
-        .values(
-          inputMilestones.map((m) => ({
+      // Insert lines
+      let insertedLines: Array<typeof salesOrderLines.$inferSelect> = [];
+      if (input.lines.length > 0) {
+        const lineValues = input.lines.map((l, i) => {
+          const refs = resolveLineItemRefs(l, resolved);
+          return {
             companyId,
             salesOrderId: header.id,
-            lotNo: m.lotNo,
-            qty: m.qty,
-            dueDate: m.dueDate ?? null,
-            remarks: m.remarks ?? null,
+            lineNo: lineNos[i]!,
+            itemId: refs.itemId,
+            itemCodeText: refs.itemCodeText,
+            partName: l.partName,
+            material: l.material ?? null,
+            drawingNo: l.drawingNo ?? null,
+            uom: l.uom,
+            orderQty: l.orderQty,
+            rate: rateToString(l),
+            dueDate: l.dueDate ?? null,
+            clientPoLineNo: l.clientPoLineNo ?? null,
+            status: l.status ?? headerStatus,
+            sourceBomMasterId: l.sourceBomMasterId ?? null,
             createdBy: user.id,
             updatedBy: user.id,
-          })),
-        )
-        .returning();
-    }
+          };
+        });
+        insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
+      }
 
-    return {
-      ...toSalesOrder(header),
-      createdByName: await resolveUserName(tx, header.createdBy),
-      lines: insertedLines.map((row) => toSalesOrderLine(row)),
-      milestones: insertedMilestones.map(toSoMilestone),
-      clientPoFilePath: null,
-    };
-  });
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'SalesOrder',
+          detail: soDetail(header.code, header.customerName),
+          refId: header.code,
+        },
+        companyId,
+        user,
+      );
+
+      // BOM-8 cascade: for every freshly-inserted line that links a BOM,
+      // walk the BOM's lines and spawn child JCs / PRs. Runs in the same
+      // tx as the SO insert so a cascade failure rolls back the SO.
+      for (const line of insertedLines) {
+        if (line.sourceBomMasterId) {
+          await cascadeBomToSoLine(tx, line.id, user);
+        }
+      }
+
+      // Insert delivery-schedule milestones (ISSUE-015).
+      const inputMilestones = input.milestones ?? [];
+      let insertedMilestones: Array<typeof soMilestones.$inferSelect> = [];
+      if (inputMilestones.length > 0) {
+        insertedMilestones = await tx
+          .insert(soMilestones)
+          .values(
+            inputMilestones.map((m) => ({
+              companyId,
+              salesOrderId: header.id,
+              lotNo: m.lotNo,
+              qty: m.qty,
+              dueDate: m.dueDate ?? null,
+              remarks: m.remarks ?? null,
+              createdBy: user.id,
+              updatedBy: user.id,
+            })),
+          )
+          .returning();
+      }
+
+      const createdCodeMap = await resolveItemCodesById(
+        tx,
+        insertedLines.map((l) => l.itemId),
+        companyId,
+      );
+      return {
+        ...toSalesOrder(header),
+        createdByName: await resolveUserName(tx, header.createdBy),
+        lines: insertedLines.map((row) =>
+          toSalesOrderLine(row, createdCodeMap.get(row.itemId ?? '') ?? null),
+        ),
+        milestones: insertedMilestones.map(toSoMilestone),
+        clientPoFilePath: null,
+      };
+    }),
+  );
 }
 
 export async function updateSalesOrder(
@@ -743,10 +788,17 @@ export async function updateSalesOrder(
       user,
     );
 
+    const updatedCodeMap = await resolveItemCodesById(
+      tx,
+      lineRows.map((l) => l.itemId),
+      companyId,
+    );
     return {
       ...toSalesOrder(updatedHdr),
       createdByName: await resolveUserName(tx, updatedHdr.createdBy),
-      lines: lineRows.map((row) => toSalesOrderLine(row)),
+      lines: lineRows.map((row) =>
+        toSalesOrderLine(row, updatedCodeMap.get(row.itemId ?? '') ?? null),
+      ),
       milestones,
       clientPoFilePath,
     };

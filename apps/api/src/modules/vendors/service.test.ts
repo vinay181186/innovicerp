@@ -42,6 +42,20 @@ describe('vendors service', () => {
     expect(v.isActive).toBe(true);
   });
 
+  it('createVendor auto-generates distinct sequential VND- codes (bug 2)', async () => {
+    const a = await service.createVendor({ name: 'Auto Vendor A', isActive: true }, admin);
+    const b = await service.createVendor({ name: 'Auto Vendor B', isActive: true }, admin);
+    expect(a.code).toMatch(/^VND-\d{3,}$/);
+    expect(b.code).toMatch(/^VND-\d{3,}$/);
+    expect(a.code).not.toBe(b.code);
+    const na = Number(a.code.replace(/\D/g, ''));
+    const nb = Number(b.code.replace(/\D/g, ''));
+    expect(nb).toBe(na + 1);
+    // Generated codes don't carry TEST_PREFIX, so clean up explicitly.
+    await db.delete(vendors).where(eq(vendors.id, a.id));
+    await db.delete(vendors).where(eq(vendors.id, b.id));
+  });
+
   it('createVendor rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createVendor({ code, name: 'First', isActive: true }, admin);

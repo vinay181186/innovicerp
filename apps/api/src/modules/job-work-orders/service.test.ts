@@ -131,6 +131,25 @@ describe('job-work-orders service', () => {
     await db.delete(jobWorkOrders).where(eq(jobWorkOrders.id, detail.id));
   });
 
+  it('two quick JWSO creates get distinct sequential IN-JW codes (bug 2)', async () => {
+    const mk = () =>
+      service.createJobWorkOrder(
+        {
+          header: { jwDate: '2026-05-03', customerName: 'Seq Co', status: 'open' },
+          lines: [{ partName: 'Seq', itemId: firstItemId, uom: 'NOS', orderQty: 1 }],
+        },
+        admin,
+      );
+    const a = await mk();
+    const b = await mk();
+    expect(a.code).not.toBe(b.code);
+    expect(Number(b.code.slice(-5))).toBe(Number(a.code.slice(-5)) + 1);
+    for (const id of [a.id, b.id]) {
+      await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, id));
+      await db.delete(jobWorkOrders).where(eq(jobWorkOrders.id, id));
+    }
+  });
+
   it('createJobWorkOrder rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createJobWorkOrder(
@@ -217,7 +236,9 @@ describe('job-work-orders service', () => {
       admin,
     );
     // One row per line (2 lines for this JW), each carrying header material.
-    const rowsForJw = result.items.filter((j) => j.code === code).sort((a, b) => a.lineNo - b.lineNo);
+    const rowsForJw = result.items
+      .filter((j) => j.code === code)
+      .sort((a, b) => a.lineNo - b.lineNo);
     expect(rowsForJw).toHaveLength(2);
     expect(rowsForJw[0]?.lineNo).toBe(1);
     expect(rowsForJw[0]?.orderQty).toBe(4);

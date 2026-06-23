@@ -1,7 +1,8 @@
 import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { vendors } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   CreateVendorInput,
@@ -47,7 +48,11 @@ export async function listVendors(
         .select()
         .from(vendors)
         .where(where)
-        .orderBy((input.sortDir === 'desc' ? desc : asc)(input.sortBy === 'name' ? vendors.name : vendors.code))
+        .orderBy(
+          (input.sortDir === 'desc' ? desc : asc)(
+            input.sortBy === 'name' ? vendors.name : vendors.code,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(vendors).where(where),
@@ -76,48 +81,63 @@ export async function getVendor(id: string, user: AuthContext): Promise<Vendor> 
   });
 }
 
+/** Next VND-### code in the company series (legacy _nextVendorCode, 3-digit). */
+async function nextVendorCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: vendors.code })
+    .from(vendors)
+    .where(eq(vendors.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/VND-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `VND-${String(max + 1).padStart(3, '0')}`;
+}
+
 export async function createVendor(input: CreateVendorInput, user: AuthContext): Promise<Vendor> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
-      .select({ id: vendors.id })
-      .from(vendors)
-      .where(
-        and(
-          eq(vendors.companyId, companyId),
-          eq(vendors.code, input.code),
-          isNull(vendors.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      throw new ConflictError(`Vendor code "${input.code}" already exists`);
-    }
+  // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
+  // collide on vendors_company_code_uniq (23505).
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      const code = input.code?.trim() || (await nextVendorCode(tx, companyId));
+      const existing = await tx
+        .select({ id: vendors.id })
+        .from(vendors)
+        .where(
+          and(eq(vendors.companyId, companyId), eq(vendors.code, code), isNull(vendors.deletedAt)),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        throw new ConflictError(`Vendor code "${code}" already exists`);
+      }
 
-    const inserted = await tx
-      .insert(vendors)
-      .values({
-        companyId,
-        code: input.code,
-        name: input.name,
-        contactPerson: emptyToNull(input.contactPerson),
-        email: emptyToNull(input.email),
-        phone: emptyToNull(input.phone),
-        gstNumber: emptyToNull(input.gstNumber),
-        addressLine1: emptyToNull(input.addressLine1),
-        city: emptyToNull(input.city),
-        state: emptyToNull(input.state),
-        pincode: emptyToNull(input.pincode),
-        materialsSupplied: emptyToNull(input.materialsSupplied),
-        rating: emptyToNull(input.rating),
-        isActive: input.isActive,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    return inserted[0] as unknown as Vendor;
-  });
+      const inserted = await tx
+        .insert(vendors)
+        .values({
+          companyId,
+          code,
+          name: input.name,
+          contactPerson: emptyToNull(input.contactPerson),
+          email: emptyToNull(input.email),
+          phone: emptyToNull(input.phone),
+          gstNumber: emptyToNull(input.gstNumber),
+          addressLine1: emptyToNull(input.addressLine1),
+          city: emptyToNull(input.city),
+          state: emptyToNull(input.state),
+          pincode: emptyToNull(input.pincode),
+          materialsSupplied: emptyToNull(input.materialsSupplied),
+          rating: emptyToNull(input.rating),
+          isActive: input.isActive,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning();
+      return inserted[0] as unknown as Vendor;
+    }),
+  );
 }
 
 export async function updateVendor(

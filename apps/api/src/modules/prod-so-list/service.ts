@@ -41,6 +41,7 @@ export async function listProdSo(
           sol.id AS sol_id,
           sol.sales_order_id,
           sol.order_qty,
+          sol.due_date AS line_due_date,
           COALESCE((
             SELECT SUM(
               CASE
@@ -70,7 +71,9 @@ export async function listProdSo(
         COALESCE(c.name, so.customer_name, '—') AS "customerName",
         so.type::text AS "soType",
         so.so_date AS "soDate",
-        so.due_date AS "dueDate",
+        -- sales_orders has no due_date column; the due date lives on the lines.
+        -- MIN over the SO's lines = earliest line due date (null when no lines).
+        MIN(ld.line_due_date) AS "dueDate",
         COUNT(ld.sol_id)::int AS "linesCount",
         COALESCE(SUM(ld.order_qty), 0)::int AS "totalQty",
         COALESCE(SUM(ld.done_qty), 0)::int AS "doneQty",
@@ -86,26 +89,24 @@ export async function listProdSo(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const rows = (result as unknown as Array<Record<string, unknown>>).map(
-      (r): ProdSoListRow => {
-        const total = Number(r['totalQty'] ?? 0);
-        const done = Number(r['doneQty'] ?? 0);
-        const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-        return {
-          soId: r['soId'] as string,
-          soCode: String(r['soCode'] ?? ''),
-          customerName: String(r['customerName'] ?? ''),
-          soType: String(r['soType'] ?? ''),
-          soDate: dateLike(r['soDate']),
-          dueDate: dateLike(r['dueDate']),
-          linesCount: Number(r['linesCount'] ?? 0),
-          totalQty: total,
-          doneQty: done,
-          balanceQty: Number(r['balanceQty'] ?? 0),
-          progressPct: pct,
-        };
-      },
-    );
+    const rows = (result as unknown as Array<Record<string, unknown>>).map((r): ProdSoListRow => {
+      const total = Number(r['totalQty'] ?? 0);
+      const done = Number(r['doneQty'] ?? 0);
+      const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      return {
+        soId: r['soId'] as string,
+        soCode: String(r['soCode'] ?? ''),
+        customerName: String(r['customerName'] ?? ''),
+        soType: String(r['soType'] ?? ''),
+        soDate: dateLike(r['soDate']),
+        dueDate: dateLike(r['dueDate']),
+        linesCount: Number(r['linesCount'] ?? 0),
+        totalQty: total,
+        doneQty: done,
+        balanceQty: Number(r['balanceQty'] ?? 0),
+        progressPct: pct,
+      };
+    });
 
     const totalRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS total

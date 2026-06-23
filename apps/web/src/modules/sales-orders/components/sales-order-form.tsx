@@ -18,12 +18,11 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
-import { useSalesOrdersList } from '../api';
 import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
 
 interface LineFormValue {
@@ -120,7 +119,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // Code → master item, for auto-filling a line from the item master (bug 6.1):
   // selecting an item code fills Part Name / Material / Drawing / UOM.
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
-  const { data: soListData } = useSalesOrdersList({ limit: 200, offset: 0 });
 
   /** Fill empty line fields from the master on item-code change (fill-only so
    *  manual edits are preserved); UOM mirrors the master. */
@@ -137,18 +135,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const isEquip = headerType === 'equipment';
   const watchedLines = watch('lines');
   const gstPercent = Number(watch('header.gstPercent')) || 0;
-
-  // Auto-suggest the next IN-SO-##### on a fresh create form.
-  useEffect(() => {
-    if (isEdit || getValues('header.code')) return;
-    const codes = soListData?.items.map((i) => i.code) ?? [];
-    let max = 0;
-    for (const c of codes) {
-      const m = c.match(/IN-SO-(\d+)\s*$/i);
-      if (m) max = Math.max(max, Number(m[1]));
-    }
-    setValue('header.code', `IN-SO-${String(max + 1).padStart(5, '0')}`);
-  }, [soListData, isEdit, getValues, setValue]);
 
   // In-form line import.
   const lineFileRef = useRef<HTMLInputElement>(null);
@@ -173,6 +159,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     const equip = values.header.type === 'equipment';
     const headerOut = {
       ...values.header,
+      // Code is generated server-side in series; never send a client value on
+      // create (an empty string would fail the schema's min-length check).
+      code: values.header.code?.trim() || undefined,
       // customerName is snapshotted server-side from the client master.
       customerName: undefined,
       clientId: values.header.clientId || undefined,
@@ -242,9 +231,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
         <div className="form-grp">
-          <label className="form-label" htmlFor="code">SO/WO No.<span className="req">★</span></label>
-          <input id="code" className="innovic-input" autoFocus={!isEdit} autoComplete="off" readOnly={isEdit} {...register('header.code', { required: 'SO/WO No. is required' })} />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          <label className="form-label" htmlFor="code">SO/WO No.</label>
+          <input id="code" className="innovic-input" autoComplete="off" readOnly placeholder={isEdit ? undefined : 'Auto-generated on save'} {...register('header.code')} />
+          <div className="form-help">{isEdit ? 'Code cannot be changed after creation.' : 'Generated automatically in series (IN-SO-…) when you save.'}</div>
           {errors.header?.code?.message ? <div className="form-error">{errors.header.code.message}</div> : null}
         </div>
         <div className="form-grp">

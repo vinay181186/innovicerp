@@ -14,6 +14,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { clients, items, jobWorkOrderLines, jobWorkOrders } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { withUniqueRetry } from '../../lib/db-retry';
 import {
   AuthorizationError,
   ConflictError,
@@ -280,7 +281,11 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)))
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
-    const codeMap = await resolveItemCodesById(tx, lineRows.map((l) => l.itemId), companyId);
+    const codeMap = await resolveItemCodesById(
+      tx,
+      lineRows.map((l) => l.itemId),
+      companyId,
+    );
     return {
       ...toJobWorkOrder(header),
       lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
@@ -322,7 +327,8 @@ function toJobWorkOrderLine(
   // On write, a line matched to a master item stores item_id and nulls
   // item_code_text. On read we surface the readable code (from the master) so
   // the detail page and edit form show it instead of a blank / "— linked —".
-  const resolvedCode = row.itemCodeText ?? (row.itemId ? codeByItemId?.get(row.itemId) ?? null : null);
+  const resolvedCode =
+    row.itemCodeText ?? (row.itemId ? (codeByItemId?.get(row.itemId) ?? null) : null);
   return {
     id: row.id,
     companyId: row.companyId,
@@ -359,106 +365,115 @@ export async function createJobWorkOrder(
   requireWriteRole(user);
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    // Code is server-authoritative: when the client omits it (or sends blank),
-    // generate the next IN-JW-##### in the company series (fixes bug 1.2). A
-    // caller-supplied code is still honoured (and duplicate-checked) for parity
-    // with the legacy manual-entry path.
-    const code = input.header.code?.trim() || (await nextJwCode(tx, companyId));
+  // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
+  // collide on job_work_orders_company_code_uniq (23505) — the MAX+1 generator
+  // is not race-proof on its own.
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      // Code is server-authoritative: when the client omits it (or sends blank),
+      // generate the next IN-JW-##### in the company series (fixes bug 1.2). A
+      // caller-supplied code is still honoured (and duplicate-checked) for parity
+      // with the legacy manual-entry path.
+      const code = input.header.code?.trim() || (await nextJwCode(tx, companyId));
 
-    const dup = await tx
-      .select({ id: jobWorkOrders.id })
-      .from(jobWorkOrders)
-      .where(
-        and(
-          eq(jobWorkOrders.companyId, companyId),
-          eq(jobWorkOrders.code, code),
-          isNull(jobWorkOrders.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length > 0) {
-      throw new ConflictError(`Job work order code "${code}" already exists`);
-    }
+      const dup = await tx
+        .select({ id: jobWorkOrders.id })
+        .from(jobWorkOrders)
+        .where(
+          and(
+            eq(jobWorkOrders.companyId, companyId),
+            eq(jobWorkOrders.code, code),
+            isNull(jobWorkOrders.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (dup.length > 0) {
+        throw new ConflictError(`Job work order code "${code}" already exists`);
+      }
 
-    // Client master link is enforced by the create schema (route boundary).
-    // When a client is set, snapshot its master name into customer_name so the
-    // stored customer always mirrors the master (no free text).
-    let clientName: string | null = null;
-    if (input.header.clientId) {
-      clientName = await assertClientExists(tx, input.header.clientId, companyId);
-    }
+      // Client master link is enforced by the create schema (route boundary).
+      // When a client is set, snapshot its master name into customer_name so the
+      // stored customer always mirrors the master (no free text).
+      let clientName: string | null = null;
+      if (input.header.clientId) {
+        clientName = await assertClientExists(tx, input.header.clientId, companyId);
+      }
 
-    const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
-    await assertItemIdsExist(tx, directIds, companyId);
-    const codesToResolve = input.lines
-      .filter((l) => !l.itemId && l.itemCodeText)
-      .map((l) => l.itemCodeText!.trim());
-    const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
-    const lineNos = assignLineNos(input.lines, 1);
+      const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
+      await assertItemIdsExist(tx, directIds, companyId);
+      const codesToResolve = input.lines
+        .filter((l) => !l.itemId && l.itemCodeText)
+        .map((l) => l.itemCodeText!.trim());
+      const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+      const lineNos = assignLineNos(input.lines, 1);
 
-    const headerStatus = input.header.status ?? 'open';
-    const inserted = await tx
-      .insert(jobWorkOrders)
-      .values({
+      const headerStatus = input.header.status ?? 'open';
+      const inserted = await tx
+        .insert(jobWorkOrders)
+        .values({
+          companyId,
+          code,
+          jwDate: input.header.jwDate,
+          clientId: input.header.clientId ?? null,
+          customerName: clientName ?? input.header.customerName ?? null,
+          clientPoNo: input.header.clientPoNo ?? null,
+          status: headerStatus,
+          remarks: input.header.remarks ?? null,
+          clientMaterial: input.header.clientMaterial ?? null,
+          clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
+          materialReceivedDate: input.header.materialReceivedDate ?? null,
+          materialReceivedQty: numToStringOrNull(input.header.materialReceivedQty),
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning();
+      const header = inserted[0]!;
+
+      const lineValues = input.lines.map((l, i) => {
+        const refs = resolveLineItemRefs(l, resolved);
+        return {
+          companyId,
+          jobWorkOrderId: header.id,
+          lineNo: lineNos[i]!,
+          itemId: refs.itemId,
+          itemCodeText: refs.itemCodeText,
+          partName: l.partName,
+          material: l.material ?? null,
+          drawingNo: l.drawingNo ?? null,
+          uom: l.uom,
+          orderQty: l.orderQty,
+          rate: (l.rate ?? 0).toFixed(2),
+          dueDate: l.dueDate ?? null,
+          status: l.status ?? headerStatus,
+          createdBy: user.id,
+          updatedBy: user.id,
+        };
+      });
+      const insertedLines = await tx.insert(jobWorkOrderLines).values(lineValues).returning();
+      const codeMap = await resolveItemCodesById(
+        tx,
+        insertedLines.map((l) => l.itemId),
         companyId,
-        code,
-        jwDate: input.header.jwDate,
-        clientId: input.header.clientId ?? null,
-        customerName: clientName ?? input.header.customerName ?? null,
-        clientPoNo: input.header.clientPoNo ?? null,
-        status: headerStatus,
-        remarks: input.header.remarks ?? null,
-        clientMaterial: input.header.clientMaterial ?? null,
-        clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
-        materialReceivedDate: input.header.materialReceivedDate ?? null,
-        materialReceivedQty: numToStringOrNull(input.header.materialReceivedQty),
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const header = inserted[0]!;
+      );
 
-    const lineValues = input.lines.map((l, i) => {
-      const refs = resolveLineItemRefs(l, resolved);
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'JobWorkOrder',
+          detail: jwDetail(header.code, header.customerName),
+          refId: header.code,
+        },
+        companyId,
+        user,
+      );
+
       return {
-        companyId,
-        jobWorkOrderId: header.id,
-        lineNo: lineNos[i]!,
-        itemId: refs.itemId,
-        itemCodeText: refs.itemCodeText,
-        partName: l.partName,
-        material: l.material ?? null,
-        drawingNo: l.drawingNo ?? null,
-        uom: l.uom,
-        orderQty: l.orderQty,
-        rate: (l.rate ?? 0).toFixed(2),
-        dueDate: l.dueDate ?? null,
-        status: l.status ?? headerStatus,
-        createdBy: user.id,
-        updatedBy: user.id,
+        ...toJobWorkOrder(header),
+        lines: insertedLines.map((l) => toJobWorkOrderLine(l, codeMap)),
       };
-    });
-    const insertedLines = await tx.insert(jobWorkOrderLines).values(lineValues).returning();
-    const codeMap = await resolveItemCodesById(tx, insertedLines.map((l) => l.itemId), companyId);
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'JobWorkOrder',
-        detail: jwDetail(header.code, header.customerName),
-        refId: header.code,
-      },
-      companyId,
-      user,
-    );
-
-    return {
-      ...toJobWorkOrder(header),
-      lines: insertedLines.map((l) => toJobWorkOrderLine(l, codeMap)),
-    };
-  });
+    }),
+  );
 }
 
 export async function updateJobWorkOrder(
@@ -525,7 +540,11 @@ export async function updateJobWorkOrder(
       .orderBy(asc(jobWorkOrderLines.lineNo));
 
     const updatedHdr = updatedHdrRows[0]!;
-    const codeMap = await resolveItemCodesById(tx, lineRows.map((l) => l.itemId), companyId);
+    const codeMap = await resolveItemCodesById(
+      tx,
+      lineRows.map((l) => l.itemId),
+      companyId,
+    );
     await emitActivityLog(
       tx,
       {
