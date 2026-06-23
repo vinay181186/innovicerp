@@ -22,7 +22,9 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
+import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   signedUrlFor,
@@ -32,7 +34,6 @@ import {
   useQcDocuments,
   useQcLineDetail,
   useQcMatrix,
-  useQcMatrixSos,
 } from '../api';
 
 const searchSchema = z.object({
@@ -107,8 +108,9 @@ function QcDocumentsPage(): React.JSX.Element {
 function MatrixView(): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
-  const { data: sosData, isLoading: sosLoading } = useQcMatrixSos();
-  const sos = useMemo(() => sosData?.sos ?? [], [sosData]);
+  const [soSearch, setSoSearch] = useState('');
+  const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
+  const sos = useMemo(() => soQuery.data?.items ?? [], [soQuery.data]);
 
   // Default to the first (newest) SO once the list loads.
   const selectedSo = search.so ?? sos[0]?.id;
@@ -122,7 +124,7 @@ function MatrixView(): React.JSX.Element {
 
   const [detailJcId, setDetailJcId] = useState<string | null>(null);
 
-  if (sosLoading) {
+  if (soQuery.isLoading) {
     return (
       <div className="empty-state" style={{ padding: 60 }}>
         <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
@@ -204,21 +206,22 @@ function MatrixView(): React.JSX.Element {
         <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>
           SELECT SO:
         </label>
-        <select
-          className="innovic-select"
-          style={{ minWidth: 320, fontSize: 13, fontWeight: 700 }}
-          value={selectedSo ?? ''}
-          onChange={(e) =>
-            void navigate({ search: (p) => ({ ...p, so: e.target.value }), replace: true })
-          }
-        >
-          {sos.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.code}
-              {s.customerName ? ` — ${s.customerName}` : ''}
-            </option>
-          ))}
-        </select>
+        <div style={{ minWidth: 320 }}>
+          <SearchableSelect
+            id="qc-docs-so"
+            value={selectedSo ?? null}
+            valueLabel={
+              matrix?.so ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}` : undefined
+            }
+            onChange={(id) =>
+              void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
+            }
+            onSearch={setSoSearch}
+            loading={soQuery.isFetching}
+            placeholder="🔍 Select SO — type code or customer…"
+            options={sos.map((s) => ({ id: s.id, code: s.code, name: s.customerName ?? '' }))}
+          />
+        </div>
         {isFetching && !isLoading ? <Loader2 className="inline h-3 w-3 animate-spin" /> : null}
       </div>
 

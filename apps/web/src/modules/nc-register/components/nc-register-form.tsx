@@ -10,8 +10,10 @@ import {
   type UpdateNcRegisterInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useItemsList } from '@/modules/items/api';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useNcRegisterList } from '../api';
@@ -78,6 +80,16 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
   const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
+
+  // SO No. is a code-text snapshot (string), not an id — so the picker stores the
+  // chosen SO's code, not its id (keeps the saved value type identical).
+  const [soSearch, setSoSearch] = useState('');
+  const soQuery = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
+  const soOptions = (soQuery.data?.items ?? []).map((s) => ({
+    id: s.id,
+    code: s.code,
+    name: s.customerName ?? '',
+  }));
 
   const itemsByCode = useMemo(() => {
     const m = new Map<string, (typeof items)[number]>();
@@ -282,15 +294,21 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label" htmlFor="soCodeText">
+              <label className="form-label" htmlFor="nc-so">
                 SO No. (snapshot)
               </label>
-              <input
-                id="soCodeText"
-                className="innovic-input"
-                autoComplete="off"
-                placeholder="SO-436"
-                {...register('soCodeText')}
+              <SearchableSelect
+                id="nc-so"
+                value={soOptions.find((o) => o.code === watch('soCodeText'))?.id ?? null}
+                valueLabel={watch('soCodeText') || undefined}
+                onChange={(id) => {
+                  const so = soOptions.find((o) => o.id === id);
+                  setValue('soCodeText', so?.code ?? '', { shouldDirty: true });
+                }}
+                onSearch={setSoSearch}
+                loading={soQuery.isFetching}
+                placeholder="🔍 SO No. — type code or customer…"
+                options={soOptions}
               />
             </div>
 

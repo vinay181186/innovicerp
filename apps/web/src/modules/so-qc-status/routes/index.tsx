@@ -13,8 +13,10 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useSoForQc, useSoQcStatus } from '../api';
+import { useSoQcStatus } from '../api';
 
 const searchSchema = z.object({ so: z.string().uuid().optional() });
 
@@ -42,10 +44,11 @@ function stageIcon(status: SoQcStageOp['status']): string {
 function SoQcStatusPage(): React.JSX.Element {
   const search = soQcStatusRoute.useSearch();
   const navigate = soQcStatusRoute.useNavigate();
-  const sos = useSoForQc();
+  const [soSearch, setSoSearch] = useState('');
+  const soList = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
   const detail = useSoQcStatus(search.so);
 
-  function selectSo(id: string): void {
+  function selectSo(id: string | null): void {
     void navigate({ search: () => (id ? { so: id } : {}), replace: true });
   }
 
@@ -64,19 +67,21 @@ function SoQcStatusPage(): React.JSX.Element {
         <div className="section-hdr" style={{ marginBottom: 0 }}>
           🔬 SO QC Status
         </div>
-        <select
-          className="innovic-select"
-          style={{ minWidth: 300, fontSize: 13 }}
-          value={search.so ?? ''}
-          onChange={(e) => selectSo(e.target.value)}
-        >
-          <option value="">— Select SO —</option>
-          {(sos.data?.sos ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.code} — {s.customerName ?? ''} ({s.status})
-            </option>
-          ))}
-        </select>
+        <div style={{ minWidth: 300 }}>
+          <SearchableSelect
+            id="so-qc-select"
+            value={search.so ?? null}
+            onChange={selectSo}
+            onSearch={setSoSearch}
+            loading={soList.isFetching}
+            placeholder="🔍 Select SO — type code or customer…"
+            options={(soList.data?.items ?? []).map((s) => ({
+              id: s.id,
+              code: s.code,
+              name: s.customerName ?? '',
+            }))}
+          />
+        </div>
       </div>
 
       {!search.so ? (

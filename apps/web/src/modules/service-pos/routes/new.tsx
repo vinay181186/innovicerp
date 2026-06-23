@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useCreateServicePo } from '../api';
@@ -35,9 +36,14 @@ function ServicePosNewPage(): React.JSX.Element {
   const { data: me } = useSession();
   const canEdit = me?.role === 'admin' || me?.role === 'manager';
   const createMut = useCreateServicePo();
-  const { data: vendorsList } = useVendorsList({ limit: 200, offset: 0 }, { enabled: canEdit });
-  const { data: salesOrders } = useSalesOrdersList(
-    { limit: 100, offset: 0 },
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [soSearch, setSoSearch] = useState('');
+  const vendorsQuery = useVendorsList(
+    { search: vendorSearch || undefined, limit: 50, offset: 0 },
+    { enabled: canEdit },
+  );
+  const salesOrdersQuery = useSalesOrdersList(
+    { search: soSearch || undefined, limit: 50, offset: 0 },
     { enabled: canEdit },
   );
 
@@ -154,18 +160,19 @@ function ServicePosNewPage(): React.JSX.Element {
           </div>
           <div className="form-grp">
             <label className="form-label">Vendor <span className="req">★</span></label>
-            <select
-              className="innovic-select"
-              value={vendorId}
-              onChange={(e) => setVendorId(e.target.value)}
-            >
-              <option value="">— Select —</option>
-              {(vendorsList?.vendors ?? []).map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              id="spo-vendor"
+              value={vendorId || null}
+              onChange={(id) => setVendorId(id ?? '')}
+              onSearch={setVendorSearch}
+              loading={vendorsQuery.isFetching}
+              placeholder="🔍 Select vendor — type code or name…"
+              options={(vendorsQuery.data?.vendors ?? []).map((v) => ({
+                id: v.id,
+                code: v.code,
+                name: v.name,
+              }))}
+            />
           </div>
           <div className="form-grp">
             <label className="form-label">Expense Head</label>
@@ -205,18 +212,19 @@ function ServicePosNewPage(): React.JSX.Element {
         {costCenter === 'so' ? (
           <div className="form-grp" style={{ maxWidth: 400 }}>
             <label className="form-label">SO / JW No.</label>
-            <select
-              className="innovic-select"
-              value={soRefId}
-              onChange={(e) => setSoRefId(e.target.value)}
-            >
-              <option value="">— Select —</option>
-              {(salesOrders?.items ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              id="spo-so"
+              value={soRefId || null}
+              onChange={(id) => setSoRefId(id ?? '')}
+              onSearch={setSoSearch}
+              loading={salesOrdersQuery.isFetching}
+              placeholder="🔍 Select SO — type code or customer…"
+              options={(salesOrdersQuery.data?.items ?? []).map((s) => ({
+                id: s.id,
+                code: s.code,
+                name: s.customerName ?? '',
+              }))}
+            />
           </div>
         ) : null}
 

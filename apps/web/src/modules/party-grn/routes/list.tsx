@@ -10,6 +10,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -280,12 +281,13 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   const [err, setErr] = useState<string | null>(null);
 
   const nextCodeQ = useNextPartyGrnCode();
-  const { data: jwData } = useJobWorkOrdersList({
+  const jwQuery = useJobWorkOrdersList({
     search: jwSearch.trim() || undefined,
     status: 'open',
     limit: 50,
     offset: 0,
   });
+  const jwData = jwQuery.data;
   // The JW list returns one row per line; dedupe to one entry per JW header.
   const jwHeaders = useMemo(() => {
     const seen = new Set<string>();
@@ -444,34 +446,20 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
           </Field>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★ (type to search)">
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="🔍 Type JWSO number…"
-                value={
-                  selectedJw
-                    ? `${selectedJw.code} — ${selectedJw.customerName ?? ''}`
-                    : jwSearch
-                }
-                onChange={(e) => {
-                  setJwId(null);
-                  setJwSearch(e.target.value);
-                }}
+            <Field label="JWSO No. ★">
+              <SearchableSelect
+                id="pgrn-jwso"
+                value={jwId}
+                onChange={setJwId}
+                onSearch={setJwSearch}
+                loading={jwQuery.isFetching}
+                placeholder="🔍 Select JWSO — type number or customer…"
+                options={jwHeaders.map((j) => ({
+                  id: j.jwId,
+                  code: j.code,
+                  name: j.customerName ?? '',
+                }))}
               />
-              {!jwId && jwSearch && jwData ? (
-                <Picklist
-                  items={jwHeaders.slice(0, 20).map((j) => ({
-                    id: j.jwId,
-                    label: `${j.code} — ${j.customerName ?? ''}`,
-                    sub: j.clientPoNo ?? null,
-                  }))}
-                  onPick={(id) => {
-                    setJwId(id);
-                    setJwSearch('');
-                  }}
-                />
-              ) : null}
             </Field>
           </div>
 
@@ -813,41 +801,3 @@ function Field({
   );
 }
 
-function Picklist({
-  items,
-  onPick,
-}: {
-  items: Array<{ id: string; label: string; sub: string | null }>;
-  onPick: (id: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 4,
-        background: 'var(--bg2)',
-        marginTop: 4,
-        maxHeight: 180,
-        overflowY: 'auto',
-      }}
-    >
-      {items.map((it) => (
-        <div
-          key={it.id}
-          onClick={() => onPick(it.id)}
-          style={{
-            padding: '6px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
