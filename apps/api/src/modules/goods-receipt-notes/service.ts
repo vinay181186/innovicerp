@@ -483,6 +483,21 @@ export async function getGoodsReceiptNote(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+/** Next IN-GRN-##### code in the company series (mirrors nextSoCode). Used when
+ *  the create payload omits a code (document-number override: blank = auto). */
+async function nextGrnCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: goodsReceiptNotes.code })
+    .from(goodsReceiptNotes)
+    .where(eq(goodsReceiptNotes.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/IN-GRN-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `IN-GRN-${String(max + 1).padStart(5, '0')}`;
+}
+
 export async function createGoodsReceiptNote(
   input: CreateGoodsReceiptNoteInput,
   user: AuthContext,
@@ -491,19 +506,22 @@ export async function createGoodsReceiptNote(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    const code = input.header.code?.trim() || (await nextGrnCode(tx, companyId));
     const dup = await tx
       .select({ id: goodsReceiptNotes.id })
       .from(goodsReceiptNotes)
       .where(
         and(
           eq(goodsReceiptNotes.companyId, companyId),
-          eq(goodsReceiptNotes.code, input.header.code),
+          eq(goodsReceiptNotes.code, code),
           isNull(goodsReceiptNotes.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`GRN code "${input.header.code}" already exists`);
+      throw new ConflictError(
+        `GRN No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
+      );
     }
 
     if (input.header.vendorId) {
@@ -530,7 +548,7 @@ export async function createGoodsReceiptNote(
       .insert(goodsReceiptNotes)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         grnDate: input.header.grnDate,
         purchaseOrderId: input.header.purchaseOrderId ?? null,
         poCodeText: input.header.poCodeText ?? null,

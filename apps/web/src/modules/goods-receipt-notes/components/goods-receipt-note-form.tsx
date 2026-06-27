@@ -9,8 +9,9 @@ import {
   type UpdateGoodsReceiptNoteInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { useSession } from '@/lib/session';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -100,6 +101,8 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, control, handleSubmit, formState, setValue, getValues, watch } = form;
+  const isCreate = !isEdit;
+  const [docNoValid, setDocNoValid] = useState(true);
   const errors = formState.errors;
   const companyId = useSession().data?.companyId ?? null;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
@@ -192,23 +195,15 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   return (
     <form onSubmit={handleSubmit(onValid)}>
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            GRN No.<span className="req">★</span>
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            {...register('header.code', { required: !isEdit ? 'GRN No. is required' : false })}
-          />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
-          {errors.header?.code?.message ? (
-            <div className="form-error">{errors.header.code.message}</div>
-          ) : null}
-        </div>
+        <DocNumberInput
+          type="grn"
+          label="GRN No."
+          required={isCreate}
+          readOnly={isEdit}
+          value={watch('header.code') ?? ''}
+          onChange={(v) => setValue('header.code', v)}
+          onValidityChange={setDocNoValid}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="grnDate">
             Date<span className="req">★</span>
@@ -561,7 +556,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create GRN')}
           </button>

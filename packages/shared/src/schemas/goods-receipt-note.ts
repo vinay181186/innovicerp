@@ -157,11 +157,14 @@ export const goodsReceiptNoteLineInputSchema = z
 export type GoodsReceiptNoteLineInput = z.infer<typeof goodsReceiptNoteLineInputSchema>;
 
 const _grnHeaderInputBase = z.object({
+  // Optional: the server auto-generates the next IN-GRN-##### when omitted
+  // (document-number override — blank = auto). A caller may still pass a code.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+    .optional(),
   grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'grnDate must be YYYY-MM-DD'),
   purchaseOrderId: z.string().uuid().optional(),
   poCodeText: z.string().max(64).optional(),
