@@ -237,20 +237,16 @@ export type CreateSalesOrderInput = z.infer<typeof createSalesOrderInputSchema>;
  *  legacy `_editFullSO` merge semantics: id-matched lines are updated, new
  *  lines are inserted, existing lines absent from input are soft-deleted. */
 export const updateSalesOrderInputSchema = z.object({
+  // Client master link is mandatory on edit too (matches create): every SO must
+  // reference a real client. Editing a legacy customerName-only order therefore
+  // forces picking a client from the master; the free-text fallback is gone.
+  // The server re-snapshots customerName from the chosen client.
   header: _soHeaderInputBase
     .partial()
     .omit({ code: true })
-    .refine(
-      // If both fields are explicitly set to undefined that's fine — keep
-      // existing values. Only block the case where the caller actively sets
-      // both to empty/null in one shot.
-      (h) =>
-        h.clientId !== '' &&
-        (h.customerName === undefined ||
-          h.customerName.trim().length > 0 ||
-          h.clientId !== undefined),
-      { message: 'clientId or customerName must remain populated' },
-    ),
+    .refine((h) => Boolean(h.clientId), {
+      message: 'A client (from the client master) is required for a Sales Order.',
+    }),
   lines: z.array(salesOrderLineInputSchema).optional(),
   milestones: z.array(salesOrderMilestoneInputSchema).optional(),
 });

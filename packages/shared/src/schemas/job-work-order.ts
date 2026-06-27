@@ -18,7 +18,8 @@
 //   - `createJobWorkOrderInputSchema` and `updateJobWorkOrderInputSchema`
 //     accept `{header, lines}`; service runs the merge in one transaction
 //     using the same option-C semantics as sales orders.
-//   - Header requires `clientId` OR `customerName` (ADR-012 #9).
+//   - Header requires a client-master `clientId` (supersedes ADR-012 #9 —
+//     the free-text `customerName` fallback is removed, create and update).
 //   - Each line requires `itemId` OR `itemCodeText` (ADR-012 #10).
 //   - JWs always require ≥ 1 line (no Equipment exception).
 
@@ -175,9 +176,17 @@ export const createJobWorkOrderInputSchema = z.object({
 });
 export type CreateJobWorkOrderInput = z.infer<typeof createJobWorkOrderInputSchema>;
 
-/** UPDATE — same shape; lines optional (option C merge). `code` immutable. */
+/** UPDATE — same shape; lines optional (option C merge). `code` immutable.
+ *  Client master link is mandatory on edit too (matches create): editing a
+ *  legacy customerName-only JWSO forces picking a client from the master. The
+ *  server re-snapshots customerName from the chosen client. */
 export const updateJobWorkOrderInputSchema = z.object({
-  header: _jwHeaderInputBase.partial().omit({ code: true }),
+  header: _jwHeaderInputBase
+    .partial()
+    .omit({ code: true })
+    .refine((h) => Boolean(h.clientId), {
+      message: 'A client (from the client master) is required for a Job Work order.',
+    }),
   lines: z.array(jobWorkOrderLineInputSchema).optional(),
 });
 export type UpdateJobWorkOrderInput = z.infer<typeof updateJobWorkOrderInputSchema>;
