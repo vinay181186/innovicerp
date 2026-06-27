@@ -72,6 +72,17 @@ export function useSalesOrder(id: string | undefined) {
   });
 }
 
+/** Next suggested SO No. (MAX+1 after the highest IN-SO-#####). Used to prefill
+ *  the create form with an editable, overridable suggestion. */
+export function useNextSoCode(enabled = true) {
+  return useQuery<{ code: string }>({
+    queryKey: [...salesOrdersKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/sales-orders/next-code'),
+    enabled,
+    staleTime: 0,
+  });
+}
+
 export function useCreateSalesOrder() {
   const qc = useQueryClient();
   return useMutation<SalesOrderDetail, Error, CreateSalesOrderInput>({

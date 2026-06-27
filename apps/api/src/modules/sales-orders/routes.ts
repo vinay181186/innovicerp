@@ -17,6 +17,11 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     return service.listSalesOrders(query, req.user);
   });
 
+  app.get('/sales-orders/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextSoCode(req.user);
+  });
+
   app.get('/sales-orders/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

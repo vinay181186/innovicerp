@@ -547,6 +547,13 @@ async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string>
   return `IN-SO-${String(max + 1).padStart(5, '0')}`;
 }
 
+/** The next suggested SO code (MAX+1 after the highest IN-SO-#####). Surfaced to
+ *  the create form so it can prefill an editable, overridable suggestion. */
+export async function getNextSoCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextSoCode(tx, companyId) }));
+}
+
 export async function createSalesOrder(
   input: CreateSalesOrderInput,
   user: AuthContext,
@@ -573,7 +580,9 @@ export async function createSalesOrder(
         )
         .limit(1);
       if (dup.length > 0) {
-        throw new ConflictError(`Sales order code "${code}" already exists`);
+        throw new ConflictError(
+          `Sales Order No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
+        );
       }
 
       // Duplicate Client PO No. guard (legacy addSO L12431): a client PO number
