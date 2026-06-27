@@ -60,7 +60,6 @@ interface FormValues {
     clientPoNo?: string;
     bomMasterId?: string;
     bomStatus?: string;
-    costCenter?: string;
     remarks?: string;
   };
   lines: LineFormValue[];
@@ -168,7 +167,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       clientPoNo: values.header.clientPoNo?.trim() || undefined,
       bomMasterId: equip ? values.header.bomMasterId?.trim() || undefined : undefined,
       bomStatus: equip ? (values.header.bomMasterId?.trim() ? 'BOM Assigned' : 'BOM Pending') : undefined,
-      costCenter: values.header.costCenter?.trim() || undefined,
       remarks: values.header.remarks?.trim() || undefined,
     };
 
@@ -258,10 +256,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
             {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="costCenter">🏢 Cost Center</label>
-          <input id="costCenter" className="innovic-input" autoComplete="off" placeholder="Cost center" {...register('header.costCenter')} />
         </div>
 
         <div className="form-grp">
@@ -491,7 +485,6 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
       ...(detail.clientPoNo ? { clientPoNo: detail.clientPoNo } : {}),
       ...(detail.bomMasterId ? { bomMasterId: detail.bomMasterId } : {}),
       ...(detail.bomStatus ? { bomStatus: detail.bomStatus } : {}),
-      ...(detail.costCenter ? { costCenter: detail.costCenter } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
     },
     lines:

@@ -73,7 +73,9 @@ export async function listSoCosting(user: AuthContext): Promise<ListSoCostingRes
         SELECT
           so.id AS so_id, so.code AS so_no,
           COALESCE(cl.name, so.customer_name) AS customer,
-          so.cost_center,
+          -- Cost Center is no longer captured on the SO; every SO is its own
+          -- cost centre, so fall back to the SO No. when cost_center is empty.
+          COALESCE(so.cost_center, so.code) AS cost_center,
           (SELECT cc.name FROM cost_centers cc
              WHERE cc.code = so.cost_center AND cc.company_id = so.company_id
                AND cc.deleted_at IS NULL LIMIT 1) AS cc_name,
@@ -150,7 +152,8 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
     const headRes = await tx.execute(
       sql.raw(`
         SELECT so.id AS so_id, so.code AS so_no,
-          COALESCE(cl.name, so.customer_name) AS customer, so.cost_center,
+          COALESCE(cl.name, so.customer_name) AS customer,
+          COALESCE(so.cost_center, so.code) AS cost_center,
           (SELECT cc.name FROM cost_centers cc
              WHERE cc.code = so.cost_center AND cc.company_id = so.company_id
                AND cc.deleted_at IS NULL LIMIT 1) AS cc_name
