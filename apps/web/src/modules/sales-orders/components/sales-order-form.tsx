@@ -14,7 +14,6 @@
 
 import {
   type CreateSalesOrderInput,
-  type ListSalesOrdersQuery,
   type SalesOrderDetail,
   SELECTABLE_SO_TYPES,
   type SoStatus,
@@ -24,13 +23,13 @@ import {
   UOMS,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
+import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
-import { useNextSoCode, useSalesOrdersList } from '../api';
 import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
 
 interface LineFormValue {
@@ -146,31 +145,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const watchedLines = watch('lines');
   const gstPercent = Number(watch('header.gstPercent')) || 0;
 
-  // ── SO No.: prefill the next suggestion (editable), live availability check ──
+  // ── SO No.: reusable document-number field (prefill + live duplicate check) ──
   const isCreate = !isEdit;
-  const { data: nextCode } = useNextSoCode(isCreate);
-  const codePrefilled = useRef(false);
-  useEffect(() => {
-    if (isCreate && nextCode?.code && !codePrefilled.current && !getValues('header.code')) {
-      setValue('header.code', nextCode.code);
-      codePrefilled.current = true;
-    }
-  }, [isCreate, nextCode, setValue, getValues]);
-
-  const codeValue = watch('header.code');
-  const [codeProbe, setCodeProbe] = useState('');
-  useEffect(() => {
-    const t = setTimeout(() => setCodeProbe((codeValue || '').trim()), 400);
-    return () => clearTimeout(t);
-  }, [codeValue]);
-  const { data: probeData, isFetching: probeFetching } = useSalesOrdersList(
-    { search: codeProbe, limit: 5 } as ListSalesOrdersQuery,
-    { enabled: isCreate && codeProbe.length > 0 },
-  );
-  const codeTaken =
-    isCreate &&
-    codeProbe.length > 0 &&
-    (probeData?.items ?? []).some((s) => s.code.trim().toUpperCase() === codeProbe.toUpperCase());
+  const [docNoValid, setDocNoValid] = useState(true);
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   // Keep a stable label for the selected client even when it scrolls out of the
@@ -258,11 +235,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     setLineError(null);
-    // SO No. duplicate guard (client-side; the server is the backstop).
-    if (isCreate && codeTaken) {
-      setLineError(`Sales Order No. "${codeProbe}" already exists — duplicate not allowed. Use a unique number.`);
-      return;
-    }
+    // SO No. validity is enforced by DocNumberInput (save disabled while invalid);
+    // the server UNIQUE constraint is the final backstop.
     const equip = values.header.type === 'equipment';
 
     // Item-Master enforcement (legacy L12443): every component line must carry a
@@ -344,35 +318,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     <form onSubmit={handleSubmit(onValid)}>
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">SO/WO No.{isCreate ? <span className="req">★</span> : null}</label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoComplete="off"
-            readOnly={isEdit}
-            list={isCreate ? 'dlSoExistingNos' : undefined}
-            placeholder={isEdit ? undefined : 'IN-SO-00001'}
-            style={isCreate && codeTaken ? { borderColor: 'var(--red)' } : undefined}
-            {...register('header.code')}
-          />
-          {isCreate ? (
-            <datalist id="dlSoExistingNos">
-              {(probeData?.items ?? []).map((s) => <option key={s.id} value={s.code} />)}
-            </datalist>
-          ) : null}
-          {isEdit ? (
-            <div className="form-help">Code cannot be changed after creation.</div>
-          ) : codeProbe.length === 0 ? (
-            <div className="form-help">Auto-filled with the next number. Edit to use your own — leave blank to auto-generate on save.</div>
-          ) : probeFetching ? (
-            <div className="form-help">Checking availability…</div>
-          ) : codeTaken ? (
-            <div className="form-error">✗ "{codeProbe}" already exists — duplicate not allowed. Use a unique number.</div>
-          ) : (
-            <div className="form-help" style={{ color: 'var(--green)' }}>✓ "{codeProbe}" is available.</div>
-          )}
-        </div>
+        <DocNumberInput
+          type="sales_order"
+          label="SO/WO No."
+          required={isCreate}
+          readOnly={isEdit}
+          value={watch('header.code') ?? ''}
+          onChange={(v) => setValue('header.code', v)}
+          onValidityChange={setDocNoValid}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="soDate">Date<span className="req">★</span></label>
           <input id="soDate" type="date" className="innovic-input" {...register('header.soDate', { required: 'Date is required' })} />
@@ -616,7 +570,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create SO')}
           </button>
