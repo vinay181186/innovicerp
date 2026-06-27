@@ -375,6 +375,21 @@ function toPurchaseOrderLine(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+/** Next IN-PO-##### code in the company series (mirrors nextSoCode). Used when
+ *  the create payload omits a code (document-number override: blank = auto). */
+async function nextPoCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: purchaseOrders.code })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/IN-PO-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `IN-PO-${String(max + 1).padStart(5, '0')}`;
+}
+
 export async function createPurchaseOrder(
   input: CreatePurchaseOrderInput,
   user: AuthContext,
@@ -383,19 +398,22 @@ export async function createPurchaseOrder(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    const code = input.header.code?.trim() || (await nextPoCode(tx, companyId));
     const dup = await tx
       .select({ id: purchaseOrders.id })
       .from(purchaseOrders)
       .where(
         and(
           eq(purchaseOrders.companyId, companyId),
-          eq(purchaseOrders.code, input.header.code),
+          eq(purchaseOrders.code, code),
           isNull(purchaseOrders.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${input.header.code}" already exists`);
+      throw new ConflictError(
+        `Purchase Order No. "${code}" already exists — duplicate not allowed. Please use a unique number.`,
+      );
     }
 
     if (input.header.vendorId) {
@@ -429,7 +447,7 @@ export async function createPurchaseOrder(
       .insert(purchaseOrders)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         poDate: input.header.poDate,
         poType: headerType,
         vendorId: input.header.vendorId ?? null,

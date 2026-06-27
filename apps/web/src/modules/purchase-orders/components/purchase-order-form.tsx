@@ -10,8 +10,9 @@ import {
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
+import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
@@ -90,7 +91,9 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
     : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, setValue } = form;
+  const { register, control, handleSubmit, formState, setValue, watch } = form;
+  const isCreate = !isEdit;
+  const [docNoValid, setDocNoValid] = useState(true);
   const errors = formState.errors;
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
@@ -150,23 +153,15 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
     <form onSubmit={handleSubmit(onValid)}>
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            PO No.<span className="req">★</span>
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            {...register('header.code', { required: !isEdit ? 'PO No. is required' : false })}
-          />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
-          {errors.header?.code?.message ? (
-            <div className="form-error">{errors.header.code.message}</div>
-          ) : null}
-        </div>
+        <DocNumberInput
+          type="purchase_order"
+          label="PO No."
+          required={isCreate}
+          readOnly={isEdit}
+          value={watch('header.code') ?? ''}
+          onChange={(v) => setValue('header.code', v)}
+          onValidityChange={setDocNoValid}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="poDate">
             Date<span className="req">★</span>
@@ -518,7 +513,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PO')}
           </button>
