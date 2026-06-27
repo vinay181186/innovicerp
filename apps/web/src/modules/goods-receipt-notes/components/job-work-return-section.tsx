@@ -160,6 +160,15 @@ export function JobWorkReturnSection(): React.JSX.Element {
             placeholder="Optional"
           />
         </div>
+        <div className="form-grp">
+          <label className="form-label">Remarks</label>
+          <input
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
       </div>
 
       <div className="tbl-wrap" style={{ marginTop: 10 }}>
