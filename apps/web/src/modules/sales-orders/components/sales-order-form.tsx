@@ -467,7 +467,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ minWidth: 120 }}>Item Code <span className="req">★</span></th>
                   <th style={{ minWidth: 80 }}>Part Name</th>
                   <th style={{ width: 70 }}>Material</th>
-                  <th style={{ width: 70 }}>Drawing No.</th>
+                  <th style={{ width: 91 }}>Drawing No.</th>
                   <th style={{ width: 60 }}>Client PO Ln</th>
                   <th style={{ width: 64 }}>UOM</th>
                   <th style={{ width: 120 }} className="td-ctr">Qty <span className="req">★</span></th>
