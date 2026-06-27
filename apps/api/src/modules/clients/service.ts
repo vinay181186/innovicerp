@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   Client,
@@ -98,38 +99,45 @@ async function nextClientCode(tx: DbTransaction, companyId: string): Promise<str
 export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const code = input.code?.trim() || (await nextClientCode(tx, companyId));
-    const existing = await tx
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(eq(clients.companyId, companyId), eq(clients.code, code), isNull(clients.deletedAt)))
-      .limit(1);
-    if (existing.length > 0) {
-      throw new ConflictError(`Client code "${code}" already exists`);
-    }
+  // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
+  // collide on clients_company_code_uniq (23505) — e.g. both auto-generate the
+  // same CLI-### — so the loser retries with the next code instead of 500ing.
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      const code = input.code?.trim() || (await nextClientCode(tx, companyId));
+      const existing = await tx
+        .select({ id: clients.id })
+        .from(clients)
+        .where(
+          and(eq(clients.companyId, companyId), eq(clients.code, code), isNull(clients.deletedAt)),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        throw new ConflictError(`Client code "${code}" already exists`);
+      }
 
-    const inserted = await tx
-      .insert(clients)
-      .values({
-        companyId,
-        code,
-        name: input.name,
-        contactPerson: emptyToNull(input.contactPerson),
-        email: emptyToNull(input.email),
-        phone: emptyToNull(input.phone),
-        gstNumber: emptyToNull(input.gstNumber),
-        addressLine1: emptyToNull(input.addressLine1),
-        city: emptyToNull(input.city),
-        state: emptyToNull(input.state),
-        pincode: emptyToNull(input.pincode),
-        isActive: input.isActive,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    return inserted[0] as unknown as Client;
-  });
+      const inserted = await tx
+        .insert(clients)
+        .values({
+          companyId,
+          code,
+          name: input.name,
+          contactPerson: emptyToNull(input.contactPerson),
+          email: emptyToNull(input.email),
+          phone: emptyToNull(input.phone),
+          gstNumber: emptyToNull(input.gstNumber),
+          addressLine1: emptyToNull(input.addressLine1),
+          city: emptyToNull(input.city),
+          state: emptyToNull(input.state),
+          pincode: emptyToNull(input.pincode),
+          isActive: input.isActive,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning();
+      return inserted[0] as unknown as Client;
+    }),
+  );
 }
 
 export async function updateClient(
