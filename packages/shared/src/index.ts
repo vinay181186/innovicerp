@@ -67,6 +67,7 @@ export * from './schemas/tool-issue';
 export * from './schemas/party-material';
 export * from './schemas/party-grn';
 export * from './schemas/jw-dc';
+export * from './schemas/grn-unified';
 export * from './schemas/design-tracker';
 export * from './schemas/design-project';
 export * from './schemas/prod-so-list';
