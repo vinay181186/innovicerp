@@ -19,6 +19,7 @@ import {
   invoices,
   items,
   jobCards,
+  jobWorkOrders,
   salesOrderLines,
   salesOrders,
   soMilestones,
@@ -573,6 +574,42 @@ export async function createSalesOrder(
         .limit(1);
       if (dup.length > 0) {
         throw new ConflictError(`Sales order code "${code}" already exists`);
+      }
+
+      // Duplicate Client PO No. guard (legacy addSO L12431): a client PO number
+      // must be unique across Sales Orders AND Job Work orders.
+      const poNo = input.header.clientPoNo?.trim();
+      if (poNo) {
+        const [soHit, jwHit] = await Promise.all([
+          tx
+            .select({ code: salesOrders.code })
+            .from(salesOrders)
+            .where(
+              and(
+                eq(salesOrders.companyId, companyId),
+                eq(salesOrders.clientPoNo, poNo),
+                isNull(salesOrders.deletedAt),
+              ),
+            )
+            .limit(1),
+          tx
+            .select({ code: jobWorkOrders.code })
+            .from(jobWorkOrders)
+            .where(
+              and(
+                eq(jobWorkOrders.companyId, companyId),
+                eq(jobWorkOrders.clientPoNo, poNo),
+                isNull(jobWorkOrders.deletedAt),
+              ),
+            )
+            .limit(1),
+        ]);
+        const hit = soHit[0]?.code ?? jwHit[0]?.code;
+        if (hit) {
+          throw new ConflictError(
+            `Client PO No. "${poNo}" already exists in ${hit}. Duplicate not allowed.`,
+          );
+        }
       }
 
       // Client master link is enforced by the create schema (route boundary).
