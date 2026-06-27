@@ -230,7 +230,11 @@ export function transformDeliveryChallans(
       vendorId,
       vendorCodeText: vendorCode,
       salesOrderLineId,
-      soRefText: soRefId === '' ? null : soRefId,
+      // Legacy soRefId is an internal Firebase key (e.g. "574se7ev"), NOT a
+      // human SO number — never surface it as the SO snapshot. The live SO code
+      // (joined via salesOrderLineId) is the display source; leave text null.
+      // The raw soRefId is still recorded in the so_line_unresolved anomaly above.
+      soRefText: null,
       transport: emptyToNull(r.transport),
       status,
     });

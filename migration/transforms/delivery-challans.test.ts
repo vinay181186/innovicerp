@@ -139,7 +139,8 @@ describe('transformDeliveryChallans', () => {
     expect(dc00002['purchaseOrderId']).toBeNull(); // IN-PO-00002 unmigrated
     expect(dc00002['poCodeText']).toBe('IN-PO-00002');
     expect(dc00002['salesOrderLineId']).toBeNull();
-    expect(dc00002['soRefText']).toBe('574se7ev');
+    // Legacy soRefId is an internal key, never surfaced as the SO snapshot.
+    expect(dc00002['soRefText']).toBeNull();
     expect(dc00002['vendorId']).toBe('vendor-uuid');
     expect(dc00002['status']).toBe('issued');
 
