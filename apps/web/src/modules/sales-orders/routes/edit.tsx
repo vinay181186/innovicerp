@@ -3,8 +3,10 @@
 import type { CreateSalesOrderInput, UpdateSalesOrderInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
 import { useCreateSalesOrder, useSalesOrder, useUpdateSalesOrder } from '../api';
 import { SalesOrderForm } from '../components/sales-order-form';
 
@@ -23,12 +25,35 @@ export const salesOrderEditRoute = createRoute({
 function SalesOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateSalesOrder();
+  const createDoc = useCreateSoDocument();
+  const { data: me } = useSession();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const poFileRef = useRef<File | null>(null);
 
   const onSubmit = async (values: CreateSalesOrderInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
+      // Upload the chosen client-PO document against the new SO (legacy
+      // addSO L12459 uploads after save). Best-effort — the SO is already saved.
+      const poFile = poFileRef.current;
+      if (poFile && me?.companyId) {
+        try {
+          const storagePath = await uploadSoDocFile(poFile, me.companyId);
+          await createDoc.mutateAsync({
+            salesOrderId: created.id,
+            soCodeText: created.code,
+            category: 'client_po',
+            docType: 'Client PO',
+            fileName: poFile.name,
+            storagePath,
+            fileSize: poFile.size,
+            fileType: poFile.type || undefined,
+          });
+        } catch {
+          // Non-fatal: SO is saved; the PO doc can be attached on the detail page.
+        }
+      }
       await navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create sales order');
@@ -53,6 +78,7 @@ function SalesOrderNewPage(): React.JSX.Element {
           <SalesOrderForm
             mode="create"
             onSubmit={onSubmit}
+            onPoFileChange={(f) => { poFileRef.current = f; }}
             submitError={submitError}
             onCancel={() => void navigate({ to: '/sales-orders' })}
           />
