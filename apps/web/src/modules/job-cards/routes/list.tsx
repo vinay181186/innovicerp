@@ -7,10 +7,18 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useSession } from '@/lib/session';
@@ -108,6 +116,7 @@ function JobCardsListPage(): React.JSX.Element {
     () => [
       {
         header: 'JC No.',
+        accessorKey: 'code',
         cell: ({ row }) => (
           <Link
             to="/job-cards/$id"
@@ -126,6 +135,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Date',
+        accessorKey: 'jcDate',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.jcDate}
@@ -134,6 +144,8 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'SO/WO',
+        id: 'source',
+        accessorFn: (r) => r.sourceLink?.code ?? '',
         cell: ({ row }) => {
           const s = row.original.sourceLink;
           if (!s)
@@ -169,6 +181,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'CPO Ln',
+        accessorKey: 'clientPoLineNo',
         cell: ({ row }) => (
           <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
             {row.original.clientPoLineNo ?? '—'}
@@ -177,6 +190,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Code',
+        accessorKey: 'itemCode',
         cell: ({ row }) => (
           <span className="td-code" style={{ color: 'var(--purple)' }}>
             {row.original.itemCode}
@@ -185,14 +199,17 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Item Name',
+        accessorKey: 'itemName',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName || '—'}</span>,
       },
       {
         header: 'Order Qty',
+        accessorKey: 'orderQty',
         cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span>,
       },
       {
         id: 'completed',
+        accessorFn: (r) => r.lastOpCompletedQty,
         header: () => <span style={{ color: 'var(--green)' }}>Completed</span>,
         cell: ({ row }) => {
           const done = row.original.lastOpCompletedQty;
@@ -230,6 +247,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         id: 'pending',
+        accessorFn: (r) => Math.max(0, r.orderQty - r.lastOpCompletedQty),
         header: () => <span style={{ color: 'var(--red)' }}>Pending</span>,
         cell: ({ row }) => {
           const pending = Math.max(0, row.original.orderQty - row.original.lastOpCompletedQty);
@@ -245,6 +263,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Priority',
+        accessorKey: 'priority',
         cell: ({ row }) => {
           const high = row.original.priority === 'high';
           return (
@@ -256,6 +275,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Due Date',
+        accessorKey: 'dueDate',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.dueDate ?? '—'}
@@ -264,6 +284,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Ops Done',
+        accessorKey: 'doneOps',
         cell: ({ row }) => (
           <span className="td-ctr text2">
             {row.original.doneOps}/{row.original.totalOps}
@@ -272,6 +293,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Status',
+        accessorKey: 'computedStatus',
         cell: ({ row }) => (
           <span style={{ whiteSpace: 'nowrap' }}>
             <JcStatusBadge status={row.original.computedStatus} />
@@ -285,6 +307,7 @@ function JobCardsListPage(): React.JSX.Element {
       },
       {
         header: 'Actions',
+        enableSorting: false,
         cell: ({ row }) => (
           <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
             <Link
@@ -315,10 +338,14 @@ function JobCardsListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -470,17 +497,7 @@ function JobCardsListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

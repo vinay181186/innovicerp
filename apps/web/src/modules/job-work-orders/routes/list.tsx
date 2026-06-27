@@ -11,10 +11,18 @@ import {
   type SoStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -96,15 +104,16 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           </Link>
         ),
       },
-      { header: 'Line', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineNo}</span> },
-      { header: 'Date', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
-      { header: 'Client', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
-      { header: 'Client PO', cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
-      { header: 'Item Code', cell: ({ row }) => <span className="td-code" style={{ color: 'var(--text2)' }}>{row.original.itemCode ?? '—'}</span> },
-      { header: 'Part Name', cell: ({ row }) => row.original.partName },
-      { header: 'Qty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span> },
+      { header: 'Line', accessorKey: 'lineNo', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineNo}</span> },
+      { header: 'Date', accessorKey: 'jwDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
+      { header: 'Client', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
+      { header: 'Client PO', accessorKey: 'clientPoNo', cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
+      { header: 'Item Code', accessorKey: 'itemCode', cell: ({ row }) => <span className="td-code" style={{ color: 'var(--text2)' }}>{row.original.itemCode ?? '—'}</span> },
+      { header: 'Part Name', accessorKey: 'partName', cell: ({ row }) => row.original.partName },
+      { header: 'Qty', accessorKey: 'orderQty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span> },
       {
         header: 'JC Qty',
+        accessorKey: 'jcQty',
         cell: ({ row }) => {
           const jc = row.original.jcQty;
           const tot = row.original.orderQty;
@@ -119,6 +128,8 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Material',
+        id: 'material',
+        accessorFn: (r) => Number(r.materialReceivedQty ?? 0),
         cell: ({ row }) => (
           <span className="td-ctr" style={{ fontSize: 11 }}>
             <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} orderQty={row.original.orderQty} />
@@ -127,6 +138,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Due',
+        accessorKey: 'dueDate',
         cell: ({ row }) => {
           const due = row.original.dueDate;
           const overdue = !!due && due < today && row.original.status === 'open';
@@ -136,6 +148,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       { header: 'Status', accessorKey: 'status', cell: ({ row }) => <SoStatusBadge status={row.original.status} /> },
       {
         header: 'Remarks',
+        accessorKey: 'remarks',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11, maxWidth: 110, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
             {row.original.remarks ?? ''}
@@ -146,6 +159,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         ? [{
             header: '',
             id: 'actions',
+            enableSorting: false,
             cell: ({ row }: { row: { original: JobWorkOrderListItem } }) => (
               <div style={{ display: 'flex', gap: 4 }}>
                 <Link to="/job-work-orders/$id/edit" params={{ id: row.original.jwId }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
@@ -158,7 +172,15 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     [canWrite, today],
   );
 
-  const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const table = useReactTable({
+    data: data?.items ?? [],
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -185,11 +207,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>{hg.headers.map((h) => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={columns.length} className="empty-state"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</td></tr>

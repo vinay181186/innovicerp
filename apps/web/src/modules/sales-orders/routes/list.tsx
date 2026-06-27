@@ -17,10 +17,18 @@ import {
   type SoType,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronDown, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
@@ -194,6 +202,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       {
         header: '',
         id: 'expand',
+        enableSorting: false,
         cell: ({ row }) => {
           const isExpanded = expandedId === row.original.id;
           return (
@@ -218,10 +227,11 @@ function SalesOrdersListPage(): React.JSX.Element {
         ),
       },
       { header: 'Date', accessorKey: 'soDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.soDate}</span> },
-      { header: 'Customer', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
-      { header: 'Raised By', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.createdByName ?? '—'}</span> },
+      { header: 'Customer', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
+      { header: 'Raised By', accessorKey: 'createdByName', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.createdByName ?? '—'}</span> },
       {
         header: 'Client PO',
+        accessorKey: 'clientPoNo',
         cell: ({ row }) => (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>
@@ -242,6 +252,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       {
         id: 'type',
         accessorKey: 'type',
+        enableSorting: false, // header hosts a filter <select>
         header: () => (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             Type
@@ -262,10 +273,11 @@ function SalesOrdersListPage(): React.JSX.Element {
         ),
         cell: ({ row }) => <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{row.original.type.replaceAll('_', ' ')}</span>,
       },
-      { header: 'Lines', cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span> },
-      { header: 'Total Qty', cell: ({ row }) => <span className="td-ctr mono">{row.original.totalQty}</span> },
+      { header: 'Lines', accessorKey: 'lineCount', cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span> },
+      { header: 'Total Qty', accessorKey: 'totalQty', cell: ({ row }) => <span className="td-ctr mono">{row.original.totalQty}</span> },
       {
         header: 'JC Qty',
+        accessorKey: 'jcQty',
         cell: ({ row }) => {
           const jc = row.original.jcQty;
           const total = row.original.totalQty;
@@ -279,6 +291,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Due',
+        accessorKey: 'earliestDueDate',
         cell: ({ row }) => {
           const due = row.original.earliestDueDate;
           if (!due) return <span className="text3">—</span>;
@@ -301,6 +314,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Remarks',
+        accessorKey: 'remarks',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11, maxWidth: 120, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
             {row.original.remarks ?? ''}
@@ -311,6 +325,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         ? [{
             header: '',
             id: 'actions',
+            enableSorting: false,
             cell: ({ row }: { row: { original: SalesOrderListItem } }) => (
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                 <Link to="/sales-orders/$id/edit" params={{ id: row.original.id }} className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} title="Add / edit lines">
@@ -329,7 +344,15 @@ function SalesOrdersListPage(): React.JSX.Element {
     [expandedId, canWrite, search.type, navigate],
   );
 
-  const table = useReactTable({ data: data?.items ?? [], columns, getCoreRowModel: getCoreRowModel() });
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const table = useReactTable({
+    data: data?.items ?? [],
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
+  });
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -376,13 +399,7 @@ function SalesOrdersListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => <th key={header.id}>{flexRender(header.column.columnDef.header, header.getContext())}</th>)}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr><td colSpan={columns.length} className="empty-state"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</td></tr>
