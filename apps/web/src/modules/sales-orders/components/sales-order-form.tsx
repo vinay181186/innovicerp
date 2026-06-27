@@ -455,7 +455,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               not clipped by the scroll container; the table sizes naturally and
               the page scrolls horizontally when narrow. */}
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table className="innovic-table" style={{ minWidth: 880 }}>
+            <table className="innovic-table" style={{ minWidth: 820 }}>
               <thead>
                 <tr>
                   <th style={{ width: 30 }}>#</th>
@@ -463,11 +463,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ minWidth: 120 }}>Part Name</th>
                   <th style={{ minWidth: 90 }}>Material</th>
                   <th style={{ minWidth: 90 }}>Drawing No.</th>
-                  <th style={{ minWidth: 80 }}>Client PO Ln</th>
+                  <th style={{ width: 60 }}>Client PO Ln</th>
                   <th style={{ width: 64 }}>UOM</th>
-                  <th style={{ width: 80 }} className="td-ctr">Qty <span className="req">★</span></th>
-                  <th style={{ width: 90, color: 'var(--green)' }}>Rate ₹</th>
-                  <th style={{ width: 90, color: 'var(--green)' }}>Amount</th>
+                  <th style={{ width: 72 }} className="td-ctr">Qty <span className="req">★</span></th>
+                  <th style={{ width: 82, color: 'var(--green)' }}>Rate ₹</th>
+                  <th style={{ width: 80, color: 'var(--green)' }}>Amount</th>
                   <th style={{ width: 120 }}>Due Date</th>
                   <th style={{ width: 30 }} />
                 </tr>
@@ -503,8 +503,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
                           </select>
                         </td>
-                        <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontWeight: 700, color: 'var(--cyan)' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
-                        <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', color: 'var(--green)' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${amt.toFixed(2)}` : '—'}</td>
                         <td><input type="date" className="innovic-input" {...register(`lines.${idx}.dueDate` as const)} /></td>
                         <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button></td>
