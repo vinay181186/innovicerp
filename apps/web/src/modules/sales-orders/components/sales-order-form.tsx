@@ -455,13 +455,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               not clipped by the scroll container; the table sizes naturally and
               the page scrolls horizontally when narrow. */}
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table className="innovic-table" style={{ minWidth: 820 }}>
+            <table className="innovic-table" style={{ minWidth: 800 }}>
               <thead>
                 <tr>
                   <th style={{ width: 30 }}>#</th>
                   <th style={{ minWidth: 190 }}>Item Code <span className="req">★</span></th>
                   <th style={{ minWidth: 120 }}>Part Name</th>
-                  <th style={{ minWidth: 90 }}>Material</th>
+                  <th style={{ width: 70 }}>Material</th>
                   <th style={{ minWidth: 90 }}>Drawing No.</th>
                   <th style={{ width: 60 }}>Client PO Ln</th>
                   <th style={{ width: 64 }}>UOM</th>
