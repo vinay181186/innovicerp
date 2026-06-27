@@ -459,21 +459,23 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           {/* overflow:visible (not auto) so the per-line item-picker dropdown is
               not clipped by the scroll container; the table sizes naturally and
               the page scrolls horizontally when narrow. */}
+          {/* Fixed layout so every column gets exactly its share — the percentage
+              widths are balanced to each field's data and scale with the panel. */}
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table className="innovic-table" style={{ minWidth: 800 }}>
+            <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 940 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 30 }}>#</th>
-                  <th style={{ minWidth: 120 }}>Item Code <span className="req">★</span></th>
-                  <th style={{ minWidth: 80 }}>Part Name</th>
-                  <th style={{ width: 70 }}>Material</th>
-                  <th style={{ width: 118 }}>Drawing No.</th>
-                  <th style={{ width: 60 }}>Client PO Ln</th>
-                  <th style={{ width: 64 }}>UOM</th>
-                  <th style={{ width: 120 }} className="td-ctr">Qty <span className="req">★</span></th>
-                  <th style={{ width: 135, color: 'var(--green)' }}>Rate ₹</th>
-                  <th style={{ width: 80, color: 'var(--green)' }}>Amount</th>
-                  <th style={{ width: 30 }} />
+                  <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '20%' }}>Item Code <span className="req">★</span></th>
+                  <th style={{ width: '15%' }}>Part Name</th>
+                  <th style={{ width: '9%' }}>Material</th>
+                  <th style={{ width: '11%' }}>Drawing No.</th>
+                  <th style={{ width: '9%' }}>Client PO Ln</th>
+                  <th style={{ width: '6%' }}>UOM</th>
+                  <th style={{ width: '8%' }} className="td-ctr">Qty <span className="req">★</span></th>
+                  <th style={{ width: '8%', color: 'var(--green)' }}>Rate ₹</th>
+                  <th style={{ width: '6%', color: 'var(--green)' }}>Amount</th>
+                  <th style={{ width: '4%' }} />
                 </tr>
               </thead>
               <tbody>
