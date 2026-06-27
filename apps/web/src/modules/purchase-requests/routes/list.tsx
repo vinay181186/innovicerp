@@ -7,10 +7,18 @@ import {
   type PurchaseRequestListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseRequestsList } from '../api';
@@ -91,6 +99,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       },
       {
         header: 'Vendor',
+        id: 'vendor',
+        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
         cell: ({ row }) => (
           <span style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
@@ -99,6 +109,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       },
       {
         header: 'Item',
+        id: 'item',
+        accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
           <span className="td-code mono" style={{ fontSize: 11 }}>
             {row.original.itemCode ?? row.original.itemCodeText ?? '—'}
@@ -107,6 +119,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       },
       {
         header: 'Operation',
+        accessorKey: 'operation',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
             {row.original.operation ?? '—'}
@@ -115,10 +128,12 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       },
       {
         header: 'Qty',
+        accessorKey: 'qty',
         cell: ({ row }) => <span className="td-ctr mono">{row.original.qty}</span>,
       },
       {
         header: 'Source JC',
+        accessorKey: 'sourceJcCode',
         cell: ({ row }) =>
           row.original.sourceJcCode ? (
             <span className="mono" style={{ fontSize: 11 }}>
@@ -130,6 +145,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       },
       {
         header: 'PO',
+        accessorKey: 'poCode',
         cell: ({ row }) =>
           row.original.poCode ? (
             <span
@@ -151,10 +167,14 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -218,17 +238,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

@@ -7,10 +7,18 @@ import {
   type ListDeliveryChallansQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallansList } from '../api';
@@ -107,6 +115,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
       },
       {
         header: 'Vendor',
+        id: 'vendor',
+        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
             {row.original.vendorName ?? (
@@ -117,6 +127,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
       },
       {
         header: 'PO',
+        id: 'po',
+        accessorFn: (r) => r.poCode ?? r.poCodeText ?? '',
         cell: ({ row }) => {
           if (row.original.poCode) {
             return (
@@ -145,6 +157,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
       },
       {
         header: 'SO',
+        id: 'so',
+        accessorFn: (r) => r.soCode ?? r.soRefText ?? '',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11 }}>
             {row.original.soCode ?? row.original.soRefText ?? '—'}
@@ -153,12 +167,15 @@ function DeliveryChallansListPage(): React.JSX.Element {
       },
       {
         header: 'Lines',
+        accessorKey: 'lineCount',
         cell: ({ row }) => (
           <span className="td-ctr mono fw-700">{row.original.lineCount}</span>
         ),
       },
       {
         header: 'Total qty',
+        id: 'totalQty',
+        accessorFn: (r) => Number(r.totalQty),
         cell: ({ row }) => (
           <span className="td-ctr mono">{Number(row.original.totalQty).toFixed(2)}</span>
         ),
@@ -172,10 +189,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -257,17 +278,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

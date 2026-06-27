@@ -7,7 +7,14 @@ import {
   type StoreTxnType,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -128,10 +135,13 @@ function StoreTransactionsListPage() {
       },
       {
         header: 'Type',
+        accessorKey: 'txnType',
         cell: ({ row }) => <TxnTypeBadge type={row.original.txnType} />,
       },
       {
         header: 'Item',
+        id: 'item',
+        accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
           <span className="font-mono text-xs">
             {row.original.itemCode ?? row.original.itemCodeText ?? '—'}
@@ -140,16 +150,19 @@ function StoreTransactionsListPage() {
       },
       {
         header: 'Item name',
+        accessorKey: 'itemName',
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">{row.original.itemName ?? '—'}</span>
         ),
       },
       {
         header: 'Qty',
+        accessorKey: 'qty',
         cell: ({ row }) => <span className="font-mono text-sm">{row.original.qty}</span>,
       },
       {
         header: 'Source',
+        accessorKey: 'sourceType',
         cell: ({ row }) => (
           <span className="text-xs uppercase text-muted-foreground">
             {row.original.sourceType.replaceAll('_', ' ')}
@@ -158,10 +171,13 @@ function StoreTransactionsListPage() {
       },
       {
         header: 'Ref',
+        accessorKey: 'sourceRef',
         cell: ({ row }) => <span className="font-mono text-xs">{row.original.sourceRef}</span>,
       },
       {
         header: 'Stock before → after',
+        id: 'stockAfter',
+        accessorFn: (r) => r.stockAfter,
         cell: ({ row }) => (
           <span className="font-mono text-xs">
             {row.original.stockBefore} → <b>{row.original.stockAfter}</b>
@@ -172,10 +188,14 @@ function StoreTransactionsListPage() {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -269,11 +289,40 @@ function StoreTransactionsListPage() {
             <TableHeader>
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <TableHead key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
+                  {hg.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                        style={canSort ? { cursor: 'pointer', userSelect: 'none' } : undefined}
+                        aria-sort={
+                          sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : undefined
+                        }
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {canSort ? (
+                            <span
+                              aria-hidden
+                              style={{
+                                fontSize: 9,
+                                opacity: sorted ? 1 : 0.3,
+                                color: sorted ? 'var(--cyan)' : 'inherit',
+                              }}
+                            >
+                              {sorted === 'desc' ? '▼' : sorted === 'asc' ? '▲' : '↕'}
+                            </span>
+                          ) : null}
+                        </span>
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableHeader>

@@ -2,10 +2,18 @@
 
 import type { ListQcProcessesQuery, QcProcess } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcProcessesList } from '../api';
@@ -62,6 +70,7 @@ function QcProcessesListPage(): React.JSX.Element {
     () => [
       {
         header: '#',
+        enableSorting: false,
         cell: ({ row }) => (
           <span className="td-ctr mono fw-700">
             {(search.page - 1) * PAGE_SIZE + row.index + 1}
@@ -84,6 +93,7 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         header: 'Description',
+        accessorKey: 'description',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.description ?? '—'}
@@ -92,6 +102,8 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         header: 'Std time (min)',
+        id: 'defaultCycleTimeMin',
+        accessorFn: (r) => Number(r.defaultCycleTimeMin),
         cell: ({ row }) => (
           <span className="td-ctr mono" style={{ fontSize: 11 }}>
             {Number(row.original.defaultCycleTimeMin) > 0
@@ -102,6 +114,7 @@ function QcProcessesListPage(): React.JSX.Element {
       },
       {
         header: 'Status',
+        accessorKey: 'isActive',
         cell: ({ row }) => (
           <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
             {row.original.isActive ? 'Active' : 'Inactive'}
@@ -112,10 +125,14 @@ function QcProcessesListPage(): React.JSX.Element {
     [search.page],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -190,17 +207,7 @@ function QcProcessesListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

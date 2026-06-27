@@ -11,10 +11,18 @@ import {
   type NcStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
@@ -99,6 +107,7 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'JC No.',
+        accessorKey: 'jcCode',
         cell: ({ row }) => (
           <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
             {row.original.jcCode ?? '—'}
@@ -107,6 +116,8 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'Operation',
+        id: 'operation',
+        accessorFn: (r) => r.jcOpSeqResolved ?? r.opSeq ?? 0,
         cell: ({ row }) => {
           const seq = row.original.jcOpSeqResolved ?? row.original.opSeq;
           const op =
@@ -125,6 +136,8 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'Item',
+        id: 'item',
+        accessorFn: (r) => r.itemCode ?? r.itemCodeText ?? '',
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
             <span className="mono">{row.original.itemCode ?? row.original.itemCodeText}</span>
@@ -136,6 +149,8 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'Rej qty',
+        id: 'rejectedQty',
+        accessorFn: (r) => Number(r.rejectedQty),
         cell: ({ row }) => (
           <span className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
             {Number(row.original.rejectedQty).toFixed(0)}
@@ -144,6 +159,7 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'Reason',
+        accessorKey: 'reasonCategory',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
             {row.original.reasonCategory.replaceAll('_', ' ')}
@@ -152,6 +168,7 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'Disposition',
+        accessorKey: 'disposition',
         cell: ({ row }) => <NcDispositionBadge disposition={row.original.disposition} />,
       },
       {
@@ -161,6 +178,7 @@ function NcRegisterListPage(): React.JSX.Element {
       },
       {
         header: 'CAPA',
+        accessorKey: 'linkedCapaCode',
         cell: ({ row }) =>
           row.original.linkedCapaCode ? (
             <Link
@@ -181,10 +199,14 @@ function NcRegisterListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -287,17 +309,7 @@ function NcRegisterListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

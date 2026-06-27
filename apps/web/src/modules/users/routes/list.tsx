@@ -3,10 +3,18 @@
 
 import { USER_ROLES, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovalConfig } from '@/modules/approval-config/api';
@@ -81,6 +89,7 @@ function UsersListPage(): React.JSX.Element {
     () => [
       {
         header: 'Name',
+        accessorKey: 'fullName',
         cell: ({ row }) => (
           <Link
             to="/users/$id/edit"
@@ -110,6 +119,7 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         header: 'Phone',
+        accessorKey: 'phone',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.phone ?? '—'}
@@ -118,6 +128,7 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         header: 'Status',
+        accessorKey: 'isActive',
         cell: ({ row }) => (
           <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
             {row.original.isActive ? 'Active' : 'Inactive'}
@@ -126,6 +137,8 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         header: 'Approver',
+        id: 'approver',
+        accessorFn: (r) => (r.role === 'admin' || approverSet.has(r.id) ? 1 : 0),
         cell: ({ row }) => {
           const isApprover =
             row.original.role === 'admin' || approverSet.has(row.original.id);
@@ -147,6 +160,7 @@ function UsersListPage(): React.JSX.Element {
       },
       {
         header: 'Actions',
+        enableSorting: false,
         cell: ({ row }) => (
           <Link
             to="/users/$id/edit"
@@ -161,10 +175,14 @@ function UsersListPage(): React.JSX.Element {
     [approverSet],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -262,17 +280,7 @@ function UsersListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

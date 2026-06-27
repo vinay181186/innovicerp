@@ -7,10 +7,18 @@ import {
   type ListCostCentersQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList } from '../api';
@@ -85,20 +93,24 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         header: 'Name',
+        accessorKey: 'name',
         cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
       },
       {
         header: 'Department',
+        accessorKey: 'department',
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>{row.original.department ?? '—'}</span>
         ),
       },
       {
         header: 'Type',
+        accessorKey: 'type',
         cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.type ?? '—'}</span>,
       },
       {
         header: 'Description',
+        accessorKey: 'description',
         cell: ({ row }) => (
           <span className="text3" style={{ fontSize: 11 }}>
             {row.original.description ?? '—'}
@@ -107,6 +119,7 @@ function CostCentersListPage(): React.JSX.Element {
       },
       {
         header: 'Status',
+        accessorKey: 'isActive',
         cell: ({ row }) => (
           <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
             {row.original.isActive ? 'Active' : 'Inactive'}
@@ -117,10 +130,14 @@ function CostCentersListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -229,17 +246,7 @@ function CostCentersListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

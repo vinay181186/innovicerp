@@ -7,10 +7,18 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNotesList } from '../api';
@@ -90,6 +98,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       },
       {
         header: 'PO',
+        id: 'po',
+        accessorFn: (r) => r.poCode ?? r.poCodeText ?? '',
         cell: ({ row }) =>
           row.original.poCode ? (
             <span className="mono" style={{ fontSize: 11 }}>
@@ -103,6 +113,8 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       },
       {
         header: 'Vendor',
+        id: 'vendor',
+        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
         cell: ({ row }) => (
           <span style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
@@ -111,6 +123,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       },
       {
         header: 'DC',
+        accessorKey: 'dcNo',
         cell: ({ row }) => (
           <span className="mono" style={{ fontSize: 11 }}>
             {row.original.dcNo ?? '—'}
@@ -119,10 +132,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       },
       {
         header: 'Lines',
+        accessorKey: 'lineCount',
         cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span>,
       },
       {
         header: 'Received',
+        accessorKey: 'totalReceivedQty',
         cell: ({ row }) => (
           <span className="td-ctr mono fw-700">{row.original.totalReceivedQty}</span>
         ),
@@ -130,6 +145,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       {
         // Legacy renderGRN L26468 — QC Accepted total across lines (green).
         header: 'QC Accepted',
+        accessorKey: 'totalQcAcceptedQty',
         cell: ({ row }) => (
           <span
             className="td-ctr mono fw-700"
@@ -142,6 +158,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       {
         // Legacy renderGRN L26469 — QC Rejected total across lines (red).
         header: 'QC Rejected',
+        accessorKey: 'totalQcRejectedQty',
         cell: ({ row }) => (
           <span
             className="td-ctr mono"
@@ -153,6 +170,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       },
       {
         header: 'QC pending',
+        accessorKey: 'qcPendingCount',
         cell: ({ row }) => {
           const p = row.original.qcPendingCount;
           return (
@@ -169,10 +187,14 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -259,17 +281,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>

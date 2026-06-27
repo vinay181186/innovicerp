@@ -9,10 +9,18 @@ import {
   type PurchaseOrderListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
@@ -118,6 +126,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Vendor',
+        id: 'vendor',
+        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
         cell: ({ row }) => (
           <span className="fw-700" style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
@@ -126,14 +136,17 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'Lines',
+        accessorKey: 'lineCount',
         cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span>,
       },
       {
         header: 'Total Qty',
+        accessorKey: 'totalQty',
         cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.totalQty}</span>,
       },
       {
         header: 'Received',
+        accessorKey: 'receivedQty',
         cell: ({ row }) => {
           const r = row.original.receivedQty;
           const t = row.original.totalQty;
@@ -152,6 +165,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       },
       {
         header: 'PR ref',
+        accessorKey: 'prCodeText',
         cell: ({ row }) => (
           <span className="mono text3" style={{ fontSize: 11 }}>
             {row.original.prCodeText ?? '—'}
@@ -167,10 +181,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: { sorting },
+    onSortingChange: setSorting,
   });
 
   const total = data?.total ?? 0;
@@ -253,17 +271,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
-            <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
-            </thead>
+            <SortableHead table={table} />
             <tbody>
               {isLoading ? (
                 <tr>
