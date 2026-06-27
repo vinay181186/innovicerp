@@ -2141,3 +2141,107 @@ and type-to-search pickers that read as free-text and silently failed to commit 
   Party-GRN saves. Typecheck + lint clean.
 - Negative / Risks: `MAX+1` code generation is not concurrency-proof (established repo
   convention; acceptable at 15–20 users). DB-backed service tests run in CI only.
+
+## ADR-053: "+ New SO" brought to 1:1 legacy parity, with 3 deliberate deviations
+
+**Date:** 2026-06-28
+**Status:** Accepted
+
+### Context
+
+Live-trial request (Vinay) to map the entire "+ New Sales Order" form against the legacy
+HTML (`soHeaderForm` L12183 / `_soLinesHtml` L12158 / `addSO` L12413) and rebuild it
+1:1 including all logic. Mapping surfaced parity gaps (plain selects vs. type-to-search,
+card line layout vs. table, no PO-doc upload, no duplicate-PO guard, no item-master
+enforcement) and three genuine conflicts between the legacy spec and recent product
+decisions / existing ADRs, each resolved by the user before building.
+
+### Decision
+
+Rebuilt `sales-order-form.tsx` to mirror the HTML, **no DB/schema change**:
+
+- **Searchable master pickers** — client and per-line Item Code are now server-searched
+  `SearchableSelect`s (scales past the old 200-row datalist cap; 1149 items in trial).
+- **Inline client quick-add** — "+ New" opens a modal (mirrors legacy `addClientQuick`)
+  instead of navigating away; created client is auto-selected.
+- **Line items as a table** with per-line Amount, SO totals (subtotal / GST / grand) +
+  an "N items / M pcs" count (legacy `_soTotalsHtml` L12366).
+- **Client-PO document upload** — captured in the form, uploaded after save against the
+  new SO into `file_registry` category `client_po` (legacy post-save upload, `addSO` L12459).
+- **Duplicate Client PO No. guard** — `createSalesOrder` rejects a `client_po_no` that
+  already exists on another SO **or** JWSO (legacy L12431). App-level (no DB unique index).
+- **Item Master required on SO component lines** — the master-only picker + a submit guard
+  reject any component line without a master item (legacy `_badIC` L12443). **Supersedes
+  ADR-012 #10 for SO component lines** (off-master `itemCodeText` still allowed for
+  equipment Part No. and other modules).
+- Milestones saved only when `qty > 0` (legacy `_getSoBaseData` L12310).
+
+**Three deliberate deviations from the HTML (user-approved):**
+
+1. **Status** is NOT shown on create (defaults `open`); selectable only on edit.
+2. **Cost Center** field removed from the SO form; Finance/SO-costing derives the cost
+   centre from the SO No. via `COALESCE(so.cost_center, so.code)`. Legacy `cost_center`
+   column retained for legacy rows.
+3. **Equipment value** captured as ₹/unit (total = rate × qty), not the legacy absolute
+   `SO Total Value`.
+
+### Alternatives Considered
+
+- Restore Status + Cost Center to match HTML exactly — rejected by user (settled product
+  decisions; cost centre = SO No.).
+- Keep ADR-012 #10 free-text item codes on SO lines — rejected by user (wants Item-Master
+  enforcement like legacy); achieved via the picker so off-master is structurally impossible.
+- Enforce item-master server-side for all line types — rejected: equipment Part No. is
+  legitimately free text in legacy; enforcement is scoped to component lines (client-side
+  via picker + submit guard).
+
+### Consequences
+
+- Positive: form matches legacy behaviour + layout; pickers scale; duplicate POs blocked;
+  master-only items. Shared/API/web typecheck + lint clean, web build green.
+- Negative / Risks: duplicate-PO + item-master checks are app-level (not DB constraints) —
+  consistent with the repo's `MAX+1` / app-guard convention. Skipped the cosmetic
+  green/amber item-code border cue (the picker shows the resolved item instead).
+
+## ADR-054: Document-number override — editable codes with live duplicate/format check (Phase 1: SO/PO/GRN)
+
+**Date:** 2026-06-28
+**Status:** Accepted
+
+### Context
+
+Document numbers were auto-generated and uneditable for SO, and user-typed-required for
+PO/GRN, with no live duplicate feedback. Request: prefill the next number but let the user
+override it, check uniqueness in real time, show inline feedback, and disable Save on
+error — built once as reusable parts, then wired to SO/PO/GRN (12 more types in Phase 2).
+
+### Decision
+
+- **One backend endpoint** `GET /doc-numbers/check?type=&code=` returns `{ exists, nextCode,
+  formatValid }` — per-company, soft-delete-aware. Per-type table/prefix/digits live in a
+  shared `DOC_NUMBER_FORMATS` map + `TABLE_NAME` (extend both for Phase 2).
+- **One hook** `useDocNumber` (TanStack Query + a new shared `useDebounce`, 500 ms) and **one
+  component** `DocNumberInput` (prefill, ✓/✗/Checking indicator, blur auto-pad,
+  `onValidityChange` to disable Save). Pure logic (`evaluateDocNumber`/`docNumberError`/
+  `padDocNumber`) lives in `@innovic/shared`, unit-tested without a DOM.
+- **PO/GRN gained auto-generation** (`nextPoCode`/`nextGrnCode`, MAX+1, `IN-PO-/IN-GRN-#####`);
+  their create `code` became optional (blank = server auto). SO was already so.
+- **Two duplicate layers:** the live frontend check (UX) + the existing partial unique index
+  `(company_id, code) WHERE deleted_at IS NULL` (data safety). No migration.
+- Added a **jsdom test setupFile** so RTL tests run (the env was already configured).
+
+### Deviations (user-approved)
+
+- SO format is **`IN-SO-#####`** (project reality), not the spec's `SO-#####`.
+- **Strict format is enforced at the form** (DocNumberInput) + endpoint `formatValid`, but the
+  backend Zod create schema keeps the loose `codeRegex` so bulk-import and legacy codes like
+  `SO-436/A` aren't rejected.
+- The earlier bespoke `/sales-orders/next-code` + `useNextSoCode` are left in place but
+  superseded by the generic endpoint/component.
+
+### Consequences
+
+- Positive: one reusable trio drives all doc-number fields; Phase 2 = add a config row +
+  drop in `<DocNumberInput>`. Tests: shared 11, api 6, web hook 5 + component 5; build green.
+- Negative / Risks: format strictness is UI-side, not DB-enforced (matches the repo's
+  app-guard convention). New `/doc-numbers/check` endpoint needs an API redeploy.

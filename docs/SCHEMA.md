@@ -53,6 +53,23 @@ MUST have indexes:
 - Time-range columns used in reports
 - Unique business keys (`so_number`, `jc_number`, `po_number`, etc.)
 
+### App-level uniqueness (no DB constraint)
+
+Some business rules are enforced in the service layer, NOT by a DB index — documented
+here so they aren't mistaken for schema:
+
+- **`client_po_no` is unique across `sales_orders` + `job_work_orders`** (ADR-053, legacy
+  `addSO` L12431). Enforced by `createSalesOrder` (and the JWSO path), since the rule spans
+  two tables a single unique index can't express it. No migration; no new column.
+- **SO component lines require an Item-Master item** (ADR-053 / supersedes ADR-012 #10 for
+  SO components) — enforced by the master-only picker + a submit guard, not a FK NOT NULL
+  (equipment Part No. stays free text).
+- **Document-number override** (ADR-054, SO/PO/GRN) — the `code` strict format
+  (`IN-SO-/IN-PO-/IN-GRN-#####`) is enforced at the form (`DocNumberInput`) + the
+  `/doc-numbers/check` endpoint, NOT in the Zod create schema (kept loose so bulk-import +
+  legacy codes survive). Uniqueness is the existing partial unique index per table; create
+  `code` is optional (blank → server `next*Code`). No new column/constraint.
+
 ## Helper Functions (created in T-003, applied in T-005)
 
 ```sql
