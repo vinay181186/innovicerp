@@ -68,6 +68,9 @@ interface FormValues {
     bomMasterId?: string;
     bomStatus?: string;
     remarks?: string;
+    // SO-level due date (UI only) — applied to every line on save. Not stored on
+    // the SO header (due_date lives per line); the form captures it once.
+    dueDate?: string;
   };
   lines: LineFormValue[];
   milestones: MilestoneFormValue[];
@@ -238,6 +241,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     // SO No. validity is enforced by DocNumberInput (save disabled while invalid);
     // the server UNIQUE constraint is the final backstop.
     const equip = values.header.type === 'equipment';
+    // SO-level due date applied to every line (the field lives at the top now).
+    const soDue = values.header.dueDate?.trim() || undefined;
 
     // Item-Master enforcement (legacy L12443): every component line must carry a
     // master item (the picker guarantees an itemId). Equipment part No. is free.
@@ -282,7 +287,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate),
-        dueDate: l.dueDate || undefined,
+        dueDate: soDue,
         clientPoLineNo: l.clientPoLineNo?.trim() || undefined,
         ...(l.status ? { status: l.status } : {}),
       };
@@ -330,6 +335,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         <div className="form-grp">
           <label className="form-label" htmlFor="soDate">Date<span className="req">★</span></label>
           <input id="soDate" type="date" className="innovic-input" {...register('header.soDate', { required: 'Date is required' })} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="soDueDate">Due Date</label>
+          <input id="soDueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="type">Type<span className="req">★</span></label>
@@ -420,10 +429,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <input type="number" min={1} className="innovic-input" {...register('lines.0.orderQty', { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
             </div>
             <div className="form-grp">
-              <label className="form-label">Due Date</label>
-              <input type="date" className="innovic-input" {...register('lines.0.dueDate')} />
-            </div>
-            <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--green)' }}>💰 SO Value (₹ / unit)</label>
               <input type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { valueAsNumber: true })} />
             </div>
@@ -468,13 +473,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ width: 72 }} className="td-ctr">Qty <span className="req">★</span></th>
                   <th style={{ width: 82, color: 'var(--green)' }}>Rate ₹</th>
                   <th style={{ width: 80, color: 'var(--green)' }}>Amount</th>
-                  <th style={{ width: 120 }}>Due Date</th>
                   <th style={{ width: 30 }} />
                 </tr>
               </thead>
               <tbody>
                 {fields.length === 0 ? (
-                  <tr><td colSpan={12} className="empty-state" style={{ padding: 14 }}>No lines yet — click <strong>+ Add Line</strong> or import from Excel.</td></tr>
+                  <tr><td colSpan={11} className="empty-state" style={{ padding: 14 }}>No lines yet — click <strong>+ Add Line</strong> or import from Excel.</td></tr>
                 ) : (
                   fields.map((field, idx) => {
                     const ln = watchedLines?.[idx];
@@ -506,7 +510,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${amt.toFixed(2)}` : '—'}</td>
-                        <td><input type="date" className="innovic-input" {...register(`lines.${idx}.dueDate` as const)} /></td>
                         <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button></td>
                       </tr>
                     );
@@ -685,6 +688,11 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
       ...(detail.bomMasterId ? { bomMasterId: detail.bomMasterId } : {}),
       ...(detail.bomStatus ? { bomStatus: detail.bomStatus } : {}),
       ...(detail.remarks ? { remarks: detail.remarks } : {}),
+      // SO-level due date = the earliest line due date (lines all share it now).
+      ...(() => {
+        const due = detail.lines.map((l) => l.dueDate).filter((d): d is string => Boolean(d)).sort()[0];
+        return due ? { dueDate: due } : {};
+      })(),
     },
     lines:
       detail.lines.length > 0
