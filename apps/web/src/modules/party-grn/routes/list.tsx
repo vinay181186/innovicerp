@@ -7,7 +7,7 @@ import {
   type CreatePartyGrnLineInput,
   type PartyMaterialListItem,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -43,8 +43,38 @@ function PartyGrnListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Deprecation notice — superseded by the unified GRN (Inward) screen. */}
+      <div
+        style={{
+          background: '#FEF3C7',
+          border: '2px solid #F59E0B',
+          borderRadius: 8,
+          padding: '12px 16px',
+          marginBottom: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <div style={{ fontSize: 24 }}>⚠️</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, color: '#92400E', fontSize: 14, marginBottom: 2 }}>
+            DEPRECATED — Use the unified GRN screen
+          </div>
+          <div style={{ fontSize: 12, color: '#78350F' }}>
+            This screen is kept for reference only. For new entries, use the unified{' '}
+            <Link
+              to="/goods-receipt-notes/new"
+              style={{ fontWeight: 700, textDecoration: 'underline', color: '#78350F' }}
+            >
+              GRN
+            </Link>{' '}
+            screen and select <b>JWSO Inward</b>. Existing records remain accessible here.
+          </div>
+        </div>
+      </div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📥 Party Material GRN</div>
+        <div className="section-hdr m-0">📥 Party Material GRN (LEGACY)</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
