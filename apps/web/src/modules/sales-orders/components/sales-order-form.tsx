@@ -451,7 +451,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </div>
           {importMsg ? <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>{importMsg} <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button></div> : null}
 
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+          {/* overflow:visible (not auto) so the per-line item-picker dropdown is
+              not clipped by the scroll container; the table sizes naturally and
+              the page scrolls horizontally when narrow. */}
+          <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
             <table className="innovic-table" style={{ minWidth: 880 }}>
               <thead>
                 <tr>
