@@ -1,13 +1,14 @@
 // GRN new + edit routes (UI-003-05).
 
-import type { CreateGoodsReceiptNoteInput, UpdateGoodsReceiptNoteInput } from '@innovic/shared';
+import type { UpdateGoodsReceiptNoteInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateGoodsReceiptNote, useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
+import { useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
+import { UnifiedGrnForm } from '../components/unified-grn-form';
 
 const newSearchSchema = z.object({
   poId: z.string().uuid().optional(),
@@ -28,50 +29,9 @@ export const goodsReceiptNoteEditRoute = createRoute({
 
 function GoodsReceiptNoteNewPage(): React.JSX.Element {
   const { poId } = goodsReceiptNoteNewRoute.useSearch();
-  const navigate = useNavigate();
-  const create = useCreateGoodsReceiptNote();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const onSubmit = async (values: CreateGoodsReceiptNoteInput): Promise<void> => {
-    setSubmitError(null);
-    try {
-      const created = await create.mutateAsync(values);
-      await navigate({
-        to: '/goods-receipt-notes/$id',
-        params: { id: created.id },
-        replace: true,
-      });
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create GRN');
-    }
-  };
-
-  return (
-    <div>
-      <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to GRN list
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">+ New Goods Receipt Note</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Receive material against a PO. QC accept on a line writes a stock-in ledger entry.
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <GoodsReceiptNoteForm
-            mode="create"
-            {...(poId ? { initialPurchaseOrderId: poId } : {})}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/goods-receipt-notes' })}
-          />
-        </div>
-      </div>
-    </div>
-  );
+  // Unified inward shell: type selector + per-type sections. The Purchase tab
+  // reuses the same create form/endpoint this page used before (unchanged).
+  return <UnifiedGrnForm {...(poId ? { initialPurchaseOrderId: poId } : {})} />;
 }
 
 function GoodsReceiptNoteEditPage(): React.JSX.Element {
