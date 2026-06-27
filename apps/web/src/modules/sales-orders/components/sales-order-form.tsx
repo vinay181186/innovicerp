@@ -245,12 +245,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </select>
         </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="status">Status</label>
-          <select id="status" className="innovic-select" {...register('header.status')}>
-            {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
+        {isEdit ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="status">Status</label>
+            <select id="status" className="innovic-select" {...register('header.status')}>
+              {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        ) : null}
         <div className="form-grp">
           <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
           <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
