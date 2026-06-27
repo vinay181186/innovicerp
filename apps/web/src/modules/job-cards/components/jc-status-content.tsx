@@ -151,6 +151,11 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
             ) : null}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text2)' }}>Due: {jc.dueDate ?? '—'}</div>
+          {jc.remarks ? (
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
+              Remarks: <span style={{ color: 'var(--text)' }}>{jc.remarks}</span>
+            </div>
+          ) : null}
         </div>
         <div style={cardStyle('var(--bg3)', 'var(--border)')}>
           <div style={lblStyle}>Order Qty</div>

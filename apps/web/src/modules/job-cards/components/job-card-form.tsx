@@ -111,6 +111,7 @@ export function JobCardForm({
   const [priority, setPriority] = useState<'normal' | 'high'>(model?.priority ?? 'normal');
   const [dueDate, setDueDate] = useState(model?.dueDate ?? '');
   const [drawingFilePath, setDrawingFilePath] = useState<string | null>(model?.drawingFilePath ?? null);
+  const [remarks, setRemarks] = useState(model?.remarks ?? '');
   const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
 
   const [ops, setOps] = useState<FormOp[]>(
@@ -294,6 +295,7 @@ export function JobCardForm({
       priority,
       dueDate: dueDate || null,
       drawingFilePath,
+      remarks: remarks.trim() || null,
       ops: ops.map(
         (o): JcOpInput => ({
           id: o.id,
@@ -466,6 +468,16 @@ export function JobCardForm({
                 className="innovic-input"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp form-full">
+              <label className="form-label">Remarks</label>
+              <textarea
+                className="innovic-input"
+                rows={2}
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Optional notes for this job card"
               />
             </div>
             <div className="form-grp">

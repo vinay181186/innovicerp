@@ -306,6 +306,26 @@ function JobCardsListPage(): React.JSX.Element {
         ),
       },
       {
+        header: 'Remarks',
+        accessorKey: 'remarks',
+        cell: ({ row }) => (
+          <span
+            className="text3"
+            style={{
+              fontSize: 11,
+              maxWidth: 140,
+              display: 'inline-block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={row.original.remarks ?? ''}
+          >
+            {row.original.remarks ?? '—'}
+          </span>
+        ),
+      },
+      {
         header: 'Actions',
         enableSorting: false,
         cell: ({ row }) => (

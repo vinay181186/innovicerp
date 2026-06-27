@@ -63,6 +63,7 @@ export const jobCardListItemSchema = z.object({
   priority: jcPrioritySchema,
   dueDate: z.string().nullable(),
   drawingFilePath: z.string().nullable(),
+  remarks: z.string().nullable(),
   closedAt: z.string().nullable(),
   // Derived from v_jc_status
   computedStatus: jcComputedStatusSchema,
@@ -186,6 +187,7 @@ export const jobCardWriteInputSchema = z
     priority: jcPrioritySchema.default('normal'),
     dueDate: isoDate.nullable().optional(),
     drawingFilePath: z.string().max(512).nullable().optional(),
+    remarks: z.string().max(2000).nullable().optional(),
     ops: z.array(jcOpInputSchema).default([]),
     qcDocs: z.array(jcDocInputSchema).default([]),
   })
@@ -265,6 +267,7 @@ export const jobCardEditModelSchema = z.object({
   priority: jcPrioritySchema,
   dueDate: z.string().nullable(),
   drawingFilePath: z.string().nullable(),
+  remarks: z.string().nullable(),
   ops: z.array(jobCardOpEditSchema),
   qcDocs: z.array(jobCardDocSchema),
 });

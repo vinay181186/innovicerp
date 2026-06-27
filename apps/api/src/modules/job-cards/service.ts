@@ -96,7 +96,7 @@ export async function listJobCards(
         jc.jc_date AS "jcDate", jc.item_id AS "itemId",
         jc.order_qty AS "orderQty", jc.priority,
         jc.due_date AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
-        jc.closed_at AS "closedAt",
+        jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
@@ -204,7 +204,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.jc_date AS "jcDate", jc.item_id AS "itemId",
         jc.order_qty AS "orderQty", jc.priority,
         jc.due_date AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
-        jc.closed_at AS "closedAt",
+        jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
@@ -302,6 +302,7 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     priority: r['priority'] as JobCardListItem['priority'],
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
     drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    remarks: (r['remarks'] as string | null) ?? null,
     closedAt: r['closedAt'] != null ? tsLike(r['closedAt']) : null,
     computedStatus: r['computedStatus'] as JobCardListItem['computedStatus'],
     totalOps: Number(r['totalOps'] ?? 0),
@@ -384,7 +385,7 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
         jc.source_so_line_id AS "sourceSoLineId", jc.source_jw_line_id AS "sourceJwLineId",
         jc.order_qty AS "orderQty", jc.priority, jc.due_date AS "dueDate",
-        jc.drawing_file_path AS "drawingFilePath", i.code AS "itemCode"
+        jc.drawing_file_path AS "drawingFilePath", jc.remarks AS "remarks", i.code AS "itemCode"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
@@ -431,6 +432,7 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       priority: h['priority'] as JobCardEditModel['priority'],
       dueDate: h['dueDate'] != null ? dateLike(h['dueDate']) : null,
       drawingFilePath: (h['drawingFilePath'] as string | null) ?? null,
+      remarks: (h['remarks'] as string | null) ?? null,
       ops: opRows.map((o) => ({
         id: o['id'] as string,
         opSeq: Number(o['opSeq'] ?? 0),
@@ -669,6 +671,7 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
         priority: input.priority,
         dueDate: input.dueDate ?? null,
         drawingFilePath: input.drawingFilePath ?? null,
+        remarks: input.remarks ?? null,
         sourceSoLineId: input.sourceSoLineId ?? null,
         sourceJwLineId: input.sourceJwLineId ?? null,
         createdBy: user.id,
@@ -839,6 +842,7 @@ export async function updateJobCard(
         priority: input.priority,
         dueDate: input.dueDate ?? null,
         drawingFilePath: input.drawingFilePath ?? null,
+        remarks: input.remarks ?? null,
         sourceSoLineId: input.sourceSoLineId ?? null,
         sourceJwLineId: input.sourceJwLineId ?? null,
         updatedBy: user.id,

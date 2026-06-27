@@ -712,6 +712,7 @@ export const jobCards = pgTable(
     priority: jcPriorityEnum('priority').notNull().default('normal'),
     dueDate: date('due_date'),
     drawingFilePath: text('drawing_file_path'),
+    remarks: text('remarks'),
     // Source SO/JW link — FKs landed in Phase 4 (0008_phase4_jc_alters.sql)
     // per ADR-012 #2-#4. source_jw_id renamed to source_jw_line_id; both
     // columns now FK-enforced (ON DELETE SET NULL — drop the SO/JW without
