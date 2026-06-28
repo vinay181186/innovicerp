@@ -177,11 +177,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     }
     const it = itemsById.get(id);
     if (!it) return;
-    setValue(`lines.${idx}.itemCodeText`, it.code);
-    if (!getValues(`lines.${idx}.partName`)) setValue(`lines.${idx}.partName`, it.name);
-    if (!getValues(`lines.${idx}.material`)) setValue(`lines.${idx}.material`, it.material ?? '');
-    if (!getValues(`lines.${idx}.drawingNo`)) setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
-    setValue(`lines.${idx}.uom`, it.uom);
+    // Always auto-fill Part Name / Material / Drawing No. / UOM from the picked
+    // item's master data (overwrites any prior values so the row matches the
+    // selected part code). shouldDirty so the registered inputs re-render.
+    const opt = { shouldDirty: true } as const;
+    setValue(`lines.${idx}.itemCodeText`, it.code, opt);
+    setValue(`lines.${idx}.partName`, it.name, opt);
+    setValue(`lines.${idx}.material`, it.material ?? '', opt);
+    setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '', opt);
+    setValue(`lines.${idx}.uom`, it.uom, opt);
   }
 
   // Equipment Part No. uses a free datalist (legacy allows off-master parts).
