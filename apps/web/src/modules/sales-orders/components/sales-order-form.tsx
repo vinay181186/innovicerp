@@ -20,7 +20,6 @@ import {
   type SoType,
   type UpdateSalesOrderInput,
   type Uom,
-  UOMS,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -504,15 +503,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             valueLabel={ln?.itemCodeText || undefined}
                           />
                         </td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Part name" {...register(`lines.${idx}.partName` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Material" {...register(`lines.${idx}.material` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Drg.No" {...register(`lines.${idx}.drawingNo` as const)} /></td>
+                        {/* Auto-filled from the item master — read-only (set by pickItem). */}
+                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.partName` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.material` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.drawingNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
-                        <td>
-                          <select className="innovic-select" {...register(`lines.${idx}.uom` as const)}>
-                            {UOMS.map((u) => <option key={u} value={u}>{u}</option>)}
-                          </select>
-                        </td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${amt.toFixed(2)}` : '—'}</td>
