@@ -273,6 +273,17 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   const [code, setCode] = useState('');
   const [itemSearch, setItemSearch] = useState('');
   const [itemId, setItemId] = useState<string | null>(null);
+  // Snapshot of the picked item, captured at pick time. Do NOT derive this from
+  // itemsData: picking clears the search which refetches a different page that
+  // usually no longer contains the picked row, so a derived lookup goes null and
+  // the display + auto-fill both break.
+  const [selectedItem, setSelectedItem] = useState<{
+    id: string;
+    code: string;
+    name: string;
+    description: string | null;
+    material: string | null;
+  } | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [material, setMaterial] = useState('');
@@ -301,10 +312,6 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
     offset: 0,
   });
 
-  const selectedItem = useMemo(
-    () => itemsData?.items.find((i) => i.id === itemId) ?? null,
-    [itemsData, itemId],
-  );
   const selectedClient = useMemo(
     () => clientsData?.clients.find((c) => c.id === clientId) ?? null,
     [clientsData, clientId],
@@ -312,19 +319,10 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
 
   const createMut = useCreatePartyMaterial();
 
-  // Auto-fill name/description/material when an Item Master entry is picked.
+  // Fill name/description/material from the picked Item Master entry. Done at
+  // pick time (see onPick below), only into blank fields so manual edits stick.
   // UOM not auto-filled — items master vocabulary ('KGS') differs from
   // party material vocabulary ('KG' per legacy L24185).
-  const selectedItemId = selectedItem?.id ?? null;
-  useEffect(() => {
-    if (selectedItem) {
-      if (!name) setName(selectedItem.name);
-      if (!description && selectedItem.description) setDescription(selectedItem.description);
-      if (!material && selectedItem.material) setMaterial(selectedItem.material);
-    }
-    // Intentionally narrow to selection identity — setters are stable and we
-    // only want this fill to fire when the picked item changes.
-  }, [selectedItemId, selectedItem, name, description, material]);
 
   const onSave = (): void => {
     setErr(null);
@@ -394,6 +392,7 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
               onBlur={() => setTimeout(() => setItemFocused(false), 150)}
               onChange={(e) => {
                 setItemId(null);
+                setSelectedItem(null);
                 setItemSearch(e.target.value);
               }}
             />
@@ -405,8 +404,22 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
                   sub: it.material ?? null,
                 }))}
                 onPick={(id) => {
+                  const it = itemsData.items.find((i) => i.id === id);
                   setItemId(id);
                   setItemSearch('');
+                  if (it) {
+                    setSelectedItem({
+                      id: it.id,
+                      code: it.code,
+                      name: it.name,
+                      description: it.description ?? null,
+                      material: it.material ?? null,
+                    });
+                    // Fill blanks only, so any manual edits are preserved.
+                    setName((n) => (n.trim() ? n : it.name));
+                    if (it.description) setDescription((d) => (d.trim() ? d : it.description ?? ''));
+                    if (it.material) setMaterial((m) => (m.trim() ? m : it.material ?? ''));
+                  }
                 }}
               />
             ) : null}
