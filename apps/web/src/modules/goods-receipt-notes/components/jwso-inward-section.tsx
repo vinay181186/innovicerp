@@ -197,7 +197,9 @@ export function JwsoInwardSection(): React.JSX.Element {
         </button>
       </div>
 
-      <div className="tbl-wrap" style={{ marginTop: 6 }}>
+      {/* overflow:visible (not the tbl-wrap default) so the per-line material
+          picker dropdown is not clipped by the scroll container. */}
+      <div className="tbl-wrap" style={{ marginTop: 6, overflow: 'visible' }}>
         <table className="innovic-table">
           <thead>
             <tr>
