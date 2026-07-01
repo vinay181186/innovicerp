@@ -29,6 +29,7 @@ function SalesOrderNewPage(): React.JSX.Element {
   const { data: me } = useSession();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
+  const emailFileRef = useRef<File | null>(null);
 
   const onSubmit = async (values: CreateSalesOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -52,6 +53,25 @@ function SalesOrderNewPage(): React.JSX.Element {
           });
         } catch {
           // Non-fatal: SO is saved; the PO doc can be attached on the detail page.
+        }
+      }
+      // Upload the attached email reference the same way (best-effort).
+      const emailFile = emailFileRef.current;
+      if (emailFile && me?.companyId) {
+        try {
+          const storagePath = await uploadSoDocFile(emailFile, me.companyId);
+          await createDoc.mutateAsync({
+            salesOrderId: created.id,
+            soCodeText: created.code,
+            category: 'email_reference',
+            docType: 'Email Reference',
+            fileName: emailFile.name,
+            storagePath,
+            fileSize: emailFile.size,
+            fileType: emailFile.type || undefined,
+          });
+        } catch {
+          // Non-fatal: SO is saved; the email ref can be attached on the detail page.
         }
       }
       await navigate({ to: '/sales-orders/$id', params: { id: created.id }, replace: true });
@@ -79,6 +99,7 @@ function SalesOrderNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             onPoFileChange={(f) => { poFileRef.current = f; }}
+            onEmailFileChange={(f) => { emailFileRef.current = f; }}
             submitError={submitError}
             onCancel={() => void navigate({ to: '/sales-orders' })}
           />

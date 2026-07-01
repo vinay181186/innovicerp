@@ -93,6 +93,8 @@ type CreateMode = {
   onCancel?: () => void;
   /** Client-PO document chosen in the form; uploaded by the page after save. */
   onPoFileChange?: (file: File | null) => void;
+  /** Email reference (e.g. .eml/.msg/pdf) attached against the Client PO. */
+  onEmailFileChange?: (file: File | null) => void;
 };
 type EditMode = {
   mode: 'edit';
@@ -102,6 +104,7 @@ type EditMode = {
   submitError?: string | null;
   onCancel?: () => void;
   onPoFileChange?: (file: File | null) => void;
+  onEmailFileChange?: (file: File | null) => void;
 };
 export type SalesOrderFormProps = CreateMode | EditMode;
 
@@ -213,6 +216,24 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   function clearPoFile(): void {
     setPoFileName(null);
     props.onPoFileChange?.(null);
+  }
+
+  // Email reference attached against the Client PO (legacy parity with PO doc).
+  const [emailFileName, setEmailFileName] = useState<string | null>(null);
+  function onPickEmailFile(e: React.ChangeEvent<HTMLInputElement>): void {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 20 * 1024 * 1024) {
+      setLineError('Email reference file too large (max 20MB).');
+      e.target.value = '';
+      return;
+    }
+    setEmailFileName(f.name);
+    props.onEmailFileChange?.(f);
+  }
+  function clearEmailFile(): void {
+    setEmailFileName(null);
+    props.onEmailFileChange?.(null);
   }
 
   // In-form line import.
@@ -400,6 +421,17 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 📤 Upload PO Doc
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickPoFile} />
+              </label>
+            )}
+            {emailFileName ? (
+              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
+                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
+              </span>
+            ) : (
+              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                📧 Attach Email Ref
+                <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
               </label>
             )}
           </div>
