@@ -90,7 +90,19 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="code">
             Vendor Code
           </label>
-          <input id="code" className="innovic-input" readOnly autoComplete="off" placeholder="Auto-generated on save" {...register('code')} />
+          <input
+            id="code"
+            className="innovic-input"
+            readOnly
+            autoComplete="off"
+            placeholder="Auto-generated on save"
+            {...register('code', {
+              // Read-only, auto-generated server-side. RHF reads the blank DOM
+              // value back as "" on submit, failing the schema's min(1); coerce
+              // blank → undefined so `code` is omitted (optional).
+              setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
+            })}
+          />
           <div className="form-help">Generated automatically in series (VND-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
