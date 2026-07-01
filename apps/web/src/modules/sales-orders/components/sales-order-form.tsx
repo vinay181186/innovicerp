@@ -469,11 +469,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <thead>
                 <tr>
                   <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '9%' }}>Client PO Ln</th>
                   <th style={{ width: '20%' }}>Item Code <span className="req">★</span></th>
                   <th style={{ width: '15%' }}>Part Name</th>
                   <th style={{ width: '9%' }}>Material</th>
                   <th style={{ width: '11%' }}>Drawing No.</th>
-                  <th style={{ width: '9%' }}>Client PO Ln</th>
                   <th style={{ width: '6%' }}>UOM</th>
                   <th style={{ width: '8%' }} className="td-ctr">Qty <span className="req">★</span></th>
                   <th style={{ width: '8%', color: 'var(--green)' }}>Rate ₹</th>
@@ -491,6 +491,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     return (
                       <tr key={field.id}>
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td>
                           <SearchableSelect
                             id={`soln-ic-${idx}`}
@@ -501,13 +502,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             options={items.map((it) => ({ id: it.id, code: it.code, name: it.name }))}
                             placeholder="🔍 Search item…"
                             valueLabel={ln?.itemCodeText || undefined}
+                            // Show only the code in the field once picked; the dropdown
+                            // still lists "CODE — Name".
+                            selectedLabel={(o) => o.code ?? o.name}
                           />
                         </td>
                         {/* Auto-filled from the item master — read-only (set by pickItem). */}
                         <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.partName` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.material` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.drawingNo` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>

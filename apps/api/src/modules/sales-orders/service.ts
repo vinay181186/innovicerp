@@ -26,7 +26,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
   AuthorizationError,
@@ -755,7 +755,9 @@ export async function updateSalesOrder(
   input: UpdateSalesOrderInput,
   user: AuthContext,
 ): Promise<SalesOrderDetail> {
-  requireWriteRole(user);
+  // Editing an existing SO is admin-only (managers can still create). A
+  // non-admin update is rejected server-side even if the UI is bypassed.
+  requireAdminRole(user);
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

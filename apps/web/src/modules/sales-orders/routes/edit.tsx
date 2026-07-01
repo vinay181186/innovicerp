@@ -91,9 +91,28 @@ function SalesOrderNewPage(): React.JSX.Element {
 function SalesOrderEditPage(): React.JSX.Element {
   const { id } = salesOrderEditRoute.useParams();
   const navigate = useNavigate();
+  const { data: me } = useSession();
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const update = useUpdateSalesOrder(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Editing a Sales Order is admin-only (enforced again server-side).
+  if (me && me.role !== 'admin') {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to SO
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            🔒 Only an admin can edit a Sales Order.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const onSubmit = async (values: UpdateSalesOrderInput): Promise<void> => {
     setSubmitError(null);

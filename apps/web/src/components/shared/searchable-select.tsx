@@ -39,6 +39,10 @@ export interface SearchableSelectProps {
   disabled?: boolean | undefined;
   /** Optional display label for a pre-selected `value` (e.g. edit forms). */
   valueLabel?: string | undefined;
+  /** What to show in the input once a row is picked. Defaults to "CODE — Name";
+   *  pass e.g. `(o) => o.code ?? o.name` to show only the code while the dropdown
+   *  keeps the full "CODE — Name" label. */
+  selectedLabel?: ((o: SearchableOption) => string) | undefined;
   id?: string | undefined;
   className?: string | undefined;
   emptyText?: string | undefined;
@@ -57,6 +61,7 @@ export function SearchableSelect({
   placeholder = '🔍 Click to browse or type to search…',
   disabled = false,
   valueLabel,
+  selectedLabel,
   id,
   className,
   emptyText = 'No matches',
@@ -123,7 +128,7 @@ export function SearchableSelect({
 
   function pick(o: SearchableOption): void {
     onChange(o.id);
-    setQuery(optionLabel(o));
+    setQuery(selectedLabel ? selectedLabel(o) : optionLabel(o));
     setOpen(false);
   }
 
