@@ -41,6 +41,20 @@ describe('operators service', () => {
     expect(o.userId).toBeNull();
   });
 
+  it('createOperator auto-generates distinct sequential OP- codes when omitted', async () => {
+    const a = await service.createOperator({ name: 'Auto Op A', isActive: true }, admin);
+    const b = await service.createOperator({ name: 'Auto Op B', isActive: true }, admin);
+    expect(a.code).toMatch(/^OP-\d{3,}$/);
+    expect(b.code).toMatch(/^OP-\d{3,}$/);
+    expect(a.code).not.toBe(b.code);
+    const na = Number(a.code.replace(/\D/g, ''));
+    const nb = Number(b.code.replace(/\D/g, ''));
+    expect(nb).toBe(na + 1);
+    // Generated codes don't carry TEST_PREFIX, so clean up explicitly.
+    await db.delete(operators).where(eq(operators.id, a.id));
+    await db.delete(operators).where(eq(operators.id, b.id));
+  });
+
   it('createOperator rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
     await service.createOperator({ code, name: 'First', isActive: true }, admin);

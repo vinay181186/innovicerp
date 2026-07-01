@@ -20,11 +20,14 @@ export const operatorSchema = z.object({
 export type Operator = z.infer<typeof operatorSchema>;
 
 export const createOperatorInputSchema = z.object({
+  // Optional: the server auto-generates the next OP-### in the company series
+  // when omitted. A caller may still pass an explicit code.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen')
+    .optional(),
   name: z.string().min(1).max(255),
   department: z.string().max(100).optional(),
   skills: z.string().max(1000).optional(),

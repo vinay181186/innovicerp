@@ -35,7 +35,9 @@ type EditMode = {
 type OperatorFormProps = CreateMode | EditMode;
 
 const CREATE_DEFAULTS: CreateOperatorInput = {
-  code: '',
+  // Code is auto-generated server-side; never seed an empty string (it would
+  // fail the schema's min-length check). Leave it undefined.
+  code: undefined,
   name: '',
   department: undefined,
   skills: undefined,
@@ -75,16 +77,29 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Operator ID<span className="req">★</span>
+            Operator ID
           </label>
-          <input id="code" className="innovic-input" autoFocus autoComplete="off" placeholder="OP-001" {...register('code')} />
+          <input
+            id="code"
+            className="innovic-input"
+            readOnly
+            autoComplete="off"
+            placeholder="Auto-generated on save"
+            {...register('code', {
+              // Read-only, auto-generated server-side. RHF reads the blank DOM
+              // value back as "" on submit, failing the schema's min(1); coerce
+              // blank → undefined so `code` is omitted (optional).
+              setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
+            })}
+          />
+          <div className="form-help">Generated automatically in series (OP-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="name">
             Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" placeholder="Full name" {...register('name')} />
+          <input id="name" className="innovic-input" autoFocus autoComplete="off" placeholder="Full name" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 

@@ -1,7 +1,8 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   CreateOperatorInput,
@@ -77,46 +78,67 @@ export async function getOperator(id: string, user: AuthContext): Promise<Operat
   });
 }
 
+/** Next OP-### code in the company series. Server-authoritative so operator
+ *  IDs auto-generate instead of being typed manually. */
+async function nextOperatorCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const rows = await tx
+    .select({ code: operators.code })
+    .from(operators)
+    .where(eq(operators.companyId, companyId));
+  let max = 0;
+  for (const r of rows) {
+    const m = (r.code || '').match(/OP-(\d+)\s*$/i);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `OP-${String(max + 1).padStart(3, '0')}`;
+}
+
 export async function createOperator(
   input: CreateOperatorInput,
   user: AuthContext,
 ): Promise<Operator> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const existing = await tx
-      .select({ id: operators.id })
-      .from(operators)
-      .where(
-        and(
-          eq(operators.companyId, companyId),
-          eq(operators.code, input.code),
-          isNull(operators.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      throw new ConflictError(`Operator code "${input.code}" already exists`);
-    }
+  // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
+  // collide on operators_company_code_uniq (23505) — e.g. both auto-generate the
+  // same OP-### — so the loser retries with the next code instead of 500ing.
+  return withUniqueRetry(() =>
+    withUserContext(user, async (tx) => {
+      const code = input.code?.trim() || (await nextOperatorCode(tx, companyId));
+      const existing = await tx
+        .select({ id: operators.id })
+        .from(operators)
+        .where(
+          and(
+            eq(operators.companyId, companyId),
+            eq(operators.code, code),
+            isNull(operators.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (existing.length > 0) {
+        throw new ConflictError(`Operator code "${code}" already exists`);
+      }
 
-    const userIdValue = input.userId && input.userId.length > 0 ? input.userId : null;
+      const userIdValue = input.userId && input.userId.length > 0 ? input.userId : null;
 
-    const inserted = await tx
-      .insert(operators)
-      .values({
-        companyId,
-        code: input.code,
-        name: input.name,
-        department: emptyToNull(input.department),
-        skills: emptyToNull(input.skills),
-        isActive: input.isActive,
-        userId: userIdValue,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    return inserted[0] as unknown as Operator;
-  });
+      const inserted = await tx
+        .insert(operators)
+        .values({
+          companyId,
+          code,
+          name: input.name,
+          department: emptyToNull(input.department),
+          skills: emptyToNull(input.skills),
+          isActive: input.isActive,
+          userId: userIdValue,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning();
+      return inserted[0] as unknown as Operator;
+    }),
+  );
 }
 
 export async function updateOperator(
