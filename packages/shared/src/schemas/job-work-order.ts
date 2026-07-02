@@ -85,26 +85,26 @@ export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
 });
 export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
 
-/** List ROW = one job_work_order_line joined to its header (legacy
- *  renderJWMaster L12644-12671 lists one row per line). Columns, in order:
- *  JW NO. · LINE · DATE · CLIENT · CLIENT PO · ITEM CODE · PART NAME · QTY ·
- *  JC QTY · MATERIAL · DUE · STATUS · REMARKS. Material status reads the
- *  header materialReceivedQty vs the line orderQty (legacy L12648). */
+/** List ROW = ONE JWSO header with line aggregates (#6 — matches the SO Master
+ *  list, which is one row per order, not per line). Columns, in order:
+ *  JWSO NO. · DATE · CLIENT · CLIENT PO · LINES · TOTAL QTY · JC QTY ·
+ *  MATERIAL · DUE · STATUS · REMARKS. Material status reads the header
+ *  materialReceivedQty vs clientMaterialQty; earliestDueDate = MIN(line.due). */
 export const jobWorkOrderListItemSchema = z.object({
   jwId: z.string().uuid(),
-  lineId: z.string().uuid(),
   code: z.string(),
-  lineNo: z.number().int(),
   jwDate: z.string(),
   clientId: z.string().uuid().nullable(),
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),
-  itemCode: z.string().nullable(),
-  partName: z.string(),
-  orderQty: z.number().int().nonnegative(),
-  /** Σ job_cards.order_qty whose source_jw_line_id = this line. */
+  /** # of non-deleted lines on this JWSO. */
+  lineCount: z.number().int().nonnegative(),
+  /** Σ line order_qty across the JWSO. */
+  totalQty: z.number().int().nonnegative(),
+  /** Σ job_cards.order_qty linked to any line of this JWSO. */
   jcQty: z.number().int().nonnegative(),
-  dueDate: z.string().nullable(),
+  /** MIN(line.due_date) across non-deleted lines; null when none set. */
+  earliestDueDate: z.string().nullable(),
   status: jwStatusSchema,
   remarks: z.string().nullable(),
   /** Header-level client material (drives the MATERIAL column). */

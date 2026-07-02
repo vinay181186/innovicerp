@@ -211,7 +211,7 @@ describe('job-work-orders service', () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('listJobWorkOrders returns one row per line incl. header material + status filter', async () => {
+  it('listJobWorkOrders returns ONE row per JWSO with line aggregates + status filter', async () => {
     const code = `${TEST_PREFIX}LST`;
     await service.createJobWorkOrder(
       {
@@ -235,17 +235,15 @@ describe('job-work-orders service', () => {
       { search: 'T031-LST', status: 'open', limit: 50, offset: 0 },
       admin,
     );
-    // One row per line (2 lines for this JW), each carrying header material.
-    const rowsForJw = result.items
-      .filter((j) => j.code === code)
-      .sort((a, b) => a.lineNo - b.lineNo);
-    expect(rowsForJw).toHaveLength(2);
-    expect(rowsForJw[0]?.lineNo).toBe(1);
-    expect(rowsForJw[0]?.orderQty).toBe(4);
-    expect(rowsForJw[1]?.orderQty).toBe(6);
-    expect(Number(rowsForJw[0]?.clientMaterialQty)).toBe(12);
-    expect(Number(rowsForJw[0]?.materialReceivedQty)).toBe(4);
-    expect(rowsForJw[0]?.jcQty).toBe(0);
+    // ONE row for the whole JWSO (#6), aggregating its 2 lines.
+    const rowsForJw = result.items.filter((j) => j.code === code);
+    expect(rowsForJw).toHaveLength(1);
+    const row = rowsForJw[0];
+    expect(row?.lineCount).toBe(2);
+    expect(row?.totalQty).toBe(10); // 4 + 6
+    expect(Number(row?.clientMaterialQty)).toBe(12);
+    expect(Number(row?.materialReceivedQty)).toBe(4);
+    expect(row?.jcQty).toBe(0);
   });
 
   it('updateJobWorkOrder header-only does NOT touch lines', async () => {

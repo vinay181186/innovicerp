@@ -1,8 +1,8 @@
-// JW Master list — 1:1 with legacy renderJWMaster (L12642). ONE ROW PER LINE,
-// columns in legacy order: JW NO. · LINE · DATE · CLIENT · CLIENT PO · ITEM
-// CODE · PART NAME · QTY · JC QTY · MATERIAL · DUE · STATUS · REMARKS · (Edit
-// Del). Material is colored text (✓ Full / ◑ Partial / ✕ Not Received) keyed on
-// header materialReceivedQty vs line orderQty (legacy L12648).
+// JW Master list — ONE ROW PER JWSO (#6, matches the SO Master list). Columns:
+// JWSO NO. · DATE · CLIENT · CLIENT PO · LINES · TOTAL QTY · JC QTY · MATERIAL ·
+// DUE · STATUS · REMARKS · (Edit Del). Material is colored text (✓ Full / ◑
+// Partial / ✕ Not Received) keyed on header materialReceivedQty vs the header
+// clientMaterialQty (expected client-supplied material).
 
 import {
   type JobWorkOrderListItem,
@@ -43,9 +43,9 @@ export const jobWorkOrdersListRoute = createRoute({
   component: JobWorkOrdersListPage,
 });
 
-// Material status as legacy colored text (L12648-12650): received vs line qty.
-function MaterialCell({ received, orderQty }: { received: number; orderQty: number }): React.JSX.Element {
-  if (orderQty > 0 && received >= orderQty) {
+// Material status as colored text: header received vs expected client material.
+function MaterialCell({ received, expected }: { received: number; expected: number }): React.JSX.Element {
+  if (expected > 0 && received >= expected) {
     return <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ Full</span>;
   }
   if (received > 0) {
@@ -104,19 +104,17 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           </Link>
         ),
       },
-      { header: 'Line', accessorKey: 'lineNo', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineNo}</span> },
       { header: 'Date', accessorKey: 'jwDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
       { header: 'Client', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
       { header: 'Client PO', accessorKey: 'clientPoNo', cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
-      { header: 'Item Code', accessorKey: 'itemCode', cell: ({ row }) => <span className="td-code" style={{ color: 'var(--text2)' }}>{row.original.itemCode ?? '—'}</span> },
-      { header: 'Part Name', accessorKey: 'partName', cell: ({ row }) => row.original.partName },
-      { header: 'Qty', accessorKey: 'orderQty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span> },
+      { header: 'Lines', accessorKey: 'lineCount', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineCount}</span> },
+      { header: 'Total Qty', accessorKey: 'totalQty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.totalQty}</span> },
       {
         header: 'JC Qty',
         accessorKey: 'jcQty',
         cell: ({ row }) => {
           const jc = row.original.jcQty;
-          const tot = row.original.orderQty;
+          const tot = row.original.totalQty;
           const color = jc >= tot && tot > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
           return (
             <span className="td-ctr mono" style={{ fontSize: 11 }}>
@@ -132,15 +130,15 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         accessorFn: (r) => Number(r.materialReceivedQty ?? 0),
         cell: ({ row }) => (
           <span className="td-ctr" style={{ fontSize: 11 }}>
-            <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} orderQty={row.original.orderQty} />
+            <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} expected={Number(row.original.clientMaterialQty ?? 0)} />
           </span>
         ),
       },
       {
         header: 'Due',
-        accessorKey: 'dueDate',
+        accessorKey: 'earliestDueDate',
         cell: ({ row }) => {
-          const due = row.original.dueDate;
+          const due = row.original.earliestDueDate;
           const overdue = !!due && due < today && row.original.status === 'open';
           return <span className="text2 td-ctr" style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due ?? '—'}</span>;
         },
@@ -226,7 +224,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>{total === 0 ? 'No lines' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
+        <span>{total === 0 ? 'No JWSOs' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage <= 1} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }), replace: true })}><ChevronLeft size={14} /> Prev</button>
           <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>Page {currentPage} / {totalPages}</span>

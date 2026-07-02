@@ -184,46 +184,64 @@ export async function listJobWorkOrders(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
-    // Match JW / client / item code / part name (legacy "Search JW, client, item").
+    // Match JW / client / client-PO, or any of the JWSO's lines by item code /
+    // part name (via EXISTS so the header stays one row — #6).
     const searchFrag = term
       ? sql`AND (jw.code ILIKE ${term} OR jw.customer_name ILIKE ${term} OR jw.client_po_no ILIKE ${term}
-                 OR COALESCE(it.code, jwl.item_code_text) ILIKE ${term} OR jwl.part_name ILIKE ${term})`
+                 OR EXISTS (
+                   SELECT 1 FROM public.job_work_order_lines l2
+                   LEFT JOIN public.items i2 ON i2.id = l2.item_id AND i2.deleted_at IS NULL
+                   WHERE l2.job_work_order_id = jw.id AND l2.deleted_at IS NULL
+                     AND (COALESCE(i2.code, l2.item_code_text) ILIKE ${term} OR l2.part_name ILIKE ${term})
+                 ))`
       : sql``;
     const statusFrag = input.status ? sql`AND jw.status = ${input.status}::so_status` : sql``;
     const clientFrag = input.clientId ? sql`AND jw.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND jw.jw_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND jw.jw_date <= ${input.toDate}::date` : sql``;
 
-    // ONE ROW PER LINE (legacy renderJWMaster lists one row per JW line). Each
-    // row joins its header + the line's own JC qty (source_jw_line_id).
-    const baseFrom = sql`
-      FROM public.job_work_order_lines jwl
-      JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
-      LEFT JOIN public.items it ON it.id = jwl.item_id AND it.deleted_at IS NULL
-      LEFT JOIN (
-        SELECT source_jw_line_id, SUM(order_qty) AS jc_qty
-        FROM public.job_cards WHERE deleted_at IS NULL AND source_jw_line_id IS NOT NULL
-        GROUP BY source_jw_line_id
-      ) jc ON jc.source_jw_line_id = jwl.id
-      WHERE jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL
+    // ONE ROW PER JWSO HEADER (#6 — matches the SO Master list). Line aggregates
+    // (count, total qty, earliest due) + rolled-up JC qty across all lines.
+    const baseWhere = sql`
+      FROM public.job_work_orders jw
+      WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
         ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}`;
 
     const result = await tx.execute(sql`
       SELECT
-        jw.id AS "jwId", jwl.id AS "lineId", jw.code, jwl.line_no AS "lineNo",
-        jw.jw_date AS "jwDate", jw.client_id AS "clientId", jw.customer_name AS "customerName",
+        jw.id AS "jwId", jw.code, jw.jw_date AS "jwDate",
+        jw.client_id AS "clientId", jw.customer_name AS "customerName",
         jw.client_po_no AS "clientPoNo",
-        COALESCE(it.code, jwl.item_code_text) AS "itemCode", jwl.part_name AS "partName",
-        jwl.order_qty AS "orderQty", COALESCE(jc.jc_qty, 0)::int AS "jcQty",
-        jwl.due_date::text AS "dueDate", jw.status, jw.remarks,
+        COALESCE(agg.line_count, 0)::int AS "lineCount",
+        COALESCE(agg.total_qty, 0)::int AS "totalQty",
+        COALESCE(jca.jc_qty, 0)::int AS "jcQty",
+        agg.earliest_due::text AS "earliestDueDate",
+        jw.status, jw.remarks,
         jw.client_material_qty::text AS "clientMaterialQty",
         jw.material_received_qty::text AS "materialReceivedQty"
-      ${baseFrom}
-      ORDER BY jw.code ASC, jwl.line_no ASC
+      FROM public.job_work_orders jw
+      LEFT JOIN (
+        SELECT job_work_order_id,
+          COUNT(*) AS line_count, SUM(order_qty) AS total_qty, MIN(due_date) AS earliest_due
+        FROM public.job_work_order_lines
+        WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+        GROUP BY job_work_order_id
+      ) agg ON agg.job_work_order_id = jw.id
+      LEFT JOIN (
+        SELECT l.job_work_order_id, SUM(jc.order_qty) AS jc_qty
+        FROM public.job_cards jc
+        JOIN public.job_work_order_lines l
+          ON l.id = jc.source_jw_line_id AND l.deleted_at IS NULL
+        WHERE jc.deleted_at IS NULL AND jc.source_jw_line_id IS NOT NULL
+        GROUP BY l.job_work_order_id
+      ) jca ON jca.job_work_order_id = jw.id
+      WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
+        ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}
+      ORDER BY jw.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    const totalRows = await tx.execute(sql`SELECT COUNT(*)::int AS c ${baseFrom}`);
+    const totalRows = await tx.execute(sql`SELECT COUNT(*)::int AS c ${baseWhere}`);
     const total = Number((totalRows as unknown as Array<{ c: number }>)[0]?.c ?? 0);
 
     const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
@@ -234,18 +252,15 @@ export async function listJobWorkOrders(
 function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
   return {
     jwId: r['jwId'] as string,
-    lineId: r['lineId'] as string,
     code: r['code'] as string,
-    lineNo: Number(r['lineNo'] ?? 0),
     jwDate: dateLike(r['jwDate']),
     clientId: (r['clientId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     clientPoNo: (r['clientPoNo'] as string | null) ?? null,
-    itemCode: (r['itemCode'] as string | null) ?? null,
-    partName: (r['partName'] as string | null) ?? '',
-    orderQty: Number(r['orderQty'] ?? 0),
+    lineCount: Number(r['lineCount'] ?? 0),
+    totalQty: Number(r['totalQty'] ?? 0),
     jcQty: Number(r['jcQty'] ?? 0),
-    dueDate: (r['dueDate'] as string | null) ?? null,
+    earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     status: r['status'] as JobWorkOrder['status'],
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,

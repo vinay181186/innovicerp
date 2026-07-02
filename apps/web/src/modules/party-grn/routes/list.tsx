@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobWorkOrdersList } from '../../job-work-orders/api';
+import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
 import { useCreatePartyGrn, useNextPartyGrnCode, usePartyGrnList } from '../api';
 
@@ -318,21 +318,17 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
     offset: 0,
   });
   const jwData = jwQuery.data;
-  // The JW list returns one row per line; dedupe to one entry per JW header.
-  const jwHeaders = useMemo(() => {
-    const seen = new Set<string>();
-    return (jwData?.items ?? []).filter((j) => (seen.has(j.jwId) ? false : (seen.add(j.jwId), true)));
-  }, [jwData]);
+  // The JW list is one row per JWSO (#6); no dedupe needed.
+  const jwHeaders = jwData?.items ?? [];
   const selectedJw = useMemo(
     () => jwHeaders.find((j) => j.jwId === jwId) ?? null,
     [jwHeaders, jwId],
   );
-  // Bug 3.3: once a JWSO is picked, surface ITS line item codes (the JW list
-  // returns one row per line) so the user can see/pick them in the JW Line box.
-  const jwLinesForSelected = useMemo(
-    () => (jwId ? (jwData?.items ?? []).filter((j) => j.jwId === jwId) : []),
-    [jwData, jwId],
-  );
+  // Bug 3.3: once a JWSO is picked, surface ITS line item codes so the user can
+  // see/pick them in the JW Line box. Lines come from the JWSO detail (the
+  // master list no longer carries per-line rows).
+  const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
+  const jwLinesForSelected = jwDetailQ.data?.lines ?? [];
 
   const { data: pmData } = usePartyMaterialsList({
     search: undefined,
@@ -446,8 +442,8 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         {/* JW line codes for the selected JWSO (bug 3.3) — feeds the JW Line box. */}
         <datalist id="dlPGrnJwLine">
           {jwLinesForSelected.map((j) => (
-            <option key={j.lineId} value={String(j.lineNo)}>
-              L{j.lineNo} · {j.itemCode ?? ''} · {j.partName}
+            <option key={j.id} value={String(j.lineNo)}>
+              L{j.lineNo} · {j.itemCodeText ?? ''} · {j.partName}
             </option>
           ))}
         </datalist>
