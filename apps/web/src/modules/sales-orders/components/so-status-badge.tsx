@@ -4,6 +4,7 @@
 import type { SoStatus } from '@innovic/shared';
 
 const CLASSES: Record<SoStatus, string> = {
+  draft: 'b-amber',
   open: 'b-blue',
   closed: 'b-green',
   dispatched: 'b-cyan',

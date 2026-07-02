@@ -8,6 +8,7 @@
 // Drives a single endpoint: GET /so-overview?status=<filter?>&search=<q?>.
 
 import { z } from 'zod';
+import { SO_STATUSES } from '../enums/so-status';
 
 export const soOverviewQuerySchema = z.object({
   /** Status filter: open / closed / dispatched / cancelled / all (default open). */
@@ -54,7 +55,7 @@ export const soOverviewRowSchema = z.object({
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),
   type: z.enum(['component_manufacturing', 'equipment', 'with_material']),
-  status: z.enum(['open', 'closed', 'dispatched', 'cancelled']),
+  status: z.enum(SO_STATUSES),
   /** Earliest unfinished line due date (proxy for SO due date). */
   earliestDueDate: z.string().nullable(),
   bomMasterId: z.string().uuid().nullable(),

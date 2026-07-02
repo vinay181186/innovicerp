@@ -5,6 +5,7 @@
 // per-unit assembly tracking + dispatch flags.
 
 import { z } from 'zod';
+import { SO_STATUSES } from '../enums/so-status';
 
 export const assemblyComponentStatusEnum = z.enum([
   'ready',
@@ -72,7 +73,7 @@ export const assemblyHeaderSchema = z.object({
   soCode: z.string(),
   customerName: z.string().nullable(),
   type: z.enum(['component_manufacturing', 'equipment', 'with_material']),
-  status: z.enum(['open', 'closed', 'dispatched', 'cancelled']),
+  status: z.enum(SO_STATUSES),
   bomMasterId: z.string().uuid().nullable(),
   bomCode: z.string().nullable(),
   bomName: z.string().nullable(),

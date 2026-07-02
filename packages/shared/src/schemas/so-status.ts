@@ -10,6 +10,7 @@
 // types verbatim — kept as string literal unions to stay framework-agnostic.
 
 import { z } from 'zod';
+import { SO_STATUSES } from '../enums/so-status';
 
 // Op status (from calc-engine OpStatus union)
 export const soStatusOpStatusEnum = z.enum([
@@ -168,7 +169,7 @@ export const soStatusHeaderSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   type: z.enum(['component_manufacturing', 'equipment', 'with_material']),
-  status: z.enum(['open', 'closed', 'dispatched', 'cancelled']),
+  status: z.enum(SO_STATUSES),
   soDate: z.string(),
   dueDate: z.string().nullable(),
   customerName: z.string().nullable(),

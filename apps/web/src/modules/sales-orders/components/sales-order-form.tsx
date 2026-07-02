@@ -260,7 +260,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const gstAmt = subtotal * (gstPercent / 100);
   const grand = subtotal + gstAmt;
 
-  const onValid = async (values: FormValues): Promise<void> => {
+  // `asDraft` (#3): the "Save as draft" button submits with status 'draft';
+  // the normal submit keeps the header status (defaults to 'open'). Captured
+  // per-handler so there is no shared mutable flag to leak across submits.
+  const onValid = (asDraft: boolean) => async (values: FormValues): Promise<void> => {
     setLineError(null);
     // SO No. validity is enforced by DocNumberInput (save disabled while invalid);
     // the server UNIQUE constraint is the final backstop.
@@ -285,6 +288,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
     const headerOut = {
       ...values.header,
+      status: asDraft ? ('draft' as SoStatus) : values.header.status,
       code: values.header.code?.trim() || undefined,
       customerName: undefined,
       clientId: values.header.clientId || undefined,
@@ -344,7 +348,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   };
 
   return (
-    <form onSubmit={handleSubmit(onValid)}>
+    <form onSubmit={handleSubmit(onValid(false))}>
       {/* Header */}
       <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
         <DocNumberInput
@@ -613,6 +617,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
+          {isCreate ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+              disabled={formState.isSubmitting || !docNoValid}
+              onClick={() => void handleSubmit(onValid(true))()}
+              title="Save this Sales Order as a draft (status: draft)"
+            >
+              Save as draft
+            </button>
+          ) : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
             {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create SO')}
