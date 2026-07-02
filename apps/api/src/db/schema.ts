@@ -4505,6 +4505,16 @@ export const fileRegistry = pgTable(
       onDelete: 'set null',
     }),
     jcCodeText: text('jc_code_text'),
+    // JWSO producer dimension (migration 0058). JWSOs live in job_work_orders,
+    // not sales_orders — the JWSO PO-doc upload registers here keyed by these.
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
+    jwCodeText: text('jw_code_text'),
+    jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    jwLineNo: integer('jw_line_no'),
     // Free-text category (drawing/qc-docs/inspection/tpi/incoming-qc/po-docs/
     // design/dispatch/other) — same vocabulary as legacy fileRegistry.category.
     category: text('category').notNull().default('other'),
@@ -4529,6 +4539,9 @@ export const fileRegistry = pgTable(
   (t) => [
     index('file_registry_company_so_idx')
       .on(t.companyId, t.salesOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('file_registry_company_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
       .where(sql`${t.deletedAt} is null`),
     index('file_registry_company_status_idx')
       .on(t.companyId, t.status)

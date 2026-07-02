@@ -64,6 +64,8 @@ type CreateMode = {
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
+  /** Client PO document picked below Client PO No. (uploaded after save). */
+  onPoFileChange?: (file: File | null) => void;
 };
 type EditMode = {
   mode: 'edit';
@@ -72,6 +74,8 @@ type EditMode = {
   submitLabel?: string;
   submitError?: string | null;
   onCancel?: () => void;
+  /** Client PO document picked below Client PO No. (uploaded on save). */
+  onPoFileChange?: (file: File | null) => void;
 };
 export type JobWorkOrderFormProps = CreateMode | EditMode;
 
@@ -106,6 +110,30 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   }
 
   const watchedLines = watch('lines');
+
+  // Client PO document upload (#8). File is handed to the parent, which uploads
+  // it to Storage + registers metadata against the JWSO after save.
+  const poFileRef = useRef<HTMLInputElement>(null);
+  const [poFileName, setPoFileName] = useState<string | null>(null);
+  const [poFileError, setPoFileError] = useState<string | null>(null);
+  const onPoFileChange = 'onPoFileChange' in props ? props.onPoFileChange : undefined;
+  function onPickPoFile(e: React.ChangeEvent<HTMLInputElement>): void {
+    const f = e.target.files?.[0] ?? null;
+    if (f && f.size > 20 * 1024 * 1024) {
+      setPoFileError('PO document must be 20 MB or smaller.');
+      if (poFileRef.current) poFileRef.current.value = '';
+      return;
+    }
+    setPoFileError(null);
+    setPoFileName(f?.name ?? null);
+    onPoFileChange?.(f);
+  }
+  function clearPoFile(): void {
+    setPoFileName(null);
+    setPoFileError(null);
+    if (poFileRef.current) poFileRef.current.value = '';
+    onPoFileChange?.(null);
+  }
 
   // In-form line import (appends lines to the JW being created/edited).
   const lineFileRef = useRef<HTMLInputElement>(null);
@@ -234,6 +262,29 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <div className="form-grp">
           <label className="form-label" htmlFor="clientPoNo">Client PO No.</label>
           <input id="clientPoNo" className="innovic-input" autoComplete="off" {...register('header.clientPoNo')} />
+          {/* Upload PO Doc (#8) — reflects on the JWSO after save. */}
+          <div style={{ marginTop: 6 }}>
+            <input
+              ref={poFileRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+              style={{ display: 'none' }}
+              onChange={onPickPoFile}
+            />
+            {poFileName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                <span className="mono" style={{ color: 'var(--cyan)' }}>📎 {poFileName}</span>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={clearPoFile} aria-label="Remove PO document">✕</button>
+              </div>
+            ) : (
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => poFileRef.current?.click()}>
+                📤 Upload PO Doc
+              </button>
+            )}
+            {poFileError ? <div className="form-error">{poFileError}</div> : (
+              <div className="form-help">Attach the client's PO document — saved against this JWSO.</div>
+            )}
+          </div>
         </div>
 
         <div className="form-grp form-full">

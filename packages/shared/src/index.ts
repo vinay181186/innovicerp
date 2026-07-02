@@ -44,6 +44,7 @@ export * from './schemas/report-type';
 export * from './schemas/so-qc-status';
 export * from './schemas/qc-document';
 export * from './schemas/so-document';
+export * from './schemas/jw-document';
 export * from './schemas/qc-command';
 export * from './schemas/operator';
 export * from './schemas/op-entry';
