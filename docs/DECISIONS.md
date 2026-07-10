@@ -2245,3 +2245,43 @@ error — built once as reusable parts, then wired to SO/PO/GRN (12 more types i
   drop in `<DocNumberInput>`. Tests: shared 11, api 6, web hook 5 + component 5; build green.
 - Negative / Risks: format strictness is UI-side, not DB-enforced (matches the repo's
   app-guard convention). New `/doc-numbers/check` endpoint needs an API redeploy.
+
+## ADR-055: JW full plan parity — plans.jw_line_id, not a parallel table
+**Date:** 2026-07-10
+**Status:** Accepted
+
+### Context
+JWSOs (IN-JW-00001, IN-JW-00002) never appeared in SO/JW Planning. Root cause:
+`getPlanningSoList` queried only `sales_orders`, and `job-cards/service.ts` had an
+explicit guard ("...until JW is supported in Planning") — JW planning was a deferred
+migration gap, not a regression. Legacy `renderSOPlanning` merged SOs + JWs via
+`CASCADE.allOpenOrders()`. User chose **full plan parity** (JWs get the same
+Mfg/Buy/OSP → execute → JC lifecycle as SOs), not a lighter visibility-only path.
+
+### Decision
+Extend the existing `plans` table with a nullable `jw_line_id` FK
+(`job_work_order_lines`), rather than build a parallel `jw_plans` table. A plan carries
+at most one of (`so_line_id`, `jw_line_id`); the service sets whichever the source is.
+On execute, `executeManufacture` passes both `sourceSoLineId`/`sourceJwLineId` to the
+JC (job_cards CHECK `num_nonnulls(...) <= 1` guarantees ≤1 is set). so-planning list +
+detail union JWs: list appends JW headers (planned via `jw_line_id`, direct JCs via
+`source_jw_line_id`); detail falls through to `getJwPlanningDetail` when the id isn't an
+SO. Wire shape gains a `source: 'so' | 'jw'` discriminator so the Create-Plan modal
+posts `jwLineId` vs `soLineId`.
+
+### Alternatives Considered
+- Parallel `jw_plans` + `jw_plan_ops` tables — rejected: doubles the plan lifecycle,
+  the dashboard, execute, and every rollup query; the plans CHECKs never referenced the
+  source line, so one nullable column is enough.
+- Visibility-only JW (show + "Create Job Card", no Plan step) — offered; user rejected,
+  wants full make/buy/outsource planning for JWs.
+
+### Consequences
+- Positive: JWs reuse the entire plan engine (types, ops, execute, PR/JC creation,
+  dashboard) with one additive column; no constraint relaxation → low migration risk.
+- Negative: PRs from JW Buy/OSP plans have no JW source-line link (`purchase_requests`
+  has no `source_jw_line_id`); they still carry item/qty + a "from plan PLN-xxxx" remark.
+  Acceptable for now — revisit if PR→JW traceability is needed.
+- Risks: `0060_plans_jw_line.sql` is **deploy-blocking** — so-planning reads now
+  reference `plans.jw_line_id`; must be applied before/with the deploy or all Planning
+  reads 500. Pending prod apply alongside 0058/0059.

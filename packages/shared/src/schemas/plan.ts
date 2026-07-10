@@ -53,6 +53,7 @@ export const planSchema = z.object({
   planType: planTypeSchema,
 
   soLineId: z.string().uuid().nullable(),
+  jwLineId: z.string().uuid().nullable(),
   soCodeText: z.string().nullable(),
   lineNo: z.number().int().positive().nullable(),
 
@@ -163,6 +164,7 @@ export const createPlanInputSchema = z.object({
   planType: planTypeSchema,
 
   soLineId: z.string().uuid().nullable().optional(),
+  jwLineId: z.string().uuid().nullable().optional(),
   soCodeText: z.string().trim().max(40).nullable().optional(),
   lineNo: z.number().int().positive().nullable().optional(),
 

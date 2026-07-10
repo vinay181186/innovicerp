@@ -28,13 +28,15 @@ import {
   items,
   itemStockBalances,
   jobCards,
+  jobWorkOrderLines,
+  jobWorkOrders,
   planOps,
   plans,
   purchaseRequests,
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -56,6 +58,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // ── Sales Orders ──────────────────────────────────────────────────────
     // 1. Open SO headers + per-line totals (aggregated in SQL).
     const soRows = await tx
       .select({
@@ -86,81 +89,176 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
       .groupBy(salesOrders.id, salesOrders.code, salesOrders.customerName, salesOrders.type)
       .orderBy(desc(salesOrders.code));
 
-    if (soRows.length === 0) {
-      return { generatedAt: new Date().toISOString(), items: [] };
-    }
-
     const soIds = soRows.map((r) => r.soId);
 
-    // 2. Planned-qty rollup per SO via the plans table.
-    const plannedAgg = await tx
-      .select({
-        soId: salesOrders.id,
-        plannedQty:
-          sql<number>`coalesce(sum(${plans.planQty}), 0)::int`.as('planned_qty'),
-      })
-      .from(plans)
-      .innerJoin(salesOrderLines, eq(salesOrderLines.id, plans.soLineId))
-      .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
-      .where(
-        and(
-          inArray(salesOrders.id, soIds),
-          isNull(plans.deletedAt),
-          sql`${plans.planStatus} <> 'cancelled'`,
-        ),
-      )
-      .groupBy(salesOrders.id);
-
+    // 2. Planned-qty rollup per SO via the plans table (so_line_id link).
+    const plannedAgg =
+      soIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: salesOrders.id,
+              plannedQty: sql<number>`coalesce(sum(${plans.planQty}), 0)::int`.as('planned_qty'),
+            })
+            .from(plans)
+            .innerJoin(salesOrderLines, eq(salesOrderLines.id, plans.soLineId))
+            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+            .where(
+              and(
+                inArray(salesOrders.id, soIds),
+                isNull(plans.deletedAt),
+                sql`${plans.planStatus} <> 'cancelled'`,
+              ),
+            )
+            .groupBy(salesOrders.id);
     const plannedMap = new Map<string, number>();
     for (const r of plannedAgg) plannedMap.set(r.soId, Number(r.plannedQty));
 
     // 2b. Direct (plan-less) Job Card qty per SO — JCs on open SO lines not
     // linked to any non-cancelled plan. Folded into coverage so the dot/pct
     // reflect production that bypassed planning (matches SO Status Review).
-    const directAgg = await tx
-      .select({
-        soId: salesOrders.id,
-        directQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`.as('direct_qty'),
-      })
-      .from(jobCards)
-      .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
-      .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
-      .leftJoin(
-        plans,
-        and(
-          eq(plans.jcId, jobCards.id),
-          isNull(plans.deletedAt),
-          sql`${plans.planStatus} <> 'cancelled'`,
-        ),
-      )
-      .where(
-        and(inArray(salesOrders.id, soIds), isNull(jobCards.deletedAt), isNull(plans.id)),
-      )
-      .groupBy(salesOrders.id);
+    const directAgg =
+      soIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: salesOrders.id,
+              directQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`.as('direct_qty'),
+            })
+            .from(jobCards)
+            .innerJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
+            .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+            .leftJoin(
+              plans,
+              and(
+                eq(plans.jcId, jobCards.id),
+                isNull(plans.deletedAt),
+                sql`${plans.planStatus} <> 'cancelled'`,
+              ),
+            )
+            .where(
+              and(inArray(salesOrders.id, soIds), isNull(jobCards.deletedAt), isNull(plans.id)),
+            )
+            .groupBy(salesOrders.id);
     const directMap = new Map<string, number>();
     for (const r of directAgg) directMap.set(r.soId, Number(r.directQty));
 
-    return {
-      generatedAt: new Date().toISOString(),
-      items: soRows.map((r) => {
-        const totalQty = Number(r.totalQty);
-        const plannedQty = plannedMap.get(r.soId) ?? 0;
-        const coveredQty = plannedQty + (directMap.get(r.soId) ?? 0);
-        const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
-        return {
-          soId: r.soId,
-          soCode: r.soCode,
-          customerName: r.customerName ?? null,
-          soType: r.soType,
-          dueDate: r.maxDueDate ?? null,
-          totalLines: Number(r.totalLines),
-          totalQty,
-          totalPlannedQty: plannedQty,
-          planningPct: pct,
-          planningStatus: classifyPlanningPct(pct),
-        };
-      }),
+    // ── Job Work Orders ───────────────────────────────────────────────────
+    // Same shape as SO but off job_work_orders / job_work_order_lines and the
+    // plans.jw_line_id link. JWs are plannable identically to SOs (full parity).
+    const jwRows = await tx
+      .select({
+        soId: jobWorkOrders.id,
+        soCode: jobWorkOrders.code,
+        customerName: jobWorkOrders.customerName,
+        totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
+        totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
+        maxDueDate: sql<string | null>`max(${jobWorkOrderLines.dueDate})::text`.as('max_due'),
+      })
+      .from(jobWorkOrders)
+      .leftJoin(
+        jobWorkOrderLines,
+        and(
+          eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrders.id),
+          isNull(jobWorkOrderLines.deletedAt),
+          eq(jobWorkOrderLines.status, 'open'),
+        ),
+      )
+      .where(
+        and(
+          eq(jobWorkOrders.companyId, companyId),
+          isNull(jobWorkOrders.deletedAt),
+          eq(jobWorkOrders.status, 'open'),
+        ),
+      )
+      .groupBy(jobWorkOrders.id, jobWorkOrders.code, jobWorkOrders.customerName)
+      .orderBy(desc(jobWorkOrders.code));
+
+    const jwIds = jwRows.map((r) => r.soId);
+
+    const jwPlannedAgg =
+      jwIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: jobWorkOrders.id,
+              plannedQty: sql<number>`coalesce(sum(${plans.planQty}), 0)::int`.as('planned_qty'),
+            })
+            .from(plans)
+            .innerJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, plans.jwLineId))
+            .innerJoin(jobWorkOrders, eq(jobWorkOrders.id, jobWorkOrderLines.jobWorkOrderId))
+            .where(
+              and(
+                inArray(jobWorkOrders.id, jwIds),
+                isNull(plans.deletedAt),
+                sql`${plans.planStatus} <> 'cancelled'`,
+              ),
+            )
+            .groupBy(jobWorkOrders.id);
+    const jwPlannedMap = new Map<string, number>();
+    for (const r of jwPlannedAgg) jwPlannedMap.set(r.soId, Number(r.plannedQty));
+
+    const jwDirectAgg =
+      jwIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: jobWorkOrders.id,
+              directQty: sql<number>`coalesce(sum(${jobCards.orderQty}), 0)::int`.as('direct_qty'),
+            })
+            .from(jobCards)
+            .innerJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
+            .innerJoin(jobWorkOrders, eq(jobWorkOrders.id, jobWorkOrderLines.jobWorkOrderId))
+            .leftJoin(
+              plans,
+              and(
+                eq(plans.jcId, jobCards.id),
+                isNull(plans.deletedAt),
+                sql`${plans.planStatus} <> 'cancelled'`,
+              ),
+            )
+            .where(
+              and(inArray(jobWorkOrders.id, jwIds), isNull(jobCards.deletedAt), isNull(plans.id)),
+            )
+            .groupBy(jobWorkOrders.id);
+    const jwDirectMap = new Map<string, number>();
+    for (const r of jwDirectAgg) jwDirectMap.set(r.soId, Number(r.directQty));
+
+    const buildItem = (
+      r: { soId: string; soCode: string; customerName: string | null; totalLines: number; totalQty: number; maxDueDate: string | null },
+      source: 'so' | 'jw',
+      soType: string,
+      planned: number,
+      direct: number,
+    ) => {
+      const totalQty = Number(r.totalQty);
+      const coveredQty = planned + direct;
+      const pct = totalQty > 0 ? Math.min(100, Math.round((coveredQty / totalQty) * 100)) : 0;
+      return {
+        soId: r.soId,
+        soCode: r.soCode,
+        source,
+        customerName: r.customerName ?? null,
+        soType,
+        dueDate: r.maxDueDate ?? null,
+        totalLines: Number(r.totalLines),
+        totalQty,
+        totalPlannedQty: planned,
+        planningPct: pct,
+        planningStatus: classifyPlanningPct(pct),
+      };
     };
+
+    const items = [
+      ...soRows.map((r) =>
+        buildItem(r, 'so', r.soType, plannedMap.get(r.soId) ?? 0, directMap.get(r.soId) ?? 0),
+      ),
+      ...jwRows.map((r) =>
+        buildItem(r, 'jw', 'job_work', jwPlannedMap.get(r.soId) ?? 0, jwDirectMap.get(r.soId) ?? 0),
+      ),
+    ];
+
+    return { generatedAt: new Date().toISOString(), items };
   });
 }
 
@@ -194,7 +292,8 @@ export async function getPlanningSoDetail(
       )
       .limit(1);
     const so = soRows[0];
-    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    // Not an SO id → try a Job Work Order (JWs are planned identically).
+    if (!so) return getJwPlanningDetail(tx, soId, companyId);
 
     // 2. Lines + items (in 1 query).
     const lineRows = await tx
@@ -412,6 +511,7 @@ export async function getPlanningSoDetail(
     return {
       soId: so.id,
       soCode: so.code,
+      source: 'so' as const,
       customerName: so.customerName ?? null,
       soType: so.type,
       dueDate: lines.reduce<string | null>((max, l) => {
@@ -423,6 +523,204 @@ export async function getPlanningSoDetail(
       lines,
     };
   });
+}
+
+// ─── Right pane: per-JW detail ───────────────────────────────────────────
+// JW parity port of getPlanningSoDetail. Reads job_work_orders /
+// job_work_order_lines and links plans via plans.jw_line_id + direct JCs via
+// job_cards.source_jw_line_id. JW lines carry no BOM master, so the Equipment
+// and assembly-BOM branches are always off here.
+async function getJwPlanningDetail(
+  tx: DbTransaction,
+  jwId: string,
+  companyId: string,
+): Promise<PlanningDetailResponse> {
+  // 1. JW header.
+  const jwRows = await tx
+    .select({
+      id: jobWorkOrders.id,
+      code: jobWorkOrders.code,
+      customerName: jobWorkOrders.customerName,
+      clientPoNo: jobWorkOrders.clientPoNo,
+    })
+    .from(jobWorkOrders)
+    .where(
+      and(
+        eq(jobWorkOrders.id, jwId),
+        eq(jobWorkOrders.companyId, companyId),
+        isNull(jobWorkOrders.deletedAt),
+      ),
+    )
+    .limit(1);
+  const jw = jwRows[0];
+  if (!jw) throw new NotFoundError(`Sales order / Job Work order ${jwId} not found`);
+
+  // 2. Lines + items.
+  const lineRows = await tx
+    .select({
+      line: jobWorkOrderLines,
+      itemCode: items.code,
+      itemName: items.name,
+    })
+    .from(jobWorkOrderLines)
+    .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
+    .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jwId), isNull(jobWorkOrderLines.deletedAt)))
+    .orderBy(asc(jobWorkOrderLines.lineNo));
+
+  const lineIds = lineRows.map((r) => r.line.id);
+
+  // 3. Plans + linked JC code + PR codes (via plans.jw_line_id).
+  const planRows =
+    lineIds.length === 0
+      ? []
+      : await tx
+          .select({
+            plan: plans,
+            jcCode: jobCards.code,
+            dpPrCode: sql<string | null>`dp_pr.code`.as('dp_pr_code'),
+            foPrCode: sql<string | null>`fo_pr.code`.as('fo_pr_code'),
+            foMatPrCode: sql<string | null>`fo_mat_pr.code`.as('fo_mat_pr_code'),
+          })
+          .from(plans)
+          .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
+          .leftJoin(sql`${purchaseRequests} as dp_pr`, sql`dp_pr.id = ${plans.dpPrId}`)
+          .leftJoin(sql`${purchaseRequests} as fo_pr`, sql`fo_pr.id = ${plans.foPrId}`)
+          .leftJoin(sql`${purchaseRequests} as fo_mat_pr`, sql`fo_mat_pr.id = ${plans.foMatPrId}`)
+          .where(
+            and(
+              inArray(plans.jwLineId, lineIds),
+              isNull(plans.deletedAt),
+              sql`${plans.planStatus} <> 'cancelled'`,
+            ),
+          )
+          .orderBy(asc(plans.code));
+
+  const planIds = planRows.map((r) => r.plan.id);
+
+  // 4. Ops counts per plan.
+  const opsAgg =
+    planIds.length === 0
+      ? []
+      : await tx
+          .select({
+            planId: planOps.planId,
+            c: count(),
+            outsourceCount:
+              sql<number>`count(*) filter (where ${planOps.opType} = 'outsource')::int`.as(
+                'os_count',
+              ),
+          })
+          .from(planOps)
+          .where(and(inArray(planOps.planId, planIds), isNull(planOps.deletedAt)))
+          .groupBy(planOps.planId);
+  const opsCountMap = new Map<string, { count: number; hasOutsource: boolean }>();
+  for (const r of opsAgg) {
+    opsCountMap.set(r.planId, {
+      count: Number(r.c),
+      hasOutsource: Number(r.outsourceCount) > 0,
+    });
+  }
+
+  // 5. Bucket plans by line.
+  const plansByLine = new Map<string, PlanningPlanSummary[]>();
+  for (const r of planRows) {
+    if (!r.plan.jwLineId) continue;
+    const ops = opsCountMap.get(r.plan.id) ?? { count: 0, hasOutsource: false };
+    const summary: PlanningPlanSummary = {
+      id: r.plan.id,
+      code: r.plan.code,
+      planType: r.plan.planType,
+      planStatus: r.plan.planStatus,
+      planQty: r.plan.planQty,
+      opsCount: ops.count,
+      hasOutsourceOp: ops.hasOutsource,
+      jcId: r.plan.jcId ?? null,
+      jcCode: r.jcCode ?? null,
+      dpPrCode: r.dpPrCode ?? null,
+      foPrCode: r.foPrCode ?? null,
+      foMatPrCode: r.foMatPrCode ?? null,
+      foVendorCodeText: r.plan.foVendorCodeText,
+    };
+    const bucket = plansByLine.get(r.plan.jwLineId);
+    if (bucket) bucket.push(summary);
+    else plansByLine.set(r.plan.jwLineId, [summary]);
+  }
+
+  // 6. Direct (plan-less) Job Cards against these JW lines.
+  const linkedJcIds = new Set(
+    planRows.map((r) => r.plan.jcId).filter((id): id is string => id !== null),
+  );
+  const jcRows =
+    lineIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: jobCards.id,
+            code: jobCards.code,
+            jwLineId: jobCards.sourceJwLineId,
+            orderQty: jobCards.orderQty,
+          })
+          .from(jobCards)
+          .where(and(inArray(jobCards.sourceJwLineId, lineIds), isNull(jobCards.deletedAt)))
+          .orderBy(asc(jobCards.code));
+  const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
+  for (const jc of jcRows) {
+    if (!jc.jwLineId || linkedJcIds.has(jc.id)) continue;
+    const entry = directJcByLine.get(jc.jwLineId) ?? { qty: 0, codes: [] };
+    entry.qty += jc.orderQty;
+    entry.codes.push(jc.code);
+    directJcByLine.set(jc.jwLineId, entry);
+  }
+
+  // 7. Compose lines. JW lines have no BOM master → BOM branches always off.
+  const lines: PlanningLine[] = lineRows.map((r) => {
+    const linePlans = plansByLine.get(r.line.id) ?? [];
+    const totalPlanned = linePlans.reduce((s, p) => s + p.planQty, 0);
+    const orderQty = r.line.orderQty;
+    const direct = directJcByLine.get(r.line.id);
+    const directJcQty = direct?.qty ?? 0;
+    const directJcCodes = direct?.codes ?? [];
+    const coveredQty = totalPlanned + directJcQty;
+    const remaining = Math.max(0, orderQty - coveredQty);
+    const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
+
+    return {
+      soLineId: r.line.id,
+      lineNo: r.line.lineNo,
+      clientPoLineNo: null,
+      itemId: r.line.itemId,
+      itemCode: r.itemCode ?? r.line.itemCodeText,
+      itemName: r.itemName ?? r.line.partName,
+      orderQty,
+      dueDate: r.line.dueDate,
+      plans: linePlans,
+      totalPlanned,
+      directJcQty,
+      directJcCodes,
+      remaining,
+      lineStatus: classifyPlanningPct(pct),
+      hasEquipmentBom: false,
+      hasAssemblyBom: false,
+      bomMasterId: null,
+      bomNo: null,
+      bomPartsCount: 0,
+    };
+  });
+
+  return {
+    soId: jw.id,
+    soCode: jw.code,
+    source: 'jw' as const,
+    customerName: jw.customerName ?? null,
+    soType: 'job_work',
+    dueDate: lines.reduce<string | null>((max, l) => {
+      if (!l.dueDate) return max;
+      if (!max || l.dueDate > max) return l.dueDate;
+      return max;
+    }, null),
+    clientPoNo: jw.clientPoNo ?? null,
+    lines,
+  };
 }
 
 // ─── BOM-planning aggregator (§8 + §9) ───────────────────────────────────

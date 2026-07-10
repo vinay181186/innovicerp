@@ -218,6 +218,7 @@ export async function createPlan(
         planStatus: 'in_planning',
         planType: input.planType,
         soLineId: input.soLineId ?? null,
+        jwLineId: input.jwLineId ?? null,
         soCodeText: input.soCodeText ?? null,
         lineNo: input.lineNo ?? null,
         itemId: input.itemId ?? null,
@@ -589,7 +590,10 @@ async function executeManufacture(
       itemId: plan.itemId,
       orderQty: plan.planQty,
       priority: 'normal',
+      // A plan sources from either an SO line or a JW line (never both);
+      // pass whichever is set so the JC links back to the right order.
       sourceSoLineId: plan.soLineId ?? null,
+      sourceJwLineId: plan.jwLineId ?? null,
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -1070,6 +1074,7 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     planStatus: row.planStatus,
     planType: row.planType,
     soLineId: row.soLineId,
+    jwLineId: row.jwLineId,
     soCodeText: row.soCodeText,
     lineNo: row.lineNo,
     itemId: row.itemId,

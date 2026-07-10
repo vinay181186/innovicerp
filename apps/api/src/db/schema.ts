@@ -2426,8 +2426,13 @@ export const plans = pgTable(
     planStatus: planStatusEnum('plan_status').notNull().default('in_planning'),
     planType: planTypeEnum('plan_type').notNull(),
 
-    // SO/JW source link
+    // SO/JW source link. A plan carries at most one of (soLineId, jwLineId);
+    // enforced at the service layer. soCodeText/lineNo hold the display code +
+    // line no for whichever source is set.
     soLineId: uuid('so_line_id').references(() => salesOrderLines.id, {
+      onDelete: 'set null',
+    }),
+    jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id, {
       onDelete: 'set null',
     }),
     soCodeText: text('so_code_text'),
@@ -2499,6 +2504,9 @@ export const plans = pgTable(
     index('plans_so_line_idx')
       .on(t.soLineId)
       .where(sql`${t.soLineId} is not null`),
+    index('plans_jw_line_idx')
+      .on(t.jwLineId)
+      .where(sql`${t.jwLineId} is not null`),
     index('plans_jc_id_idx')
       .on(t.jcId)
       .where(sql`${t.jcId} is not null`),

@@ -145,11 +145,24 @@ function SoListRow({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span
-          className="mono fw-700"
-          style={{ fontSize: 12, color: 'var(--cyan)' }}
-        >
-          {so.soCode}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {so.source === 'jw' ? (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: 'var(--purple)',
+                background: 'rgba(124,58,237,0.12)',
+                padding: '1px 4px',
+                borderRadius: 3,
+              }}
+            >
+              JW
+            </span>
+          ) : null}
+          <span className="mono fw-700" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+            {so.soCode}
+          </span>
         </span>
         <span
           style={{

@@ -83,6 +83,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** PLAN-JW-1 (JW full plan parity in SO/JW Planning, ADR-055, migration 0060, 2026-07-10)
+**Title:** JWSOs (IN-JW-*) didn't appear in SO/JW Planning; user chose full plan parity (JWs planned like SOs). Root cause: so-planning read only `sales_orders`; JW planning was a deferred gap (guard in `job-cards/service.ts`).
+**Status:** [~] CODE COMPLETE, NOT DEPLOYED. Added `plans.jw_line_id` (migration `0060_plans_jw_line.sql` + schema.ts + shared plan.ts). so-planning list unions JWs + detail falls through to `getJwPlanningDetail`; wire shape gains `source:'so'|'jw'`; Create-Plan modal posts `jwLineId` for JW; execute sets `job_cards.source_jw_line_id`; `[JW]` tag in the left list. Added JW service-test coverage (list+detail). typecheck + lint green across all 4 packages; module tests need DB env (run in CI). **DEPLOY-BLOCKING:** so-planning reads now reference `plans.jw_line_id` → migration 0060 MUST be applied before/with deploy (with pending 0058, 0059) or all Planning reads 500.
+**Next:** user says "deploy" → push; apply 0058+0059+0060 to prod (via `.env.local` DATABASE_URL run OR Supabase SQL Editor).
+
 **ID:** GO-LIVE-1 (trial-run deployment to innovicerp.com, 2026-06-13)
 **Title:** Deploy the web app to Cloudflare Pages on `innovicerp.com` for a 15–20 person team trial; API already live on Railway.
 **Status:** [~] IN PROGRESS — **WEB IS LIVE → https://innovic-erp.pages.dev** (deployed 2026-06-13 via Cloudflare account token `cfat_` + wrangler direct upload; project `innovic-erp`, prod branch `main`). API live at `https://api-production-06c90.up.railway.app`; Railway `ALLOWED_ORIGINS` already permits the pages.dev origin (CORS verified). Prod build override in gitignored `.env.production.local` (`VITE_API_URL`=Railway). **runbook in [`docs/GO_LIVE.md`](GO_LIVE.md)**. Phase 0 DECIDED: **Option A**. All four Claude-side build deliverables DONE (see below). **Remaining = user dashboard work:** Phase 1 (backup → run `docs/sql/purge-demo-data.sql` → run `docs/sql/check-migrations.sql`), Phase 5 onboarding (+ Add User), Phase 6 smoke test, Phase 7 B2 backup secrets. Custom domain (GoDaddy) DEFERRED to post-trial. Optional next: `deploy-web.yml` auto-deploy Action (offered).

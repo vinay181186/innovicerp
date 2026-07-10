@@ -9,6 +9,9 @@ import { planStatusSchema, planTypeSchema } from './plan';
 export const planningSoListItemSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** 'so' = sales_orders row, 'jw' = job_work_orders row. Drives which
+   *  table the detail endpoint reads and which line link a new plan uses. */
+  source: z.enum(['so', 'jw']),
   customerName: z.string().nullable(),
   soType: z.string(),
   dueDate: z.string().nullable(),
@@ -87,6 +90,8 @@ export type PlanningLine = z.infer<typeof planningLineSchema>;
 export const planningDetailResponseSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),
+  /** 'so' | 'jw' — tells the UI whether a new plan links via soLineId or jwLineId. */
+  source: z.enum(['so', 'jw']),
   customerName: z.string().nullable(),
   soType: z.string(),
   dueDate: z.string().nullable(),

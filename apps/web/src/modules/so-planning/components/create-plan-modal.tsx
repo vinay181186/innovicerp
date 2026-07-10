@@ -40,7 +40,11 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       // code omitted → server assigns the next sequential PLN-NNNN.
       planDate: new Date().toISOString().slice(0, 10),
       planType: 'manufacture',
-      soLineId: line.soLineId,
+      // A JW plan links via jwLineId; an SO plan via soLineId. line.soLineId
+      // holds whichever line id the detail endpoint returned.
+      ...(so.source === 'jw'
+        ? { jwLineId: line.soLineId }
+        : { soLineId: line.soLineId }),
       soCodeText: so.soCode,
       lineNo: line.lineNo,
       itemId: line.itemId ?? null,

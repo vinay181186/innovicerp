@@ -12,6 +12,8 @@ import {
   activityLog,
   items,
   jobCards,
+  jobWorkOrderLines,
+  jobWorkOrders,
   planOps,
   plans,
   salesOrderLines,
@@ -30,6 +32,7 @@ let soAId: string;
 let soBId: string;
 let soCId: string;
 let lineA1Id: string;
+let jwAId: string;
 
 async function teardown(): Promise<void> {
   const planRows = await db
@@ -51,6 +54,8 @@ async function teardown(): Promise<void> {
     await db.delete(salesOrderLines).where(eq(salesOrderLines.salesOrderId, so.id));
   }
   await db.delete(salesOrders).where(like(salesOrders.code, `${PREFIX}%`));
+  // JW orders — lines cascade on parent delete; do before items (itemId FK).
+  await db.delete(jobWorkOrders).where(like(jobWorkOrders.code, `${PREFIX}%`));
   await db.delete(items).where(like(items.code, `${PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${PREFIX}%`));
 }
@@ -213,6 +218,54 @@ beforeAll(async () => {
     createdBy: admin.id,
     updatedBy: admin.id,
   });
+
+  // JW A — 1 line qty 10, half-covered by a plan linked via jw_line_id.
+  // Exercises JW full-plan parity in both list + detail.
+  const jwA = await db
+    .insert(jobWorkOrders)
+    .values({
+      companyId: admin.companyId!,
+      code: `${PREFIX}JW-A`,
+      jwDate: '2026-05-04',
+      customerName: 'Planning JW Customer A',
+      status: 'open',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  jwAId = jwA[0]!.id;
+
+  const jwLinesA = await db
+    .insert(jobWorkOrderLines)
+    .values({
+      companyId: admin.companyId!,
+      jobWorkOrderId: jwAId,
+      lineNo: 1,
+      itemId,
+      partName: 'PL-4b JW Part A1',
+      orderQty: 10,
+      dueDate: '2026-06-20',
+      status: 'open',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  const jwLineA1Id = jwLinesA[0]!.id;
+
+  await db.insert(plans).values({
+    companyId: admin.companyId!,
+    code: `${PREFIX}PL-JWA1`,
+    planDate: '2026-05-04',
+    planStatus: 'in_planning',
+    planType: 'manufacture',
+    jwLineId: jwLineA1Id,
+    itemId,
+    itemCodeText: `${PREFIX}ITM-A`,
+    orderQty: 10,
+    planQty: 5, // half-cover → partial 50%
+    createdBy: admin.id,
+    updatedBy: admin.id,
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -291,6 +344,36 @@ describe('so-planning — right pane detail', () => {
 
   it('throws ValidationError on bad uuid', async () => {
     await expect(service.getPlanningSoDetail('not-a-uuid', admin)).rejects.toThrow(/Invalid/);
+  });
+});
+
+describe('so-planning — Job Work orders (full plan parity)', () => {
+  it('lists a JWSO with source "jw" and coverage % from its jw_line_id plan', async () => {
+    const out = await service.getPlanningSoList(admin);
+    const jw = out.items.find((r) => r.soCode === `${PREFIX}JW-A`);
+    expect(jw).toBeDefined();
+    expect(jw!.source).toBe('jw');
+    expect(jw!.totalLines).toBe(1);
+    expect(jw!.totalQty).toBe(10);
+    expect(jw!.totalPlannedQty).toBe(5);
+    expect(jw!.planningPct).toBe(50);
+    expect(jw!.planningStatus).toBe('partial');
+  });
+
+  it('returns JWSO detail via the same id-based endpoint, tagged source "jw"', async () => {
+    const out = await service.getPlanningSoDetail(jwAId, admin);
+    expect(out.source).toBe('jw');
+    expect(out.soCode).toBe(`${PREFIX}JW-A`);
+    expect(out.lines).toHaveLength(1);
+    const l1 = out.lines[0]!;
+    expect(l1.plans).toHaveLength(1);
+    expect(l1.plans[0]!.code).toBe(`${PREFIX}PL-JWA1`);
+    expect(l1.plans[0]!.planQty).toBe(5);
+    expect(l1.totalPlanned).toBe(5);
+    expect(l1.remaining).toBe(5);
+    expect(l1.lineStatus).toBe('partial');
+    expect(l1.hasEquipmentBom).toBe(false);
+    expect(l1.hasAssemblyBom).toBe(false);
   });
 });
 
