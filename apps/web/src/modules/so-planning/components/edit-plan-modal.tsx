@@ -17,6 +17,7 @@ import type {
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useCostCentersList } from '@/modules/cost-centers/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
@@ -94,9 +95,37 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const update = useUpdatePlan(plan.id);
   const finalize = useFinalizePlan();
 
+  // Searchable master pickers (server-searched via ?search=; one shared search
+  // term per master, like the SO line table). Machine ← Machine Master,
+  // Vendor ← Vendor Master.
+  const [machineSearch, setMachineSearch] = useState('');
+  const machines = useMachinesList({
+    ...(machineSearch.trim() ? { search: machineSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const [vendorSearch, setVendorSearch] = useState('');
+  const vendors = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const machineOpts = useMemo(
+    () => (machines.data?.machines ?? []).map((m) => ({ id: m.id, code: m.code, name: m.name })),
+    [machines.data],
+  );
+  const vendorOpts = useMemo(
+    () => (vendors.data?.vendors ?? []).map((v) => ({ id: v.id, code: v.code, name: v.name })),
+    [vendors.data],
+  );
+  const machineById = useMemo(() => new Map(machineOpts.map((o) => [o.id, o])), [machineOpts]);
+  const vendorById = useMemo(() => new Map(vendorOpts.map((o) => [o.id, o])), [vendorOpts]);
+  const machineIdByCode = (code: string): string | null =>
+    machineOpts.find((m) => m.code === code)?.id ?? null;
+  const vendorIdByCode = (code: string): string | null =>
+    vendorOpts.find((v) => v.code === code)?.id ?? null;
+
   // Datalists
-  const vendors = useVendorsList({ limit: 500, offset: 0 });
-  const machines = useMachinesList({ limit: 500, offset: 0 });
   const costCenters = useCostCentersList({ limit: 200, offset: 0 });
   const qcProcesses = useQcProcessesList({ limit: 200, offset: 0 });
   const docPresets = useMemo(() => DOC_PRESETS_FALLBACK, []);
@@ -391,7 +420,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           style={{
             border: '1px solid var(--border)',
             borderRadius: 8,
-            overflow: 'hidden',
+            // Not 'hidden': the Machine / Vendor SearchableSelect dropdowns are
+            // absolutely positioned and must overflow the table without clipping.
+            overflow: 'visible',
             marginBottom: 14,
           }}
         >
@@ -399,6 +430,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             style={{
               padding: '8px 12px',
               background: 'var(--bg4)',
+              borderTopLeftRadius: 8,
+              borderTopRightRadius: 8,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -450,20 +483,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
           ) : (
             <>
-              <datalist id="dlPlanMach">
-                {(machines.data?.machines ?? []).map((m) => (
-                  <option key={m.id} value={m.code}>
-                    {m.code} — {m.name}
-                  </option>
-                ))}
-              </datalist>
-              <datalist id="dlPlanVend">
-                {(vendors.data?.vendors ?? []).map((v) => (
-                  <option key={v.id} value={v.code}>
-                    {v.code} — {v.name}
-                  </option>
-                ))}
-              </datalist>
               <table style={{ width: '100%' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
@@ -614,14 +633,20 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             />
                           </td>
                           <td>
-                            <input
-                              list="dlPlanVend"
-                              value={op.outsourceVendorText ?? ''}
-                              onChange={(e) =>
-                                updateOp(op.uid, { outsourceVendorText: e.target.value })
+                            <SearchableSelect
+                              id={`plan-osp-vend-${op.uid}`}
+                              value={vendorIdByCode(op.outsourceVendorText ?? '')}
+                              onChange={(id) =>
+                                updateOp(op.uid, {
+                                  outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
+                                })
                               }
+                              onSearch={setVendorSearch}
+                              loading={vendors.isFetching}
+                              options={vendorOpts}
                               placeholder="🔍 Vendor"
-                              style={{ width: '100%', fontSize: 10 }}
+                              valueLabel={op.outsourceVendorText || undefined}
+                              selectedLabel={(o) => o.code ?? o.name}
                             />
                           </td>
                           <td>
@@ -644,14 +669,20 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       >
                         <td className="td-ctr mono fw-700">{i + 1}</td>
                         <td>
-                          <input
-                            list="dlPlanMach"
-                            value={op.machineCodeText ?? ''}
-                            onChange={(e) =>
-                              updateOp(op.uid, { machineCodeText: e.target.value })
+                          <SearchableSelect
+                            id={`plan-mach-${op.uid}`}
+                            value={machineIdByCode(op.machineCodeText ?? '')}
+                            onChange={(id) =>
+                              updateOp(op.uid, {
+                                machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
+                              })
                             }
+                            onSearch={setMachineSearch}
+                            loading={machines.isFetching}
+                            options={machineOpts}
                             placeholder="🔍 Machine"
-                            style={{ width: '100%', fontSize: 11 }}
+                            valueLabel={op.machineCodeText || undefined}
+                            selectedLabel={(o) => o.code ?? o.name}
                           />
                         </td>
                         <td>
@@ -718,13 +749,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             ℹ Our material will be sent to vendor. Vendor does all machining/processes and
             returns finished parts.
           </div>
-          <datalist id="dlFOVend">
-            {(vendors.data?.vendors ?? []).map((v) => (
-              <option key={v.id} value={v.code}>
-                {v.code} — {v.name}
-              </option>
-            ))}
-          </datalist>
           <datalist id="dlFOCC">
             {(costCenters.data?.items ?? []).map((c) => (
               <option key={c.id} value={c.code}>
@@ -737,12 +761,16 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <label className="form-label" style={{ color: 'var(--purple)' }}>
                 Vendor ★
               </label>
-              <input
-                list="dlFOVend"
-                value={foVendor}
-                onChange={(e) => setFoVendor(e.target.value)}
+              <SearchableSelect
+                id="plan-fo-vend"
+                value={vendorIdByCode(foVendor)}
+                onChange={(id) => setFoVendor(id ? (vendorById.get(id)?.code ?? '') : '')}
+                onSearch={setVendorSearch}
+                loading={vendors.isFetching}
+                options={vendorOpts}
                 placeholder="🔍 Search vendor…"
-                style={{ fontSize: 12 }}
+                valueLabel={foVendor || undefined}
+                selectedLabel={(o) => o.code ?? o.name}
               />
             </div>
             <div className="form-grp">
@@ -826,24 +854,21 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           >
             🛒 Direct Purchase Details
           </div>
-          <datalist id="dlDPVend">
-            {(vendors.data?.vendors ?? []).map((v) => (
-              <option key={v.id} value={v.code}>
-                {v.code} — {v.name}
-              </option>
-            ))}
-          </datalist>
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--green)' }}>
                 Vendor ★
               </label>
-              <input
-                list="dlDPVend"
-                value={dpVendor}
-                onChange={(e) => setDpVendor(e.target.value)}
+              <SearchableSelect
+                id="plan-dp-vend"
+                value={vendorIdByCode(dpVendor)}
+                onChange={(id) => setDpVendor(id ? (vendorById.get(id)?.code ?? '') : '')}
+                onSearch={setVendorSearch}
+                loading={vendors.isFetching}
+                options={vendorOpts}
                 placeholder="🔍 Search vendor…"
-                style={{ fontSize: 12 }}
+                valueLabel={dpVendor || undefined}
+                selectedLabel={(o) => o.code ?? o.name}
               />
             </div>
             <div className="form-grp">
