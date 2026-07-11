@@ -4,6 +4,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
 
 export const jobCardStatusRoute = createRoute({
@@ -14,13 +15,15 @@ export const jobCardStatusRoute = createRoute({
 
 function JobCardStatusPage(): React.JSX.Element {
   const { id } = jobCardStatusRoute.useParams();
+  // Shares the JcStatusContent query cache (same key) — no extra request.
+  const { data: jc } = useJobCard(id);
   return (
     <div>
       <Link to="/job-cards" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Job Cards
       </Link>
       <div className="section-hdr" style={{ marginBottom: 12 }}>
-        JC Status
+        JC Status{jc?.code ? ` - ${jc.code}` : ''}
       </div>
       <JcStatusContent id={id} />
     </div>
