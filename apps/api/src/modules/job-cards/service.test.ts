@@ -241,7 +241,7 @@ describe('job-cards service — writes (ADR-051)', () => {
       admin,
     );
     createdIds.push(jc.id);
-    expect(jc.code).toMatch(/^IN-JC-\d{5}$/);
+    expect(jc.code).toMatch(/^IN-JC-\d{2}-\d{5}$/);
     expect(jc.itemCode).toBe(itemCode);
     expect(jc.orderQty).toBe(5);
     expect(jc.totalOps).toBe(2);

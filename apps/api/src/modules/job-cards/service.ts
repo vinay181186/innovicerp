@@ -12,7 +12,7 @@
 // Filters live as conditional `sql\`\`` fragments. machineId / operatorId use
 // EXISTS sub-selects on jc_ops / op_log so we don't blow up the row set.
 
-import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   fileRegistry,
   items,
@@ -463,15 +463,26 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
 
 const NUM = (v: number): string => String(v);
 
-/** Next JC code in the legacy IN-JC-##### series, scoped to the company. */
-async function nextJcCode(tx: DbTransaction, companyId: string): Promise<string> {
-  const rows = await tx.select({ code: jobCards.code }).from(jobCards).where(eq(jobCards.companyId, companyId));
+/** Next JC code in the IN-JC-YY-##### series (YY = 2-digit year), scoped to the
+ *  company and reset per year — e.g. IN-JC-26-00001. Exported so the plans module
+ *  uses the same series when a plan is executed into a Job Card. Only same-year
+ *  IN-JC-YY-##### codes count toward the sequence, so legacy JC-PLN-… and the old
+ *  yearless IN-JC-##### codes never corrupt the next number. */
+export async function nextJcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const yy = new Date().toISOString().slice(2, 4);
+  const prefix = `IN-JC-${yy}-`;
+  const rows = await tx
+    .select({ code: jobCards.code })
+    .from(jobCards)
+    .where(and(eq(jobCards.companyId, companyId), like(jobCards.code, `${prefix}%`)));
+  const re = new RegExp(`^IN-JC-${yy}-(\\d+)$`, 'i');
   let max = 0;
   for (const r of rows) {
-    const m = Number((r.code || '').replace(/\D/g, '')) || 0;
-    if (m > max) max = m;
+    const m = (r.code || '').match(re);
+    const n = m ? Number(m[1]) : 0;
+    if (n > max) max = n;
   }
-  return `IN-JC-${String(max + 1).padStart(5, '0')}`;
+  return `${prefix}${String(max + 1).padStart(5, '0')}`;
 }
 
 async function resolveItem(

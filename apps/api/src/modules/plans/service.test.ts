@@ -32,6 +32,9 @@ let itemId: string;
 // Auto-numbered plans (PLN-NNNN) don't carry TEST_PREFIX, so track + delete by
 // id — important because the test DB is shared with the live trial.
 let autoPlanIds: string[] = [];
+// Plan-executed JCs now use the real IN-JC-YY-##### series (no JC-PLN marker), so
+// track their ids and delete by id to avoid polluting the live trial's JC series.
+let createdJcIds: string[] = [];
 
 async function teardown(): Promise<void> {
   if (autoPlanIds.length > 0) {
@@ -44,7 +47,11 @@ async function teardown(): Promise<void> {
   // because jc_created requires jc_id (and pr_created requires the relevant
   // PR id). Drop the plans first, then the JCs/PRs are unreferenced.
   await db.delete(plans).where(like(plans.code, `${TEST_PREFIX}%`));
-  await db.delete(jobCards).where(like(jobCards.code, `JC-PLN-%`));
+  await db.delete(jobCards).where(like(jobCards.code, `JC-PLN-%`)); // legacy cruft
+  if (createdJcIds.length > 0) {
+    await db.delete(jobCards).where(inArray(jobCards.id, createdJcIds));
+    createdJcIds = [];
+  }
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-DP-%`));
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FO-%`));
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-FOMAT-%`));
@@ -463,7 +470,8 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     );
     await service.finalizePlan(created.id, admin);
     const result = await service.executePlan(created.id, admin);
-    expect(result.jcCode).toMatch(/^JC-PLN-/);
+    if (result.plan.jcId) createdJcIds.push(result.plan.jcId);
+    expect(result.jcCode).toMatch(/^IN-JC-\d{2}-\d{5}$/);
     expect(result.plan.planStatus).toBe('jc_created');
     expect(result.plan.jcId).not.toBeNull();
 

@@ -48,6 +48,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import { nextJcCode } from '../job-cards/service';
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
@@ -579,7 +580,7 @@ async function executeManufacture(
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const jcCode = await nextPlanJcCode(tx, plan.companyId, plan.id);
+  const jcCode = await nextJcCode(tx, plan.companyId);
 
   const jcRows = await tx
     .insert(jobCards)
@@ -804,19 +805,6 @@ async function executeFullOutsource(
   };
   if (materialPr) out.materialPrCode = materialPr.code;
   return out;
-}
-
-async function nextPlanJcCode(
-  tx: DbTransaction,
-  companyId: string,
-  planId: string,
-): Promise<string> {
-  const rows = await tx
-    .select({ value: count() })
-    .from(jobCards)
-    .where(and(eq(jobCards.companyId, companyId), like(jobCards.code, `JC-PLN-${planId.slice(0, 8)}-%`)));
-  const seq = (rows[0]?.value ?? 0) + 1;
-  return `JC-PLN-${planId.slice(0, 8)}-${String(seq).padStart(2, '0')}`;
 }
 
 async function nextPlanPrCode(
