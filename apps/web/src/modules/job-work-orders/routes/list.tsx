@@ -5,6 +5,7 @@
 // clientMaterialQty (expected client-supplied material).
 
 import {
+  type JobWorkOrderDetail,
   type JobWorkOrderListItem,
   type ListJobWorkOrdersQuery,
   SO_STATUSES,
@@ -19,14 +20,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
+import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -89,12 +90,33 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const deleteMut = useSoftDeleteJobWorkOrder();
   const today = new Date().toISOString().slice(0, 10);
 
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
+
   const onDelete = (jwId: string, code: string): void => {
     if (confirm(`Move JW ${code} to Trash?`)) deleteMut.mutate(jwId);
   };
 
   const columns = useMemo<ColumnDef<JobWorkOrderListItem>[]>(
     () => [
+      {
+        header: '',
+        id: 'expand',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const isExpanded = expandedId === row.original.jwId;
+          return (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.jwId); }}
+              aria-label={isExpanded ? 'Collapse' : 'Expand'}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, display: 'inline-flex', alignItems: 'center' }}
+            >
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+          );
+        },
+      },
       {
         header: 'JWSO No.',
         accessorKey: 'code',
@@ -159,7 +181,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
             id: 'actions',
             enableSorting: false,
             cell: ({ row }: { row: { original: JobWorkOrderListItem } }) => (
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
                 <Link to="/job-work-orders/$id/edit" params={{ id: row.original.jwId }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
                 <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} disabled={deleteMut.isPending} onClick={() => onDelete(row.original.jwId, row.original.code)}>Del</button>
               </div>
@@ -167,7 +189,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           } as ColumnDef<JobWorkOrderListItem>]
         : []),
     ],
-    [canWrite, today],
+    [expandedId, canWrite, today],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -214,9 +236,26 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr><td colSpan={columns.length} className="empty-state">No Job Work Sales Orders — click + New JWSO Order</td></tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>{row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>
-                ))
+                table.getRowModel().rows.map((row) => {
+                  const isExpanded = expandedId === row.original.jwId;
+                  return (
+                    <Fragment key={row.id}>
+                      <tr
+                        onClick={() => void navigate({ to: '/job-work-orders/$id', params: { id: row.original.jwId } })}
+                        style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
+                      >
+                        {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
+                      </tr>
+                      {isExpanded ? (
+                        <tr>
+                          <td colSpan={columns.length} style={{ padding: 0, background: 'var(--bg3)' }}>
+                            <JwExpandedPanel jwId={row.original.jwId} canWrite={canWrite} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -231,6 +270,61 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }), replace: true })}>Next <ChevronRight size={14} /></button>
         </div>
       </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
+        💡 Click a row to open the JWSO. Click the chevron to expand its line items inline.
+      </div>
+    </div>
+  );
+}
+
+// Inline line-item panel for one JWSO — mirrors the SO Master expand. Loads the
+// JWSO detail (header + lines) and lists each line's item / part / material /
+// qty / rate / due / status.
+function JwExpandedPanel({ jwId, canWrite }: { jwId: string; canWrite: boolean }): React.JSX.Element {
+  const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
+  if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
+  if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load JWSO detail'}</div>;
+  return <JwLinesTable jw={data} canWrite={canWrite} />;
+}
+
+function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: boolean }): React.JSX.Element {
+  return (
+    <div style={{ padding: '8px 12px 8px 36px' }}>
+      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
+      <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
+        <thead>
+          <tr style={{ background: 'var(--bg4)' }}>
+            <th style={{ width: 36 }}>Ln</th><th>Item Code</th><th>Part Name</th><th>Material</th><th>Drawing No</th>
+            <th className="td-ctr">Qty</th><th>UOM</th><th className="td-ctr">Rate</th><th>Due Date</th><th>Status</th>
+            {canWrite ? <th /> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {jw.lines.length === 0 ? (
+            <tr><td colSpan={canWrite ? 11 : 10} className="empty-state">No lines yet</td></tr>
+          ) : (
+            jw.lines.map((l) => (
+              <tr key={l.id} style={{ background: 'var(--bg)' }}>
+                <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{l.lineNo}</td>
+                <td className="td-code" style={{ color: 'var(--text2)' }}>{l.itemCodeText ?? '—'}</td>
+                <td>{l.partName}</td>
+                <td className="text2" style={{ fontSize: 11 }}>{l.material ?? '—'}</td>
+                <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{l.drawingNo ?? '—'}</td>
+                <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
+                <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{l.uom}</td>
+                <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>
+                <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
+                <td><SoStatusBadge status={l.status} /></td>
+                {canWrite ? (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <Link to="/job-work-orders/$id/edit" params={{ id: jw.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
+                  </td>
+                ) : null}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
