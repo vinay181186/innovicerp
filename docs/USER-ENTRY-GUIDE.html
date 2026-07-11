@@ -1,0 +1,1158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Innovic ERP — Beginner Data-Entry Guide</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #1f2933;
+    margin: 0;
+  }
+
+  /* Each top-level part (H1) starts on a new page. */
+  h1 {
+    font-size: 23pt;
+    color: #14539a;                /* blue */
+    border-bottom: 3px solid #1c7ed6;
+    padding-bottom: 6px;
+    margin: 0 0 14px;
+    page-break-before: always;
+  }
+  h1:first-of-type { page-break-before: avoid; }
+
+  h2 {
+    font-size: 15pt;
+    color: #1c7ed6;                /* blue */
+    margin: 22px 0 6px;
+    padding: 4px 0 4px 10px;
+    border-left: 4px solid #1c7ed6;
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 12.5pt;
+    color: #14539a;                /* blue */
+    margin: 16px 0 4px;
+    page-break-after: avoid;
+  }
+
+  p { margin: 6px 0; }
+
+  blockquote {
+    background: #eef5fc;
+    border-left: 4px solid #1c7ed6;
+    margin: 10px 0;
+    padding: 8px 14px;
+    color: #52606d;
+    border-radius: 3px;
+  }
+
+  ol, ul { margin: 6px 0 10px; padding-left: 22px; }
+  li { margin: 3px 0; }
+
+  /* Inline code = real field names and enum values (monospace). */
+  code {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 9.5pt;
+    background: #f3f5f7;
+    color: #0b3d2e;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #e1e7ec;
+  }
+
+  /* Monospace code blocks. */
+  pre {
+    background: #f3f5f7;
+    border: 1px solid #e1e7ec;
+    border-radius: 4px;
+    padding: 10px 12px;
+    overflow-x: auto;
+  }
+  pre code { background: none; border: none; padding: 0; }
+
+  hr { border: none; border-top: 1px solid #cbd2d9; margin: 18px 0; }
+
+  strong { color: #1f2933; }
+  em { color: #52606d; }
+  a { color: #1c7ed6; text-decoration: none; }
+
+  h3 + p + ol { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+<h1>Innovic ERP — Beginner Data-Entry Guide</h1>
+<p>This guide teaches a brand-new user how to enter data, screen by screen.
+It follows the natural work order of a job shop:</p>
+<p><strong>Masters → Sales → Planning → Production → Purchase → Store → Quality → Finance.</strong></p>
+<p>Read it top to bottom the first time. Each part starts with one plain line
+saying what the part is for. Then each entry screen is shown with <strong>cases</strong> —
+Case 1 is the simplest thing you can save, and later cases add more detail.</p>
+<h2>How to read a case</h2>
+<ul>
+<li><strong>Required</strong> fields must be filled, or the screen will not save.</li>
+<li><strong>Optional</strong> fields can be left blank.</li>
+<li>A <strong>picker</strong> is a box where you start typing and choose from a ready-made
+list (the master lists). You cannot type something that is not in the list.</li>
+<li>A <strong>code</strong> (Item Code, SO No., Client Code, etc.) <strong>cannot be changed after
+you save it the first time.</strong> Pick it carefully.</li>
+<li><strong>Dates</strong> are typed as Year-Month-Day, for example <code>2026-06-19</code>.</li>
+<li><strong>₹</strong> means a rupee amount.</li>
+<li>&quot;<strong>Cascade</strong>&quot; notes tell you what happens in another part of the system when
+you fill a field. This is how one screen feeds the next.</li>
+</ul>
+<hr>
+<h1>1. Masters</h1>
+<p><strong>What it does:</strong> Holds the basic facts everything else points to — your parts,
+customers, suppliers, machines, people, cost groups, and the recipes used to
+make a part.</p>
+<blockquote>
+<p>Do the Masters first. Orders, plans, and job cards can only pick things that
+already exist here.</p>
+</blockquote>
+<h2>1.1 Items — Add Item</h2>
+<p><strong>What it does:</strong> Adds a part or product to the master list of things the
+company makes or uses.</p>
+<p>Real fields: <code>code</code>, <code>name</code>, <code>description</code>, <code>drawingNo</code>, <code>drawingFilePath</code>
+(drawing file), <code>revision</code> (default <code>A</code>), <code>material</code>, <code>uom</code>
+(<code>NOS</code> / <code>KGS</code> / <code>SET</code> / <code>MTR</code>, default <code>NOS</code>), <code>itemType</code>
+(<code>component</code> / <code>assembly</code>, default <code>component</code>), <code>hsnCode</code>.</p>
+<p><strong>Case 1 — Add a simple part.</strong>
+The least you can enter to create a part.</p>
+<ol>
+<li>Item Code: <code>SHAFT-12</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>Shaft 12mm</code></li>
+<li>UOM: leave as <code>NOS</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this Item Code can now be picked on BOMs, Route Cards, Sales Orders,
+Job Cards, Purchase Orders, and more.</li>
+</ul>
+<p><strong>Case 2 — Add a part with drawing and material.</strong>
+A machined part that has a drawing and a metal grade.</p>
+<ol>
+<li>Item Code: <code>SHAFT-12</code></li>
+<li>Name: <code>Shaft 12mm</code></li>
+<li>Drawing No.: <code>DRG-1001</code></li>
+<li>Drawing file: upload the PDF.</li>
+<li>Revision: <code>B</code></li>
+<li>Material: <code>EN8</code></li>
+<li>UOM: <code>NOS</code></li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Add an assembly with a tax code.</strong>
+A finished machine that is built from other parts.</p>
+<ol>
+<li>Item Code: <code>PUMP-A1</code></li>
+<li>Name: <code>Pump Assembly A1</code></li>
+<li>Item Type: change to <code>assembly</code></li>
+<li>HSN Code: <code>8413</code></li>
+<li>UOM: <code>NOS</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Note: an <code>assembly</code> item is usually the parent on a BOM (see 1.8).</li>
+</ul>
+<h2>1.2 Clients — Add Client</h2>
+<p><strong>What it does:</strong> Records a customer the company sells to.</p>
+<p>Real fields: <code>code</code>, <code>name</code>, <code>addressLine1</code>, <code>contactPerson</code>, <code>email</code>,
+<code>phone</code>, <code>gstNumber</code>, <code>city</code>, <code>state</code>, <code>pincode</code>, <code>isActive</code>
+(<code>Active</code> / <code>Inactive</code>, default <code>Active</code>).</p>
+<p><strong>Case 1 — Add a customer by name.</strong></p>
+<ol>
+<li>Client Code: <code>ACME</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>Acme Industries</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this client can now be picked on Sales Orders and Job Work Orders.</li>
+</ul>
+<p><strong>Case 2 — Add a customer with full billing details.</strong></p>
+<ol>
+<li>Client Code: <code>ACME</code></li>
+<li>Name: <code>Acme Industries</code></li>
+<li>Contact Person: <code>R. Sharma</code></li>
+<li>Email: <code>accounts@acme.com</code></li>
+<li>Phone: <code>9820011111</code></li>
+<li>GST Number: <code>27ABCDE1234F1Z5</code></li>
+<li>Address / City / State / Pincode: <code>Plot 5, MIDC</code> / <code>Pune</code> / <code>Maharashtra</code> / <code>411019</code></li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Stop using an old customer.</strong></p>
+<ol>
+<li>Open the client.</li>
+<li>Status: change to <code>Inactive</code>.</li>
+<li>Save. (They stay on old orders but no longer appear as a fresh choice.)</li>
+</ol>
+<h2>1.3 Vendors — Add Vendor</h2>
+<p><strong>What it does:</strong> Records a supplier the company buys material or outside work
+from.</p>
+<p>Real fields: <code>code</code>, <code>name</code>, <code>contactPerson</code>, <code>email</code>, <code>phone</code>, <code>gstNumber</code>,
+<code>rating</code>, <code>isActive</code> (<code>Active</code> / <code>Inactive</code>, default <code>Active</code>),
+<code>materialsSupplied</code>, <code>addressLine1</code>, <code>city</code>, <code>state</code>, <code>pincode</code>.</p>
+<p><strong>Case 1 — Add a supplier by name.</strong></p>
+<ol>
+<li>Vendor Code: <code>STEELCO</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>Steel Co Pvt Ltd</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this vendor can now be picked on Purchase Orders and on Route Card
+outsource (OSP) steps.</li>
+</ul>
+<p><strong>Case 2 — Add a rated supplier with what they supply.</strong></p>
+<ol>
+<li>Vendor Code: <code>STEELCO</code></li>
+<li>Name: <code>Steel Co Pvt Ltd</code></li>
+<li>Contact Person / Phone: <code>S. Patil</code> / <code>9820022222</code></li>
+<li>GST Number: <code>27XYZAB6789K1Z3</code></li>
+<li>Rating: <code>A</code></li>
+<li>Materials Supplied: <code>EN8, EN24, SS304 bar</code></li>
+<li>Save.</li>
+</ol>
+<h2>1.4 Machines — Add Machine</h2>
+<p><strong>What it does:</strong> Records a machine on the shop floor and how much it costs to
+run per hour.</p>
+<p>Real fields: <code>code</code> (Machine ID), <code>name</code>, <code>machineType</code>, <code>capacityPerShift</code>
+(hours), <code>shiftsPerDay</code> (default <code>1</code>), <code>status</code>
+(<code>Idle</code> / <code>Running</code> / <code>Down</code> / <code>Maintenance</code>, default <code>Idle</code>), <code>hourRate</code>
+(Machine Rate, ₹/hr).</p>
+<p><strong>Case 1 — Add a machine.</strong></p>
+<ol>
+<li>Machine ID: <code>CNC-01</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>CNC Lathe 1</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this Machine ID can now be picked on Route Card and Job Card steps.</li>
+</ul>
+<p><strong>Case 2 — Add a machine with a running rate.</strong></p>
+<ol>
+<li>Machine ID: <code>CNC-01</code></li>
+<li>Name: <code>CNC Lathe 1</code></li>
+<li>Machine Type: <code>CNC Lathe</code></li>
+<li>Machine Rate: <code>500</code> (₹ per hour)</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the Machine Rate is used by SO Costing to value machine time.</li>
+</ul>
+<p><strong>Case 3 — Add a machine with capacity and shifts.</strong></p>
+<ol>
+<li>Machine ID / Name / Type: as above.</li>
+<li>Capacity per Shift: <code>8</code> (hours)</li>
+<li>Shifts per Day: <code>2</code></li>
+<li>Status: <code>Idle</code></li>
+<li>Machine Rate: <code>500</code></li>
+<li>Save.</li>
+</ol>
+<h2>1.5 Operators — Add Operator</h2>
+<p><strong>What it does:</strong> Records a shop-floor worker, and can link them to a login.</p>
+<p>Real fields: <code>code</code> (Operator ID), <code>name</code>, <code>department</code>, <code>isActive</code>
+(<code>Active</code> / <code>Inactive</code>, default <code>Active</code>), <code>skills</code>, <code>userId</code> (Linked User).</p>
+<p><strong>Case 1 — Add a worker.</strong></p>
+<ol>
+<li>Operator ID: <code>OP-01</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>Sunil More</code></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this Operator can now be named when logging work on Job Cards.</li>
+</ul>
+<p><strong>Case 2 — Add a worker with department and skills.</strong></p>
+<ol>
+<li>Operator ID: <code>OP-01</code></li>
+<li>Name: <code>Sunil More</code></li>
+<li>Department: <code>CNC Turning</code></li>
+<li>Skills: <code>CNC-01, CNC-02</code></li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Link the worker to a login.</strong></p>
+<ol>
+<li>Fill the fields as above.</li>
+<li>Linked User: paste the user account ID (a long code) so this worker can log in.</li>
+<li>Save. (Leave blank for shop-floor-only workers.)</li>
+</ol>
+<h2>1.6 Cost Centers — Add Cost Center</h2>
+<p><strong>What it does:</strong> Records a department or area used to group and track costs.</p>
+<p>Real fields: <code>code</code>, <code>name</code>, <code>isActive</code> (<code>Active</code> / <code>Inactive</code>),
+<code>department</code> (<code>Production</code> / <code>QC</code> / <code>Maintenance</code> / <code>Store</code> / <code>Admin</code> /
+<code>Design</code> / <code>Purchase</code> / <code>Sales</code> / <code>Other</code>, default <code>Production</code>), <code>type</code>
+(<code>Manufacturing</code> / <code>Overhead</code> / <code>Service</code>, default <code>Manufacturing</code>),
+<code>description</code>.</p>
+<p><strong>Case 1 — Add a cost center.</strong></p>
+<ol>
+<li>Code: <code>CC-PROD</code>  <em>(cannot be changed later)</em></li>
+<li>Name: <code>Production Floor</code></li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Add a classified cost center.</strong></p>
+<ol>
+<li>Code: <code>CC-QC</code></li>
+<li>Name: <code>Quality Lab</code></li>
+<li>Department: <code>QC</code></li>
+<li>Type: <code>Overhead</code></li>
+<li>Description: <code>Inspection and testing area</code></li>
+<li>Save.</li>
+</ol>
+<h2>1.7 Route Cards — Create Route Card</h2>
+<p><strong>What it does:</strong> Defines the step-by-step sequence of operations needed to make
+one item.</p>
+<p>Header fields: <code>code</code> (RC No., auto-made if blank), <code>itemId</code> (Item Code picker,
+required), <code>notes</code>.
+Each operation row: <code>opType</code> (<code>process</code> / <code>qc</code> / <code>outsource</code>, default
+<code>process</code>), <code>machineId</code> (Machine picker, for process steps), <code>ospVendorId</code>
+(Vendor picker, for outsource steps), <code>operation</code>, <code>cycleTimeMin</code> (shown as
+hours), <code>program</code>, <code>ospLeadDays</code>, <code>toolNo</code>, <code>toolDetails</code>.</p>
+<p><strong>Case 1 — One-step route.</strong>
+The simplest recipe: a single machining step.</p>
+<ol>
+<li>Item Code: pick <code>SHAFT-12</code>.  <em>(comes from the Item master)</em></li>
+<li>Click <strong>Add Op</strong>. On the row:<ul>
+<li>Type: <code>process</code></li>
+<li>Machine: pick <code>CNC-01</code>  <em>(comes from the Machine master)</em></li>
+<li>Operation: <code>Turning</code></li>
+</ul>
+</li>
+<li>Save (RC No. fills in by itself).</li>
+</ol>
+<p><strong>Case 2 — Machining then inspection.</strong>
+Add a quality check after the machining step.</p>
+<ol>
+<li>Item Code: <code>SHAFT-12</code>.</li>
+<li><strong>Add Op</strong> → Type <code>process</code>, Machine <code>CNC-01</code>, Operation <code>Turning</code>, Cycle <code>0.5</code> hrs.</li>
+<li><strong>QC Step</strong> → Operation <code>Final Dimensional Check</code> (no machine needed).</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Add an outside-process step.</strong>
+A step that is sent to an outside vendor (for example, plating).</p>
+<ol>
+<li>Item Code: <code>SHAFT-12</code>.</li>
+<li><strong>Add Op</strong> (process) → <code>CNC-01</code>, <code>Turning</code>.</li>
+<li><strong>OSP Step</strong> → Vendor: pick <code>PLATERS</code>  <em>(comes from the Vendor master)</em>,
+Operation <code>Hard Chrome Plating</code>, Lead <code>5</code> days.</li>
+<li><strong>QC Step</strong> → <code>Final Check</code>.</li>
+<li>Save.</li>
+</ol>
+<h2>1.8 BOM Master — Create BOM</h2>
+<p><strong>What it does:</strong> Lists all the child parts and quantities that go into making
+one assembly.</p>
+<p>Header fields: <code>bomNo</code> (auto-made if blank), <code>bomName</code> (required), <code>status</code>
+(<code>draft</code> / <code>active</code> / <code>obsolete</code>, default <code>draft</code>).
+Each part row: <code>childItemId</code> (Item Code picker, required), <code>qtyPerSet</code>
+(default <code>1</code>), <code>bomType</code> (<code>manufacture</code> / <code>purchase</code> / <code>outsource</code>, default
+<code>manufacture</code>).</p>
+<p><strong>Case 1 — A two-part BOM (draft).</strong></p>
+<ol>
+<li>BOM Name: <code>Pump Assembly A1 BOM</code></li>
+<li>Add a part row → Item Code <code>SHAFT-12</code>, Qty/Set <code>1</code>, Type <code>manufacture</code>.</li>
+<li>Add a part row → Item Code <code>SEAL-9</code>, Qty/Set <code>2</code>, Type <code>purchase</code>.</li>
+<li>Leave Status as <code>draft</code>. Save.</li>
+</ol>
+<p><strong>Case 2 — Make the BOM usable.</strong>
+A BOM must be <code>active</code> before an Equipment Sales Order can use it.</p>
+<ol>
+<li>Open the BOM.</li>
+<li>Status: change to <code>active</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: only <code>active</code> BOMs can be linked from an Equipment Sales Order (2.1, Case 3).</li>
+</ul>
+<p><strong>Case 3 — BOM with a make, a buy, and an outside part.</strong></p>
+<ol>
+<li>BOM Name: <code>Pump Assembly A1 BOM</code></li>
+<li>Row 1 → <code>SHAFT-12</code>, Qty/Set <code>1</code>, Type <code>manufacture</code>.</li>
+<li>Row 2 → <code>SEAL-9</code>, Qty/Set <code>2</code>, Type <code>purchase</code>.</li>
+<li>Row 3 → <code>HOUSING-7</code>, Qty/Set <code>1</code>, Type <code>outsource</code>.</li>
+<li>Status <code>active</code>. Save.</li>
+</ol>
+<ul>
+<li>Cascade: at order time, <code>manufacture</code> parts become child Job Cards,
+<code>purchase</code> parts become buy requests, and <code>outsource</code> parts become
+outside-work requests.</li>
+</ul>
+<hr>
+<h1>2. Sales</h1>
+<p><strong>What it does:</strong> Sales Orders record what a customer ordered — the parts or the
+equipment, how many, and the price.</p>
+<h2>2.1 Sales Order — Create SO</h2>
+<p><strong>What it does:</strong> Raises a new customer order.</p>
+<p>Header fields: <code>code</code> (SO/WO No., auto-suggested like <code>IN-SO-00001</code>),
+<code>soDate</code> (default today), <code>type</code> (<code>component_manufacturing</code> / <code>equipment</code>,
+default <code>component_manufacturing</code>), <code>status</code>
+(<code>open</code> / <code>closed</code> / <code>dispatched</code> / <code>cancelled</code>, default <code>open</code>), <code>gstPercent</code>
+(<code>0</code> / <code>5</code> / <code>12</code> / <code>18</code> / <code>28</code>, default <code>18</code>), <code>costCenter</code>, <code>clientId</code>
+(Client picker, <strong>required</strong>), <code>clientPoNo</code>, <code>remarks</code>.</p>
+<p>Component line fields: <code>itemCodeText</code> (Item Code picker), <code>partName</code>
+(required), <code>material</code>, <code>drawingNo</code>, <code>uom</code> (default <code>NOS</code>), <code>orderQty</code>
+(required, min 1), <code>rate</code>, <code>dueDate</code>, <code>clientPoLineNo</code>.</p>
+<p><strong>Case 1 — Order for one part.</strong>
+The simplest sales order.</p>
+<ol>
+<li>SO No.: keep the suggested <code>IN-SO-00001</code>.</li>
+<li>Date: today.</li>
+<li>Type: <code>component_manufacturing</code>.</li>
+<li>Client: pick <code>Acme Industries</code>.  <em>(comes from the Client master; required)</em></li>
+<li>In the line table, add one line:<ul>
+<li>Item Code: <code>SHAFT-12</code>  <em>(comes from the Item master)</em></li>
+<li>Part Name: <code>Shaft 12mm</code></li>
+<li>Qty: <code>100</code></li>
+</ul>
+</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: each line&#39;s Qty is the source amount that Planning and Production
+work against.</li>
+</ul>
+<p><strong>Case 2 — Order for several parts, with PO and delivery dates.</strong></p>
+<ol>
+<li>Fill header as Case 1, plus Client PO No.: <code>PO-9001</code>, GST %: <code>18</code>.</li>
+<li>Line 1 → Item <code>SHAFT-12</code>, Part <code>Shaft 12mm</code>, Qty <code>100</code>, Rate <code>250</code>, Due <code>2026-07-10</code>.</li>
+<li>Line 2 → Item <code>SLEEVE-4</code>, Part <code>Sleeve 4</code>, Qty <code>50</code>, Rate <code>120</code>, Due <code>2026-07-15</code>.</li>
+<li>(Optional) Add a Delivery Schedule row: Lot <code>1</code>, Qty <code>40</code>, Due <code>2026-07-05</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Equipment order linked to a BOM.</strong>
+Used when you sell a whole machine, not loose parts.</p>
+<ol>
+<li>SO No., Date, Client: as before.</li>
+<li>Type: change to <code>equipment</code>. The form now shows <strong>Equipment Details</strong>.</li>
+<li>Equipment / Part No.: <code>PUMP-A1</code>  <em>(comes from the Item master)</em></li>
+<li>Description: <code>Pump Assembly A1</code></li>
+<li>Order Qty: <code>2</code></li>
+<li>SO Value ₹ / unit: <code>85000</code></li>
+<li>BOM: pick <code>Pump Assembly A1 BOM</code>.  <em>(comes from the BOM master; only active BOMs show)</em></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: linking a BOM lets Planning explode the equipment into its child
+parts (see 3.3).</li>
+</ul>
+<h2>2.2 Sales Order — Edit SO</h2>
+<p><strong>What it does:</strong> Changes an existing order after it was first raised.</p>
+<p><strong>Case 1 — Change a quantity.</strong></p>
+<ol>
+<li>Open the SO and click Edit.</li>
+<li>The SO No. is shown but cannot be changed.</li>
+<li>Change a line&#39;s Qty from <code>100</code> to <code>120</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Add a line to an existing order.</strong></p>
+<ol>
+<li>Edit the SO.</li>
+<li>Add a new line → Item <code>WASHER-2</code>, Part <code>Washer</code>, Qty <code>200</code>.</li>
+<li>Save. (New lines are added, changed lines are updated, removed lines are
+dropped.)</li>
+</ol>
+<h2>2.3 SO Documents — Upload Document</h2>
+<p><strong>What it does:</strong> Attaches files (drawings, certificates, reports) to a sales
+order.</p>
+<p>Fields: <code>lineKey</code> (whole SO, or one SO line), <code>category</code>
+(<code>drawing</code> / <code>qc-docs</code> / <code>inspection</code> / <code>tpi</code> / <code>incoming-qc</code> / <code>po-docs</code> /
+<code>client_po</code> / <code>design</code> / <code>dispatch</code> / <code>other</code>, default <code>other</code>), <code>docType</code>,
+<code>files</code> (required).</p>
+<p><strong>Case 1 — Attach a drawing to the whole order.</strong></p>
+<ol>
+<li>Pick the Sales Order from the dropdown.</li>
+<li>Click <strong>Upload Document</strong>.</li>
+<li>SO Line: leave as <code>SO Level (no specific line)</code>.</li>
+<li>Category: <code>drawing</code>.</li>
+<li>Files: choose the PDF. Upload.</li>
+</ol>
+<p><strong>Case 2 — Attach an inspection report to one line.</strong></p>
+<ol>
+<li>Pick the SO and click <strong>Upload Document</strong>.</li>
+<li>SO Line: choose <code>Line 1: SHAFT-12 — Shaft 12mm</code>.</li>
+<li>Category: <code>inspection</code>.</li>
+<li>Document Type: <code>Inspection Report</code>.</li>
+<li>Files: choose the file. Upload.</li>
+</ol>
+<hr>
+<h1>3. Planning</h1>
+<p><strong>What it does:</strong> Decides how each ordered part will be made, bought, or sent
+out — and breaks an equipment order into its parts.</p>
+<h2>3.1 Plans — New Plan</h2>
+<p><strong>What it does:</strong> Creates a production plan that says how much of a part to make,
+buy, or outsource, and lists the work steps.</p>
+<p>Header fields: <code>code</code> (auto <code>PLN-…</code> if blank), <code>planDate</code> (default today),
+<code>planType</code> (<code>manufacture</code> / <code>direct_purchase</code> / <code>full_outsource</code> / <code>assembly</code>,
+default <code>manufacture</code>, <strong>locked after saving</strong>), <code>itemCodeText</code> (Item picker,
+required), <code>orderQty</code>, <code>planQty</code> (required), <code>soLineId</code> (Sales Order line link),
+<code>plannedStartDate</code>, <code>plannedEndDate</code>, <code>remarks</code>.
+Operation rows (for <code>manufacture</code> / <code>assembly</code>): <code>opSeq</code>, <code>operation</code>,
+<code>opType</code> (<code>process</code> / <code>outsource</code> / <code>qc</code>), <code>machineCodeText</code>, <code>cycleTimeMin</code>,
+<code>qcRequired</code>, <code>outsourceVendorText</code>, <code>outsourceCost</code>, <code>outsourceLeadDays</code>.</p>
+<p><strong>Case 1 — Plan to make a part, one step.</strong></p>
+<ol>
+<li>Plan Type: <code>manufacture</code>.  <em>(cannot be changed after saving)</em></li>
+<li>Item Code: <code>SHAFT-12</code>.  <em>(comes from the Item master)</em></li>
+<li>Order Qty: <code>100</code>. Plan Qty: <code>100</code>.</li>
+<li>Add one operation → Seq <code>1</code>, Operation <code>Turning</code>, Type <code>process</code>, Machine <code>CNC-01</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: running a <code>manufacture</code> or <code>assembly</code> plan creates a Job Card in
+Production.</li>
+</ul>
+<p><strong>Case 2 — Plan to make a part using its route card.</strong></p>
+<ol>
+<li>Plan Type <code>manufacture</code>, Item <code>SHAFT-12</code>, Plan Qty <code>100</code>.</li>
+<li>Click <strong>Load route card</strong> to fill in the saved steps for that item.</li>
+<li>Adjust steps if needed. Save.</li>
+</ol>
+<p><strong>Case 3 — Plan to buy a part instead of making it.</strong></p>
+<ol>
+<li>Plan Type: <code>direct_purchase</code>. The form shows the purchase block.</li>
+<li>Item Code: <code>SEAL-9</code>. Plan Qty: <code>200</code>.</li>
+<li>Vendor Code: <code>STEELCO</code>.  <em>(comes from the Vendor master)</em></li>
+<li>Unit Cost: <code>40</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: a <code>direct_purchase</code> or <code>full_outsource</code> plan creates a Purchase
+Request (see Purchase).</li>
+</ul>
+<h2>3.2 SO Planning — Create Plan from a SO line</h2>
+<p><strong>What it does:</strong> From a sales-order line, quickly start a plan for some of the
+remaining quantity.</p>
+<p><strong>Case 1 — Plan the whole remaining quantity.</strong></p>
+<ol>
+<li>Open the Sales Order line.</li>
+<li>Plan Qty: it is pre-filled with the remaining amount (for example <code>100</code>).
+You can lower it but not raise it above the remaining.</li>
+<li>Save. It opens the full plan screen so you can add steps.</li>
+</ol>
+<ul>
+<li>Note: item, order qty, and the SO link are filled in for you; type is fixed
+to <code>manufacture</code>.</li>
+</ul>
+<h2>3.3 SO Planning — BOM Planning (for equipment orders)</h2>
+<p><strong>What it does:</strong> Breaks an equipment order&#39;s BOM into its child parts and lets
+you plan each one.</p>
+<p>Each child row: <code>Plan?</code> (tick to plan it), <code>qty</code> (how many to plan),
+<code>Final Assembly Job Card</code> (tick to also plan the final build).</p>
+<p><strong>Case 1 — Plan the short parts.</strong></p>
+<ol>
+<li>Open BOM Planning for the equipment SO line.</li>
+<li>The screen lists every child part with its need, stock, and shortfall.</li>
+<li>For each part you want, tick <strong>Plan?</strong> and check the suggested Qty.</li>
+<li>(Optional) Tick <strong>Final Assembly Job Card</strong> to also plan the final build.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: each ticked part becomes its own plan — <code>purchase</code> parts become buy
+requests, the rest become make plans. The numbers come from the BOM master.</li>
+</ul>
+<h2>3.4 Production Schedule — Reschedule an operation</h2>
+<p><strong>What it does:</strong> Drag a job&#39;s operation bar to a different machine and day.</p>
+<p><strong>Case 1 — Move a job to another machine.</strong></p>
+<ol>
+<li>Find the operation bar on the chart.</li>
+<li>Drag it onto a different machine row and drop it on the day you want.</li>
+<li>It saves the new machine and start date by itself.</li>
+</ol>
+<ul>
+<li>Note: there is nothing to type here. Only managers and admins can drag; others
+see a read-only chart. Machine Loading is a view-only screen with no entry.</li>
+</ul>
+<hr>
+<h1>4. Production</h1>
+<p><strong>What it does:</strong> Runs the work on the shop floor — job orders, job cards, the
+operations on them, and logging how many pieces get done.</p>
+<h2>4.1 Job Work Order — New JWSO</h2>
+<p><strong>What it does:</strong> Records an order where a client sends material for the shop to
+process into finished parts.</p>
+<p>Header fields: <code>code</code> (JWSO No., auto <code>IN-JW-…</code>), <code>jwDate</code> (default today),
+<code>status</code> (<code>open</code> / <code>closed</code> / <code>dispatched</code> / <code>cancelled</code>, default <code>open</code>),
+<code>clientId</code> (Client picker, required), <code>clientPoNo</code>, <code>remarks</code>,
+<code>clientMaterial</code> (raw-material item picker), <code>clientMaterialQty</code>,
+<code>materialReceivedDate</code>, <code>materialReceivedQty</code>.
+Line fields: <code>itemCodeText</code> (Item picker), <code>partName</code> (required), <code>material</code>,
+<code>drawingNo</code>, <code>uom</code> (default <code>NOS</code>), <code>orderQty</code> (required), <code>rate</code> (processing
+charge per unit), <code>dueDate</code>.</p>
+<p><strong>Case 1 — Basic job-work order.</strong></p>
+<ol>
+<li>JWSO No.: keep the suggested number.</li>
+<li>Client: pick <code>Acme Industries</code>.  <em>(comes from the Client master; required)</em></li>
+<li>Add a line → Item <code>SHAFT-12</code>, Part <code>Shaft 12mm</code>, Qty <code>100</code>, Rate <code>60</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: each line&#39;s Qty is the balance that Job Cards are raised against.</li>
+</ul>
+<p><strong>Case 2 — Record the client&#39;s supplied material.</strong></p>
+<ol>
+<li>Fill header and line as Case 1.</li>
+<li>Client Material: pick the raw-material item the client sent.</li>
+<li>Material Qty (Client Supplied): <code>500</code>.</li>
+<li>Material Received Date: today. Received Qty: <code>500</code>.</li>
+<li>Save.</li>
+</ol>
+<h2>4.2 Job Card — New Job Card</h2>
+<p><strong>What it does:</strong> Creates a shop-floor batch for one item and quantity, with its
+sequence of steps.</p>
+<p>Header fields: <code>jcDate</code> (default today), <code>priority</code> (<code>normal</code> / <code>high</code>, default
+<code>normal</code>), source line (JWSO No. picker, required), <code>itemCode</code> (Item picker,
+required), <code>orderQty</code> (required), <code>dueDate</code>, drawing upload.
+Operation rows: <code>machineCode</code> (Machine picker, for process), <code>operation</code>,
+<code>cycleTimeMin</code>, <code>program</code>, <code>toolDetails</code>, <code>qcRequired</code>, <code>opType</code>
+(<code>process</code> / <code>qc</code> / <code>outsource</code>), <code>outsourceVendorCode</code> (Vendor picker, for
+outsource), <code>outsourceCost</code>.</p>
+<p><strong>Case 1 — Job card with two machining steps.</strong></p>
+<ol>
+<li>Date: today. Priority: <code>normal</code>.</li>
+<li>JWSO No.: pick the open job-work line.  <em>(comes from the Job Work Order; fills item, qty, due)</em></li>
+<li>Item Code: <code>SHAFT-12</code> (filled in for you).</li>
+<li>Order Qty: <code>100</code>.</li>
+<li>Add operations:<ul>
+<li>Machine <code>CNC-01</code>, Operation <code>Turning</code>.</li>
+<li>Machine <code>VMC-01</code>, Operation <code>Milling</code>.</li>
+</ul>
+</li>
+<li>Save. (The JC number is made automatically and cannot be changed.)</li>
+</ol>
+<p><strong>Case 2 — Add a quality step and a drawing.</strong></p>
+<ol>
+<li>Fill as Case 1.</li>
+<li>Click <strong>+ Add QC Op</strong> → Operation <code>Final Dimensional Check</code>.</li>
+<li>Drawing: upload the part drawing.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Add an outside-process step.</strong></p>
+<ol>
+<li>Fill the machining steps.</li>
+<li>On a step, tick <strong>OUTSOURCE</strong> → Vendor: pick <code>PLATERS</code>  <em>(comes from the Vendor master)</em>,
+₹ Cost/pc <code>15</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: outsource steps feed the Outsource (OSP) flow when work starts.</li>
+</ul>
+<h2>4.3 Op Entry — Log completion</h2>
+<p><strong>What it does:</strong> Records how many pieces an operator finished on one step.</p>
+<p>Fields: <code>logDate</code> (default today), <code>shift</code> (<code>day</code> / <code>night</code> / <code>general</code>,
+default <code>day</code>), <code>qty</code> (required), <code>rejectQty</code> (default <code>0</code>), <code>operatorName</code>
+(Operator), <code>remarks</code>.</p>
+<p><strong>Case 1 — Log finished pieces.</strong></p>
+<ol>
+<li>Open the operation on the job card.</li>
+<li>Date: today. Shift: <code>day</code>.</li>
+<li>Qty done: <code>50</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the finished quantity becomes the amount available for the next step,
+and updates the job card&#39;s progress.</li>
+</ul>
+<p><strong>Case 2 — Log with rejects and operator.</strong></p>
+<ol>
+<li>Date / Shift as above.</li>
+<li>Qty done: <code>48</code>. Reject qty: <code>2</code>.</li>
+<li>Operator: <code>Sunil More</code>.  <em>(comes from the Operator master)</em></li>
+<li>Remarks: <code>2 pcs undersize</code>.</li>
+<li>Save.</li>
+</ol>
+<h2>4.4 Op Entry — QC Inspection</h2>
+<p><strong>What it does:</strong> Records how many finished pieces passed or failed inspection on
+a step that needs QC.</p>
+<p>Fields: <code>logDate</code>, <code>shift</code> (<code>day</code> / <code>night</code> / <code>general</code>), <code>qty</code> (accepted),
+<code>rejectQty</code>, <code>operatorName</code> (inspector), <code>remarks</code>, QC report attachment.</p>
+<p><strong>Case 1 — Accept all pieces.</strong></p>
+<ol>
+<li>Date: today. Accepted qty: <code>50</code>. Reject qty: <code>0</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: accepting clears the QC pending count and moves the job toward
+complete.</li>
+</ul>
+<p><strong>Case 2 — Accept some, reject some, attach the report.</strong></p>
+<ol>
+<li>Accepted qty: <code>47</code>. Reject qty: <code>3</code>.</li>
+<li>Inspector: <code>Sunil More</code>.</li>
+<li>QC report: upload the inspection PDF.</li>
+<li>Save. (Accepted + Reject cannot be more than the pending quantity.)</li>
+</ol>
+<h2>4.5 JW Delivery Challan — New Outward DC</h2>
+<p><strong>What it does:</strong> Records material sent out to a job-work vendor against a
+job-work purchase order.</p>
+<p>Fields: <code>dcDate</code> (default today), <code>purchaseOrderId</code> (job-work PO picker,
+required), <code>vehicleNo</code>, <code>remarks</code>. Line: tick the line, <code>sentQty</code>.</p>
+<p><strong>Case 1 — Send material out.</strong></p>
+<ol>
+<li>Date: today.</li>
+<li>JWPO: pick the job-work purchase order.  <em>(comes from the Purchase Order master; loads its lines and vendor)</em></li>
+<li>In the line list, keep the line ticked and set Qty to Send: <code>100</code>.</li>
+<li>Save. (The DC number is made automatically.)</li>
+</ol>
+<ul>
+<li>Cascade: the sent quantity becomes the amount tracked as &quot;pending return&quot;.</li>
+</ul>
+<h2>4.6 JW Delivery Challan — New Inward Entry</h2>
+<p><strong>What it does:</strong> Records processed material coming back from the vendor against
+an outward challan.</p>
+<p>Fields: <code>inwardDate</code> (default today), <code>jwDcOutwardId</code> (outward DC picker,
+required), <code>vendorChallanNo</code>, <code>vehicleNo</code>, <code>remarks</code>. Lines: <code>receivedQty</code>,
+<code>okQty</code>, <code>rejectedQty</code>.</p>
+<p><strong>Case 1 — Receive returned material.</strong></p>
+<ol>
+<li>Date: today.</li>
+<li>JW DC: pick the outward challan that has pending returns.</li>
+<li>On the line: Received <code>100</code>, OK <code>98</code>, Rejected <code>2</code>.
+(OK + Rejected must equal Received.)</li>
+<li>Save.</li>
+</ol>
+<h2>4.7 Outsource Jobs — Create a Job-Work PO from requests</h2>
+<p><strong>What it does:</strong> Groups one or more auto-made outsource requests into a single
+job-work purchase order to one vendor.</p>
+<p>Fields: tick the requests, <code>poCode</code>, <code>poDate</code> (default today), <code>vendorId</code>
+(Vendor picker, required). Line: <code>rate</code>.</p>
+<p><strong>Case 1 — Turn outsource requests into one PO.</strong></p>
+<ol>
+<li>Tick the outsource requests you want to combine.  <em>(these come from outsource job-card steps)</em></li>
+<li>PO No.: <code>IN-JWPO-00001</code>.</li>
+<li>Vendor: pick <code>PLATERS</code> (often suggested from the first request).</li>
+<li>Set Rate ₹/pc on each line, for example <code>15</code>.</li>
+<li>Save.</li>
+</ol>
+<hr>
+<h1>5. Purchase</h1>
+<p><strong>What it does:</strong> Asks for and orders materials and services from suppliers.</p>
+<h2>5.1 Purchase Request — New PR</h2>
+<p><strong>What it does:</strong> Records a request to buy an item so it can later become a
+purchase order.</p>
+<p>Fields: <code>code</code> (required), <code>prDate</code> (default today), <code>status</code>
+(<code>open</code> / <code>approved</code> / <code>po_created</code> / <code>cancelled</code>, default <code>open</code>), <code>vendorId</code>
+(Vendor picker) <strong>or</strong> <code>vendorCodeText</code> (typed), <code>requiredDate</code>, <code>itemCodeText</code>
+(Item picker), <code>itemName</code>, <code>operation</code>, <code>qty</code> (required, min 1), <code>estCost</code>,
+<code>remarks</code>.</p>
+<p><strong>Case 1 — Request one item.</strong></p>
+<ol>
+<li>PR No.: <code>PR-0001</code>.</li>
+<li>Date: today.</li>
+<li>Item Code: <code>SEAL-9</code>.  <em>(comes from the Item master)</em></li>
+<li>Qty: <code>200</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Request with a chosen vendor and cost.</strong></p>
+<ol>
+<li>Fill as Case 1.</li>
+<li>Vendor: pick <code>STEELCO</code>.  <em>(comes from the Vendor master)</em></li>
+<li>Required Date: <code>2026-07-01</code>. Est. Cost: <code>40</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: when this PR becomes a PO, the Est. Cost is used as the line rate.</li>
+</ul>
+<h2>5.2 Purchase Order — New PO</h2>
+<p><strong>What it does:</strong> Records an order placed with a supplier for one or more items.</p>
+<p>Header fields: <code>code</code> (required), <code>poDate</code> (default today), <code>poType</code>
+(<code>standard</code> / <code>job_work</code> / <code>outsource</code> / <code>service</code>, default <code>standard</code>),
+<code>status</code> (<code>draft</code> / <code>open</code> / <code>partial</code> / <code>qc_pending</code> / <code>closed</code> / <code>cancelled</code>,
+default <code>draft</code>), <code>dueDate</code>, <code>prCodeText</code>, <code>vendorId</code> (Vendor picker) <strong>or</strong>
+<code>vendorCodeText</code>, <code>taxType</code> (<code>sgst_cgst</code> / <code>igst</code> / <code>none</code>), <code>sgstPct</code>,
+<code>cgstPct</code>, <code>igstPct</code>, <code>remarks</code>.
+Line fields: <code>itemCodeText</code> (Item picker), <code>itemName</code> (required), <code>qty</code>
+(required, min 1), <code>rate</code>, <code>dueDate</code>, <code>lineRemarks</code>.</p>
+<p><strong>Case 1 — Simple order to a supplier.</strong></p>
+<ol>
+<li>PO No.: <code>IN-PO-00001</code>. Date: today.</li>
+<li>Vendor: pick <code>STEELCO</code>.  <em>(comes from the Vendor master)</em></li>
+<li>Add a line → Item <code>SEAL-9</code>, Item Name <code>Seal 9mm</code>, Qty <code>200</code>, Rate <code>40</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this PO is what the Store receives against later (GRN).</li>
+</ul>
+<p><strong>Case 2 — Order with GST split and two lines.</strong></p>
+<ol>
+<li>Header as Case 1, plus Tax Type <code>sgst_cgst</code>, SGST <code>9</code>, CGST <code>9</code>.</li>
+<li>Line 1 → <code>SEAL-9</code>, Qty <code>200</code>, Rate <code>40</code>.</li>
+<li>Line 2 → <code>WASHER-2</code>, Qty <code>500</code>, Rate <code>5</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 3 — Job-work purchase order.</strong></p>
+<ol>
+<li>PO No., Date, Vendor as before.</li>
+<li>PO Type: <code>job_work</code>.</li>
+<li>Add the line(s) for the outside work. Save.</li>
+</ol>
+<ul>
+<li>Cascade: a job-work PO is what an outward Delivery Challan ships against.</li>
+</ul>
+<h2>5.3 Purchase Order — Create PO from a PR</h2>
+<p><strong>What it does:</strong> Turns an existing approved purchase request into a supplier
+order in one step.</p>
+<p>Fields: <code>code</code> (required), <code>poDate</code> (default today), <code>poType</code> (default
+<code>job_work</code>), <code>dueDate</code>, tax fields, <code>remarks</code>. (The item, vendor, qty, and cost
+come from the request — you do not retype them.)</p>
+<p><strong>Case 1 — One-click PO from a request.</strong></p>
+<ol>
+<li>Open the approved PR and choose <strong>Create PO</strong>.</li>
+<li>PO No.: <code>IN-PO-00002</code>. Date: today.</li>
+<li>(The PR&#39;s vendor, item, qty, and cost are shown read-only at the top.)</li>
+<li>Save. The request is marked as <code>po_created</code>.</li>
+</ol>
+<h2>5.4 Service PO — New Service PO</h2>
+<p><strong>What it does:</strong> Records a purchase of a service (labour, transport,
+calibration), with no stock item involved.</p>
+<p>Header fields: <code>spoNo</code> (required), <code>spoDate</code> (default today), <code>vendorId</code>
+(Vendor picker, required), <code>expenseHead</code> (<code>Transport</code> / <code>Calibration</code> /
+<code>Testing</code> / <code>Labour</code> / <code>AMC</code> / <code>Inspection</code> / <code>Machining</code> / <code>Consultancy</code> /
+<code>Other</code>), <code>costCenter</code> (<code>so</code> = Against SO / <code>general</code> = General Expense),
+<code>soRefId</code> (Sales Order picker, only when Against SO), <code>taxType</code>
+(<code>sgst_cgst</code> / <code>igst</code>), <code>gstPct</code> (default <code>18</code>), <code>paymentTerms</code> (<code>Immediate</code> /
+<code>15 days</code> / <code>30 days</code> / <code>45 days</code> / <code>60 days</code>), <code>remarks</code>.
+Line fields: <code>description</code> (required), <code>qty</code> (default <code>1</code>), <code>rate</code>.</p>
+<p><strong>Case 1 — Pay for a general service.</strong></p>
+<ol>
+<li>Service PO No.: <code>SPO-00001</code>. Date: today.</li>
+<li>Vendor: pick <code>CALIBLAB</code>.  <em>(comes from the Vendor master; required)</em></li>
+<li>Expense Head: <code>Calibration</code>. Cost Center: <code>General Expense</code>.</li>
+<li>Add a line → Description <code>Gauge calibration</code>, Qty <code>1</code>, Rate <code>2500</code>.</li>
+<li>Click <strong>Save &amp; Submit for Approval</strong> (or <strong>Save Draft</strong>).</li>
+</ol>
+<p><strong>Case 2 — A service charged against a sales order.</strong></p>
+<ol>
+<li>Fill as Case 1, but Cost Center: <code>Against SO</code>.</li>
+<li>SO Reference: pick the Sales Order.  <em>(comes from the Sales Order master)</em></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Note: only managers and admins can open this screen. Totals are worked out for
+you. Service POs do not affect stock.</li>
+</ul>
+<hr>
+<h1>6. Store</h1>
+<p><strong>What it does:</strong> Records material coming in, going out, and what is in stock.</p>
+<h2>6.1 Goods Receipt Note (GRN) — New GRN</h2>
+<p><strong>What it does:</strong> Records the goods a vendor delivered against a purchase order,
+with a quality check on each item.</p>
+<p>Header fields: <code>code</code> (GRN No., required), <code>grnDate</code> (default today),
+<code>purchaseOrderId</code> (PO picker), <code>poCodeText</code>, <code>vendorId</code> (Vendor picker) <strong>or</strong>
+<code>vendorCodeText</code>, <code>dcNo</code>, <code>invoiceNo</code>, <code>remarks</code>.
+Line fields: <code>itemCodeText</code>, <code>itemName</code> (required), <code>receivedQty</code> (required),
+<code>dcRefNo</code>, <code>qcStatus</code> (<code>pending</code> / <code>in_progress</code> / <code>completed</code>, default
+<code>pending</code>), <code>qcAcceptedQty</code>, <code>qcRejectedQty</code>, <code>qcDate</code>, <code>qcRemarks</code>, QC report.</p>
+<p><strong>Case 1 — Receive against a PO, check later.</strong></p>
+<ol>
+<li>GRN No.: <code>GRN-00001</code>. Date: today.</li>
+<li>Purchase Order: pick the PO.  <em>(comes from the Purchase Order master; fills the vendor and the lines)</em></li>
+<li>On the line, set Received: <code>200</code>.</li>
+<li>Leave QC Status as <code>pending</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: Received quantity updates the PO&#39;s received total and its status.</li>
+</ul>
+<p><strong>Case 2 — Receive and pass quality the same time.</strong></p>
+<ol>
+<li>Fill header and Received as Case 1.</li>
+<li>QC Status: <code>completed</code>. QC Accepted: <code>200</code>. QC Rejected: <code>0</code>. QC Date: today.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: when QC is <code>completed</code> with accepted pieces, that quantity is added
+to store stock (a stock-in entry). Once a line&#39;s QC is completed, it locks.</li>
+</ul>
+<p><strong>Case 3 — Partial accept with rejects and a report.</strong></p>
+<ol>
+<li>Received: <code>200</code>.</li>
+<li>QC Status: <code>completed</code>. QC Accepted: <code>190</code>. QC Rejected: <code>10</code>.</li>
+<li>QC Report: upload the inspection file. QC Remarks: <code>10 pcs rust</code>.</li>
+<li>Save. (Accepted + Rejected cannot be more than Received.)</li>
+</ol>
+<h2>6.2 Store Issue — New Item Issue</h2>
+<p><strong>What it does:</strong> Records consumable material taken out of the store, and who got
+it.</p>
+<p>Fields: <code>issueDate</code> (default today), <code>qty</code> (required), <code>itemId</code> (Item picker,
+required), <code>issuedTo</code> (required), <code>refType</code> (<code>Job Card</code> / <code>SO</code> / <code>Production</code> /
+<code>Maintenance</code> / <code>Other</code>, default <code>Job Card</code>), <code>refNo</code>, <code>purpose</code>, <code>remarks</code>.</p>
+<p><strong>Case 1 — Issue material to a job.</strong></p>
+<ol>
+<li>Date: today.</li>
+<li>Item: pick <code>BAR-EN8</code>.  <em>(comes from the Item master)</em></li>
+<li>Qty to Issue: <code>20</code>.</li>
+<li>Issued To: <code>Sunil More</code>.</li>
+<li>Reference Type: <code>Job Card</code>. Reference No.: <code>JC-00001</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the issued quantity is taken out of stock straight away. You cannot
+issue more than the stock on hand.</li>
+</ul>
+<h2>6.3 Tool Issue — Issue Tool</h2>
+<p><strong>What it does:</strong> Records a returnable tool given out, with an expected return
+date.</p>
+<p>Fields: <code>issueDate</code> (default today), <code>expectedReturnDate</code> (required), <code>itemId</code>
+(Item picker, required), <code>qty</code> (required), <code>issuedTo</code> (required), <code>refType</code>
+(same list as above), <code>refNo</code>, <code>purpose</code>, <code>remarks</code>.</p>
+<p><strong>Case 1 — Give out a tool.</strong></p>
+<ol>
+<li>Date: today. Expected Return: <code>2026-06-26</code>.</li>
+<li>Tool / Item: pick <code>GAUGE-12</code>.  <em>(comes from the Item master)</em></li>
+<li>Qty: <code>1</code>. Issued To: <code>Sunil More</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the tool quantity is taken out of stock until it is returned.</li>
+</ul>
+<h2>6.4 Tool Issue — Record Return</h2>
+<p><strong>What it does:</strong> Records how much of an issued tool came back good, damaged, or
+used up.</p>
+<p>Fields: <code>returnDate</code> (default today), <code>returnedBy</code>, <code>goodQty</code>, <code>damagedQty</code>,
+<code>consumedQty</code>, <code>remarks</code>.</p>
+<p><strong>Case 1 — Tool returned in good shape.</strong></p>
+<ol>
+<li>Click <strong>Return</strong> on the issued row.</li>
+<li>Return Date: today.</li>
+<li>Returned Good: <code>1</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: only the good quantity goes back into stock.</li>
+</ul>
+<h2>6.5 Party Material Master — Add Party Material</h2>
+<p><strong>What it does:</strong> Sets up a catalogue entry for a raw material that a client
+supplies for job work.</p>
+<p>Fields: <code>code</code> (auto <code>PM-…</code>), <code>uom</code> (<code>NOS</code> / <code>KG</code> / <code>MTR</code> / <code>SET</code> / <code>LOT</code>,
+default <code>NOS</code>), <code>itemId</code> (Item picker, optional), <code>name</code> (required),
+<code>description</code>, <code>material</code>, <code>clientId</code> (Client picker, required).</p>
+<p><strong>Case 1 — Add a client-supplied material.</strong></p>
+<ol>
+<li>Material Code: keep the auto code <code>PM-0001</code>.</li>
+<li>Name: <code>Forged Blank 50mm</code>.</li>
+<li>Client: pick <code>Acme Industries</code>.  <em>(comes from the Client master; required)</em></li>
+<li>UOM: <code>NOS</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Note: these belong to the client, separate from the company Item master.</li>
+</ul>
+<h2>6.6 Party Material GRN — New Party GRN</h2>
+<p><strong>What it does:</strong> Records client-supplied raw material received against a
+job-work order.</p>
+<p>Header fields: <code>code</code> (auto <code>PGRN-…</code>), <code>grnDate</code> (default today),
+<code>jobWorkOrderId</code> (JWSO picker, required), <code>dcNo</code>, <code>remarks</code>.
+Line fields: <code>jwLineNoText</code>, <code>partyMaterialId</code> (Party Material picker,
+required), <code>receivedQty</code> (required).</p>
+<p><strong>Case 1 — Receive client material.</strong></p>
+<ol>
+<li>Date: today.</li>
+<li>JWSO No.: pick the open job-work order.  <em>(comes from the Job Work Order master; shows the client read-only)</em></li>
+<li>Add a line → Material: pick <code>Forged Blank 50mm</code>, Qty <code>500</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this adds to the party material&#39;s stock (not company item stock). The
+material must already exist in the Party Material master.</li>
+</ul>
+<h2>6.7 Delivery Challan — New Delivery Challan</h2>
+<p><strong>What it does:</strong> Creates a dispatch document sending material out to a vendor
+against a job-work purchase order.</p>
+<p>Fields: <code>code</code> (required), <code>dcDate</code> (default today), <code>transport</code>. Line:
+<code>shipQty</code>, <code>materialText</code>, <code>dcRemarks</code>.</p>
+<p><strong>Case 1 — Send material on a challan.</strong></p>
+<ol>
+<li>Open it from a job-work PO (use the <strong>New DC</strong> button on the PO).</li>
+<li>DC code: <code>DC-00001</code>. Date: today.</li>
+<li>On a line, set Ship qty: <code>100</code> (cannot exceed the PO line quantity).</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the shipped quantity is taken out of stock and flips any linked
+outside-work step to &quot;sent&quot;.</li>
+</ul>
+<h2>6.8 Delivery Challan — Receive</h2>
+<p><strong>What it does:</strong> Records material coming back from the vendor against a
+challan, split into received-good and rejected.</p>
+<p>Fields: <code>receiptDate</code> (default today), <code>vendorInvoiceText</code>, <code>remarks</code>. Lines:
+<code>receivedQty</code>, <code>rejectedQty</code>, <code>rejectReason</code>.</p>
+<p><strong>Case 1 — Receive back good and rejected pieces.</strong></p>
+<ol>
+<li>Open the challan and click <strong>Receive</strong>.</li>
+<li>Receipt Date: today.</li>
+<li>On the line: Receive now <code>98</code>, Reject now <code>2</code>, Reject reason <code>surface marks</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: the received-good quantity goes back into stock; the rejected
+quantity automatically creates a non-conformance (NC) in Quality.</li>
+</ul>
+<hr>
+<h1>7. Quality</h1>
+<p><strong>What it does:</strong> Checks parts, records defects, and tracks the fixes.</p>
+<h2>7.1 QC Process Master — Add QC Process</h2>
+<p><strong>What it does:</strong> Defines a named quality check (like a dimensional check) that
+can later be picked on route cards and job cards.</p>
+<p>Fields: <code>code</code> (QC Process Name, required), <code>description</code>,
+<code>defaultCycleTimeMin</code>, <code>isActive</code> (<code>Active</code> / <code>Inactive</code>, default <code>Active</code>).</p>
+<p><strong>Case 1 — Add a check.</strong></p>
+<ol>
+<li>QC Process Name: <code>Final Dimensional Check</code>.  <em>(cannot be changed later)</em></li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this name appears in the QC-step dropdowns on Route Cards and Job
+Cards.</li>
+</ul>
+<h2>7.2 NC Register — Report NC</h2>
+<p><strong>What it does:</strong> Logs a quality defect found against a job card so it can be
+tracked and fixed.</p>
+<p>Fields: <code>code</code> (NC No., auto-suggested), <code>ncDate</code> (default today),
+<code>reportedByText</code>, <code>jobCardId</code> (Job Card picker, required), <code>itemId</code> (Item
+picker, required), <code>soCodeText</code>, operation, <code>operatorText</code>, <code>machineCodeText</code>,
+<code>rejectedQty</code> (required), <code>reasonCategory</code> (<code>dimensional</code> / <code>surface</code> /
+<code>material</code> / <code>process</code> / <code>operator_error</code> / <code>machine_fault</code> / <code>other</code>, default
+<code>other</code>), <code>reason</code> (required).</p>
+<p><strong>Case 1 — Report a defect.</strong></p>
+<ol>
+<li>NC No.: keep the suggested <code>NC-0001</code>. Date: today.</li>
+<li>Job Card: pick <code>JC-00001</code>.  <em>(comes from the Job Card list; fills the item and its operations)</em></li>
+<li>Item: <code>SHAFT-12</code> (filled in for you).</li>
+<li>Rejected Qty: <code>3</code>.</li>
+<li>Problem description: <code>Outer diameter undersize by 0.05mm</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Report with a reason category and details.</strong></p>
+<ol>
+<li>Fill as Case 1.</li>
+<li>Reason Category: <code>dimensional</code>.</li>
+<li>Operation: pick the step. Operator: <code>Sunil More</code>. Machine: <code>CNC-01</code>.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: this NC number can be picked later when opening a CAPA.</li>
+</ul>
+<h2>7.3 CAPA — New CAPA</h2>
+<p><strong>What it does:</strong> Opens a corrective/preventive action to fix the root cause of a
+problem, often linked to an NC.</p>
+<p>Fields: <code>type</code> (<code>Corrective</code> / <code>Preventive</code>, default <code>Corrective</code>), <code>capaDate</code>
+(default today), <code>ncRef</code> (NC picker), <code>jcNo</code>, <code>department</code> (<code>Production</code> / <code>QC</code>
+/ <code>Store</code> / <code>Purchase</code> / <code>Design</code>, default <code>QC</code>), <code>problem</code> (required).</p>
+<p><strong>Case 1 — Open a CAPA from an NC.</strong></p>
+<ol>
+<li>Type: <code>Corrective</code>. Date: today.</li>
+<li>NC Reference: pick <code>NC-0001</code>.  <em>(comes from the NC Register; fills the JC, SO, item, and operation)</em></li>
+<li>Problem Description: check the filled-in text or add to it.</li>
+<li>Save.</li>
+</ol>
+<h2>7.4 CAPA — Edit (5 steps)</h2>
+<p><strong>What it does:</strong> Works the CAPA through its five stages — problem, root cause,
+corrective action, verification, and prevention/closure.</p>
+<p>Key fields: <code>rootCauseMethod</code> (<code>5-Why</code> / <code>Fishbone</code> / <code>Other</code>), <code>rootCause</code>,
+<code>correctiveAction</code>, <code>responsible</code>, <code>targetDate</code>, <code>verification</code>, <code>verifiedBy</code>,
+<code>verifiedDate</code>, <code>preventiveAction</code>, <code>effectiveness</code> (<code>Effective</code> /
+<code>Not Effective</code> / <code>Monitoring</code>), <code>reviewDate</code>, <code>status</code> (<code>Open</code> /
+<code>In Progress</code> / <code>Verified</code> / <code>Closed</code>).</p>
+<p><strong>Case 1 — Fill the root cause and action.</strong></p>
+<ol>
+<li>Step 2 Method: <code>5-Why</code>. Root cause: <code>Tool wear not checked</code>.</li>
+<li>Step 3 Corrective Action: <code>Add tool-wear check every 50 pcs</code>.
+Responsible: pick the person. Target Date: <code>2026-07-01</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Verify and close.</strong></p>
+<ol>
+<li>Step 4 Verification: <code>Checked next 3 lots — within tolerance</code>. Verified By:
+<code>QC Head</code>. Verified Date: today.</li>
+<li>Step 5 Effectiveness: <code>Effective</code>. Status: <code>Closed</code>.</li>
+<li>Save.</li>
+</ol>
+<h2>7.5 QC Call Register — Submit QC</h2>
+<p><strong>What it does:</strong> Accepts or rejects produced quantity for a job-card step that
+was called for inspection.</p>
+<p>Fields: <code>logDate</code> (default today), <code>shift</code>, <code>accept</code>, <code>reject</code> (default <code>0</code>),
+<code>inspector</code>, <code>remarks</code>, QC report attachment.</p>
+<p><strong>Case 1 — Pass the pieces.</strong></p>
+<ol>
+<li>Open the pending call.</li>
+<li>Date: today. Accept Qty: <code>50</code>. Reject Qty: <code>0</code>.</li>
+<li>Save.</li>
+</ol>
+<p><strong>Case 2 — Partly reject with a report.</strong></p>
+<ol>
+<li>Accept Qty: <code>47</code>. Reject Qty: <code>3</code>.</li>
+<li>Inspector: <code>Sunil More</code>. QC report: upload the file.</li>
+<li>Save. (Accept + Reject must be more than zero and not exceed the pending
+quantity.)</li>
+</ol>
+<h2>7.6 QC Documents — Upload Document</h2>
+<p><strong>What it does:</strong> Attaches and records a QC file, optionally tagged to a job card
+and sales order.</p>
+<p>Fields: <code>file</code> (required), <code>docType</code> (<code>MIR</code> / <code>MCR</code> /
+<code>Inspection Report Protocol</code> / <code>Inspection Report</code> / <code>TPI Report</code> / <code>Drawing</code> /
+<code>Certificate</code> / <code>Other</code>), <code>category</code> (<code>qc-docs</code> / <code>drawing</code> / <code>inspection</code> /
+<code>tpi</code> / <code>incoming-qc</code> / <code>po-docs</code> / <code>design</code> / <code>dispatch</code> / <code>other</code>),
+<code>jcCodeText</code>, <code>soCodeText</code>.</p>
+<p><strong>Case 1 — Upload an inspection report.</strong></p>
+<ol>
+<li>File: choose the PDF.</li>
+<li>Document Type: <code>Inspection Report</code>.</li>
+<li>(Optional) JC No.: <code>JC-00001</code>. SO No.: <code>IN-SO-00001</code>.</li>
+<li>Save.</li>
+</ol>
+<hr>
+<h1>8. Finance</h1>
+<p><strong>What it does:</strong> Records dispatches sent to customers and the invoices billed to
+them.</p>
+<h2>8.1 Customer Dispatch — New Dispatch</h2>
+<p><strong>What it does:</strong> Records finished goods shipped to a customer against one of
+their sales orders.</p>
+<p>Fields: <code>salesOrderId</code> (Sales Order picker, required), <code>dispatchDate</code> (default
+today), <code>transport</code>, <code>vehicleNo</code>, <code>remarks</code>. Line: <code>qty</code> (Dispatch Qty).</p>
+<p><strong>Case 1 — Ship finished goods.</strong></p>
+<ol>
+<li>Sales Order: pick <code>IN-SO-00001</code>.  <em>(comes from the Sales Order master; loads the ready-to-ship lines)</em></li>
+<li>Dispatch Date: today.</li>
+<li>On each line, the Dispatch Qty is pre-filled with what is ready (for example
+<code>100</code>). Lower it if you are shipping part.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: dispatched quantity is what an invoice can later bill.</li>
+</ul>
+<p><strong>Case 2 — Ship with transport details.</strong></p>
+<ol>
+<li>Fill as Case 1, plus Transport: <code>Acme Roadways</code>, Vehicle No.: <code>MH12AB1234</code>.</li>
+<li>Save.</li>
+</ol>
+<h2>8.2 Invoice — Create Invoice</h2>
+<p><strong>What it does:</strong> Raises a tax invoice for goods already dispatched on a sales
+order.</p>
+<p>Fields: <code>salesOrderId</code> (Sales Order picker, required), <code>invoiceDate</code> (default
+today), <code>paymentTermsDays</code> (default <code>45</code>), <code>gstPercent</code> (<code>0</code> / <code>5</code> / <code>12</code> /
+<code>18</code> / <code>28</code>, default <code>18</code>), <code>remarks</code>. Lines: <code>qty</code> (Invoice Qty), <code>rate</code>.</p>
+<p><strong>Case 1 — Invoice dispatched goods.</strong></p>
+<ol>
+<li>Sales Order: pick <code>IN-SO-00001</code>.  <em>(comes from the Sales Order master; loads the lines you can still bill)</em></li>
+<li>Invoice Date: today.</li>
+<li>On each line, Invoice Qty is pre-filled with the available amount (for
+example <code>100</code>); Rate is pre-filled from the order.</li>
+<li>Save.</li>
+</ol>
+<ul>
+<li>Cascade: invoicing increases the order line&#39;s &quot;already invoiced&quot; count, so you
+cannot bill the same pieces twice. You can only invoice what has been
+dispatched.</li>
+</ul>
+<p><strong>Case 2 — Set payment terms and GST.</strong></p>
+<ol>
+<li>Fill as Case 1.</li>
+<li>Payment Terms (days): <code>30</code>. GST %: <code>18</code>.</li>
+<li>Save.</li>
+</ol>
+<hr>
+<p><em>End of guide. Every field name and every option shown above is taken directly
+from the current system, so what you see on screen will match this document.</em></p>
+
+</body>
+</html>
