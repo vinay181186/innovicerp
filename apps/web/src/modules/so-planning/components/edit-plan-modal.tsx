@@ -581,56 +581,37 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       );
                     }
                     // Non-QC op row — process by default. Ticking the OUTSOURCE box
-                    // in the Outsource cell flips it to an outsource op (vendor from
-                    // Vendor Master + ₹/pc rate); unticking flips it back.
+                    // reveals the vendor + ₹/pc rate in the Outsource cell; the Machine
+                    // field stays visible either way so a machine can still be set.
                     return (
                       <tr
                         key={op.uid}
-                        style={{
-                          background: isOS
-                            ? 'rgba(139,92,246,0.06)'
-                            : i % 2 === 0
-                              ? 'var(--bg)'
-                              : 'var(--bg3)',
-                          ...(isOS ? { borderLeft: '3px solid #7c3aed' } : {}),
-                        }}
+                        style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
                       >
-                        <td
-                          className="td-ctr mono fw-700"
-                          style={isOS ? { color: '#7c3aed' } : undefined}
-                        >
-                          {i + 1}
-                        </td>
+                        <td className="td-ctr mono fw-700">{i + 1}</td>
                         <td>
-                          {isOS ? (
-                            <span style={{ fontSize: 10, color: 'var(--text3)', fontStyle: 'italic' }}>
-                              — outsourced —
-                            </span>
-                          ) : (
-                            <SearchableSelect
-                              id={`plan-mach-${op.uid}`}
-                              value={machineIdByCode(op.machineCodeText ?? '')}
-                              onChange={(id) =>
-                                updateOp(op.uid, {
-                                  machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
-                                })
-                              }
-                              onSearch={setMachineSearch}
-                              loading={machines.isFetching}
-                              options={machineOpts}
-                              placeholder="🔍 Machine"
-                              valueLabel={op.machineCodeText || undefined}
-                              selectedLabel={(o) => o.code ?? o.name}
-                            />
-                          )}
+                          <SearchableSelect
+                            id={`plan-mach-${op.uid}`}
+                            value={machineIdByCode(op.machineCodeText ?? '')}
+                            onChange={(id) =>
+                              updateOp(op.uid, {
+                                machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
+                              })
+                            }
+                            onSearch={setMachineSearch}
+                            loading={machines.isFetching}
+                            options={machineOpts}
+                            placeholder="🔍 Machine"
+                            valueLabel={op.machineCodeText || undefined}
+                            selectedLabel={(o) => o.code ?? o.name}
+                          />
                         </td>
                         <td>
                           <input
                             className="innovic-input"
                             value={op.operation}
                             onChange={(e) => updateOp(op.uid, { operation: e.target.value })}
-                            placeholder={isOS ? 'Coating, Painting…' : 'Operation name'}
-                            style={isOS ? { color: '#7c3aed', fontWeight: 600 } : undefined}
+                            placeholder="Operation name"
                           />
                         </td>
                         <td>
@@ -661,6 +642,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             <input
                               type="checkbox"
                               checked={isOS}
+                              style={{ accentColor: 'var(--amber)' }}
                               onChange={(e) =>
                                 updateOp(
                                   op.uid,
@@ -906,6 +888,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       <div className="form-grp">
         <label className="form-label">Remarks / Notes</label>
         <input
+          className="innovic-input"
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
           placeholder="Planning notes, special instructions"
@@ -963,13 +946,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                   <option key={d} value={d} />
                 ))}
               </datalist>
-              <table style={{ width: '100%' }}>
+              <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 30 }}>#</th>
+                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
                     <th>Document Name ★</th>
-                    <th style={{ width: 140 }}>Requirement</th>
-                    <th style={{ width: 40 }} />
+                    <th style={{ width: 180 }}>Requirement</th>
+                    <th style={{ width: 56 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -981,6 +964,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       <td className="td-ctr mono fw-700">{i + 1}</td>
                       <td>
                         <input
+                          className="innovic-input"
                           list="dlDocPresets"
                           value={d.name}
                           onChange={(e) =>
@@ -991,11 +975,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             )
                           }
                           placeholder="🔍 Type or select document…"
-                          style={{ width: '100%', fontSize: 12 }}
                         />
                       </td>
                       <td>
                         <select
+                          className="innovic-select"
                           value={d.mandatory ? 'mandatory' : 'optional'}
                           onChange={(e) =>
                             setRequiredDocs((prev) =>
@@ -1006,7 +990,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               ),
                             )
                           }
-                          style={{ width: '100%', fontSize: 11 }}
                         >
                           <option value="mandatory">★ Mandatory</option>
                           <option value="optional">Optional</option>

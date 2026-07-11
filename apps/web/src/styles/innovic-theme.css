@@ -398,10 +398,10 @@
   text-align: center;
 }
 
-/* Plan modal — Operations Routing table. Roomy cells + row separators so the
-   ops list reads with the same breathing room as the SO master tables (the raw
-   modal table has no cell padding otherwise). Column widths keep Machine and
-   Operation wide while Cycle stays compact. */
+/* Plan modal — Operations Routing + Required QC Documents tables. Roomy cells +
+   row separators so these lists read with the same breathing room as the SO
+   master tables (the raw modal tables have no cell padding otherwise). Column
+   widths keep the name columns wide while Cycle / Requirement stay compact. */
 .ops-routing {
   width: 100%;
   border-collapse: collapse;
