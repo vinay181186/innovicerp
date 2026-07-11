@@ -398,6 +398,31 @@
   text-align: center;
 }
 
+/* Plan modal — Operations Routing table. Roomy cells + row separators so the
+   ops list reads with the same breathing room as the SO master tables (the raw
+   modal table has no cell padding otherwise). Column widths keep Machine and
+   Operation wide while Cycle stays compact. */
+.ops-routing {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ops-routing th {
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.ops-routing td {
+  padding: 12px 14px;
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+}
+
 /* ═══ BADGES ═══ */
 .badge {
   display: inline-flex;

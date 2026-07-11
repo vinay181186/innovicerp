@@ -400,6 +400,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <label className="form-label">Planned Start / Required Date</label>
           <input
             type="date"
+            className="innovic-input"
             value={plannedStartDate}
             onChange={(e) => setPlannedStartDate(e.target.value)}
           />
@@ -408,6 +409,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <label className="form-label">Planned End Date</label>
           <input
             type="date"
+            className="innovic-input"
             value={plannedEndDate}
             onChange={(e) => setPlannedEndDate(e.target.value)}
           />
@@ -483,15 +485,15 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             </div>
           ) : (
             <>
-              <table style={{ width: '100%' }}>
+              <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 30 }}>#</th>
-                    <th>Machine</th>
-                    <th>Operation</th>
-                    <th style={{ width: 70 }}>Cycle(h)</th>
-                    <th style={{ minWidth: 140, color: 'var(--amber)' }}>Outsource</th>
-                    <th style={{ width: 40 }} />
+                    <th style={{ width: 44, textAlign: 'center' }}>#</th>
+                    <th style={{ width: '34%' }}>Machine</th>
+                    <th style={{ width: '30%' }}>Operation</th>
+                    <th style={{ width: 110 }}>Cycle(h)</th>
+                    <th style={{ width: 190, color: 'var(--amber)' }}>Outsource</th>
+                    <th style={{ width: 56 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -530,6 +532,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           </td>
                           <td>
                             <select
+                              className="innovic-select"
                               value={op.operation}
                               onChange={(e) => {
                                 const name = e.target.value;
@@ -543,7 +546,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                     : op.cycleTimeMin,
                                 });
                               }}
-                              style={{ width: '100%', fontSize: 11 }}
                             >
                               <option value="">— Select QC Process —</option>
                               {(qcProcesses.data?.items ?? []).map((p) => (
@@ -555,13 +557,14 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           </td>
                           <td>
                             <input
+                              className="innovic-input"
                               type="number"
                               step="0.01"
                               value={op.cycleTimeMin}
                               onChange={(e) =>
                                 updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
                               }
-                              style={{ width: '100%', fontSize: 11 }}
+                              style={{ textAlign: 'center' }}
                             />
                           </td>
                           <td style={{ color: 'var(--text3)', fontSize: 10 }}>—</td>
@@ -623,25 +626,23 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         </td>
                         <td>
                           <input
+                            className="innovic-input"
                             value={op.operation}
                             onChange={(e) => updateOp(op.uid, { operation: e.target.value })}
                             placeholder={isOS ? 'Coating, Painting…' : 'Operation name'}
-                            style={{
-                              width: '100%',
-                              fontSize: 11,
-                              ...(isOS ? { color: '#7c3aed', fontWeight: 600 } : {}),
-                            }}
+                            style={isOS ? { color: '#7c3aed', fontWeight: 600 } : undefined}
                           />
                         </td>
                         <td>
                           <input
+                            className="innovic-input"
                             type="number"
                             step="0.01"
                             value={op.cycleTimeMin}
                             onChange={(e) =>
                               updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
                             }
-                            style={{ width: '100%', fontSize: 11 }}
+                            style={{ textAlign: 'center' }}
                           />
                         </td>
                         <td>
@@ -699,6 +700,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                 selectedLabel={(o) => o.code ?? o.name}
                               />
                               <input
+                                className="innovic-input"
                                 type="number"
                                 min={0}
                                 step="0.01"
@@ -707,7 +709,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                   updateOp(op.uid, { outsourceCost: Number(e.target.value) })
                                 }
                                 placeholder="₹/pc"
-                                style={{ width: '100%', fontSize: 11 }}
                               />
                             </div>
                           ) : null}
