@@ -1,10 +1,11 @@
 // Unified GRN (Inward) create shell — UI-only aggregator over existing backends.
 //
 // Canonical source: user-written Unified-Inward spec (option 3 — no legacy HTML
-// reference available). 3 types only (Miscellaneous deferred — no store-adjust
-// endpoint). The Purchase tab REUSES the existing <GoodsReceiptNoteForm> verbatim
-// so current behaviour is unchanged; Job Work Return + JWSO Inward route to their
-// existing endpoints (/jw-dc/inward, /party-grn) with NO backend change.
+// reference available). Purchase + Job Work Return only (Miscellaneous deferred —
+// no store-adjust endpoint; JWSO Inward lives on the dedicated Party Material GRN
+// screen). The Purchase tab REUSES the existing <GoodsReceiptNoteForm> verbatim so
+// current behaviour is unchanged; Job Work Return routes to /jw-dc/inward with NO
+// backend change.
 
 import { GRN_INWARD_TYPES, type CreateGoodsReceiptNoteInput, type GrnInwardType } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -13,12 +14,10 @@ import { useState, type CSSProperties } from 'react';
 import { useCreateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from './goods-receipt-note-form';
 import { JobWorkReturnSection } from './job-work-return-section';
-import { JwsoInwardSection } from './jwso-inward-section';
 
 const TYPE_META: Record<GrnInwardType, { label: string; icon: string }> = {
   purchase: { label: 'Purchase', icon: '📦' },
   job_work_return: { label: 'Job Work Return', icon: '🏭' },
-  jwso_inward: { label: 'JWSO Inward', icon: '👥' },
 };
 
 function typeBtnStyle(active: boolean): CSSProperties {
@@ -114,7 +113,6 @@ export function UnifiedGrnForm({
             />
           ) : null}
           {inwardType === 'job_work_return' ? <JobWorkReturnSection /> : null}
-          {inwardType === 'jwso_inward' ? <JwsoInwardSection /> : null}
         </div>
       </div>
     </div>

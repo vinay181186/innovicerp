@@ -6,10 +6,10 @@
 //
 // Scope decisions confirmed by the user:
 //   1. Miscellaneous is DROPPED for now (store-transactions has no create
-//      endpoint and the scope forbids new endpoints) — 3 types only.
+//      endpoint and the scope forbids new endpoints).
 //   2. Job Work Return routes to POST /jw-dc/inward (createJwDcInwardInputSchema).
-//   3. JWSO Inward uses the EXISTING party-grn contract (jobWorkOrderId required,
-//      lines keyed by partyMaterialId uuid) — no backend change.
+//   3. JWSO Inward (customer-supplied material) is NOT part of this unified screen —
+//      it is entered on the dedicated Party Material GRN screen (POST /party-grn).
 //
 // Each member simply tags the existing per-backend create schema with an
 // `inwardType` discriminator. The form picks a type, builds the matching
@@ -19,10 +19,10 @@
 import { z } from 'zod';
 import { createGoodsReceiptNoteInputSchema } from './goods-receipt-note';
 import { createJwDcInwardInputSchema } from './jw-dc';
-import { createPartyGrnInputSchema } from './party-grn';
 
-/** The three supported inward types (Miscellaneous deferred — no endpoint). */
-export const GRN_INWARD_TYPES = ['purchase', 'job_work_return', 'jwso_inward'] as const;
+/** The supported unified-inward types (Miscellaneous deferred; JWSO Inward lives
+ *  on its own Party Material GRN screen). */
+export const GRN_INWARD_TYPES = ['purchase', 'job_work_return'] as const;
 export type GrnInwardType = (typeof GRN_INWARD_TYPES)[number];
 
 /** Purchase → POST /goods-receipt-notes (goods_receipt_notes). */
@@ -35,14 +35,8 @@ export const grnUnifiedJobWorkReturnSchema = createJwDcInwardInputSchema.extend(
   inwardType: z.literal('job_work_return'),
 });
 
-/** JWSO Inward (customer-supplied) → POST /party-grn (party_grn + party_materials.stock_qty). */
-export const grnUnifiedJwsoInwardSchema = createPartyGrnInputSchema.extend({
-  inwardType: z.literal('jwso_inward'),
-});
-
 export const grnUnifiedSchema = z.discriminatedUnion('inwardType', [
   grnUnifiedPurchaseSchema,
   grnUnifiedJobWorkReturnSchema,
-  grnUnifiedJwsoInwardSchema,
 ]);
 export type GrnUnifiedInput = z.infer<typeof grnUnifiedSchema>;

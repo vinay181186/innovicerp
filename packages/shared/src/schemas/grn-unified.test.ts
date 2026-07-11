@@ -20,16 +20,10 @@ const jobWorkReturn = {
   jwDcOutwardId: UUID,
   lines: [{ jwDcOutwardLineId: UUID2, receivedQty: 5, okQty: 4, rejectedQty: 1 }],
 };
-const jwsoInward = {
-  inwardType: 'jwso_inward' as const,
-  grnDate: '2026-06-28',
-  jobWorkOrderId: UUID,
-  lines: [{ partyMaterialId: UUID2, receivedQty: 2 }],
-};
 
 describe('grnUnifiedSchema', () => {
-  it('exposes exactly the three supported inward types (Misc deferred)', () => {
-    expect([...GRN_INWARD_TYPES]).toEqual(['purchase', 'job_work_return', 'jwso_inward']);
+  it('exposes exactly the two supported inward types (Misc deferred; JWSO Inward on Party GRN screen)', () => {
+    expect([...GRN_INWARD_TYPES]).toEqual(['purchase', 'job_work_return']);
   });
 
   it('accepts a valid Purchase payload', () => {
@@ -40,20 +34,30 @@ describe('grnUnifiedSchema', () => {
     expect(grnUnifiedSchema.safeParse(jobWorkReturn).success).toBe(true);
   });
 
-  it('accepts a valid JWSO Inward payload', () => {
-    expect(grnUnifiedSchema.safeParse(jwsoInward).success).toBe(true);
-  });
-
   it('rejects the deferred miscellaneous type', () => {
     expect(grnUnifiedSchema.safeParse({ inwardType: 'miscellaneous' }).success).toBe(false);
+  });
+
+  it('rejects the JWSO Inward type (moved to the Party Material GRN screen)', () => {
+    const res = grnUnifiedSchema.safeParse({
+      inwardType: 'jwso_inward',
+      grnDate: '2026-06-28',
+      jobWorkOrderId: UUID,
+      lines: [{ partyMaterialId: UUID2, receivedQty: 2 }],
+    });
+    expect(res.success).toBe(false);
   });
 
   it('rejects an unknown inwardType', () => {
     expect(grnUnifiedSchema.safeParse({ ...purchase, inwardType: 'nonsense' }).success).toBe(false);
   });
 
-  it('routes by discriminator — Purchase fields under a JWSO tag fail', () => {
-    const res = grnUnifiedSchema.safeParse({ inwardType: 'jwso_inward', header: purchase.header, lines: purchase.lines });
+  it('routes by discriminator — Purchase fields under a Job Work Return tag fail', () => {
+    const res = grnUnifiedSchema.safeParse({
+      inwardType: 'job_work_return',
+      header: purchase.header,
+      lines: purchase.lines,
+    });
     expect(res.success).toBe(false);
   });
 
@@ -61,22 +65,11 @@ describe('grnUnifiedSchema', () => {
     expect(grnUnifiedSchema.safeParse({ ...purchase, lines: [] }).success).toBe(false);
   });
 
-  it('JWSO Inward requires jobWorkOrderId', () => {
-    const { jobWorkOrderId, ...noJw } = jwsoInward;
-    void jobWorkOrderId;
-    expect(grnUnifiedSchema.safeParse(noJw).success).toBe(false);
-  });
-
   it('Job Work Return enforces okQty + rejectedQty === receivedQty', () => {
     const bad = {
       ...jobWorkReturn,
       lines: [{ jwDcOutwardLineId: UUID2, receivedQty: 5, okQty: 4, rejectedQty: 0 }],
     };
-    expect(grnUnifiedSchema.safeParse(bad).success).toBe(false);
-  });
-
-  it('JWSO Inward requires a positive received qty per line', () => {
-    const bad = { ...jwsoInward, lines: [{ partyMaterialId: UUID2, receivedQty: 0 }] };
     expect(grnUnifiedSchema.safeParse(bad).success).toBe(false);
   });
 });

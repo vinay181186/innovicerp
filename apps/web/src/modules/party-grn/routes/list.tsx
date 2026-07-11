@@ -7,7 +7,7 @@ import {
   type CreatePartyGrnLineInput,
   type PartyMaterialListItem,
 } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -43,7 +43,7 @@ function PartyGrnListPage(): React.JSX.Element {
 
   return (
     <div>
-      {/* Deprecation notice — superseded by the unified GRN (Inward) screen. */}
+      {/* Home for client-supplied (party) material receipts against a JW order. */}
       <div
         style={{
           background: '#FEF3C7',
@@ -56,25 +56,21 @@ function PartyGrnListPage(): React.JSX.Element {
           gap: 12,
         }}
       >
-        <div style={{ fontSize: 24 }}>⚠️</div>
+        <div style={{ fontSize: 24 }}>📥</div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, color: '#92400E', fontSize: 14, marginBottom: 2 }}>
-            DEPRECATED — Use the unified GRN screen
+            Record Party Material GRNs here
           </div>
           <div style={{ fontSize: 12, color: '#78350F' }}>
-            This screen is kept for reference only. For new entries, use the unified{' '}
-            <Link
-              to="/goods-receipt-notes/new"
-              style={{ fontWeight: 700, textDecoration: 'underline', color: '#78350F' }}
-            >
-              GRN
-            </Link>{' '}
-            screen and select <b>JWSO Inward</b>. Existing records remain accessible here.
+            This is the home for client-supplied (party) material. When a client sends raw
+            material against a Job Work order, record its receipt right here — just click{' '}
+            <b>+ New Party GRN</b>. Every party-material receipt is entered and tracked on this
+            screen.
           </div>
         </div>
       </div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📥 Party Material GRN (LEGACY)</div>
+        <div className="section-hdr m-0">📥 Party Material GRN</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
