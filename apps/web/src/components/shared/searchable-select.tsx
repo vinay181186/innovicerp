@@ -80,15 +80,19 @@ export function SearchableSelect({
     if (!open && value && valueLabel && query === '') setQuery(valueLabel);
   }, [open, value, valueLabel, query]);
 
-  // Close on outside mousedown.
+  // Close on outside mousedown. Use the CAPTURE phase so this still fires when the
+  // component sits inside a container that stops mousedown propagation (e.g. the
+  // planning Modal calls e.stopPropagation() on its body to avoid backdrop-close).
+  // A bubble-phase document listener would never run there, leaving the dropdown
+  // stuck open. Clicking outside just closes it — it never forces a selection.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent): void {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     }
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('mousedown', onDocMouseDown, true);
+    return () => document.removeEventListener('mousedown', onDocMouseDown, true);
   }, []);
 
   useEffect(() => {

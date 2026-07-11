@@ -577,120 +577,60 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         </tr>
                       );
                     }
-                    if (isOS) {
-                      return (
-                        <tr
-                          key={op.uid}
-                          style={{
-                            background: 'rgba(139,92,246,0.06)',
-                            borderLeft: '3px solid #7c3aed',
-                          }}
-                        >
-                          <td className="td-ctr mono fw-700" style={{ color: '#7c3aed' }}>
-                            {i + 1}
-                          </td>
-                          <td>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '3px 8px',
-                                background: 'rgba(124,58,237,0.12)',
-                                border: '1px solid rgba(124,58,237,0.3)',
-                                borderRadius: 4,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: '#7c3aed',
-                              }}
-                            >
-                              🏭 OSP
-                            </span>
-                          </td>
-                          <td>
-                            <input
-                              value={op.operation}
-                              onChange={(e) => updateOp(op.uid, { operation: e.target.value })}
-                              placeholder="Coating, Painting…"
-                              style={{
-                                width: '100%',
-                                fontSize: 11,
-                                color: '#7c3aed',
-                                fontWeight: 600,
-                              }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              min={0}
-                              value={op.outsourceLeadDays ?? 5}
-                              onChange={(e) =>
-                                updateOp(op.uid, { outsourceLeadDays: Number(e.target.value) })
-                              }
-                              style={{ width: '100%', fontSize: 11 }}
-                              title="Lead days"
-                            />
-                          </td>
-                          <td>
-                            <SearchableSelect
-                              id={`plan-osp-vend-${op.uid}`}
-                              value={vendorIdByCode(op.outsourceVendorText ?? '')}
-                              onChange={(id) =>
-                                updateOp(op.uid, {
-                                  outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
-                                })
-                              }
-                              onSearch={setVendorSearch}
-                              loading={vendors.isFetching}
-                              options={vendorOpts}
-                              placeholder="🔍 Vendor"
-                              valueLabel={op.outsourceVendorText || undefined}
-                              selectedLabel={(o) => o.code ?? o.name}
-                            />
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm btn-icon"
-                              onClick={() => removeOp(op.uid)}
-                            >
-                              <Trash2 size={11} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    }
-                    // Regular process row
+                    // Non-QC op row — process by default. Ticking the OUTSOURCE box
+                    // in the Outsource cell flips it to an outsource op (vendor from
+                    // Vendor Master + ₹/pc rate); unticking flips it back.
                     return (
                       <tr
                         key={op.uid}
-                        style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}
+                        style={{
+                          background: isOS
+                            ? 'rgba(139,92,246,0.06)'
+                            : i % 2 === 0
+                              ? 'var(--bg)'
+                              : 'var(--bg3)',
+                          ...(isOS ? { borderLeft: '3px solid #7c3aed' } : {}),
+                        }}
                       >
-                        <td className="td-ctr mono fw-700">{i + 1}</td>
+                        <td
+                          className="td-ctr mono fw-700"
+                          style={isOS ? { color: '#7c3aed' } : undefined}
+                        >
+                          {i + 1}
+                        </td>
                         <td>
-                          <SearchableSelect
-                            id={`plan-mach-${op.uid}`}
-                            value={machineIdByCode(op.machineCodeText ?? '')}
-                            onChange={(id) =>
-                              updateOp(op.uid, {
-                                machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
-                              })
-                            }
-                            onSearch={setMachineSearch}
-                            loading={machines.isFetching}
-                            options={machineOpts}
-                            placeholder="🔍 Machine"
-                            valueLabel={op.machineCodeText || undefined}
-                            selectedLabel={(o) => o.code ?? o.name}
-                          />
+                          {isOS ? (
+                            <span style={{ fontSize: 10, color: 'var(--text3)', fontStyle: 'italic' }}>
+                              — outsourced —
+                            </span>
+                          ) : (
+                            <SearchableSelect
+                              id={`plan-mach-${op.uid}`}
+                              value={machineIdByCode(op.machineCodeText ?? '')}
+                              onChange={(id) =>
+                                updateOp(op.uid, {
+                                  machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
+                                })
+                              }
+                              onSearch={setMachineSearch}
+                              loading={machines.isFetching}
+                              options={machineOpts}
+                              placeholder="🔍 Machine"
+                              valueLabel={op.machineCodeText || undefined}
+                              selectedLabel={(o) => o.code ?? o.name}
+                            />
+                          )}
                         </td>
                         <td>
                           <input
                             value={op.operation}
                             onChange={(e) => updateOp(op.uid, { operation: e.target.value })}
-                            placeholder="Operation name"
-                            style={{ width: '100%', fontSize: 11 }}
+                            placeholder={isOS ? 'Coating, Painting…' : 'Operation name'}
+                            style={{
+                              width: '100%',
+                              fontSize: 11,
+                              ...(isOS ? { color: '#7c3aed', fontWeight: 600 } : {}),
+                            }}
                           />
                         </td>
                         <td>
@@ -704,7 +644,74 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             style={{ width: '100%', fontSize: 11 }}
                           />
                         </td>
-                        <td>—</td>
+                        <td>
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: 'var(--amber)',
+                              cursor: 'pointer',
+                              letterSpacing: '.04em',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isOS}
+                              onChange={(e) =>
+                                updateOp(
+                                  op.uid,
+                                  e.target.checked
+                                    ? {
+                                        opType: 'outsource',
+                                        outsourceLeadDays: op.outsourceLeadDays ?? 5,
+                                      }
+                                    : { opType: 'process' },
+                                )
+                              }
+                            />
+                            OUTSOURCE
+                          </label>
+                          {isOS ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 4,
+                                marginTop: 6,
+                              }}
+                            >
+                              <SearchableSelect
+                                id={`plan-osp-vend-${op.uid}`}
+                                value={vendorIdByCode(op.outsourceVendorText ?? '')}
+                                onChange={(id) =>
+                                  updateOp(op.uid, {
+                                    outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
+                                  })
+                                }
+                                onSearch={setVendorSearch}
+                                loading={vendors.isFetching}
+                                options={vendorOpts}
+                                placeholder="🔍 Vendor"
+                                valueLabel={op.outsourceVendorText || undefined}
+                                selectedLabel={(o) => o.code ?? o.name}
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={op.outsourceCost}
+                                onChange={(e) =>
+                                  updateOp(op.uid, { outsourceCost: Number(e.target.value) })
+                                }
+                                placeholder="₹/pc"
+                                style={{ width: '100%', fontSize: 11 }}
+                              />
+                            </div>
+                          ) : null}
+                        </td>
                         <td>
                           <button
                             type="button"
