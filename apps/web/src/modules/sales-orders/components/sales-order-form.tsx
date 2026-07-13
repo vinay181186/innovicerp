@@ -14,6 +14,7 @@
 
 import {
   type CreateSalesOrderInput,
+  type ListItemsResponse,
   type SalesOrderDetail,
   SELECTABLE_SO_TYPES,
   type SoStatus,
@@ -26,6 +27,7 @@ import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { apiFetch } from '@/lib/api';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
@@ -242,8 +244,68 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   async function onImportLines(file: File): Promise<void> {
     try {
       const { rows, errors: errs } = await parseSoLineFile(file);
-      for (const r of rows) append({ ...NEW_LINE, ...r });
-      setImportMsg(`Added ${rows.length} line(s)${errs.length ? ` · ${errs.length} skipped` : ''}.`);
+      // Every Item Code in the sheet must exist in Item Master. The in-memory
+      // `items` list is only the current 50-row search page, so resolve each
+      // unique code against the server (search + exact-code match).
+      const uniqueCodes = Array.from(
+        new Set(
+          rows
+            .map((r) => r.itemCodeText.trim())
+            .filter(Boolean)
+            .map((c) => c.toUpperCase()),
+        ),
+      );
+      const masterByCode = new Map<string, ListItemsResponse['items'][number]>();
+      await Promise.all(
+        uniqueCodes.map(async (code) => {
+          try {
+            const res = await apiFetch<ListItemsResponse>(
+              `/items?search=${encodeURIComponent(code)}&limit=50&offset=0`,
+            );
+            const hit = res.items.find((it) => it.code.trim().toUpperCase() === code);
+            if (hit) masterByCode.set(code, hit);
+          } catch {
+            /* leave unresolved → reported as missing below */
+          }
+        }),
+      );
+
+      const missing: string[] = [];
+      let added = 0;
+      for (const r of rows) {
+        const code = r.itemCodeText.trim();
+        const master = code ? masterByCode.get(code.toUpperCase()) : undefined;
+        if (!master) {
+          if (code) missing.push(code);
+          continue;
+        }
+        // Item Code drives the row: link the master item, auto-fetch Part Name
+        // (and UOM) from master; the remaining details come from the sheet
+        // (falling back to master for material / drawing when the cell is blank).
+        append({
+          ...NEW_LINE,
+          ...r,
+          itemId: master.id,
+          itemCodeText: master.code,
+          partName: master.name,
+          material: r.material ?? master.material ?? '',
+          drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          uom: master.uom,
+        });
+        added += 1;
+      }
+
+      const parts: string[] = [];
+      if (added) parts.push(`Added ${added} line(s).`);
+      if (missing.length) {
+        const uniq = Array.from(new Set(missing));
+        parts.push(
+          `${uniq.length} item code(s) not found in Item Master: ${uniq.join(', ')}. ` +
+            `Please add ${uniq.length > 1 ? 'each' : 'it'} (item code + item name) in Item Master first, then re-import.`,
+        );
+      }
+      if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
+      setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');
     } finally {
@@ -493,7 +555,30 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
             </div>
           </div>
-          {importMsg ? <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>{importMsg} <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button></div> : null}
+          {importMsg ? (() => {
+            const isWarn = importMsg.includes('not found in Item Master');
+            return (
+              <div
+                className={isWarn ? undefined : 'text3'}
+                style={{
+                  fontSize: 11,
+                  marginBottom: 8,
+                  ...(isWarn
+                    ? {
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        background: 'rgba(245,158,11,0.10)',
+                        border: '1px solid rgba(245,158,11,0.35)',
+                        color: 'var(--amber)',
+                      }
+                    : {}),
+                }}
+              >
+                {isWarn ? '⚠ ' : ''}{importMsg}{' '}
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+              </div>
+            );
+          })() : null}
 
           {/* overflow:visible (not auto) so the per-line item-picker dropdown is
               not clipped by the scroll container; the table sizes naturally and
