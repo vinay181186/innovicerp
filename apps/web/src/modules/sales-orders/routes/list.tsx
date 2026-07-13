@@ -1,8 +1,7 @@
 // SO / WO Master (UI-003-05 + legacy renderSOmaster L11839 parity). Grouped,
 // expandable rows; per-row +Line / Del; expanded component lines show JC Qty /
 // Dispatched / Balance with inline Edit + Del; expanded equipment shows the
-// BOM-status strip + exploded BOM items table. Header has Excel Template +
-// Import.
+// BOM-status strip + exploded BOM items table. Header has Excel Export.
 
 import {
   type ListSalesOrdersQuery,
@@ -26,24 +25,22 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { ChevronDown, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
-import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
 import {
   fetchSalesOrdersForExport,
-  useCreateSalesOrder,
   useSalesOrder,
   useSalesOrdersList,
   useSoftDeleteSalesOrder,
   useUpdateSalesOrder,
 } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
-import { downloadSoTemplate, exportSoListExcel, parseSoImportFile } from '../lib/import-export';
+import { exportSoListExcel } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -132,45 +129,8 @@ function SalesOrdersListPage(): React.JSX.Element {
     if (confirm(`Delete SO ${so.code}? This soft-deletes the whole order.`)) softDelete.mutate(so.id);
   };
 
-  // Excel import — parse the workbook, then create each grouped SO sequentially
-  // (each success invalidates the list via the mutation hook).
-  const createSo = useCreateSalesOrder();
-  // Client master for resolving the import's "Client" column → clientId.
-  const { data: clientsData } = useClientsList({ limit: 1000, offset: 0 });
-  const fileRef = useRef<HTMLInputElement>(null);
+  // Export status/error banner (import UI removed — bulk-add lives on the SO form).
   const [importMsg, setImportMsg] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onImportFile(file: File): Promise<void> {
-    setImporting(true);
-    setImportMsg(null);
-    try {
-      const { payloads, rowCount, errors } = await parseSoImportFile(
-        file,
-        clientsData?.clients ?? [],
-      );
-      let ok = 0;
-      const fails: string[] = [];
-      for (const p of payloads) {
-        try {
-          await createSo.mutateAsync(p);
-          ok += 1;
-        } catch (e) {
-          fails.push(`${p.header.code}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
-      }
-      setImportMsg(
-        `Imported ${ok}/${payloads.length} SO(s) (${rowCount} lines).` +
-          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
-          (fails.length ? ` Failures: ${fails.join('; ')}` : ''),
-      );
-    } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
 
   // Export the whole filtered list to Excel — pulls every matching row (not just
   // the visible page) using the current search/type/status filter.
@@ -377,14 +337,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           </button>
           {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
           {canWrite ? (
-            <>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} title="Download Excel template" onClick={() => downloadSoTemplate()}>⬇ Template</button>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={importing} onClick={() => fileRef.current?.click()}>
-                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
-              </button>
-              <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportFile(f); }} />
-              <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
-            </>
+            <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
           ) : null}
         </div>
       </div>

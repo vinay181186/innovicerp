@@ -122,7 +122,7 @@ const TYPE_MAP: Record<string, SoType> = {
 };
 
 // ── In-form line-items import (adds lines to the SO being created/edited) ──
-const LINE_COLUMNS = ['Item Code', 'Part Name', 'Material', 'Drawing No', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
+const LINE_COLUMNS = ['Item Code', 'Material', 'Drawing No', 'CPO Line', 'Qty', 'Rate', 'Due Date'] as const;
 
 export interface SoLineImportRow {
   itemCodeText: string;
@@ -136,7 +136,7 @@ export interface SoLineImportRow {
 }
 
 export function downloadSoLineTemplate(): void {
-  const sample = ['ITM-001', 'Shaft 12mm', 'EN8', 'DRG-001', '1', '100', '250', '2026-07-01'];
+  const sample = ['ITM-001', 'EN8', 'DRG-001', '1', '100', '250', '2026-07-01'];
   const ws = XLSX.utils.aoa_to_sheet([LINE_COLUMNS as unknown as string[], sample]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'SO Lines');
