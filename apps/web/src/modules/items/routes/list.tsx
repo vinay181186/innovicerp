@@ -22,6 +22,18 @@ import { printItemDrawing } from '../lib/print-drawing';
 
 const PAGE_SIZE = 25;
 
+/** Outcome of an Excel import, bucketed so duplicates are shown on their own. */
+interface ImportResult {
+  ok: number;
+  total: number;
+  /** Item codes that already exist in Item Master (skipped). */
+  duplicates: string[];
+  /** Rows that failed for a non-duplicate reason (bad data, etc.). */
+  failures: { code: string; reason: string }[];
+  /** Row-level parse warnings from the workbook. */
+  warnings: string[];
+}
+
 const listSearchSchema = z.object({
   search: z.string().optional(),
   itemType: z.enum(ITEM_TYPES).optional(),
@@ -102,31 +114,34 @@ function ItemsListPage(): React.JSX.Element {
   // (each success invalidates the list via the mutation hook).
   const createItem = useCreateItem();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
   async function onImportFile(file: File): Promise<void> {
     setImporting(true);
-    setImportMsg(null);
+    setImportResult(null);
+    setImportError(null);
     try {
       const { payloads, errors } = await parseItemImportFile(file);
       let ok = 0;
-      const fails: string[] = [];
+      const duplicates: string[] = [];
+      const failures: { code: string; reason: string }[] = [];
       for (const p of payloads) {
         try {
           await createItem.mutateAsync(p);
           ok += 1;
         } catch (e) {
-          fails.push(`${p.code}: ${e instanceof Error ? e.message : 'failed'}`);
+          const reason = e instanceof Error ? e.message : 'failed';
+          // The API rejects an existing code with `… already exists`; split those
+          // out as duplicates so the user gets a clean list of what to remove.
+          if (/already exists/i.test(reason)) duplicates.push(p.code);
+          else failures.push({ code: p.code, reason });
         }
       }
-      setImportMsg(
-        `Imported ${ok}/${payloads.length} item(s).` +
-          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
-          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
-      );
+      setImportResult({ ok, total: payloads.length, duplicates, failures, warnings: errors });
     } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+      setImportError(e instanceof Error ? e.message : 'Import failed');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -347,20 +362,24 @@ function ItemsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      {importMsg ? (
+      {importError ? (
         <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
-            {importMsg}
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}>
+            ⚠ {importError}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ marginLeft: 8, fontSize: 10 }}
-              onClick={() => setImportMsg(null)}
+              onClick={() => setImportError(null)}
             >
               ✕
             </button>
           </div>
         </div>
+      ) : null}
+
+      {importResult ? (
+        <ImportResultBanner result={importResult} onClose={() => setImportResult(null)} />
       ) : null}
 
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -484,6 +503,108 @@ function PaginationFooter(props: {
         >
           Next <ChevronRight size={14} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Excel-import result banner. Duplicates get their own clearly-labelled list so
+// the user can see exactly which item codes already exist in Item Master.
+function ImportResultBanner(props: { result: ImportResult; onClose: () => void }): React.JSX.Element {
+  const { result, onClose } = props;
+  const { ok, total, duplicates, failures, warnings } = result;
+  const copyDuplicates = (): void => {
+    void navigator.clipboard?.writeText(duplicates.join('\n'));
+  };
+  return (
+    <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel-body" style={{ padding: '12px 14px', fontSize: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontWeight: 700 }}>
+            {ok > 0 ? '✅' : 'ℹ'} Imported {ok} of {total} item{total === 1 ? '' : 's'}
+            {duplicates.length > 0 ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped` : ''}
+            {failures.length > 0 ? ` · ${failures.length} failed` : ''}
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        {duplicates.length > 0 ? (
+          <div
+            style={{
+              marginTop: 10,
+              padding: '10px 12px',
+              borderRadius: 6,
+              background: 'rgba(245,158,11,0.10)',
+              border: '1px solid rgba(245,158,11,0.35)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 700, color: 'var(--amber)' }}>
+                ⚠ Duplicate item codes — already in Item Master ({duplicates.length})
+              </span>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={copyDuplicates}>
+                📋 Copy codes
+              </button>
+            </div>
+            <div style={{ color: 'var(--text3)', marginBottom: 6 }}>
+              These were skipped (they already exist). Remove them from your sheet, or ignore — they’re already saved.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                maxHeight: 160,
+                overflowY: 'auto',
+                userSelect: 'text',
+              }}
+            >
+              {duplicates.map((code) => (
+                <span
+                  key={code}
+                  className="mono"
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'var(--bg4)',
+                    border: '1px solid var(--border)',
+                    fontSize: 11,
+                  }}
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {failures.length > 0 ? (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>
+              ✕ Failed rows ({failures.length})
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 140, overflowY: 'auto' }}>
+              {failures.map((f) => (
+                <li key={f.code} style={{ color: 'var(--text2)' }}>
+                  <span className="mono">{f.code}</span> — {f.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {warnings.length > 0 ? (
+          <div style={{ marginTop: 10, color: 'var(--text3)' }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Row warnings ({warnings.length})</div>
+            <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 120, overflowY: 'auto' }}>
+              {warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </div>
   );
