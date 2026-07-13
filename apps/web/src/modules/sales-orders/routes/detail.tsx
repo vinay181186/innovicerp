@@ -6,14 +6,16 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
+import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
 
-/** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
-async function openClientPoFile(storagePath: string): Promise<void> {
+/** Open a stored SO document (PO doc / email ref) via a short-lived signed URL,
+ *  inline in a new tab — the signed URL carries no attachment disposition, so
+ *  the browser views (not downloads) any type it can render (PDF, images). */
+async function openStoredFile(storagePath: string): Promise<void> {
   try {
     const url = await soDocSignedUrl(storagePath);
     window.open(url, '_blank', 'noopener');
@@ -283,6 +285,12 @@ function ClientPoFileBar({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Email reference(s) attached to this SO (uploaded on create / SO Documents).
+  const docDetail = useSoDocDetail(detail.id);
+  const emailRefs = (docDetail.data?.files ?? []).filter(
+    (f) => f.category === 'email_reference' && f.status !== 'archived',
+  );
+
   async function onPick(file: File): Promise<void> {
     if (!companyId) {
       setErr('No company on session — cannot upload.');
@@ -315,46 +323,76 @@ function ClientPoFileBar({
     <div className="panel" style={{ marginBottom: 14 }}>
       <div
         className="panel-body"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', flexWrap: 'wrap' }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px' }}
       >
-        <span className="form-label" style={{ marginBottom: 0, fontSize: 12 }}>
-          📎 Client PO Document
-        </span>
-        {detail.clientPoFilePath ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => void openClientPoFile(detail.clientPoFilePath!)}
-          >
-            ⬇ View
-          </button>
-        ) : (
-          <span className="text3" style={{ fontSize: 12 }}>
-            None uploaded
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="form-label" style={{ marginBottom: 0, fontSize: 12 }}>
+            📎 Client PO Document
           </span>
-        )}
-        {canEdit ? (
-          <>
+          {detail.clientPoFilePath ? (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
+              onClick={() => void openStoredFile(detail.clientPoFilePath!)}
             >
-              {busy ? 'Uploading…' : detail.clientPoFilePath ? 'Replace' : 'Upload'}
+              👁 View
             </button>
-            <input
-              ref={fileRef}
-              type="file"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void onPick(f);
-              }}
-            />
-          </>
-        ) : null}
-        {err ? <span style={{ color: 'var(--red)', fontSize: 11 }}>{err}</span> : null}
+          ) : (
+            <span className="text3" style={{ fontSize: 12 }}>
+              None uploaded
+            </span>
+          )}
+          {canEdit ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                {busy ? 'Uploading…' : detail.clientPoFilePath ? 'Replace' : 'Upload'}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void onPick(f);
+                }}
+              />
+            </>
+          ) : null}
+          {err ? <span style={{ color: 'var(--red)', fontSize: 11 }}>{err}</span> : null}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="form-label" style={{ marginBottom: 0, fontSize: 12 }}>
+            📧 Email Reference
+          </span>
+          {emailRefs.length > 0 ? (
+            emailRefs.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className="btn btn-ghost btn-sm"
+                title={f.fileName}
+                onClick={() => void openStoredFile(f.storagePath)}
+              >
+                👁 View
+                <span
+                  style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginLeft: 4, color: 'var(--text3)', fontSize: 11 }}
+                >
+                  {f.fileName}
+                </span>
+              </button>
+            ))
+          ) : (
+            <span className="text3" style={{ fontSize: 12 }}>
+              None attached
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

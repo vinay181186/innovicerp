@@ -512,7 +512,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
                 {emailFileUrl ? (
-                  <a href={emailFileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', fontSize: 10, textDecoration: 'underline' }}>👁 View</a>
+                  <button
+                    type="button"
+                    onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
+                    style={{ color: 'var(--cyan)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                  >
+                    👁 View
+                  </button>
                 ) : null}
                 <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
               </span>
