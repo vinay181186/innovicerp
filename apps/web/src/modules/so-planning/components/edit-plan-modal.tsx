@@ -581,8 +581,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       );
                     }
                     // Non-QC op row — process by default. Ticking the OUTSOURCE box
-                    // reveals the vendor + ₹/pc rate in the Outsource cell; the Machine
-                    // field stays visible either way so a machine can still be set.
+                    // turns it into an outsourced (OSP) op: the Machine cell shows an
+                    // OSP badge (work leaves the shop, so no machine), the Cycle(h)
+                    // field is hidden (no in-house machine time), and the Outsource
+                    // cell reveals the vendor picker.
                     return (
                       <tr
                         key={op.uid}
@@ -590,21 +592,40 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                       >
                         <td className="td-ctr mono fw-700">{i + 1}</td>
                         <td>
-                          <SearchableSelect
-                            id={`plan-mach-${op.uid}`}
-                            value={machineIdByCode(op.machineCodeText ?? '')}
-                            onChange={(id) =>
-                              updateOp(op.uid, {
-                                machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
-                              })
-                            }
-                            onSearch={setMachineSearch}
-                            loading={machines.isFetching}
-                            options={machineOpts}
-                            placeholder="🔍 Machine"
-                            valueLabel={op.machineCodeText || undefined}
-                            selectedLabel={(o) => o.code ?? o.name}
-                          />
+                          {isOS ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '3px 8px',
+                                background: 'rgba(124,58,237,0.12)',
+                                border: '1px solid rgba(124,58,237,0.3)',
+                                borderRadius: 4,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: '#7c3aed',
+                              }}
+                            >
+                              🏭 OSP
+                            </span>
+                          ) : (
+                            <SearchableSelect
+                              id={`plan-mach-${op.uid}`}
+                              value={machineIdByCode(op.machineCodeText ?? '')}
+                              onChange={(id) =>
+                                updateOp(op.uid, {
+                                  machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
+                                })
+                              }
+                              onSearch={setMachineSearch}
+                              loading={machines.isFetching}
+                              options={machineOpts}
+                              placeholder="🔍 Machine"
+                              valueLabel={op.machineCodeText || undefined}
+                              selectedLabel={(o) => o.code ?? o.name}
+                            />
+                          )}
                         </td>
                         <td>
                           <input
@@ -615,16 +636,20 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           />
                         </td>
                         <td>
-                          <input
-                            className="innovic-input"
-                            type="number"
-                            step="0.01"
-                            value={op.cycleTimeMin}
-                            onChange={(e) =>
-                              updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
-                            }
-                            style={{ textAlign: 'center' }}
-                          />
+                          {isOS ? (
+                            <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>
+                          ) : (
+                            <input
+                              className="innovic-input"
+                              type="number"
+                              step="0.01"
+                              value={op.cycleTimeMin}
+                              onChange={(e) =>
+                                updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
+                              }
+                              style={{ textAlign: 'center' }}
+                            />
+                          )}
                         </td>
                         <td>
                           <label
@@ -650,6 +675,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                     ? {
                                         opType: 'outsource',
                                         outsourceLeadDays: op.outsourceLeadDays ?? 5,
+                                        cycleTimeMin: 0,
                                       }
                                     : { opType: 'process' },
                                 )
@@ -658,14 +684,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             OUTSOURCE
                           </label>
                           {isOS ? (
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 4,
-                                marginTop: 6,
-                              }}
-                            >
+                            <div style={{ marginTop: 6 }}>
                               <SearchableSelect
                                 id={`plan-osp-vend-${op.uid}`}
                                 value={vendorIdByCode(op.outsourceVendorText ?? '')}
@@ -680,17 +699,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                 placeholder="🔍 Vendor"
                                 valueLabel={op.outsourceVendorText || undefined}
                                 selectedLabel={(o) => o.code ?? o.name}
-                              />
-                              <input
-                                className="innovic-input"
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={op.outsourceCost}
-                                onChange={(e) =>
-                                  updateOp(op.uid, { outsourceCost: Number(e.target.value) })
-                                }
-                                placeholder="₹/pc"
                               />
                             </div>
                           ) : null}
