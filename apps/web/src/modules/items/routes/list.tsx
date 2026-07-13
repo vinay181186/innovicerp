@@ -22,14 +22,15 @@ import { printItemDrawing } from '../lib/print-drawing';
 
 const PAGE_SIZE = 25;
 
-/** Outcome of an Excel import, bucketed so duplicates are shown on their own. */
+/** Outcome of an Excel import, bucketed so each group is shown on its own. */
 interface ImportResult {
-  ok: number;
   total: number;
+  /** Item codes that were added to Item Master. */
+  imported: string[];
   /** Item codes that already exist in Item Master (skipped). */
   duplicates: string[];
-  /** Rows that failed for a non-duplicate reason (bad data, etc.). */
-  failures: { code: string; reason: string }[];
+  /** Item codes that failed for a non-duplicate reason (bad data, etc.). */
+  failures: string[];
   /** Row-level parse warnings from the workbook. */
   warnings: string[];
 }
@@ -124,22 +125,22 @@ function ItemsListPage(): React.JSX.Element {
     setImportError(null);
     try {
       const { payloads, errors } = await parseItemImportFile(file);
-      let ok = 0;
+      const imported: string[] = [];
       const duplicates: string[] = [];
-      const failures: { code: string; reason: string }[] = [];
+      const failures: string[] = [];
       for (const p of payloads) {
         try {
           await createItem.mutateAsync(p);
-          ok += 1;
+          imported.push(p.code);
         } catch (e) {
           const reason = e instanceof Error ? e.message : 'failed';
           // The API rejects an existing code with `… already exists`; split those
           // out as duplicates so the user gets a clean list of what to remove.
           if (/already exists/i.test(reason)) duplicates.push(p.code);
-          else failures.push({ code: p.code, reason });
+          else failures.push(p.code);
         }
       }
-      setImportResult({ ok, total: payloads.length, duplicates, failures, warnings: errors });
+      setImportResult({ total: payloads.length, imported, duplicates, failures, warnings: errors });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : 'Import failed');
     } finally {
@@ -512,16 +513,31 @@ function PaginationFooter(props: {
 // the user can see exactly which item codes already exist in Item Master.
 function ImportResultBanner(props: { result: ImportResult; onClose: () => void }): React.JSX.Element {
   const { result, onClose } = props;
-  const { ok, total, duplicates, failures, warnings } = result;
+  const { total, imported, duplicates, failures, warnings } = result;
   const copyDuplicates = (): void => {
     void navigator.clipboard?.writeText(duplicates.join('\n'));
   };
+  const chip = (code: string): React.JSX.Element => (
+    <span
+      key={code}
+      className="mono"
+      style={{
+        padding: '2px 8px',
+        borderRadius: 4,
+        background: 'var(--bg4)',
+        border: '1px solid var(--border)',
+        fontSize: 11,
+      }}
+    >
+      {code}
+    </span>
+  );
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-body" style={{ padding: '12px 14px', fontSize: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ fontWeight: 700 }}>
-            {ok > 0 ? '✅' : 'ℹ'} Imported {ok} of {total} item{total === 1 ? '' : 's'}
+            {imported.length > 0 ? '✅' : 'ℹ'} Imported {imported.length} of {total} item{total === 1 ? '' : 's'}
             {duplicates.length > 0 ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped` : ''}
             {failures.length > 0 ? ` · ${failures.length} failed` : ''}
           </span>
@@ -561,37 +577,33 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
                 userSelect: 'text',
               }}
             >
-              {duplicates.map((code) => (
-                <span
-                  key={code}
-                  className="mono"
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    background: 'var(--bg4)',
-                    border: '1px solid var(--border)',
-                    fontSize: 11,
-                  }}
-                >
-                  {code}
-                </span>
-              ))}
+              {duplicates.map(chip)}
             </div>
           </div>
         ) : null}
 
-        {failures.length > 0 ? (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>
-              ✕ Failed rows ({failures.length})
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 18, maxHeight: 140, overflowY: 'auto' }}>
-              {failures.map((f) => (
-                <li key={f.code} style={{ color: 'var(--text2)' }}>
-                  <span className="mono">{f.code}</span> — {f.reason}
-                </li>
-              ))}
-            </ul>
+        {imported.length > 0 || failures.length > 0 ? (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10 }}>
+            {imported.length > 0 ? (
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>
+                  ✅ Added rows ({imported.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
+                  {imported.map(chip)}
+                </div>
+              </div>
+            ) : null}
+            {failures.length > 0 ? (
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
+                  ✕ Failed rows ({failures.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
+                  {failures.map(chip)}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
