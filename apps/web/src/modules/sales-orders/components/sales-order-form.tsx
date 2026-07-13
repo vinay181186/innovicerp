@@ -119,7 +119,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
   const errors = formState.errors;
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
   const {
     fields: msFields,
     append: appendMs,
@@ -201,6 +201,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   }
 
   const [lineError, setLineError] = useState<string | null>(null);
+  // At least one of Client PO No. / Email Ref must be provided (create form).
+  const [poEmailError, setPoEmailError] = useState<string | null>(null);
   // Client-PO document (legacy _cpoFileSelected L12315) — captured here, the
   // page uploads it after the SO is saved (matches addSO L12459).
   const [poFileName, setPoFileName] = useState<string | null>(null);
@@ -221,7 +223,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   }
 
   // Email reference attached against the Client PO (legacy parity with PO doc).
+  // Keep a local object URL so the just-attached file can be viewed before save.
   const [emailFileName, setEmailFileName] = useState<string | null>(null);
+  const [emailFileUrl, setEmailFileUrl] = useState<string | null>(null);
   function onPickEmailFile(e: React.ChangeEvent<HTMLInputElement>): void {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -230,11 +234,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       e.target.value = '';
       return;
     }
+    if (emailFileUrl) URL.revokeObjectURL(emailFileUrl);
     setEmailFileName(f.name);
+    setEmailFileUrl(URL.createObjectURL(f));
+    setPoEmailError(null);
     props.onEmailFileChange?.(f);
   }
   function clearEmailFile(): void {
+    if (emailFileUrl) URL.revokeObjectURL(emailFileUrl);
     setEmailFileName(null);
+    setEmailFileUrl(null);
     props.onEmailFileChange?.(null);
   }
 
@@ -271,7 +280,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       );
 
       const missing: string[] = [];
-      let added = 0;
+      const newLines: LineFormValue[] = [];
       for (const r of rows) {
         const code = r.itemCodeText.trim();
         const master = code ? masterByCode.get(code.toUpperCase()) : undefined;
@@ -282,7 +291,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         // Item Code drives the row: link the master item, auto-fetch Part Name
         // (and UOM) from master; the remaining details come from the sheet
         // (falling back to master for material / drawing when the cell is blank).
-        append({
+        newLines.push({
           ...NEW_LINE,
           ...r,
           itemId: master.id,
@@ -292,7 +301,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           drawingNo: r.drawingNo ?? master.drawingNo ?? '',
           uom: master.uom,
         });
-        added += 1;
+      }
+
+      const added = newLines.length;
+      if (added) {
+        // If the grid still holds only the untouched blank starter row(s), replace
+        // them so imports fill from Sr No. 1 instead of appending after an empty row.
+        const current = getValues('lines') ?? [];
+        const allBlank = current.every(
+          (l) => !l.itemId && !l.itemCodeText?.trim() && !l.partName?.trim(),
+        );
+        if (allBlank) replace(newLines);
+        else for (const l of newLines) append(l);
       }
 
       const parts: string[] = [];
@@ -327,6 +347,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // per-handler so there is no shared mutable flag to leak across submits.
   const onValid = (asDraft: boolean) => async (values: FormValues): Promise<void> => {
     setLineError(null);
+    setPoEmailError(null);
+    // Require proof of the client order: either a Client PO No. or an attached
+    // email reference. Enforced on the create form (edit keeps whatever the SO
+    // already has). At least one must be present.
+    if (isCreate && !values.header.clientPoNo?.trim() && !emailFileName) {
+      setPoEmailError('Enter a Client PO No. or attach an Email Ref — at least one is required.');
+      return;
+    }
     // SO No. validity is enforced by DocNumberInput (save disabled while invalid);
     // the server UNIQUE constraint is the final backstop.
     const equip = values.header.type === 'equipment';
@@ -475,8 +503,20 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="clientPoNo">Client PO No.</label>
-          <input id="clientPoNo" className="innovic-input" autoComplete="off" placeholder="Client PO reference" {...register('header.clientPoNo')} />
+          <label className="form-label" htmlFor="clientPoNo">
+            Client PO No. {isCreate ? <span className="req">★</span> : null}
+          </label>
+          <input
+            id="clientPoNo"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Client PO reference"
+            {...register('header.clientPoNo', {
+              onChange: (e) => {
+                if (e.target.value.trim()) setPoEmailError(null);
+              },
+            })}
+          />
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {poFileName ? (
               <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -492,6 +532,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {emailFileName ? (
               <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
+                {emailFileUrl ? (
+                  <a href={emailFileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', fontSize: 10, textDecoration: 'underline' }}>👁 View</a>
+                ) : null}
                 <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
               </span>
             ) : (
@@ -501,6 +544,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               </label>
             )}
           </div>
+          {poEmailError ? (
+            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red)' }}>⚠ {poEmailError}</div>
+          ) : null}
         </div>
 
         <div className="form-grp form-full">
@@ -589,7 +635,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 940 }}>
               <thead>
                 <tr>
-                  <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '5%' }}>Sr No.</th>
                   <th style={{ width: '9%' }}>Client PO Ln</th>
                   <th style={{ width: '20%' }}>Item Code <span className="req">★</span></th>
                   <th style={{ width: '15%' }}>Part Name</th>
