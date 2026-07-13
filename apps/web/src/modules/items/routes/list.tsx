@@ -599,6 +599,9 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
                 <div style={{ fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
                   ✕ Failed rows ({failures.length})
                 </div>
+                <div style={{ color: 'var(--text3)', marginBottom: 6 }}>
+                  ⚠ These break the item-code format rule — a code may contain only letters, digits, dot (.), underscore (_) and hyphen (-). No spaces or brackets. Fix the code in your sheet and re-import.
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
                   {failures.map(chip)}
                 </div>
