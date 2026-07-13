@@ -503,9 +503,26 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
 
         <div className="form-grp">
-          <label className="form-label" htmlFor="clientPoNo">
-            Client PO No. {isCreate ? <span className="req">★</span> : null}
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
+              Client PO No. {isCreate ? <span className="req">★</span> : null}
+            </label>
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
+            {emailFileName ? (
+              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
+                {emailFileUrl ? (
+                  <a href={emailFileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', fontSize: 10, textDecoration: 'underline' }}>👁 View</a>
+                ) : null}
+                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
+              </span>
+            ) : (
+              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                📧 Attach Email Ref
+                <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
+              </label>
+            )}
+          </div>
           <input
             id="clientPoNo"
             className="innovic-input"
@@ -527,20 +544,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                 📤 Upload PO Doc
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickPoFile} />
-              </label>
-            )}
-            {emailFileName ? (
-              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
-                {emailFileUrl ? (
-                  <a href={emailFileUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', fontSize: 10, textDecoration: 'underline' }}>👁 View</a>
-                ) : null}
-                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
-              </span>
-            ) : (
-              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                📧 Attach Email Ref
-                <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
               </label>
             )}
           </div>
