@@ -10,14 +10,18 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateJobWorkOrder, useJobWorkOrder, useUpdateJobWorkOrder } from '../api';
 import { JobWorkOrderForm } from '../components/job-work-order-form';
 
-/** Upload a picked Client PO file to Storage + register it against the JWSO.
- *  Best-effort: the JWSO is already saved, so a failed upload never blocks. */
-async function registerPoDoc(
+/** Upload a picked file to Storage + register it against the JWSO under a given
+ *  category. Best-effort: the JWSO is already saved, so a failed upload never
+ *  blocks. Used for both the Client PO doc (`po-docs`) and the Email Ref
+ *  (`email_reference`). */
+async function registerJwDoc(
   file: File | null,
   companyId: string | null | undefined,
   jwId: string,
   jwCode: string,
   createDoc: ReturnType<typeof useCreateJwDocument>,
+  category: 'po-docs' | 'email_reference',
+  docType: string,
 ): Promise<void> {
   if (!file || !companyId) return;
   try {
@@ -25,15 +29,15 @@ async function registerPoDoc(
     await createDoc.mutateAsync({
       jobWorkOrderId: jwId,
       jwCodeText: jwCode,
-      category: 'po-docs',
-      docType: 'Client PO',
+      category,
+      docType,
       fileName: file.name,
       storagePath,
       fileSize: file.size,
       fileType: file.type || undefined,
     });
   } catch {
-    // Non-fatal: the JWSO is saved; the PO doc can be re-attached on the detail page.
+    // Non-fatal: the JWSO is saved; the doc can be re-attached on the detail page.
   }
 }
 
@@ -56,13 +60,16 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   const { data: me } = useSession();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
+  const emailFileRef = useRef<File | null>(null);
 
   const onSubmit = async (values: CreateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      // Upload the chosen Client PO document against the new JWSO (best-effort).
-      await registerPoDoc(poFileRef.current, me?.companyId, created.id, created.code, createDoc);
+      // Upload the chosen Client PO document + Email Ref against the new JWSO
+      // (best-effort — the JWSO is already saved).
+      await registerJwDoc(poFileRef.current, me?.companyId, created.id, created.code, createDoc, 'po-docs', 'Client PO');
+      await registerJwDoc(emailFileRef.current, me?.companyId, created.id, created.code, createDoc, 'email_reference', 'Email Reference');
       await navigate({ to: '/job-work-orders/$id', params: { id: created.id }, replace: true });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create job-work order');
@@ -88,6 +95,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
             mode="create"
             onSubmit={onSubmit}
             onPoFileChange={(f) => { poFileRef.current = f; }}
+            onEmailFileChange={(f) => { emailFileRef.current = f; }}
             submitError={submitError}
             onCancel={() => void navigate({ to: '/job-work-orders' })}
           />
@@ -106,13 +114,16 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const { data: me } = useSession();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
+  const emailFileRef = useRef<File | null>(null);
 
   const onSubmit = async (values: UpdateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
     try {
       const saved = await update.mutateAsync(values);
-      // Upload a newly-picked Client PO document against this JWSO (best-effort).
-      await registerPoDoc(poFileRef.current, me?.companyId, id, saved.code, createDoc);
+      // Upload a newly-picked Client PO document + Email Ref against this JWSO
+      // (best-effort).
+      await registerJwDoc(poFileRef.current, me?.companyId, id, saved.code, createDoc, 'po-docs', 'Client PO');
+      await registerJwDoc(emailFileRef.current, me?.companyId, id, saved.code, createDoc, 'email_reference', 'Email Reference');
       await navigate({ to: '/job-work-orders/$id', params: { id }, replace: true });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update job-work order');
@@ -171,6 +182,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
             detail={detail}
             onSubmit={onSubmit}
             onPoFileChange={(f) => { poFileRef.current = f; }}
+            onEmailFileChange={(f) => { emailFileRef.current = f; }}
             submitError={submitError}
             onCancel={() => void navigate({ to: '/job-work-orders/$id', params: { id } })}
           />

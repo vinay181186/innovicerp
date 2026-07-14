@@ -11,7 +11,7 @@
 
 import { z } from 'zod';
 
-export const DOC_NUMBER_TYPES = ['sales_order', 'purchase_order', 'grn'] as const;
+export const DOC_NUMBER_TYPES = ['sales_order', 'job_work_order', 'purchase_order', 'grn'] as const;
 export type DocNumberType = (typeof DOC_NUMBER_TYPES)[number];
 
 export interface DocNumberFormat {
@@ -25,6 +25,7 @@ export interface DocNumberFormat {
 
 export const DOC_NUMBER_FORMATS: Record<DocNumberType, DocNumberFormat> = {
   sales_order: { prefix: 'IN-SO-', digits: 5, label: 'SO No.' },
+  job_work_order: { prefix: 'IN-JW-', digits: 5, label: 'JWSO No.' },
   purchase_order: { prefix: 'IN-PO-', digits: 5, label: 'PO No.' },
   grn: { prefix: 'IN-GRN-', digits: 5, label: 'GRN No.' },
 };

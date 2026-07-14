@@ -6,7 +6,8 @@
 // Phase 4 storage layer (job_work_orders + job_work_order_lines, ADR-012).
 //
 // Differences from `sales-order.ts`:
-//   - Header: no `type`, no `gstPercent`, no `costCenter`, no BOM fields.
+//   - Header: no `type`, no `costCenter`, no BOM fields. Carries `gstPercent`
+//     (migration 0061) for SO-parity totals on the JWSO form.
 //     Status uses the same `so_status` enum (ADR-012 #5 — semantics identical).
 //     Carries the 4 HEADER-level client-material fields (migration 0053,
 //     matching legacy CLIENT MATERIAL DETAILS L12839): `clientMaterial`,
@@ -65,6 +66,7 @@ export const jobWorkOrderSchema = z.object({
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),
   status: jwStatusSchema,
+  gstPercent: z.string(), // numeric stored as string (parity with sales_order)
   remarks: z.string().nullable(),
   // Client material details (header-level, per legacy CLIENT MATERIAL DETAILS
   // L12839). Client supplies raw material → we process → deliver finished parts.
@@ -152,6 +154,8 @@ const _jwHeaderInputBase = z.object({
   customerName: z.string().max(255).optional(),
   clientPoNo: z.string().max(64).optional(),
   status: jwStatusSchema.default('open'),
+  // Optional on the wire — the service + DB both default it to 18 when omitted.
+  gstPercent: z.coerce.number().nonnegative().max(99.99).optional(),
   remarks: z.string().max(2000).optional(),
   // Client material details (header-level).
   clientMaterial: z.string().max(255).optional(),

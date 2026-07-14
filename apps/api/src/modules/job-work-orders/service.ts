@@ -318,6 +318,7 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
     customerName: row.customerName,
     clientPoNo: row.clientPoNo,
     status: row.status,
+    gstPercent: row.gstPercent,
     remarks: row.remarks,
     clientMaterial: row.clientMaterial,
     clientMaterialQty: row.clientMaterialQty,
@@ -433,6 +434,7 @@ export async function createJobWorkOrder(
           customerName: clientName ?? input.header.customerName ?? null,
           clientPoNo: input.header.clientPoNo ?? null,
           status: headerStatus,
+          gstPercent: (input.header.gstPercent ?? 18).toFixed(2),
           remarks: input.header.remarks ?? null,
           clientMaterial: input.header.clientMaterial ?? null,
           clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
@@ -528,6 +530,7 @@ export async function updateJobWorkOrder(
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.status !== undefined) updates['status'] = h.status;
+    if (h.gstPercent !== undefined) updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
     if (h.clientMaterial !== undefined) updates['clientMaterial'] = h.clientMaterial ?? null;
     if (h.clientMaterialQty !== undefined)

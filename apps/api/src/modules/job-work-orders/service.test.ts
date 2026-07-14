@@ -111,6 +111,8 @@ describe('job-work-orders service', () => {
     expect(detail.clientMaterialQty).toBe('12.50');
     expect(detail.materialReceivedQty).toBe('10.00');
     expect(detail.materialReceivedDate).toBe('2026-05-01');
+    // GST % defaults to 18 on the header (migration 0061, parity with SO).
+    expect(detail.gstPercent).toBe('18.00');
     // ADR-012 #10 fallback
     expect(detail.lines[1]?.itemId).toBeNull();
     expect(detail.lines[1]?.itemCodeText).toBe('NONEXISTENT-BRK');

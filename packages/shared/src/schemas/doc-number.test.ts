@@ -13,9 +13,19 @@ import {
 } from './doc-number';
 
 describe('doc-number config', () => {
-  it('defines all three Phase-1 types', () => {
-    expect([...DOC_NUMBER_TYPES]).toEqual(['sales_order', 'purchase_order', 'grn']);
+  it('defines the document-number types', () => {
+    expect([...DOC_NUMBER_TYPES]).toEqual([
+      'sales_order',
+      'job_work_order',
+      'purchase_order',
+      'grn',
+    ]);
     expect(DOC_NUMBER_FORMATS.sales_order).toEqual({ prefix: 'IN-SO-', digits: 5, label: 'SO No.' });
+    expect(DOC_NUMBER_FORMATS.job_work_order).toEqual({
+      prefix: 'IN-JW-',
+      digits: 5,
+      label: 'JWSO No.',
+    });
     expect(DOC_NUMBER_FORMATS.purchase_order.prefix).toBe('IN-PO-');
     expect(DOC_NUMBER_FORMATS.grn.prefix).toBe('IN-GRN-');
   });

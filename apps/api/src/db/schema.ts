@@ -1188,6 +1188,9 @@ export const jobWorkOrders = pgTable(
     customerName: text('customer_name'),
     clientPoNo: text('client_po_no'),
     status: soStatusEnum('status').notNull().default('open'),
+    // GST % on the JWSO header (migration 0061) — parity with sales_orders so
+    // the JWSO form shows subtotal / GST / grand totals.
+    gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
     remarks: text('remarks'),
     // Client material details (header-level, migration 0053).
     clientMaterial: text('client_material'),

@@ -2285,3 +2285,54 @@ posts `jwLineId` vs `soLineId`.
 - Risks: `0060_plans_jw_line.sql` is **deploy-blocking** — so-planning reads now
   reference `plans.jw_line_id`; must be applied before/with the deploy or all Planning
   reads 500. Pending prod apply alongside 0058/0059.
+
+## ADR-056: JWSO create/edit header brought to Sales-Order parity
+**Date:** 2026-07-14
+**Status:** Accepted
+
+### Context
+The "+ New JWSO Order" header lagged the "+ New Sales Order" header: plain
+auto-generated JWSO No. (no live check), a native `<select>` client picker capped
+at 200 with a navigate-away "+ New", a visible Status dropdown on create, no
+GST %/totals, no header-level Due Date, and a plain optional Client PO No. with no
+Email Ref option. User asked for the JWSO header to behave exactly like the SO
+header.
+
+### Decision
+Mirror the SO header on JWSO, minus the fields that don't fit the job-work domain:
+- **JWSO No.** → `DocNumberInput type="job_work_order"` (live duplicate/format check
+  + prefill). Added `job_work_order` → `IN-JW-#####` to `DOC_NUMBER_FORMATS` +
+  `TABLE_NAME` (`job_work_orders`) — no migration; reuses the existing series.
+- **Client** → server-searched `SearchableSelect` + inline quick-add modal.
+- **GST %** → new `job_work_orders.gst_percent numeric(5,2) NOT NULL DEFAULT 18`
+  (migration 0061) + a subtotal / GST / grand totals box under the lines.
+- **Header Due Date** → UI-only, applied to every line on save (as SO does); the
+  per-line due-date input is removed from the JWSO line card.
+- **Client PO No. required OR Email Ref** → on create at least one is required; the
+  Email Ref uploads under the existing `email_reference` category (no backend change
+  — JWSO documents already reuse `soDocCategorySchema`) and is viewable inline + in
+  the JWSO Documents panel.
+- **Status** → hidden on create (defaults to `'open'`); still editable on the edit form.
+
+Kept JWSO-specific: the free-text line editor (JWSO does NOT enforce Item Master)
+and the Client Material Details block.
+
+### Alternatives Considered
+- **Also add Order Type + BOM/equipment branch (full SO parity)** — rejected by the
+  user: "no type field in create jwso" and "in jwso we don't create bom". Type/BOM
+  don't fit job-work (client supplies material, we bill a processing charge).
+- **Add Delivery Schedule / Milestones** — deferred: not a header field, needs a new
+  `job_work_order_milestones` table.
+- **`gst_percent` as a UI-only field (no column)** — rejected: SO persists it; parity
+  means the JWSO remembers its GST % on reopen.
+- **`gstPercent` with `.default(18)` in the create schema** — rejected: the inferred
+  output type then makes it required and breaks 13 direct-construction service tests.
+  Used `.optional()` + service/DB default 18 instead (identical behaviour).
+
+### Consequences
+- Positive: one consistent order-header UX; JWSOs now show priced totals; stronger
+  proof-of-order (PO No. or email) on create.
+- Negative: JWSO lines lose their independent per-line due dates (collapse to the
+  header Due Date on save, same trade-off SO made).
+- Risks: `0061_jw_gst_percent.sql` is **deploy-blocking** — the JWSO service selects
+  `gst_percent`; must be applied before/with the code deploy or every JWSO read 500s.
