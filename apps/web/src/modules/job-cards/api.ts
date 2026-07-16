@@ -2,6 +2,7 @@ import type {
   JobCardEditModel,
   JobCardListItem,
   JobCardSourceOption,
+  JobCardStatusExtras,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
@@ -60,6 +61,18 @@ export function useJobCardEditModel(id: string | undefined) {
   return useQuery<JobCardEditModel>({
     queryKey: id ? ([...jobCardsKeys.detail(id), 'edit'] as const) : (['job-cards', 'edit', '__missing__'] as const),
     queryFn: () => apiFetch<JobCardEditModel>(`/job-cards/${id}/edit`),
+    enabled: Boolean(id),
+  });
+}
+
+/** JC Status extras: QC docs, per-op machine name + tool details, and the
+ *  merged completion feed (op_log ∪ NC ∪ OSP) with a real server total. */
+export function useJobCardStatusExtras(id: string | undefined) {
+  return useQuery<JobCardStatusExtras>({
+    queryKey: id
+      ? ([...jobCardsKeys.detail(id), 'status'] as const)
+      : (['job-cards', 'status', '__missing__'] as const),
+    queryFn: () => apiFetch<JobCardStatusExtras>(`/job-cards/${id}/status`),
     enabled: Boolean(id),
   });
 }

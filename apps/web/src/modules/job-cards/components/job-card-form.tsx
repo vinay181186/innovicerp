@@ -95,19 +95,30 @@ export function JobCardForm({
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
 
+  // ISSUE-170: source-options lists only OPEN lines, so a JC linked to a CLOSED
+  // order would lose its own source from the datalist/label/banner. The edit
+  // model resolves that linked line (open or closed) as `linkedSourceOption`;
+  // unshift it (legacy editJC L5947-50) when it isn't already present.
+  const allSources = useMemo(() => {
+    const linked = model?.linkedSourceOption ?? null;
+    if (!linked) return sourceOptions;
+    if (sourceOptions.some((o) => o.lineId === linked.lineId)) return sourceOptions;
+    return [linked, ...sourceOptions];
+  }, [sourceOptions, model?.linkedSourceOption]);
+
   // Governance: direct SO/item Job Cards are disabled. Manual creation is
   // JW-only — SO items go through Planning (execute a plan). Edit mode keeps
   // whatever source the JC already has (incl. legacy SO-linked JCs).
-  const availableSources = isEdit ? sourceOptions : sourceOptions.filter((o) => o.type === 'jw');
+  const availableSources = isEdit ? allSources : allSources.filter((o) => o.type === 'jw');
 
   const create = useCreateJobCard();
   const update = useUpdateJobCard(model?.id ?? '');
 
   // ── Header state ──
   const initialSource = model?.sourceSoLineId
-    ? sourceOptions.find((o) => o.lineId === model.sourceSoLineId)
+    ? allSources.find((o) => o.lineId === model.sourceSoLineId)
     : model?.sourceJwLineId
-      ? sourceOptions.find((o) => o.lineId === model.sourceJwLineId)
+      ? allSources.find((o) => o.lineId === model.sourceJwLineId)
       : undefined;
   const [jcDate, setJcDate] = useState(model?.jcDate ?? today());
   const [sourceLineId, setSourceLineId] = useState<string | null>(
@@ -167,7 +178,7 @@ export function JobCardForm({
     return m;
   }, [availableSources]);
   const selectedSource = sourceLineId
-    ? sourceOptions.find((o) => o.lineId === sourceLineId)
+    ? allSources.find((o) => o.lineId === sourceLineId)
     : undefined;
 
   // ISSUE-169 fix: once the linked source option resolves (edit mode), display

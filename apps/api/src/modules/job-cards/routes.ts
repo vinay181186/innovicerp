@@ -37,6 +37,14 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     return service.getJobCardEditModel(id, req.user);
   });
 
+  // JC Status extras: QC docs, per-op machine name + tool details, and the
+  // merged completion feed with a real total (parity: viewJCStatus L11020).
+  app.get('/job-cards/:id/status', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getJobCardStatusExtras(id, req.user);
+  });
+
   app.get('/job-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

@@ -2,15 +2,19 @@
 
 import {
   type ChangeJcOpMachineInput,
+  type CreatePurchaseRequestInput,
   type JcOpsBoardRow,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
+// Reuse the existing PR create hook — do not build a parallel one.
+import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
-import { useChangeJcOpMachine, useJcOpsBoard } from '../api';
+import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard } from '../api';
 
 export const jcOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,6 +27,7 @@ function JcOpsPage(): React.JSX.Element {
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [jcCode, setJcCode] = useState('');
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
+  const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
 
   const { data, isLoading, isError, error } = useJcOpsBoard({
     jcCode: jcCode || undefined,
@@ -120,7 +125,13 @@ function JcOpsPage(): React.JSX.Element {
               </thead>
               <tbody>
                 {data.items.map((o) => (
-                  <Row key={o.jcOpId} o={o} canWrite={canWrite} onEdit={() => setEditRow(o)} />
+                  <Row
+                    key={o.jcOpId}
+                    o={o}
+                    canWrite={canWrite}
+                    onEdit={() => setEditRow(o)}
+                    onCreatePr={() => setPrRow(o)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -131,6 +142,8 @@ function JcOpsPage(): React.JSX.Element {
       {editRow ? (
         <ChangeMachineModal row={editRow} onClose={() => setEditRow(null)} />
       ) : null}
+
+      {prRow ? <CreatePrModal row={prRow} onClose={() => setPrRow(null)} /> : null}
     </div>
   );
 }
@@ -149,10 +162,12 @@ function Row({
   o,
   canWrite,
   onEdit,
+  onCreatePr,
 }: {
   o: JcOpsBoardRow;
   canWrite: boolean;
   onEdit: () => void;
+  onCreatePr: () => void;
 }): React.JSX.Element {
   const isOutsource = o.opType === 'outsource';
   const outsourceStatus = o.outsourceStatus || 'pending';
@@ -177,6 +192,20 @@ function Row({
         {o.operation}
         {isOutsource ? (
           <>
+            {' '}
+            {/* Legacy L11379 [OSP] tag — marks the row as outside-processing. */}
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: '#7c3aed',
+                background: 'rgba(124,58,237,0.12)',
+                padding: '1px 6px',
+                borderRadius: 3,
+              }}
+            >
+              [OSP]
+            </span>
             <br />
             <span
               style={{
@@ -260,7 +289,26 @@ function Row({
       </td>
       <td>
         {isOutsource ? (
-          outsourceStatus === 'pr_raised' ? (
+          outsourceStatus === 'pending' ? (
+            // Legacy L11369 — raise a PR from a pending outsource op. The
+            // server-side cascade (purchase-requests service) stamps this op
+            // as pr_raised + links the new PR; the board then reflects it.
+            canWrite ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'var(--amber)',
+                  color: '#000',
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+                onClick={onCreatePr}
+              >
+                📋 Create PR
+              </button>
+            ) : null
+          ) : outsourceStatus === 'pr_raised' ? (
             <span style={{ fontSize: 10, color: 'var(--amber)' }}>
               ⏳ PR: {o.outsourcePrCode ?? ''}
             </span>
@@ -461,6 +509,222 @@ function ChangeMachineModal({
               </>
             ) : (
               'Save'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Raise a Purchase Request from a pending outsource op (legacy createPR modal,
+// HTML L6180-6213). Collects the same fields the legacy modal did — Qty, Est.
+// Cost/pc, Required By Date, Remarks — plus a PR No. (legacy auto-generated it
+// via _nextPRNo(); this app assigns PR codes manually, consistent with the
+// standalone New PR form). Submitting POSTs to /purchase-requests with
+// sourceJcOpId; the server-side cascade stamps the op as pr_raised.
+function CreatePrModal({
+  row,
+  onClose,
+}: {
+  row: JcOpsBoardRow;
+  onClose: () => void;
+}): React.JSX.Element {
+  const qc = useQueryClient();
+  const create = useCreatePurchaseRequest();
+  const [code, setCode] = useState('');
+  const [qty, setQty] = useState<number>(row.available > 0 ? row.available : row.jcOrderQty);
+  const [cost, setCost] = useState<string>('');
+  const [reqDate, setReqDate] = useState<string>('');
+  const [remarks, setRemarks] = useState<string>('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const vendorText = row.outsourceVendorCode ?? row.outsourceVendorName ?? '';
+  const itemText = row.jcItemCode ?? '';
+
+  const onSave = (): void => {
+    setErr(null);
+    if (!code.trim()) {
+      setErr('PR No. is required');
+      return;
+    }
+    if (qty <= 0) {
+      setErr('Qty must be > 0'); // legacy L6194
+      return;
+    }
+    if (!vendorText.trim()) {
+      setErr('This op has no outsource vendor — set a vendor on the operation first');
+      return;
+    }
+    const input: CreatePurchaseRequestInput = {
+      code: code.trim(),
+      prDate: new Date().toISOString().slice(0, 10), // legacy today()
+      status: 'open',
+      qty,
+      estCost: cost ? Number(cost) : 0,
+      vendorCodeText: vendorText,
+      itemCodeText: itemText || undefined,
+      itemName: row.jcItemName ?? undefined,
+      operation: row.operation,
+      requiredDate: reqDate || undefined,
+      remarks: remarks || undefined,
+      sourceJcOpId: row.jcOpId,
+    };
+    create.mutate(input, {
+      onSuccess: () => {
+        // Reflect the op's new pr_raised state on the board immediately.
+        void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+        onClose();
+      },
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create PR'),
+    });
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(560px, 96vw)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 14 }}>
+          Create Purchase Request — {row.jcCode} Op{row.opSeq}
+        </div>
+        <div
+          style={{
+            background: 'var(--bg3)',
+            padding: '10px 14px',
+            borderRadius: 8,
+            marginBottom: 14,
+            border: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            Operation: <b>{row.operation}</b>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            Vendor: {row.outsourceVendorName ?? row.outsourceVendorCode ?? '—'} · Item:{' '}
+            {row.jcItemCode ?? '—'}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+            PR No. ★
+          </div>
+          <input
+            className="innovic-select"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. PR-00001"
+            style={{ width: '100%', fontSize: 12 }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 140px' }}>
+            <div
+              className="text3"
+              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4, color: 'var(--amber)' }}
+            >
+              Qty Required ★
+            </div>
+            <input
+              type="number"
+              min={1}
+              className="innovic-select"
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              style={{ width: '100%', fontSize: 12 }}
+            />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+              Est. Cost / pc (₹)
+            </div>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className="innovic-select"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              style={{ width: '100%', fontSize: 12 }}
+            />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+              Required By Date
+            </div>
+            <input
+              type="date"
+              className="innovic-select"
+              value={reqDate}
+              onChange={(e) => setReqDate(e.target.value)}
+              style={{ width: '100%', fontSize: 12 }}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}>
+            Remarks
+          </div>
+          <input
+            className="innovic-select"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Any special instructions"
+            style={{ width: '100%', fontSize: 12 }}
+          />
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={create.isPending}
+          >
+            {create.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Creating…
+              </>
+            ) : (
+              'Create PR'
             )}
           </button>
         </div>

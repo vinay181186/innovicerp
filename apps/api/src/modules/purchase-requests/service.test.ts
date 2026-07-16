@@ -1,7 +1,15 @@
 import { and, asc, eq, isNull, like, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, purchaseRequests, users, vendors } from '../../db/schema';
+import {
+  activityLog,
+  items,
+  jcOps,
+  jobCards,
+  purchaseRequests,
+  users,
+  vendors,
+} from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import {
   AuthorizationError,
@@ -17,6 +25,10 @@ const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 let admin: AuthContext;
 let firstItemId: string;
 let firstVendorId: string;
+// Own JC + two outsource ops for the create-PR-from-op cascade tests.
+let cascadeJcId: string;
+let cascadeSourceOpId: string; // becomes the source of a PR → must be stamped
+let cascadeUntouchedOpId: string; // never a PR source → must stay untouched
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -60,11 +72,54 @@ beforeAll(async () => {
   const v = vendorRow[0];
   if (!v) throw new Error('No vendors in seed company — run migration load first');
   firstVendorId = v.id;
+
+  // Own fixture for the create-PR-from-op cascade: a JC with two outsource ops.
+  // Isolated (TEST_PREFIX codes) so we never mutate seed production ops.
+  cascadeJcId = (
+    await db
+      .insert(jobCards)
+      .values({
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}JC-OSP`,
+        jcDate: '2026-05-02',
+        itemId: firstItemId,
+        orderQty: 10,
+        priority: 'normal',
+        createdBy: u.id,
+        updatedBy: u.id,
+      })
+      .returning()
+  )[0]!.id;
+
+  const baseOp = {
+    companyId: u.companyId,
+    jobCardId: cascadeJcId,
+    opType: 'outsource' as const,
+    cycleTimeMin: '0.00',
+    qcRequired: false,
+    reworkQty: 0,
+    outsourceCost: '0.00',
+    outsourceSentQty: 0,
+    outsourceReturnedQty: 0,
+    createdBy: u.id,
+    updatedBy: u.id,
+  };
+  const ops = await db
+    .insert(jcOps)
+    .values([
+      { ...baseOp, opSeq: 1, operation: `${TEST_PREFIX}COATING` },
+      { ...baseOp, opSeq: 2, operation: `${TEST_PREFIX}PLATING` },
+    ])
+    .returning();
+  cascadeSourceOpId = ops.find((o) => o.opSeq === 1)!.id;
+  cascadeUntouchedOpId = ops.find((o) => o.opSeq === 2)!.id;
 });
 
 afterAll(async () => {
   await db.delete(purchaseRequests).where(like(purchaseRequests.code, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
+  await db.delete(jcOps).where(eq(jcOps.jobCardId, cascadeJcId));
+  await db.delete(jobCards).where(eq(jobCards.id, cascadeJcId));
 });
 
 describe('purchase-requests service', () => {
@@ -110,6 +165,52 @@ describe('purchase-requests service', () => {
     );
     expect(pr.vendorId).toBeNull();
     expect(pr.vendorCodeText).toBe('UNRESOLVED-VENDOR');
+  });
+
+  it('createPurchaseRequest from an outsource op stamps outsource_pr_id + outsource_status=pr_raised (legacy L6207-08)', async () => {
+    const code = `${TEST_PREFIX}OSP1`;
+    const pr = await service.createPurchaseRequest(
+      {
+        code,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 8,
+        estCost: 0,
+        status: 'open',
+        sourceJcOpId: cascadeSourceOpId,
+      },
+      admin,
+    );
+    // The PR itself records its source op.
+    expect(pr.sourceJcOpId).toBe(cascadeSourceOpId);
+    // The source op is stamped — atomic with the PR insert.
+    const op = (await db.select().from(jcOps).where(eq(jcOps.id, cascadeSourceOpId)))[0]!;
+    expect(op.outsourcePrId).toBe(pr.id);
+    expect(op.outsourceStatus).toBe('pr_raised');
+  });
+
+  it('createPurchaseRequest NOT from an op leaves ops untouched', async () => {
+    const before = (await db.select().from(jcOps).where(eq(jcOps.id, cascadeUntouchedOpId)))[0]!;
+    expect(before.outsourcePrId).toBeNull();
+    expect(before.outsourceStatus).toBeNull();
+
+    await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}OSP2`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 1,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+
+    const after = (await db.select().from(jcOps).where(eq(jcOps.id, cascadeUntouchedOpId)))[0]!;
+    expect(after.outsourcePrId).toBeNull();
+    expect(after.outsourceStatus).toBeNull();
   });
 
   it('createPurchaseRequest rejects duplicate code with ConflictError', async () => {

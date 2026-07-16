@@ -18,6 +18,7 @@ export {
 export type {
   JcDocInput,
   JcOpInput,
+  JobCardCompletionEvent,
   JobCardCreateInput,
   JobCardDoc,
   JobCardEditModel,
@@ -25,6 +26,9 @@ export type {
   JobCardOpEdit,
   JobCardSourceLink,
   JobCardSourceOption,
+  JobCardStatusExtras,
+  JobCardStatusOpExtra,
+  JobCardStatusQcDoc,
   JobCardUpdateInput,
   JobCardWriteInput,
   ListJobCardsQuery,

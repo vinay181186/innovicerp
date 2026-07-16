@@ -393,6 +393,34 @@ export async function createPurchaseRequest(
       })
       .returning();
     const row = inserted[0]!;
+
+    // Legacy createPR write-back — HTML L6207-08:
+    //   op.outsourceStatus='PR Raised'; op.outsourcePRNo=prNo;
+    // When a PR is raised from an outsource JC op, stamp the source op so the
+    // JC Ops board (jc-ops/service.ts joins pr ON pr.id = op.outsource_pr_id)
+    // surfaces the raised PR. This is ATOMIC with the insert above — same tx —
+    // so a committed PR is never left without its op stamped (the parity bug
+    // this fixes). 'PR Raised' maps to the 'pr_raised' OUTSOURCE_STATUSES
+    // member; legacy `op.outsourcePRNo` maps to our outsource_pr_id FK.
+    // The op's existence/company was already asserted above (assertJcOpExists).
+    if (input.sourceJcOpId) {
+      await tx
+        .update(jcOps)
+        .set({
+          outsourcePrId: row.id,
+          outsourceStatus: 'pr_raised',
+          updatedAt: new Date(),
+          updatedBy: user.id,
+        })
+        .where(
+          and(
+            eq(jcOps.id, input.sourceJcOpId),
+            eq(jcOps.companyId, companyId),
+            isNull(jcOps.deletedAt),
+          ),
+        );
+    }
+
     await emitActivityLog(
       tx,
       {

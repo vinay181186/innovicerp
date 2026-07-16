@@ -29,10 +29,14 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { emitActivityLog } from '../activity-log/service';
 import type {
   JcOpInput,
+  JobCardCompletionEvent,
   JobCardEditModel,
   JobCardListItem,
   JobCardSourceLink,
   JobCardSourceOption,
+  JobCardStatusExtras,
+  JobCardStatusOpExtra,
+  JobCardStatusQcDoc,
   JobCardWriteInput,
   ListJobCardsQuery,
   ListJobCardsResponse,
@@ -322,6 +326,77 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
 
 // ─── Cascade source options (parity: CASCADE.allOpenOrders + orderBalance) ──
 
+/** Maps one SO/JW line row (shape shared by listJobCardSourceOptions and
+ *  resolveLinkedSource) into a JobCardSourceOption. */
+function toSourceOption(r: Record<string, unknown>): JobCardSourceOption {
+  const orderQty = Number(r['orderQty'] ?? 0);
+  const inJc = Number(r['inJc'] ?? 0);
+  return {
+    type: r['type'] as 'so' | 'jw',
+    orderId: r['orderId'] as string,
+    lineId: r['lineId'] as string,
+    code: r['code'] as string,
+    lineNo: Number(r['lineNo'] ?? 0),
+    partName: (r['partName'] as string | null) ?? null,
+    itemCode: (r['itemCode'] as string | null) ?? null,
+    customerName: (r['customerName'] as string | null) ?? null,
+    orderQty,
+    dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+    inJc,
+    remaining: Math.max(0, orderQty - inJc),
+  };
+}
+
+/** Resolves the JC's currently-linked SO/JW line into a full option EVEN when
+ *  the parent order is closed (ISSUE-170 / legacy editJC L5947-50). Unlike
+ *  listJobCardSourceOptions there is no `status != 'closed'` filter. Every
+ *  joined table is soft-delete filtered. */
+async function resolveLinkedSource(
+  tx: DbTransaction,
+  companyId: string,
+  kind: 'so' | 'jw',
+  lineId: string,
+): Promise<JobCardSourceOption | null> {
+  const rows = (
+    kind === 'so'
+      ? await tx.execute(sql`
+          SELECT 'so' AS type, so.id AS "orderId", sol.id AS "lineId", so.code,
+            sol.line_no AS "lineNo", sol.part_name AS "partName",
+            COALESCE(i.code, sol.item_code_text) AS "itemCode",
+            COALESCE(so.customer_name, cli.name) AS "customerName",
+            sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
+            sol.client_po_line_no AS "clientPoLineNo",
+            COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+              WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+          FROM public.sales_order_lines sol
+          JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+          LEFT JOIN public.items i ON i.id = sol.item_id AND i.deleted_at IS NULL
+          LEFT JOIN public.clients cli ON cli.id = so.client_id AND cli.deleted_at IS NULL
+          WHERE sol.id = ${lineId}::uuid AND sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL
+          LIMIT 1
+        `)
+      : await tx.execute(sql`
+          SELECT 'jw' AS type, jw.id AS "orderId", jwl.id AS "lineId", jw.code,
+            jwl.line_no AS "lineNo", jwl.part_name AS "partName",
+            COALESCE(i.code, jwl.item_code_text) AS "itemCode",
+            COALESCE(jw.customer_name, cli.name) AS "customerName",
+            jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
+            NULL AS "clientPoLineNo",
+            COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
+              WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL), 0)::int AS "inJc"
+          FROM public.job_work_order_lines jwl
+          JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+          LEFT JOIN public.items i ON i.id = jwl.item_id AND i.deleted_at IS NULL
+          LEFT JOIN public.clients cli ON cli.id = jw.client_id AND cli.deleted_at IS NULL
+          WHERE jwl.id = ${lineId}::uuid AND jwl.company_id = ${companyId}::uuid AND jwl.deleted_at IS NULL
+          LIMIT 1
+        `)
+  ) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0];
+  return r ? toSourceOption(r) : null;
+}
+
 export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCardSourceOption[]> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -354,25 +429,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       ORDER BY type, code, "lineNo"
     `)) as unknown as Array<Record<string, unknown>>;
 
-    return result.map((r): JobCardSourceOption => {
-      const orderQty = Number(r['orderQty'] ?? 0);
-      const inJc = Number(r['inJc'] ?? 0);
-      return {
-        type: r['type'] as 'so' | 'jw',
-        orderId: r['orderId'] as string,
-        lineId: r['lineId'] as string,
-        code: r['code'] as string,
-        lineNo: Number(r['lineNo'] ?? 0),
-        partName: (r['partName'] as string | null) ?? null,
-        itemCode: (r['itemCode'] as string | null) ?? null,
-        customerName: (r['customerName'] as string | null) ?? null,
-        orderQty,
-        dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
-        clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
-        inJc,
-        remaining: Math.max(0, orderQty - inJc),
-      };
-    });
+    return result.map(toSourceOption);
   });
 }
 
@@ -421,6 +478,16 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       ORDER BY created_at
     `)) as unknown as Array<Record<string, unknown>>;
 
+    // ISSUE-170: resolve the linked source line as a full option even when the
+    // parent order is closed (source-options lists only open lines).
+    const soLineId = (h['sourceSoLineId'] as string | null) ?? null;
+    const jwLineId = (h['sourceJwLineId'] as string | null) ?? null;
+    const linkedSourceOption = soLineId
+      ? await resolveLinkedSource(tx, companyId, 'so', soLineId)
+      : jwLineId
+        ? await resolveLinkedSource(tx, companyId, 'jw', jwLineId)
+        : null;
+
     return {
       id: h['id'] as string,
       code: h['code'] as string,
@@ -455,6 +522,271 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         storagePath: (d['storagePath'] as string | null) ?? '',
         fileSize: d['fileSize'] != null ? Number(d['fileSize']) : null,
       })),
+      linkedSourceOption,
+    };
+  });
+}
+
+// ─── JC Status extras (parity: viewJCStatus L11020) ─────────────────────────
+// QC documents (L11250-57), per-op machine name + tool details (L11049/L11230),
+// and the merged completion feed (op_log ∪ NC ∪ NC-disposition ∪ OSP activity,
+// L11091-11134) with a REAL server total (ISSUE-174). All over existing tables.
+
+/** op_log rows fetched for the feed are capped so a JC with a very long
+ *  production history doesn't ship an unbounded payload; the TOTAL is still an
+ *  exact server COUNT (legacy fetched all; we cap the list but never the count). */
+const COMPLETION_LOG_OPLOG_CAP = 300;
+
+export async function getJobCardStatusExtras(
+  id: string,
+  user: AuthContext,
+): Promise<JobCardStatusExtras> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const jcRows = (await tx.execute(sql`
+      SELECT jc.code FROM public.job_cards jc
+      WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<{ code: string }>;
+    const jcRow = jcRows[0];
+    if (!jcRow) throw new NotFoundError(`Job card ${id} not found`);
+    const jcCode = jcRow.code;
+    const jcLike = `%${jcCode}%`;
+
+    // 1. QC documents (file_registry qc-docs — same source the JC modal writes).
+    const docRows = (await tx.execute(sql`
+      SELECT id, doc_type AS "docType", file_name AS "fileName",
+        storage_path AS "storagePath", file_size AS "fileSize",
+        to_char(created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "uploadDate"
+      FROM public.file_registry
+      WHERE job_card_id = ${id}::uuid AND category = 'qc-docs'
+        AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+      ORDER BY created_at
+    `)) as unknown as Array<Record<string, unknown>>;
+    const qcDocs: JobCardStatusQcDoc[] = docRows.map((d) => ({
+      id: d['id'] as string,
+      docType: (d['docType'] as string | null) ?? 'Other',
+      docName: null,
+      fileName: (d['fileName'] as string | null) ?? '',
+      storagePath: (d['storagePath'] as string | null) ?? '',
+      fileSize: d['fileSize'] != null ? Number(d['fileSize']) : null,
+      uploadDate: (d['uploadDate'] as string | null) ?? null,
+    }));
+
+    // 2. Per-op machine name + tool_details.
+    const opRows = (await tx.execute(sql`
+      SELECT o.id AS "jcOpId", o.tool_details AS "toolDetails", m.name AS "machineName"
+      FROM public.jc_ops o
+      LEFT JOIN public.machines m ON m.id = o.machine_id AND m.deleted_at IS NULL
+      WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+      ORDER BY o.op_seq
+    `)) as unknown as Array<Record<string, unknown>>;
+    const opExtras: JobCardStatusOpExtra[] = opRows.map((o) => ({
+      jcOpId: o['jcOpId'] as string,
+      machineName: (o['machineName'] as string | null) ?? null,
+      toolDetails: (o['toolDetails'] as string | null) ?? null,
+    }));
+
+    // 3. Completion feed sources (all JC-scoped, soft-delete filtered on
+    //    jc_ops / nc_register; op_log has no deleted_at column).
+    const opLogRows = (await tx.execute(sql`
+      SELECT ol.id, ol.log_type AS "logType", ol.log_date AS "logDate",
+        ol.start_time AS "startTime", ol.shift, ol.qty, ol.reject_qty AS "rejectQty",
+        ol.remarks, ol.operator_name AS "operatorName",
+        o.op_seq AS "opSeq", o.operation,
+        COALESCE(m.code, o.machine_code_text) AS "machineCode"
+      FROM public.op_log ol
+      JOIN public.jc_ops o ON o.id = ol.jc_op_id AND o.deleted_at IS NULL
+      LEFT JOIN public.machines m ON m.id = o.machine_id AND m.deleted_at IS NULL
+      WHERE o.job_card_id = ${id}::uuid AND ol.company_id = ${companyId}::uuid
+      ORDER BY ol.log_date DESC, ol.start_time DESC NULLS LAST, ol.created_at DESC
+      LIMIT ${COMPLETION_LOG_OPLOG_CAP}
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    const ncRows = (await tx.execute(sql`
+      SELECT nc.id, nc.code AS "ncNo", nc.nc_date AS "ncDate", nc.op_seq AS "opSeq",
+        nc.reason_category AS "reasonCategory", nc.reason,
+        nc.rejected_qty AS "rejectedQty", nc.disposition,
+        nc.disposition_date AS "dispositionDate", nc.disposition_by_text AS "dispositionBy",
+        nc.rework_op_seq AS "reworkOpSeq", nc.operator_text AS "operatorText",
+        to_char(nc.time_logged AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "ncTime"
+      FROM public.nc_register nc
+      WHERE nc.job_card_id = ${id}::uuid AND nc.company_id = ${companyId}::uuid
+        AND nc.deleted_at IS NULL
+      ORDER BY nc.nc_date DESC
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    // OSP activity (legacy L11128): CREATE of an OSP Auto PR/PO referencing this
+    // JC. Our PurchaseRequest activity detail carries the JC code + "OSP";
+    // PurchaseOrder detail omits the JC code, so only PR events link here.
+    const actRows = (await tx.execute(sql`
+      SELECT a.id, a.entity, a.detail,
+        to_char(a.ts AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "actDate",
+        to_char(a.ts AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "actTime"
+      FROM public.activity_log a
+      WHERE a.company_id = ${companyId}::uuid
+        AND a.entity IN ('PurchaseRequest', 'PurchaseOrder')
+        AND a.detail ILIKE ${jcLike}
+        AND a.detail ILIKE '%OSP%'
+      ORDER BY a.ts DESC
+    `)) as unknown as Array<Record<string, unknown>>;
+
+    // 4. Exact total (legacy `_allEvents.length`) — independent of the op_log cap.
+    const countRows = (await tx.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM public.op_log ol
+           JOIN public.jc_ops o ON o.id = ol.jc_op_id AND o.deleted_at IS NULL
+           WHERE o.job_card_id = ${id}::uuid AND ol.company_id = ${companyId}::uuid)::int AS oplog,
+        (SELECT COUNT(*) FROM public.nc_register nc
+           WHERE nc.job_card_id = ${id}::uuid AND nc.company_id = ${companyId}::uuid
+             AND nc.deleted_at IS NULL)::int AS nc,
+        (SELECT COUNT(*) FROM public.nc_register nc
+           WHERE nc.job_card_id = ${id}::uuid AND nc.company_id = ${companyId}::uuid
+             AND nc.deleted_at IS NULL AND nc.disposition IS NOT NULL)::int AS ncdisp,
+        (SELECT COUNT(*) FROM public.activity_log a
+           WHERE a.company_id = ${companyId}::uuid
+             AND a.entity IN ('PurchaseRequest', 'PurchaseOrder')
+             AND a.detail ILIKE ${jcLike} AND a.detail ILIKE '%OSP%')::int AS osp
+    `)) as unknown as Array<{ oplog: number; nc: number; ncdisp: number; osp: number }>;
+    const c = countRows[0] ?? { oplog: 0, nc: 0, ncdisp: 0, osp: 0 };
+    const total = Number(c.oplog) + Number(c.nc) + Number(c.ncdisp) + Number(c.osp);
+
+    // 5. Build the merged, structured feed (presentation stays on the client).
+    const events: JobCardCompletionEvent[] = [];
+    const nz = (v: unknown): number => Number(v ?? 0);
+
+    for (const l of opLogRows) {
+      const date = dateLike(l['logDate']);
+      const time = l['startTime'] != null ? String(l['startTime']).slice(0, 5) : null;
+      events.push({
+        id: l['id'] as string,
+        kind: 'op',
+        date,
+        time,
+        sortKey: `${date}T${time ?? '99:99'}`,
+        logType: l['logType'] as JobCardCompletionEvent['logType'],
+        opSeq: l['opSeq'] != null ? Number(l['opSeq']) : null,
+        operation: (l['operation'] as string | null) ?? null,
+        machineCode: (l['machineCode'] as string | null) ?? null,
+        operatorName: (l['operatorName'] as string | null) ?? null,
+        shift: (l['shift'] as string | null) ?? null,
+        qty: nz(l['qty']),
+        rejectQty: nz(l['rejectQty']),
+        remarks: (l['remarks'] as string | null) ?? null,
+        ncNo: null,
+        reasonCategory: null,
+        reason: null,
+        disposition: null,
+        dispositionBy: null,
+        reworkOpSeq: null,
+        rejectedQty: null,
+        operatorText: null,
+        ospCategory: null,
+        detail: null,
+      });
+    }
+
+    for (const nc of ncRows) {
+      const date = dateLike(nc['ncDate']);
+      const time = (nc['ncTime'] as string | null) ?? null;
+      const rejectedQty = nz(nc['rejectedQty']);
+      const disposition = (nc['disposition'] as string | null) ?? null;
+      events.push({
+        id: nc['id'] as string,
+        kind: 'nc',
+        date,
+        time,
+        sortKey: `${date}T${time ?? '99:99'}`,
+        logType: null,
+        opSeq: nc['opSeq'] != null ? Number(nc['opSeq']) : null,
+        operation: null,
+        machineCode: null,
+        operatorName: null,
+        shift: null,
+        qty: null,
+        rejectQty: null,
+        remarks: null,
+        ncNo: (nc['ncNo'] as string | null) ?? null,
+        reasonCategory: (nc['reasonCategory'] as string | null) ?? null,
+        reason: (nc['reason'] as string | null) ?? null,
+        disposition,
+        dispositionBy: (nc['dispositionBy'] as string | null) ?? null,
+        reworkOpSeq: nc['reworkOpSeq'] != null ? Number(nc['reworkOpSeq']) : null,
+        rejectedQty,
+        operatorText: (nc['operatorText'] as string | null) ?? null,
+        ospCategory: null,
+        detail: null,
+      });
+      if (disposition) {
+        const dDate = dateLike(nc['dispositionDate'] ?? nc['ncDate']);
+        events.push({
+          id: `${nc['id'] as string}:disp`,
+          kind: 'nc-disposition',
+          date: dDate,
+          time: null,
+          sortKey: `${dDate}T99:98`,
+          logType: null,
+          opSeq: null,
+          operation: null,
+          machineCode: null,
+          operatorName: null,
+          shift: null,
+          qty: null,
+          rejectQty: null,
+          remarks: null,
+          ncNo: (nc['ncNo'] as string | null) ?? null,
+          reasonCategory: null,
+          reason: null,
+          disposition,
+          dispositionBy: (nc['dispositionBy'] as string | null) ?? null,
+          reworkOpSeq: nc['reworkOpSeq'] != null ? Number(nc['reworkOpSeq']) : null,
+          rejectedQty,
+          operatorText: null,
+          ospCategory: null,
+          detail: null,
+        });
+      }
+    }
+
+    for (const a of actRows) {
+      const date = (a['actDate'] as string | null) ?? '';
+      const time = (a['actTime'] as string | null) ?? null;
+      events.push({
+        id: a['id'] as string,
+        kind: 'osp',
+        date,
+        time,
+        sortKey: `${date}T${time ?? '99:99'}`,
+        logType: null,
+        opSeq: null,
+        operation: null,
+        machineCode: null,
+        operatorName: null,
+        shift: null,
+        qty: null,
+        rejectQty: null,
+        remarks: null,
+        ncNo: null,
+        reasonCategory: null,
+        reason: null,
+        disposition: null,
+        dispositionBy: null,
+        reworkOpSeq: null,
+        rejectedQty: null,
+        operatorText: null,
+        ospCategory:
+          a['entity'] === 'PurchaseRequest' ? 'Purchase Request' : 'Purchase Order',
+        detail: (a['detail'] as string | null) ?? null,
+      });
+    }
+
+    // Latest first (legacy L11134).
+    events.sort((x, y) => y.sortKey.localeCompare(x.sortKey));
+
+    return {
+      qcDocs,
+      opExtras,
+      completionLog: { events, total, truncated: total > events.length },
     };
   });
 }

@@ -270,5 +270,94 @@ export const jobCardEditModelSchema = z.object({
   remarks: z.string().nullable(),
   ops: z.array(jobCardOpEditSchema),
   qcDocs: z.array(jobCardDocSchema),
+  /** ISSUE-170 parity: the JC's currently-linked SO/JW source line resolved as
+   *  a full option EVEN when the order is closed (so `source-options`, which
+   *  lists only OPEN lines, would otherwise omit it). Legacy editJC unshifts
+   *  this into the datalist (L5947-50). Null when the JC has no source link. */
+  linkedSourceOption: jobCardSourceOptionSchema.nullable(),
 });
 export type JobCardEditModel = z.infer<typeof jobCardEditModelSchema>;
+
+// ─── JC Status extras (parity: viewJCStatus L11020) ─────────────────────────
+// Server-computed additions the read-oriented Status page needs but that the
+// list/detail row (JobCardListItem) and the op-entry enriched op shape do not
+// carry: QC documents attached to the JC, per-op machine name + tool details,
+// and the merged completion feed (op_log ∪ NC ∪ NC-disposition ∪ OSP activity)
+// with a REAL server total (ISSUE-174 — no client-side 300-cap count).
+
+/** A QC document attached to the JC (file_registry, category 'qc-docs' — the
+ *  same source the JC create/edit modal writes via registerQcDocs and the edit
+ *  model reads). Mirrors legacy `jc.qcDocs` rendered at L11250-57. `docName`
+ *  has no column in our schema (legacy free-text) → always null. */
+export const jobCardStatusQcDocSchema = z.object({
+  id: z.string().uuid(),
+  docType: z.string(),
+  docName: z.string().nullable(),
+  fileName: z.string(),
+  storagePath: z.string(),
+  fileSize: z.number().int().nullable(),
+  uploadDate: z.string().nullable(),
+});
+export type JobCardStatusQcDoc = z.infer<typeof jobCardStatusQcDocSchema>;
+
+/** Per-op enrichment for the Status page: resolved machine NAME (legacy L11230
+ *  flow stepper) + tool_details (legacy L11049 Prog/Tool cell). Keyed by op id
+ *  so the client merges into the op-entry enriched rows, which omit both. */
+export const jobCardStatusOpExtraSchema = z.object({
+  jcOpId: z.string().uuid(),
+  machineName: z.string().nullable(),
+  toolDetails: z.string().nullable(),
+});
+export type JobCardStatusOpExtra = z.infer<typeof jobCardStatusOpExtraSchema>;
+
+/** One entry in the merged Completion Log feed (legacy _allEvents L11091-11134).
+ *  Structured (not pre-formatted) so the client maps kind → icon/colour/title;
+ *  the server owns the MERGE, ORDER (`sortKey`, latest-first) and TOTAL. */
+export const JC_COMPLETION_EVENT_KINDS = ['op', 'nc', 'nc-disposition', 'osp'] as const;
+export const jcCompletionEventKindSchema = z.enum(JC_COMPLETION_EVENT_KINDS);
+export type JcCompletionEventKind = z.infer<typeof jcCompletionEventKindSchema>;
+
+export const jobCardCompletionEventSchema = z.object({
+  id: z.string(),
+  kind: jcCompletionEventKindSchema,
+  date: z.string(),
+  time: z.string().nullable(),
+  sortKey: z.string(),
+  // op events (kind='op')
+  logType: z.enum(['start', 'complete', 'qc']).nullable(),
+  opSeq: z.number().int().nullable(),
+  operation: z.string().nullable(),
+  machineCode: z.string().nullable(),
+  operatorName: z.string().nullable(),
+  shift: z.string().nullable(),
+  qty: z.number().int().nullable(),
+  rejectQty: z.number().int().nullable(),
+  remarks: z.string().nullable(),
+  // nc events (kind='nc' | 'nc-disposition')
+  ncNo: z.string().nullable(),
+  reasonCategory: z.string().nullable(),
+  reason: z.string().nullable(),
+  disposition: z.string().nullable(),
+  dispositionBy: z.string().nullable(),
+  reworkOpSeq: z.number().int().nullable(),
+  rejectedQty: z.number().int().nullable(),
+  operatorText: z.string().nullable(),
+  // osp events (kind='osp')
+  ospCategory: z.string().nullable(),
+  detail: z.string().nullable(),
+});
+export type JobCardCompletionEvent = z.infer<typeof jobCardCompletionEventSchema>;
+
+export const jobCardStatusExtrasSchema = z.object({
+  qcDocs: z.array(jobCardStatusQcDocSchema),
+  opExtras: z.array(jobCardStatusOpExtraSchema),
+  completionLog: z.object({
+    /** Latest-first; op_log capped server-side, NC/OSP fully included. */
+    events: z.array(jobCardCompletionEventSchema),
+    /** Exact server count of ALL merged events (legacy `_allEvents.length`). */
+    total: z.number().int().nonnegative(),
+    /** true when op_log was capped → render "showing latest N of total". */
+    truncated: z.boolean(),
+  }),
+});
+export type JobCardStatusExtras = z.infer<typeof jobCardStatusExtrasSchema>;

@@ -137,6 +137,50 @@ describe('job-cards service', () => {
       service.listJobCards({ limit: 10, offset: 0 }, noCompanyUser),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
+
+  it('getJobCardEditModel resolves the linked source line as an option (ISSUE-170)', async () => {
+    // IN-JC-00002 is backfilled to SO-436 line 6. The linked line must resolve
+    // regardless of the SO's open/closed status (source-options lists only open).
+    const list = await service.listJobCards({ search: 'IN-JC-00002', limit: 1, offset: 0 }, admin);
+    const target = list.items[0];
+    if (!target) return; // migrated seed absent on this DB
+    const model = await service.getJobCardEditModel(target.id, admin);
+    if (target.sourceLink) {
+      expect(model.linkedSourceOption).not.toBeNull();
+      expect(model.linkedSourceOption?.lineId).toBe(target.sourceLink.type === 'so'
+        ? target.sourceLink.salesOrderLineId
+        : target.sourceLink.jobWorkOrderLineId);
+      expect(model.linkedSourceOption?.code).toBe(target.sourceLink.code);
+      expect(model.linkedSourceOption?.remaining).toBeGreaterThanOrEqual(0);
+    } else {
+      expect(model.linkedSourceOption).toBeNull();
+    }
+  });
+
+  it('getJobCardStatusExtras returns qcDocs, opExtras, and a real completion-log total', async () => {
+    const list = await service.listJobCards({ search: 'IN-JC-0000', limit: 1, offset: 0 }, admin);
+    const target = list.items[0];
+    if (!target) return; // migrated seed absent on this DB
+    const extras = await service.getJobCardStatusExtras(target.id, admin);
+    expect(Array.isArray(extras.qcDocs)).toBe(true);
+    expect(Array.isArray(extras.opExtras)).toBe(true);
+    expect(Array.isArray(extras.completionLog.events)).toBe(true);
+    expect(typeof extras.completionLog.total).toBe('number');
+    expect(extras.completionLog.total).toBeGreaterThanOrEqual(0);
+    expect(typeof extras.completionLog.truncated).toBe('boolean');
+    // The exact total must be >= the number of events actually shipped.
+    expect(extras.completionLog.total).toBeGreaterThanOrEqual(extras.completionLog.events.length);
+    // Feed is latest-first (server-sorted by sortKey desc).
+    const keys = extras.completionLog.events.map((e) => e.sortKey);
+    const sorted = [...keys].sort((a, b) => b.localeCompare(a));
+    expect(keys).toEqual(sorted);
+  });
+
+  it('getJobCardStatusExtras throws NotFoundError for unknown id', async () => {
+    await expect(
+      service.getJobCardStatusExtras('00000000-0000-0000-0000-000000000000', admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
 });
 
 describe('job-cards service — writes (ADR-051)', () => {

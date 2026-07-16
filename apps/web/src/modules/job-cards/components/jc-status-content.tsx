@@ -2,7 +2,12 @@
 // cards, OPERATION FLOW stepper, OPERATIONS DETAIL (per-op recent logs + Start/
 // Log/QC actions), and the completion-log timeline. Rendered by the JC Status
 // page (routes/status).
-import type { JcOpsBoardRow, OpLog, OutsourceStatus } from '@innovic/shared';
+import type {
+  JcOpsBoardRow,
+  JobCardCompletionEvent,
+  OpLog,
+  OutsourceStatus,
+} from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -11,7 +16,7 @@ import { signedUrl } from '@/lib/storage';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
-import { useJobCard } from '../api';
+import { useJobCard, useJobCardStatusExtras } from '../api';
 import { JcStatusBadge } from './jc-status-badge';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
@@ -59,10 +64,145 @@ const OUTSOURCE_STATUS_LABEL: Record<OutsourceStatus, string> = {
 const barColor = (status: string): string =>
   status === 'complete' ? 'var(--green)' : status === 'in_progress' ? 'var(--amber)' : 'var(--blue)';
 
-// Legacy renders bare 'HH:MM' (its op_log startTime is a time input); our
-// `op_log.start_time` is a `time` column serialised 'HH:MM:SS'. Bare clock
-// time — no timezone involved, so no ISSUE-065 exposure.
-const fmtTime = (t: string | null): string => (t ? t.slice(0, 5) : '');
+// Legacy disposition icon/colour ladder (viewJCStatus L11115-11116). Legacy
+// keyed Title-Case strings ('Rework', 'Scrap', …); our nc_disposition enum is
+// snake_case, so the keys are remapped.
+const DISPOSITION_ICON: Record<string, { icon: string; color: string }> = {
+  rework: { icon: '♻', color: 'var(--cyan)' },
+  scrap: { icon: '🗑', color: 'var(--red)' },
+  use_as_is: { icon: '✅', color: 'var(--green)' },
+  return_to_vendor: { icon: '📦', color: 'var(--purple)' },
+  make_fresh: { icon: '📦', color: 'var(--purple)' },
+};
+
+// One rendered feed row. Kept presentation-only: the server owns the merge,
+// order and total; this maps a structured event → legacy's icon/colour/title.
+interface FeedRow {
+  id: string;
+  date: string;
+  time: string | null;
+  icon: string;
+  color: string;
+  title: string;
+  detail: string;
+  remarks: string;
+  qtyKind: 'none' | 'complete' | 'qc' | 'nc';
+  qty: number | null;
+}
+
+// Mirrors legacy _allEvents shaping (L11091-11131) per event kind.
+function mapEvent(e: JobCardCompletionEvent): FeedRow {
+  if (e.kind === 'op') {
+    const label =
+      e.logType === 'start' ? 'Started' : e.logType === 'qc' ? 'QC Entry' : 'Completed';
+    const machine = e.machineCode ?? '?';
+    const operator = e.operatorName ?? '';
+    const detail =
+      e.logType === 'start'
+        ? `on ${machine} by ${operator}`
+        : e.logType === 'qc'
+          ? `+${e.qty ?? 0} accepted${(e.rejectQty ?? 0) > 0 ? `, ${e.rejectQty} rejected` : ''} — ${operator}`
+          : `+${e.qty ?? 0} pcs — ${operator}`;
+    return {
+      id: e.id,
+      date: e.date,
+      time: e.time,
+      icon: e.logType === 'start' ? '▶' : e.logType === 'qc' ? '🔬' : '✔',
+      color: e.logType === 'start' ? 'var(--amber)' : 'var(--green)',
+      title: `Op${e.opSeq ?? '?'}: ${e.operation ?? '?'} — ${label}`,
+      detail: `${detail}${e.shift ? ` • ${e.shift}` : ''}`,
+      remarks: e.remarks ?? '',
+      qtyKind: e.logType === 'start' ? 'none' : e.logType === 'qc' ? 'qc' : 'complete',
+      qty: e.qty ?? 0,
+    };
+  }
+  if (e.kind === 'nc') {
+    const detail =
+      `${e.rejectedQty ?? 0} pcs rejected — ${e.reason ?? ''}` +
+      (e.disposition ? ` • Disposition: ${e.disposition}` : '') +
+      (e.operatorText ? ` • Operator: ${e.operatorText}` : '');
+    return {
+      id: e.id,
+      date: e.date,
+      time: e.time,
+      icon: '❌',
+      color: 'var(--red)',
+      title: `${e.ncNo ?? 'NC'}: ${e.reasonCategory ?? 'NC'} at Op${e.opSeq ?? '?'}`,
+      detail,
+      remarks: '',
+      qtyKind: 'nc',
+      qty: e.rejectedQty ?? 0,
+    };
+  }
+  if (e.kind === 'nc-disposition') {
+    const d = DISPOSITION_ICON[e.disposition ?? ''] ?? { icon: '📦', color: 'var(--purple)' };
+    const detail =
+      `${e.rejectedQty ?? 0} pcs` +
+      (e.disposition === 'rework' ? ` → back to Op${e.reworkOpSeq ?? '?'}` : '') +
+      (e.dispositionBy ? ` • By: ${e.dispositionBy}` : '');
+    return {
+      id: e.id,
+      date: e.date,
+      time: e.time,
+      icon: d.icon,
+      color: d.color,
+      title: `${e.ncNo ?? 'NC'} Disposed: ${e.disposition ?? ''}`,
+      detail,
+      remarks: '',
+      qtyKind: 'none',
+      qty: null,
+    };
+  }
+  // osp (legacy L11128-11130)
+  return {
+    id: e.id,
+    date: e.date,
+    time: e.time,
+    icon: '📋',
+    color: 'var(--blue)',
+    title: `${e.ospCategory ?? ''}: ${e.detail ?? ''}`,
+    detail: 'Auto-generated for OSP process',
+    remarks: '',
+    qtyKind: 'none',
+    qty: null,
+  };
+}
+
+// QC document card (legacy L11253-54). storagePath resolves to a signed URL on
+// click (legacy embedded base64 fileData directly; we stream from Storage).
+function QcDocCard({
+  docType,
+  fileName,
+  storagePath,
+  uploadDate,
+}: {
+  docType: string;
+  fileName: string;
+  storagePath: string;
+  uploadDate: string | null;
+}): React.JSX.Element {
+  const open = (): void => {
+    void signedUrl(storagePath).then((url) => window.open(url, '_blank', 'noopener'));
+  };
+  return (
+    <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)', minWidth: 190 }}>
+      <div style={{ fontSize: 10, color: 'var(--cyan)', fontWeight: 700 }}>{docType}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, margin: '3px 0' }}>{fileName || '—'}</div>
+      {storagePath ? (
+        <button
+          type="button"
+          onClick={open}
+          style={{ fontSize: 11, color: 'var(--blue)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+        >
+          📎 {fileName || 'Download'}
+        </button>
+      ) : (
+        <span style={{ fontSize: 10, color: 'var(--text3)' }}>No file</span>
+      )}
+      <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>Added: {uploadDate ?? '—'}</div>
+    </div>
+  );
+}
 
 const cardStyle = (bg: string, brd: string): React.CSSProperties => ({
   background: bg,
@@ -146,6 +286,9 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
   const { data: jc, isLoading, isError, error } = useJobCard(id);
   const { data: ops = [] } = useJcOpsEnriched({ jobCardId: id }, { enabled: Boolean(id) });
   const { data: logs = [] } = useOpLog({ jobCardId: id, limit: 300 }, { enabled: Boolean(id) });
+  // Server-computed extras: QC docs, per-op machine name + tool details, and the
+  // merged completion feed (op_log ∪ NC ∪ OSP) with a real total (ISSUE-174).
+  const { data: extras } = useJobCardStatusExtras(id);
   const { data: company } = useMyCompany();
   const [detailOpen, setDetailOpen] = useState(true);
   const drawingPath = jc?.drawingFilePath ?? null;
@@ -167,52 +310,35 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
     for (const arr of m.values()) arr.sort((a, b) => b.logDate.localeCompare(a.logDate));
     return m;
   }, [logs]);
-  const opById = useMemo(() => new Map(ops.map((o) => [o.id, o])), [ops]);
+  // Per-op machine name (flow stepper, L11230) + tool details (Prog/Tool cell,
+  // L11049) — both server-resolved (opExtras); the op-entry enriched op omits
+  // them. Keyed by op id.
+  const opExtraById = useMemo(
+    () => new Map((extras?.opExtras ?? []).map((e) => [e.jcOpId, e])),
+    [extras?.opExtras],
+  );
 
-  // Legacy _allEvents (L11091-11142): every op_log row for this JC — including
-  // 'start' entries, which our previous port dropped — shaped into an icon feed
-  // and grouped by date, latest first.
-  //
-  // Legacy also folds in NC register events, NC dispositions, and OSP PR/PO
-  // events from the activity log (L11106-11131). None of those have a
-  // server-side source on this page's endpoints, so they are reported as a gap
-  // rather than derived in the browser.
+  // Completion feed (legacy _allEvents L11091-11134). The server owns the MERGE
+  // (op_log ∪ NC ∪ NC-disposition ∪ OSP activity), the ORDER (latest-first) and
+  // the TOTAL; here we group the already-sorted events by date and map each to
+  // its icon/colour/title. `truncated` → op_log was capped, so the header shows
+  // "showing latest N of total" (ISSUE-174 — no fabricated count).
   const eventDays = useMemo(() => {
-    const events = logs.map((l) => {
-      const op = opById.get(l.jcOpId);
-      const machine = op ? (op.machineCode ?? op.machineCodeText ?? '?') : '?';
-      const operator = l.operatorName ?? '';
-      const label = l.logType === 'start' ? 'Started' : l.logType === 'qc' ? 'QC Entry' : 'Completed';
-      const detail =
-        l.logType === 'start'
-          ? `on ${machine} by ${operator}`
-          : l.logType === 'qc'
-            ? `+${l.qty} accepted${l.rejectQty > 0 ? `, ${l.rejectQty} rejected` : ''} — ${operator}`
-            : `+${l.qty} pcs — ${operator}`;
-      return {
-        id: l.id,
-        date: l.logDate,
-        time: fmtTime(l.startTime),
-        sort: `${l.logDate}T${fmtTime(l.startTime) || '99:99'}`,
-        icon: l.logType === 'start' ? '▶' : l.logType === 'qc' ? '🔬' : '✔',
-        color: l.logType === 'start' ? 'var(--amber)' : 'var(--green)',
-        title: `Op${op?.opSeq ?? '?'}: ${op?.operation ?? '?'} — ${label}`,
-        detail: `${detail}${l.shift ? ` • ${l.shift}` : ''}`,
-        remarks: l.remarks ?? '',
-        logType: l.logType,
-        qty: l.qty,
-      };
-    });
-    events.sort((a, b) => b.sort.localeCompare(a.sort));
-    const days: { date: string; events: typeof events }[] = [];
-    for (const e of events) {
-      const key = e.date || 'Unknown';
+    const rows = (extras?.completionLog.events ?? []).map(mapEvent);
+    const days: { date: string; events: FeedRow[] }[] = [];
+    for (const r of rows) {
+      const key = r.date || 'Unknown';
       const last = days.find((d) => d.date === key);
-      if (last) last.events.push(e);
-      else days.push({ date: key, events: [e] });
+      if (last) last.events.push(r);
+      else days.push({ date: key, events: [r] });
     }
-    return { days, total: events.length };
-  }, [logs, opById]);
+    return {
+      days,
+      shown: rows.length,
+      total: extras?.completionLog.total ?? rows.length,
+      truncated: extras?.completionLog.truncated ?? false,
+    };
+  }, [extras?.completionLog]);
 
   if (isLoading) {
     return (
@@ -421,9 +547,17 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                     ) : isOut ? (
                       <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--amber)' }}>OUTSOURCE</div>
                     ) : (
-                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
-                        {o.machineCode ?? o.machineCodeText ?? '—'}
-                      </div>
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
+                          {o.machineCode ?? o.machineCodeText ?? '—'}
+                        </div>
+                        {/* Resolved machine name (legacy L11230 sub-line). */}
+                        {opExtraById.get(o.id)?.machineName ? (
+                          <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                            {opExtraById.get(o.id)?.machineName}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                     <div style={{ fontSize: 9, color: 'var(--text3)' }}>
                       {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
@@ -543,6 +677,12 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                           ) : (
                             <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)', display: 'inline-block', lineHeight: 1.25, verticalAlign: 'top' }}>
                               <span style={{ fontWeight: 700, display: 'block' }}>{o.machineCode ?? o.machineCodeText ?? '—'}</span>
+                              {/* Resolved machine name (legacy machTag L1982). */}
+                              {opExtraById.get(o.id)?.machineName ? (
+                                <span style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400, display: 'block' }}>
+                                  {opExtraById.get(o.id)?.machineName}
+                                </span>
+                              ) : null}
                             </span>
                           )}
                         </td>
@@ -556,6 +696,15 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                             <>
                               {o.program ? <br /> : null}
                               <span style={{ color: 'var(--cyan)', fontSize: 10 }}>{o.toolNo}</span>
+                            </>
+                          ) : null}
+                          {/* tool_details (legacy L11049) — server-resolved (opExtras). */}
+                          {opExtraById.get(o.id)?.toolDetails ? (
+                            <>
+                              {o.program || o.toolNo ? <br /> : null}
+                              <span style={{ color: 'var(--text3)', fontSize: 10 }}>
+                                {opExtraById.get(o.id)?.toolDetails}
+                              </span>
                             </>
                           ) : null}
                           {!o.program && !o.toolNo ? <span className="text3">—</span> : null}
@@ -677,10 +826,37 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
         </div>
       ) : null}
 
+      {/* QC DOCUMENTS — legacy L11250-11257. Rendered only when the JC has docs
+          attached (file_registry qc-docs), between the ops table and the feed. */}
+      {extras && extras.qcDocs.length > 0 ? (
+        <>
+          <div style={{ marginTop: 16, marginBottom: 8 }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, textTransform: 'uppercase' }}>
+              ▸ QC Documents ({extras.qcDocs.length})
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {extras.qcDocs.map((d) => (
+              <QcDocCard
+                key={d.id}
+                docType={d.docType}
+                fileName={d.fileName}
+                storagePath={d.storagePath}
+                uploadDate={d.uploadDate}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+
       {/* Log history — legacy L11144-11161, L11259-11260. A per-date grouped
-          icon feed, not a table. */}
+          icon feed, not a table. Header shows the REAL server total; when op_log
+          was capped, it notes how many of the total are shown (ISSUE-174). */}
       <div className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-        ▸ Completion Log ({eventDays.total} entries)
+        ▸ Completion Log{' '}
+        {eventDays.truncated
+          ? `(showing latest ${eventDays.shown} of ${eventDays.total} entries)`
+          : `(${eventDays.total} entries)`}
       </div>
       <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px' }}>
         {eventDays.total === 0 ? (
@@ -724,10 +900,12 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                       ) : null}
                     </div>
                   </div>
-                  {e.logType !== 'start' ? (
+                  {e.qtyKind !== 'none' ? (
                     <div className="mono fw-700" style={{ fontSize: 13, flexShrink: 0 }}>
-                      {e.logType === 'qc' ? (
+                      {e.qtyKind === 'qc' ? (
                         `+${e.qty}`
+                      ) : e.qtyKind === 'nc' ? (
+                        <span style={{ color: 'var(--red)' }}>-{e.qty}</span>
                       ) : (
                         <b style={{ color: 'var(--green)' }}>+{e.qty}</b>
                       )}
