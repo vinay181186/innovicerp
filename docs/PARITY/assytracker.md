@@ -1,7 +1,24 @@
 # PARITY — Assembly Tracker (`renderAssemblyTracker`)
 
+> ## ⚠️ THIS DOCUMENT HAS BEEN WRONG SIX TIMES. RE-VERIFY EVERY CLAIM AGAINST THE LEGACY FILE BEFORE ACTING ON IT.
+>
+> Audited 2026-07-16 (REFACTOR-1) against `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`. **Every error leans the same way — asserting a parity that does not exist — which is exactly the direction that stops anyone looking.**
+>
+> | Claim | Verdict |
+> | --- | --- |
+> | ~~`.dash-stat-card` "✅ class exists in theme"~~ | ❌ **FALSE** — exists in **neither** the theme **nor** legacy. Corrected 2026-07-15. |
+> | §5 item 3 — component table has *"Override (admin only)"*, **no `#` column** | ❌ **FALSE** — legacy **L28802 opens with `<th>#</th>`**. The column list is incomplete. |
+> | §5 item 4 — units column order | ⚠️ legacy's order is stated correctly, but the doc **omits that our port had Remarks / Dispatch Status INVERTED** — presenting the port as matching when it did not. Fixed 2026-07-16. |
+> | §5 item 1 — *"Progress bar … coloured teal/cyan"* | ❌ **MISLEADING** — the teal branch is **inert** (`--teal` is undefined in **both** systems). The bar is cyan or **invisible**, never teal. |
+> | §1 / §8 — tiles *"`--teal` coloured for Done"* | ❌ **MISLEADING** — inert in legacy; legacy paints **no teal at all**. Its only real teal is a **literal `#14b8a6`** on the Done badge → `.b-teal`. |
+> | §5 scope — *"Detailed mapping is OUT OF SCOPE … see a separate `assytracker-detail.md`"* | ⚠️ **That file was never written.** The detail was **unmapped** until 2026-07-16. |
+>
+> **Verified accurate:** §0 accordion split · §4.1 badge text/colours · §5's list of expanded-body sections.
+>
+> **⚠️ LEGACY BUG — DO NOT COPY:** legacy's progress bar switches its fill to `var(--teal)` at 100%. `--teal` is undefined → invalid declaration → **the bar renders EMPTY when complete**. Ours stays cyan deliberately.
+
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L28738–28887 (`function renderAssemblyTracker()`). Per-unit assemble logic at L28890+. `_atBuildAssemblies` builds the rollup (separate function — drives `data.assemblies` + `data.equipSOs`).
-> **React target:** `apps/web/src/modules/assembly/routes/list.tsx` (route `/assemblies`, PL-5 shipped) + `apps/web/src/modules/assembly/routes/detail.tsx` (per-SO detail).
+> **React target:** `apps/web/src/modules/assembly/routes/list.tsx` (route `/assemblies`, PL-5 shipped) = legacy's **collapsed card header L28782–28787** · `apps/web/src/modules/assembly/routes/detail.tsx` (route `/assemblies/$soId`) = legacy's **per-SO EXPANDED BODY L28788–28884** (mapped + refactored 2026-07-16).
 > **Status legend:** ✅ match · ❌ differs · ⚠️ partial.
 > **Tag every gap:** **BLOCKER** · **DELTA** · **POLISH**.
 
@@ -29,7 +46,14 @@ Legacy: 5 status tiles in a `grid auto-fit minmax(145px)` row.
 
 - ❌ **All 5 tiles missing in React list.** Click sets `atFilter` and re-renders. **BLOCKER** for parity but workable today since the list shows status badges per row.
 
-Tile chrome: `.dash-stat-card`, centered, 14px padding, 10px radius. ✅ class exists in theme.
+Tile chrome: legacy writes `class="dash-stat-card"` (L28750) plus inline `bg2/border/14px/r10/center/pointer`.
+
+> **CORRECTION 2026-07-15 (REFACTOR-1):** this line previously read *"✅ class exists in theme"*. **That was false.**
+> `.dash-stat-card` is defined in **neither** `innovic-theme.css` (0 matches) **nor legacy's stylesheet** (0 matches) —
+> legacy *uses* it at L24013-16 and L28750 and never defines it, so **it is inert in legacy too**. The tiles are
+> styled entirely by legacy's inline attributes, which the port already mirrors. **Do not add a rule for it** —
+> that would diverge from legacy, not match it. See ISSUE-027 for the method: "legacy references X" ≠ "legacy
+> defines X" ≠ "X applies". A class can be spelled plausibly, typecheck, lint, and do nothing.
 
 ---
 

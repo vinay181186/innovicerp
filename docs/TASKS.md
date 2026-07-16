@@ -83,6 +83,166 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 ## Active Task
 
+**ID:** REFACTOR-1 (legacy page-parity refactor track, 2026-07-15)
+**Title:** Bring every React page to 1:1 visual parity with the legacy HTML — structure, labels, columns, field order. UI/JSX only; no business logic, APIs, hooks, routes, or backend.
+**Status:** [x] **COMPLETE 2026-07-16 — THE LIST IS CLEAR.** **130 of 130 refactorable pages done** (129 Refactored + 1 Verified), **0 Not Started**, **25 "No Legacy Counterpart"** (port-only, each verified with evidence — nothing to refactor them TO). Registry total **155** pages across 145 route files. Ran as **37 batches × 3 parallel `legacy-page-refactor` agents**, per the user's 2026-07-15 direction ("refactor ALL pages, 3 at a time until the list is clear") — which overrode the skill's "never batch" rule.
+**Final verification (combined tree, authoritative):** `pnpm --filter web typecheck` **PASS** · `lint` **PASS** · `build` **PASS** (the >1000 kB chunk warning is pre-existing).
+**Output:** **271 issues logged in `docs/ISSUES.md`** · **28 registry mapping errors corrected** · **4 legacy classes ported to the theme** · the skill gained a **`SETTLED — do NOT re-raise`** section.
+
+### ⚠️ STILL NOT COMMITTED — the single biggest risk
+**~130 files, 37 batches, zero commits.** The tree had **10** modified files when REFACTOR-1 started. CLAUDE.md §0 forbids auto-commit, so this needs an explicit user approval — **but there is no fallback point.** Ask before anything else.
+
+### What this track was actually for
+**It is not a cosmetic pass.** The parity work is the *instrument*; the findings are the output. Highest-value, in order:
+1. **ISSUE-142 (P1)** — **`/so-timeline` 500s for essentially every real SO.** A 4-line `::text` fix. Verified end-to-end.
+2. **ISSUE-204 (P1)** — **a probable 60× error in QC-process cycle times** (legacy stores HOURS; our column is `_min`). **Audit BEFORE building ISSUE-109**, which would propagate it into Route Card + JC op times.
+3. **ISSUE-065** — night-shift misdating, **69 files**. The **highest-leverage single fix is one `SET TIME ZONE 'Asia/Kolkata'` in `withUserContext`** (23 SQL `CURRENT_DATE` sites). **Legacy was CORRECT — `fmt()` L1484 appends `'T00:00:00'` → local midnight → no UTC shift. Our port dropped exactly that.**
+4. **ISSUE-117/118 (P1)** — SO edit **silently eats attached files** and **collapses every line's Due Date to the earliest.**
+5. **ISSUE-150/186 (P1, compliance)** — the **Invoice prints without the buyer's address**; the **JW DC prints without "⚠ RETURNABLE"**. Both keep the layout and lose the legal character. **The PO/SPO prints are clean → per-document, not systemic.**
+6. **ISSUE-104's family (12+ instances)** — see the sweep below.
+
+### The five sweeps this track earned (each is one fix, many sites)
+1. **The IST helper** (ISSUE-065/040/244): **one** shared `todayIst()` + `formatInTimeZone(v,'Asia/Kolkata','yyyy-MM-dd')` + **one** en-IN short-date helper (`15 Jul 26` — *no existing helper produces it*; `fmtDate` is `dd-MM-yyyy`, a third format). **12+ divergent local `fmt()` copies; three shapes: named-local helpers, inlined expressions, and server-side copies.** `date-fns-tz@^3.2.0` is installed and unused.
+2. **ISSUE-104 — option lists.** **The rule, corrected twice and now settled:** *any option list not guaranteed to contain every stored value silently rewrites out-of-list values on save — whether excluded by a `<>`, a status filter, a narrow enum, or a **page boundary**.* **The immunity is the HANDLER'S NO-MATCH PATH, not the control type.** Audit every **`useXList({limit:N})` feeding a form control** and trace its no-match path. *(`useVendorsList({limit:200})` → a native `<select>` was found **independently by three agents**.)*
+3. **The `job_work` enum** (ISSUE-124/161/231): **legacy's vocabulary had 2 values; `PO_TYPES` has 4.** It already causes **double-billing in SQL**, a **wrong workflow button** in the PO detail, **and a silent wrong WRITE** on PR→PO conversion. **Grep every `job_work` / `'Job Work'` comparison across api + web.**
+4. **`as unknown as` over raw `tx.execute`** (ISSUE-142/212/240): **postgres.js's `parse: x => new Date(x)` hands a `Date` to code typed `string`.** Outcomes range from **harmless** (212 — cleared by test) to a **500** (142) to a **silently wrong figure** (240: `diffDays` returns **−9102** where the answer is **28**). **The casts make the compiler agree. The type system cannot tell you which.**
+5. **ISSUE-043 — the count query omits the filters the rows apply. NINE modules.** One line per service.
+
+### The rules that were earned (all now in `.claude/skills/refactor-page-to-legacy.md`)
+- **"Absent from OUR theme" and "absent from LEGACY" are different facts, and only the pair tells you what to do.** absent+**defined in legacy** → a real gap · absent+**absent** → **PARITY, leave it** (`.card`, ISSUE-247) · **present in ours**+absent → **we invented it** (`var(--teal,#fallback)`, ISSUE-195).
+- **A parity claim is worth nothing unless re-verified.** **EIGHT false comments** — one (**ISSUE-213**) **deleted legacy's Manual GRN mode** on a weasel-worded *"the reference file is absent"* while its own sibling cited the spec. **But `print-po.ts`, `print-jwdc.ts`, `print-spo.ts` and `so-cycle-time/lib/export.ts` all checked out.** A correct line number is not evidence of a correct claim — **and don't assume guilt either.**
+- **A constant wearing the costume of a measurement** (ISSUE-127/133/158/245/249): *legacy writes `x || 'default'`; the port drops the `x` and keeps the `'default'`.* **The reverse also happens** (the Issue Register dropped the `|| '—'`). **And the wrong-field variant** (ISSUE-259: the PO code written into the vendor-code field). **Preserve the `??`/`||` exactly.** **But VERIFY before accusing — SIX suspected constants turned out faithful.**
+- **Our normalisation IS the migration** (4×: JW's flat line array with no header entity · GRN's flat record with no lines entity · party-GRN's one-row-per-line · SO lines). **Legacy's grain is an artefact of the JSON-blob anti-pattern CLAUDE.md §1/§12 names as the reason for this project. Parity there would port it back in.**
+- **Legacy bugs NOT to copy** (found and refused): its Assembly progress bar **renders EMPTY at 100%** (`var(--teal)` is invalid) · `saveRouteCardForItem` L6918 **silently discards 6 fields its own UI collects** · `_spoEdit` never passes `editId`, so legacy's edit screen shows **"➕ New Service PO — «a fresh number»"** while pointing at the real record · SO Cycle Time's `red` duration branch is **unreachable dead code and its own hint advertises it** · `_disposeNC` **rewrites the reason category** to one of 5 where creation offers 7 · `colspan="10"` on an 11-column table.
+- **Drift that mirrors a real SERVER asymmetry is not drift** — check the service before crying drift (3×: JC form, NC, QC Process).
+- **The footer rule is CLOSED (ISSUE-248)** — six shapes; **`showModal` takes THREE params, so any 4th arg is dead.** Derive from the **call site**, never the helper name.
+
+### 🔴 My own record: 14 corrections, every one caught by an agent
+**The cause is identical every time: I asserted a conclusion from a plausible fragment instead of tracing it.** `.stat-card.blue` (I *added* a rule legacy doesn't define) · `th.td-ctr` · the alerts/`calc-engine` link · `printJwDc` · `LIMIT 1000` vs 5000 · `ClientNewPage` · **`toISOString()` being "safe"** (→ ISSUE-065 mech 4) · **ISSUE-111 "structurally cannot"** (on-hand **is** server-available via `v_item_stock.on_hand_qty`) · `editSOLine` vs `_editFullSO` (**a correct delegate is not a correct counterpart — match on GRAIN**) · `poHeaderForm` · **"legacy's PR Approve never stamps the approver"** (**backwards** — legacy stamps; **we have no approve endpoint at all**, T-036b never shipped) · the `…FromPrBatch` schema (**two sibling hooks; I named the wrong one**) · **`.card` → `.panel`** (**I encoded my own cautionary tale as a directive for 30 batches**) · **`_ospDCCreateForm`** (**a grep too narrow, then an absence reported as evidence**).
+**The system worked because every brief says "verify, don't trust me" — and agents took it literally 14 times.**
+
+### Decisions queued for the user
+**Run first (before any ISSUE-104 parity work ships):**
+```sql
+SELECT * FROM vendors  WHERE rating NOT IN ('A','B','C','');
+SELECT * FROM machines WHERE shifts_per_day > 3;
+SELECT id, so_no, type    FROM sales_orders WHERE type = 'with_material' AND deleted_at IS NULL;
+SELECT id, so_no, gst_pct FROM sales_orders WHERE gst_pct NOT IN (0,5,12,18,28) AND deleted_at IS NULL;
+SELECT id, code, department, type FROM cost_centers WHERE department IS NULL OR type IS NULL;
+SELECT id, code, default_cycle_time_min FROM qc_processes WHERE deleted_at IS NULL;  -- ISSUE-204, vs legacy's HOURS
+```
+**Rulings needed:** the **hours-vs-minutes unit** (ISSUE-177/204 — **three modules, one decision**) · **ISSUE-178's ADR conflict** (the JWSO/SO `gstPercent` select collapses a stored 12.5% to **0%**; ADR-056 binds the two for parity, so fixing one breaks the other) · the Address `<textarea>` vs `<input>` contradiction (**two agents reached opposite conclusions**) · NC's badge divergences (legacy uses **no badge at all**; `return_to_vendor` is purple in legacy, `.b-purple` doesn't exist) · Production Dashboard's 2 removed tiles (ISSUE-074) · `.blue`'s absence (ISSUE-110) · legacy's `'3th'` typo.
+**Legacy spec source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` (newer than the CLAUDE.md §1 filename — do not "correct" it).
+**Modules COMPLETE:** Masters · Quality · Inventory · Design. **Remaining:** Sales (in progress), Manufacturing (bulk), Purchase, System.
+
+**⚠️ NOT COMMITTED — the single biggest risk on this track.** 28 batches, **114 dirty files, ~11.3k insertions / ~6.1k deletions**, zero commits. The tree had **10** modified files when REFACTOR-1 started. CLAUDE.md §0 forbids auto-commit, so this needs an explicit user approval — **but there is no fallback point, and one bad `git stash` or reset costs the entire track.** Ask for a checkpoint at the next opportunity.
+
+## 🔴🔴 THE MOST SEVERE FINDING — ISSUE-142: `/so-timeline` is DEAD in production
+
+**It throws a TypeError (500) for essentially every real SO — any SO with a Job Card, PR, PO or GRN.** Not a divergence; a broken page. **I verified all six links of the chain personally** (`apps/api/src/modules/so-timeline/service.ts`):
+
+1. `jc_date`/`pr_date`/`po_date`/`grn_date` are **`date`** columns → **OID 1082** (schema.ts:707, 1306, 1382, 1513)
+2. Driver = **postgres.js** (`db/client.ts:1-2`)
+3. postgres.js: `from: [1082, 1114, 1184]` → **`parse: x => new Date(x)`** (`postgres@3.4.9/src/types.js:29-32`)
+4. The four raw `tx.execute` selects **omit `::text`** (service.ts:129, 173, 206, 239)
+5. **`as unknown as Array<{ jc_date: string }>` lies to the compiler** (service.ts:140, 183, 217, 247) → typecheck passes
+6. `events.sort((a,b) => a.date.localeCompare(b.date))` (service.ts:267) → **`Date.prototype.localeCompare` is not a function**
+
+**Fix:** add `::text` to the four selects — the pattern already exists at `customer-dispatches/service.ts:287` and `job-work-orders/service.ts:218`.
+
+**The lesson that generalises:** `as unknown as X` is **an assertion the compiler must believe**, not an annotation. **Typecheck passing here was not evidence of correctness — it was evidence we told it not to look.** Every `as unknown as` over a raw `tx.execute` result is an unchecked claim about driver type-parsing. **Audit them.**
+
+**Why nothing caught it (ISSUE-146):** `so-timeline` has **no tests at all** — a CLAUDE.md §9 violation. One integration test against an SO with a single Job Card would have failed on day one. **This is the first place on this track where the missing-tests gap has a proven, specific cost.**
+
+## 🔴 THE HEADLINE FINDING — read ISSUE-065 before anything else
+
+**Night-shift records are silently misdated by one day.** `new Date().toISOString().slice(0,10)` returns the **UTC** date; IST is UTC+5:30, so 00:00–05:30 IST yields **yesterday**. **69 files** (47 web + 22 API). Proven, not theorised.
+- Web: seeds `logDate` on **Op Entry** (production logs), DC **receipt date** (cascades to `jc_ops`/`store_transactions`/auto-NC), dispatch, CAPA, design work log.
+- API (**fires with nobody logged in**): `lib/calc-engine.ts:354` computes `today` for the **entire calc engine** → every overdue/aging figure runs against yesterday; `goods-receipt-notes/cascades.ts:191` + `store-inventory/service.ts:192` **write `store_transactions.txn_date`**.
+- **Legacy was CORRECT** (`today()` L1485 uses local date parts) — this is a **port regression**.
+- Violates CLAUDE.md §6 rule 5 verbatim. **`date-fns-tz@^3.2.0` is installed and unused.**
+- **Fix with ISSUE-040** (display half — 12 divergent local `fmt()` copies). Same root cause: no shared IST date utility.
+
+## Orchestrator rules (learned the hard way)
+
+- Agents must **NOT commit**, **NOT edit the registry**, and (since batch 12) **NOT edit `docs/ISSUES.md`** — the orchestrator owns all three. Number collisions happened 3× when agents wrote concurrently.
+- **Verify `typecheck` + `lint` + `build` on the COMBINED tree after every batch.** Per-agent checks are unreliable during concurrent work — confirmed to **false-pass AND false-fail** on other agents' in-flight files (ISSUE-035).
+- **Never quote match counts in a brief** (ISSUE-071) — `grep -c` counts lines, agents count occurrences. Tell agents to grep and read for themselves.
+- **Registry mappings have now been wrong 12×.** Root cause of #1-9: the auto-builder assigned **ONE legacy fn to EVERY route in a module** — so it almost always names the module's **LIST** renderer. Two further failure modes since:
+  - **#10 — right fn, WRONG SUB-RENDERER:** BOM detail's real target is `renderBOMMaster`'s **expanded row L8460-8493** (+ `_bomViewSnapshot` L8812), not its list wrapper L8438. *A plausible fn name is not evidence the mapping is right.*
+  - **#12 — a route legacy NEVER HAD:** `/customer-dispatches/new`. Legacy's register empty state (L10783) names **Item Master** as the only create path, and its header has no New button.
+  **Trace the mapping before briefing; tell the agent to STOP and report if it disagrees.** Four have correctly returned port-only with zero edits.
+- **THREE port-only categories — distinguish them:** (1) **no renderer at all** (5 master detail pages); (2) **renderer hidden in a list, NOT yet ported** → refactor it (BOM Master); (3) **renderer hidden in a list, ALREADY ported** → zero edits (Sales Orders — `renderSOmaster`'s expand L11879-11957 already lives in `list.tsx`).
+- **`_mob*` functions are NOT a spec source.** Different shell: keyed on `_mobPage`, rendered into `#mobBody` (L28224), **unreachable from the desktop `render()` router**. ~9 `mob-*` classes have **0 occurrences** in our styles, and the screens are strict **subsets** — porting one would *delete* working fields.
+- **A correct delegate does NOT imply a correct counterpart — match on GRAIN.** `editSO` L12528 → `editSOLine` L12465 is a real delegate, but `editSOLine` edits **ONE LINE**; our `/sales-orders/$id/edit` loads the whole SO → the true counterpart is **`_editFullSO` L12531**. I briefed the wrong one.
+- **The footer rule has FOUR shapes — derive it from the CALL SITE, never from the helper name:** `showModal` → `Cancel`/`Save` (L28026-27); `showModalLg` **with** an explicit `saveLabel` → that label; `showModalLg` **without** one → the **L28034 fallback derives it from the title** (SO = `✓ Save SO` on `.btn-success`); and some fns **hand-roll** `<div class="modal-footer">` entirely (Route Cards).
+- **Never quote match counts in a brief** (ISSUE-071) — `grep -c` counts lines, agents count occurrences. **Never quote theme line numbers** (ISSUE-102) — I invalidated them all by porting classes into the file. Name the class; make the agent grep.
+- Second-hand intel is a **hypothesis, not a finding** — QC Call Register's "unsurfaced fields" were all already rendered.
+- **My assertions have been disproven 9×, always the same way: I generalise from a plausible grep instead of tracing the type or call path.** (`.stat-card.blue` — I *added* a CSS rule legacy doesn't define; `th.td-ctr`; the alerts/`calc-engine` link; `printJwDc`; `LIMIT 1000` vs 5000; `ClientNewPage`; **`toISOString()` being "safe"** — became ISSUE-065 mech 4; **ISSUE-111 "structurally cannot"** — on-hand IS server-available via `v_item_stock.on_hand_qty`; and the `editSOLine` counterpart.) **Frame briefs as "verify this", never as fact.** The system works because agents check me.
+
+## Parity policy (ISSUE-017 + hard-won corollaries)
+
+- Genuine legacy behaviour is the spec **even when surprising**. But:
+- **"Legacy references X" ≠ "legacy defines X" ≠ "X applies"** (ISSUE-027/047). Legacy has a **second, print-only `<style>` block at L10539**; the main one opens at L10. `.stat-card.blue`, `.b-running`, `.b-yellow` are *used* but undefined (or print-only) → **unstyled in legacy too**. **Print the FULL selector and compare specificity** — 4 specificity claims (one mine) were wrong from not reading the selector.
+- **The port is a LIGHT theme; legacy was DARK (ISSUE-067).** Map legacy hex → nearest token. **Copying legacy's literals is often WRONG.**
+- **Never ship legacy text describing features the port lacks** — build it if UI-only, else withhold the text and report.
+- **Never port verbatim when our semantics invert legacy's** (ISSUE-023 Access column: legacy's "Not configured" = restricted, ours = ALLOW ALL).
+- **Never delete a working feature to reach parity** — report and keep ours. (Violated once: Production Dashboard's Outsource Ops / At Vendor tiles — **awaiting a user ruling**, ISSUE-074.)
+- **Endpoints: trace against legacy's handler, THEN decide.** 3 agents correctly **refused** (PR Approve — **see the correction below**; DC's edit bypasses our atomic `/receive` cascade; Job Queue's `togglePriority` would delete/re-upsert every `jc_ops` row). 3 correctly **wired** (TPI submit, Shop Floor stop, Outsource batch PO — matched or superset). Neither reflex is right.
+  - **🔴 CORRECTED 2026-07-16 (ISSUE-216) — I had this BACKWARDS and propagated it into many briefs.** I wrote *"PR Approve never stamps the approver"* **as a statement about legacy. Legacy DOES stamp** — `approvePR` L6420-21 writes `approvedBy` and `approvedDate`. **WE have no approve endpoint at all:** `purchase-requests/service.ts` L1-7 says *"the approve + create-PO actions ship in **T-036b**"* — **T-036b never shipped**, and no approve fn exists in `routes.ts`. **The columns and every READ path exist** (schema.ts:1325/1330; service.ts:166, 209, 282-283), **so `approvedBy`/`approvedAt` are structurally always null.** The refusal was right; **my recorded reason inverted which side had the gap.** *(Correction #11 — same root cause as the other ten: a conclusion recorded without tracing the claim.)*
+
+## What this track is actually finding — it is NOT cosmetic
+
+**Recurring classes (count = pages hit):**
+- **Browser math on server-owned figures (12).** Tiles/counts bound to capped arrays: a QC tile froze at `LIMIT 500`; SC Dashboard's **"Grand Total ₹" freezes past `LIMIT 100`**; Production Dashboard's count froze at 100 **while the server's true count sat unused on the payload**; QC Dashboard's Pareto divides by a `LIMIT 8` subset → percentages inflate to a **false 100%**.
+- **Fields on the payload, never rendered (11+).** PR had 5; Invoices had `overdueCount`; Op Log discards `qcReportPath`.
+- **Whole actions missing though route+hook exist (7).** Route Cards' ENTIRE Actions column (Edit unreachable); Cost Centers same; PR's Create-PO; SO's Assign; Operators' Del; Machines' ₹/hr. **Design Projects still cannot be edited at all** — complete write path, **zero call sites** (ISSUE-064).
+- **Count query omits filters the rows apply (6 modules)** → phantom pages (ISSUE-043). `sales-orders/service.ts:283-285` **fabricates a justification** — it claims "UI shows X+ results"; the UI renders `Showing A–B of {total}` with **no `+` anywhere** (ISSUE-113, now **verified against the render site, not merely suspected**). Don't trust comments; check where it renders.
+- **Invented semantics** — Job Queue's "Busy" load label exists **nowhere** in legacy; Cost Centers badged Inactive amber where legacy is muted.
+
+**🔴 THE CLASS THAT MATTERS MOST — SILENT DATA LOSS, and it is NOT cosmetic (11 instances, mostly found in batches 23-27):**
+
+- **ISSUE-117 (P1):** editing an SO **silently eats attached files** — the form renders `📤 Upload PO Doc` / `📧 Attach Email Ref` in both modes but `edit.tsx` never wires the handlers. Attach → see the chip → save → **gone**. **Legacy wires both modes** (`_cpoUploadIfNeeded` L12522/L12617). A **port regression**.
+- **ISSUE-118 (P1):** editing an SO **collapses every line's Due Date to the earliest** (lines due 30-Mar + 15-Apr → both 30-Mar). Legacy captures Due Date **per line** (L12164/L12006). **A half-fix would wipe ALL due dates — restore the column and the save mapping together, or not at all.**
+- **ISSUE-104 family — a closed control over a wider column silently overwrites on save.** Now **8 instances in three shapes**: *narrowing* (vendor rating A/B/C vs stored `"D"`; machine shifts 1/2/3 vs `>3`; user roles missing 4 → rewritten to `viewer`; SO GST select vs `0..99.99`); *inverted* (BOM qty `min="1" step="1"` vs our decimals; OSP lead-days `min="1"` vs stored `0` → **validation failure**); *closed-over-open* (cost-center `department`/`type` are **nullable free text** with **no empty option** → null renders `Production` and is overwritten).
+- **ISSUE-119 (P2):** `with_material` SOs are **silently rewritten to `component_manufacturing`** — it's a valid stored value the Type select can't represent. **This one changes what KIND of document the record is.**
+- **ISSUE-120 (P2):** an SO's **BOM link is silently cleared** on edit (the select is fed `status:'active'`; an inactive-BOM link finds no option → cleared → `BOM Pending`). **Legacy explicitly guards against this** — `if(!isAdmin()||!_bv2) bomMasterId=origBomId` (L12482). Another **port regression against a safeguard legacy shipped**.
+- **The generalisation:** *a filtered option list is the same defect shape as a narrow one.* **Before porting ANY select / `min` / `step` / `maxlength`, check the schema's full value range AND what the option list is filtered by.**
+- **Required DB audits BEFORE any of this ships:**
+  ```sql
+  SELECT * FROM vendors  WHERE rating NOT IN ('A','B','C','');
+  SELECT * FROM machines WHERE shifts_per_day > 3;
+  SELECT id, so_no, type    FROM sales_orders WHERE type = 'with_material' AND deleted_at IS NULL;
+  SELECT id, so_no, gst_pct FROM sales_orders WHERE gst_pct NOT IN (0,5,12,18,28) AND deleted_at IS NULL;
+  SELECT id, code, department, type FROM cost_centers WHERE department IS NULL OR type IS NULL;
+  ```
+
+**Legacy save handlers are NOT automatically the spec.** `saveRouteCardForItem` L6918 keeps only 6 fields and **silently discards `opType`, `isOSP`, `ospVendorCode`, `ospVendor`, `ospLeadDays`, `qcRequired`** — legacy's own edit UI builds OSP/QC ops its own save handler throws away. Ours persists them. **Trace the handler; don't copy it reflexively.**
+
+**Features that structurally cannot work:**
+- **ISSUE-062:** Design Work Log's Alerts tab flags engineers who *haven't* logged — by reading the engineer list **from the logs that exist**. Non-loggers are invisible. Root cause: `GET /users` is `requireAdminRole` and would 403 for its own users.
+- **ISSUE-068:** Machine Loading's queue filters `available>0 OR in_progress` where legacy shows everything `!== 'Complete'` → **`waiting`/`qc_pending`/`running` never appear** on a board whose purpose is showing what's stuck.
+- **ISSUE-016:** click-to-sort dead on clients/items/vendors — `toQueryString` never serialises `sortBy`/`sortDir`. Marked RESOLVED 2026-06-13; **never worked**. 6-line fix.
+- **ISSUE-061:** every table header has `cursor:pointer` + `:hover`; legacy only styles *sortable* ones. Most invite a click and do nothing.
+
+**Legacy bugs we must NOT copy (documented so nobody "fixes" toward legacy):**
+- **ISSUE-066:** legacy's machine-entry form (`_machSubmitLog` L5669) has **no QC guard** — it *is* the source of ISSUE-001's phantom complete-logs. Porting it verbatim would reintroduce the corruption.
+- `background: var(--x)12` (ISSUE-063) → invalid CSS, no background; one port had *invented* a blue tint that rendered on a purple chip.
+- Task Board's Overdue filter renders **zero rows** in legacy (filters on a derived status no task stores).
+- `.mach-card.selected` emitted but only `.mach-card.sel` defined → legacy's selected card has **no** highlight; `.mach-val`/`.mach-lbl` used 3×, defined 0×.
+
+**~10 defects survived review by LOOKING right** — inert CSS classes, dropped query params, a plausible-but-wrong page name, invented class names, comments asserting correctness above the bug. **All typecheck and lint clean.** Only diffing against legacy caught them.
+
+## Skill/theme fixes made by this track
+`.claude/skills/refactor-page-to-legacy.md` prescribed **8 nonexistent classes** (`form-label-required`, `filter-bar`, `section-title`, `section-actions`, `panel-meta`, `empty-state-icon`, `empty-state-msg`, `page-wrap`) — in the same doc that bans inventing classes. **All corrected**; a standing "grep before trusting this document" rule added. **Ported to `innovic-theme.css`** (verified legacy main-block, tokens already present): `.tbl-frozen`, `.tag`, `.task-unread`, `.task-linked-ref`. **Consolidated** 4 duplicate `ColumnMeta` augmentations → `apps/web/src/types/tanstack-table.d.ts` (ISSUE-029). **Added** 8 acronym routes to the topbar `TITLE_MAP` (ISSUE-057).
+
+## NOT COMMITTED
+
+**Nothing on this track has ever been committed** — scaffold, 55 pages, theme ports, skill fixes, 75 logged issues. Diff grows every batch; user approval required per CLAUDE.md §0. Plan when approved: 3 commits (scaffold · earlier-8 + fixes · batches 1-N).
+
+**Open user decisions:** the 6-line sort fix (ISSUE-016) · JC badge colours, `no_ops` renders **red** (ISSUE-025) · `.badge` uppercase app-wide, `PAID` vs `Paid` (ISSUE-041) · header affordances (ISSUE-061) · Production Dashboard's 2 removed tiles (ISSUE-074) · legacy's `'3th'` typo not reproduced (ISSUE-058) · Op Log's removed subtitle (ISSUE-061).
+**Next:** B17 prod-jw-list/assemblies/jw-dc (in flight). Then remaining Manufacturing, System (16), Sales detail/forms. Re-verify Daily Task Reports — marked Verified while carrying the date-tooltip regression.
+
 **ID:** PLAN-JW-1 (JW full plan parity in SO/JW Planning, ADR-055, migration 0060, 2026-07-10)
 **Title:** JWSOs (IN-JW-*) didn't appear in SO/JW Planning; user chose full plan parity (JWs planned like SOs). Root cause: so-planning read only `sales_orders`; JW planning was a deferred gap (guard in `job-cards/service.ts`).
 **Status:** [~] CODE COMPLETE, NOT DEPLOYED. Added `plans.jw_line_id` (migration `0060_plans_jw_line.sql` + schema.ts + shared plan.ts). so-planning list unions JWs + detail falls through to `getJwPlanningDetail`; wire shape gains `source:'so'|'jw'`; Create-Plan modal posts `jwLineId` for JW; execute sets `job_cards.source_jw_line_id`; `[JW]` tag in the left list. Added JW service-test coverage (list+detail). typecheck + lint green across all 4 packages; module tests need DB env (run in CI). **DEPLOY-BLOCKING:** so-planning reads now reference `plans.jw_line_id` → migration 0060 MUST be applied before/with deploy (with pending 0058, 0059) or all Planning reads 500.

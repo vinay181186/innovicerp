@@ -1,0 +1,2173 @@
+# ERP page registry — auto-built by page-registry-builder. Do not hand-edit auto fields
+# (route, react_file, render_fn); status IS meant to be advanced by humans/other agents.
+# status values: Not Started | Mapping Done | Refactored | Verified | No Legacy Counterpart
+#
+# "No Legacy Counterpart" = a port-only page. Legacy has NO equivalent screen, so there is
+# nothing to refactor it TO. Do not force one onto the nearest-looking legacy function —
+# that produces a worse page than leaving it alone. These are DONE for REFACTOR-1 purposes.
+# Traced 2026-07-15; each verified against the legacy router + every render/modal fn.
+#
+# NOTE: some pages map to legacy MODAL functions (_alertDrillDown, _ospDCCreateForm,
+# _ospDCRegister), not top-level render*() fns. The legacy app crams several of our routes
+# into one tabbed/modal screen, so a 1:1 route->render_fn mapping does not always exist.
+legacy_html: legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+pages:
+  # ─── Masters ───────────────────────────────────────────────────────────────
+  - module: Masters
+    page_name: BOM Master — Create
+    route: /bom-masters/new
+    react_file: apps/web/src/modules/bom-master/routes/new.tsx
+    # Corrected 2026-07-15: L8438 is renderBOMMaster (the LIST). Both BOM form routes are
+    # served by the shared builder _bomMasterFormBody L8513 — the form agent worked from
+    # it. Its modal is showModalLg (explicit saveLabel), so the Cancel/Save footer rule
+    # (ISSUE-099) correctly does NOT apply here.
+    render_fn: _bomMasterFormBody
+    render_fn_line: 8513
+    theme_css: null
+    status: Refactored
+  - module: Masters
+    page_name: BOM Master — Detail
+    route: /bom-masters/$id
+    react_file: apps/web/src/modules/bom-master/routes/detail.tsx
+    # REGISTRY ERROR #10 — corrected 2026-07-15 (REFACTOR-1). A NEW failure mode: not
+    # "one fn per module" (errors #1-9) but the RIGHT fn, WRONG sub-renderer. L8438 is
+    # renderBOMMaster's list wrapper; the detail equivalent is its expanded-row block at
+    # L8460-8493 (two full tables, own <thead>s, branch on revisionLog.length), plus the
+    # second-level snapshot viewer _bomViewSnapshot L8812 — never attributed to anything.
+    # Verdict: a REAL renderer, not port-only. Expand-row packaging is OUR route
+    # architecture, not a spec divergence. Contrast the five port-only master details,
+    # which have no legacy renderer at all.
+    render_fn: renderBOMMaster (expanded row) + _bomViewSnapshot
+    render_fn_line: 8460
+    render_fn_line_secondary: 8812
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: BOM Master — Edit
+    route: /bom-masters/$id/edit
+    react_file: apps/web/src/modules/bom-master/routes/edit.tsx
+    # Corrected 2026-07-15: L8438 is the LIST. Shared builder _bomMasterFormBody L8513
+    # (same fn as /bom-masters/new). The revision bump + snapshot lives in editBOMMaster
+    # L8636-8653 — it genuinely snapshots the old lines, so the list's "Revise" is honest.
+    render_fn: _bomMasterFormBody
+    render_fn_line: 8513
+    theme_css: null
+    status: Refactored
+  - module: Masters
+    page_name: BOM Master — List
+    route: /bom-masters
+    react_file: apps/web/src/modules/bom-master/routes/list.tsx
+    render_fn: renderBOMMaster
+    render_fn_line: 8438
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Clients — Create
+    route: /clients/new
+    react_file: apps/web/src/modules/clients/routes/edit.tsx
+    render_fn: renderClients
+    render_fn_line: 12969
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #8).
+  # Legacy has NO detail view for this master. Evidence:
+  #   1. No detail fn exists — only renderClients (list), clientForm, addClient, editClient, delClient.
+  #   2. Legacy's router has exactly ONE key for this master, pointing at the LIST
+  #      (L2413 machines / L2420 clients / L2422 operators / L2435 vendors /
+  #      L2455 costcenters). There is no detail route.
+  #   3. Legacy's list row actions are Edit + Del only — NO View button (confirmed
+  #      independently by the Clients and Vendors list agents, both of which
+  #      removed ours to match).
+  # Legacy's masters are list + modal-form only. Our detail pages are a port
+  # ADDITION. Nothing to refactor them TO. Contrast: Items DOES have one
+  # (viewItemDetail L11743) and Route Cards does (viewRouteCard L10143).
+
+  - module: Masters
+    page_name: Clients — Detail
+    route: /clients/$id
+    react_file: apps/web/src/modules/clients/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Masters
+    page_name: Clients — Edit
+    route: /clients/$id/edit
+    react_file: apps/web/src/modules/clients/routes/edit.tsx
+    render_fn: renderClients
+    render_fn_line: 12969
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Clients — List
+    route: /clients
+    react_file: apps/web/src/modules/clients/routes/list.tsx
+    render_fn: renderClients
+    render_fn_line: 12969
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Cost Centers — Create
+    route: /cost-centers/new
+    react_file: apps/web/src/modules/cost-centers/routes/new.tsx
+    # Corrected 2026-07-15: L17165 is renderCostCenters (the LIST). The create form is
+    # _addCostCenter L17191 — underscore-prefixed, which is why earlier greps missed it.
+    # NOTE: unlike every other master, legacy has NO shared form builder here — add and
+    # edit are separate fns and GENUINELY DIFFER (see ISSUE-107).
+    render_fn: _addCostCenter
+    render_fn_line: 17191
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #8).
+  # Legacy has NO detail view for this master. Evidence:
+  #   1. No detail fn exists — only renderCostCenters (list), costCenterForm, addCostCenter, editCostCenter, delCostCenter.
+  #   2. Legacy's router has exactly ONE key for this master, pointing at the LIST
+  #      (L2413 machines / L2420 clients / L2422 operators / L2435 vendors /
+  #      L2455 costcenters). There is no detail route.
+  #   3. Legacy's list row actions are Edit + Del only — NO View button (confirmed
+  #      independently by the Clients and Vendors list agents, both of which
+  #      removed ours to match).
+  # Legacy's masters are list + modal-form only. Our detail pages are a port
+  # ADDITION. Nothing to refactor them TO. Contrast: Items DOES have one
+  # (viewItemDetail L11743) and Route Cards does (viewRouteCard L10143).
+
+  - module: Masters
+    page_name: Cost Centers — Detail
+    route: /cost-centers/$id
+    react_file: apps/web/src/modules/cost-centers/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Masters
+    page_name: Cost Centers — Edit
+    route: /cost-centers/$id/edit
+    react_file: apps/web/src/modules/cost-centers/routes/edit.tsx
+    # Corrected 2026-07-15: L17165 is the LIST. The edit form is _editCostCenter L17213.
+    render_fn: _editCostCenter
+    render_fn_line: 17213
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Cost Centers — List
+    route: /cost-centers
+    react_file: apps/web/src/modules/cost-centers/routes/list.tsx
+    render_fn: renderCostCenters
+    render_fn_line: 17165
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Items — Create
+    route: /items/new
+    react_file: apps/web/src/modules/items/routes/edit.tsx
+    render_fn: renderItems
+    render_fn_line: 11481
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Items — Detail
+    route: /items/$id
+    react_file: apps/web/src/modules/items/routes/detail.tsx
+    render_fn: renderItems
+    render_fn_line: 11481
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Items — Edit
+    route: /items/$id/edit
+    react_file: apps/web/src/modules/items/routes/edit.tsx
+    render_fn: renderItems
+    render_fn_line: 11481
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Items — List
+    route: /items
+    react_file: apps/web/src/modules/items/routes/list.tsx
+    render_fn: renderItems
+    render_fn_line: 11481
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Machines — Create
+    route: /machines/new
+    react_file: apps/web/src/modules/machines/routes/edit.tsx
+    render_fn: renderMachines
+    render_fn_line: 13070
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #8).
+  # Legacy has NO detail view for this master. Evidence:
+  #   1. No detail fn exists — only renderMachines (list), machineForm, addMachine, editMachine, delMachine.
+  #   2. Legacy's router has exactly ONE key for this master, pointing at the LIST
+  #      (L2413 machines / L2420 clients / L2422 operators / L2435 vendors /
+  #      L2455 costcenters). There is no detail route.
+  #   3. Legacy's list row actions are Edit + Del only — NO View button (confirmed
+  #      independently by the Clients and Vendors list agents, both of which
+  #      removed ours to match).
+  # Legacy's masters are list + modal-form only. Our detail pages are a port
+  # ADDITION. Nothing to refactor them TO. Contrast: Items DOES have one
+  # (viewItemDetail L11743) and Route Cards does (viewRouteCard L10143).
+
+  - module: Masters
+    page_name: Machines — Detail
+    route: /machines/$id
+    react_file: apps/web/src/modules/machines/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Masters
+    page_name: Machines — Edit
+    route: /machines/$id/edit
+    react_file: apps/web/src/modules/machines/routes/edit.tsx
+    render_fn: renderMachines
+    render_fn_line: 13070
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Machines — List
+    route: /machines
+    react_file: apps/web/src/modules/machines/routes/list.tsx
+    render_fn: renderMachines
+    render_fn_line: 13070
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Operators — Create
+    route: /operators/new
+    react_file: apps/web/src/modules/operators/routes/edit.tsx
+    render_fn: renderOperators
+    render_fn_line: 13699
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #8).
+  # Legacy has NO detail view for this master. Evidence:
+  #   1. No detail fn exists — only renderOperators (list), operatorForm, addOperator, editOperator, delOperator.
+  #   2. Legacy's router has exactly ONE key for this master, pointing at the LIST
+  #      (L2413 machines / L2420 clients / L2422 operators / L2435 vendors /
+  #      L2455 costcenters). There is no detail route.
+  #   3. Legacy's list row actions are Edit + Del only — NO View button (confirmed
+  #      independently by the Clients and Vendors list agents, both of which
+  #      removed ours to match).
+  # Legacy's masters are list + modal-form only. Our detail pages are a port
+  # ADDITION. Nothing to refactor them TO. Contrast: Items DOES have one
+  # (viewItemDetail L11743) and Route Cards does (viewRouteCard L10143).
+
+  - module: Masters
+    page_name: Operators — Detail
+    route: /operators/$id
+    react_file: apps/web/src/modules/operators/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Masters
+    page_name: Operators — Edit
+    route: /operators/$id/edit
+    react_file: apps/web/src/modules/operators/routes/edit.tsx
+    render_fn: renderOperators
+    render_fn_line: 13699
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Operators — List
+    route: /operators
+    react_file: apps/web/src/modules/operators/routes/list.tsx
+    render_fn: renderOperators
+    render_fn_line: 13699
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Report Types — List
+    route: /report-master
+    react_file: apps/web/src/modules/report-types/routes/list.tsx
+    render_fn: renderReportMaster
+    render_fn_line: 23677
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Route Cards — Create
+    route: /route-cards/new
+    react_file: apps/web/src/modules/route-cards/routes/new.tsx
+    # Corrected 2026-07-15: L10078 is renderRouteCards (the LIST). Create is addRouteCard
+    # L6939 — but it owns no op renderer: it emits an empty <div id="rcOpsSection"> that
+    # _rcCheckExisting L6994 fills via rcOpsHtml L10208. That SHARED renderer is why
+    # legacy's two modes are field-identical (ISSUE-099's mechanism, 6th confirmation).
+    render_fn: addRouteCard (ops via rcOpsHtml L10208)
+    render_fn_line: 6939
+    theme_css: null
+    status: Refactored
+  - module: Masters
+    page_name: Route Cards — Detail
+    route: /route-cards/$id
+    react_file: apps/web/src/modules/route-cards/routes/detail.tsx
+    render_fn: renderRouteCards
+    render_fn_line: 10078
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Route Cards — Edit
+    route: /route-cards/$id/edit
+    react_file: apps/web/src/modules/route-cards/routes/edit.tsx
+    # Corrected 2026-07-15: L10078 is the LIST. Edit is editRouteCard L10169, ops via the
+    # same shared rcOpsHtml L10208 (called directly at L10198). Ignore L10173-10184 — it
+    # builds an opsHtml/body pair via jcModalOpsHtml() that L10186 immediately OVERWRITES:
+    # dead code in legacy.
+    render_fn: editRouteCard (ops via rcOpsHtml L10208)
+    render_fn_line: 10169
+    theme_css: null
+    status: Refactored
+  - module: Masters
+    page_name: Route Cards — List
+    route: /route-cards
+    react_file: apps/web/src/modules/route-cards/routes/list.tsx
+    render_fn: renderRouteCards
+    render_fn_line: 10078
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Users — Create
+    route: /users/new
+    react_file: apps/web/src/modules/users/routes/create.tsx
+    render_fn: renderUsers
+    render_fn_line: 13435
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Users — Edit
+    route: /users/$id/edit
+    react_file: apps/web/src/modules/users/routes/edit.tsx
+    render_fn: renderUsers
+    render_fn_line: 13435
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Users — List
+    route: /users
+    react_file: apps/web/src/modules/users/routes/list.tsx
+    render_fn: renderUsers
+    render_fn_line: 13435
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Vendors — Create
+    route: /vendors/new
+    react_file: apps/web/src/modules/vendors/routes/edit.tsx
+    render_fn: renderVendors
+    render_fn_line: 27734
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #8).
+  # Legacy has NO detail view for this master. Evidence:
+  #   1. No detail fn exists — only renderVendors (list), vendorForm, addVendor, editVendor, delVendor.
+  #   2. Legacy's router has exactly ONE key for this master, pointing at the LIST
+  #      (L2413 machines / L2420 clients / L2422 operators / L2435 vendors /
+  #      L2455 costcenters). There is no detail route.
+  #   3. Legacy's list row actions are Edit + Del only — NO View button (confirmed
+  #      independently by the Clients and Vendors list agents, both of which
+  #      removed ours to match).
+  # Legacy's masters are list + modal-form only. Our detail pages are a port
+  # ADDITION. Nothing to refactor them TO. Contrast: Items DOES have one
+  # (viewItemDetail L11743) and Route Cards does (viewRouteCard L10143).
+
+  - module: Masters
+    page_name: Vendors — Detail
+    route: /vendors/$id
+    react_file: apps/web/src/modules/vendors/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Masters
+    page_name: Vendors — Edit
+    route: /vendors/$id/edit
+    react_file: apps/web/src/modules/vendors/routes/edit.tsx
+    render_fn: renderVendors
+    render_fn_line: 27734
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Masters
+    page_name: Vendors — List
+    route: /vendors
+    react_file: apps/web/src/modules/vendors/routes/list.tsx
+    render_fn: renderVendors
+    render_fn_line: 27734
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # ─── Sales ─────────────────────────────────────────────────────────────────
+  - module: Sales
+    page_name: Customer Dispatches — Create
+    route: /customer-dispatches/new
+    react_file: apps/web/src/modules/customer-dispatches/routes/create.tsx
+    # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #12).
+    # A NEW failure mode: not a mis-assigned fn, but a ROUTE LEGACY NEVER HAD.
+    #   Legacy names its own create path in its register's empty state (L10783):
+    #   "No dispatches recorded yet — use 📦 Dispatch button in Item Master", and
+    #   renderDispatchRegister's header (L10751-54) has NO New button.
+    #   dispatchItem(id) L11679 is ITEM-first (db.items.find(i=>i.id===id), L11681), and
+    #   our Items master has no dispatch UI at all (0 grep hits) — so dispatchItem is an
+    #   UNPORTED legacy flow, not a mismapping. This route is our own design.
+    # Model divergence on three independent axes:
+    #   entry:        item-first          vs  SO-first
+    #   grain:        a dispatchLog row IS the dispatch (1 item, 1 qty, no header)
+    #                                     vs  a document (header + N lines)
+    #   availability: item.stockQty (inventory on-hand)
+    #                                     vs  readyQty − dispatchedQty (per SO line)
+    # Forcing the port would DELETE live data (Transport/Vehicle No. are real nullable
+    # columns, schema.ts:3881-82; legacy folds them into a Remarks placeholder) and ship
+    # dead controls (createCustomerDispatchInputSchema accepts none of legacy's Linked JC
+    # / Dispatched By / Customer-Ref → Trap 1).
+    # A third dispatch writer, _atDispatchUnit L28991, is assembly-unit-first with qty:1
+    # hardcoded — also not our model.
+    # (renderDispatchRegister L10711 is the LIST — already ported to routes/list.tsx.)
+    render_fn: null
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Sales
+    page_name: Customer Dispatches — List
+    route: /customer-dispatches
+    react_file: apps/web/src/modules/customer-dispatches/routes/list.tsx
+    render_fn: renderDispatchRegister
+    render_fn_line: 10711
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Invoices — Create
+    route: /invoices/new
+    react_file: apps/web/src/modules/invoices/routes/create.tsx
+    # Corrected 2026-07-15 (registry error #14, the classic auto-builder failure).
+    # L21096 is renderInvoices — the LIST, and L2457 `invoices: ()=>renderInvoices()` is
+    # the ONLY invoice router key. Create is _createInvoice L21152, a MODAL reached solely
+    # from the list button L21136. Lines loader: _invLoadLines L21209 (invoicedMap rollup
+    # L21216-18; available = max(0, dispQty - invoiced) L21224).
+    # FOOTER: L21170 showModalLg(..., 'Create Invoice') — an EXPLICIT saveLabel, so the
+    # L28034 title-fallback never runs → "✓ Create Invoice" on .btn-success.
+    # NOT ported (rule 1, server owns them): the client dup-check L21173 and _nextInvNo
+    # L20922 — nextInvoiceCode (service.ts:249-254) does the same max-derivation on the
+    # correct side of the wire. No "Invoice No." field: it has no value before save.
+    render_fn: _createInvoice (lines via _invLoadLines L21209)
+    render_fn_line: 21152
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Invoices — Detail
+    route: /invoices/$id
+    react_file: apps/web/src/modules/invoices/routes/detail.tsx
+    # Corrected 2026-07-15 (registry error #15). L21096 is renderInvoices — the LIST, and
+    # L2457 `invoices: ()=>renderInvoices()` is the ONLY invoice router key: NOTHING routes
+    # to _viewInvoice. Detail is _viewInvoice(invId) L21273, a MODAL (showModalLg(...,
+    # 'Close') L21311) reached from the list's code cell L21117 and 👁 button L21127.
+    # lib/print.ts → _printInvoice L21314 (that line ref was correct; its "mirror" CLAIM
+    # was not — client address + PAN dropped, dates/qty differ. See ISSUE-150/151.)
+    render_fn: _viewInvoice (print via _printInvoice L21314)
+    render_fn_line: 21273
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Invoices — List
+    route: /invoices
+    react_file: apps/web/src/modules/invoices/routes/list.tsx
+    render_fn: renderInvoices
+    render_fn_line: 21096
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Pending SO Value
+    route: /pending-so-value
+    react_file: apps/web/src/modules/pending-so-value/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderPendingSOValue() L19272,
+    # router key pendingsovalue L2451.
+    # MONEY IS CLEAN — checked at the payload, not the comment: service.ts computes every
+    # figure in SQL and sumTotals() runs SERVER-SIDE (L181-205); the page only FORMATS.
+    # The only client-side maths are pct(a,b) — a display ratio of two server totals,
+    # exactly as legacy L19320 — and the `overdue` flag. The SO Costing / SC Dashboard
+    # browser-rollup shape is NOT present, despite legacy doing exactly that at L19303/
+    # L19317.
+    # ISSUE-241: six money <th>s rendered LEFT because ours used className="td-right"
+    # (inert: .innovic-table th (0,1,1) beats .td-right (0,1,0)) while LEGACY uses the
+    # inline style, which applies. Fixed by mirroring the inline style. 37 such sites app-
+    # wide — sweep case-by-case, never mechanically (183 th.td-ctr sites are correctly
+    # inert in BOTH systems and must not be touched).
+    # ISSUE-242: the totals row's <tr> bg4 was eaten by .innovic-table tbody
+    # tr:nth-child(even) td, which paints CELLS over any <tr> background. Legacy has no
+    # zebra rule. Fixed by moving the background to the cells.
+    # maximumFractionDigits:0 KEPT over the shared inrFormat (2dp): legacy's PSV list AND
+    # detail are both 0dp — internally coherent, so parity wins.
+    # ISSUE-095/043 CLEAN: no LIMIT and NO separate count query — filtering is one pass over
+    # the full set.
+    render_fn: renderPendingSOValue
+    render_fn_line: 19272
+    status: Refactored
+  - module: Sales
+    page_name: Sales Orders — Create
+    route: /sales-orders/new
+    react_file: apps/web/src/modules/sales-orders/routes/edit.tsx
+    # Corrected 2026-07-15: L11839 is renderSOmaster (the LIST). Create is addSO L12413
+    # → showModalLg('New SO / WO') L12427 → body built by soHeaderForm L12183 (shared
+    # with edit, so legacy's two modes are field-identical BY CONSTRUCTION).
+    # Line table: _soLinesHtml L12158 / _soLineRowHtml L11985. Totals: _soTotalsHtml.
+    # FOOTER: showModalLg with NO explicit saveLabel → the L28034 fallback derives it
+    # from the title → "✓ Save SO" on .btn-success. NOT the Cancel/Save showModal rule.
+    render_fn: addSO (body via soHeaderForm L12183)
+    render_fn_line: 12413
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Sales Orders — Detail
+    route: /sales-orders/$id
+    react_file: apps/web/src/modules/sales-orders/routes/detail.tsx
+    # NO LEGACY COUNTERPART — verified 2026-07-15 (REFACTOR-1, registry error #11).
+    # A THIRD port-only category: a real renderer EXISTS, is ALREADY ported, and is not
+    # this page. renderSOmaster L11839 hides a detail view (expand block L11879-11957,
+    # <tr><td colspan="12">, Equipment + Component variants) exactly as BOM Master does —
+    # but it is already ported into routes/list.tsx (SoExpandedPanel L437 /
+    # EquipmentSoExpand L444 / EquipmentBomItems L476 / ComponentSoExpand L516).
+    # Correctly placed: in legacy it IS an inline row of the list, not a page. Porting it
+    # here would DUPLICATE it.
+    #   Proof it's the detail: _editFullSO L12531-35 — !canEdit() toggles _soExpanded
+    #   (written nowhere else: decl L11838, read L11851, write L12534); editors get the
+    #   showModalLg Edit modal instead → edit.tsx / sales-order-form.tsx.
+    #   Desktop router L2416 somaster / L2418 sostatus — NO sodetail key.
+    #   _mobSODetail rejected as a spec source: different shell (_mobPage → #mobBody,
+    #   unreachable from desktop render()), ~9 mob-* classes with 0 occurrences in our
+    #   styles, and a strict SUBSET that drops rate/material/drawing/dispatched/billed/
+    #   milestones/GST/remarks — porting it would DELETE working features.
+    # detail.tsx is port-owned design. Verified clean: no ISSUE-065 (all rendered dates
+    # are `date` columns; createdAt uses a correct IST formatter), no ISSUE-095 (getById
+    # applies no LIMIT to lines or milestones).
+    render_fn: null
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Sales
+    page_name: Sales Orders — Edit
+    route: /sales-orders/$id/edit
+    react_file: apps/web/src/modules/sales-orders/routes/edit.tsx
+    # Corrected 2026-07-15: L11839 is the LIST. Edit is _editFullSO L12531 →
+    # showModalLg('Edit SO — X (N lines)') L12549 → soHeaderForm L12183 (same builder as
+    # create). Reached from the SO row click L11858.
+    #   NOT editSO L12528 → editSOLine L12465: that delegate is real, but editSOLine
+    #   edits ONE LINE (legacy stores one row per SO line) and is the per-line Edit
+    #   button L11893/L11950 — a route our port does not have. A correct delegate does
+    #   NOT imply a correct counterpart; match on GRAIN, not on call chain.
+    # FOOTER: showModalLg, saveLabel 'Save SO' passed explicitly at L12619 → "✓ Save SO"
+    # on .btn-success.
+    render_fn: _editFullSO (body via soHeaderForm L12183)
+    render_fn_line: 12531
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: Sales Orders — List
+    route: /sales-orders
+    react_file: apps/web/src/modules/sales-orders/routes/list.tsx
+    render_fn: renderSOmaster
+    render_fn_line: 11839
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: SO Costing — Detail
+    route: /so-costing/$id
+    react_file: apps/web/src/modules/so-costing/routes/detail.tsx
+    # Corrected 2026-07-15: L17249 is renderSOCosting (the LIST). The detail is
+    # _soCostDetail(soNo) L17310-17400 — a GENUINE second renderer (unlike the five
+    # master detail pages, which have none).
+    render_fn: _soCostDetail
+    render_fn_line: 17310
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: SO Costing — List
+    route: /so-costing
+    react_file: apps/web/src/modules/so-costing/routes/list.tsx
+    # Mapping CORRECT as auto-built (rare) — verified 2026-07-15. renderSOCosting
+    # L17249-17308, router key socosting. Excel export _soCostExport L17402 NOT ported:
+    # it re-derives the whole costing in the browser via calcEngine() (rule 1) — needs a
+    # server-side export endpoint.
+    render_fn: renderSOCosting
+    render_fn_line: 17249
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: SO Cycle Time
+    route: /so-cycle-time
+    react_file: apps/web/src/modules/so-cycle-time/routes/page.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderSOCycleTime() L18176,
+    # router key socycletime L2453. Sidebar L540.
+    # DURATIONS ARE CLEAN: computeDurations in apps/api/src/lib/so-phase-data.ts is a
+    # faithful port of legacy L17980 (diffDays and all), served via so-cycle-time/
+    # service.ts. The page only renders r.durations.* — nothing re-derived in the browser.
+    # loadSoPhaseData has NO LIMIT -> ISSUE-095 does not apply; no disclosure added.
+    # lib/export.ts VERIFIED HONEST (4th print/export file to survive scrutiny): L18260 IS
+    # _sctExport, it IS one sheet named "SO Cycle Time" (L18281), and our 27 columns match
+    # legacy's in order. It PROJECTS server rows rather than re-deriving — unlike legacy's
+    # own version, which recomputes _soPhaseData over the in-memory db (the pattern refused
+    # for _soCostExport).
+    # TWO legacy bugs not copied: (1) duration colours L18237 are v>10?amber:v>20?red:text
+    # — left-to-right, so `red` is UNREACHABLE DEAD CODE and legacy's own hint ("Red = over
+    # 20d") describes behaviour its code never delivers; ours checks >20 first. (2) legacy's
+    # binary Done/Active status cell would hide cancelled/draft from live users; ours shows
+    # the real SO status.
+    # ISSUE-240 (P2, server-side): so-phase-data.ts selects bom_masters.created_at and
+    # plans.created_at (both timestamptz) raw with no ::text; postgres.js parses OID 1184 to
+    # a Date; toStr's String(v) then yields "Thu Apr 30 2026 ..." and diffDays' .substring
+    # (0,10) DROPS THE YEAR -> new Date("Thu Apr 30") defaults to 2001 -> diffDays returns
+    # -9102 where the answer is 28. Mixed date/timestamptz phases are catastrophically
+    # wrong; both-timestamptz pairs are accidentally CORRECT (both mangled to 2001) unless
+    # they straddle a year boundary. Fix: b.created_at::text. Note so.updated_at::date::text
+    # (L144) is already correctly cast — the pattern was known and applied unevenly.
+    render_fn: renderSOCycleTime
+    render_fn_line: 18176
+    status: Refactored
+  - module: Sales
+    page_name: SO Documents
+    route: /so-documents
+    react_file: apps/web/src/modules/so-documents/routes/page.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderSODocs() L19478, router
+    # key sodocs L2450.
+    # THE ORCHESTRATOR'S _viewQCReport STEER WAS THE TRAP, and the agent caught it:
+    # _viewQCReport L23860 is GRN-scoped (_viewQCReport(grnId) -> grn.qcReportData), and
+    # legacy's SO Docs NEVER calls it — it uses _sdViewFile(f.id). QcReportLink's existing
+    # homes (incoming-qc:337, tpi:255) are the honest ones. No change made.
+    # ISSUE-245 (P2): ARCHIVED is a constant. 'archived' appears ONLY at the two READ sites
+    # (service.ts:62, 206); NOTHING in the API ever writes it, and createSoDocument
+    # hardcodes status:'active'. So the amber ARCHIVED card and the Archived column are
+    # structurally always 0. Legacy produced them via _sdArchiveSO; our port never got
+    # archive/restore. Legacy's Archived Files panel (L19637-42) correctly NOT ported: it
+    # can never render AND its text tells users to click "Restore from ZIP", which does not
+    # exist — Trap 1 twice over.
+    # fileSize:null on QC files VERIFIED FAITHFUL: qc_documents genuinely has no file_size
+    # column (schema.ts:4433-58). Not a Trap-1 case.
+    # ISSUE-100 clean: no "max 5MB" label anywhere and none added — uploadFile() enforces no
+    # size; the accept list is all that's real.
+    # Kept though legacy lacks them: the QC Docs column + card (real qc_documents data;
+    # legacy's 7-col table has no equivalent, so colSpan={8} is OUR real count, not
+    # legacy's 7).
+    render_fn: renderSODocs
+    render_fn_line: 19478
+    status: Refactored
+  - module: Sales
+    page_name: SO Overview — List
+    route: /so-overview
+    react_file: apps/web/src/modules/so-overview/routes/list.tsx
+    # Mapping CORRECT as auto-built — verified 2026-07-15. renderSOOverview L9112, plus
+    # _deriveSOSummaries L9064 and the drill _soOvShowSODetail L9146. Router L2385.
+    # _mobSOOverview L28228 REJECTED as a spec source (mobile shell, unreachable from the
+    # desktop render() router) — the second agent to reach this independently; the _mob*
+    # exclusion is now settled.
+    render_fn: renderSOOverview (+ _deriveSOSummaries L9064, drill _soOvShowSODetail L9146)
+    render_fn_line: 9112
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Sales
+    page_name: SO Planning Workflow
+    route: /planning
+    react_file: apps/web/src/modules/so-planning/routes/workflow.tsx
+    theme_css: null
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderSOPlanning() L9299,
+    # router key `planning` L2384. _planPreSelectLine is read at L9314, and
+    # _soStatusCreateJC L4565-69 only SETS it and calls nav('planning') — so this page is
+    # that button's destination (legacy's "+ Plan N pcs" does not create a JC either).
+    # NO BODY BUILDERS — all five entry points inline their body literal (the QC-Process /
+    # GRN shape): createPlan L9432, editPlan L9500 (buildOpsTable / _planBuildDocsTable are
+    # delegates for two SUB-TABLES only), showBOMPlanning L7116, showEquipBOMPlanning
+    # L8848, viewPlanDetail L9942. None hand-rolls a footer.
+    # badge() is NOT the renderer here — inline ternary colours throughout (5th such module).
+    # ISSUE-248: showModal L28014 takes only THREE params, so createPlan's 4th arg
+    # ('Create Plan') is DEAD — its footer is the hard-coded Cancel/Save.
+    # THREE legacy bugs not copied: planMfgSection's initial-render bug (L9642 shows the
+    # Mfg section for anything non-direct_purchase, so a full_outsource plan renders BOTH
+    # sections until a tab is clicked); an unclosed <span> in opsInfo L9375; and the dead
+    # 4th arg above.
+    # var(--purple,#8b5cf6): --purple IS defined (#7c3aed), so legacy's fallback is dead
+    # code — our port had shipped the dead fallback (#8b5cf6) as the value. Fixed.
+    # (The exact inverse of ISSUE-195's var(--teal,#fallback), where the token is undefined
+    # so the fallback DOES fire and paints a colour legacy never shows.)
+    render_fn: renderSOPlanning
+    render_fn_line: 9299
+    status: Refactored
+  - module: Sales
+    page_name: SO QC Status
+    route: /so-qc-status
+    react_file: apps/web/src/modules/so-qc-status/routes/index.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderSOQCStatus() L18347,
+    # router key soqcstatus at L2402 (the orchestrator briefed ~L2387; the agent corrected
+    # it). Sidebar L486.
+    # Trap 1 fixed: the header rendered a HARDCODED `badge b-blue`. Legacy maps
+    # Open->b-cyan, Closed->b-green, Cancelled->b-red. Now uses <SoStatusBadge>. Legacy's
+    # ||'b-grey' fallback is UNREACHABLE here (status is the soStatusEnum DB enum, so the
+    # map is total) — no fallback was dropped.
+    # var(--teal, #0d9488) VERIFIED FAITHFUL here — legacy L18578 writes the same fallback.
+    # ISSUE-195 does not apply to this page.
+    # ISSUE-236: the selector calls useSalesOrdersList({limit:20}) while listSoForQc
+    # (service.ts:61-75) returns EVERY non-cancelled SO with NO LIMIT — an exact match for
+    # legacy L18348. So useSoForQc and GET /so-qc-status are DEAD CODE. The honest fix is
+    # to use the endpoint we already built, not to add a truncation notice.
+    render_fn: renderSOQCStatus
+    render_fn_line: 18347
+    status: Refactored
+  - module: Sales
+    page_name: SO Status — Detail
+    route: /sales-orders/$id/status
+    react_file: apps/web/src/modules/so-status/routes/detail.tsx
+    # NO LEGACY COUNTERPART — verified 2026-07-15 (registry error #13). Category 4:
+    # "a route legacy never had" (as /customer-dispatches/new). Proof is CONCLUSIVE,
+    # not merely absent:
+    #   - _soSel (L4253) is the ONLY selection state and has exactly ONE writer: L4526,
+    #     the left-pane card's onclick. No other writer in 29k lines.
+    #   - Every entry is a BARE nav('sostatus') — sidebar L404, mobile dept menu L28240.
+    #     The router takes no id (L2418).
+    #   - renderSOStatus has no per-SO branch or expand row; it always renders both panes.
+    #   => Legacy structurally CANNOT deep-link to one SO's status. Ours can.
+    # A live feature — kept, untouched. It renders the shared so-status-detail.tsx, so it
+    # inherits that component's refactor for free.
+    render_fn: null
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: Sales
+    page_name: SO Status — List
+    route: /so-status
+    react_file: apps/web/src/modules/so-status/routes/index.tsx
+    # Mapping CORRECT as auto-built — verified 2026-07-15. renderSOStatus L4255-4561,
+    # router L2418 (sostatus), sidebar L404. The two-pane shell L4543-4560 IS this route.
+    # The right pane (L4276-4559) → components/so-status-detail.tsx, shared by BOTH
+    # routes — one agent must own it.
+    # NB the Excel export is _soStatusExportExcel L9262, NOT L4555 (that's only the
+    # button). lib/export.ts's own comment cites L4555 and claims a "mirror" it isn't —
+    # see ISSUE-136.
+    render_fn: renderSOStatus
+    render_fn_line: 4255
+    theme_css: null
+    status: Refactored
+  - module: Sales
+    page_name: SO Timeline
+    route: /so-timeline
+    react_file: apps/web/src/modules/so-timeline/routes/index.tsx
+    # Mapping CORRECT as auto-built — verified 2026-07-15. renderSOTimeline L19971 (router
+    # key sotimeline L2449) delegates to _soTimeline(soNo) L17679-17864. No _mobSOTimeline
+    # exists. Legacy's timeline uses pure inline styles — NOT .op-node/.op-arrow.
+    # ⚠️ ISSUE-142: the SERVICE throws a TypeError (500) for essentially every real SO —
+    # four raw tx.execute date selects lack ::text, postgres.js parses OID 1082 into Date,
+    # the `as unknown as {..: string}` cast hides it, and sort() calls .localeCompare on a
+    # Date. Only 7 of 29 legacy event families are ported (ISSUE-143).
+    render_fn: renderSOTimeline (delegates to _soTimeline L17679)
+    render_fn_line: 19971
+    theme_css: null
+    status: Refactored
+  # ─── Manufacturing ─────────────────────────────────────────────────────────
+  - module: Manufacturing
+    page_name: Assembly — Detail
+    route: /assemblies/$soId
+    react_file: apps/web/src/modules/assembly/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #20). L28738 renderAssemblyTracker is the LIST
+    # (router key assytracker). The real counterpart is its per-SO EXPANDED BODY,
+    # L28788-28884 — category 2 (hidden in a list, NOT ported).
+    #   list.tsx L8-11 already declares the split: it ports only the COLLAPSED card header
+    #   (L28782-87). Unlike Sales Orders, the body was never ported → not a zero-edit case.
+    #   Decoy ruled out: showEquipBOMPlanning (the 📦 BOM Planning hop L28866) is at L8848
+    #   and takes soLineId, NOT soId — it lives in the BOM module (a cross-module nav).
+    #   _atDispatchUnit(unitId, soId) L28991 is a per-unit dispatch MODAL invoked from the
+    #   units table inside the expanded body — it confirms legacy works per-SO inside the
+    #   accordion, not via a separate renderer. Its qty:1 hardcode is in the db.dispatchLog
+    #   write (L29013) — legacy's dispatch model, not markup.
+    #   No render* fn is parameterised by soId (grep of all _at* / renderAssembly*).
+    # ⚠️ LEGACY BUG NOT COPIED: legacy's progress bar switches its fill to var(--teal) at
+    # 100%; --teal is undefined in BOTH systems (ISSUE-126) → the declaration is invalid →
+    # THE BAR RENDERS EMPTY WHEN COMPLETE. Ours stays cyan. All of legacy's other teal
+    # declarations are likewise inert and were not painted. The one real teal is legacy's
+    # LITERAL #14b8a6 Done badge → .b-teal (documented in the theme for this screen).
+    # ⚠️ docs/PARITY/assytracker.md IS UNRELIABLE — audited 2026-07-16: 4 false/misleading
+    # claims beyond the .dash-stat-card one already corrected, plus a reference to an
+    # assytracker-detail.md that was never written. Re-verify before trusting it.
+    render_fn: renderAssemblyTracker (expanded body)
+    render_fn_line: 28788
+    status: Refactored
+  - module: Manufacturing
+    page_name: Assembly — List
+    route: /assemblies
+    react_file: apps/web/src/modules/assembly/routes/list.tsx
+    render_fn: renderAssemblyTracker
+    render_fn_line: 28738
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Daily Report
+    route: /daily-report
+    react_file: apps/web/src/modules/daily-report/routes/list.tsx
+    render_fn: renderDailyReport
+    render_fn_line: 10823
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+    # Refactored 2026-07-14: 3 presentational edits (print-button label, filter tip
+    # text, empty-state subtext). Post-map parity: MATCH 24 / DIFFERENT 1 / MISSING 1.
+    # Not Verified — 2 residual gaps need business-logic changes (out of UI-refactor
+    # scope): machine filter <select> vs legacy datalist; per-machine-panel print button.
+    # typecheck+lint+web-tests PASS; apps/api suite un-runnable here (no test DB).
+  - module: Manufacturing
+    page_name: Daily Task Reports
+    route: /daily-task-reports
+    react_file: apps/web/src/modules/daily-task-reports/routes/list.tsx
+    render_fn: renderDailyReports
+    render_fn_line: 14141
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Verified
+  - module: Manufacturing
+    page_name: JC Ops — List
+    route: /jc-ops
+    react_file: apps/web/src/modules/jc-ops/routes/list.tsx
+    render_fn: renderJCOps
+    render_fn_line: 11349
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Cards — Create
+    route: /job-cards/new
+    react_file: apps/web/src/modules/job-cards/routes/new.tsx
+    theme_css: null
+    # Corrected 2026-07-16. L5739 renderJobCards is the LIST (stamped on all 3 JC routes
+    # by the auto-builder). Create is addJC L6020 → showModalLg('New Job Card',
+    # jcModalBody(null), …, 'Save Job Card').
+    # THE SHARED BODY BUILDER IS jcModalBody(jc) L5943 — proven from the call site, not the
+    # name. jcModalOpsHtml L5868 and jcModalDocsHtml L5809 are DELEGATES called from INSIDE
+    # it (L6012 / L6016) — the _poLinesHtml shape. Same grain as our route (whole record).
+    # ISSUE-099 CLEAN here (streak broke at 8): the create-only ★ mirrors the SERVER's own
+    # asymmetry — createJobCard throws if !sourceJwLineId (service.ts:647-651); the update
+    # path (L855-858) has no such guard. Drift that mirrors a real server rule is not drift.
+    # ISSUE-104 CLEAN: every useXList({limit:500}) here feeds a DATALIST, not a <select> —
+    # out-of-list values survive. The control type is the immunity, not the limit.
+    render_fn: addJC (body via jcModalBody L5943)
+    render_fn_line: 6020
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Cards — Edit
+    route: /job-cards/$id/edit
+    react_file: apps/web/src/modules/job-cards/routes/edit.tsx
+    theme_css: null
+    # Corrected 2026-07-16. L5739 is the LIST. Edit is editJC L6076 →
+    # showModalLg('Edit Job Card — '+jc.jcNo, jcModalBody(jc), …, 'Save Job Card').
+    # Same shared builder jcModalBody L5943 as /new → legacy is field-identical by
+    # construction. FOOTER: explicit saveLabel at L6073/L6124 → "✓ Save Job Card" on
+    # .btn-success (L28044 prefixes &#10003; even on an explicit label).
+    # Legacy DEAD CODE, nothing to port: the QC column (qcCell built L5898, never inserted
+    # L5923 — legacy renders no QC column) and rcHint (rc requires jc truthy, then
+    # rcHint = rc && !jc → always ''). Cycle(h) L5932 NOT ported: our column is
+    # cycle_time_min, MINUTES (schema.ts:795) — see ISSUE-177's open unit question.
+    render_fn: editJC (body via jcModalBody L5943)
+    render_fn_line: 6076
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Cards — List
+    route: /job-cards
+    react_file: apps/web/src/modules/job-cards/routes/list.tsx
+    render_fn: renderJobCards
+    render_fn_line: 5739
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Cards — Status
+    route: /job-cards/$id
+    react_file: apps/web/src/modules/job-cards/routes/status.tsx
+    theme_css: null
+    # Corrected 2026-07-16. L5739 is the LIST — and NOT a decoy: L5748/L5768 call
+    # viewJCStatus(jc.id) from the JC No. cell and the View action, so the list hops to the
+    # detail. Real target: viewJCStatus(id) L11020-11266. Body maps 1:1 — 6 stat cards →
+    # Operation Flow → Operations Detail → Completion Log → components/jc-status-content.tsx
+    # (routes/status.tsx is a thin wrapper; legacy's title 'JC Status — ${jc.jcNo}' matches).
+    # NOT in scope: addJCOp L11410 / editJCOp L11435 / editJCOpMachine L11453 belong to
+    # renderJCOps L11349, a separate nav screen; viewJCStatus never references them.
+    # ISSUE-001 not inheritable here: _machSubmitLog L5669 is in renderMachineOpEntry.
+    # ISSUE-065 CLEAN (verified): due_date (713), jc_date (707), op_log.log_date (882) are
+    # all `date` columns; closed_at (734, timestamptz) is not rendered on this page.
+    render_fn: viewJCStatus
+    render_fn_line: 11020
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Queue
+    route: /job-queue
+    react_file: apps/web/src/modules/job-queue/routes/list.tsx
+    render_fn: renderJobQueue
+    render_fn_line: 10363
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Work Orders — Create
+    route: /job-work-orders/new
+    react_file: apps/web/src/modules/job-work-orders/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16. L12642 renderJWMaster is the LIST. Create is addJW L12885/12890
+    # → showModalLg('New JW Order (Job Work)', jwHeaderForm(null), …).
+    # SHARED BODY BUILDER: jwHeaderForm(j) L12784 — serves both modes (addJW passes null;
+    # the body does j=j||{}). Its only j-driven conditionals (L12828 clientPoFileUrl,
+    # L12829 cpoUploadBtn) are DATA-driven, not MODE-driven → legacy is genuinely symmetric
+    # here; nothing to mirror per-mode. FOOTER: "✓ Save JW" on .btn-success.
+    # ISSUE-117 CLEARED by verification: both modes declare AND wire onPoFileChange /
+    # onEmailFileChange; both onSubmit call registerJwDoc twice (commit 9527725).
+    render_fn: addJW (body via jwHeaderForm L12784)
+    render_fn_line: 12885
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Work Orders — Detail
+    route: /job-work-orders/$id
+    react_file: apps/web/src/modules/job-work-orders/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #18). Category 1:
+    # no renderer at all, at EITHER grain. Evidence is a FULL function inventory of
+    # legacy's JW region (L12357-12956): _cpoApplyToJW, renderJWMaster, _jwLineRowHtml,
+    # _jwSetQty, _jwUpdateAmt, _jwFillItem, _jwFillRmItem, _jwAddRmItem, _jwLinesHtml,
+    # _refreshJwLines, jwHeaderForm, _getJwBaseData, addJW, editJW, delJW — every one is
+    # list, form, or delete. No read-only single-JW renderer.
+    #   - L12642 renderJWMaster is the LIST (router key jwmaster L2417). Its rows are one
+    #     per LINE (lineNo L12653, itemCode L12657, orderQty L12659) — row = line.
+    #   - NO expand row (no chevron, no <tr onclick>, no hidden detail <tr>) — unlike BOM
+    #     L8460-8493 / renderSOmaster L11879-11957.
+    #   - The row's only onclicks are editJW L12668 and delJW L12669. No View / 👁 /
+    #     viewJW → no viewPO-style one-hop-further detail (the PO decoy pattern).
+    # DECOY REJECTED: renderProdJWList L22995-23033 IS header-grain (groups by jwNo into
+    # {jwNo, customer, lines:[]}, L22999) — but it is a SEPARATE router page (key
+    # prodjwlist L2460, own sidebar entry L469, titled "JW List (Production View)"
+    # L23028): a list of all JWs with no drill-in. It is already mapped to /prod-jw-list.
+    # GRAIN: legacy's db.jobWorkOrders is a FLAT ARRAY OF LINES with no header entity —
+    # addJW L12901-04 duplicates jwNo/customer/status onto every line. That is the
+    # JSON-blob anti-pattern CLAUDE.md §1/§12 rejects. Legacy ITSELF needed the header
+    # grain (it hand-rolls the jwNo rollup at L22999) but never gave it a detail page.
+    # Our header-grain detail is the migration target; the page was NOT narrowed to one
+    # line to manufacture parity.
+    # Verified clean: ISSUE-065 (jwDate 1186 / dueDate 1253 / materialReceivedDate 1198
+    # are all `date`; no toISOString on the page) and ISSUE-095 (no LIMIT on detail lines).
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Job Work Orders — Edit
+    route: /job-work-orders/$id/edit
+    react_file: apps/web/src/modules/job-work-orders/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16. L12642 is the LIST. Edit is editJW L12916/12926 →
+    # showModalLg('Edit JW — '+j.jwNo+' / Line '+(j.lineNo||'1'), jwHeaderForm(j), …).
+    # Same shared builder jwHeaderForm L12784 as /new.
+    # ⚠️ THE '/ Line N' GRAIN QUESTION — RESOLVED, and it is NOT the editSOLine trap:
+    #   legacy's db.jobWorkOrders is a FLAT ARRAY OF LINES — there is NO header entity.
+    #   Every element duplicates jwNo/customer/clientPoNo/status plus its own lineNo/item/
+    #   qty/rate. addJW L12903-08 pushes N records; editJW L12920-24 seeds _jwModalLines
+    #   with exactly ONE line and L12935 Object.assign updates only that record.
+    #   So legacy's per-line grain is real — but it exists ONLY because legacy is
+    #   denormalized: the JSON-blob anti-pattern CLAUDE.md §1/§12 says we are migrating AWAY
+    #   from. Our job_work_orders + job_work_order_lines, $id = the HEADER, is the intended
+    #   target. THE GRAIN MISMATCH IS THE MIGRATION, NOT A DEFECT.
+    #   (Contrast the SO trap: TWO legacy fns at two grains, and the port picked wrong.)
+    #   Correctly NOT ported: the '/ Line N' title (Trap 1 — a grain nothing enforces) and
+    #   narrowing our edit to one line.
+    render_fn: editJW (body via jwHeaderForm L12784)
+    render_fn_line: 12916
+    status: Refactored
+  - module: Manufacturing
+    page_name: Job Work Orders — List
+    route: /job-work-orders
+    react_file: apps/web/src/modules/job-work-orders/routes/list.tsx
+    render_fn: renderJWMaster
+    render_fn_line: 12642
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: JW DC — Detail
+    route: /jw-dc/$id
+    react_file: apps/web/src/modules/jw-dc/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #19). L24434 renderJWDC is the LIST (router
+    # key jwdc L2412). The real detail is ONE HOP PAST A DECOY — the viewPO L26299 pattern:
+    #   L24463 DC No. cell  -> _jwdcPrint(dc.id)   DECOY (opens the print window)
+    #   L24473 🖨 action     -> _jwdcPrint          DECOY
+    #   L24474 👁 action     -> _jwdcViewOut(dc.id) THE REAL DETAIL (showModalLg: info
+    #                                               block + line table + remarks)
+    # detail.tsx's old comment cited "_jwdcPrint trigger (L24463)" — a REAL line with a
+    # WRONG claim: the page was named after a print trigger (5th false parity comment).
+    # Print: _jwdcPrint L24611 -> lib/print-jwdc.ts. Line ref correct AND claim honest —
+    # the _ptData bag matches field-for-field; verified independently, not inherited.
+    # ⚠️ ISSUE-186 (P1, compliance): the print omits legacy's "⚠ RETURNABLE GATE PASS"
+    # title (L24645) and its "⚠ RETURNABLE — Material to be returned after processing"
+    # banner (L24652). Under the GST job-work provisions that is the document's whole
+    # legal character. Fix is in doc-print.ts.
+    # Verified faithful, NOT defects: uom:'NOS' (legacy hardcodes NOS at L24614; the line
+    # schema has no uom) and driverName:'' (legacy has no driver input anywhere).
+    # fmtDate(dc.dcDate) is safe: dc_date is a `date` column (schema.ts:3072) and fmtDate
+    # regexes the string with no Date object.
+    render_fn: _jwdcViewOut (print via _jwdcPrint L24611)
+    render_fn_line: 24592
+    status: Refactored
+  - module: Manufacturing
+    page_name: JW DC — List
+    route: /jw-dc
+    react_file: apps/web/src/modules/jw-dc/routes/list.tsx
+    render_fn: renderJWDC
+    render_fn_line: 24434
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Machine Loading
+    route: /machine-loading
+    react_file: apps/web/src/modules/machine-loading/routes/list.tsx
+    render_fn: renderLoading
+    render_fn_line: 5021
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Op Entry
+    route: /op-entry
+    react_file: apps/web/src/modules/op-entry/routes/index.tsx
+    render_fn: renderOpEntry
+    render_fn_line: 5202
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Op Entry — Machines
+    route: /op-entry/machines
+    react_file: apps/web/src/modules/op-entry/routes/machines.tsx
+    render_fn: renderMachOpEntry
+    render_fn_line: 5540
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Op Entry — Running Ops
+    route: /op-entry/running
+    react_file: apps/web/src/modules/op-entry/routes/running.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Op Log — List
+    route: /op-log
+    react_file: apps/web/src/modules/op-log/routes/list.tsx
+    render_fn: renderOpLog
+    render_fn_line: 13194
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Outsource Jobs — List
+    route: /outsource-jobs
+    react_file: apps/web/src/modules/outsource-jobs/routes/list.tsx
+    render_fn: renderOutsourceJobs
+    render_fn_line: 27044
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Planning Dashboard
+    route: /planning-dashboard
+    react_file: apps/web/src/modules/plans/routes/dashboard.tsx
+    render_fn: renderPlanDashboard
+    render_fn_line: 9994
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+    # Refactored 2026-07-14: presentational edits to legacy parity — SO/JW header,
+    # Plan No. header, "Search plans..." placeholder, 🛒 Buy / 🛠 Asm / 🏭 Mfg type
+    # tags, icon-only In-Planning pencil action, plans-table column reorder + Line
+    # column added + combined Qty cell. Post-map parity: MATCH 37 / DIFFERENT 2 /
+    # MISSING 2 / EXTRA 2. Not Verified — residual gaps are out of UI-refactor scope:
+    # JC/PR column (needs un-fetched dpPRNo/jcNo codes), Total Plans KPI (needs new
+    # computation), In Prod/Done tile merge (KPI business logic), retained functional
+    # extras. typecheck+lint+web-tests PASS; apps/api suite un-runnable here (no test DB).
+  - module: Manufacturing
+    page_name: Plans — Create
+    route: /plans/new
+    react_file: apps/web/src/modules/plans/routes/new.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Plans — Detail
+    route: /plans/$id
+    react_file: apps/web/src/modules/plans/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Plans — Edit
+    route: /plans/$id/edit
+    react_file: apps/web/src/modules/plans/routes/edit.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Plans — List
+    route: /plans
+    react_file: apps/web/src/modules/plans/routes/list.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Manufacturing
+    page_name: Production Dashboard
+    route: /production-dashboard
+    react_file: apps/web/src/modules/production-dashboard/routes/index.tsx
+    render_fn: renderDashboard
+    render_fn_line: 3658
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Production JW List
+    route: /prod-jw-list
+    react_file: apps/web/src/modules/prod-jw-list/routes/list.tsx
+    render_fn: renderProdJWList
+    render_fn_line: 22995
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Production Schedule
+    route: /production-schedule
+    react_file: apps/web/src/modules/production-schedule/routes/list.tsx
+    render_fn: renderProductionSchedule
+    render_fn_line: 15588
+    theme_css: null
+    status: Refactored
+  - module: Manufacturing
+    page_name: Production SO List
+    route: /prod-so-list
+    react_file: apps/web/src/modules/prod-so-list/routes/list.tsx
+    render_fn: renderProdSOList
+    render_fn_line: 22954
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: SC Dashboard
+    route: /sc-dashboard
+    react_file: apps/web/src/modules/sc-dashboard/routes/page.tsx
+    render_fn: renderSCDashboard
+    render_fn_line: 16790
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Shop Floor
+    route: /shop-floor
+    react_file: apps/web/src/modules/shop-floor/routes/list.tsx
+    render_fn: renderShopFloor
+    render_fn_line: 10286
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Stuck Dashboard
+    route: /stuck-dashboard
+    react_file: apps/web/src/modules/stuck-dashboard/routes/page.tsx
+    render_fn: renderStuckDashboard
+    render_fn_line: 18017
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Manufacturing
+    page_name: Task Board
+    route: /task-board
+    react_file: apps/web/src/modules/tasks/routes/board.tsx
+    render_fn: renderTaskBoard
+    render_fn_line: 14255
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # ─── Purchase ──────────────────────────────────────────────────────────────
+  - module: Purchase
+    page_name: Purchase Orders — Create
+    route: /purchase-orders/new
+    react_file: apps/web/src/modules/purchase-orders/routes/edit.tsx
+    # Corrected 2026-07-15. L25209 is renderPurchaseOrders — the LIST. Create is addPO
+    # L25728 → showModalLg('+ New Purchase Order', poHeaderForm(null), fn).
+    # THE SHARED BODY BUILDER IS poHeaderForm(po) L25605 — serving BOTH modes, which is
+    # why legacy's two modes are field-identical. _poLinesHtml L25487 also serves both but
+    # INDIRECTLY: it is called from inside poHeaderForm at L25673, NOT from addPO/editPO.
+    # FOOTER: "✓ Save PO" on .btn-success (both modes).
+    render_fn: addPO (body via poHeaderForm L25605, lines via _poLinesHtml L25487)
+    render_fn_line: 25728
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Orders — Detail
+    route: /purchase-orders/$id
+    react_file: apps/web/src/modules/purchase-orders/routes/detail.tsx
+    # Corrected 2026-07-15 (registry error #17). A REAL renderer, found PAST A DECOY:
+    #   1. L25209 renderPurchaseOrders is the LIST (stat-filter row, poTable <thead>
+    #      L25350-55, empty state). routes/list.tsx:1 already declares itself its port.
+    #   2. It DOES have an expand row (window._poExpanded, <tr><td colspan="11">
+    #      L25276-25303) — the BOM-Master shape — but that block is a PO-LINES sub-table
+    #      that list.tsx:20-22 already declares deliberately unported ("the list payload
+    #      has no lines"). A DECOY: an expand row matching the BOM shape is not proof.
+    #   3. The real detail is one hop further: L25259 View → viewPO(id) L26299-26438, a
+    #      showModalLg (L26357) with vendor/details boxes, 5 tiles, a line table with its
+    #      own <thead>, a totals box and a GRN table. list.tsx:23-24 corroborates.
+    # Print: printPO(poNo) L25913-26131 → lib/print-po.ts. Its "mirrors legacy" comment
+    # was VERIFIED TRUE (right line, accurate claim) — unlike ISSUE-113/136/143. The PO
+    # print also emits PAN + E.&O.E. (doc-print.ts:244), so the Invoice's compliance
+    # omission (ISSUE-150/151) is Invoice-specific, not systemic.
+    # Money: kept toFixed(2) — legacy's DETAIL uses .toFixed(2) (L26392/26409); only
+    # printPO uses inr(). Legacy is internally consistent here, so follow it.
+    render_fn: viewPO (print via printPO L25913)
+    render_fn_line: 26299
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Orders — Edit
+    route: /purchase-orders/$id/edit
+    react_file: apps/web/src/modules/purchase-orders/routes/edit.tsx
+    # Corrected 2026-07-15. L25209 is the LIST. Edit is editPO(id) L25790 →
+    # showModalLg('Edit PO — '+po.poNo+' / Line '+…, poHeaderForm(po), fn). Same shared
+    # builder poHeaderForm L25605 as /new.
+    # Legacy IS mildly asymmetric — exactly TWO po-driven conditionals inside the one
+    # builder: (1) Print PO / Print Challan L25636-39, EDIT ONLY (Challan further gated on
+    # poType==='Job Work' — an ISSUE-161 two-value test in a four-value world);
+    # (2) PO No. L25642 — create: _nextPONo(), editable; edit: po.poNo + readonly. Hence
+    # addPO validates !b.poNo (L25735) and editPO does not. Mirrored per-mode, not unified.
+    # NOT ported (needs schema+API): "Against SO / JW" and its cumulative 105%-of-SO-qty
+    # over-ordering cap (addPO L25743-73 / editPO L25808-35) — ISSUE-162; PO revision
+    # tracking (editPO L25856-96) — ISSUE-163.
+    render_fn: editPO (body via poHeaderForm L25605, lines via _poLinesHtml L25487)
+    render_fn_line: 25790
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Orders — From PR
+    route: /purchase-orders/from-pr
+    react_file: apps/web/src/modules/purchase-orders/routes/from-pr.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #27). Verdict: createPOFromPR(prId) L6732 —
+    # the SINGLE-PR flow. The orchestrator's brief was WRONG here and the agent corrected
+    # it: two sibling symbols were conflated —
+    #   useCreatePurchaseOrderFromPr      (api.ts:93)  -> POST /purchase-orders/from-pr
+    #     -> createPurchaseOrderFromPrInputSchema      -> prId: uuid  SINGULAR  -> THIS page
+    #   useCreatePurchaseOrderFromPrBatch (api.ts:143) -> POST /from-pr-batch
+    #     -> createPurchaseOrderFromPrBatchInputSchema -> prIds: array -> outsource-jobs/
+    #        routes/list.tsx:23,69  (NOT this page)
+    # This page imports CreatePurchaseOrderFromPrInput (singular); its route param is
+    # z.object({ prId: z.string().uuid() }) — ONE PR, from the URL.
+    # Candidates ruled out with evidence:
+    #   _prCreateClubPO L6323 — reads .prChk:checked off the PR LIST and hard-requires
+    #     selectedIds.length < 2 -> toast('Select at least 2...'). This route has no list.
+    #   _ospCreatePO L27131 — reads .ospChk:checked (Outsource Jobs). purchase-order.ts:
+    #     204-207 says verbatim "Outsource Jobs page batch action. Mirror of legacy
+    #     _ospCreatePO L27131" — TRUE, but it sits on the BATCH schema this file never uses.
+    # FOOTER from the call site: L6805 passes an EXPLICIT saveLabel 'Create PO'; L28043-44
+    # renders class="btn btn-success" + a check prefix -> "Create PO" on .btn-success.
+    # ISSUE-231 (P2, a silent wrong WRITE): poType is hardcoded 'job_work' where legacy
+    # computes isJW = pr.jcNo && pr.opSeq -> 'Job Work' : 'With Material' (L6736-37). The
+    # signal exists on our PR (sourceJcOpId, prType='jw_osp') and is unused, so MATERIAL
+    # PRs silently become job_work POs — the same po_type column behind ISSUE-124/161.
+    # inrFormat deliberately NOT applied: legacy itself uses '₹'+amt.toFixed(2) (L6690,
+    # L6712) with no en-IN grouping — switching would DIVERGE. (Match legacy when it is
+    # coherent; choose consistency only when it contradicts itself, as SO Costing did.)
+    render_fn: createPOFromPR (single-PR)
+    render_fn_line: 6732
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Orders — List
+    route: /purchase-orders
+    react_file: apps/web/src/modules/purchase-orders/routes/list.tsx
+    render_fn: renderPurchaseOrders
+    render_fn_line: 25209
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Requests — Create
+    route: /purchase-requests/new
+    react_file: apps/web/src/modules/purchase-requests/routes/edit.tsx
+    # Corrected 2026-07-15 (registry error #16). L6217 is renderPurchaseRequests — the
+    # LIST (router key purchaserequests). Create is _addDirectPR L6475
+    # (showModalLg('📝 New Purchase Request — '+prNo) L6480), body _dprFormHtml L6515.
+    # FOOTER: showModalLg(..., 'Create PR') → "✓ Create PR" on .btn-success. NB L28044
+    # renders `&#10003; ${_saveLabel}` — the ✓ prefixes the label even when saveLabel is
+    # passed explicitly.
+    # Legacy's slot-3 "Category" select IS the source of `operation` (L6502:
+    # `operation: category||'Direct'`) — our Operation field belongs in that slot.
+    # NOT ported (needs API/schema, not markup): multi-line entry + the prNo-1/prNo-2
+    # fan-out L6499 (one PR row per line; ours is single-row per ADR-015 #2), Cost Center
+    # + _dprCatCCMap (purchase_requests has no cost_center column), the Raw-Material SO
+    # panel L6543-47 (legacy keys on the SO header; ours has sourceSoLineId — different
+    # grain), UOM (no column), and _nextPRNo (our API requires a client-supplied code).
+    render_fn: _addDirectPR (body via _dprFormHtml L6515)
+    render_fn_line: 6475
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Purchase Requests — Detail
+    route: /purchase-requests/$id
+    react_file: apps/web/src/modules/purchase-requests/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #26). Category 1: no
+    # renderer at all. EIGHT markers, all independently re-derived (the agent did not take
+    # the prior handoff's word):
+    #   1. viewPR / _viewPR / prDetail / _prDetail / showPR / _prView / prView -> ZERO hits.
+    #      The single `openPR` hit (L27065) is a VARIABLE counting open PRs in the outsource
+    #      dashboard — not a function.
+    #   2. Router L2432: `purchaserequests: ()=>renderPurchaseRequests()` is the ONLY PR key.
+    #      No prdetail. The router takes no id.
+    #   3. Row actions re-enumerated exhaustively (L6255-6270): approvePR (Pending),
+    #      cancelPR (Pending), createPOFromPR (Approved), an inline viewPO span (PO Created),
+    #      _assignTaskFromContext (Admin/Manager). NO view and NO edit affordance, any status.
+    #   4. Decoy disarmed: the PO-Created cell's viewPO(_po.id) hop lands on the PO detail
+    #      L26299 — someone else's page. createPOFromPR L6732 opens a PO CREATION form with
+    #      a PR context banner — not a PR view.
+    #   5. The showModal(..., null) read-only signature is ABSENT: all five PR modals (L6173,
+    #      L6355, L6480, L6805, L27153) have NON-NULL save callbacks. Every one is a create.
+    #      (That marker positively confirmed NC's _viewNC, so its absence here is evidence.)
+    #   6. The canonical detail-link site is INERT: L6277 is a plain <td> of pr.prNo with NO
+    #      onclick. On every module that HAD a detail, this cell was the hop.
+    #   7. No expand row (corroboration): a flat <tr> of 12 <td>s, no chevron, no hidden <tr>.
+    #   8. STRUCTURAL: every PR navigation in 29k lines is a bare nav('purchaserequests') —
+    #      L494, L2635, L2830, L2896-2900, L3002, L3368, L3557, L25329, and
+    #      _assignTaskFromContext's own navPage. Legacy CANNOT deep-link to one PR. Ours can.
+    # pr-status-badge.tsx verified ALREADY CORRECT: renderPurchaseRequests BYPASSES badge()
+    # entirely — L6286 is an inline <span style="color:'+stColor+'">. So badge()'s map (which
+    # says 'PO Created':'b-blue') is NOT the renderer and must not be "fixed" from. The real
+    # source is stColor L6253 (Pending->amber, Approved->blue, PO Created->GREEN,
+    # Cancelled->red) — exactly what our badge maps. 4th module where legacy bypasses badge().
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Purchase
+    page_name: Purchase Requests — Edit
+    route: /purchase-requests/$id/edit
+    react_file: apps/web/src/modules/purchase-requests/routes/edit.tsx
+    # NO LEGACY COUNTERPART — verified 2026-07-15 (registry error #16). Category 4:
+    # "a route legacy never had" (as /customer-dispatches/new, /sales-orders/$id/status).
+    #   - editPR | _editPR | prForm | _prForm | editPurchaseRequest → ZERO hits in 29k
+    #     lines.
+    #   - Corroborated, not merely absent: the list's row actions (L6255-6270) are
+    #     EXHAUSTIVELY approvePR (Pending), cancelPR (Pending), createPOFromPR (Approved),
+    #     an inline viewPO link (PO Created), _assignTaskFromContext (Admin/Manager).
+    #     NO edit affordance on ANY status.
+    #   - Legacy's only PR write paths: _addDirectPR (create), approvePR, cancelPR, plus
+    #     cascades that ORIGINATE PRs from Plans/JC-ops. A PR is create-then-approve-or-
+    #     cancel; legacy never re-opens one for field editing.
+    # Our edit route is our own design. Shares purchase-request-form.tsx with /new, so it
+    # inherits that refactor. Since there is no legacy spec for edit, the two modes must
+    # at least agree with each other — hence "✓ Save PR" on .btn-success.
+    render_fn: null
+    render_fn_line: null
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: No Legacy Counterpart
+  - module: Purchase
+    page_name: Purchase Requests — List
+    route: /purchase-requests
+    react_file: apps/web/src/modules/purchase-requests/routes/list.tsx
+    render_fn: renderPurchaseRequests
+    render_fn_line: 6217
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Purchase
+    page_name: Service POs — Create
+    route: /service-pos/new
+    react_file: apps/web/src/modules/service-pos/routes/new.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16. L27504 renderServicePO is a TAB SWITCH (see /service-pos).
+    # Create is _spoCreateForm() L27513 — an INLINE PAGE (no modal in this region), called
+    # with NO argument from the tab button, so editId === undefined.
+    # LEGACY BUG, deliberately not copied: _spoEdit(id) L27675 sets _spoTab='create' and
+    # calls render() -> _spoCreateForm() WITH NO ARG -> spo is always null -> the entire
+    # editId branch (the "Edit" header, the prefill) is DEAD CODE. Legacy's edit screen
+    # therefore shows "New Service PO — <a fresh _nextSPONo()>" while fSpoEditId points at
+    # the real record; _spoSave's update branch never assigns spoNo, so the record keeps
+    # its real number and the DISPLAYED number is simply wrong.
+    # Also not copied: legacy's min="1" no-step qty input (rejects 2.5 hours of labour;
+    # service_po_lines.qty is numeric(12,2)) — kept step=0.01/min=0; and legacy's
+    # SGST+CGST / IGST buttons never indicate which is selected (_spoBtnSC/_spoBtnI get
+    # ids but nothing styles them) — ours highlights the active one, kept.
+    # ISSUE-222: SPO No. is hand-typed. _nextSPONo L27496 was correctly not ported (browser
+    # MAX+1 + a race, and our list is paginated so it isn't computable) — but NOTHING
+    # allocates on our side either. DOC_NUMBER_TYPES never registered service_po, though
+    # DOC_NUMBER_FORMATS' prefix+5-digits shape matches legacy's IN-SPO-00001 exactly.
+    render_fn: _spoCreateForm (inline page, no modal)
+    render_fn_line: 27513
+    status: Refactored
+  - module: Purchase
+    page_name: Service POs — Detail
+    route: /service-pos/$id
+    react_file: apps/web/src/modules/service-pos/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16. Category 4: a route legacy never had.
+    #   - No _viewSPO / _spoDetail exists. Row actions are print / Approve / edit / delete
+    #     — no View, no expand row.
+    #   - DECOY chased: _spoPrint L27703 is a PRINT TRIGGER (the JW DC trap) — it opens a
+    #     window.open document, not a screen.
+    #   - _spoEdit(id) L27675 sets _spoLines, sets _spoTab='create', calls render() ->
+    #     _spoCreateForm() with no arg -> then a setTimeout(...,100) patches fields by DOM
+    #     id. So legacy's EDIT is _spoCreateForm + a DOM patch. We have no
+    #     /service-pos/$id/edit route, so nothing maps onto our read-only $id.
+    # _spoCreateForm was NOT forced onto this page: ours is read-only + Approve/Delete,
+    # which honestly mirror _spoApprove L27667 / _spoDel L27696. Its nearest legacy render
+    # is _spoPrint, which is what the audit used.
+    # _spoApprove read, not rewired: our Approve gates on role==='admin' and hits the
+    # existing useApproveServicePo; the service enforces pending-only and stamps
+    # approved_by/at — matching legacy's isAdmin() gate. Nothing to do.
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Purchase
+    page_name: Service POs — List
+    route: /service-pos
+    react_file: apps/web/src/modules/service-pos/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #26). renderServicePO() L27504 is NOT the list —
+    # it SWITCHES on the module-global _spoTab ('register' | 'create', declared L27491):
+    # it renders a section-hdr + a two-button tab bar, then
+    #   (_spoTab==='create' ? _spoCreateForm() : _spoRegister()).
+    # So the list is _spoRegister() L27630.
+    # There is NO showModal anywhere in the region (L27468's belongs to _ospDCEdit), so
+    # _spoCreateForm is an INLINE PAGE and the four-shape showModal footer rule does not
+    # apply to this module — legacy hand-rolls its own buttons.
+    # Reported, not built: the list has NO actions column — legacy L27653 has 10 columns,
+    # ours 9. Print/Approve/Delete are one hop away on the detail; EDIT EXISTS NOWHERE in
+    # our app (no edit route). colSpan={9} is correct for our real 9.
+    render_fn: _spoRegister
+    render_fn_line: 27630
+    status: Refactored
+  # ─── Inventory ─────────────────────────────────────────────────────────────
+  - module: Inventory
+    page_name: GRN — Create
+    route: /goods-receipt-notes/new
+    react_file: apps/web/src/modules/goods-receipt-notes/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #25). L26444 renderGRN is the LIST (router L2434
+    # `grn` — the ONLY GRN router entry). Create is addGRN() L26515, reached from + New GRN
+    # (L26481) and createGRNfromPO() L26730 (which just calls addGRN()).
+    # THERE IS NO BODY BUILDER — proven, not un-found: addGRN builds `var body='...'` as an
+    # INLINE LITERAL at L26530-26565 and passes it straight to showModalLg at L26567. The
+    # QC-Process / cost-centers shape. _grnRefreshPOLines L26668 and _grnLoadJWPODCs L26692
+    # are POST-RENDER DOM injectors into #grnPOLinesBody / #grnJWPOBody, not builders.
+    # FOOTER: showModalLg('New GRN', body, cb, 'Create GRN') — an EXPLICIT saveLabel, so no
+    # title-fallback branch runs. L28044 prefixes a check on .btn-success -> "Create GRN".
+    # ISSUE-213: legacy has THREE inward types — Against PO / Against JWPO-DC / MANUAL
+    # (L26535, L26571-84). We ship two. The Manual mode was dropped on a false comment in
+    # packages/shared/src/schemas/grn-unified.ts L3-5 ("the v82.12.4 reference file is
+    # absent, so there are NO HTML line citations") — weasel-worded: its own sibling
+    # goods-receipt-note.ts L3-6 cites v82_12_3 renderGRN L26444 / addGRN L26515. The
+    # stated blocker ("store-transactions has no create endpoint") is also false: manual
+    # GRN writes qcStatus:'Pending', qcAcceptedQty:0, and writeStoreTxnOnQcAccept only
+    # fires on completed + accepted > 0.
+    # Verified negative: ISSUE-152 does NOT apply — receivedQty/qcAcceptedQty/qcRejectedQty
+    # are `integer` columns, so the MISSING step is correct (browser default step=1 matches
+    # the column). The rule is "match the column", not "always add a step".
+    render_fn: addGRN (no body builder — inline literal L26530-65)
+    render_fn_line: 26515
+    status: Refactored
+  - module: Inventory
+    page_name: GRN — Detail
+    route: /goods-receipt-notes/$id
+    react_file: apps/web/src/modules/goods-receipt-notes/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #24). Category 1: no
+    # renderer at all. Markers, all checked:
+    #   1. viewGRN / editGRN / _viewGRN / grnDetail -> ZERO hits across 29k lines.
+    #   2. L2434 `grn: ()=>renderGRN()` is the ONLY GRN router entry. renderGRN L26444
+    #      returns section-hdr + 4 stat-cards + the "GRN Register" table = the LIST.
+    #   3. Row action inventory (L26461-73): EXACTLY ONE onclick, and it is not a detail —
+    #      assignBtn L26458-60 -> _assignTaskFromContext({type:'GRN', navPage:'incomingqc'}).
+    #      No View, no eye, no Edit, no Del — more minimal than the master-detail signature.
+    #   4. No expand row (corroboration only): a flat <tr> of 11 <td>s, no row onclick.
+    # Four decoys chased and eliminated:
+    #   grnQC(grnId) L26740 — the strongest: called from EXACTLY ONE site, L23776, inside
+    #     renderIncomingQC L23748 (a DIFFERENT router key) — and it is not read-only: it
+    #     early-returns toast('QC already completed') L26743. A detail never refuses to open.
+    #   createGRNfromPO L26730 — nav('grn'); addGRN() = a CREATE prefill.
+    #   renderPartyGRN L24251 / addPartyGRN L24298 — a different module (party_grn, the
+    #     second grn_date table at schema.ts:2961).
+    #   _rptPOGRN L20396, _mobGRNEntry L28466 — a report and the mobile entry form.
+    # STRUCTURAL CLINCHER: legacy's GRN is a FLAT ONE-ITEM RECORD (g.itemCode,
+    # g.receivedQty, g.qcAcceptedQty — all singular, L26466-69). It has no header+lines
+    # shape to expand into. Our goods_receipt_note_lines is a deliberate normalisation
+    # BEYOND legacy. A legacy GRN detail is not merely absent — it is NOT EXPRESSIBLE.
+    # (Same shape as the JW grain finding: there legacy had lines with no header entity;
+    # here a flat record with no lines entity. Our normalisation IS the migration.)
+    # qc-status-badge.tsx verified FAITHFUL: legacy does NOT route GRN through badge()
+    # (L1959 has no GRN path; its 'Partial':'b-amber' is a red herring). GRN uses an inline
+    # ternary at L26457 — Pending->b-amber, Partial->b-blue, Completed->b-green — which our
+    # map matches exactly. "Fixing" it toward badge() would be a REGRESSION.
+    # Verified clean: ISSUE-123 (deleted_at filtered on all 5 relations), ISSUE-124/161 (no
+    # poType comparison anywhere in the module), ISSUE-095 (no LIMIT on lines), ISSUE-065
+    # mech 4 (grn_date :1513 and qc_date :1582 are both `date`).
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Inventory
+    page_name: GRN — Edit
+    route: /goods-receipt-notes/$id/edit
+    react_file: apps/web/src/modules/goods-receipt-notes/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #25). Category 4:
+    # "a route legacy never had". editGRN and viewGRN return ZERO hits across 29k lines.
+    #   Proven by EXHAUSTIVE row enumeration, not by the grep: renderGRN's <tr> (L26461-73)
+    #   has 11 cells; TEN are inert text (grnNo, grnDate, poNo, vendor, itemCode, received,
+    #   accepted, rejected, badge, ref). The <tr> itself carries NO onclick. The single
+    #   interactive element is assignBtn L26458-60 -> _assignTaskFromContext({type:'GRN',
+    #   navPage:'incomingqc'}) — task assignment, gated on (isAdmin()||isManager()) &&
+    #   qcSt==='Pending'. A nav/assign, not an edit. NO edit affordance on any status.
+    #   The ONLY entries to a GRN modal in the entire file are addGRN() and
+    #   createGRNfromPO() -> addGRN(). Both create.
+    #   (Independently corroborated by the GRN detail agent's identical row inventory.)
+    # Our edit route is our own design; it shares the form tree with /new.
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Inventory
+    page_name: GRN — List
+    route: /goods-receipt-notes
+    react_file: apps/web/src/modules/goods-receipt-notes/routes/list.tsx
+    render_fn: renderGRN
+    render_fn_line: 26444
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Inventory
+    page_name: Issue Register
+    route: /issue-register
+    react_file: apps/web/src/modules/store-issues/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified independently 2026-07-16 (rare: the registry
+    # has been right about 4 times in 25 checks). renderIssueRegister() L23874-23905, router
+    # key issueregister L2408, sidebar nav('issueregister') L429. Modal = addIssue() L23914.
+    # _mobIssueEntry L28401 exists in the _mobPage map — ignored per the settled rule.
+    # Legacy's `x || '—'` fallbacks restored in four cells (item name, issuedTo,
+    # refType+refNo, purpose): the port had DROPPED them — the ISSUE-158 mechanism in
+    # reverse (kept the x, dropped the default, so a null renders blank not an em-dash).
+    # "(coming soon)" removed and the Tool Issue Register link restored — trap 1: the port
+    # advertised a page that already exists.
+    # NOT ported, with reasons: legacy's client-side stock validation (server-side now,
+    # rule 1); legacy's datalist (our API needs itemId, a UUID — a datalist binds only
+    # `code`, so legacy's open-datalist immunity is unavailable here); legacy's Issue No.
+    # prefill (_nextIssueNo is a browser MAX+1; our server allocates atomically via
+    # nextStoreIssueCode, and DOC_NUMBER_TYPES cannot serve a store issue — ISSUE-210).
+    # ISSUE-043 CONFIRMED LIVE (ISSUE-207): the rows query applies searchFrag/fromFrag/
+    # toFrag; the count query applies only companyId/deletedAt/itemId. This page passes
+    # `search`, so searching ships "Showing 1-25 of 412" with Next onto empty pages.
+    render_fn: renderIssueRegister (modal via addIssue L23914)
+    render_fn_line: 23874
+    status: Refactored
+  - module: Inventory
+    page_name: Party GRN — List
+    route: /party-grn
+    react_file: apps/web/src/modules/party-grn/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderPartyGRN() L24251, router
+    # key partygrn L2411. Genuinely row-onclick-free: every <td> in the row builder
+    # (L24256-67) is plain; addPartyGRN L24298 is a showModalLg. No detail hop.
+    # STREAM CHECK: this is party_grn — grn_date at schema.ts:2961 — SEPARATE from
+    # goods_receipt_notes at :1513. (A GRN-detail agent chased renderPartyGRN/addPartyGRN as
+    # a decoy and correctly ruled it out as a different module; this is the other side.)
+    # KPI tiles were a custom KpiTile with inline grid/borderTop:3px/fontSize:22 -> legacy's
+    # real .stat-grid / .stat-card cyan|green|amber / .stat-label / .stat-val, verified
+    # BYTE-IDENTICAL between legacy L96-104 and theme :290-341. The modal's Material Name
+    # column was restored (legacy: esc(pm?pm.name:ln.materialName||'')).
+    # ISSUE-268: legacy lists 11 columns incl. JW Line / Material Code / Material Name
+    # because legacy pushes ONE db.partyGrn record PER LINE (L24346-56) — its list is one row
+    # per LINE. Ours is normalized (party_grn header + party_grn_lines) and /party-grn
+    # returns HEADER rows only. The 4th instance of "our normalisation IS the migration"
+    # (JW: lines with no header entity; GRN: a flat record with no lines entity; here: one
+    # row per line). Re-deriving them client-side would breach rule 1.
+    # ISSUE-265 (P2, server-side): service.ts:147 `new Date().toISOString().slice(0,10)`
+    # feeds COUNT(*) FILTER (WHERE pg.grn_date = ${today}::date) — before 05:30 IST the TODAY
+    # tile counts YESTERDAY, for everyone at once.
+    # Verified clean: summary tiles + linesCount/totalReceivedQty are SERVER-COMPUTED SQL
+    # aggregates (both api.ts files are pure apiFetch hooks, zero client derivation); a real
+    # server total exists on both endpoints (no ISSUE-095 disclosure needed); and ISSUE-242
+    # does not bite the modal's zebra — the ported <tr> background sits on a BARE <table>,
+    # and our zebra rule is .innovic-table tbody..., so it survives in both.
+    # FLAGGED FOR A RULING: the amber "Record Party Material GRNs here" banner
+    # (list.tsx:47-71) is OURS-only (legacy has no such element) and carries hardcoded hex.
+    # Kept per the live-system rule.
+    render_fn: renderPartyGRN
+    render_fn_line: 24251
+    status: Refactored
+  - module: Inventory
+    page_name: Party Materials — List
+    route: /party-material
+    react_file: apps/web/src/modules/party-materials/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderPartyMaterial() L24129,
+    # router key partymaterial at L2410 (the orchestrator briefed ~L2411; the agent
+    # corrected it — L2411 is partygrn).
+    # Row onclicks grepped: editPartyMaterial(id) L24214 and delPartyMaterial(id) L24233 —
+    # both showModal/confirm; neither is a detail renderer. No decoy.
+    # ISSUE-264 (P2): party_materials.issued_qty is written ONLY at insert (issuedQty: 0,
+    # service.ts:241). Nothing in apps/api/src or packages/shared/src increments it, and
+    # nothing decrements stock_qty on issue — so the amber "Issued" column is structurally
+    # always 0. LEGACY DOES BOTH, in the DC-creation flow (L26256-57: pm.stockQty -= dl.qty;
+    # pm.issuedQty += dl.qty). A missing cascade, not a fabricated constant — the writer
+    # belongs in delivery-challans. NB service.ts:7-10 CLAIMS "JW Issue — increments issued
+    # and decrements stock": the 8th false comment; the agent checked the code, not it.
+    # esc(pm.uom||'NOS') is NOT ISSUE-158: a real uom column exists and the server preserves
+    # legacy's default (String(r['uom'] ?? 'NOS'), service.ts:134).
+    # <th className="td-ctr"> left alone — legacy uses the class form too, so it is inert in
+    # BOTH and renders left in both. PARITY (contrast ISSUE-241, where legacy uses inline).
+    render_fn: renderPartyMaterial
+    render_fn_line: 24129
+    status: Refactored
+  - module: Inventory
+    page_name: Stock Valuation
+    route: /stock-valuation
+    react_file: apps/web/src/modules/stock-valuation/routes/page.tsx
+    render_fn: renderStockValuation
+    render_fn_line: 20927
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Inventory
+    page_name: Store Inventory
+    route: /store-inventory
+    react_file: apps/web/src/modules/store-inventory/routes/list.tsx
+    render_fn: renderStore
+    render_fn_line: 24803
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Inventory
+    page_name: Store Transactions
+    route: /store-transactions
+    react_file: apps/web/src/modules/store-transactions/routes/list.tsx
+    render_fn: renderStockLedger
+    render_fn_line: 25013
+    theme_css: null
+    status: Refactored
+  # ─── Quality ───────────────────────────────────────────────────────────────
+  - module: Quality
+    page_name: CAPA — List
+    route: /capa
+    react_file: apps/web/src/modules/capa/routes/list.tsx
+    render_fn: renderCAPA
+    render_fn_line: 22779
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: Incoming QC
+    route: /incoming-qc
+    react_file: apps/web/src/modules/incoming-qc/routes/index.tsx
+    render_fn: renderIncomingQC
+    render_fn_line: 23748
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: NC Register — Create
+    route: /nc-register/new
+    react_file: apps/web/src/modules/nc-register/routes/new.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #21). L22494 renderNCRegister is the LIST
+    # (router L2406). Create is _addManualNC() L22565 — hop followed, not assumed: L22551
+    # renders a "Report NC" button whose onclick is _addManualNC(), and _addManualNC calls
+    # showModalLg with the form-grid body. Its JC-to-Operation cascade is _ncFillJC L22609.
+    # FOOTER (the most careful derivation on this track): showModalLg with NO saveLabel and
+    # the title "Report Non-Conformance" matches NO L28034 branch — those test for
+    # UPPERCASE PO/SO/WO/JW/JC, and "Report" contains a lowercase "po". So it falls through
+    # to plain Save, rendered L28044 as a check-prefixed Save on .btn-success. That is a
+    # FIFTH footer shape: the fallback's own default.
+    # PREDICTIVE ISSUE-104 refusal: legacy binds Operator/Machine to db.operators and
+    # db.machines selects; our operator_text / machine_code_text are FREE-TEXT snapshot
+    # columns that auto-created NCs populate from op logs which need not match a master.
+    # Porting the selects would MANUFACTURE the bug. Kept text inputs.
+    render_fn: _addManualNC
+    render_fn_line: 22565
+    status: Refactored
+  - module: Quality
+    page_name: NC Register — Detail
+    route: /nc-register/$id
+    react_file: apps/web/src/modules/nc-register/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #22). L22494 renderNCRegister is the LIST
+    # (router L2406). Detail is _viewNC(id) L22716 — ONE hop, no decoy: the row's eye
+    # button at L22538. Every other hop out of that row was checked and none renders a
+    # detail: _disposeNC L22539 (form modal), _closeNCRework L22540/41 (confirm+mutate,
+    # renders nothing), _createCAPAFromNC L22542 (mutate+nav), nav('capa') L22543.
+    # Legacy's detail is a showModal overlay; ours is a route page, so the action-button
+    # header is the port's adaptation of legacy's LIST-ROW actions. Kept.
+    # TWO BADGE DIVERGENCES FLAGGED, NOT ACTED ON (both badges are shared with list.tsx):
+    #   (1) legacy NEVER uses .badge for NC status or disposition anywhere — _viewNC
+    #       L22718-19 and the row L22524-25 both use plain coloured span/b, and badge()
+    #       L1959 has no NC entry. Ours badges both, in both views.
+    #   (2) return_to_vendor is b-orange here but legacy computes var(--purple) in BOTH
+    #       views — and .b-purple does not exist in the theme.
+    # Both need a ruling; both would change list.tsx's rendering.
+    render_fn: _viewNC
+    render_fn_line: 22716
+    status: Refactored
+  - module: Quality
+    page_name: NC Register — Edit
+    route: /nc-register/$id/edit
+    react_file: apps/web/src/modules/nc-register/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #21). Category 4:
+    # "a route legacy never had". editNC does not exist.
+    #   Proof is NOT mere absence — the list's row actions were enumerated EXHAUSTIVELY
+    #   (L22540-22549) and every hop followed:
+    #     _viewNC (eye)         always              -> showModal(..., NULL) = READ-ONLY
+    #     _disposeNC (pencil)   status Pending      -> the disposition modal
+    #     _closeNCRework        Disposed+Rework     -> confirm() then status flip only
+    #     _closeNCRework        Rework Done+Rework  -> same
+    #     _createCAPAFromNC     status not Pending  -> creates a CAPA record
+    #     nav('capa')           CAPA exists         -> navigation
+    #     _assignTaskFromContext admin/mgr          -> task assignment
+    #   NO edit affordance on ANY status. Cross-checked every ncRegister write site: only
+    #   _autoCreateNC L22480, _addManualNC L22597, _disposeNC L22649, and the mobile QC
+    #   path L28390. NC is create-then-DISPOSITION, never create-then-edit.
+    # Our edit route is our own design, and its narrowness MIRRORS A REAL SERVER RULE:
+    # updateNcRegister L493 throws ConflictError unless status is 'pending', and the update
+    # schema is deliberately narrow per ADR-017 #7. Drift that mirrors a server rule is not
+    # drift. Shares nc-register-form.tsx with /new.
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Quality
+    page_name: NC Register — List
+    route: /nc-register
+    react_file: apps/web/src/modules/nc-register/routes/list.tsx
+    render_fn: renderNCRegister
+    render_fn_line: 22494
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: QC Call Register
+    route: /qc-call-register
+    react_file: apps/web/src/modules/qc-call-register/routes/index.tsx
+    render_fn: renderQCDashboard
+    render_fn_line: 4126
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: QC Command Center
+    route: /qc-command
+    react_file: apps/web/src/modules/qc-command/routes/index.tsx
+    render_fn: renderQCCommandCenter
+    render_fn_line: 18613
+    theme_css: null
+    status: Refactored
+  - module: Quality
+    page_name: QC Dashboard
+    route: /qc-dashboard
+    react_file: apps/web/src/modules/qc-dashboard/routes/index.tsx
+    render_fn: renderQCEngineerDash
+    render_fn_line: 3963
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: QC Documents — List
+    route: /qc-docs
+    react_file: apps/web/src/modules/qc-documents/routes/list.tsx
+    render_fn: renderQCDocuments
+    render_fn_line: 23039
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: QC History
+    route: /qc-history
+    react_file: apps/web/src/modules/qc-history/routes/index.tsx
+    render_fn: renderQCHistory
+    render_fn_line: 23531
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: QC Processes — Create
+    route: /qc-processes/new
+    react_file: apps/web/src/modules/qc-processes/routes/new.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16 (registry error #23). L23446 renderQCProcessMaster is the LIST
+    # (router L2407 qcprocessmaster). Create is addQCProcess() L23475.
+    # THERE IS NO SHARED BODY BUILDER — and that IS the finding. addQCProcess L23475 and
+    # editQCProcess L23492 EACH INLINE their own string literal directly into
+    # showModal(title, body, cb) — built inline at L23478-83 and L23495-500 respectively.
+    # Neither calls a helper. This is the COST-CENTERS shape (two independent builders),
+    # not the poHeaderForm / jcModalBody shape.
+    # Complete universe of legacy QC-process fns: renderQCProcessMaster L23446 (list),
+    # addQCProcess L23475, editQCProcess L23492, delQCProcess L23508, _selQCProcesses
+    # L23516, _dlQCProcesses L23523, _mobQCPending L28256 (unrelated). That is all seven.
+    # FOOTER: showModal (not showModalLg) -> L28026-27 hard-codes Cancel/Save. No check.
+    # ISSUE-204: legacy's "(hrs)" label NOT ported — our column is default_cycle_time_min
+    # (MINUTES, schema.ts:469) while legacy stores HOURS (_selQCProcesses L23518 renders
+    # an "h" suffix). Shipping "(hrs)" would mislabel the field users type into.
+    render_fn: addQCProcess
+    render_fn_line: 23475
+    status: Refactored
+  - module: Quality
+    page_name: QC Processes — Detail
+    route: /qc-processes/$id
+    react_file: apps/web/src/modules/qc-processes/routes/detail.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # NO LEGACY COUNTERPART — verified 2026-07-16 (registry error #23). Category 1: no
+    # renderer at all. All four master-detail signature markers present:
+    #   1. No detail fn — viewQCProcess|_viewQCP|qcProcessDetail -> 0 hits, and the
+    #      seven-function inventory above is exhaustive.
+    #   2. One router key — L2407 qcprocessmaster -> the LIST.
+    #   3. Rows are Edit + Del only (L23456-57) — no View/eye.
+    #   4. No expand row — expand|toggle|eye|View inside L23446-73 -> 0 hits.
+    # Markers 1-3 are conclusive positive evidence; #4 was checked anyway because the PO
+    # expand row was a decoy — absence alone is not proof.
+    # Same verdict as the five master detail pages (clients / vendors / machines /
+    # operators / cost-centers). detail.tsx left untouched.
+    render_fn: null
+    render_fn_line: null
+    status: No Legacy Counterpart
+  - module: Quality
+    page_name: QC Processes — Edit
+    route: /qc-processes/$id/edit
+    react_file: apps/web/src/modules/qc-processes/routes/edit.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Corrected 2026-07-16. L23446 is the LIST. Edit is editQCProcess(id) L23492 — its own
+    # inline literal (L23495-500), NOT a shared builder (see /qc-processes/new).
+    # FOOTER: showModal -> Cancel/Save (L28026-27).
+    # ISSUE-099 clean: the create-only star / readonly name MIRRORS A REAL SERVER RULE —
+    # updateQcProcessInputSchema = createQcProcessInputSchema.partial().omit({code:true}),
+    # and updateQcProcess only ever writes description / defaultCycleTimeMin / isActive.
+    # Starring a field the edit path never submits would be ISSUE-100 text. The
+    # cost-centers master reached the identical conclusion independently.
+    # Legacy's editable name NOT ported (server omits code). Note legacy's rename is itself
+    # unsafe: route cards and job cards store op.operation as the NAME STRING, so a legacy
+    # rename silently orphans every referencing op.
+    render_fn: editQCProcess
+    render_fn_line: 23492
+    status: Refactored
+  - module: Quality
+    page_name: QC Processes — List
+    route: /qc-processes
+    react_file: apps/web/src/modules/qc-processes/routes/list.tsx
+    render_fn: renderQCProcessMaster
+    render_fn_line: 23446
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Quality
+    page_name: TPI
+    route: /tpi
+    react_file: apps/web/src/modules/tpi/routes/index.tsx
+    render_fn: renderTPI
+    render_fn_line: 21381
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # ─── Design ────────────────────────────────────────────────────────────────
+  - module: Design
+    page_name: Design Issues — List
+    route: /design-issues
+    react_file: apps/web/src/modules/design-issues/routes/list.tsx
+    render_fn: renderDesignIssuesPage
+    render_fn_line: 7890
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # renderDesignProjects (L7570) BRANCHES: when the `_dpActiveProject` global is
+  # set it returns _dpRenderDetail(p) (L7623) instead of the list. Legacy crams
+  # list+detail into one function behind a global toggle (same shape as
+  # renderOspDC's tabs). The detail page's real counterpart is _dpRenderDetail,
+  # with _dpRenderTasks (L7653) and _dpProjectStats (L7546) as its helpers.
+  # Corrected 2026-07-15; previously pointed at the LIST renderer.
+  - module: Design
+    page_name: Design Projects — Detail
+    route: /design-projects/$id
+    react_file: apps/web/src/modules/design-projects/routes/detail.tsx
+    render_fn: _dpRenderDetail
+    render_fn_line: 7623
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Design
+    page_name: Design Projects — List
+    route: /design-projects
+    react_file: apps/web/src/modules/design-projects/routes/list.tsx
+    render_fn: renderDesignProjects
+    render_fn_line: 7570
+    theme_css: null
+    status: Refactored
+  - module: Design
+    page_name: Design Tracker
+    route: /design-tracker
+    react_file: apps/web/src/modules/design-tracker/routes/list.tsx
+    render_fn: renderDesignTracker
+    render_fn_line: 7259
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: Design
+    page_name: Design Work Log
+    route: /design-work-log
+    react_file: apps/web/src/modules/design-work-log/routes/list.tsx
+    render_fn: renderDesignWorkLog
+    render_fn_line: 7935
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # ─── System ────────────────────────────────────────────────────────────────
+  - module: System
+    page_name: Access Control
+    route: /access-control
+    react_file: apps/web/src/modules/access-control/routes/list.tsx
+    render_fn: renderAccessControl
+    render_fn_line: 13861
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: System
+    page_name: Activity Log
+    route: /activity-log
+    react_file: apps/web/src/modules/activity-log/routes/list.tsx
+    render_fn: renderActivityLog
+    render_fn_line: 11270
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Alerts — Config
+    route: /alerts/config
+    react_file: apps/web/src/modules/alerts/routes/config.tsx
+    render_fn: renderAlertConfig
+    render_fn_line: 22427
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Alerts — Dashboard
+    route: /alerts
+    react_file: apps/web/src/modules/alerts/routes/dashboard.tsx
+    render_fn: renderAlerts
+    render_fn_line: 22323
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Alerts — Drill-down
+    route: /alerts/$code
+    react_file: apps/web/src/modules/alerts/routes/drill.tsx
+    render_fn: _alertDrillDown
+    render_fn_line: 22374
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Approval Config
+    route: /approval-config
+    react_file: apps/web/src/modules/approval-config/routes/page.tsx
+    render_fn: renderApprovalConfig
+    render_fn_line: 21608
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: System
+    page_name: Backup
+    route: /backup
+    react_file: apps/web/src/modules/backup/routes/page.tsx
+    render_fn: renderBackup
+    render_fn_line: 21963
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: System
+    page_name: Print Templates
+    route: /print-templates
+    react_file: apps/web/src/modules/print-templates/routes/editor.tsx
+    render_fn: renderPrintTemplates
+    render_fn_line: 14660
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Reports — List
+    route: /reports
+    react_file: apps/web/src/modules/reports/routes/list.tsx
+    render_fn: renderReports
+    render_fn_line: 20047
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: System
+    page_name: Reports — Run
+    route: /reports/$slug
+    react_file: apps/web/src/modules/reports/routes/run.tsx
+    render_fn: renderReports
+    render_fn_line: 20047
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Saved Reports — Create
+    route: /saved-reports/new
+    react_file: apps/web/src/modules/saved-reports/routes/new.tsx
+    render_fn: renderReportBuilder
+    render_fn_line: 17526
+    theme_css: null
+    status: Refactored
+  - module: System
+    page_name: Saved Reports — Edit
+    route: /saved-reports/$id/edit
+    react_file: apps/web/src/modules/saved-reports/routes/edit.tsx
+    theme_css: null
+    # Corrected 2026-07-16. Legacy serves /saved-reports/new AND this route from the ONE
+    # renderReportBuilder (router key reportbuilder); this page's own chrome is its header
+    # at L17554-59.
+    # THE "ZERO EDITS" HYPOTHESIS WAS FALSIFIED. The audit split in two:
+    #   INHERITED CORRECTLY (ISSUE-097 holds exactly as recorded): components/builder.tsx's
+    #     props contract (Props / BuilderInitial / SaveInput) is byte-identical, so edit.tsx
+    #     compiled untouched and inherits the Builder refactor. onExcel wiring is
+    #     byte-identical to new.tsx. Every Builder prop is passed; only `initial` and
+    #     `saveLabel` differ, as intended.
+    #   NEVER REFACTORED: its own chrome was still <main className="container max-w-6xl
+    #     py-10"> + shadcn Card/Button/h1 text-2xl — the skill's "FROM" side.
+    # DECISIVE ARGUMENT: new.tsx, ported from the SAME legacy function, already uses <div> +
+    # .section-hdr "📄 Excel Report Builder" + .panel/.panel-body/.empty-state. Two routes
+    # rendering ONE legacy function cannot legitimately have different chrome.
+    # LESSON: "the shared component was refactored" does NOT mean "the page was refactored".
+    # Zero logic changes: onSave, onExcel, updateMutation, navigate, loading/errored/
+    # errorMessage all untouched; the sourcesQ/reportQ errorMessage logic preserved exactly.
+    # Not re-litigated (ISSUE-097): the drag grips are INERT in legacy (_rbDropCol L17513
+    # rejects COL: payloads); `N records match` and the preview stat tiles need a server
+    # count / columnTotals ("a stale count is worse than none"); the Load Template dropdown
+    # is superseded by our /saved-reports list.
+    render_fn: renderReportBuilder (header L17554-59)
+    render_fn_line: 17554
+    status: Refactored
+  # MAPPING CORRECTED 2026-07-15 (REFACTOR-1, registry error #5). The registry
+  # auto-assigned renderReportBuilder (L17526) to ALL FOUR saved-reports routes.
+  # It is the drag-and-drop Excel BUILDER, already ported to
+  # saved-reports/components/builder.tsx and consumed by new.tsx:10 + edit.tsx:10.
+  # It never enumerates saved reports.
+  #   -> /saved-reports/new and /saved-reports/$id/edit: renderReportBuilder is CORRECT.
+  #   -> /saved-reports (this list): NO legacy counterpart. Legacy exposes saved
+  #      templates only as a <select> (L17552/17558); `reportTemplates` appears at
+  #      exactly 4 lines in 29k (L17552, L17673 save, L17674 load, L21810 collection
+  #      list) and NO renderer lists them. Legacy has strictly FEWER elements than
+  #      ours (no description/owner/shared flag/per-row Run-Edit-Delete/empty state),
+  #      so porting toward it would delete working features. Parity-complete as-is.
+  #   -> /saved-reports/$id (Run): unverified — legacy's builder has an inline
+  #      Preview (L17601) but no separate run-a-saved-report screen. Verify before
+  #      refactoring; it may also be port-only.
+  - module: System
+    page_name: Saved Reports — List
+    route: /saved-reports
+    react_file: apps/web/src/modules/saved-reports/routes/list.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  # MAPPING CORRECTED 2026-07-15 (REFACTOR-1, registry error #6 — 2nd in this
+  # module from the same auto-assignment). NO legacy counterpart. Proof:
+  #   1. Legacy's router has exactly THREE report keys — reportmaster (L2403),
+  #      reports (L2447), reportbuilder (L2448). There is no run-a-saved-report screen.
+  #   2. _rbLoadTemplate (L17674) is the ONLY way to consume a saved template and it
+  #      navigates nowhere: it repopulates builder state, sets _rbPreview='' and
+  #      re-renders. Legacy drops you on the BUILDER with the preview CLEARED —
+  #      the opposite of our run page, which auto-runs and shows results.
+  #   3. Preview is a sub-panel, not a screen: _rbDoPreview (L17608-17636) assigns a
+  #      string to _rbPreview which renderReportBuilder splices in at L17603. It
+  #      belongs to new.tsx/edit.tsx (ported as components/result-table.tsx).
+  #   4. run.tsx's own markup (back link, name/desc/meta header, Edit button) has
+  #      zero legacy analogue.
+  # Alternatives ruled out: renderReports (L20047, hardcoded canned tabs) and
+  # renderReportMaster (L23677, CRUD over db.reportTypes = QC document types).
+  - module: System
+    page_name: Saved Reports — Run
+    route: /saved-reports/$id
+    react_file: apps/web/src/modules/saved-reports/routes/run.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: System
+    page_name: Settings
+    route: /settings
+    react_file: apps/web/src/modules/settings/routes/index.tsx
+    render_fn: renderSettings
+    render_fn_line: 13351
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: System
+    page_name: Trash
+    route: /trash
+    react_file: apps/web/src/modules/trash/routes/list.tsx
+    render_fn: renderTrash
+    render_fn_line: 11309
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  # ─── Unmapped module dir (module label not in the business-module mapping) ───
+  - module: unknown
+    page_name: Delivery Challans — Create
+    route: /delivery-challans/new
+    react_file: apps/web/src/modules/delivery-challans/routes/create.tsx
+    theme_css: null
+    # Corrected 2026-07-16 (registry error #28). CATEGORY 1 — legacy HAD this page; the
+    # port-only hypothesis was DISPROVEN.
+    #   The orchestrator briefed "no _ospDCAdd/addDC/createDC -> maybe category 4". The
+    #   function is named _ospDCCreateForm() L27251 (+ _ospDCFillPO L27283,
+    #   _ospDCRefreshLines L27318, _ospDCSave L27336). A grep pattern too narrow, then an
+    #   absence reported as evidence.
+    #   And it was not hidden: renderOspDC() L27244 is a TWO-TAB container (Create DC /
+    #   Outward Register) and _ospDCTab DEFAULTS to 'create' (L27214) — the create form is
+    #   legacy's LANDING VIEW for this module.
+    # Register that owns this route: _ospDCRegister() L27419 via renderOspDC() L27244, nav
+    # key ospdc (router L2465, sidebar L497, dept purchase L2342). NOT renderJWDC L24434
+    # (/jw-dc) and NOT renderDispatchRegister L10711 (/customer-dispatches). Registry error
+    # #1 confirmed corrected.
+    # THE DECISIVE HOP IS ON THE PO LIST, NOT THE DC LIST: L25268 — if(poType==='Job Work'
+    # && overallSt!=='Draft') items.push({label:'Create DC', onclick:"_ospDCFromPO(poNo)"})
+    # -> _ospDCFromPO L27233 sets _ospDCSelectedPO, _ospDCTab='create', nav('ospdc'). That is
+    # exactly our ?poId= contract, and our "Pick a JW PO first" branch is the faithful
+    # analogue of legacy's unselected <select id="fOspDCPO">.
+    # ISSUE-241 applied and verified at this site: <th className="td-right"> -> inline style
+    # (legacy L27321 uses the inline form, which applies; the class is inert against
+    # .innovic-table th). <td className="td-right"> correctly LEFT — .innovic-table td sets
+    # no text-align, so the class DOES apply there. The inertness is a <th>-only problem.
+    # ISSUE-260 (P2): ship qty caps at poLineQty, not PENDING. Legacy computes
+    # _ospDCSentQtyLine L27217 -> pending = poQty - sent, caps the input at pending (L27330),
+    # pre-fills it, and HIDES the form with "All qty sent via DCs. No pending." (L27311).
+    # So multiple DCs against one PO line can EXCEED the order. Not built: server-side logic,
+    # and po.lines[].receivedQty is GRN RECEIPTS, not DC SENDS — not a substitute.
+    # Verified faithful: uom:'NOS' (legacy L27355 hardcodes it too) and step="1"
+    # (purchaseOrderLineSchema.qty is z.number().int() — the GRN precedent).
+    # PREDICTIVE ISSUE-104 refusal: legacy's <select id="fOspDCPO"> (L27267) NOT ported — it
+    # would be a native select over a filtered list (L27253 excludes Closed/Cancelled/Draft),
+    # the exact stacked-exclusion shape that bit the GRN.
+    render_fn: _ospDCCreateForm
+    render_fn_line: 27251
+    status: Refactored
+  - module: unknown
+    page_name: Delivery Challans — Detail
+    route: /delivery-challans/$id
+    react_file: apps/web/src/modules/delivery-challans/routes/detail.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  # Legacy renderOspDC (L27243) is ONE tabbed page ("📦 OSP Delivery Challan &
+  # Outward": create | register) over db.ospDC. The port split those tabs into
+  # separate routes, so this list maps to the REGISTER TAB only — _ospDCRegister
+  # (L27419) — not to renderOspDC as a whole. /delivery-challans/new maps to
+  # _ospDCCreateForm. Identified 2026-07-15; was render_fn: unknown.
+  - module: Dispatch
+    page_name: Delivery Challans — List
+    route: /delivery-challans
+    react_file: apps/web/src/modules/delivery-challans/routes/list.tsx
+    render_fn: _ospDCRegister
+    render_fn_line: 27419
+    theme_css: apps/web/src/styles/innovic-theme.css
+    status: Refactored
+  - module: unknown
+    page_name: Delivery Challans — Receive
+    route: /delivery-challans/$id/receive
+    react_file: apps/web/src/modules/delivery-challans/routes/receive.tsx
+    render_fn: PORT_ONLY
+    render_fn_line: null
+    theme_css: null
+    status: No Legacy Counterpart
+  - module: unknown
+    page_name: Tool Issues — List
+    route: /tool-issues
+    react_file: apps/web/src/modules/tool-issues/routes/list.tsx
+    theme_css: apps/web/src/styles/innovic-theme.css
+    # Mapping CORRECT as auto-built — verified 2026-07-16. renderToolIssue() L23965-24036
+    # (router key toolissue) + addToolIssue() L24038-24071 + _toolReturn() L24080-24126.
+    # THREE briefed warnings CHECKED, and one REFUTED:
+    #   - ISSUE-242 does NOT apply here, and "fixing" it would have MANUFACTURED a
+    #     divergence: legacy HAS a zebra rule at L113 (tbody tr:nth-child(even) td{
+    #     background:var(--bg3)}), structurally identical to ours at L387. So the overdue
+    #     <tr> tint is eaten on even rows in BOTH systems -> parity. The rule is PER-TABLE,
+    #     not global (ISSUE-242 is real on Pending SO Value because legacy has no zebra
+    #     THERE).
+    #   - .dash-stat-card: written 5x in legacy, defined nowhere -> inert in legacy too. No
+    #     class added, no rule (the .stat-card.blue precedent). Inline styles carry it.
+    #   - ISSUE-065 mech 4 N/A: every column is `date` (schema L2726-27, L2789).
+    # Real gaps closed: legacy puts statCards BEFORE the header (L24018); the Overdue tile
+    # renders only if >0 (L24016); the <th>Action</th> column is UNCONDITIONAL with an empty
+    # <td> for read-only users (ours dropped the whole column, shifting every other column
+    # for non-writers); an invented ✓ on returned rows -> legacy's EMPTY cell; both modals
+    # hand-rolled fixed divs at min(1100px,96vw) -> legacy's real .overlay/.modal(560px)/
+    # .modal-hdr/.modal-title/.modal-body/.modal-footer; legacy's field order restored.
+    # Both footers -> Cancel/Save (showModal(t,b,fn), ISSUE-248).
+    # ★ mirrored as LITERAL label text, not .req — legacy has no .req in its CSS, so our red
+    # star would render something legacy never does.
+    # A NUANCED --teal CALL: legacy's Return button has color:var(--teal) (L23996), which is
+    # undefined in BOTH systems -> legacy renders the inherited colour. Our #14b8a6 was
+    # KEPT: legacy's own rgba(20,184,166,...) border+background make teal the evident
+    # intent, and reverting would be a visible regression on a live system to match a legacy
+    # bug. Distinct from SO QC Status (legacy itself writes var(--teal,#0d9488)) and from
+    # ISSUE-195 (assembly/list.tsx invents a fallback legacy lacks). Three sites, three
+    # different correct answers.
+    # ISSUE-104 CLEAR: both no-match paths BLOCK THE SAVE (legacy: if(!item){toast('Item not
+    # found');return false;}; ours: if(!itemId){setErr('Select an item');return;}). refType
+    # is a <select> over the COMPLETE STORE_ISSUE_REF_TYPES enum -> immune by construction.
+    render_fn: renderToolIssue (modal via addToolIssue L24038)
+    render_fn_line: 23965
+    status: Refactored
