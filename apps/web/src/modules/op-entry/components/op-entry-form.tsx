@@ -28,6 +28,12 @@ interface Props {
   op: JcOpEnriched;
   // Active running session id for this op, if any (for the Stop button).
   activeRunningId: string | null;
+  // Legacy _opEntryMode (renderOpEntry L5210): 'start' shows the Mark-as-Running
+  // sub-form, 'complete' shows the Qty-Completed form. Only the production path
+  // honours it (QC / outsource have their own dedicated flows). Defaulted so
+  // callers that don't care keep the current combined behaviour.
+  mode?: 'start' | 'complete';
+  onModeChange?: (mode: 'start' | 'complete') => void;
 }
 
 function todayIso(): string {
@@ -40,7 +46,12 @@ function nowHHMM(): string {
   return d.toTimeString().slice(0, 5);
 }
 
-export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
+export function OpEntryForm({
+  op,
+  activeRunningId,
+  mode = 'complete',
+  onModeChange,
+}: Props): React.JSX.Element {
   const submit = useSubmitOpLog();
   const submitQc = useSubmitQcLog();
   const start = useStartOp();
@@ -185,6 +196,18 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Stop failed');
     }
+  }
+
+  // Production form submit dispatches by mode (legacy submitStartOp vs
+  // submitOpEntry). In 'start' mode Enter/primary marks the op running; in
+  // 'complete' mode it logs a completion.
+  async function handleProductionSubmit(e: React.FormEvent): Promise<void> {
+    if (mode === 'start') {
+      e.preventDefault();
+      if (!activeRunningId) await handleStart();
+      return;
+    }
+    await handleSubmit(e);
   }
 
   // OSP auto-PR generation (ADR-039) — port of legacy _autoGenerateOspPR.
@@ -461,83 +484,177 @@ export function OpEntryForm({ op, activeRunningId }: Props): React.JSX.Element {
     );
   }
 
-  // Production-complete form for non-QC ops (process / outsource).
+  // Production form for non-QC / non-outsource ops. Legacy renderOpEntry
+  // (L5277-5331) switches between a Start and a Complete sub-form via
+  // _opEntryMode; the header toggle mirrors legacy L5278-5283.
+  const isStart = mode === 'start';
+  const modeToggle = onModeChange ? (
+    <div style={{ display: 'flex', gap: 4 }}>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => onModeChange('start')}
+        style={{
+          borderColor: isStart ? 'var(--amber)' : 'var(--border2)',
+          background: isStart ? 'var(--amber3)' : 'transparent',
+          color: isStart ? 'var(--amber)' : 'var(--text2)',
+          fontWeight: 700,
+        }}
+      >
+        ▶ Start
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => onModeChange('complete')}
+        style={{
+          borderColor: !isStart ? 'var(--green)' : 'var(--border2)',
+          background: !isStart ? 'var(--green3)' : 'transparent',
+          color: !isStart ? 'var(--green)' : 'var(--text2)',
+          fontWeight: 700,
+        }}
+      >
+        ✓ Complete
+      </button>
+    </div>
+  ) : null;
+
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={(e) => void handleProductionSubmit(e)}>
       <div className="panel">
         <div className="panel-hdr">
-          <span className="panel-title">Log entry</span>
-          <span className="text3" style={{ fontSize: 11 }}>
-            Op {op.opSeq} · <span className="mono">{op.operation}</span>
-          </span>
+          <span className="panel-title">{isStart ? '▶ Start Operation' : '✓ Log entry'}</span>
+          {modeToggle ?? (
+            <span className="text3" style={{ fontSize: 11 }}>
+              Op {op.opSeq} · <span className="mono">{op.operation}</span>
+            </span>
+          )}
         </div>
         <div className="panel-body">
           {blockedBanner}
           <div className="form-grid">
             {commonFields}
-            <div className="form-grp">
-              <label className="form-label" htmlFor="opf-qty">
-                Qty done
-              </label>
-              <input
-                id="opf-qty"
-                className="innovic-input"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={op.available}
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="0"
-                disabled={blockedReason !== null}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="opf-rej">
-                Reject qty
-              </label>
-              <input
-                id="opf-rej"
-                className="innovic-input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={rejectQty}
-                onChange={(e) => setRejectQty(e.target.value)}
-                placeholder="0"
-              />
-            </div>
+            {isStart ? (
+              // Legacy "Mark Operation as Running" panel (L5303-5307).
+              <div
+                className="form-grp form-full"
+                style={{
+                  background: 'var(--amber3)',
+                  border: '1px solid var(--amber2)',
+                  borderRadius: 8,
+                  padding: 10,
+                }}
+              >
+                <div
+                  style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}
+                >
+                  ▶ Mark Operation as Running
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+                  This will mark{' '}
+                  <b className="mono">
+                    {op.jobCardCode} Op{op.opSeq}
+                  </b>{' '}
+                  as Running on <b>{op.machineCode ?? op.machineCodeText ?? '—'}</b>.
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                  Available qty to process:{' '}
+                  <b style={{ color: 'var(--cyan)' }}>{op.available} pcs</b>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="opf-qty">
+                    Qty done
+                  </label>
+                  <input
+                    id="opf-qty"
+                    className="innovic-input"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={op.available}
+                    value={qty}
+                    onChange={(e) => setQty(e.target.value)}
+                    placeholder="0"
+                    disabled={blockedReason !== null}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label" htmlFor="opf-rej">
+                    Reject qty
+                  </label>
+                  <input
+                    id="opf-rej"
+                    className="innovic-input"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={rejectQty}
+                    onChange={(e) => setRejectQty(e.target.value)}
+                    placeholder="0"
+                  />
+                </div>
+              </>
+            )}
             {operatorAndRemarks}
           </div>
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-            <button
-              type="submit"
-              className="btn btn-success"
-              disabled={blockedReason !== null || submit.isPending}
-            >
-              {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit
-              completion
-            </button>
-            {activeRunningId ? (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => void handleStop()}
-                disabled={stop.isPending}
-              >
-                <Square size={14} />
-                Stop ({stop.isPending ? 'stopping…' : 'running'})
-              </button>
+            {isStart ? (
+              activeRunningId ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void handleStop()}
+                  disabled={stop.isPending}
+                >
+                  <Square size={14} />
+                  Stop ({stop.isPending ? 'stopping…' : 'running'})
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
+                  disabled={blockedReason !== null || start.isPending}
+                >
+                  {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
+                  ▶ Start Operation
+                </button>
+              )
             ) : (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => void handleStart()}
-                disabled={blockedReason !== null || start.isPending}
-              >
-                <Play size={14} />▶ Start session
-              </button>
+              <>
+                <button
+                  type="submit"
+                  className="btn btn-success"
+                  disabled={blockedReason !== null || submit.isPending}
+                >
+                  {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit
+                  completion
+                </button>
+                {activeRunningId ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void handleStop()}
+                    disabled={stop.isPending}
+                  >
+                    <Square size={14} />
+                    Stop ({stop.isPending ? 'stopping…' : 'running'})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => void handleStart()}
+                    disabled={blockedReason !== null || start.isPending}
+                  >
+                    <Play size={14} />▶ Start session
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

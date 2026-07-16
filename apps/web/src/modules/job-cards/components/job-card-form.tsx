@@ -117,6 +117,14 @@ export function JobCardForm({
     model?.sourceSoLineId ? 'so' : model?.sourceJwLineId ? 'jw' : null,
   );
   const [sourceText, setSourceText] = useState(initialSource ? sourceLabel(initialSource) : '');
+  // ISSUE-169: `sourceText` above initialises from `initialSource`, which reads
+  // `sourceOptions` — an empty array on the first render (the query hasn't
+  // resolved). The initialiser runs once and never re-syncs, so the linked
+  // SO/WO/JW label stays blank on every edit even though the balance banner
+  // (driven by the inline `selectedSource`, which recomputes each render) shows
+  // the order. This flag lets an effect below sync the display value once the
+  // linked option resolves, and stops once the user edits the field.
+  const [sourceTextSynced, setSourceTextSynced] = useState(false);
   const [itemCode, setItemCode] = useState(model?.itemCode ?? '');
   const [orderQty, setOrderQty] = useState<string>(model ? String(model.orderQty) : '');
   const [priority, setPriority] = useState<'normal' | 'high'>(model?.priority ?? 'normal');
@@ -162,12 +170,23 @@ export function JobCardForm({
     ? sourceOptions.find((o) => o.lineId === sourceLineId)
     : undefined;
 
+  // ISSUE-169 fix: once the linked source option resolves (edit mode), display
+  // its label in the search field. Runs once, then yields to user edits.
+  useEffect(() => {
+    if (!isEdit || sourceTextSynced || !selectedSource) return;
+    setSourceText(sourceLabel(selectedSource));
+    setSourceTextSynced(true);
+  }, [isEdit, sourceTextSynced, selectedSource]);
+
   // Ops counter (legacy jcModalOpsHtml L5927 — note legacy pluralises "op(s)"
   // off the TOTAL row count, not the non-QC count; mirrored).
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
   const onSourceChange = (val: string): void => {
+    // User is editing the field — freeze the ISSUE-169 auto-sync effect so it
+    // never overwrites what they type.
+    setSourceTextSynced(true);
     setSourceText(val);
     const opt = sourceByLabel.get(val);
     if (!opt) {

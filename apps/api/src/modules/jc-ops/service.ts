@@ -70,6 +70,7 @@ export async function listJcOpsBoard(
         ven.name AS "outsourceVendorName",
         pr.code AS "outsourcePrCode",
         po.code AS "outsourcePoCode",
+        po.id AS "outsourcePoId",
         op.outsource_sent_qty AS "sentQty"
       FROM public.jc_ops op
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
@@ -115,6 +116,7 @@ export async function listJcOpsBoard(
         outsourceVendorName: (r['outsourceVendorName'] as string | null) ?? null,
         outsourcePrCode: (r['outsourcePrCode'] as string | null) ?? null,
         outsourcePoCode: (r['outsourcePoCode'] as string | null) ?? null,
+        outsourcePoId: (r['outsourcePoId'] as string | null) ?? null,
         sentQty: num(r['sentQty']),
       }),
     );

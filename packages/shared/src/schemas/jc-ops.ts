@@ -39,6 +39,8 @@ export const jcOpsBoardRowSchema = z.object({
   outsourceVendorName: z.string().nullable(),
   outsourcePrCode: z.string().nullable(),
   outsourcePoCode: z.string().nullable(),
+  /** PO PK for the deep-link to /purchase-orders/$id (legacy viewPO, L11371). */
+  outsourcePoId: z.string().uuid().nullable(),
   sentQty: z.number().int().nonnegative(),
 });
 export type JcOpsBoardRow = z.infer<typeof jcOpsBoardRowSchema>;

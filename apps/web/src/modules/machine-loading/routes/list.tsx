@@ -90,8 +90,17 @@ function MachineLoadingPage(): React.JSX.Element {
     }
   }
 
+  // Operation View re-applies legacy's narrow ops filter (renderLoading L5060:
+  // available > 0 OR In Progress). The service now returns the wider Job-Queue
+  // set (all non-complete ops) so the Job Queue View can surface waiting /
+  // qc_pending / running (ISSUE-068); this keeps the ops table unchanged.
   const filteredOps = useMemo(
-    () => (selMachineId ? allOps.filter((o) => o.machineId === selMachineId) : allOps),
+    () =>
+      allOps.filter(
+        (o) =>
+          (selMachineId ? o.machineId === selMachineId : true) &&
+          (o.available > 0 || o.computedStatus === 'in_progress'),
+      ),
     [allOps, selMachineId],
   );
 

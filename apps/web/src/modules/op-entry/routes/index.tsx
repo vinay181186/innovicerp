@@ -17,6 +17,11 @@ import { OpLogHistory } from '../components/op-log-history';
 const searchSchema = z.object({
   jc: z.string().optional(),
   op: z.string().uuid().optional(),
+  // Legacy `window._opEntryMode` (renderOpEntry L5210). JC Status enters Op
+  // Entry via goToOpEntryStart / goToOpEntryComplete (L11013 / L11007), which
+  // set this intent. Optional; absent = 'complete' (legacy default L5210),
+  // which preserves the current combined form behaviour.
+  mode: z.enum(['start', 'complete']).optional(),
 });
 
 export const opEntryRoute = createRoute({
@@ -47,6 +52,10 @@ function OpEntryPage() {
   const ops = useJcOpsEnriched(jcQuery, { enabled: Boolean(search.jc) });
   const running = useRunningOps({ status: 'running' });
 
+  // Start vs Complete intent (legacy _opEntryMode). Default 'complete' matches
+  // legacy L5210 and preserves the current form. Toggling writes it to the URL.
+  const mode = search.mode ?? 'complete';
+
   const selectedOp = useMemo(
     () => ops.data?.find((o) => o.id === search.op) ?? null,
     [ops.data, search.op],
@@ -75,6 +84,13 @@ function OpEntryPage() {
   function handleSelectOp(opId: string) {
     void navigate({
       search: (prev) => ({ ...prev, op: opId }),
+      replace: true,
+    });
+  }
+
+  function handleModeChange(next: 'start' | 'complete') {
+    void navigate({
+      search: (prev) => ({ ...prev, mode: next }),
       replace: true,
     });
   }
@@ -154,7 +170,12 @@ function OpEntryPage() {
               }}
             >
               <div>
-                <OpEntryForm op={selectedOp} activeRunningId={activeRunningId} />
+                <OpEntryForm
+                  op={selectedOp}
+                  activeRunningId={activeRunningId}
+                  mode={mode}
+                  onModeChange={handleModeChange}
+                />
               </div>
               <div className="panel">
                 <div className="panel-hdr">

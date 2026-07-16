@@ -8,8 +8,10 @@ import { sql } from 'drizzle-orm';
 import type {
   ProductionDashboardCounters,
   ProductionDashboardJc,
+  ProductionDashboardLowStockItem,
   ProductionDashboardReadyOp,
   ProductionDashboardResponse,
+  ProductionDashboardSupplyChain,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
@@ -129,6 +131,71 @@ export async function getProductionDashboard(
       computedStatus: (r['computedStatus'] as string | null) ?? '',
     }));
 
-    return { counters, openJobCards, readyToProcess };
+    // ── Supply Chain Snapshot (legacy L3804-3838) ─────────────────────────
+    // Additive DTO exposure of figures already computed elsewhere — nothing is
+    // recomputed in a new way:
+    //  · low/zero stock reuse store-inventory/service.ts's exact formula
+    //    (minQty>0 && inStock<=minQty; inStock=0) over the v_item_stock view.
+    //  · openPos/todayGrn reuse sc-dashboard/service.ts's predicates
+    //    (status IN open|partial|qc_pending; grn_date = current_date).
+    const stockCountRows = await tx.execute(sql`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE i.min_stock_qty > 0 AND COALESCE(s.on_hand_qty, 0) <= i.min_stock_qty
+        )::int AS "lowStockCount",
+        COUNT(*) FILTER (WHERE COALESCE(s.on_hand_qty, 0) = 0)::int AS "zeroStockCount"
+      FROM public.items i
+      LEFT JOIN public.v_item_stock s
+        ON s.item_id = i.id AND s.company_id = i.company_id
+      WHERE i.company_id = ${companyId}::uuid AND i.deleted_at IS NULL
+    `);
+    const scc = (stockCountRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+
+    const lowItemRows = await tx.execute(sql`
+      SELECT
+        i.id AS "itemId", i.code,
+        COALESCE(s.on_hand_qty, 0)::int AS "inStock",
+        i.min_stock_qty AS "minQty"
+      FROM public.items i
+      LEFT JOIN public.v_item_stock s
+        ON s.item_id = i.id AND s.company_id = i.company_id
+      WHERE i.company_id = ${companyId}::uuid
+        AND i.deleted_at IS NULL
+        AND i.min_stock_qty > 0
+        AND COALESCE(s.on_hand_qty, 0) <= i.min_stock_qty
+      ORDER BY i.code
+      LIMIT 50
+    `);
+    const lowStockItems: ProductionDashboardLowStockItem[] = (
+      lowItemRows as unknown as Array<Record<string, unknown>>
+    ).map((r) => ({
+      itemId: r['itemId'] as string,
+      code: r['code'] as string,
+      inStock: Number(r['inStock'] ?? 0),
+      minQty: Number(r['minQty'] ?? 0),
+    }));
+
+    const poGrnRows = await tx.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM public.purchase_orders po
+           WHERE po.company_id = ${companyId}::uuid
+             AND po.deleted_at IS NULL
+             AND po.status IN ('open', 'partial', 'qc_pending'))::int AS "openPos",
+        (SELECT COUNT(*) FROM public.goods_receipt_notes grn
+           WHERE grn.company_id = ${companyId}::uuid
+             AND grn.deleted_at IS NULL
+             AND grn.grn_date = current_date)::int AS "todayGrn"
+    `);
+    const pg = (poGrnRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+
+    const supplyChain: ProductionDashboardSupplyChain = {
+      lowStockCount: Number(scc['lowStockCount'] ?? 0),
+      zeroStockCount: Number(scc['zeroStockCount'] ?? 0),
+      openPos: Number(pg['openPos'] ?? 0),
+      todayGrn: Number(pg['todayGrn'] ?? 0),
+      lowStockItems,
+    };
+
+    return { counters, openJobCards, readyToProcess, supplyChain };
   });
 }

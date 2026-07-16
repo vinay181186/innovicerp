@@ -87,8 +87,15 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
     });
 
     // ── Open operations (operation view + per-machine queue) ───────────────
-    // Legacy filter: available > 0 OR In Progress; non-outsource. Sort:
-    // priority (High first) → due date → op_seq.
+    // ISSUE-068: the Job Queue View was hiding waiting / qc_pending / running
+    // ops. Legacy builds ONE enrichedOps set then applies two DIFFERENT view
+    // filters: the Operation View (renderLoading L5060) shows only
+    // `available > 0 OR In Progress`, while the Job Queue View (L5081) shows
+    // every non-complete, non-outsource op. This query returns the WIDER
+    // Job-Queue set (computed_status <> 'complete'); the Operation View
+    // re-applies the narrow predicate client-side (see list.tsx filteredOps),
+    // so the ops table is unchanged while the queue now surfaces those states.
+    // Sort: priority (High first) → due date → op_seq.
     const opRows = await tx.execute(sql`
       SELECT
         jo.id AS "jcOpId", jo.job_card_id AS "jobCardId", jc.code AS "jobCardCode",
@@ -112,7 +119,7 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
       WHERE jo.company_id = ${companyId}::uuid
         AND jo.deleted_at IS NULL
         AND jo.op_type <> 'outsource'
-        AND (vos.available > 0 OR vos.computed_status = 'in_progress')
+        AND vos.computed_status <> 'complete'
       ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jo.op_seq ASC
     `);
 

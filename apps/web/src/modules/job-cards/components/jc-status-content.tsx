@@ -2,12 +2,13 @@
 // cards, OPERATION FLOW stepper, OPERATIONS DETAIL (per-op recent logs + Start/
 // Log/QC actions), and the completion-log timeline. Rendered by the JC Status
 // page (routes/status).
-import type { OpLog } from '@innovic/shared';
+import type { JcOpsBoardRow, OpLog, OutsourceStatus } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { signedUrl } from '@/lib/storage';
+import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useMyCompany } from '@/modules/settings/api';
 import { useJobCard } from '../api';
@@ -35,6 +36,24 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
 
+// Legacy stores outsourceStatus as Title Case strings ('Pending', 'PR Raised',
+// 'PO Created', …) and renders them raw (L11043, L11075). Ours is the pg enum
+// `outsource_status`, so rendering it raw shows `pr_raised` where legacy shows
+// `PR Raised`. This maps our enum back to legacy's exact wording.
+//
+// Kept separate from OP_STATUS above: that map is keyed for a different field
+// (jc_ops computed status, read only at the Status column) and has no entry for
+// `pending` or `sent` — two of the five outsource values — so reusing it would
+// leave those rendering raw. `Record<OutsourceStatus, string>` makes the
+// compiler enforce all five.
+const OUTSOURCE_STATUS_LABEL: Record<OutsourceStatus, string> = {
+  pending: 'Pending',
+  pr_raised: 'PR Raised',
+  po_created: 'PO Created',
+  sent: 'Sent',
+  received: 'Received',
+};
+
 // Legacy op-status → progress-bar colour (L11033). Legacy tests only
 // 'In Progress' here, so 'Running' falls through to blue — mirrored verbatim.
 const barColor = (status: string): string =>
@@ -58,6 +77,69 @@ const lblStyle: React.CSSProperties = {
   letterSpacing: '.08em',
   marginBottom: 4,
 };
+
+// Outsource vendor/PR/PO details for a JC op. Wired from the existing jc-ops
+// board endpoint (useJcOpsBoard, jc-ops/api.ts:31), whose row already carries
+// outsourceVendorName / outsourcePrCode / outsourcePoCode (jc-ops.ts:39-41,
+// populated in jc-ops/service.ts:70-72) — fields the op-entry enriched op shape
+// (sortedOps) omits. Legacy renders these at L11043 (vendor name in the Machine
+// cell) and L11070-74 (PR/PO refs in the Action cell).
+//
+// Rendered ONLY inside outsource rows, so the board is fetched only when a JC
+// actually has outsource ops, and always with a resolved jcCode (these mount
+// after the JC has loaded) — no unfiltered fetch-all. Multiple outsource rows on
+// one JC share a single request (identical query key → TanStack Query dedupes).
+function useOutsourceRow(jcCode: string, jcOpId: string): JcOpsBoardRow | undefined {
+  const { data } = useJcOpsBoard({ jcCode, limit: 500, offset: 0 });
+  return data?.items.find((r) => r.jcOpId === jcOpId);
+}
+
+// Machine-column cell for an outsource op (legacy L11043): label + resolved
+// vendor name + status.
+function OutsourceMachineCell({
+  jcCode,
+  jcOpId,
+  status,
+}: {
+  jcCode: string;
+  jcOpId: string;
+  status: OutsourceStatus;
+}): React.JSX.Element {
+  const row = useOutsourceRow(jcCode, jcOpId);
+  return (
+    <>
+      <div style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>🏭 Outsource</div>
+      {row?.outsourceVendorName ? (
+        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{row.outsourceVendorName}</div>
+      ) : null}
+      <div style={{ fontSize: 9, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
+    </>
+  );
+}
+
+// Action-column cell for an outsource op (legacy L11070-74): PR ref when a PR is
+// raised, PO ref when a PO is created, otherwise the raw status. Legacy's
+// "Create PR" branch (L11070) is an OSP action that lives in Op Entry
+// (useGenerateOspPr), not on this read-oriented status page — so only the
+// resulting references are surfaced here.
+function OutsourceActionRefs({
+  jcCode,
+  jcOpId,
+  status,
+}: {
+  jcCode: string;
+  jcOpId: string;
+  status: OutsourceStatus;
+}): React.JSX.Element {
+  const row = useOutsourceRow(jcCode, jcOpId);
+  if (status === 'pr_raised' && row?.outsourcePrCode) {
+    return <span style={{ fontSize: 10, color: 'var(--blue)' }}>PR: {row.outsourcePrCode}</span>;
+  }
+  if (status === 'po_created' && row?.outsourcePoCode) {
+    return <span style={{ fontSize: 10, color: 'var(--cyan)' }}>PO: {row.outsourcePoCode}</span>;
+  }
+  return <span style={{ fontSize: 10, color: 'var(--purple)' }}>{OUTSOURCE_STATUS_LABEL[status]}</span>;
+}
 
 export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
@@ -348,7 +430,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                     </div>
                     {isOut ? (
                       <div style={{ fontSize: 9, marginTop: 3, fontWeight: 700, color: 'var(--amber)' }}>
-                        {o.outsourceStatus ?? 'Pending'}
+                        {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
                       </div>
                     ) : (
                       <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>{flowLabel}</div>
@@ -453,10 +535,11 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>QC</span>
                             </div>
                           ) : isOut ? (
-                            <>
-                              <div style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>🏭 Outsource</div>
-                              <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.outsourceStatus ?? 'Pending'}</div>
-                            </>
+                            <OutsourceMachineCell
+                              jcCode={jc.code}
+                              jcOpId={o.id}
+                              status={o.outsourceStatus ?? 'pending'}
+                            />
                           ) : (
                             <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)', display: 'inline-block', lineHeight: 1.25, verticalAlign: 'top' }}>
                               <span style={{ fontWeight: 700, display: 'block' }}>{o.machineCode ?? o.machineCodeText ?? '—'}</span>
@@ -535,15 +618,26 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                             ))
                           )}
                         </td>
-                        {/* Legacy L11067-11085. Legacy's outsource branch offers
-                            Create PR / PR-No / PO-link actions off
-                            o.outsourcePRNo / o.outsourcePONo — neither field is on
-                            our enriched op shape, so outsource ops keep our
-                            existing Op Entry route (reported, not dropped). */}
+                        {/* Legacy L11067-11085. Legacy branches on outsource FIRST
+                            (L11068), then QC, then normal ops. The outsource PR-No
+                            (L11072) / PO-No (L11074) refs are wired from the jc-ops
+                            board via OutsourceActionRefs; legacy's Create PR button
+                            (L11070) is an Op Entry action, not surfaced here. */}
                         <td>
-                          {isQc ? (
+                          {isOut ? (
+                            <OutsourceActionRefs
+                              jcCode={jc.code}
+                              jcOpId={o.id}
+                              status={o.outsourceStatus ?? 'pending'}
+                            />
+                          ) : isQc ? (
                             o.qcPending > 0 ? (
-                              <button type="button" className="btn btn-sm" style={{ color: 'var(--green)' }} onClick={openOpEntry}>
+                              <button
+                                type="button"
+                                className="btn btn-sm"
+                                style={{ color: 'var(--green)' }}
+                                onClick={() => void navigate({ to: '/qc-call-register' })}
+                              >
                                 🔬 QC ({o.qcPending})
                               </button>
                             ) : o.computedStatus === 'complete' ? (
@@ -552,14 +646,23 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                               <span style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</span>
                             )
                           ) : o.computedStatus !== 'complete' ? (
-                            <button type="button" className="btn btn-sm btn-primary" onClick={openOpEntry}>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              onClick={() => void navigate({ to: '/op-entry', search: { jc: jc.code, op: o.id, mode: 'complete' } })}
+                            >
                               ✚ Log
                             </button>
                           ) : (
                             <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
                           )}
                           {!isQc && !isOut && (o.computedStatus === 'available' || o.computedStatus === 'waiting') ? (
-                            <button type="button" className="btn btn-sm" style={{ marginTop: 3 }} onClick={openOpEntry}>
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              style={{ marginTop: 3 }}
+                              onClick={() => void navigate({ to: '/op-entry', search: { jc: jc.code, op: o.id, mode: 'start' } })}
+                            >
                               ▶ Start
                             </button>
                           ) : null}

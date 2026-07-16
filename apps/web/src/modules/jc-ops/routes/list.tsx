@@ -4,7 +4,7 @@ import {
   type ChangeJcOpMachineInput,
   type JcOpsBoardRow,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
@@ -30,6 +30,12 @@ function JcOpsPage(): React.JSX.Element {
     offset: 0,
   });
 
+  // Legacy L11400 "+ Add Operation" opened a modal to pick a JC, then added an
+  // op to it. Ops are edited on the Job Card edit page, so we link there.
+  // When a JC is selected in the filter we deep-link to that card; otherwise we
+  // send the user to the Job Cards list to pick one first.
+  const selectedJc = (data?.jcOptions ?? []).find((j) => j.jcCode === jcCode);
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -48,6 +54,21 @@ function JcOpsPage(): React.JSX.Element {
               </option>
             ))}
           </select>
+          {canWrite ? (
+            selectedJc ? (
+              <Link
+                to="/job-cards/$id/edit"
+                params={{ id: selectedJc.jcId }}
+                className="btn btn-primary"
+              >
+                + Add Operation
+              </Link>
+            ) : (
+              <Link to="/job-cards" className="btn btn-primary">
+                + Add Operation
+              </Link>
+            )
+          ) : null}
         </div>
       </div>
 
@@ -114,6 +135,16 @@ function JcOpsPage(): React.JSX.Element {
   );
 }
 
+// Legacy L11359/L11363/L11368 render the outsource sub-status in Title Case
+// (`o.outsourceStatus||'Pending'`); our enum values are snake_case.
+const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  pr_raised: 'PR Raised',
+  po_created: 'PO Created',
+  sent: 'Sent',
+  received: 'Received',
+};
+
 function Row({
   o,
   canWrite,
@@ -124,6 +155,7 @@ function Row({
   onEdit: () => void;
 }): React.JSX.Element {
   const isOutsource = o.opType === 'outsource';
+  const outsourceStatus = o.outsourceStatus || 'pending';
   const bg = isOutsource ? 'rgba(255,176,32,0.04)' : undefined;
   return (
     <tr style={{ background: bg }}>
@@ -160,26 +192,26 @@ function Row({
             >
               🏭 OUTSOURCE
             </span>
-            {o.outsourceStatus ? (
-              <div
-                style={{
-                  fontSize: 9,
-                  color:
-                    o.outsourceStatus === 'pending'
-                      ? 'var(--text3)'
-                      : o.outsourceStatus === 'pr_raised'
-                        ? 'var(--amber)'
-                        : o.outsourceStatus === 'po_created'
-                          ? 'var(--blue)'
-                          : o.outsourceStatus === 'sent'
-                            ? 'var(--purple)'
+            <div
+              style={{
+                fontSize: 9,
+                color:
+                  outsourceStatus === 'pending'
+                    ? 'var(--text3)'
+                    : outsourceStatus === 'pr_raised'
+                      ? 'var(--amber)'
+                      : outsourceStatus === 'po_created'
+                        ? 'var(--blue)'
+                        : outsourceStatus === 'sent'
+                          ? 'var(--purple)'
+                          : outsourceStatus === 'received'
+                            ? 'var(--cyan)'
                             : 'var(--green)',
-                  fontWeight: 600,
-                }}
-              >
-                {o.outsourceStatus.replace(/_/g, ' ').toUpperCase()}
-              </div>
-            ) : null}
+                fontWeight: 600,
+              }}
+            >
+              {OUTSOURCE_STATUS_LABELS[outsourceStatus] ?? outsourceStatus.replace(/_/g, ' ')}
+            </div>
             {o.outsourceVendorName ? (
               <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.outsourceVendorName}</div>
             ) : null}
@@ -227,7 +259,35 @@ function Row({
         <StatusBadge status={o.status} />
       </td>
       <td>
-        {canWrite && (o.status === 'waiting' || o.status === 'available') && !isOutsource ? (
+        {isOutsource ? (
+          outsourceStatus === 'pr_raised' ? (
+            <span style={{ fontSize: 10, color: 'var(--amber)' }}>
+              ⏳ PR: {o.outsourcePrCode ?? ''}
+            </span>
+          ) : outsourceStatus === 'po_created' ? (
+            o.outsourcePoId ? (
+              <Link
+                to="/purchase-orders/$id"
+                params={{ id: o.outsourcePoId }}
+                style={{
+                  fontSize: 10,
+                  color: 'var(--blue)',
+                  textDecoration: 'underline dotted',
+                }}
+              >
+                PO: {o.outsourcePoCode ?? ''}
+              </Link>
+            ) : (
+              <span style={{ fontSize: 10, color: 'var(--blue)' }}>
+                PO: {o.outsourcePoCode ?? ''}
+              </span>
+            )
+          ) : outsourceStatus === 'sent' ? (
+            <span style={{ fontSize: 10, color: 'var(--purple)' }}>
+              📦 At Vendor ({o.sentQty} pcs)
+            </span>
+          ) : null
+        ) : canWrite && (o.status === 'waiting' || o.status === 'available') ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"

@@ -47,9 +47,40 @@ export const productionDashboardReadyOpSchema = z.object({
 });
 export type ProductionDashboardReadyOp = z.infer<typeof productionDashboardReadyOpSchema>;
 
+// ── Supply Chain Snapshot (legacy L3804-3838) ──────────────────────────────
+// Four whole-master figures + the low-stock item chips. Every figure reuses an
+// EXISTING computation rather than inventing one:
+//   · lowStockCount / zeroStockCount / lowStockItems ← store-inventory
+//     service.ts formula (minQty>0 && inStock<=minQty at :130; inStock===0 at
+//     :148) over the v_item_stock view (:94).
+//   · openPos / todayGrn ← sc-dashboard service.ts predicates (status IN
+//     open|partial|qc_pending at :77; grn_date = current_date at :52).
+// Composed into GET /production-dashboard's DTO in this module's service.
+export const productionDashboardLowStockItemSchema = z.object({
+  itemId: z.string().uuid(),
+  code: z.string(),
+  inStock: z.number().int(),
+  minQty: z.number().int().nonnegative(),
+});
+export type ProductionDashboardLowStockItem = z.infer<
+  typeof productionDashboardLowStockItemSchema
+>;
+
+export const productionDashboardSupplyChainSchema = z.object({
+  lowStockCount: z.number().int().nonnegative(),
+  zeroStockCount: z.number().int().nonnegative(),
+  openPos: z.number().int().nonnegative(),
+  todayGrn: z.number().int().nonnegative(),
+  lowStockItems: z.array(productionDashboardLowStockItemSchema),
+});
+export type ProductionDashboardSupplyChain = z.infer<
+  typeof productionDashboardSupplyChainSchema
+>;
+
 export const productionDashboardResponseSchema = z.object({
   counters: productionDashboardCountersSchema,
   openJobCards: z.array(productionDashboardJcSchema),
   readyToProcess: z.array(productionDashboardReadyOpSchema),
+  supplyChain: productionDashboardSupplyChainSchema,
 });
 export type ProductionDashboardResponse = z.infer<typeof productionDashboardResponseSchema>;
