@@ -2336,3 +2336,69 @@ and the Client Material Details block.
   header Due Date on save, same trade-off SO made).
 - Risks: `0061_jw_gst_percent.sql` is **deploy-blocking** — the JWSO service selects
   `gst_percent`; must be applied before/with the code deploy or every JWSO read 500s.
+
+## ADR-057: Never nest `withUserContext` — read-back goes through an `*Internal(tx, …)` helper
+
+**Date:** 2026-07-16
+**Status:** Accepted
+
+### Context
+
+Creating an OSP process in Settings failed with `NotFoundError: OSP process <uuid>
+not found` — naming the very row it had just inserted. Downstream, "Generate OSP PR"
+on a JC op then reported `Operation "Machining" does not match any configured OSP
+process`, because no OSP process had ever actually persisted.
+
+One root cause. `withUserContext` opens a real transaction (`db.transaction`), and on
+the postgres-js driver `db.transaction` → `sql.begin()` **reserves a separate
+connection from the pool**. `createOspProcess` INSERTed on its own transaction, then
+called `getOspProcess(id, user)` — a *second* `withUserContext`, therefore a second
+transaction on a second connection, which by read-committed isolation cannot see the
+outer transaction's uncommitted INSERT. It threw `NotFoundError`, and that throw
+unwound the outer transaction, rolling the INSERT back. The write was lost, and the
+user's error message pointed at a row that momentarily existed.
+
+`updateOspProcess` had the same nesting with a quieter failure mode: the read landed
+on a connection that couldn't see the uncommitted UPDATE, so it returned **stale**
+data rather than erroring.
+
+### Decision
+
+`withUserContext` is never nested. Any function that must read a row back while
+inside a transaction calls a private `*Internal(tx, id, companyId)` helper that runs
+on the **existing** `tx`. The public `getX(id, user)` becomes a thin
+`withUserContext(user, (tx) => getXInternal(tx, id, companyId))` wrapper, so route
+handlers are unaffected.
+
+This is already the dominant repo pattern — `purchase-orders`, `invoices`, `plans`,
+`tasks`, `service-pos`, `customer-dispatches`, and `daily-task-reports` all use
+`*Internal(tx, …)`. `osp-processes` was the outlier.
+
+### Alternatives Considered
+
+- **Move the read-back outside the transaction** (as `job-cards` does — it awaits
+  `withUserContext` to completion, *then* calls `getJobCard`) — works, and is not a
+  bug, but costs a second round trip and can observe a concurrent writer's changes.
+  Fine where it stands; not worth churning.
+- **Pass `tx` through the public `getX`** (make the param optional) — rejected: an
+  optional-`tx` signature makes the unsafe call the default and the safe one opt-in,
+  which is exactly backwards for a footgun this quiet.
+- **Savepoints** (postgres.js `sql.savepoint()`) — rejected: only reachable from the
+  transaction-scoped handle, so it would require threading `tx` anyway, and the
+  nesting buys nothing here.
+
+### Consequences
+
+- Positive: OSP process create/update persist correctly; update returns fresh rows.
+  One fewer connection held per write (nested transactions held two, which under the
+  pool's default max can deadlock at concurrency).
+- Negative: `getX` and `getXInternal` duplicate a signature.
+- Risks: **the same nesting is live in `goods-receipt-notes/service.ts:610` and
+  `:681`** — `createGoodsReceiptNote` / `updateGoodsReceiptNote` both `return
+  getGoodsReceiptNote(header.id, user)` from inside their own `withUserContext`.
+  Same shape, same predicted failure. Untouched here (one module at a time) and not
+  yet reproduced at runtime — **needs its own task**.
+- Test gap that let this ship: `osp-cascade.test.ts:157` seeds `ospProcesses` with a
+  raw `db.insert`, so it covered the *matching* logic while the *create* path had no
+  service test at all. `osp-processes/service.test.ts` now covers create→list
+  round-trip and the update-freshness assertion.

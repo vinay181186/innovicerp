@@ -7,7 +7,7 @@
 import type { ListOspProcessesResponse, OspProcess, OspProcessInput } from '@innovic/shared';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { ospProcesses, vendors } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 
@@ -102,40 +102,50 @@ export async function createOspProcess(
       })
       .returning();
 
-    return getOspProcess(inserted[0]!.id, user);
+    return getOspProcessInternal(tx, inserted[0]!.id, companyId);
   });
+}
+
+/** Read one OSP process on an EXISTING transaction. Callers that are already
+ *  inside `withUserContext` MUST use this, not `getOspProcess` — nesting
+ *  `withUserContext` opens a second transaction on a different pooled
+ *  connection, which cannot see the outer transaction's uncommitted rows. */
+async function getOspProcessInternal(
+  tx: DbTransaction,
+  id: string,
+  companyId: string,
+): Promise<OspProcess> {
+  const rows = await tx
+    .select({
+      id: ospProcesses.id,
+      companyId: ospProcesses.companyId,
+      processName: ospProcesses.processName,
+      vendorId: ospProcesses.vendorId,
+      vendorCode: vendors.code,
+      vendorName: vendors.name,
+      autoPo: ospProcesses.autoPo,
+      leadDays: ospProcesses.leadDays,
+      createdAt: ospProcesses.createdAt,
+      updatedAt: ospProcesses.updatedAt,
+    })
+    .from(ospProcesses)
+    .leftJoin(vendors, eq(vendors.id, ospProcesses.vendorId))
+    .where(
+      and(
+        eq(ospProcesses.id, id),
+        eq(ospProcesses.companyId, companyId),
+        isNull(ospProcesses.deletedAt),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new NotFoundError(`OSP process ${id} not found`);
+  return rowToOsp(row);
 }
 
 export async function getOspProcess(id: string, user: AuthContext): Promise<OspProcess> {
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const rows = await tx
-      .select({
-        id: ospProcesses.id,
-        companyId: ospProcesses.companyId,
-        processName: ospProcesses.processName,
-        vendorId: ospProcesses.vendorId,
-        vendorCode: vendors.code,
-        vendorName: vendors.name,
-        autoPo: ospProcesses.autoPo,
-        leadDays: ospProcesses.leadDays,
-        createdAt: ospProcesses.createdAt,
-        updatedAt: ospProcesses.updatedAt,
-      })
-      .from(ospProcesses)
-      .leftJoin(vendors, eq(vendors.id, ospProcesses.vendorId))
-      .where(
-        and(
-          eq(ospProcesses.id, id),
-          eq(ospProcesses.companyId, companyId),
-          isNull(ospProcesses.deletedAt),
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row) throw new NotFoundError(`OSP process ${id} not found`);
-    return rowToOsp(row);
-  });
+  return withUserContext(user, (tx) => getOspProcessInternal(tx, id, companyId));
 }
 
 export async function updateOspProcess(
@@ -187,7 +197,7 @@ export async function updateOspProcess(
       })
       .where(eq(ospProcesses.id, id));
 
-    return getOspProcess(id, user);
+    return getOspProcessInternal(tx, id, companyId);
   });
 }
 
