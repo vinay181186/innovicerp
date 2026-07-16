@@ -3,9 +3,12 @@
 // Header: RC No (auto on create), Item picker (one active RC per item),
 // optional notes, revision indicator.
 //
-// Op editor: per-row Machine / Operation / Cycle (hrs) / Program /
-// Tool fields + Add Op / Add QC / Add OSP buttons. Mirrors legacy
-// rcOpsHtml (L10208).
+// Op editor: per-row Machine / Operation / Cycle(h) / Program /
+// Tool fields + Add Op / Add OSP Op / Add QC Op buttons. Mirrors legacy
+// rcOpsHtml (L10208), which is the single op renderer shared by BOTH
+// legacy entry points — addRouteCard() (L6939, via _rcCheckExisting
+// L6994) and editRouteCard() (L10169, direct call at L10198). That
+// shared renderer is why legacy's two modes are field-identical.
 
 import type { CreateRouteCardOpInput, Item, Machine, RouteCard, Vendor } from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
@@ -67,7 +70,9 @@ export function emptyProcessOp(): RouteCardFormOpDraft {
     machineCodeText: '',
     operation: '',
     opType: 'process',
-    cycleTimeMin: '0',
+    // Legacy renders `${op.cycleTime||''}` with a "hrs" placeholder (L10216 /
+    // L10240) — a blank cell, not a literal 0. opsToInput coerces '' → 0.
+    cycleTimeMin: '',
     program: '',
     toolNo: '',
     toolDetails: '',
@@ -201,8 +206,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         <div className="panel-hdr">
           <div className="panel-title">
             {mode === 'create'
-              ? '📋 New Route Card'
-              : `📋 Edit Route Card — ${routeCard?.code ?? ''}`}
+              ? '➕ New Route Card'
+              : `Edit Route Card — ${routeCard?.code ?? ''}`}
           </div>
         </div>
         <div className="panel-body">
@@ -273,25 +278,25 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               type="button"
               className="btn btn-sm"
               style={{
+                background: 'rgba(124,58,237,0.08)',
+                color: 'var(--purple)',
+                border: '1px solid rgba(124,58,237,0.25)',
+              }}
+              onClick={() => addOp('outsource')}
+            >
+              <Plus size={13} /> Add OSP Op
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{
                 background: 'rgba(34,197,94,0.08)',
                 color: 'var(--green)',
                 border: '1px solid rgba(34,197,94,0.25)',
               }}
               onClick={() => addOp('qc')}
             >
-              <Plus size={13} /> QC Step
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{
-                background: 'rgba(124,58,237,0.08)',
-                color: '#7c3aed',
-                border: '1px solid rgba(124,58,237,0.25)',
-              }}
-              onClick={() => addOp('outsource')}
-            >
-              <Plus size={13} /> OSP Step
+              <Plus size={13} /> Add QC Op
             </button>
           </div>
         </div>
@@ -301,11 +306,15 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               <tr>
                 <th style={{ width: 36 }}>#</th>
                 <th style={{ width: 100 }}>Type</th>
-                <th style={{ width: 150 }}>Machine / Vendor</th>
+                <th style={{ width: 150 }}>Machine / Vendor ★</th>
                 <th>Operation ★</th>
-                <th style={{ width: 90 }}>Cycle (hrs)</th>
+                <th className="text3" style={{ width: 90 }}>
+                  Cycle(h)
+                </th>
                 <th style={{ width: 90 }}>Program / Lead</th>
-                <th style={{ width: 90 }}>Tool No.</th>
+                <th className="cyan" style={{ width: 90 }}>
+                  Tool No.
+                </th>
                 <th>Tool Details</th>
                 <th style={{ width: 44 }}></th>
               </tr>
@@ -377,36 +386,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </div>
       ) : null}
 
-      {validationError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 12,
-          }}
-        >
-          {validationError}
-        </div>
-      ) : null}
-      {submitError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 12,
-          }}
-        >
-          {submitError}
-        </div>
-      ) : null}
+      {validationError ? <div className="form-error">{validationError}</div> : null}
+      {submitError ? <div className="form-error">{submitError}</div> : null}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
@@ -417,7 +398,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           className="btn btn-primary"
           disabled={Boolean(validationError) || submitting}
         >
-          {submitting ? 'Saving…' : mode === 'create' ? 'Create Route Card' : 'Save Revision'}
+          {submitting ? 'Saving…' : '✓ Save Route Card'}
         </button>
       </div>
     </form>
@@ -453,7 +434,11 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
         ? 'rgba(124,58,237,0.06)'
         : undefined;
   const accent =
-    op.opType === 'qc' ? 'var(--green)' : op.opType === 'outsource' ? '#7c3aed' : 'var(--text3)';
+    op.opType === 'qc'
+      ? 'var(--green)'
+      : op.opType === 'outsource'
+        ? 'var(--purple)'
+        : 'var(--text3)';
   const machineLabel = op.machineId
     ? machinesList.find((m) => m.id === op.machineId)?.name
     : op.machineCodeText.trim()
@@ -492,7 +477,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
               value={op.ospVendorCodeText}
               onChange={(e) => onVendorChange(e.target.value)}
               placeholder="🔍 Vendor code"
-              style={{ fontSize: 12, color: '#7c3aed' }}
+              style={{ fontSize: 12, color: 'var(--purple)' }}
             />
             {vendorLabel ? (
               <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
@@ -545,6 +530,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           className="innovic-input"
           value={op.cycleTimeMin}
           onChange={(e) => onChange({ cycleTimeMin: e.target.value })}
+          placeholder="hrs"
           style={{ textAlign: 'right' }}
         />
       </td>

@@ -170,7 +170,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <th>Type</th>
                 <th>Machine / Vendor</th>
                 <th>Operation</th>
-                <th className="td-ctr">Cycle (hrs)</th>
+                <th className="td-ctr">Cycle(h)</th>
                 <th>Program / Lead</th>
                 <th>Tool No.</th>
                 <th>Tool Details</th>
@@ -180,16 +180,19 @@ function RouteCardDetailPage(): React.JSX.Element {
               {detail.ops.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="empty-state">
-                    No operations on this route card.
+                    No operations
                   </td>
                 </tr>
               ) : (
                 detail.ops.map((op) => {
+                  // Op-type accents follow legacy's own convention: the sequence
+                  // number is text3 on process rows (L10147/L10237), green on QC
+                  // (L10213) and purple on OSP (L10226).
                   const accent =
                     op.opType === 'qc'
                       ? 'var(--green)'
                       : op.opType === 'outsource'
-                        ? '#7c3aed'
+                        ? 'var(--purple)'
                         : 'var(--text3)';
                   const bg =
                     op.opType === 'qc'
@@ -197,6 +200,20 @@ function RouteCardDetailPage(): React.JSX.Element {
                       : op.opType === 'outsource'
                         ? 'rgba(124,58,237,0.06)'
                         : undefined;
+                  // machTag (L1980) renders the machine as a cyan `.tag` chip:
+                  // code on a bold line, machine name on a 9px text3 line under
+                  // it. OSP/QC rows reuse the chip with their own accent.
+                  const tagColor =
+                    op.opType === 'qc'
+                      ? 'var(--green)'
+                      : op.opType === 'outsource'
+                        ? 'var(--purple)'
+                        : 'var(--cyan)';
+                  const tagCode =
+                    op.opType === 'outsource'
+                      ? (op.ospVendorCode ?? op.ospVendorCodeText ?? '—')
+                      : (op.machineCode ?? op.machineCodeText ?? '—');
+                  const tagName = op.opType === 'outsource' ? op.ospVendorName : op.machineName;
                   return (
                     <tr key={op.id} style={{ background: bg }}>
                       <td className="td-ctr mono fw-700" style={{ color: accent }}>
@@ -207,34 +224,44 @@ function RouteCardDetailPage(): React.JSX.Element {
                           {op.opType.toUpperCase()}
                         </span>
                       </td>
-                      <td className="mono" style={{ fontSize: 12, color: accent }}>
-                        {op.opType === 'outsource'
-                          ? (op.ospVendorCode ?? op.ospVendorCodeText ?? '—')
-                          : (op.machineCode ?? op.machineCodeText ?? '—')}
-                        {op.opType === 'outsource' && op.ospVendorName ? (
-                          <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>
-                            {op.ospVendorName}
-                          </span>
-                        ) : null}
-                        {op.opType !== 'outsource' && op.machineName ? (
-                          <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>
-                            {op.machineName}
-                          </span>
-                        ) : null}
+                      <td>
+                        <span
+                          className="tag"
+                          style={{
+                            background: 'var(--bg4)',
+                            color: tagColor,
+                            lineHeight: 1.25,
+                            verticalAlign: 'top',
+                          }}
+                        >
+                          <span style={{ fontWeight: 700, display: 'block' }}>{tagCode}</span>
+                          {tagName ? (
+                            <span
+                              style={{
+                                fontSize: 9,
+                                color: 'var(--text3)',
+                                fontWeight: 400,
+                                display: 'block',
+                              }}
+                            >
+                              {tagName}
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
-                      <td style={{ fontWeight: 600 }}>{op.operation}</td>
-                      <td className="td-ctr mono">{Number(op.cycleTimeMin)}</td>
-                      <td className="mono" style={{ fontSize: 11 }}>
+                      <td className="fw-700">{op.operation}</td>
+                      <td className="td-ctr mono">{Number(op.cycleTimeMin) || '—'}</td>
+                      <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
                         {op.opType === 'outsource'
                           ? op.ospLeadDays != null
                             ? `${op.ospLeadDays}d lead`
                             : '—'
                           : (op.program ?? '—')}
                       </td>
-                      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                      <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                         {op.toolNo ?? '—'}
                       </td>
-                      <td className="text2" style={{ fontSize: 11 }}>
+                      <td className="text3" style={{ fontSize: 12 }}>
                         {op.toolDetails ?? '—'}
                       </td>
                     </tr>

@@ -40,7 +40,8 @@ export function DataIntegrityPanel(): React.JSX.Element {
   });
 
   return (
-    <div className="panel mt-16">
+    // Legacy `<div class="panel mt-16">` (L13420); .mt-16 (L268) is not in our theme.
+    <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr">
         <span className="panel-title">🔗 Data Integrity Check</span>
       </div>

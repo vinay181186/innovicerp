@@ -43,10 +43,8 @@ function MachineNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ Add Machine</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for shop-floor equipment.
-            </div>
+            {/* Legacy modal title: showModal('Add Machine', …) L13137. */}
+            <div className="panel-title">Add Machine</div>
           </div>
         </div>
         <div className="panel-body">

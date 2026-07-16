@@ -1,9 +1,6 @@
 import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateSavedReport, usePreviewSpec, useSourceCatalog } from '../api';
@@ -52,59 +49,52 @@ function SavedReportNewPage() {
   };
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/saved-reports">
-            <ArrowLeft />
-            Back to saved reports
+    <div>
+      {/* Legacy header — renderReportBuilder L17554-59 */}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="section-hdr m-0">📄 Excel Report Builder</div>
+        <div className="flex items-center gap-2">
+          <Link to="/saved-reports" className="btn btn-sm btn-ghost">
+            ← Saved Reports
           </Link>
-        </Button>
-
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">New report</h1>
-          <p className="text-sm text-muted-foreground">
-            Pick a source, drag fields into the Columns / Filters / Group-By zones, preview, save.
-          </p>
         </div>
-
-        {sourcesQ.isLoading ? (
-          <Card>
-            <CardContent className="py-6">
-              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading sources…
-              </div>
-            </CardContent>
-          </Card>
-        ) : sourcesQ.isError || !sourcesQ.data ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Failed to load source catalog</CardTitle>
-              <CardDescription>
-                {sourcesQ.error instanceof Error ? sourcesQ.error.message : 'Unknown error'}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <Builder
-            sources={sourcesQ.data.sources}
-            initial={{ name: '', description: '', isShared: false, spec: null }}
-            onSave={onSave}
-            onPreview={(spec) => previewMutation.mutate(spec)}
-            preview={previewMutation.data}
-            previewLoading={previewMutation.isPending}
-            previewError={
-              previewMutation.error instanceof Error ? previewMutation.error.message : undefined
-            }
-            onExcel={onExcel}
-            excelLoading={excelLoading}
-            saving={createMutation.isPending}
-            saveError={saveError}
-            saveLabel="Save report"
-          />
-        )}
       </div>
-    </main>
+
+      {sourcesQ.isLoading ? (
+        <div className="panel">
+          <div className="panel-body">
+            <div className="empty-state">Loading sources…</div>
+          </div>
+        </div>
+      ) : sourcesQ.isError || !sourcesQ.data ? (
+        <div className="panel">
+          <div className="panel-hdr">
+            <div className="panel-title">Failed to load source catalog</div>
+          </div>
+          <div className="panel-body">
+            <div className="empty-state">
+              {sourcesQ.error instanceof Error ? sourcesQ.error.message : 'Unknown error'}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <Builder
+          sources={sourcesQ.data.sources}
+          initial={{ name: '', description: '', isShared: false, spec: null }}
+          onSave={onSave}
+          onPreview={(spec) => previewMutation.mutate(spec)}
+          preview={previewMutation.data}
+          previewLoading={previewMutation.isPending}
+          previewError={
+            previewMutation.error instanceof Error ? previewMutation.error.message : undefined
+          }
+          onExcel={onExcel}
+          excelLoading={excelLoading}
+          saving={createMutation.isPending}
+          saveError={saveError}
+          saveLabel="Save report"
+        />
+      )}
+    </div>
   );
 }

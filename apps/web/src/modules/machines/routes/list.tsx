@@ -1,17 +1,28 @@
 // Machine Master list (UI-003-02).
-// Ports legacy renderMachines (legacy/InnovicERP_v82_12_3.html L13070) to
-// Innovic chrome. Legacy has 10 columns including calc-engine fields
-// (Avail Qty, Pending Hrs, Maint Status) that aren't in the current
-// shared Machine type — we show the columns we have: Machine ID | Name
-// | Type | Cap/Shift | Shifts | Status | Actions. The calc-engine
-// columns are deferred until a backend cascade computes them.
+// Ports legacy renderMachines (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L13070-13111) to Innovic chrome.
+//
+// Legacy renders 10 columns: Machine ID | Name | Type | Cap/Shift | ₹/hr |
+// Status | Avail Qty | Pending Hrs | 🔧 Maint | Actions. We render 7 — the
+// three DELTA columns need data this page's API does not return:
+//   • Avail Qty / Pending Hrs — calc-engine machineLoad (legacy L1703-1715).
+//     Computed today by the machine-loading module (machineLoadCardSchema:
+//     totalAvailQty, pendingHrs) but NOT by GET /machines; wiring a second
+//     endpoint in is out of this UI-only pass. See ISSUES ISSUE-018.
+//   • 🔧 Maint — legacy derives it from m.lastMaintDate + m.maintCycleDays
+//     (L13074-13083); neither column exists in our machines table.
+// Legacy's 🔧 Log-Maintenance and Del row actions are likewise DELTA (no
+// maint_log table; delete lives on the detail page).
+//
+// The "Shifts" column previously rendered here is not a legacy column —
+// legacy carries shifts on the machine FORM only — so it is dropped and its
+// slot returns to legacy's ₹/hr.
 
 import type { ListMachinesQuery, Machine } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import {
   type ColumnDef,
   type SortingState,
-  flexRender,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -81,85 +92,28 @@ function MachinesListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useMachinesList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
+  // Header/sort config only — rows are rendered as plain <tr>/<td> below so
+  // legacy's cell classes (td-ctr, td-code, mono…) land on the <td> itself.
+  // Legacy sTh marks Machine ID / Name / Type / Status sortable (L13107);
+  // ₹/hr and Actions are plain <th> there and stay unsortable here.
   const columns = useMemo<ColumnDef<Machine>[]>(
     () => [
+      { header: 'Machine ID', accessorKey: 'code' },
+      { header: 'Name', accessorKey: 'name' },
+      { header: 'Type', accessorKey: 'machineType' },
+      { header: 'Cap/Shift', accessorKey: 'capacityPerShift' },
       {
-        header: 'Machine ID',
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/machines/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Name',
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
-      },
-      {
-        header: 'Type',
-        accessorKey: 'machineType',
-        cell: ({ row }) => (
-          <span className="text2">{row.original.machineType ?? '—'}</span>
-        ),
-      },
-      {
-        header: 'Cap / Shift',
-        accessorKey: 'capacityPerShift',
-        cell: ({ row }) => (
-          <span className="mono td-ctr">
-            {row.original.capacityPerShift != null ? `${row.original.capacityPerShift}h` : '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Shifts',
-        accessorKey: 'shiftsPerDay',
-        cell: ({ row }) => (
-          <span className="mono td-ctr">{row.original.shiftsPerDay ?? '—'}</span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: ({ row }) => (
-          <span className={`badge ${statusBadgeClass(row.original.status)}`}>
-            {row.original.status}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
+        // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). The colour
+        // must be inline on the text — .innovic-table th sets color:var(--text3)
+        // and outranks the .green utility class.
+        header: () => <span style={{ color: 'var(--green)' }}>₹/hr</span>,
+        accessorKey: 'hourRate',
         enableSorting: false,
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <Link
-              to="/machines/$id"
-              params={{ id: row.original.id }}
-              className="btn btn-ghost btn-sm"
-            >
-              View
-            </Link>
-            {canWrite ? (
-              <Link
-                to="/machines/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-          </div>
-        ),
       },
+      { header: 'Status', accessorKey: 'status' },
+      { header: 'Actions', enableSorting: false },
     ],
-    [canWrite],
+    [],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -191,12 +145,19 @@ function MachinesListPage(): React.JSX.Element {
           Machine Master
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Legacy placeholder is "🔍 Search machine, type…" (L13103) because
+              legacy searchFilter (L1513-1520) text-matches the whole rendered
+              row, type column included. Our GET /machines only ILIKEs code +
+              name (machines/service.ts L38-44), so the legacy wording would
+              advertise a search this page cannot do — trimmed per the Vendors
+              precedent (ISSUE-018). */}
           <input
             className="innovic-input"
-            placeholder="🔍 Search machine, type…"
+            placeholder="🔍 Search machine…"
+            title="Search by machine ID or name"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
+            style={{ minWidth: 220, fontSize: 13 }}
           />
           <select
             className="innovic-select"
@@ -259,15 +220,60 @@ function MachinesListPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                table.getRowModel().rows.map((row) => {
+                  const m = row.original;
+                  return (
+                    <tr key={row.id}>
+                      {/* Legacy machLabel (L1985-1991): code in cyan mono over
+                          the machine name in 10px text3. */}
+                      <td className="td-code">
+                        <Link
+                          to="/machines/$id"
+                          params={{ id: m.id }}
+                          style={{ textDecoration: 'none', lineHeight: 1.3 }}
+                        >
+                          <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
+                            {m.code}
+                          </span>
+                          <div className="text3" style={{ fontSize: 10, marginTop: 1 }}>
+                            {m.name}
+                          </div>
+                        </Link>
                       </td>
-                    ))}
-                  </tr>
-                ))
+                      <td className="fw-700">{m.name}</td>
+                      <td className="text2">{m.machineType ?? '—'}</td>
+                      <td className="td-ctr mono">
+                        {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
+                      </td>
+                      <td className="td-ctr mono green">
+                        {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${statusBadgeClass(m.status)}`}>{m.status}</span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <Link
+                            to="/machines/$id"
+                            params={{ id: m.id }}
+                            className="btn btn-ghost btn-sm"
+                          >
+                            View
+                          </Link>
+                          {canWrite ? (
+                            <Link
+                              to="/machines/$id/edit"
+                              params={{ id: m.id }}
+                              className="btn btn-ghost btn-sm"
+                            >
+                              Edit
+                            </Link>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

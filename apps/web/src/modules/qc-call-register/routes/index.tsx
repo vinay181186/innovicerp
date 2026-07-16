@@ -1,7 +1,11 @@
 // QC Call Register (legacy renderQCDashboard L4126, page `qcdashboard`).
-// 2-panel: LEFT pending QC calls with an inline accept/reject submit; RIGHT
-// completed QC log. Frontend-only — data from the qc-history endpoint, the QC
-// write reuses op-entry's submitQcLog mutation. Legacy chrome.
+// Full-bleed 2-pane split (legacy L4221): LEFT pending QC calls with an inline
+// accept/reject QC entry form; RIGHT completed QC log. Frontend-only — data from
+// the qc-history endpoint, the QC write reuses op-entry's submitQcLog mutation.
+//
+// No in-content .section-hdr: legacy's render returns the split directly and the
+// page title lives in the topbar (#pageTitle, legacy L2232/L2322). Same shape as
+// so-planning/workflow.tsx (legacy L9427).
 
 import { SHIFTS, SHIFT_LABELS, type Shift, type SubmitQcLogInput } from '@innovic/shared';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
@@ -64,7 +68,10 @@ function QcCallRegisterPage(): React.JSX.Element {
 
   const allPending = data?.pending ?? [];
   const allLogs = (data?.logs ?? []).slice(0, 30);
-  const completeCount = (data?.logs ?? []).length;
+  // Server-owned count (op_log COUNT(*) where log_type='qc'). `data.logs` is
+  // capped at LIMIT 500 by the endpoint, so counting it in the browser silently
+  // under-reports past 500 entries.
+  const completeCount = data?.stats.totalEntries ?? 0;
 
   const pt = pendSearch.trim().toLowerCase();
   const ct = compSearch.trim().toLowerCase();
@@ -82,114 +89,147 @@ function QcCallRegisterPage(): React.JSX.Element {
   const pending = allPending.filter(matchP);
   const logs = allLogs.filter(matchC);
 
-  return (
-    <div>
-      <div className="section-hdr" style={{ marginBottom: 14 }}>
-        🔬 QC Call Register
+  if (isLoading) {
+    return (
+      <div className="panel">
+        <div className="empty-state">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
+        </div>
       </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="panel">
+        <div className="empty-state" style={{ color: 'var(--red)' }}>
+          {error instanceof Error ? error.message : 'Failed to load QC call register'}
+        </div>
+      </div>
+    );
+  }
 
-      {isLoading ? (
-        <div className="panel">
-          <div className="empty-state">
-            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
-          </div>
-        </div>
-      ) : isError || !data ? (
-        <div className="panel">
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Failed to load QC call register'}
-          </div>
-        </div>
-      ) : (
+  // Legacy L4221: full-bleed two-pane split, `margin:-16px` pulling out of
+  // #content's 20px padding (legacy's #content padding is 20px too, so the 4px
+  // residual gutter is legacy's own). Height/margin numbers are legacy's
+  // verbatim — same convention as so-planning/workflow.tsx:66 (legacy L9427).
+  return (
+    <div style={{ display: 'flex', height: 'calc(100vh - 112px)', gap: 0, margin: -16, overflow: 'hidden' }}>
+      {/* LEFT PANEL: Pending QC Calls (legacy L4223) */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          borderRight: '1px solid var(--border)',
+          minWidth: 0,
+        }}
+      >
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-            gap: 14,
-            alignItems: 'start',
+            padding: '12px 14px',
+            background: 'var(--bg3)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
           }}
         >
-          {/* LEFT: pending QC calls */}
-          <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--amber)' }}>
-                ⏳ QC Pending Calls
-              </span>
-              <span className="mono fw-700" style={{ color: 'var(--amber)', fontSize: 16 }}>
-                {allPending.length}
-              </span>
+          <div
+            style={{
+              background: 'rgba(251,191,36,0.12)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              borderRadius: 6,
+              padding: '4px 12px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>
+              {data.stats.pendingOps}
             </div>
-            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-              <input
-                className="innovic-input"
-                style={{ width: '100%', fontSize: 12 }}
-                placeholder="🔍 Search…"
-                value={pendSearch}
-                onChange={(e) => setPendSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
-              {pending.length === 0 ? (
-                <div className="empty-state">✅ No pending QC calls</div>
-              ) : (
-                pending.map((o) => (
-                  <PendingCall
-                    key={o.jcOpId}
-                    o={o}
-                    open={openId === o.jcOpId}
-                    operatorNames={operatorNames}
-                    onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
-                    onDone={() => setOpenId(null)}
-                  />
-                ))
-              )}
+            <div className="text3" style={{ fontSize: 9 }}>
+              PENDING
             </div>
           </div>
-
-          {/* RIGHT: completed QC log */}
-          <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title" style={{ color: 'var(--green)' }}>
-                ✅ QC Completed Log
-              </span>
-              <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span
-                  className="mono fw-700"
-                  style={{
-                    color: 'var(--green)',
-                    fontSize: 12,
-                    padding: '2px 8px',
-                    background: 'rgba(34,197,94,0.08)',
-                    border: '1px solid rgba(34,197,94,0.25)',
-                    borderRadius: 6,
-                  }}
-                >
-                  {completeCount} COMPLETE
-                </span>
-                <span className="text3" style={{ fontSize: 11 }}>
-                  today {data.stats.today}
-                </span>
-              </span>
-            </div>
-            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-              <input
-                className="innovic-input"
-                style={{ width: '100%', fontSize: 12 }}
-                placeholder="🔍 Search…"
-                value={compSearch}
-                onChange={(e) => setCompSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
-              {logs.length === 0 ? (
-                <div className="empty-state">No QC entries yet</div>
-              ) : (
-                logs.map((l) => <CompletedLog key={l.logId} l={l} />)
-              )}
-            </div>
-          </div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>⏳ QC Pending Calls</div>
+          <div style={{ flex: 1 }} />
+          <input
+            className="innovic-input"
+            style={{ fontSize: 12, width: 180 }}
+            placeholder="🔍 Search..."
+            value={pendSearch}
+            onChange={(e) => setPendSearch(e.target.value)}
+          />
         </div>
-      )}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {pending.length === 0 ? (
+            <div className="empty-state">
+              <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
+              No pending QC calls
+            </div>
+          ) : (
+            pending.map((o) => (
+              <PendingCall
+                key={o.jcOpId}
+                o={o}
+                open={openId === o.jcOpId}
+                operatorNames={operatorNames}
+                onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
+                onDone={() => setOpenId(null)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* RIGHT PANEL: QC Completed Log (legacy L4236) */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div
+          style={{
+            padding: '12px 14px',
+            background: 'var(--bg3)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(34,197,94,0.08)',
+              border: '1px solid rgba(34,197,94,0.25)',
+              borderRadius: 6,
+              padding: '4px 12px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
+              {completeCount}
+            </div>
+            <div className="text3" style={{ fontSize: 9 }}>
+              COMPLETE
+            </div>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>✅ QC Completed Log</div>
+          <div style={{ flex: 1 }} />
+          <div className="text3" style={{ fontSize: 11 }}>
+            Today: <b style={{ color: 'var(--green)' }}>{data.stats.today}</b> entries
+          </div>
+          <input
+            className="innovic-input"
+            style={{ fontSize: 12, width: 180 }}
+            placeholder="🔍 Search..."
+            value={compSearch}
+            onChange={(e) => setCompSearch(e.target.value)}
+          />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {logs.length === 0 ? (
+            <div className="empty-state">No QC entries yet</div>
+          ) : (
+            logs.map((l) => <CompletedLog key={l.logId} l={l} />)
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -334,9 +374,18 @@ function PendingCall(props: {
             borderTop: '2px solid var(--green)',
           }}
         >
+          {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
+            ✅ QC Entry — {o.jcCode} Op{o.opSeq} —{' '}
+            <span style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}>
+              {o.operation}
+            </span>
+          </div>
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label">Date</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Date
+              </label>
               <input
                 type="date"
                 className="innovic-input"
@@ -345,7 +394,9 @@ function PendingCall(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">Shift</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Shift
+              </label>
               <select
                 className="innovic-select"
                 value={shift}
@@ -359,7 +410,7 @@ function PendingCall(props: {
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>
+              <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
                 ✅ Accept Qty (max {o.qcPending})
               </label>
               <input
@@ -370,11 +421,17 @@ function PendingCall(props: {
                 value={accept}
                 onChange={(e) => setAccept(e.target.value)}
                 placeholder="0"
-                style={{ fontWeight: 700, color: 'var(--green)' }}
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: 'var(--green)',
+                  border: '2px solid var(--green)',
+                  textAlign: 'center',
+                }}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--red)' }}>
+              <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
                 ❌ Reject Qty
               </label>
               <input
@@ -385,11 +442,19 @@ function PendingCall(props: {
                 value={reject}
                 onChange={(e) => setReject(e.target.value)}
                 placeholder="0"
-                style={{ fontWeight: 700, color: 'var(--red)' }}
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: 'var(--red)',
+                  border: '2px solid var(--red)',
+                  textAlign: 'center',
+                }}
               />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">Inspector / Operator</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Inspector / Operator
+              </label>
               <datalist id={inspectorListId}>
                 {operatorNames.map((name) => (
                   <option key={name} value={name} />
@@ -400,16 +465,18 @@ function PendingCall(props: {
                 list={inspectorListId}
                 value={inspector}
                 onChange={(e) => setInspector(e.target.value)}
-                placeholder="🔍 Search operator…"
+                placeholder="🔍 Search operator..."
               />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Remarks
+              </label>
               <input
                 className="innovic-input"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
-                placeholder="NC reason, observations…"
+                placeholder="NC reason, observations..."
               />
             </div>
             <div className="form-grp form-full">

@@ -3,6 +3,17 @@
 // Per-SO phase durations + filtered-set averages. Filter (All / Completed /
 // Active / by type) + text search are client-side; averages recompute over the
 // filtered set (legacy behaviour). Read-only. Excel export of the full matrix.
+//
+// Every duration rendered here is SERVER-computed (so-cycle-time/service.ts ->
+// lib/so-phase-data.ts computeDurations). Nothing on this page derives a
+// duration from raw records — we only render r.durations.* and take a mean of
+// them over the rows already on screen.
+//
+// Note: the API also returns `averages` (over the FULL set). We do not use it —
+// legacy recomputes averages over the filtered set on every render (L18199) and
+// the filter is client-side, so a full-set average would not match the table.
+// Consequence: `SoCycleTimeResponse.averages` is currently fetched and rendered
+// nowhere. Resolving that needs a server-side filter param, not a UI change.
 
 import type { SoCycleTimeResponse, SoCycleTimeRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -29,9 +40,12 @@ const FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'All SOs' },
   { value: 'completed', label: 'Completed Only' },
   { value: 'active', label: 'Active Only' },
-  { value: 'equipment', label: 'Equipment' },
-  { value: 'component_manufacturing', label: 'Component Mfg' },
-  { value: 'with_material', label: 'With Material' },
+  // Legacy L18215-18216 offers "Equipment Only" + "Job Work Only". Our SO type
+  // vocabulary (SO_TYPES) has no 'job work'; the last two mirror legacy's
+  // "<Type> Only" pattern over the types we actually have.
+  { value: 'equipment', label: 'Equipment Only' },
+  { value: 'component_manufacturing', label: 'Component Mfg Only' },
+  { value: 'with_material', label: 'With Material Only' },
 ];
 
 type AvgKey = 'design' | 'production' | 'qc' | 'assembly' | 'total';
@@ -109,17 +123,19 @@ function SoCycleTimePage(): React.JSX.Element {
           gap: 8,
         }}
       >
-        <div className="section-hdr">⏱ SO Cycle Time Report</div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          ⏱ SO Cycle Time Report
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             className="innovic-input"
-            placeholder="🔍 Search SO / customer…"
+            placeholder="🔍 Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ fontSize: 12, padding: '6px 10px', minWidth: 180 }}
+            style={{ fontSize: 12, padding: '6px 10px', minWidth: 160 }}
           />
           <select
-            className="innovic-input"
+            className="innovic-select"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             style={{ fontSize: 12, padding: '6px 10px' }}
@@ -187,7 +203,7 @@ function SoCycleTimePage(): React.JSX.Element {
                   const totalOverAvg =
                     r.durations.total != null && r.durations.total > averages.total;
                   return (
-                    <tr key={r.soId} style={done ? { background: 'rgba(34,197,94,0.04)' } : undefined}>
+                    <tr key={r.soId} style={done ? { background: 'rgba(34,197,94,0.02)' } : undefined}>
                       <td>
                         <Link
                           to="/sales-orders/$id"
@@ -259,10 +275,10 @@ function Avg({
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9 }}>
+      <div className="text3" style={{ fontSize: 10 }}>
         {label}
       </div>
-      <div className="mono fw-700" style={{ fontSize: 20, color }}>
+      <div className="fw-700" style={{ fontSize: 22, color }}>
         {value}d
       </div>
     </div>

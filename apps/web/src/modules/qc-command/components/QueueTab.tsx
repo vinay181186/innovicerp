@@ -97,131 +97,150 @@ export function QueueTab({
         </div>
       </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'center' }}>Age</th>
-                <th>JC / Op</th>
-                <th>Operation</th>
-                <th>SO / Customer</th>
-                <th style={{ textAlign: 'center' }}>Qty</th>
-                <th style={{ textAlign: 'center' }}>Attempt</th>
-                <th>Due</th>
-                <th>Assigned To</th>
-                {showActions ? <th>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.length === 0 ? (
-                <tr>
-                  <td colSpan={showActions ? 9 : 8} className="empty-state" style={{ color: 'var(--green)' }}>
-                    ✅ No pending QC items
-                  </td>
-                </tr>
-              ) : (
-                sorted.map((it) => {
-                  const ageColor =
-                    it.ageDays >= 3 ? 'var(--red)' : it.ageDays >= 1 ? 'var(--amber)' : 'var(--green)';
-                  return (
-                    <tr
-                      key={it.jcOpId}
-                      style={it.isOverdue ? { background: 'rgba(239,68,68,0.04)' } : undefined}
-                    >
-                      <td className="td-ctr mono fw-700" style={{ color: ageColor, fontSize: 14 }}>
-                        {it.ageDays}d
-                      </td>
-                      <td className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {it.jcCode}{' '}
-                        <span style={{ color: 'var(--red)', fontWeight: 700 }}>Op{it.opSeq}</span>
-                      </td>
-                      <td style={{ fontSize: 12 }}>
-                        <b style={{ color: 'var(--red)' }}>{it.operation}</b>
-                        <br />
-                        <span className="text3" style={{ fontSize: 10 }}>
-                          {it.itemCode ?? '—'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12 }}>
-                        <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>
-                        <br />
-                        <span className="text3" style={{ fontSize: 10 }}>
-                          {it.customer ?? '—'}
-                        </span>
-                      </td>
-                      <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)', fontSize: 14 }}>
-                        {it.pendingQty}
-                      </td>
-                      <td className="td-ctr">
-                        <span
+      {/* Legacy L18691 returns early on an empty queue: no panel, no table, no
+          tip — just the sort bar and this line. */}
+      {sorted.length === 0 ? (
+        <div className="empty-state" style={{ color: 'var(--green)' }}>
+          ✅ No pending QC items
+        </div>
+      ) : (
+        <>
+          <div className="panel">
+            <div className="tbl-wrap">
+              <table className="innovic-table">
+                <thead>
+                  <tr>
+                    <th>Age</th>
+                    <th>JC / Op</th>
+                    <th>Operation</th>
+                    <th>SO / Customer</th>
+                    <th className="td-ctr">Qty</th>
+                    <th className="td-ctr">Attempt</th>
+                    <th>Due</th>
+                    <th>Assigned To</th>
+                    {showActions ? <th>Actions</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((it) => {
+                    const ageColor =
+                      it.ageDays >= 3
+                        ? 'var(--red)'
+                        : it.ageDays >= 1
+                          ? 'var(--amber)'
+                          : 'var(--green)';
+                    return (
+                      <tr
+                        key={it.jcOpId}
+                        style={it.isOverdue ? { background: 'rgba(239,68,68,0.04)' } : undefined}
+                      >
+                        <td
+                          className="td-ctr mono fw-700"
+                          style={{ color: ageColor, fontSize: 14 }}
+                        >
+                          {it.ageDays}d
+                        </td>
+                        <td className="td-code" style={{ color: 'var(--cyan)' }}>
+                          {it.jcCode}{' '}
+                          <span style={{ color: 'var(--red)', fontWeight: 700 }}>Op{it.opSeq}</span>
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          <b style={{ color: 'var(--red)' }}>{it.operation}</b>
+                          <br />
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            {it.itemCode ?? '—'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          <span style={{ color: 'var(--cyan)' }}>{it.soCode ?? '—'}</span>
+                          <br />
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            {it.customer ?? '—'}
+                          </span>
+                        </td>
+                        <td
+                          className="td-ctr mono fw-700"
+                          style={{ color: 'var(--amber)', fontSize: 14 }}
+                        >
+                          {it.pendingQty}
+                        </td>
+                        <td className="td-ctr">
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 10px',
+                              borderRadius: 10,
+                              background: 'rgba(0,0,0,0.05)',
+                              color: attemptColor(it.attemptNo),
+                            }}
+                          >
+                            {attemptLabel(it.attemptNo)}
+                          </span>
+                        </td>
+                        <td
                           style={{
                             fontSize: 11,
-                            fontWeight: 700,
-                            padding: '2px 10px',
-                            borderRadius: 10,
-                            background: 'var(--bg3)',
-                            color: attemptColor(it.attemptNo),
+                            color: it.isOverdue ? 'var(--red)' : 'var(--text3)',
                           }}
                         >
-                          {attemptLabel(it.attemptNo)}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 11, color: it.isOverdue ? 'var(--red)' : 'var(--text3)' }}>
-                        {fmt(it.dueDate)}
-                      </td>
-                      <td style={{ fontSize: 11 }}>
-                        {it.assignedTo ? (
-                          <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{it.assignedTo}</span>
-                        ) : (
-                          <span className="text3">—</span>
-                        )}
-                      </td>
-                      {showActions ? (
-                        <td>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {canPickUp ? (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 11, color: 'var(--green)' }}
-                                disabled={busyId === it.jcOpId}
-                                onClick={() => onPickUp(it.jcOpId)}
-                              >
-                                {busyId === it.jcOpId ? (
-                                  <Loader2 className="inline h-3 w-3 animate-spin" />
-                                ) : (
-                                  '✋ Pick Up'
-                                )}
-                              </button>
-                            ) : null}
-                            {isAdmin ? (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 11, color: 'var(--blue)' }}
-                                onClick={() => onAssign(it)}
-                              >
-                                👤 Assign
-                              </button>
-                            ) : null}
-                          </div>
+                          {fmt(it.dueDate)}
                         </td>
-                      ) : null}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {showActions ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          💡 "Pick Up" assigns this item to you. "Assign" (admin only) allocates to any inspector.
-          Attempt counter increments on rework.
-        </div>
-      ) : null}
+                        <td style={{ fontSize: 11 }}>
+                          {it.assignedTo ? (
+                            <span style={{ color: 'var(--blue)', fontWeight: 600 }}>
+                              {it.assignedTo}
+                            </span>
+                          ) : (
+                            <span className="text3">—</span>
+                          )}
+                        </td>
+                        {showActions ? (
+                          <td>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              {canPickUp ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ fontSize: 11, color: 'var(--green)' }}
+                                  disabled={busyId === it.jcOpId}
+                                  onClick={() => onPickUp(it.jcOpId)}
+                                >
+                                  {busyId === it.jcOpId ? (
+                                    <Loader2 className="inline h-3 w-3 animate-spin" />
+                                  ) : (
+                                    '✋ Pick Up'
+                                  )}
+                                </button>
+                              ) : null}
+                              {isAdmin ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ fontSize: 11, color: 'var(--blue)' }}
+                                  onClick={() => onAssign(it)}
+                                >
+                                  👤 Assign
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {showActions ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+              💡 "Pick Up" assigns this item to you. "Assign" (admin only) allocates to any
+              inspector. Attempt counter increments on rework.
+            </div>
+          ) : null}
+        </>
+      )}
     </>
   );
 }

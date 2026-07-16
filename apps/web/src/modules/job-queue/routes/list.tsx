@@ -2,7 +2,7 @@
 // Pending ops per machine with ↑↓ reorder buttons.
 
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
@@ -12,6 +12,18 @@ import { useJobQueue, useReorderJobQueue } from '../api';
 const searchSchema = z.object({
   machine: z.string().optional(),
 });
+
+// Legacy L10406/L10407 — the ▲/▼ queue-move buttons are inline-styled in legacy.
+const queueBtnStyle: React.CSSProperties = {
+  background: 'none',
+  border: '1px solid var(--border2)',
+  borderRadius: 3,
+  padding: '0 4px',
+  cursor: 'pointer',
+  fontSize: 11,
+  color: 'var(--text2)',
+  lineHeight: 1.6,
+};
 
 export const jobQueueRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -144,26 +156,19 @@ function JobQueuePage(): React.JSX.Element {
       ) : (
         displayMachines.map((m) => (
           <div key={m.machineId} className="panel" style={{ marginBottom: 14 }}>
-            <div
-              style={{
-                padding: '10px 14px',
-                background: 'var(--bg4)',
-                display: 'flex',
-                gap: 12,
-                alignItems: 'center',
-                flexWrap: 'wrap',
-              }}
-            >
-              <span className="mono fw-700" style={{ fontSize: 15 }}>
-                {m.machineCode}
-              </span>
-              <span className="text3" style={{ fontSize: 11 }}>
-                {m.machineName ?? ''}
-              </span>
-              <span className="text3 mono" style={{ fontSize: 11 }}>
-                {m.pendingHrs}h pending
-              </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                <span className="mono fw-700" style={{ fontSize: 15 }}>
+                  {m.machineCode}
+                </span>
+                <span className="text2" style={{ fontSize: 12 }}>
+                  {m.machineName ?? ''}
+                </span>
+                <span className="mono text3" style={{ fontSize: 11 }}>
+                  {m.pendingHrs}h pending
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span
                   style={{
                     padding: '2px 8px',
@@ -186,13 +191,10 @@ function JobQueuePage(): React.JSX.Element {
                 >
                   {m.pendingHrs > 80 ? 'Overloaded' : m.pendingHrs > 40 ? 'Busy' : 'Clear'}
                 </span>
-                <span
-                  className="mono"
-                  style={{ color: 'var(--amber)', fontSize: 11, fontWeight: 700 }}
-                >
+                <span className="mono amber" style={{ fontSize: 11 }}>
                   {m.pendingCount} jobs
                 </span>
-              </span>
+              </div>
             </div>
             {m.rows.length === 0 ? (
               <div className="empty-state" style={{ padding: 18 }}>
@@ -203,7 +205,7 @@ function JobQueuePage(): React.JSX.Element {
                 <table className="innovic-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 60 }}>Order</th>
+                      <th style={{ width: 44 }}>Order</th>
                       <th className="td-ctr" style={{ width: 30 }}>
                         #
                       </th>
@@ -218,7 +220,7 @@ function JobQueuePage(): React.JSX.Element {
                         Done
                       </th>
                       <th className="td-ctr" style={{ color: 'var(--amber)' }}>
-                        Avail
+                        Avail★
                       </th>
                       <th>Status</th>
                       <th>Action</th>
@@ -231,46 +233,58 @@ function JobQueuePage(): React.JSX.Element {
                         <tr
                           key={r.jcOpId}
                           style={
-                            isNext ? { background: 'rgba(245,158,11,0.04)' } : undefined
+                            isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined
                           }
                         >
-                          <td>
-                            <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{
-                                  padding: '0 4px',
-                                  visibility: idx > 0 && canWrite ? 'visible' : 'hidden',
-                                }}
-                                onClick={() => onMove(m.machineId, r.jcOpId, 'up')}
-                                title="Move up"
-                              >
-                                <ChevronUp size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                style={{
-                                  padding: '0 4px',
-                                  visibility:
-                                    idx < m.rows.length - 1 && canWrite ? 'visible' : 'hidden',
-                                }}
-                                onClick={() => onMove(m.machineId, r.jcOpId, 'down')}
-                                title="Move down"
-                              >
-                                <ChevronDown size={12} />
-                              </button>
+                          <td style={{ width: 44, textAlign: 'center' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
+                                alignItems: 'center',
+                              }}
+                            >
+                              {canWrite && idx > 0 ? (
+                                <button
+                                  type="button"
+                                  style={queueBtnStyle}
+                                  onClick={() => onMove(m.machineId, r.jcOpId, 'up')}
+                                  title="Move up"
+                                >
+                                  ▲
+                                </button>
+                              ) : (
+                                <span style={{ width: 18, display: 'inline-block' }} />
+                              )}
+                              {canWrite && idx < m.rows.length - 1 ? (
+                                <button
+                                  type="button"
+                                  style={queueBtnStyle}
+                                  onClick={() => onMove(m.machineId, r.jcOpId, 'down')}
+                                  title="Move down"
+                                >
+                                  ▼
+                                </button>
+                              ) : (
+                                <span style={{ width: 18, display: 'inline-block' }} />
+                              )}
                             </div>
                           </td>
                           <td
                             className="td-ctr mono fw-700"
-                            style={{ color: isNext ? 'var(--amber)' : 'var(--text3)' }}
+                            style={{ color: isNext ? 'var(--amber)' : 'var(--text3)', width: 28 }}
                           >
                             {idx + 1}
                           </td>
-                          <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
-                            {r.jcCode}
+                          <td className="td-code cyan" style={{ whiteSpace: 'nowrap' }}>
+                            <Link
+                              to="/job-cards/$id"
+                              params={{ id: r.jcId }}
+                              style={{ color: 'inherit', textDecoration: 'underline dotted' }}
+                            >
+                              {r.jcCode}
+                            </Link>
                           </td>
                           <td>
                             <div
@@ -290,26 +304,13 @@ function JobQueuePage(): React.JSX.Element {
                           <td className="td-ctr mono">{r.opSeq}</td>
                           <td>{r.operation}</td>
                           <td>
-                            <span
-                              style={{
-                                padding: '2px 8px',
-                                borderRadius: 10,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                background: 'var(--bg4)',
-                                color: 'var(--text2)',
-                              }}
-                            >
-                              {r.priority}
-                            </span>
+                            <PriorityBadge priority={r.priority} />
                           </td>
-                          <td className="text2" style={{ fontSize: 11 }}>
+                          <td className="text2 td-ctr" style={{ fontSize: 11 }}>
                             {r.dueDate ?? '—'}
                           </td>
                           <td className="td-ctr mono">{r.orderQty}</td>
-                          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                            {r.completed}
-                          </td>
+                          <td className="td-ctr green mono fw-700">{r.completed}</td>
                           <td className="td-ctr">
                             <span
                               className="mono fw-700"
@@ -343,8 +344,8 @@ function JobQueuePage(): React.JSX.Element {
                                 search={{ jc: r.jcCode, op: r.jcOpId }}
                                 className="btn btn-sm"
                                 style={{
-                                  background: 'rgba(34,197,94,0.10)',
-                                  border: '1px solid rgba(34,197,94,0.30)',
+                                  background: 'var(--green3)',
+                                  border: '1px solid var(--green2)',
                                   color: 'var(--green)',
                                   fontSize: 11,
                                   whiteSpace: 'nowrap',
@@ -368,30 +369,40 @@ function JobQueuePage(): React.JSX.Element {
   );
 }
 
+// Legacy badge() (HTML L1959) mapped onto our lowercase computed_status enum.
+// Legacy's `In Progress`/`At Vendor` map to .b-yellow, which legacy defines ONLY
+// in its print-only <style> block (L10559) — so on legacy's screen they render as
+// a bare .badge. We reproduce that with no b-* class rather than invent a tint.
+const OP_STATUS: Record<string, { label: string; cls: string }> = {
+  complete: { label: 'Complete', cls: 'b-green' },
+  in_progress: { label: 'In Progress', cls: '' },
+  available: { label: 'Available', cls: 'b-blue' },
+  waiting: { label: 'Waiting', cls: 'b-red' },
+  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
+  running: { label: 'Running', cls: '' },
+  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
+  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
+  po_created: { label: 'PO Created', cls: 'b-blue' },
+  at_vendor: { label: 'At Vendor', cls: '' },
+  received: { label: 'Received', cls: 'b-cyan' },
+  outsource: { label: 'Outsource', cls: 'b-amber' },
+};
+
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
-  const v = status.toLowerCase();
-  const colors: Record<string, string> = {
-    complete: 'var(--green)',
-    qc_pending: 'var(--amber)',
-    running: 'var(--blue)',
-    in_progress: 'var(--blue)',
-    available: 'var(--cyan)',
-    waiting: 'var(--text3)',
-  };
-  const c = colors[v] ?? 'var(--text3)';
+  const hit = OP_STATUS[status.toLowerCase()];
+  // Legacy: `m[status] || 'b-grey'`.
+  const cls = hit ? hit.cls : 'b-grey';
   return (
-    <span
-      style={{
-        padding: '2px 9px',
-        borderRadius: 4,
-        fontSize: 10,
-        fontWeight: 700,
-        color: c,
-        background: `${c}12`,
-        border: `1px solid ${c}30`,
-      }}
-    >
-      {status.replace(/_/g, ' ')}
+    <span className={cls ? `badge ${cls}` : 'badge'}>
+      {hit ? hit.label : status.replace(/_/g, ' ')}
     </span>
+  );
+}
+
+// Legacy badge() (L1959): 'High' → b-amber, 'Normal' → b-grey.
+function PriorityBadge({ priority }: { priority: string }): React.JSX.Element {
+  const high = priority.toLowerCase() === 'high';
+  return (
+    <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>
   );
 }

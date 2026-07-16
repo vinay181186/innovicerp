@@ -1,6 +1,18 @@
 // Assembly Tracker detail (PL-5). Per-Equipment-SO BOM readiness rollup +
-// per-unit assembly + dispatch actions. Mirrors legacy renderAssemblyTracker
-// HTML L28738.
+// per-unit assembly + dispatch actions.
+//
+// Legacy counterpart: renderAssemblyTracker's per-SO EXPANDED BODY
+// (L28788–28884) — legacy has no standalone per-SO renderer; the detail hides
+// inside the list accordion. list.tsx ports the collapsed card header
+// (L28782–28787); this route ports the body. Header block here mirrors
+// L28783–28787 so the route stands alone.
+//
+// Colour note — legacy writes `var(--teal)` for the ASSEMBLED stat, the unit #,
+// the units heading, the 100% progress fill and the card border, but `--teal`
+// is defined in NEITHER legacy's stylesheet NOR our tokens (ISSUE-126), so every
+// one of those declarations is invalid → inert in legacy. They are therefore NOT
+// painted teal here. The one real teal is legacy's literal `#14b8a6` on the
+// "Done" badge (L28781) → `.b-teal`.
 
 import type {
   AssemblyComponentRow,
@@ -83,7 +95,7 @@ function AssemblyDetailPage(): React.JSX.Element {
       </Link>
 
       <HeaderPanel data={data} />
-      <RollupPanel rollup={data.rollup} />
+      <RollupPanel rollup={data.rollup} components={data.components} />
 
       {actionError ? (
         <div
@@ -101,7 +113,7 @@ function AssemblyDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <ComponentsPanel components={data.components} soId={soId} />
+      <ComponentsPanel components={data.components} soId={soId} orderQty={data.rollup.orderQty} />
 
       <div className="panel">
         <div className="panel-hdr">
@@ -175,7 +187,7 @@ function AssemblyDetailPage(): React.JSX.Element {
             title="Undo the latest non-dispatched unit"
           >
             {undo.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-            Undo last
+            Undo Last Unit
           </button>
         </div>
       </div>
@@ -185,25 +197,72 @@ function AssemblyDetailPage(): React.JSX.Element {
   );
 }
 
+// Legacy L28778–28781. `done` uses legacy's literal #14b8a6 → .b-teal.
+function StatusBadge({
+  rollup,
+  readyCount,
+  totalCount,
+}: {
+  rollup: AssemblyRollup;
+  readyCount: number;
+  totalCount: number;
+}): React.JSX.Element {
+  switch (rollup.status) {
+    case 'ready':
+      return <span className="badge b-green">ALL READY ✓</span>;
+    case 'assembling':
+      return (
+        <span className="badge b-cyan">
+          Assembling {rollup.assembledQty}/{rollup.orderQty}
+        </span>
+      );
+    case 'done':
+      return (
+        <span className="badge b-teal">
+          Done ✓ {rollup.assembledQty}/{rollup.orderQty}
+        </span>
+      );
+    case 'waiting':
+      return (
+        <span className="badge b-amber">
+          Waiting — {readyCount}/{totalCount}
+        </span>
+      );
+  }
+}
+
+// Mirrors legacy's collapsed card header L28783–28787. Legacy's meta line also
+// carries `Rev <revision>` and `Due: <dueDate>`; neither is on
+// AssemblyTrackerResponse.header, so both are omitted rather than fabricated.
 function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Element {
-  const { header } = data;
+  const { header, rollup, components } = data;
+  const readyCount = components.filter((c) => c.status === 'ready').length;
+  // Legacy L28786: teal when all units built (inert — see file header), else
+  // green at 100% component readiness, else amber.
+  const pct = components.length ? Math.round((readyCount / components.length) * 100) : 0;
+  const countColor =
+    rollup.assembledQty >= rollup.orderQty ? undefined : pct === 100 ? 'var(--green)' : 'var(--amber)';
   return (
     <div className="panel">
       <div className="panel-hdr">
         <div>
-          <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
-            {header.soCode}
+          <div style={{ fontSize: 14, fontWeight: 700 }}>
+            {header.soCode} — {header.bomName ?? '—'}{' '}
+            <span className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
+              × {header.orderQty} nos
+            </span>
           </div>
-          <div className="panel-title" style={{ marginTop: 2 }}>
-            {header.customerName ?? '—'}
+          <div className="text2" style={{ fontSize: 12, marginTop: 2 }}>
+            Customer: {header.customerName ?? ''} | BOM: {header.bomCode ?? '—'} |{' '}
+            <StatusBadge rollup={rollup} readyCount={readyCount} totalCount={components.length} />
           </div>
         </div>
-        <div className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)', textAlign: 'right' }}>
-          <div>
-            BOM <b style={{ color: 'var(--text)' }}>{header.bomCode ?? '—'}</b>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: countColor }}>
+            {rollup.assembledQty}/{rollup.orderQty}
           </div>
-          <div>
-            Required <b style={{ color: 'var(--text)' }}>{header.orderQty}</b> units
+          <div className="text3" style={{ fontSize: 10 }}>
+            assembled
           </div>
         </div>
       </div>
@@ -211,87 +270,116 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
   );
 }
 
-function RollupPanel({ rollup }: { rollup: AssemblyRollup }): React.JSX.Element {
-  const statusColor: Record<AssemblyRollup['status'], string> = {
-    waiting: 'var(--text3)',
-    ready: 'var(--blue)',
-    assembling: 'var(--amber2)',
-    done: 'var(--green2)',
-  };
-  const tiles: Array<{ label: string; val: number | string; color?: string }> = [
-    { label: 'Required', val: rollup.orderQty, color: 'var(--text)' },
-    { label: 'Assembled', val: rollup.assembledQty, color: 'var(--green2)' },
-    { label: 'Dispatched', val: rollup.dispatchedQty, color: 'var(--cyan)' },
-    { label: 'Balance', val: rollup.balanceQty, color: 'var(--red2)' },
-    { label: 'Can assemble', val: rollup.canAssembleAdditional, color: 'var(--text)' },
-    { label: 'Status', val: rollup.status, color: statusColor[rollup.status] },
-  ];
+// Legacy L28790–28799: progress bar + the inline stats strip, in legacy's order
+// (ORDER QTY · CAN ASSEMBLE · ASSEMBLED · DISPATCHED · BALANCE · COMPONENTS ·
+// BOTTLENECK). Legacy carries no Status stat here — the status is the header
+// badge (L28778–28781), where it is now rendered.
+function RollupPanel({
+  rollup,
+  components,
+}: {
+  rollup: AssemblyRollup;
+  components: AssemblyComponentRow[];
+}): React.JSX.Element {
+  const readyCount = components.filter((c) => c.status === 'ready').length;
+  const pctAssembled = rollup.orderQty > 0 ? Math.round((rollup.assembledQty / rollup.orderQty) * 100) : 0;
+  // Legacy L28792 colours CAN ASSEMBLE green when stock covers the requirement.
+  // Legacy's `assembliesPossible` is the TOTAL buildable; ours is headroom on top
+  // of what is already built (service.ts canAssembleAdditional), so the
+  // equivalent "covers what's still owed" test is against balanceQty.
+  const canAssembleColor =
+    rollup.canAssembleAdditional >= rollup.balanceQty ? 'var(--green)' : 'var(--amber)';
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
-      <div
-        className="panel-body"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-          gap: 10,
-        }}
-      >
-        {tiles.map((t) => (
-          <div
-            key={t.label}
-            style={{
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: '8px 10px',
-              background: 'var(--bg2)',
-            }}
-          >
-            <div
-              className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-            >
-              {t.label}
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 18,
-                fontWeight: 700,
-                color: t.color,
-                marginTop: 2,
-                textTransform: 'capitalize',
-              }}
-            >
-              {t.val}
-            </div>
-          </div>
-        ))}
-      </div>
-      {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
+      <div className="panel-body">
+        {/* Legacy L28790. Legacy switches the fill to var(--teal) at 100%, but
+            --teal is undefined there → invalid → the bar renders EMPTY when
+            complete. Ported as cyan throughout rather than copying that bug. */}
+        <div className="prog-wrap" style={{ marginBottom: 10 }}>
+          <div className="prog-bar" style={{ width: `${pctAssembled}%`, background: 'var(--cyan)' }} />
+        </div>
         <div
-          className="panel-body"
           style={{
-            borderTop: '1px solid var(--border)',
-            paddingTop: 8,
-            fontSize: 12,
+            display: 'flex',
+            gap: 16,
+            flexWrap: 'wrap',
+            padding: '10px 14px',
+            background: 'var(--bg)',
+            borderRadius: 8,
+            border: '1px solid var(--border)',
           }}
         >
-          🚧 Bottleneck:{' '}
-          <b style={{ fontFamily: 'var(--mono)' }}>{rollup.bottleneck.childItemCode}</b>{' '}
-          (enough for{' '}
-          <b style={{ color: 'var(--amber2)' }}>{rollup.bottleneck.enoughForUnits}</b> units)
+          <div>
+            <span className="text3" style={{ fontSize: 10 }}>
+              ORDER QTY
+            </span>
+            <br />
+            <b style={{ fontSize: 18 }}>{rollup.orderQty}</b>
+          </div>
+          <div>
+            <span className="text3" style={{ fontSize: 10 }}>
+              CAN ASSEMBLE
+            </span>
+            <br />
+            <b style={{ fontSize: 18, color: canAssembleColor }}>{rollup.canAssembleAdditional}</b>
+          </div>
+          <div>
+            <span style={{ fontSize: 10 }}>ASSEMBLED</span>
+            <br />
+            <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, color: 'var(--cyan)' }}>DISPATCHED</span>
+            <br />
+            <b style={{ fontSize: 18, color: 'var(--cyan)' }}>{rollup.dispatchedQty}</b>
+          </div>
+          <div>
+            <span className="text3" style={{ fontSize: 10 }}>
+              BALANCE
+            </span>
+            <br />
+            <b style={{ fontSize: 18, color: rollup.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}>
+              {rollup.balanceQty}
+            </b>
+          </div>
+          <div>
+            <span className="text3" style={{ fontSize: 10 }}>
+              COMPONENTS
+            </span>
+            <br />
+            <b style={{ fontSize: 18 }}>
+              {readyCount}/{components.length} ready
+            </b>
+          </div>
+          {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
+            <div>
+              <span style={{ fontSize: 10, color: 'var(--red)' }}>BOTTLENECK</span>
+              <br />
+              {/* Legacy prints childName||childCode; the rollup carries only the code. */}
+              <b style={{ color: 'var(--red)' }}>{rollup.bottleneck.childItemCode}</b>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
+
+// Legacy L28804–28805 (type label + colour map).
+const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color: string }> = {
+  manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green)' },
+  outsource: { label: '🔧 JW', color: 'var(--amber)' },
+};
 
 function ComponentsPanel({
   components,
   soId,
+  orderQty,
 }: {
   components: AssemblyComponentRow[];
   soId: string;
+  orderQty: number;
 }): React.JSX.Element {
   const setOverride = useSetReadinessOverride(soId);
   const [editing, setEditing] = useState<{ code: string; value: string } | null>(null);
@@ -343,22 +431,28 @@ function ComponentsPanel({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Item</th>
+              <th>#</th>
+              <th>Child Item</th>
               <th>Type</th>
-              <th className="td-right">Qty/Set</th>
-              <th className="td-right">Need</th>
-              <th className="td-right">Stock</th>
-              <th className="td-right">Auto Ready</th>
-              <th className="td-right">Override</th>
-              <th className="td-right">Final Ready</th>
-              <th className="td-right">Shortfall</th>
-              <th className="td-right">Enough For</th>
+              {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
+              <th style={{ textAlign: 'center' }}>Qty/Set</th>
+              <th style={{ textAlign: 'center' }}>Need</th>
+              <th style={{ textAlign: 'center' }}>Stock</th>
+              <th style={{ textAlign: 'center' }}>Auto Ready</th>
+              <th style={{ textAlign: 'center', color: 'var(--amber)' }}>Override</th>
+              <th style={{ textAlign: 'center' }}>Final Ready</th>
+              <th style={{ textAlign: 'center', color: 'var(--red)' }}>Short</th>
+              <th style={{ textAlign: 'center' }}>Enough For</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {components.map((c) => (
-              <tr key={c.childItemCode}>
+            {components.map((c, i) => (
+              <tr
+                key={c.childItemCode}
+                style={{ background: c.status === 'ready' ? 'rgba(34,197,94,0.04)' : undefined }}
+              >
+                <td className="td-ctr">{i + 1}</td>
                 <td>
                   <div className="td-code" style={{ color: 'var(--purple)' }}>
                     {c.childItemCode}
@@ -370,17 +464,19 @@ function ComponentsPanel({
                   ) : null}
                 </td>
                 <td>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    {c.bomType === 'manufacture' ? '🏭 Mfg' : c.bomType === 'purchase' ? '🛒 Buy' : '📦 Outsrc'}
+                  <span style={{ fontSize: 11, fontWeight: 700, color: TYPE_META[c.bomType].color }}>
+                    {TYPE_META[c.bomType].label}
                   </span>
                 </td>
-                <td className="td-right">{c.qtyPerSet}</td>
-                <td className="td-right">{c.totalNeed}</td>
-                <td className="td-right" style={{ color: 'var(--green2)' }}>
+                <td className="td-ctr">{c.qtyPerSet}</td>
+                <td className="td-ctr fw-700">{c.totalNeed}</td>
+                <td className="td-ctr" style={{ color: 'var(--green2)' }}>
                   {c.stockQty}
                 </td>
-                <td className="td-right">{c.autoReadyQty}</td>
-                <td className="td-right">
+                <td className="td-ctr" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
+                  {c.autoReadyQty}
+                </td>
+                <td className="td-ctr">
                   {editing?.code === c.childItemCode ? (
                     <div style={{ display: 'flex', gap: 4 }}>
                       <input
@@ -421,13 +517,30 @@ function ComponentsPanel({
                     </button>
                   )}
                 </td>
-                <td className="td-right" style={{ fontWeight: 700 }}>
+                {/* Legacy L28826 suffixes ✏ when a manual override exists.
+                    overrideQty is non-nullable here (0 == "no override"), so the
+                    marker is omitted rather than shown on every zero row. */}
+                <td
+                  className="td-ctr fw-700"
+                  style={{ color: c.finalReadyQty >= c.totalNeed ? 'var(--green)' : 'var(--amber)' }}
+                >
                   {c.finalReadyQty}
                 </td>
-                <td className="td-right" style={{ color: c.shortfall > 0 ? 'var(--red2)' : 'var(--text3)' }}>
+                <td
+                  className="td-ctr fw-700"
+                  style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
+                >
                   {c.shortfall}
                 </td>
-                <td className="td-right">{c.enoughForUnits}</td>
+                <td
+                  className="td-ctr"
+                  style={{
+                    fontWeight: 600,
+                    color: c.enoughForUnits >= orderQty ? 'var(--green)' : 'var(--amber)',
+                  }}
+                >
+                  {c.enoughForUnits >= orderQty ? `${c.enoughForUnits} ✓` : `${c.enoughForUnits} / ${orderQty}`}
+                </td>
                 <td>
                   <ComponentStatusBadge status={c.status} />
                 </td>
@@ -445,8 +558,13 @@ function ComponentStatusBadge({
 }: {
   status: AssemblyComponentRow['status'];
 }): React.JSX.Element {
+  // Legacy L28806-28809 has four states (ready / in production / GRN pending /
+  // pending) driven by JC + GRN lookups; our server derives three
+  // (deriveComponentStatus). Only `ready` maps 1:1 — legacy's `Ready ✓`. The
+  // other two keep our labels rather than fabricate a production/GRN state we
+  // have no server source for.
   const map: Record<AssemblyComponentRow['status'], { cls: string; label: string }> = {
-    ready: { cls: 'b-green', label: 'Ready' },
+    ready: { cls: 'b-green', label: 'Ready ✓' },
     enough_for_some: { cls: 'b-amber', label: 'Partial' },
     shortage: { cls: 'b-red', label: 'Shortage' },
   };
@@ -484,7 +602,7 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div className="panel-title">Assembled units ({units.length})</div>
+        <div className="panel-title">📦 Assembled Units ({units.length})</div>
       </div>
       {error ? (
         <div style={{ color: 'var(--red)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
@@ -493,53 +611,50 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th>
-              <th>Serial</th>
-              <th>Assembled</th>
-              <th>By</th>
-              <th>Dispatched</th>
+              <th style={{ textAlign: 'center' }}>Unit #</th>
+              <th>Serial No.</th>
+              <th>Assembly Date</th>
+              <th>Assembled By</th>
               <th>Remarks</th>
-              <th></th>
+              <th style={{ textAlign: 'center' }}>Dispatch Status</th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
+            {/* Server returns units already ordered by unitNo asc (service.ts). */}
             {units.map((u) => (
               <tr key={u.id}>
-                <td>{u.unitNo}</td>
-                <td>
-                  <span className="td-code">{u.serialNo ?? '—'}</span>
+                <td className="td-ctr fw-700" style={{ fontSize: 16 }}>
+                  {u.unitNo}
                 </td>
-                <td>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    {u.assemblyDate}
-                  </span>
+                <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}>
+                  {u.serialNo ?? '—'}
                 </td>
-                <td>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    {u.assembledBy ?? '—'}
-                  </span>
+                <td className="mono" style={{ fontSize: 12 }}>
+                  {u.assemblyDate}
                 </td>
-                <td>
+                <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
+                <td className="text3" style={{ fontSize: 12 }}>
+                  {u.remarks ?? '—'}
+                </td>
+                <td className="td-ctr">
                   {u.dispatched ? (
-                    <span className="badge b-cyan">
-                      ✓ {u.dispatchDate ?? ''}
-                    </span>
+                    <span className="badge b-green">Dispatched ✓</span>
                   ) : (
-                    <span className="text3" style={{ fontSize: 12 }}>
-                      —
-                    </span>
+                    <span className="badge b-amber">Pending</span>
                   )}
+                  {u.dispatchDate ? (
+                    <span className="text3" style={{ fontSize: 10 }}>
+                      {' '}
+                      {u.dispatchDate}
+                    </span>
+                  ) : null}
                 </td>
-                <td>
-                  <span className="text3" style={{ fontSize: 12 }}>
-                    {u.remarks ?? '—'}
-                  </span>
-                </td>
-                <td>
+                <td className="td-ctr">
                   {!u.dispatched ? (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="btn btn-sm btn-success"
                       onClick={() => onDispatch(u.id)}
                       disabled={dispatch.isPending}
                       title="Mark dispatched"
@@ -549,8 +664,13 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
                       ) : (
                         <Truck size={13} />
                       )}
+                      Dispatch
                     </button>
-                  ) : null}
+                  ) : (
+                    <span className="text3" style={{ fontSize: 11 }}>
+                      —
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}

@@ -1,17 +1,22 @@
-// Vendor Master list (UI-003-02; parity pass 2026-06-11).
-// Ports legacy renderVendors (legacy/InnovicERP_v82_12_3.html L27734) to
-// Innovic chrome. Columns: Code | Name | Contact | Phone | Email | GST No.
-// | Address | Materials | Rating | Status | Actions. Materials is our
-// addition; Address restored to match legacy. The legacy "Rating" column has
-// auto-computed grade (A/B/C/D); we render whatever the rating string
-// holds (the auto-computation + PO/GRN count column remain a backend cascade
-// not yet shipped — DELTA backlog). Excel Template + Import and a per-row
-// Del→Trash button added in this pass.
+// Vendor Master list (UI-003-02; legacy parity pass 2026-07-15).
+// Ports legacy renderVendors (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L27734) to Innovic chrome. Legacy columns, in order: Code | Name | Contact |
+// Phone | Email | GST No. | Address | Rating | Status | PO/GRN | Actions.
+//
+// Two legacy columns/behaviours are DELTA (blocked on backend, not faked here):
+//   * PO/GRN — legacy counts db.purchaseOrders/db.grn client-side because it
+//     holds the whole DB in memory. Our Vendor payload carries no counts, and
+//     deriving them here would mean fetching every PO+GRN to count in the
+//     browser (Rule 1 / N+1). Needs an aggregate on the vendors list endpoint.
+//   * Rating — legacy shows an auto-computed grade+score (_calcVendorRating,
+//     L27784) and opens a scorecard modal (_showVendorScore, L27814). Our
+//     `rating` is a manually-entered letter, so we render the badge only. The
+//     legacy badge's cursor:pointer + title="Click for details" are deliberately
+//     NOT copied — there is no scorecard to open.
 
-import type { ListVendorsQuery, Vendor } from '@innovic/shared';
+import type { ListVendorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
@@ -21,6 +26,8 @@ import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
+// Legacy renders 11 columns; PO/GRN is DELTA (see header note), so 10 here.
+const COL_COUNT = 10;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -130,159 +137,7 @@ function VendorsListPage(): React.JSX.Element {
     }
   }
 
-  const columns = useMemo<ColumnDef<Vendor>[]>(
-    () => [
-      {
-        header: () => (
-          <SortTh
-            label="Code"
-            field="code"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
-          />
-        ),
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/vendors/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: () => (
-          <SortTh
-            label="Name"
-            field="name"
-            sortBy={search.sortBy}
-            sortDir={search.sortDir}
-            onSort={toggleSort}
-          />
-        ),
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
-      },
-      {
-        header: 'Contact',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 12 }}>{row.original.contactPerson ?? '—'}</span>
-        ),
-      },
-      {
-        header: 'Phone',
-        cell: ({ row }) => <span style={{ fontSize: 12 }}>{row.original.phone ?? '—'}</span>,
-      },
-      {
-        header: 'Email',
-        cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11 }}>
-            {row.original.email ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'GST No.',
-        cell: ({ row }) => (
-          <span className="mono" style={{ fontSize: 11 }}>
-            {row.original.gstNumber ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Address',
-        cell: ({ row }) => (
-          <span
-            className="text3"
-            style={{
-              fontSize: 11,
-              maxWidth: 150,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={row.original.addressLine1 ?? undefined}
-          >
-            {row.original.addressLine1 ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Materials',
-        cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11 }}>
-            {row.original.materialsSupplied ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Rating',
-        cell: ({ row }) => (
-          <span className={`badge ${ratingBadgeClass(row.original.rating)}`}>
-            ⭐ {row.original.rating ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-red'}`}>
-            {row.original.isActive ? 'active' : 'inactive'}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <Link
-              to="/vendors/$id"
-              params={{ id: row.original.id }}
-              className="btn btn-ghost btn-sm"
-            >
-              View
-            </Link>
-            {canWrite ? (
-              <Link
-                to="/vendors/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-            {canWrite ? (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={softDelete.isPending}
-                onClick={() => {
-                  if (confirm(`Move vendor ${row.original.code} — ${row.original.name} to Trash?`)) {
-                    softDelete.mutate(row.original.id);
-                  }
-                }}
-              >
-                Del
-              </button>
-            ) : null}
-          </div>
-        ),
-      },
-    ],
-    [canWrite, softDelete, search.sortBy, search.sortDir, toggleSort],
-  );
-
-  const table = useReactTable({
-    data: data?.vendors ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
+  const rows = data?.vendors ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
@@ -304,10 +159,11 @@ function VendorsListPage(): React.JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="innovic-input"
-            placeholder="🔍 Search vendor, material…"
+            placeholder="🔍 Search vendor…"
+            title="Search by vendor code or name"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
+            style={{ minWidth: 220, fontSize: 13 }}
           />
           <select
             className="innovic-select"
@@ -331,39 +187,9 @@ function VendorsListPage(): React.JSX.Element {
             </span>
           ) : null}
           {canWrite ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12 }}
-                title="Download Excel template"
-                onClick={() => downloadVendorTemplate()}
-              >
-                ⬇ Template
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12 }}
-                disabled={importing}
-                onClick={() => fileRef.current?.click()}
-              >
-                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImportFile(f);
-                }}
-              />
-              <Link to="/vendors/new" className="btn btn-primary">
-                <Plus size={14} /> Add Vendor
-              </Link>
-            </>
+            <Link to="/vendors/new" className="btn btn-primary">
+              + Add Vendor
+            </Link>
           ) : null}
         </div>
       </div>
@@ -388,48 +214,124 @@ function VendorsListPage(): React.JSX.Element {
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
-              {table.getHeaderGroups().map((hg) => (
-                <tr key={hg.id}>
-                  {hg.headers.map((header) => (
-                    <th key={header.id}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </th>
-                  ))}
-                </tr>
-              ))}
+              <tr>
+                <th>
+                  <SortTh
+                    label="Code"
+                    field="code"
+                    sortBy={search.sortBy}
+                    sortDir={search.sortDir}
+                    onSort={toggleSort}
+                  />
+                </th>
+                <th>
+                  <SortTh
+                    label="Name"
+                    field="name"
+                    sortBy={search.sortBy}
+                    sortDir={search.sortDir}
+                    onSort={toggleSort}
+                  />
+                </th>
+                <th>Contact</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>GST No.</th>
+                <th>Address</th>
+                <th>Rating</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COL_COUNT} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
+                  <td colSpan={COL_COUNT} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load vendors'}
                   </td>
                 </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state">
+                  <td colSpan={COL_COUNT} className="empty-state">
                     No vendors. Add vendors to create Purchase Orders.
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                rows.map((v) => (
+                  <tr key={v.id}>
+                    <td className="td-code cyan">
+                      <Link
+                        to="/vendors/$id"
+                        params={{ id: v.id }}
+                        style={{ color: 'inherit', textDecoration: 'none' }}
+                      >
+                        {v.code}
+                      </Link>
+                    </td>
+                    <td className="fw-700">{v.name}</td>
+                    <td style={{ fontSize: 12 }}>{v.contactPerson ?? '—'}</td>
+                    <td style={{ fontSize: 12 }}>{v.phone ?? '—'}</td>
+                    <td className="text3" style={{ fontSize: 11 }}>
+                      {v.email ?? '—'}
+                    </td>
+                    <td style={{ fontSize: 11 }}>{v.gstNumber ?? '—'}</td>
+                    <td
+                      className="text3"
+                      style={{
+                        fontSize: 11,
+                        maxWidth: 150,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={v.addressLine1 ?? undefined}
+                    >
+                      {v.addressLine1 ?? '—'}
+                    </td>
+                    <td className="td-ctr">
+                      <span className={`badge ${ratingBadgeClass(v.rating)}`}>
+                        ⭐{v.rating ?? '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${v.isActive ? 'b-green' : 'b-red'}`}>
+                        {v.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {canWrite ? (
+                          <Link
+                            to="/vendors/$id/edit"
+                            params={{ id: v.id }}
+                            className="btn btn-ghost btn-sm"
+                          >
+                            Edit
+                          </Link>
+                        ) : null}
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            disabled={softDelete.isPending}
+                            onClick={() => {
+                              if (confirm(`Move vendor ${v.code} — ${v.name} to Trash?`)) {
+                                softDelete.mutate(v.id);
+                              }
+                            }}
+                          >
+                            Del
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -485,6 +387,40 @@ function VendorsListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Legacy L27776-27779: Excel template + import sit below the table panel. */}
+      {canWrite ? (
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            onClick={() => downloadVendorTemplate()}
+          >
+            ⬇ Download Excel Template
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+          >
+            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import from
+            Excel
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onImportFile(f);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

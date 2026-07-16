@@ -10,20 +10,46 @@ function fpyColor(pct: number): string {
   return 'var(--red)';
 }
 
-function GroupPanel({ title, rows }: { title: string; rows: QcFpyGroupRow[] }): React.JSX.Element {
+// Legacy L18795/L18805 hand-rolls a compact sub-header here rather than using
+// .panel-hdr/.panel-title (which it defines but does not use on this page).
+function SubHdr({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        padding: '10px 14px',
+        fontSize: 12,
+        fontWeight: 700,
+        borderBottom: '1px solid var(--border)',
+        color: 'var(--text2)',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function GroupPanel({
+  title,
+  label,
+  rows,
+  nameWeight,
+}: {
+  title: string;
+  label: string;
+  rows: QcFpyGroupRow[];
+  nameWeight?: number;
+}): React.JSX.Element {
   return (
     <div className="panel">
-      <div className="panel-hdr">
-        <span className="panel-title">{title}</span>
-      </div>
+      <SubHdr>{title}</SubHdr>
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>{title.includes('Operation') ? 'Operation' : 'Inspector'}</th>
-              <th style={{ textAlign: 'center' }}>Total</th>
-              <th style={{ textAlign: 'center' }}>Passed</th>
-              <th style={{ textAlign: 'center' }}>FPY</th>
+              <th>{label}</th>
+              <th className="td-ctr">Total</th>
+              <th className="td-ctr">Passed</th>
+              <th className="td-ctr">FPY</th>
             </tr>
           </thead>
           <tbody>
@@ -36,9 +62,7 @@ function GroupPanel({ title, rows }: { title: string; rows: QcFpyGroupRow[] }): 
             ) : (
               rows.map((r) => (
                 <tr key={r.name}>
-                  <td className="fw-700" style={{ fontSize: 12 }}>
-                    {r.name}
-                  </td>
+                  <td style={{ fontSize: 12, fontWeight: nameWeight }}>{r.name}</td>
                   <td className="td-ctr mono">{r.total}</td>
                   <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
                     {r.passed}
@@ -60,23 +84,28 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <GroupPanel title="FPY by Operation" rows={fpy.byOperation} />
-        <GroupPanel title="FPY by Inspector" rows={fpy.byInspector} />
+        {/* Legacy L18799 leaves the operation name unweighted; L18809 gives the
+            inspector name an inline font-weight:600 (there is no .fw-600). */}
+        <GroupPanel title="FPY by Operation" label="Operation" rows={fpy.byOperation} />
+        <GroupPanel
+          title="FPY by Inspector"
+          label="Inspector"
+          rows={fpy.byInspector}
+          nameWeight={600}
+        />
       </div>
 
       <div className="panel" style={{ marginTop: 14 }}>
-        <div className="panel-hdr">
-          <span className="panel-title">⚠ Items with Lowest First-Pass Yield (Quality Issues)</span>
-        </div>
+        <SubHdr>⚠ Items with Lowest First-Pass Yield (Quality Issues)</SubHdr>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
               <tr>
                 <th>Item Code</th>
                 <th>Item Name</th>
-                <th style={{ textAlign: 'center' }}>Total Inspected</th>
-                <th style={{ textAlign: 'center' }}>First-Pass</th>
-                <th style={{ textAlign: 'center' }}>FPY</th>
+                <th className="td-ctr">Total Inspected</th>
+                <th className="td-ctr">First-Pass</th>
+                <th className="td-ctr">FPY</th>
               </tr>
             </thead>
             <tbody>
@@ -89,7 +118,8 @@ export function FpyTab({ fpy }: { fpy: QcCommandFpy }): React.JSX.Element {
               ) : (
                 fpy.byItem.map((it: QcFpyItemRow) => (
                   <tr key={it.code}>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    {/* Legacy L18823 hardcodes #8B5CF6, not var(--purple) (#7c3aed). */}
+                    <td className="td-code" style={{ color: '#8B5CF6' }}>
                       {it.code}
                     </td>
                     <td style={{ fontSize: 12 }}>{it.name}</td>

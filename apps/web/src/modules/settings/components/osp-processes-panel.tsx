@@ -134,7 +134,8 @@ export function OspProcessesPanel(): React.JSX.Element {
   const items = data?.items ?? [];
 
   return (
-    <div className="panel mt-16">
+    // Legacy `<div class="panel mt-16">` (L13399); .mt-16 (L268) is not in our theme.
+    <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr">
         <span className="panel-title">🏭 OSP Process Configuration</span>
       </div>

@@ -9,6 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { inrFormat } from '@/lib/print/doc-print';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo } from '../api';
 
@@ -127,10 +128,17 @@ function InvoiceNewPage(): React.JSX.Element {
               prefilled from this dispatch (editable below).
             </div>
           ) : null}
+          {/* Field order mirrors legacy _createInvoice L21160-21167. Legacy's
+              leading "Invoice No." field is not ported: the code is
+              server-generated (nextInvoiceCode) and has no value before save. */}
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label">Sales Order ★</label>
-              <select className="innovic-input" value={soId} onChange={(e) => setSoId(e.target.value)}>
+              <label className="form-label">Invoice Date</label>
+              <input type="date" className="innovic-input" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Select SO<span className="req">★</span></label>
+              <select className="innovic-select" value={soId} onChange={(e) => setSoId(e.target.value)}>
                 <option value="">-- Select SO --</option>
                 {(soOpts?.options ?? []).map((o) => (
                   <option key={o.salesOrderId} value={o.salesOrderId}>
@@ -140,31 +148,27 @@ function InvoiceNewPage(): React.JSX.Element {
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label">Invoice Date</label>
-              <input type="date" className="innovic-input" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
-            </div>
-            <div className="form-grp">
               <label className="form-label">Payment Terms (days)</label>
-              <input type="number" className="innovic-input" value={termsDays} onChange={(e) => setTermsDays(e.target.value)} />
+              <input type="number" className="innovic-input" min={0} value={termsDays} onChange={(e) => setTermsDays(e.target.value)} />
             </div>
             <div className="form-grp">
               <label className="form-label">GST %</label>
-              <select className="innovic-input" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)}>
+              <select className="innovic-select" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)}>
                 {['0', '5', '12', '18', '28'].map((g) => (
                   <option key={g} value={g}>{g}%</option>
                 ))}
               </select>
             </div>
-            <div className="form-grp form-full">
+            <div className="form-grp">
               <label className="form-label">Remarks</label>
-              <input className="innovic-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <input className="innovic-input" placeholder="Notes..." value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
           </div>
 
           {inv ? (
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', marginBottom: 6 }}>
-                ▸ ITEMS AVAILABLE TO INVOICE (dispatched − already invoiced)
+              <div className="cyan fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
+                ▸ ITEMS AVAILABLE TO INVOICE
               </div>
               <table className="innovic-table">
                 <thead>
@@ -172,10 +176,10 @@ function InvoiceNewPage(): React.JSX.Element {
                     <th>Item</th>
                     <th>Name</th>
                     <th className="td-ctr">Order</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
+                    <th className="td-ctr green">Dispatched</th>
                     <th className="td-ctr">Invoiced</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Available</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Invoice Qty</th>
+                    <th className="td-ctr amber">Available</th>
+                    <th className="td-ctr green">Invoice Qty</th>
                     <th className="td-ctr">Rate</th>
                   </tr>
                 </thead>
@@ -188,13 +192,13 @@ function InvoiceNewPage(): React.JSX.Element {
                         <td className="td-code" style={{ color: 'var(--purple)' }}>{l.itemCode ?? '—'}</td>
                         <td style={{ fontSize: 11 }}>{l.itemName}</td>
                         <td className="td-ctr mono">{l.orderQty}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>
+                        <td className="td-ctr mono green">{l.dispatchedQty}</td>
                         <td className="td-ctr mono text3">{l.invoicedQty}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>{l.availableQty}</td>
+                        <td className="td-ctr mono fw-700 amber">{l.availableQty}</td>
                         <td className="td-ctr">
                           <input
                             type="number"
-                            className="innovic-input"
+                            className="innovic-input fw-700 green"
                             min={0}
                             max={l.availableQty}
                             value={qtys[l.salesOrderLineId] ?? 0}
@@ -205,7 +209,7 @@ function InvoiceNewPage(): React.JSX.Element {
                                 [l.salesOrderLineId]: Math.max(0, Math.min(l.availableQty, Number(e.target.value) || 0)),
                               }))
                             }
-                            style={{ width: 80, textAlign: 'center' }}
+                            style={{ width: 70, textAlign: 'center' }}
                           />
                         </td>
                         <td className="td-ctr">
@@ -226,20 +230,28 @@ function InvoiceNewPage(): React.JSX.Element {
                   )}
                 </tbody>
               </table>
+              {/* Pre-save preview only. Legacy's modal shows no totals (it sums
+                  inside the save callback, L21182-21195) — kept because users
+                  rely on it. These are sums over unsaved form input; no server
+                  figure exists before POST, and the server recomputes subtotal /
+                  GST / grand itself (service.ts L305-307). Nothing here is sent. */}
               <div style={{ display: 'flex', gap: 20, justifyContent: 'flex-end', marginTop: 10, fontSize: 13 }}>
-                <span>Subtotal: <b>₹{subtotal.toFixed(2)}</b></span>
-                <span style={{ color: 'var(--amber)' }}>GST: <b>₹{gstAmt.toFixed(2)}</b></span>
-                <span style={{ color: 'var(--green)' }}>Total: <b>₹{grand.toFixed(2)}</b></span>
+                <span className="text3">Subtotal: <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b></span>
+                <span className="text3">GST: <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b></span>
+                <span className="text3">Total: <b className="mono fw-700 green">₹{inrFormat(grand)}</b></span>
               </div>
             </div>
           ) : null}
 
-          {err ? <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>{err}</div> : null}
+          {err ? <div className="form-error" style={{ marginTop: 10 }}>{err}</div> : null}
 
+          {/* Footer per the actual call site: _createInvoice L21170-21206 calls
+              showModalLg with an explicit saveLabel 'Create Invoice', which
+              L28044 renders as `✓ Create Invoice` on .btn-success. */}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/invoices' })}>Cancel</button>
-            <button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => void submit()}>
-              {create.isPending ? 'Saving…' : 'Create Invoice'}
+            <button type="button" className="btn btn-success" disabled={create.isPending} onClick={() => void submit()}>
+              {create.isPending ? 'Saving…' : '✓ Create Invoice'}
             </button>
           </div>
         </div>

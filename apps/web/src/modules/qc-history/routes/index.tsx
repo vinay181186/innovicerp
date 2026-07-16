@@ -21,6 +21,13 @@ export const qcHistoryRoute = createRoute({
 
 type Tab = 'all' | 'pending' | 'completed';
 
+// Legacy L23599-23601: All is plain, Pending is amber, Completed is green.
+const TABS: { key: Tab; label: string; color?: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'pending', label: 'Pending', color: 'var(--amber)' },
+  { key: 'completed', label: 'Completed', color: 'var(--green)' },
+];
+
 function QcHistoryPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useQcHistory();
   const [tab, setTab] = useState<Tab>('all');
@@ -65,43 +72,26 @@ function QcHistoryPage(): React.JSX.Element {
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 14,
-          gap: 8,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
           📊 QC History &amp; Tracking
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isFetching && !isLoading ? (
             <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
               <Loader2 className="inline h-3 w-3 animate-spin" />
             </span>
           ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={logs.length === 0}
-            onClick={() => exportCompletedQc(logs)}
-          >
-            ⬇ Export Completed
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={pending.length === 0}
-            onClick={() => exportPendingQc(pending)}
-          >
-            ⬇ Export Pending
-          </button>
-          {(['all', 'pending', 'completed'] as const).map((tb) => (
+          {TABS.map((tb) => (
             <button
-              key={tb}
+              key={tb.key}
               type="button"
-              className={`btn btn-sm ${tab === tb ? 'btn-primary' : 'btn-ghost'}`}
-              style={{ textTransform: 'capitalize' }}
-              onClick={() => setTab(tb)}
+              className={`btn btn-sm ${tab === tb.key ? 'btn-primary' : 'btn-ghost'}`}
+              style={tb.color ? { color: tb.color } : undefined}
+              onClick={() => setTab(tb.key)}
             >
-              {tb}
+              {tb.label}
             </button>
           ))}
         </div>
@@ -121,25 +111,41 @@ function QcHistoryPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Stats */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-              gap: 8,
-              marginBottom: 14,
-            }}
-          >
-            <Stat label="Pending QC Ops" value={data.stats.pendingOps} color="var(--amber)" />
-            <Stat label="Overdue (>1 day)" value={data.stats.overdue} color="var(--red)" />
-            <Stat label="QC Entries (total)" value={data.stats.totalEntries} color="var(--green)" />
-            <Stat label="Today" value={data.stats.today} color="var(--blue)" />
+          {/* Stats — legacy L23604-23609. `blue` has no accent rule in legacy's
+              stylesheet (only cyan/amber/green/red at L97-102), so that tile
+              renders bare there and here. */}
+          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 14 }}>
+            <div className="stat-card amber">
+              <div className="stat-label">Pending QC Ops</div>
+              <div className="stat-val">{data.stats.pendingOps}</div>
+            </div>
+            <div className="stat-card red">
+              <div className="stat-label">Overdue (&gt;1 day)</div>
+              <div className="stat-val">{data.stats.overdue}</div>
+            </div>
+            <div className="stat-card green">
+              <div className="stat-label">QC Entries (total)</div>
+              <div className="stat-val">{data.stats.totalEntries}</div>
+            </div>
+            <div className="stat-card blue">
+              <div className="stat-label">Today</div>
+              <div className="stat-val">{data.stats.today}</div>
+            </div>
           </div>
 
-          {/* Filters */}
+          {/* Filters — legacy L23611-23622 (inline-styled bg3 bar, not a .panel) */}
           <div
-            className="panel"
-            style={{ marginBottom: 14, padding: '10px 14px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}
+            style={{
+              padding: '10px 14px',
+              background: 'var(--bg3)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              marginBottom: 14,
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+            }}
           >
             <div>
               <label className="text3" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>
@@ -147,8 +153,8 @@ function QcHistoryPage(): React.JSX.Element {
               </label>
               <input
                 className="innovic-input"
-                style={{ width: 180, fontSize: 12 }}
-                placeholder="🔍 Filter…"
+                style={{ width: 160, fontSize: 12 }}
+                placeholder="🔍 Filter..."
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
               />
@@ -180,6 +186,34 @@ function QcHistoryPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" onClick={clearFilters}>
               Clear
             </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(34,197,94,0.1)',
+                  color: 'var(--green)',
+                  border: '1px solid rgba(34,197,94,0.3)',
+                }}
+                disabled={logs.length === 0}
+                onClick={() => exportCompletedQc(logs)}
+              >
+                ⬇ Export Completed
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(251,191,36,0.1)',
+                  color: 'var(--amber)',
+                  border: '1px solid rgba(251,191,36,0.3)',
+                }}
+                disabled={pending.length === 0}
+                onClick={() => exportPendingQc(pending)}
+              >
+                ⬇ Export Pending
+              </button>
+            </div>
           </div>
 
           {showPend ? (
@@ -198,11 +232,11 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>SO</th>
                       <th>Item</th>
                       <th>Operation</th>
-                      <th style={{ textAlign: 'center' }}>Order</th>
-                      <th style={{ textAlign: 'center' }}>Done</th>
-                      <th style={{ textAlign: 'center', color: 'var(--green)' }}>Accepted</th>
-                      <th style={{ textAlign: 'center', color: 'var(--red)' }}>Rejected</th>
-                      <th style={{ textAlign: 'center', color: 'var(--amber)' }}>Pending</th>
+                      <th>Order</th>
+                      <th>Done</th>
+                      <th style={{ color: 'var(--green)' }}>Accepted</th>
+                      <th style={{ color: 'var(--red)' }}>Rejected</th>
+                      <th style={{ color: 'var(--amber)' }}>Pending</th>
                       <th>Since</th>
                       <th></th>
                     </tr>
@@ -239,8 +273,8 @@ function QcHistoryPage(): React.JSX.Element {
                       <th>SO</th>
                       <th>Item</th>
                       <th>Operation</th>
-                      <th style={{ textAlign: 'center', color: 'var(--green)' }}>Accepted</th>
-                      <th style={{ textAlign: 'center', color: 'var(--red)' }}>Rejected</th>
+                      <th style={{ color: 'var(--green)' }}>Accepted</th>
+                      <th style={{ color: 'var(--red)' }}>Rejected</th>
                       <th>Date</th>
                       <th>Shift</th>
                       <th>Inspector</th>
@@ -265,19 +299,6 @@ function QcHistoryPage(): React.JSX.Element {
           ) : null}
         </>
       )}
-    </div>
-  );
-}
-
-function Stat(props: { label: string; value: number; color: string }): React.JSX.Element {
-  return (
-    <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {props.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 22, color: props.color }}>
-        {props.value}
-      </div>
     </div>
   );
 }
@@ -343,7 +364,15 @@ function LogRow({ l }: { l: QcHistoryLogRow }): React.JSX.Element {
       <td style={{ fontSize: 11 }}>{fmtDate(l.logDate)}</td>
       <td style={{ fontSize: 11 }}>{l.shift ?? '—'}</td>
       <td style={{ fontSize: 11 }}>{l.inspector ?? '—'}</td>
-      <td className="text3" style={{ fontSize: 10 }}>
+      <td
+        style={{
+          fontSize: 10,
+          maxWidth: 100,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {l.remarks ?? '—'}
       </td>
       <td style={{ fontSize: 11 }}>

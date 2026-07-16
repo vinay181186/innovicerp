@@ -1,7 +1,16 @@
 // JW DC outward detail page (Print Templates P2, ADR-034). A full-page view of
-// a single outward DC (returnable gate pass) with the real-data Print button
-// that consumes the `jwdc_*` templates. Mirrors legacy `_jwdcPrint` trigger
-// from the JW DC list (L24463) — now a dedicated route rather than a modal.
+// a single outward DC (returnable gate pass).
+//
+// Legacy counterpart: `_jwdcViewOut` (L24592-24609) — the 👁 row action on the
+// outward register (L24474), shown there as a `showModalLg` modal; this port
+// makes it a dedicated route. Field order/labels and the line table follow that
+// modal. NOT `_jwdcPrint` (L24611): the DC No. cell (L24463) and the 🖨 action
+// (L24473) both hop straight to the print window, not to a detail view — that
+// print is reached here via the Print button, which consumes the `jwdc_*`
+// templates. `renderJWDC` (L24434) is the LIST (router key `jwdc`, L2412).
+//
+// Returned/Pending columns + the status label are additions over the legacy
+// modal, carried over from the legacy register's own columns (L24469-24471).
 
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -123,7 +132,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Item</th>
+                <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Process</th>
                 <th className="td-right">PO Qty</th>
@@ -147,19 +156,19 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                       {l.itemCodeText}
                     </td>
                     <td>{l.itemNameText ?? '—'}</td>
-                    <td className="text2" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>
-                    <td className="td-right mono">{l.poQty}</td>
-                    <td className="td-right mono" style={{ color: 'var(--cyan)', fontWeight: 700 }}>
+                    <td className="td-ctr mono">{l.poQty}</td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {l.sentQty}
                     </td>
-                    <td className="td-right mono" style={{ color: 'var(--green)' }}>
+                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
                       {l.alreadyReturned}
                     </td>
                     <td
-                      className="td-right mono"
-                      style={{ color: l.pending > 0 ? 'var(--amber)' : 'var(--green)', fontWeight: 700 }}
+                      className="td-ctr mono fw-700"
+                      style={{ color: l.pending > 0 ? 'var(--red)' : 'var(--green)' }}
                     >
                       {l.pending}
                     </td>
@@ -169,22 +178,31 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+        {/* Legacy renders Remarks below the line table (L24608), not in the
+            info block. */}
+        {dc.remarks ? (
+          <div className="panel-body text3" style={{ fontSize: 11 }}>
+            Remarks: {dc.remarks}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
+// Field order + labels mirror legacy `_jwdcViewOut`'s info block (L24599-24606):
+// DC NO. / DATE / JWPO / VENDOR / TOTAL SENT / VEHICLE. `.form-label` uppercases,
+// so these render in legacy's caps.
 function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
   const { dc } = props;
   return (
     <div className="form-grid form-grid-3">
-      <Pair label="DC Date" value={dc.dcDate} />
+      <Pair label="DC No." value={dc.code} />
+      <Pair label="Date" value={dc.dcDate} />
       <Pair label="JWPO" value={dc.jwpoCodeText ?? '—'} />
-      <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{dc.remarks ?? '—'}</div>
-      </div>
+      <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
+      <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
+      <Pair label="Vehicle" value={dc.vehicleNo ?? '—'} />
     </div>
   );
 }

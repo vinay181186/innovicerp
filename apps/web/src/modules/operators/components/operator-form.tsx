@@ -1,7 +1,11 @@
 // Operator create + edit form (UI-003-03). Field order matches legacy
-// operatorForm (legacy/InnovicERP_v82_12_3.html L13726): Operator ID,
-// Name, Department, Status, Skills/Machines (full). Plus an optional
-// Linked User field from current shared schema.
+// operatorForm (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L13726): Operator ID, Name, Department, Status, Skills/Machines (full).
+// Legacy builds one form for both modes, so create and edit must stay
+// field-identical here too. Linked User (full, last) has no legacy
+// counterpart — it is a port field backed by the current shared schema.
+// Legacy stars Operator ID; we do not, because `code` is optional in
+// createOperatorInputSchema (server auto-generates the OP-### series).
 
 import {
   type CreateOperatorInput,
@@ -143,7 +147,7 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Add Operator'}
+        submitLabel={props.submitLabel ?? 'Save'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -177,7 +181,13 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="name">
             Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+          <input
+            id="name"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Full name"
+            {...register('name')}
+          />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -214,14 +224,20 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="userId">
             Linked User (optional)
           </label>
-          <input id="userId" className="innovic-input" autoComplete="off" {...register('userId')} />
+          <input
+            id="userId"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="UUID of a user account, if this operator also has a login"
+            {...register('userId')}
+          />
           <div className="form-help">Leave blank for shop-floor-only operators.</div>
         </div>
       </div>
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save changes'}
+        submitLabel={props.submitLabel ?? 'Save'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

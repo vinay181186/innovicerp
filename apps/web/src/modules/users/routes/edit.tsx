@@ -146,7 +146,7 @@ function UserEditPage(): React.JSX.Element {
               {detail.email}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              ✏ Edit user
+              👤 Edit User{detail.fullName ? ` — ${detail.fullName}` : ''}
             </div>
             {isSelf ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
@@ -212,10 +212,16 @@ function UserEditPage(): React.JSX.Element {
             </div>
           ) : null}
           <form onSubmit={handleSubmit(onValid)}>
-            <div className="form-grid form-grid-3">
+            {/* Field order mirrors legacy BASIC INFO (L13484-13495): Name, Role, Email —
+                then this port's own fields (phone, status), then legacy's APPROVAL RIGHTS
+                limit (L13538) last. Kept identical to create.tsx, which is how legacy gets
+                it for free: _unifiedUserForm builds one form for both modes. Name carries no
+                ★ here because updateUserInputSchema.fullName is optional (create's is
+                .min(1)) — the only field that legitimately differs between the two files. */}
+            <div className="form-grid">
               <div className="form-grp">
                 <label className="form-label" htmlFor="fullName">
-                  Full name
+                  Name
                 </label>
                 <input
                   id="fullName"
@@ -229,6 +235,10 @@ function UserEditPage(): React.JSX.Element {
                 <label className="form-label" htmlFor="role">
                   Role<span className="req">★</span>
                 </label>
+                {/* Legacy's own <select> (L13486-13492) lists admin/manager/sr_engineer/
+                    engineer/jn_engineer/operator/viewer — a set that does not map to ours.
+                    Porting it would drop qc/procurement/dispatch/design and silently rewrite
+                    those users' roles on save (ISSUE-104). Our USER_ROLES stays. */}
                 <select id="role" className="innovic-select fw-700" {...register('role')}>
                   {USER_ROLES.map((r) => (
                     <option key={r} value={r} disabled={isSelf && r !== 'admin'}>
@@ -236,38 +246,13 @@ function UserEditPage(): React.JSX.Element {
                     </option>
                   ))}
                 </select>
-                {isSelf ? (
-                  <div className="form-help">Cannot demote yourself.</div>
-                ) : null}
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="isActive">
-                  Status
-                </label>
-                <select
-                  id="isActive"
-                  className="innovic-select"
-                  disabled={isSelf}
-                  {...register('isActive', { setValueAs: (v) => v === 'true' || v === true })}
-                >
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-                {isSelf ? (
-                  <div className="form-help">Cannot deactivate yourself.</div>
-                ) : null}
+                {isSelf ? <div className="form-help">Cannot demote yourself.</div> : null}
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="email">
                   Email
                 </label>
-                <input
-                  id="email"
-                  className="innovic-input"
-                  value={detail.email}
-                  readOnly
-                  style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
-                />
+                <input id="email" className="innovic-input" value={detail.email} readOnly />
                 <div className="form-help">Owned by Supabase Auth — change there.</div>
               </div>
               <div className="form-grp">
@@ -283,15 +268,30 @@ function UserEditPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
+                <label className="form-label" htmlFor="isActive">
+                  Status
+                </label>
+                <select
+                  id="isActive"
+                  className="innovic-select"
+                  disabled={isSelf}
+                  {...register('isActive', { setValueAs: (v) => v === 'true' || v === true })}
+                >
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                {isSelf ? <div className="form-help">Cannot deactivate yourself.</div> : null}
+              </div>
+              <div className="form-grp">
                 <label className="form-label" htmlFor="approvalLimit">
-                  PO approval limit (₹)
+                  Approval Limit (₹)
                 </label>
                 <input
                   id="approvalLimit"
                   className="innovic-input"
                   type="number"
                   min={0}
-                  step={10000}
+                  step={1000}
                   autoComplete="off"
                   placeholder="e.g. 100000"
                   disabled={detail.role === 'admin'}
@@ -299,8 +299,8 @@ function UserEditPage(): React.JSX.Element {
                 />
                 <div className="form-help">
                   {detail.role === 'admin'
-                    ? 'Admins can approve any PO (unlimited).'
-                    : 'Max PO value this user can approve. Blank = use company manager limit.'}
+                    ? 'Admin has unlimited approval.'
+                    : 'PO above this amount will need higher authority approval. Blank = use company manager limit.'}
                 </div>
               </div>
             </div>
@@ -337,7 +337,7 @@ function UserEditPage(): React.JSX.Element {
                   {formState.isSubmitting || update.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : null}
-                  Save changes
+                  Save User
                 </button>
               </div>
             </div>

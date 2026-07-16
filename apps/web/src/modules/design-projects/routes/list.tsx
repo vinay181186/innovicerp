@@ -6,7 +6,7 @@ import {
   type DesignProjectListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -75,16 +75,27 @@ function DesignProjectsListPage(): React.JSX.Element {
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">📋 Design Projects</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📋 Design Projects
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search…"
+            placeholder="🔍 Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
+            style={{ minWidth: 160, fontSize: 12 }}
           />
           <select
             className="innovic-select"
@@ -103,7 +114,7 @@ function DesignProjectsListPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => setShowAdd(true)}
             >
-              <Plus size={14} /> New Project
+              + New Project
             </button>
           ) : null}
         </div>
@@ -125,22 +136,25 @@ function DesignProjectsListPage(): React.JSX.Element {
             </div>
           </div>
         </div>
-      ) : data && data.items.length === 0 ? (
-        <div className="empty-state" style={{ padding: 50 }}>
-          📐 No design projects found.
-        </div>
       ) : data ? (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-            gap: 14,
-          }}
-        >
-          {data.items.map((p) => (
-            <ProjectCard key={p.id} project={p} />
-          ))}
-        </div>
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+              gap: 14,
+            }}
+          >
+            {data.items.map((p) => (
+              <ProjectCard key={p.id} project={p} />
+            ))}
+          </div>
+          {data.items.length === 0 ? (
+            <div className="empty-state" style={{ padding: 50 }}>
+              📐 No design projects found.
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       {showAdd ? <AddProjectModal onClose={() => setShowAdd(false)} /> : null}
@@ -161,24 +175,16 @@ function Tile({
 }): React.JSX.Element {
   return (
     <div
+      className="panel"
       onClick={onClick}
       style={{
-        padding: 14,
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderTop: `3px solid ${color}`,
-        borderRadius: 6,
-        cursor: onClick ? 'pointer' : 'default',
         textAlign: 'center',
+        padding: 14,
+        ...(onClick ? { cursor: 'pointer' } : {}),
       }}
     >
-      <div
-        className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
@@ -200,6 +206,7 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
       style={{
         padding: 16,
         cursor: 'pointer',
+        transition: 'all .15s',
         borderLeft: `3px solid ${borderColor}`,
         textDecoration: 'none',
         color: 'var(--text)',
@@ -208,19 +215,15 @@ function ProjectCard({ project }: { project: DesignProjectListItem }): React.JSX
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{project.projectName}</div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            {project.code} · {project.soCodeText ?? 'No SO'} · {project.clientText ?? ''}
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            {project.code} • {project.soCodeText ?? 'No SO'} • {project.clientText ?? ''}
           </div>
         </div>
         <StatusBadge status={project.status} />
       </div>
-      {project.description ? (
-        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 6 }}>
-          {project.description.length > 100
-            ? project.description.slice(0, 100) + '…'
-            : project.description}
-        </div>
-      ) : null}
+      <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 6 }}>
+        {(project.description ?? '').substring(0, 100)}
+      </div>
       <div
         style={{
           display: 'flex',
@@ -291,6 +294,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
   return (
     <span
       style={{
+        display: 'inline-block',
         padding: '2px 9px',
         borderRadius: 12,
         fontSize: 10,
@@ -313,6 +317,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const [soId, setSoId] = useState<string | null>(null);
   const [client, setClient] = useState('');
   const [lead, setLead] = useState('');
+  const [status, setStatus] = useState<CreateDesignProjectInput['status']>('Design Active');
   const [engineersStr, setEngineersStr] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [targetDate, setTargetDate] = useState('');
@@ -346,7 +351,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
-      status: 'Design Active',
+      status,
       startDate,
       targetDate,
     };
@@ -361,106 +366,123 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   };
 
   return (
-    <Modal onClose={onClose} title="📋 New Design Project">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Project Name ★">
+    <Modal
+      onClose={onClose}
+      title="📋 New Design Project"
+      footer={<Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />}
+    >
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">
+            Project Name<span className="req">★</span>
+          </label>
           <input
             className="innovic-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-        </Field>
-        <Field label="Status">
-          <input className="innovic-input" value="Design Active" readOnly />
-        </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Sales Order (optional)">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Type SO code or customer…"
-              value={
-                selectedSo
-                  ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
-                  : soSearch
-              }
-              onChange={(e) => {
-                setSoId(null);
-                setSoSearch(e.target.value);
-                // Auto-fill client from SO when an SO is picked
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Sales Order</label>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Type SO code or customer…"
+            value={
+              selectedSo
+                ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
+                : soSearch
+            }
+            onChange={(e) => {
+              setSoId(null);
+              setSoSearch(e.target.value);
+              // Auto-fill client from SO when an SO is picked
+            }}
+          />
+          {!soId && soSearch && soData ? (
+            <Picklist
+              items={soData.items.slice(0, 20).map((s) => ({
+                id: s.id,
+                label: `${s.code} — ${s.customerName ?? ''}`,
+                sub: null,
+              }))}
+              onPick={(id) => {
+                setSoId(id);
+                setSoSearch('');
+                const pickedSo = soData.items.find((x) => x.id === id);
+                if (pickedSo?.customerName && !client) setClient(pickedSo.customerName);
               }}
             />
-            {!soId && soSearch && soData ? (
-              <Picklist
-                items={soData.items.slice(0, 20).map((s) => ({
-                  id: s.id,
-                  label: `${s.code} — ${s.customerName ?? ''}`,
-                  sub: null,
-                }))}
-                onPick={(id) => {
-                  setSoId(id);
-                  setSoSearch('');
-                  const pickedSo = soData.items.find((x) => x.id === id);
-                  if (pickedSo?.customerName && !client) setClient(pickedSo.customerName);
-                }}
-              />
-            ) : null}
-          </Field>
+          ) : null}
         </div>
-        <Field label="Client">
+        <div className="form-grp">
+          <label className="form-label">Client</label>
           <input
             className="innovic-input"
             value={client}
             onChange={(e) => setClient(e.target.value)}
           />
-        </Field>
-        <Field label="Design Lead">
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Design Lead</label>
           <input
             className="innovic-input"
             value={lead}
             onChange={(e) => setLead(e.target.value)}
             placeholder="Engineer name"
           />
-        </Field>
-        <Field label="Start Date">
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Status</label>
+          <select
+            className="innovic-select"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as CreateDesignProjectInput['status'])}
+          >
+            <option value="Design Active">Design Active</option>
+            <option value="On Hold">On Hold</option>
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Start Date</label>
           <input
             type="date"
             className="innovic-input"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
-        </Field>
-        <Field label="Target Date ★">
+        </div>
+        <div className="form-grp">
+          <label className="form-label">
+            Target Date<span className="req">★</span>
+          </label>
           <input
             type="date"
             className="innovic-input"
             value={targetDate}
             onChange={(e) => setTargetDate(e.target.value)}
           />
-        </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Engineers (comma-separated names)">
-            <input
-              className="innovic-input"
-              value={engineersStr}
-              onChange={(e) => setEngineersStr(e.target.value)}
-              placeholder="Alice, Bob, Charlie"
-            />
-          </Field>
         </div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Description">
-            <textarea
-              className="innovic-input"
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </Field>
+        <div className="form-grp form-full">
+          <label className="form-label">Engineers</label>
+          <input
+            className="innovic-input"
+            value={engineersStr}
+            onChange={(e) => setEngineersStr(e.target.value)}
+            placeholder="Alice, Bob, Charlie"
+          />
+        </div>
+        <div className="form-grp form-full">
+          <label className="form-label">Description</label>
+          <textarea
+            className="innovic-textarea"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Create Project" />
     </Modal>
   );
 }
@@ -469,66 +491,34 @@ function Modal({
   onClose,
   title,
   children,
+  footer,
 }: {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  footer: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
+      <div className="modal">
+        <div className="modal-hdr">
+          <span className="modal-title">{title}</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm btn-icon"
+            onClick={onClose}
+          >
+            ✕
+          </button>
         </div>
-        {children}
+        <div className="modal-body">{children}</div>
+        <div className="modal-footer">{footer}</div>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
     </div>
   );
 }
@@ -584,7 +574,7 @@ function Actions({
   label: string;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <>
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
       </button>
@@ -597,7 +587,7 @@ function Actions({
           label
         )}
       </button>
-    </div>
+    </>
   );
 }
 

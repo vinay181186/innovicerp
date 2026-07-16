@@ -44,7 +44,7 @@ function ClientNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New Client</div>
+            <div className="panel-title">New Client</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Create a master record for a customer.
             </div>
@@ -125,7 +125,7 @@ function ClientEditPage(): React.JSX.Element {
               {client.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Client
+              Edit Client — {client.name}
             </div>
           </div>
         </div>

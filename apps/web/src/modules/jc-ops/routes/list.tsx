@@ -130,16 +130,8 @@ function Row({
       <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
         {o.jcCode}
       </td>
-      <td style={{ fontSize: 11 }}>
-        {o.jcItemCode ? (
-          <>
-            <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{o.jcItemCode}</span>
-            <br />
-            {o.jcItemName ?? ''}
-          </>
-        ) : (
-          '—'
-        )}
+      <td className="text2" style={{ fontSize: 11 }}>
+        {o.jcItemCode ?? ''}
       </td>
       <td className="td-ctr mono fw-700">{o.opSeq}</td>
       <td>

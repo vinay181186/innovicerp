@@ -19,10 +19,11 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
@@ -79,18 +80,24 @@ function NcRegisterListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useNcRegisterList(query);
   const { data: summary } = useNcRegisterSummary();
   const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
+  // CAPA create is admin/manager/qc (matches capa_records RLS + detail.tsx).
+  const canCapa = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
 
   const columns = useMemo<ColumnDef<NcRegisterListItem>[]>(
     () => [
       {
-        header: 'NC No.',
+        // Legacy L22526: <td class="mono fw-700" style="color:var(--red)">.
+        // The cell classes belong on the <td> (ISSUE-020) — carried by
+        // meta.tdClass. The link is the port's stand-in for legacy's 👁 _viewNC
+        // modal, which is also offered in Actions below.
+        header: 'Rej No.',
         accessorKey: 'code',
+        meta: { tdClass: 'mono fw-700' },
         cell: ({ row }) => (
           <Link
             to="/nc-register/$id"
             params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            style={{ color: 'var(--red)', textDecoration: 'none' }}
           >
             {row.original.code}
           </Link>
@@ -99,11 +106,7 @@ function NcRegisterListPage(): React.JSX.Element {
       {
         header: 'Date',
         accessorKey: 'ncDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.ncDate}
-          </span>
-        ),
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.ncDate}</span>,
       },
       {
         header: 'JC No.',
@@ -148,11 +151,15 @@ function NcRegisterListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Rej qty',
+        // Legacy L22531 puts `td-ctr mono fw-700` on the <td> and colours it
+        // var(--red); `.td-ctr` is text-align, so it only works from the <td>
+        // (ISSUE-020). Header itself is red in legacy (L22559).
+        header: () => <span style={{ color: 'var(--red)' }}>Qty</span>,
         id: 'rejectedQty',
         accessorFn: (r) => Number(r.rejectedQty),
+        meta: { tdClass: 'td-ctr mono fw-700' },
         cell: ({ row }) => (
-          <span className="td-ctr mono fw-700" style={{ color: 'var(--red2)' }}>
+          <span style={{ color: 'var(--red)' }}>
             {Number(row.original.rejectedQty).toFixed(0)}
           </span>
         ),
@@ -161,15 +168,25 @@ function NcRegisterListPage(): React.JSX.Element {
         header: 'Reason',
         accessorKey: 'reasonCategory',
         cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-            {row.original.reasonCategory.replaceAll('_', ' ')}
+          <span style={{ fontSize: 11 }}>
+            {NC_REASON_CATEGORY_LABELS[row.original.reasonCategory]}
           </span>
         ),
       },
       {
         header: 'Disposition',
         accessorKey: 'disposition',
-        cell: ({ row }) => <NcDispositionBadge disposition={row.original.disposition} />,
+        cell: ({ row }) => (
+          <>
+            <NcDispositionBadge disposition={row.original.disposition} />
+            {/* Legacy L22534: rework progress hint beside the disposition. */}
+            {row.original.disposition === 'rework' && Number(row.original.reworkDoneQty) > 0 ? (
+              <span style={{ fontSize: 9, color: 'var(--cyan)', marginLeft: 4 }}>
+                ♻ {Number(row.original.reworkDoneQty)}/{Number(row.original.rejectedQty)} done
+              </span>
+            ) : null}
+          </>
+        ),
       },
       {
         header: 'Status',
@@ -177,26 +194,95 @@ function NcRegisterListPage(): React.JSX.Element {
         cell: ({ row }) => <NcStatusBadge status={row.original.status} />,
       },
       {
-        header: 'CAPA',
-        accessorKey: 'linkedCapaCode',
-        cell: ({ row }) =>
-          row.original.linkedCapaCode ? (
-            <Link
-              to="/capa"
-              className="mono"
-              style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700, textDecoration: 'none' }}
-              title="Open linked CAPA"
-            >
-              {row.original.linkedCapaCode}
-            </Link>
-          ) : (
-            <span className="text3" style={{ fontSize: 11 }}>
-              —
-            </span>
-          ),
+        // Legacy L22537-22545. The port's dispose / close-rework / create-CAPA
+        // writes live on the NC detail page (they need the disposition panel and
+        // the rework-qty input), so these link there instead of opening legacy's
+        // in-list modal. The linked-CAPA jump and 👤+ assign behave as legacy.
+        header: 'Actions',
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              <Link
+                to="/nc-register/$id"
+                params={{ id: r.id }}
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 10 }}
+                title="View NC"
+              >
+                👁
+              </Link>
+              {canWrite && r.status === 'pending' ? (
+                <Link
+                  to="/nc-register/$id"
+                  params={{ id: r.id }}
+                  className="btn btn-primary btn-sm"
+                  style={{ fontSize: 10 }}
+                  title="Dispose this NC on its detail page"
+                >
+                  ✏ Dispose
+                </Link>
+              ) : null}
+              {canWrite && r.status === 'disposed' && r.disposition === 'rework' ? (
+                <Link
+                  to="/nc-register/$id"
+                  params={{ id: r.id }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 10 }}
+                  title="Close the rework on this NC's detail page"
+                >
+                  ✅ Close
+                </Link>
+              ) : null}
+              {canCapa && r.status !== 'pending' && !r.linkedCapaCode ? (
+                <Link
+                  to="/nc-register/$id"
+                  params={{ id: r.id }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 10, color: 'var(--purple)' }}
+                  title="Create a CAPA from this NC on its detail page"
+                >
+                  🛡 CAPA
+                </Link>
+              ) : null}
+              {r.linkedCapaCode ? (
+                <Link
+                  to="/capa"
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--purple)',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                  }}
+                  title="Open linked CAPA"
+                >
+                  {r.linkedCapaCode}
+                </Link>
+              ) : null}
+              {r.status !== 'closed' ? (
+                <AssignTaskButton
+                  linkedRef={{
+                    type: 'nc',
+                    id: r.id,
+                    display: `NC ${r.code}`,
+                    navPage: `/nc-register/${r.id}`,
+                  }}
+                  suggestedTitle={
+                    r.status === 'pending' ? `Dispose ${r.code}` : `Review ${r.code}`
+                  }
+                  className="btn btn-ghost btn-sm"
+                  label=""
+                />
+              ) : null}
+            </div>
+          );
+        },
       },
     ],
-    [],
+    [canWrite, canCapa],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -215,79 +301,24 @@ function NcRegisterListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Legacy L22549-22551: title + Report NC only; filters sit below the
+          cards in their own row. */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 14,
-          gap: 8,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          NC Register
+          ❌ NC Register
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Search NC code, reason, item…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as NcStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 160, fontSize: 12 }}
-          >
-            <option value="">All statuses</option>
-            {NC_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {NC_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-          <select
-            className="innovic-select"
-            value={search.reasonCategory ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as NcReasonCategory | '';
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  reasonCategory: v === '' ? undefined : v,
-                  page: 1,
-                }),
-                replace: true,
-              });
-            }}
-            style={{ width: 160, fontSize: 12 }}
-          >
-            <option value="">All reasons</option>
-            {NC_REASON_CATEGORIES.map((r) => (
-              <option key={r} value={r}>
-                {NC_REASON_CATEGORY_LABELS[r]}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <Link to="/nc-register/new" className="btn btn-primary">
-              <Plus size={14} /> Report NC
-            </Link>
-          ) : null}
-        </div>
+        {canWrite ? (
+          <Link to="/nc-register/new" className="btn btn-primary">
+            ❌ Report NC
+          </Link>
+        ) : null}
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -298,12 +329,74 @@ function NcRegisterListPage(): React.JSX.Element {
         <StatCard label="Scrap" value={summary?.scrapQty} color="var(--red)" />
       </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            ⚠️ Non-conformance log — QC rejections by JC + op. Dispose on detail page → rework / scrap / use-as-is / return-to-vendor / make-fresh (T-040b cascade).
+      {/* Legacy L22553-22557 filter row. Placeholder names only the fields the
+          API actually searches — legacy's "Search JC, item, reason..." works
+          because its filter is a client-side row-text scan; the port's search
+          is server-side over code/reason/item (service.ts L215) and does NOT
+          match JC. */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
+        <input
+          className="innovic-input"
+          placeholder="🔍 Search NC code, item, reason…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          style={{ minWidth: 220, fontSize: 13 }}
+        />
+        <select
+          className="innovic-select"
+          value={search.status ?? ''}
+          onChange={(e) => {
+            const v = e.target.value as NcStatus | '';
+            void navigate({
+              search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+              replace: true,
+            });
+          }}
+          style={{ width: 160, fontSize: 12 }}
+        >
+          <option value="">All Status</option>
+          {NC_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {NC_STATUS_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        <select
+          className="innovic-select"
+          value={search.reasonCategory ?? ''}
+          onChange={(e) => {
+            const v = e.target.value as NcReasonCategory | '';
+            void navigate({
+              search: (prev) => ({
+                ...prev,
+                reasonCategory: v === '' ? undefined : v,
+                page: 1,
+              }),
+              replace: true,
+            });
+          }}
+          style={{ width: 160, fontSize: 12 }}
+        >
+          <option value="">All Reasons</option>
+          {NC_REASON_CATEGORIES.map((r) => (
+            <option key={r} value={r}>
+              {NC_REASON_CATEGORY_LABELS[r]}
+            </option>
+          ))}
+        </select>
+        {isFetching && !isLoading ? (
+          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
           </span>
-        </div>
+        ) : null}
       </div>
 
       <div className="panel">
@@ -334,7 +427,7 @@ function NcRegisterListPage(): React.JSX.Element {
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -344,6 +437,12 @@ function NcRegisterListPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Legacy L22561 tip line. */}
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+        💡 NCs are auto-created from QC Call Register. Click <b>✏ Dispose</b> to decide: Rework,
+        Scrap, Use As Is, Return to Vendor, or Make Fresh.
       </div>
 
       <div

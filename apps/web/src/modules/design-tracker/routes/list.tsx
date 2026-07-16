@@ -7,7 +7,7 @@ import {
   type LogDesignTimeInput,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -59,24 +59,24 @@ function DesignTrackerListPage(): React.JSX.Element {
 
   return (
     <div>
-      <KpiStrip summary={summary} active={filter} onChange={setFilter} />
+      <KpiStrip summary={summary} onChange={setFilter} />
 
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="section-hdr m-0">🎨 Design Tracker</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search…"
+            placeholder="🔍 Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
+            style={{ width: 'auto', minWidth: 160, fontSize: 12 }}
           />
           <select
             className="innovic-select"
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterKey)}
-            style={{ fontSize: 12 }}
+            style={{ width: 'auto', fontSize: 12 }}
           >
             <option value="all">All</option>
             <option value="pending">Pending</option>
@@ -91,7 +91,7 @@ function DesignTrackerListPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => setShowAdd(true)}
             >
-              <Plus size={14} /> Assign Design
+              + Assign Design
             </button>
           ) : null}
         </div>
@@ -108,13 +108,6 @@ function DesignTrackerListPage(): React.JSX.Element {
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load designs'}
-            </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">🎨</div>
-              No designs assigned yet.
             </div>
           </div>
         ) : data ? (
@@ -135,16 +128,24 @@ function DesignTrackerListPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((d) => (
-                  <Row
-                    key={d.id}
-                    row={d}
-                    canWrite={canWrite}
-                    isAdmin={canWrite}
-                    onEdit={() => setEditRow(d)}
-                    onLogTime={() => setLogTimeRow(d)}
-                  />
-                ))}
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-state">
+                      No designs assigned yet
+                    </td>
+                  </tr>
+                ) : (
+                  data.items.map((d) => (
+                    <Row
+                      key={d.id}
+                      row={d}
+                      canWrite={canWrite}
+                      isAdmin={canWrite}
+                      onEdit={() => setEditRow(d)}
+                      onLogTime={() => setLogTimeRow(d)}
+                    />
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -165,26 +166,90 @@ function DesignTrackerListPage(): React.JSX.Element {
 
 function KpiStrip({
   summary,
-  active,
   onChange,
 }: {
   summary: { total: number; pending: number; inProgress: number; review: number; approved: number; overdue: number };
-  active: FilterKey;
   onChange: (k: FilterKey) => void;
 }): React.JSX.Element {
-  const tiles: Array<{ k: FilterKey; label: string; value: number; color: string; show: boolean }> = [
-    { k: 'all', label: 'Total', value: summary.total, color: 'var(--blue)', show: true },
-    { k: 'pending', label: 'Pending', value: summary.pending, color: 'var(--text3)', show: true },
-    { k: 'progress', label: 'In Progress', value: summary.inProgress, color: 'var(--amber)', show: true },
-    { k: 'review', label: 'Review', value: summary.review, color: 'var(--blue)', show: true },
-    { k: 'approved', label: 'Approved', value: summary.approved, color: 'var(--green)', show: true },
-    { k: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red)', show: summary.overdue > 0 },
+  // Legacy L7307–7314: plain --bg2 tiles, 1px --border, radius 10, no top accent
+  // and no active-tile styling. The Overdue tile is the only tinted one and is
+  // rendered only when overdue > 0.
+  const tiles: Array<{
+    k: FilterKey;
+    label: string;
+    value: number;
+    color: string;
+    labelColor: string;
+    background: string;
+    border: string;
+    show: boolean;
+  }> = [
+    {
+      k: 'all',
+      label: 'Total',
+      value: summary.total,
+      color: 'var(--blue)',
+      labelColor: 'var(--text3)',
+      background: 'var(--bg2)',
+      border: '1px solid var(--border)',
+      show: true,
+    },
+    {
+      k: 'pending',
+      label: 'Pending',
+      value: summary.pending,
+      color: 'var(--text3)',
+      labelColor: 'var(--text3)',
+      background: 'var(--bg2)',
+      border: '1px solid var(--border)',
+      show: true,
+    },
+    {
+      k: 'progress',
+      label: 'In Progress',
+      value: summary.inProgress,
+      color: 'var(--amber)',
+      labelColor: 'var(--text3)',
+      background: 'var(--bg2)',
+      border: '1px solid var(--border)',
+      show: true,
+    },
+    {
+      k: 'review',
+      label: 'Review',
+      value: summary.review,
+      color: 'var(--blue)',
+      labelColor: 'var(--text3)',
+      background: 'var(--bg2)',
+      border: '1px solid var(--border)',
+      show: true,
+    },
+    {
+      k: 'approved',
+      label: 'Approved',
+      value: summary.approved,
+      color: 'var(--green)',
+      labelColor: 'var(--text3)',
+      background: 'var(--bg2)',
+      border: '1px solid var(--border)',
+      show: true,
+    },
+    {
+      k: 'overdue',
+      label: 'Overdue',
+      value: summary.overdue,
+      color: 'var(--red)',
+      labelColor: 'var(--red)',
+      background: 'rgba(239,68,68,0.06)',
+      border: '1px solid rgba(239,68,68,0.3)',
+      show: summary.overdue > 0,
+    },
   ];
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: `repeat(${tiles.filter((t) => t.show).length}, minmax(110px, 1fr))`,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
         gap: 10,
         marginBottom: 16,
       }}
@@ -196,25 +261,16 @@ function KpiStrip({
             key={t.k}
             onClick={() => onChange(t.k)}
             style={{
-              padding: 14,
-              background: 'var(--bg2)',
-              border: `1px solid ${active === t.k ? t.color : 'var(--border)'}`,
-              borderTop: `3px solid ${t.color}`,
-              borderRadius: 6,
               cursor: 'pointer',
               textAlign: 'center',
-              boxShadow: active === t.k ? `0 0 0 2px ${t.color}` : undefined,
+              padding: 12,
+              borderRadius: 10,
+              background: t.background,
+              border: t.border,
             }}
           >
-            <div
-              className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-            >
-              {t.label}
-            </div>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: t.color }}>
-              {t.value}
-            </div>
+            <div style={{ fontSize: 10, color: t.labelColor }}>{t.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
           </div>
         ))}
     </div>
@@ -263,7 +319,10 @@ function Row({
 
   const hrsOver = row.totalHours > row.estimatedHours;
   return (
-    <tr style={{ background: isOverdue ? 'rgba(239,68,68,0.03)' : undefined }}>
+    <tr style={{ background: isOverdue ? 'rgba(239,68,68,0.03)' : 'var(--bg)' }}>
+      {/* `td-code` stays on the span: our `.innovic-table td` (0,1,1) outranks the
+          bare `.td-code` (0,1,0) and would force its font-size back to 13px, where
+          legacy's bare `td` (0,0,1) loses to `.td-code` and renders 12px. See ISSUE-060. */}
       <td>
         <span className="td-code" style={{ color: 'var(--purple)' }}>
           {row.code}
@@ -275,17 +334,11 @@ function Row({
         </span>
       </td>
       <td style={{ fontSize: 11 }}>
-        {row.itemCodeText ? (
-          <>
-            <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{row.itemCodeText}</span>
-            <br />
-            {row.itemNameText ?? ''}
-          </>
-        ) : (
-          '—'
-        )}
+        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>{row.itemCodeText ?? ''}</span>
+        <br />
+        {row.itemNameText ?? ''}
       </td>
-      <td style={{ fontSize: 12 }}>{row.designer}</td>
+      <td style={{ fontSize: 12 }}>{row.designer || '—'}</td>
       <td className="text2" style={{ fontSize: 11 }}>
         {row.startDate}
       </td>
@@ -362,7 +415,7 @@ function Row({
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Approve ${row.code}? This unlocks BOM creation for ${row.soCodeText ?? ''}.`,
+                      `Approve design ${row.code}?\nThis will unlock BOM creation for SO: ${row.soCodeText ?? ''}`,
                     )
                   )
                     approveMut.mutate(row.id);
@@ -448,39 +501,37 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
 
   return (
     <ModalShell onClose={onClose} title="🎨 Assign Design">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Sales Order ★ (type to search open SOs)">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Type SO code or customer…"
-              value={
-                selectedSo
-                  ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
-                  : soSearch
-              }
-              onChange={(e) => {
-                setSoId(null);
-                setSoSearch(e.target.value);
+      <div className="form-grid">
+        <Field label="Sales Order" req full>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Type SO code or customer…"
+            value={
+              selectedSo
+                ? `${selectedSo.code} — ${selectedSo.customerName ?? ''}`
+                : soSearch
+            }
+            onChange={(e) => {
+              setSoId(null);
+              setSoSearch(e.target.value);
+            }}
+          />
+          {!soId && soSearch && soData ? (
+            <Picklist
+              items={soData.items.slice(0, 20).map((s) => ({
+                id: s.id,
+                label: `${s.code} — ${s.customerName ?? ''}`,
+                sub: s.type ?? null,
+              }))}
+              onPick={(id) => {
+                setSoId(id);
+                setSoSearch('');
               }}
             />
-            {!soId && soSearch && soData ? (
-              <Picklist
-                items={soData.items.slice(0, 20).map((s) => ({
-                  id: s.id,
-                  label: `${s.code} — ${s.customerName ?? ''}`,
-                  sub: s.type ?? null,
-                }))}
-                onPick={(id) => {
-                  setSoId(id);
-                  setSoSearch('');
-                }}
-              />
-            ) : null}
-          </Field>
-        </div>
-        <Field label="Designer ★">
+          ) : null}
+        </Field>
+        <Field label="Designer" req>
           <input
             type="text"
             className="innovic-input"
@@ -507,7 +558,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setStartDate(e.target.value)}
           />
         </Field>
-        <Field label="Target Date ★">
+        <Field label="Target Date" req>
           <input
             type="date"
             className="innovic-input"
@@ -515,17 +566,15 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setTargetDate(e.target.value)}
           />
         </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Design Scope / Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="What needs to be designed…"
-            />
-          </Field>
-        </div>
+        <Field label="Design Scope / Remarks" full>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="What needs to be designed..."
+          />
+        </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
       <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />
@@ -572,7 +621,7 @@ function EditDesignModal({
 
   return (
     <ModalShell onClose={onClose} title={`✏ Edit Design — ${row.code}`}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-grid">
         <Field label="SO">
           <input
             type="text"
@@ -631,16 +680,14 @@ function EditDesignModal({
             onChange={(e) => setTargetDate(e.target.value)}
           />
         </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </Field>
-        </div>
+        <Field label="Remarks" full>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
+        </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
       <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />
@@ -703,7 +750,7 @@ function LogTimeModal({
           marginBottom: 14,
           padding: 10,
           background: 'var(--bg3)',
-          borderRadius: 6,
+          borderRadius: 8,
           border: '1px solid var(--border)',
           fontSize: 12,
         }}
@@ -711,7 +758,7 @@ function LogTimeModal({
         <b style={{ color: 'var(--cyan)' }}>{row.soCodeText ?? '—'}</b> | {row.itemCodeText ?? ''} |
         Designer: <b>{row.designer}</b>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-grid">
         <Field label="Date">
           <input
             type="date"
@@ -745,7 +792,7 @@ function LogTimeModal({
             className="innovic-input"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What was done…"
+            placeholder="What was done..."
           />
         </Field>
       </div>
@@ -868,24 +915,21 @@ function Actions({
 
 function Field({
   label,
+  req,
+  full,
   children,
 }: {
   label: string;
+  req?: boolean;
+  full?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+    <div className={full ? 'form-grp form-full' : 'form-grp'}>
+      <label className="form-label">
         {label}
-      </div>
+        {req ? <span className="req">★</span> : null}
+      </label>
       {children}
     </div>
   );

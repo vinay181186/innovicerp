@@ -27,10 +27,10 @@ function ProdJwListPage(): React.JSX.Element {
         <input
           type="text"
           className="innovic-input"
-          placeholder="🔍 Search JWSO, customer…"
+          placeholder="🔍 Search JWSO, customer..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 280, fontSize: 12 }}
+          style={{ width: 220 }}
         />
       </div>
       <div className="panel">
@@ -45,10 +45,6 @@ function ProdJwListPage(): React.JSX.Element {
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load'}
             </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">No JWSO orders found</div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
@@ -70,6 +66,13 @@ function ProdJwListPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="empty-state">
+                      No JWSO orders found
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((r) => (
                   <tr key={r.jwId}>
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
@@ -92,7 +95,7 @@ function ProdJwListPage(): React.JSX.Element {
                         style={{
                           width: 80,
                           height: 6,
-                          background: 'var(--bg4)',
+                          background: 'var(--bg5)',
                           borderRadius: 3,
                           display: 'inline-block',
                           verticalAlign: 'middle',

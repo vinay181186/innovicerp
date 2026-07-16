@@ -1,21 +1,7 @@
-import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, History, Loader2 } from 'lucide-react';
+import { createRoute } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableEmpty,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useActivityLog } from '../api';
 
@@ -37,36 +23,50 @@ export const activityLogListRoute = createRoute({
   component: ActivityLogListPage,
 });
 
-// Tailwind class map keyed by action label. Legacy entries (with spaces)
-// are kept alongside the new underscore-form actions emitted by the
-// service modules wired in T-051a #1-#9 so historical audit rows render
-// with the same colour they did in the legacy renderer.
-const ACTION_COLORS: Record<string, string> = {
+// Theme badge class keyed by action label — replaces the Tailwind map.
+//
+// Legacy `actionColors` (L11283) is a hex map; the port is a LIGHT theme
+// (ISSUE-067) so the hex values are MAPPED to tokens, never copied:
+//   CREATE      #22c55e → b-green   EDIT        #3b82f6 → b-blue
+//   DELETE      #ef4444 → b-red     RESTORE     #f59e0b → b-amber
+//   OP START    #f59e0b → b-amber   OP COMPLETE #22c55e → b-green
+//   DISPATCH    #06b6d4 → b-cyan    PERM DELETE #b91c1c → b-red
+// (--red2 IS #b91c1c, so PERM DELETE lands exactly; legacy's lighter
+//  DELETE red has no separate token, so the two share b-red here.)
+//
+// The underscore forms + cross-module actions below have NO legacy
+// counterpart — they are emitted by our own services (T-051a) and keep the
+// colour the port already gave them. Legacy's space forms are kept beside
+// them so migrated rows render identically.
+//
+// Unmapped actions fall back to b-grey. Legacy's default was `var(--text2)`
+// text with `background:var(--text2)22` — an invalid declaration that never
+// painted (ISSUE-063), so legacy's default chip is a bare muted label.
+const ACTION_BADGE: Record<string, string> = {
   // CRUD baseline
-  CREATE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
-  EDIT: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
-  DELETE: 'text-rose-600 dark:text-rose-400 bg-rose-500/10',
-  RESTORE: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
-  IMPORT: 'text-violet-600 dark:text-violet-400 bg-violet-500/10',
-  DISPATCH: 'text-cyan-600 dark:text-cyan-400 bg-cyan-500/10',
-  'PERM DELETE': 'text-rose-700 dark:text-rose-500 bg-rose-500/20',
+  CREATE: 'b-green',
+  EDIT: 'b-blue',
+  DELETE: 'b-red',
+  RESTORE: 'b-amber',
+  DISPATCH: 'b-cyan',
+  'PERM DELETE': 'b-red',
   // Op-entry (new — T-051a #4)
-  OP_START: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
-  OP_STOP: 'text-orange-600 dark:text-orange-400 bg-orange-500/10',
-  OP_COMPLETE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  OP_START: 'b-amber',
+  OP_STOP: 'b-orange',
+  OP_COMPLETE: 'b-green',
   // Legacy space-form variants (migrated rows render with the same colour)
-  'OP START': 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
-  'OP COMPLETE': 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  'OP START': 'b-amber',
+  'OP COMPLETE': 'b-green',
   // Cross-module + NC dispositions (T-051a #6, #8)
-  PR_CONVERT: 'text-cyan-600 dark:text-cyan-400 bg-cyan-500/10',
-  NC_DISPOSE: 'text-amber-600 dark:text-amber-400 bg-amber-500/10',
-  NC_CLOSE_REWORK: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  PR_CONVERT: 'b-cyan',
+  NC_DISPOSE: 'b-amber',
+  NC_CLOSE_REWORK: 'b-green',
   // Auto-cascade (T-051a #9) — line-close intermediate, header-close terminal
-  JC_COMPLETE: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
-  SO_LINE_CLOSED: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
-  SO_CLOSED: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
-  JW_LINE_CLOSED: 'text-blue-600 dark:text-blue-400 bg-blue-500/10',
-  JW_CLOSED: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10',
+  JC_COMPLETE: 'b-green',
+  SO_LINE_CLOSED: 'b-blue',
+  SO_CLOSED: 'b-green',
+  JW_LINE_CLOSED: 'b-blue',
+  JW_CLOSED: 'b-green',
 };
 
 function ActivityLogListPage() {
@@ -131,225 +131,209 @@ function ActivityLogListPage() {
   };
 
   return (
-    <main className="container max-w-6xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/">
-            <ArrowLeft />
-            Back to home
-          </Link>
-        </Button>
-
-        <div className="flex items-start gap-3">
-          <History className="mt-1 h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Activity log</h1>
-            <p className="text-sm text-muted-foreground">
-              Append-only audit trail. Filter by action, user, or date range; full-text search
-              across action / entity / detail / user / ref.
-            </p>
-          </div>
+    <div>
+      {/* Legacy L11292: header flex row — section-hdr left, controls right. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Activity Log
         </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Filters</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onSearchSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="search">Search</Label>
-                  <Input
-                    id="search"
-                    type="search"
-                    value={pendingSearch}
-                    onChange={(e) => setPendingSearch(e.target.value)}
-                    placeholder="action / entity / detail / user / ref"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="action">Action</Label>
-                  <Select
-                    id="action"
-                    value={search.action ?? ''}
-                    onChange={(e) => setFilter('action', e.target.value)}
-                  >
-                    <option value="">All actions</option>
-                    {(data?.actions ?? []).map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="userId">User</Label>
-                  <Select
-                    id="userId"
-                    value={search.userId ?? ''}
-                    onChange={(e) => setFilter('userId', e.target.value)}
-                  >
-                    <option value="">All users</option>
-                    {(data?.users ?? [])
-                      .filter((u) => u.id !== null)
-                      .map((u) => (
-                        <option key={u.id ?? u.name} value={u.id ?? ''}>
-                          {u.name}
-                        </option>
-                      ))}
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="fromDate">From</Label>
-                  <Input
-                    id="fromDate"
-                    type="date"
-                    value={search.fromDate ?? ''}
-                    onChange={(e) => setFilter('fromDate', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="toDate">To</Label>
-                  <Input
-                    id="toDate"
-                    type="date"
-                    value={search.toDate ?? ''}
-                    onChange={(e) => setFilter('toDate', e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button type="submit" disabled={isFetching}>
-                  {isFetching ? <Loader2 className="animate-spin" /> : null}
-                  Apply
-                </Button>
-                <Button type="button" variant="outline" onClick={onClear}>
-                  Clear
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Entries</CardTitle>
-            <CardDescription>
-              {data ? `${data.total} matching · page ${search.page} of ${totalPages}` : 'Loading…'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Detail</TableHead>
-                    <TableHead>Ref</TableHead>
-                    <TableHead>User</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    <TableEmpty colSpan={7}>
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading…
-                      </span>
-                    </TableEmpty>
-                  ) : isError ? (
-                    <TableEmpty colSpan={7}>
-                      <span className="text-destructive">
-                        {error instanceof Error ? error.message : 'Failed to load activity log'}
-                      </span>
-                    </TableEmpty>
-                  ) : !data || data.entries.length === 0 ? (
-                    <TableEmpty colSpan={7}>No activity matches these filters.</TableEmpty>
-                  ) : (
-                    data.entries.map((e) => {
-                      const dt = new Date(e.ts);
-                      const date = dt.toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      });
-                      const time = dt.toLocaleTimeString('en-IN', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false,
-                      });
-                      const colorClass =
-                        ACTION_COLORS[e.action] ?? 'text-muted-foreground bg-muted';
-                      return (
-                        <TableRow key={e.id}>
-                          <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                            {date}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {time}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={`inline-block rounded px-2 py-0.5 text-[11px] font-bold ${colorClass}`}
-                            >
-                              {e.action}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm font-medium">{e.entity}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {e.detail || '—'}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {e.refId ?? '—'}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <span className="text-amber-600 dark:text-amber-400">{e.userName}</span>
-                            {e.userId === null ? (
-                              <span className="ml-1 text-[10px] text-muted-foreground">
-                                (snapshot)
-                              </span>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {data && data.total > PAGE_SIZE ? (
-          <div className="flex items-center justify-between text-sm">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => goToPage(search.page - 1)}
-              disabled={search.page <= 1}
-            >
-              Previous
-            </Button>
-            <span className="text-muted-foreground">
-              Page {search.page} of {totalPages}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => goToPage(search.page + 1)}
-              disabled={search.page >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        ) : null}
+        {/* Legacy L11294: inline control row. From/To + Apply/Clear are
+            port-only — legacy searches in-memory on every keystroke, we hit
+            the server, so the text search stays submit-driven. */}
+        <form
+          onSubmit={onSearchSubmit}
+          style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+        >
+          <input
+            type="search"
+            className="innovic-input"
+            style={{ width: 180 }}
+            placeholder="Search..."
+            value={pendingSearch}
+            onChange={(e) => setPendingSearch(e.target.value)}
+          />
+          <select
+            className="innovic-select"
+            style={{ width: 150 }}
+            value={search.action ?? ''}
+            onChange={(e) => setFilter('action', e.target.value)}
+          >
+            <option value="">All Actions</option>
+            {(data?.actions ?? []).map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+          <select
+            className="innovic-select"
+            style={{ width: 130 }}
+            value={search.userId ?? ''}
+            onChange={(e) => setFilter('userId', e.target.value)}
+          >
+            <option value="">All Users</option>
+            {(data?.users ?? [])
+              .filter((u) => u.id !== null)
+              .map((u) => (
+                <option key={u.id ?? u.name} value={u.id ?? ''}>
+                  {u.name}
+                </option>
+              ))}
+          </select>
+          <input
+            type="date"
+            className="innovic-input"
+            style={{ width: 140 }}
+            title="From"
+            value={search.fromDate ?? ''}
+            onChange={(e) => setFilter('fromDate', e.target.value)}
+          />
+          <input
+            type="date"
+            className="innovic-input"
+            style={{ width: 140 }}
+            title="To"
+            value={search.toDate ?? ''}
+            onChange={(e) => setFilter('toDate', e.target.value)}
+          />
+          {/* Legacy L11298: `log.length` is the full filtered count (legacy
+              renders every row). data.total is the server's count over the
+              same WHERE — never data.entries.length, which is one page. */}
+          <span className="text3" style={{ fontSize: 11 }}>
+            {data ? data.total : 0} entries
+          </span>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={isFetching}>
+            {isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            Apply
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClear}>
+            Clear
+          </button>
+        </form>
       </div>
-    </main>
+
+      {/* Legacy L11302: bare panel → tbl-wrap → table. No panel-hdr, no
+          tbl-frozen. Ref is a port-only column (see report). */}
+      <div className="panel">
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Detail</th>
+                <th>Ref</th>
+                <th>User</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Loading…
+                  </td>
+                </tr>
+              ) : isError ? (
+                <tr>
+                  <td colSpan={7} className="empty-state">
+                    <span className="red">
+                      {error instanceof Error ? error.message : 'Failed to load activity log'}
+                    </span>
+                  </td>
+                </tr>
+              ) : !data || data.entries.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-state" style={{ padding: 24 }}>
+                    No activity recorded yet
+                  </td>
+                </tr>
+              ) : (
+                data.entries.map((e) => {
+                  const dt = new Date(e.ts);
+                  const date = dt.toLocaleDateString('en-IN', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  });
+                  const time = dt.toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  });
+                  const badgeClass = ACTION_BADGE[e.action] ?? 'b-grey';
+                  return (
+                    <tr key={e.id}>
+                      <td className="mono text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {date}
+                      </td>
+                      <td className="mono text3" style={{ fontSize: 11 }}>
+                        {time}
+                      </td>
+                      <td>
+                        <span className={`badge ${badgeClass}`}>{e.action}</span>
+                      </td>
+                      <td className="fw-700" style={{ fontSize: 12 }}>
+                        {e.entity}
+                      </td>
+                      <td className="text2" style={{ fontSize: 11 }}>
+                        {e.detail}
+                      </td>
+                      <td className="mono text3" style={{ fontSize: 11 }}>
+                        {e.refId ?? '—'}
+                      </td>
+                      <td className="amber" style={{ fontSize: 11 }}>
+                        {e.userName}
+                        {e.userId === null ? (
+                          <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>
+                            (snapshot)
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Port-only: legacy renders every row with no pager. */}
+      {data && data.total > PAGE_SIZE ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => goToPage(search.page - 1)}
+            disabled={search.page <= 1}
+          >
+            Previous
+          </button>
+          <span className="text3" style={{ fontSize: 11 }}>
+            Page {search.page} of {totalPages}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => goToPage(search.page + 1)}
+            disabled={search.page >= totalPages}
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }

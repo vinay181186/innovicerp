@@ -94,8 +94,12 @@ function SoOverviewPage(): React.JSX.Element {
         <div className="flex items-center gap-2">
           <input
             className="innovic-input"
-            style={{ width: 220 }}
-            placeholder="Search SO# / customer / PO…"
+            style={{ width: 280 }}
+            // Legacy placeholder promises "SO, client, equipment, item" search,
+            // but our server (so-overview/service.ts L100-104) only ILIKEs
+            // code / customerName / clientPoNo. Placeholder states what actually
+            // works rather than repeating legacy's wider claim.
+            placeholder="🔍 Search SO# / customer / PO…"
             value={search ?? ''}
             onChange={(e) =>
               void navigate({
@@ -232,62 +236,31 @@ function OverallStatusPills({
 }
 
 function SummaryStrip({ summary }: { summary: SoOverviewResponse['summary'] }): React.JSX.Element {
-  const tiles: Array<{ label: string; val: number; color?: string }> = [
-    { label: 'Total', val: summary.soCount, color: 'var(--text)' },
-    { label: 'Not Started', val: summary.notStartedCount, color: 'var(--text3)' },
-    { label: 'In Progress', val: summary.inProgressCount, color: 'var(--cyan)' },
-    { label: 'On Track', val: summary.onTrackCount, color: 'var(--green2)' },
-    { label: 'Delayed', val: summary.delayedCount, color: 'var(--red2)' },
-    { label: 'Completed', val: summary.completedCount, color: 'var(--green2)' },
-    { label: 'Blocked', val: summary.blockedCount, color: 'var(--red2)' },
+  // Legacy stat strip (L9139) uses .stat-grid / .stat-card <variant> /
+  // .stat-label / .stat-val. Legacy shows 4 tiles (TOTAL SOs, COMPLETED,
+  // DELAYED, IN PROGRESS); we keep all 7 server-provided counts — every one is
+  // a real field on summary, so none is browser-derived. Tile order follows
+  // legacy's own canonical status order (L9118) so it lines up with the filter
+  // pills below. Only the four real variants (cyan/amber/green/red) are used.
+  const tiles: Array<{ label: string; val: number; variant?: string; color?: string }> = [
+    { label: 'TOTAL SOs', val: summary.soCount, variant: 'cyan' },
+    { label: 'NOT STARTED', val: summary.notStartedCount, color: 'var(--text3)' },
+    { label: 'IN PROGRESS', val: summary.inProgressCount, variant: 'amber', color: 'var(--amber)' },
+    { label: 'ON TRACK', val: summary.onTrackCount, variant: 'green', color: 'var(--green)' },
+    { label: 'DELAYED', val: summary.delayedCount, variant: 'red', color: 'var(--red)' },
+    { label: 'COMPLETED', val: summary.completedCount, variant: 'green', color: 'var(--green)' },
+    { label: 'BLOCKED', val: summary.blockedCount, variant: 'red', color: 'var(--red)' },
   ];
   return (
-    <div
-      className="panel"
-      style={{ marginBottom: 12 }}
-    >
-      <div
-        className="panel-body"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: 10,
-        }}
-      >
-        {tiles.map((t) => (
-          <div
-            key={t.label}
-            style={{
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: '8px 10px',
-              background: 'var(--bg2)',
-            }}
-          >
-            <div
-              className="text3"
-              style={{
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              {t.label}
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 18,
-                fontWeight: 700,
-                color: t.color,
-                marginTop: 2,
-              }}
-            >
-              {t.val}
-            </div>
+    <div className="stat-grid">
+      {tiles.map((t) => (
+        <div key={t.label} className={t.variant ? `stat-card ${t.variant}` : 'stat-card'}>
+          <div className="stat-label">{t.label}</div>
+          <div className="stat-val" style={t.color ? { color: t.color } : undefined}>
+            {t.val}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -299,54 +272,48 @@ function OverviewTable({
   rows: SoOverviewRow[];
   onRowClick: (soId: string) => void;
 }): React.JSX.Element {
-  if (rows.length === 0) {
-    return (
+  return (
+    <>
       <div className="panel">
-        <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
-            No sales orders match the filter.
-          </div>
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>SO No.</th>
+                <th>Customer</th>
+                <th>Type</th>
+                <th>Equipment</th>
+                <th>Lines</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Required</th>
+                <th style={{ color: 'var(--green)' }}>Done</th>
+                <th style={{ color: 'var(--red)' }}>Balance</th>
+                <th>Due Date</th>
+                <th>Alerts</th>
+                <th>SO Date</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="empty-state">
+                    No open SOs found
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => <Row key={row.id} row={row} onRowClick={onRowClick} />)
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
-    );
-  }
-  return (
-    <div className="panel">
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>SO #</th>
-              <th>Customer</th>
-              <th>Type</th>
-              <th>Equipment</th>
-              <th className="td-ctr">Lines</th>
-              <th>Status</th>
-              <th style={{ minWidth: 140 }}>Progress</th>
-              <th className="td-right">Required</th>
-              <th className="td-right">Done</th>
-              <th className="td-right">Balance</th>
-              <th>Due</th>
-              <th>Alerts</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <Row key={row.id} row={row} onRowClick={onRowClick} />
-            ))}
-          </tbody>
-        </table>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
+        💡 Click any SO row to see BOM item breakdown / SO line detail with Stage &amp; Status
+        per item.
       </div>
-      <div
-        className="text3"
-        style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}
-      >
-        💡 Click any SO row to see BOM item breakdown / SO line detail with
-        Stage &amp; Status per item.
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -370,7 +337,7 @@ function Row({
           to="/sales-orders/$id"
           params={{ id: row.id }}
           className="td-code"
-          style={{ color: 'var(--cyan)', fontWeight: 600 }}
+          style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
         >
           {row.code}
         </Link>
@@ -380,54 +347,49 @@ function Row({
           </div>
         ) : null}
       </td>
-      <td>{row.customerName ?? '—'}</td>
-      <td>
-        <span className="text3" style={{ fontSize: 12 }}>
-          {row.type === 'equipment'
-            ? '⚙ Equipment'
-            : row.type === 'with_material'
-              ? '📦 With Material'
-              : '📋 Component'}
-        </span>
+      <td className="fw-700">{row.customerName ?? '—'}</td>
+      <td style={{ fontSize: 11 }}>
+        {row.type === 'equipment'
+          ? '⚙ Equipment'
+          : row.type === 'with_material'
+            ? '📦 With Material'
+            : '📋 Component'}
       </td>
       <td style={{ color: 'var(--purple)', fontSize: 12 }}>
-        {row.equipmentItemName ?? <span className="text3">—</span>}
+        {row.equipmentItemName ?? '—'}
       </td>
-      <td className="td-ctr">{row.lineCount}</td>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+        {row.lineCount}
+      </td>
       <td>
         <span className={`badge ${badge.cls}`}>{badge.label}</span>
       </td>
-      <td style={{ minWidth: 140 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontFamily: 'var(--mono)',
-            fontSize: 11,
-          }}
-        >
-          <ProgBar pct={row.overallPct} />
-          <span style={{ color: 'var(--text3)' }}>{row.overallPct}%</span>
+      <td style={{ width: 130 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ProgBar pct={row.overallPct} status={row.overallStatus} />
+          <span className="mono fw-700" style={{ fontSize: 11, color: barColor(row.overallStatus) }}>
+            {row.overallPct}%
+          </span>
         </div>
       </td>
-      <td className="td-right">{row.totalRequiredQty}</td>
-      <td className="td-right" style={{ color: 'var(--green2)' }}>
+      <td className="td-ctr mono fw-700">{row.totalRequiredQty}</td>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
         {row.totalDoneQty}
       </td>
       <td
-        className="td-right"
-        style={{ color: row.totalBalanceQty > 0 ? 'var(--red2)' : 'var(--text3)' }}
+        className="td-ctr mono fw-700"
+        style={{ color: row.totalBalanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
       >
         {row.totalBalanceQty}
       </td>
-      <td>
-        <span style={{ color: overdue ? 'var(--red2)' : 'var(--text3)', fontSize: 12 }}>
-          {row.earliestDueDate ?? '—'}
-        </span>
+      <td style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text)' }}>
+        {row.earliestDueDate ?? '—'}
       </td>
-      <td>
+      <td className="td-ctr">
         <AlertFlags row={row} />
+      </td>
+      <td className="text2" style={{ fontSize: 11 }}>
+        {row.soDate}
       </td>
       <td onClick={(e) => e.stopPropagation()}>
         <Link
@@ -443,39 +405,51 @@ function Row({
   );
 }
 
+/** Legacy L9135 renders alerts as plain coloured spans (not badges), in the
+ *  order ⚠ delayed → 🏭 at-vendor → 🔬 QC → 🚫 blocked, falling back to an
+ *  em-dash. Titles describe what OUR server actually returns (a qty for
+ *  at-vendor, an op count for QC) rather than legacy's per-line counts. */
 function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   const flags: React.ReactNode[] = [];
   if (row.alerts.delayedLines > 0) {
     flags.push(
-      <span key="delayed" className="badge b-red" title="Lines past due">
-        ⚠️ {row.alerts.delayedLines}
+      <span
+        key="delayed"
+        style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11 }}
+        title="Lines past due"
+      >
+        ⚠{row.alerts.delayedLines}
       </span>,
     );
   }
   if (row.alerts.atVendorQty > 0) {
     flags.push(
-      <span key="atvendor" className="badge b-blue" title="Qty at outsource vendor">
-        🏭 {row.alerts.atVendorQty}
+      <span
+        key="atvendor"
+        style={{ color: 'var(--purple)', fontSize: 11 }}
+        title="Qty at outsource vendor"
+      >
+        🏭{row.alerts.atVendorQty}
       </span>,
     );
   }
   if (row.alerts.qcPendingOps > 0) {
     flags.push(
-      <span key="qcpend" className="badge b-amber" title="Ops awaiting QC">
-        🔍 {row.alerts.qcPendingOps}
+      <span key="qcpend" style={{ color: 'var(--amber)', fontSize: 11 }} title="Ops awaiting QC">
+        🔬{row.alerts.qcPendingOps}
       </span>,
     );
   }
   if (row.stageCounts.hold > 0) {
     flags.push(
-      <span key="hold" className="badge b-red" title="Lines on hold">
-        🚫 {row.stageCounts.hold}
+      <span key="hold" style={{ color: 'var(--red)', fontSize: 11 }} title="Lines on hold">
+        🚫{row.stageCounts.hold}
       </span>,
     );
   }
   if (flags.length === 0) {
     return (
-      <span className="text3" style={{ fontSize: 12 }}>
+      <span className="text3" style={{ fontSize: 10 }}>
         —
       </span>
     );
@@ -483,12 +457,20 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   return <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{flags}</div>;
 }
 
-function ProgBar({ pct }: { pct: number }): React.JSX.Element {
-  const color =
-    pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--blue)' : pct > 0 ? 'var(--amber)' : 'var(--bg4)';
+/** Legacy colours the progress bar by overall STATUS, not by percentage
+ *  (L9122 / L9148): Delayed → red, Completed → green, everything else cyan. */
+function barColor(status: SoOverallStatus): string {
+  return status === 'delayed'
+    ? 'var(--red)'
+    : status === 'completed'
+      ? 'var(--green)'
+      : 'var(--cyan)';
+}
+
+function ProgBar({ pct, status }: { pct: number; status: SoOverallStatus }): React.JSX.Element {
   return (
-    <div className="prog-wrap" style={{ width: 70, height: 5 }}>
-      <div className="prog-bar" style={{ width: `${Math.max(2, pct)}%`, background: color }} />
+    <div className="prog-wrap" style={{ flex: 1 }}>
+      <div className="prog-bar" style={{ width: `${pct}%`, background: barColor(status) }} />
     </div>
   );
 }
@@ -665,7 +647,9 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
           <span className="text3" style={{ fontSize: 11 }}>
             Overall Progress
           </span>
-          <span className="mono fw-700">{so.overallPct}%</span>
+          <span className="mono fw-700" style={{ color: barColor(so.overallStatus) }}>
+            {so.overallPct}%
+          </span>
         </div>
         <div
           style={{
@@ -679,12 +663,7 @@ function DrillBody({ data }: { data: SoOverviewDetailResponse }): React.JSX.Elem
             style={{
               width: `${so.overallPct}%`,
               height: '100%',
-              background:
-                so.overallStatus === 'completed'
-                  ? 'var(--green)'
-                  : so.overallStatus === 'delayed'
-                    ? 'var(--red)'
-                    : 'var(--cyan)',
+              background: barColor(so.overallStatus),
               borderRadius: 5,
             }}
           />
@@ -821,25 +800,13 @@ function DrillItemsTable({
             <th>Item Name</th>
             <th>Stage</th>
             <th>Status</th>
-            <th className="td-right">Required</th>
-            <th className="td-right" style={{ color: 'var(--amber)' }}>
-              Issued
-            </th>
-            <th className="td-right" style={{ color: 'var(--cyan)' }}>
-              In Prod
-            </th>
-            <th className="td-right" style={{ color: 'var(--amber)' }}>
-              QC Pend
-            </th>
-            <th className="td-right" style={{ color: 'var(--purple)' }}>
-              At Vendor
-            </th>
-            <th className="td-right" style={{ color: 'var(--green)' }}>
-              Done
-            </th>
-            <th className="td-right" style={{ color: 'var(--red)' }}>
-              Balance
-            </th>
+            <th>Required</th>
+            <th style={{ color: 'var(--amber)' }}>Issued</th>
+            <th style={{ color: 'var(--cyan)' }}>In Prod</th>
+            <th style={{ color: 'var(--amber)' }}>QC Pend</th>
+            <th style={{ color: 'var(--purple)' }}>At Vendor</th>
+            <th style={{ color: 'var(--green)' }}>Done</th>
+            <th style={{ color: 'var(--red)' }}>Balance</th>
             <th>Current Op</th>
             <th>Machine / Vendor</th>
           </tr>
@@ -881,24 +848,24 @@ function DrillItemsTable({
                 <td>
                   <span className={`badge ${status.cls}`}>{status.label}</span>
                 </td>
-                <td className="td-right mono fw-700">{r.requiredQty}</td>
-                <td className="td-right mono" style={{ color: 'var(--amber)' }}>
+                <td className="td-ctr mono fw-700">{r.requiredQty}</td>
+                <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>
                   {r.issuedQty}
                 </td>
-                <td className="td-right mono" style={{ color: 'var(--cyan)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>
                   {r.inProductionQty}
                 </td>
-                <td className="td-right mono" style={{ color: 'var(--amber)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--amber)' }}>
                   {r.qcPendingQty}
                 </td>
-                <td className="td-right mono" style={{ color: 'var(--purple)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
                   {r.atVendorQty}
                 </td>
-                <td className="td-right mono fw-700" style={{ color: 'var(--green)' }}>
+                <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
                   {r.completedQty}
                 </td>
                 <td
-                  className="td-right mono fw-700"
+                  className="td-ctr mono fw-700"
                   style={{ color: r.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
                 >
                   {r.balanceQty}
@@ -906,7 +873,15 @@ function DrillItemsTable({
                 <td style={{ fontSize: 11, color: 'var(--cyan)' }}>
                   {r.currentOpName ?? '—'}
                 </td>
-                <td style={{ fontSize: 11, maxWidth: 140 }}>
+                <td
+                  style={{
+                    fontSize: 11,
+                    maxWidth: 120,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {r.vendorName && (r.atVendorQty > 0 || r.stage === 'outsourced') ? (
                     <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                       🏭 {r.vendorName}

@@ -1,11 +1,26 @@
-// Tax-invoice document — mirror of legacy _printInvoice (L21314).
+// Tax-invoice document — ports legacy _printInvoice (L21314, line verified).
 // `invoiceDocHtml` builds the full A4-portrait document (inline styles only)
 // so the SAME markup renders as the on-screen preview on the invoice detail
 // page AND in the print window (user direction 2026-06-06: screen = print).
 // GST split: home state (GSTIN prefix 24/Gujarat) → SGST+CGST, else IGST.
+//
+// NOT a verbatim mirror. Verified deltas against L21314-21375:
+//  - Company header/footer come from letterheadHeaderHtml/FooterHtml (the
+//    companies row) instead of legacy's hardcoded "INNOVIC TECHNOLOGY" block
+//    (L21349-21352). Deliberate: user direction 2026-06-06 names Invoice as a
+//    full-letterhead doc (lib/print/letterhead.ts). Legacy has no footer strip.
+//  - @page pins A4 portrait; legacy only set margins (L21338).
+// Known GAPS vs legacy (reported, need a shared/API change — do NOT stub):
+//  - Bill To omits the client's ADDRESS. Legacy prints it (L21355) from the
+//    clients row; InvoiceDetail carries clientCode but no address field.
+//  - The signature block omits legacy's left "PAN: AQKPM4121A / E. & O.E."
+//    (L21371). `companies` has no PAN column, and hardcoding it would fight the
+//    letterhead direction ("text comes from the companies row").
+//  - Dates print as raw ISO; legacy uses fmt() → "15 Jul 26" (L21360/21363).
 
 import type { Company, InvoiceDetail } from '@innovic/shared';
 import { companyAddressLines } from '@/lib/print/company';
+import { inrFormat } from '@/lib/print/doc-print';
 import { letterheadFooterHtml, letterheadHeaderHtml } from '@/lib/print/letterhead';
 
 const STATE_MAP: Record<string, string> = {
@@ -20,10 +35,9 @@ const STATE_MAP: Record<string, string> = {
   '08': 'Rajasthan',
 };
 
-function inr(v: number): string {
-  return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
+// numWords stays local: the shared amountInWords() appends paise ("… and Fifty
+// Paise"), but legacy _printInvoice L21324 words only Math.floor(grandTotal).
+// Reusing the shared one would change what the invoice prints.
 function numWords(num: number): string {
   const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -73,18 +87,18 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .map(
       (l, i) =>
         `<tr><td style="${TD};text-align:center">${i + 1}</td>` +
-        `<td style="${TD}"><b>${esc(l.itemCode ?? l.itemName)}</b><br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
-        `<td style="${TD};text-align:right">${l.qty}</td>` +
+        `<td style="${TD}">${esc(l.itemCode ?? l.itemName)}<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
+        `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
         `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +
-        `<td style="${TD};text-align:right">${inr(l.rate)}</td>` +
-        `<td style="${TD};text-align:right;font-weight:700">${inr(l.lineAmount)}</td></tr>`,
+        `<td style="${TD};text-align:right">${inrFormat(l.rate)}</td>` +
+        `<td style="${TD};text-align:right;font-weight:700">${inrFormat(l.lineAmount)}</td></tr>`,
     )
     .join('');
 
   const taxRows = isIGST
-    ? `<tr><td colspan="5" style="${TD};text-align:right">IGST @ ${inv.gstPercent}%</td><td style="${TD};text-align:right">${inr(inv.gstAmount)}</td></tr>`
-    : `<tr><td colspan="5" style="${TD};text-align:right">SGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inr(inv.gstAmount / 2)}</td></tr>` +
-      `<tr><td colspan="5" style="${TD};text-align:right">CGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inr(inv.gstAmount / 2)}</td></tr>`;
+    ? `<tr><td colspan="5" style="${TD};text-align:right">IGST @ ${inv.gstPercent}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount)}</td></tr>`
+    : `<tr><td colspan="5" style="${TD};text-align:right">SGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount / 2)}</td></tr>` +
+      `<tr><td colspan="5" style="${TD};text-align:right">CGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount / 2)}</td></tr>`;
 
   return `<div style="background:#fff;color:#1e293b;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;padding:18px">
     <div style="border:2px solid #333">
@@ -109,9 +123,9 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
       <table style="width:100%;border-collapse:collapse">
         <thead><tr><th style="${TH}">Sl</th><th style="${TH};text-align:left">Description</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th><th style="${TH}">Rate</th><th style="${TH}">Amount</th></tr></thead>
         <tbody>${lineRows}
-          <tr style="font-weight:700;background:#f5f5f5"><td colspan="5" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inr(inv.subtotal)}</td></tr>
+          <tr style="font-weight:700;background:#f5f5f5"><td colspan="5" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal)}</td></tr>
           ${taxRows}
-          <tr><td colspan="5" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inr(inv.grandTotal)}</td></tr>
+          <tr><td colspan="5" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal)}</td></tr>
         </tbody>
       </table>
       <div style="padding:8px 10px;border-top:1px solid #999;font-size:10px"><b>Amount in Words:</b> <i>${esc(amtWords)}</i></div>

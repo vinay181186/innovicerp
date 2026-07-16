@@ -382,9 +382,15 @@ function MatrixView(): React.JSX.Element {
                     </td>
                     <td style={{ fontSize: 11 }}>{r.itemName ?? ''}</td>
                     <td className="td-ctr mono fw-700">{r.orderQty}</td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                      {r.jcCode ?? '—'}
-                    </td>
+                    {r.jcCode ? (
+                      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                        {r.jcCode}
+                      </td>
+                    ) : (
+                      // Legacy's no-JC row shows a plain grey dash, not a cyan
+                      // mono code (L23072).
+                      <td style={{ color: 'var(--text3)', fontSize: 11 }}>—</td>
+                    )}
                     {r.cells.map((cell, ci) => (
                       <MatrixCellTd key={cols[ci] ?? ci} cell={cell} />
                     ))}
@@ -398,8 +404,8 @@ function MatrixView(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | — not applicable | Not uploaded = QC done
-        but no report attached
+        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Not uploaded =
+        QC done but no report attached
       </div>
 
       {detailJcId ? (
@@ -423,8 +429,18 @@ function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
           <div style={{ fontSize: 9, color: 'var(--text3)' }}>{fmtDate(cell.docDate)}</div>
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 9, color: 'var(--green)', padding: '1px 6px' }}
+            className="btn"
+            style={{
+              display: 'inline-block',
+              marginTop: 2,
+              padding: '2px 8px',
+              background: 'rgba(34,197,94,0.1)',
+              border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 700,
+              color: 'var(--green)',
+            }}
             onClick={(e) => {
               e.stopPropagation();
               if (cell.storagePath) void openStoragePath(cell.storagePath);
@@ -470,7 +486,13 @@ function OverallTd({
   done: number;
   total: number;
 }): React.JSX.Element {
-  if (overall === 'no_qc' || overall === 'no_jc') {
+  // Legacy renders the two "nothing to show" cases differently: a line with no
+  // linked JC gets a bare, left-aligned "No JC" td (L23072); a JC that simply
+  // has no QC ops gets a centred "No QC" span (L23096).
+  if (overall === 'no_jc') {
+    return <td style={{ color: 'var(--text3)', fontSize: 10 }}>No JC</td>;
+  }
+  if (overall === 'no_qc') {
     return (
       <td className="td-ctr">
         <span style={{ color: 'var(--text3)', fontSize: 10 }}>No QC</span>
@@ -645,7 +667,6 @@ function LineDetailBody({
           display: 'flex',
           gap: 16,
           flexWrap: 'wrap',
-          alignItems: 'center',
         }}
       >
         <div>
@@ -854,6 +875,16 @@ function DocSection({
           </span>
         </div>
         <span style={{ fontWeight: 700, fontSize: 11, color: statusColor }}>{statusLabel}</span>
+        {uploads.length > 0 ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 10, marginLeft: 6, color: 'var(--green)' }}
+            onClick={() => void downloadDocs(uploads)}
+          >
+            ⬇
+          </button>
+        ) : null}
       </div>
 
       {uploads.map((up, ui) => (
@@ -882,8 +913,16 @@ function DocSection({
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 10, color: 'var(--green)' }}
+              className="btn"
+              style={{
+                padding: '3px 8px',
+                background: 'rgba(34,197,94,0.1)',
+                border: '1px solid rgba(34,197,94,0.3)',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                color: 'var(--green)',
+              }}
               onClick={() => void openStoragePath(up.storagePath)}
             >
               👁 View
@@ -978,6 +1017,21 @@ async function downloadAllLine(data: QcLineDetailResponse): Promise<void> {
       window.open(url, '_blank', 'noopener');
     } catch {
       // skip
+    }
+  }
+}
+
+// Download every upload in one doc-type section (legacy _qcDocDownloadType
+// L23430, reached from the section header's ⬇ at L23320). Same fidelity as this
+// page's other download actions: opens each signed URL rather than forcing a
+// save, because signedUrlFor() issues no download disposition (see ISSUE-037).
+async function downloadDocs(docs: QcLineDetailResponse['sections'][number]['docs']): Promise<void> {
+  for (const d of docs) {
+    try {
+      const url = await signedUrlFor(d.storagePath);
+      window.open(url, '_blank', 'noopener');
+    } catch {
+      // skip files that fail to sign
     }
   }
 }
@@ -1230,7 +1284,7 @@ function UploadModal({
           <div className="form-grid">
             <div className="form-grp form-full">
               <label className="form-label">
-                File <span className="form-label-required">★</span>
+                File<span className="req">★</span>
               </label>
               <input
                 type="file"

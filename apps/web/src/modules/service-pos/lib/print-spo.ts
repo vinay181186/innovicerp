@@ -16,6 +16,16 @@ import {
   templatesToBlocks,
 } from '@/lib/print/doc-print';
 
+// Legacy stores the status title-cased and prints it verbatim (_spoPrint
+// L27712). Our enum is lower-case, so map back to legacy's own strings.
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  pending: 'Pending',
+  approved: 'Approved',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
 export function printServicePo(args: {
   spo: ServicePoDetail;
   vendor: Vendor | null | undefined;
@@ -65,12 +75,18 @@ export function printServicePo(args: {
     totalQty: String(totalQty),
   };
 
+  // Legacy _spoPrint L27713-19 emits, in its header grid: Vendor, Cost Center,
+  // Expense Head, Payment Terms, vendor Address + GST, plus a Status badge next
+  // to the SPO No. The address/GST/vendor go in `recipient`; the rest are
+  // meta cells — Payment Terms and Status were previously dropped.
   const meta: DocMetaCell[] = [
     { label: 'SPO No.', value: spo.spoNo },
     { label: 'Date', value: fmtDate(spo.spoDate) },
     { label: 'Expense Head', value: spo.expenseHead },
   ];
   if (data.costCenter) meta.push({ label: 'Cost Center', value: data.costCenter });
+  meta.push({ label: 'Payment Terms', value: spo.paymentTerms });
+  meta.push({ label: 'Status', value: STATUS_LABEL[spo.status] ?? spo.status });
 
   const model: DocPrintModel = {
     doc: 'SERVICE PO',

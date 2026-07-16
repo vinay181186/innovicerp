@@ -30,7 +30,9 @@ function RouteCardEditPage(): React.JSX.Element {
         machineCodeText: op.machineCode ?? op.machineCodeText ?? '',
         operation: op.operation,
         opType: op.opType,
-        cycleTimeMin: String(Number(op.cycleTimeMin)),
+        // Legacy: `${op.cycleTime||''}` — a stored 0 renders blank, same as a
+        // freshly added row. Keeps create/edit identical (ISSUE-099).
+        cycleTimeMin: Number(op.cycleTimeMin) ? String(Number(op.cycleTimeMin)) : '',
         program: op.program ?? '',
         toolNo: op.toolNo ?? '',
         toolDetails: op.toolDetails ?? '',

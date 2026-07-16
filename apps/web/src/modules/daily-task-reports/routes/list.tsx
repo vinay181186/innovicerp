@@ -71,8 +71,8 @@ function DailyTaskReportsPage(): React.JSX.Element {
             ))}
           </select>
         ) : null}
-        <input type="date" className="innovic-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ fontSize: 12 }} title="From" />
-        <input type="date" className="innovic-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ fontSize: 12 }} title="To" />
+        <input type="date" className="innovic-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ fontSize: 12 }} title="From" placeholder="From" />
+        <input type="date" className="innovic-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ fontSize: 12 }} title="To" placeholder="To" />
       </div>
 
       <div className="panel">

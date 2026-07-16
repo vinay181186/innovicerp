@@ -82,24 +82,22 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid form-grid-3">
+      <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            Code<span className="req">★</span>
+            Code{!isEdit ? <span className="req">★</span> : null}
           </label>
           <input
             id="code"
-            className="innovic-input fw-700"
+            className={isEdit ? 'innovic-input' : 'innovic-input fw-700'}
             autoFocus={!isEdit}
             autoComplete="off"
             readOnly={isEdit}
-            placeholder="CC-001"
             {...register('code', {
               required: !isEdit ? 'Code is required' : false,
               maxLength: { value: 64, message: 'Max 64 chars' },
             })}
           />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
 
@@ -111,27 +109,13 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             id="name"
             className="innovic-input"
             autoComplete="off"
-            placeholder="e.g. Machine Shop Floor"
+            {...(isEdit ? {} : { placeholder: 'e.g. Machine Shop Floor' })}
             {...register('name', {
               required: 'Name is required',
               maxLength: { value: 255, message: 'Max 255 chars' },
             })}
           />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Status
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', { setValueAs: (v) => v === 'true' || v === true })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
         </div>
 
         <div className="form-grp">
@@ -168,7 +152,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
             id="description"
             className="innovic-input"
             autoComplete="off"
-            placeholder="Brief description of this cost center"
+            {...(isEdit ? {} : { placeholder: 'Brief description of this cost center' })}
             {...register('description', {
               maxLength: { value: 1000, message: 'Max 1000 chars' },
             })}
@@ -176,6 +160,20 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
           {errors.description?.message ? (
             <div className="form-error">{errors.description.message}</div>
           ) : null}
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="isActive">
+            Status
+          </label>
+          <select
+            id="isActive"
+            className="innovic-select"
+            {...register('isActive', { setValueAs: (v) => v === 'true' || v === true })}
+          >
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
         </div>
       </div>
 
@@ -203,7 +201,7 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
           ) : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Add Cost Center')}
+            {props.submitLabel ?? 'Save'}
           </button>
         </div>
       </div>

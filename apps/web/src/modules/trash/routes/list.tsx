@@ -98,6 +98,11 @@ function TrashListPage(): React.JSX.Element {
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // `total` is scoped to the active type filter; `byType` is always computed
+  // server-side over every type, so its sum is the true trash-wide count.
+  // Legacy gates Empty All on the UNFILTERED count (db.trash.length, L11335)
+  // and states that same unfiltered count in its confirm (L2191).
+  const grandTotal = Object.values(data?.byType ?? {}).reduce((a, b) => a + b, 0);
 
   async function onRestore(it: { type: TrashEntityType; id: string; label: string }): Promise<void> {
     setActionError(null);
@@ -126,8 +131,16 @@ function TrashListPage(): React.JSX.Element {
 
   async function onEmptyAll(): Promise<void> {
     setActionError(null);
+    // Count is grandTotal, not `total`: Empty All deletes every soft-deleted
+    // row of every type, ignoring the active type filter. Warnings mirror
+    // legacy _confirmDestructive's warningList (L2192-2197).
     const confirmText = window.prompt(
-      `You are about to PERMANENTLY DELETE ${total} items.\n\nThis CANNOT be undone. Type DELETE to confirm:`,
+      `You are about to permanently delete ${grandTotal} items from trash.\n\n` +
+        '• This action CANNOT be undone\n' +
+        '• Items will be lost forever — not recoverable from trash\n' +
+        '• If you need any of these items, click Cancel and recover them first\n' +
+        '• A backup before this operation is strongly recommended\n\n' +
+        'Type DELETE to confirm:',
     );
     if (confirmText !== 'DELETE') return;
     try {
@@ -151,7 +164,7 @@ function TrashListPage(): React.JSX.Element {
       >
         <div>
           <div className="section-hdr" style={{ marginBottom: 0 }}>
-            🗑 Trash
+            Trash
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
             Soft-deleted records across every module. Restore to bring back, or permanently delete (cannot be undone).
@@ -167,9 +180,9 @@ function TrashListPage(): React.JSX.Element {
                 replace: true,
               })
             }
-            style={{ width: 180, fontSize: 12 }}
+            style={{ width: 160 }}
           >
-            <option value="">All types ({total})</option>
+            <option value="">All Types ({grandTotal})</option>
             {TYPE_OPTIONS.map((t) => {
               const n = data?.byType[t] ?? 0;
               return (
@@ -182,7 +195,7 @@ function TrashListPage(): React.JSX.Element {
           <span className="text3" style={{ fontSize: 11 }}>
             {total} item{total !== 1 ? 's' : ''} in trash
           </span>
-          {total > 0 ? (
+          {grandTotal > 0 ? (
             <button
               type="button"
               className="btn btn-danger btn-sm"
@@ -217,78 +230,80 @@ function TrashListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Deleted At</th>
-                <th>Type</th>
-                <th>Item</th>
-                <th>Deleted By</th>
-                <th style={{ width: 180 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
+      {!isLoading && !isError && items.length === 0 ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 32 }}>
+            Trash is empty
+          </div>
+        </div>
+      ) : (
+        <div className="panel">
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
+                  <th>Deleted At</th>
+                  <th>Type</th>
+                  <th>Item</th>
+                  <th>Deleted By</th>
+                  <th>Actions</th>
                 </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load trash'}
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="empty-state">
-                    Trash is empty.
-                  </td>
-                </tr>
-              ) : (
-                items.map((it) => (
-                  <tr key={`${it.type}:${it.id}`}>
-                    <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                      {fmtTs(it.deletedAt)}
-                    </td>
-                    <td>
-                      <span className="badge b-grey">{it.type}</span>
-                    </td>
-                    <td className="fw-700">{it.label}</td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {it.deletedByName ?? '—'}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={restore.isPending}
-                          onClick={() => void onRestore(it)}
-                        >
-                          <RotateCcw size={12} /> Restore
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm"
-                          disabled={permDel.isPending}
-                          onClick={() => void onPermDelete(it)}
-                        >
-                          <Trash2 size={12} /> Delete
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={5} className="empty-state">
+                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                      Loading…
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : isError ? (
+                  <tr>
+                    <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
+                      {error instanceof Error ? error.message : 'Failed to load trash'}
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((it) => (
+                    <tr key={`${it.type}:${it.id}`}>
+                      <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        {fmtTs(it.deletedAt)}
+                      </td>
+                      <td>
+                        <span className="badge b-grey">{it.type}</span>
+                      </td>
+                      <td className="fw-700">{it.label}</td>
+                      <td className="text3" style={{ fontSize: 11 }}>
+                        {it.deletedByName ?? '—'}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={restore.isPending}
+                            onClick={() => void onRestore(it)}
+                          >
+                            <RotateCcw size={12} /> Restore
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            disabled={permDel.isPending}
+                            onClick={() => void onPermDelete(it)}
+                          >
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       <div
         style={{
@@ -339,7 +354,8 @@ function TrashListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-        💡 Items can be restored to their original list. Only Admins can permanently delete or empty trash.
+        Items can be restored to their original list. Only Admins can permanently delete or empty
+        trash.
       </div>
     </div>
   );

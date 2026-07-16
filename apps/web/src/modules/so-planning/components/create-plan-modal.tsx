@@ -77,7 +77,10 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             <Loader2 className="inline-block animate-spin" style={{ width: 14, height: 14 }} /> …
           </>
         ) : (
-          'Create Plan'
+          // Legacy createPlan calls showModal(title, body, onSave, 'Create Plan'),
+          // but showModal (L28014) takes only 3 params — the 4th arg is dead code
+          // and the footer is the hard-coded Cancel / Save pair (L28026-27).
+          'Save'
         )}
       </button>
     </>

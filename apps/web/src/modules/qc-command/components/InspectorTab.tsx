@@ -15,35 +15,38 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
   return (
     <div>
       <div className="panel">
-        <div className="panel-hdr">
-          <span className="panel-title">Inspector Performance</span>
+        {/* Legacy L18895 hand-rolls this sub-header instead of .panel-hdr. */}
+        <div
+          style={{
+            padding: '10px 14px',
+            fontSize: 12,
+            fontWeight: 700,
+            borderBottom: '1px solid var(--border)',
+            color: 'var(--text2)',
+          }}
+        >
+          Inspector Performance
         </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Inspector</th>
-                <th className="td-ctr">Inspections</th>
-                <th className="td-ctr">JCs</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                  Accepted
-                </th>
-                <th className="td-ctr" style={{ color: 'var(--red)' }}>
-                  Rejected
-                </th>
-                <th className="td-ctr">Rej. Rate</th>
-                <th className="td-ctr">Current Load</th>
-              </tr>
-            </thead>
-            <tbody>
-              {perf.length === 0 ? (
+        {/* Legacy L18896 returns early with a bare line — no table — when empty. */}
+        {perf.length === 0 ? (
+          <div className="empty-state">No inspections recorded yet</div>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                {/* Legacy L18897 colours none of these headers. */}
                 <tr>
-                  <td colSpan={7} className="empty-state">
-                    No inspections recorded yet
-                  </td>
+                  <th>Inspector</th>
+                  <th className="td-ctr">Inspections</th>
+                  <th className="td-ctr">JCs</th>
+                  <th className="td-ctr">Accepted</th>
+                  <th className="td-ctr">Rejected</th>
+                  <th className="td-ctr">Rej. Rate</th>
+                  <th className="td-ctr">Current Load</th>
                 </tr>
-              ) : (
-                perf.map((p) => (
+              </thead>
+              <tbody>
+                {perf.map((p) => (
                   <tr key={p.name}>
                     <td className="fw-700" style={{ fontSize: 12 }}>
                       {p.name}
@@ -65,16 +68,19 @@ export function InspectorTab({ perf }: { perf: QcInspectorPerfRow[] }): React.JS
                       {p.currentLoad}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {/* Legacy L18896 returns before emitting the tip when there are no rows. */}
+      {perf.length > 0 ? (
+        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+          💡 Rejection Rate: Green ≤ 5%, Amber 6-15%, Red &gt; 15%. Current Load = items currently
+          assigned to the inspector.
         </div>
-      </div>
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Rejection Rate: Green ≤ 5%, Amber 6-15%, Red &gt; 15%. Current Load = items currently
-        assigned to the inspector.
-      </div>
+      ) : null}
     </div>
   );
 }

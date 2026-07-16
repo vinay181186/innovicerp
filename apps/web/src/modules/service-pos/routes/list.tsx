@@ -38,6 +38,16 @@ function statusColor(s: string): string {
   return 'var(--text3)';
 }
 
+// Legacy stores the status title-cased and prints it verbatim (_spoRegister
+// L27651). Our enum is lower-case, so map back to legacy's own strings.
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  pending: 'Pending',
+  approved: 'Approved',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
 function ServicePosListPage(): React.JSX.Element {
   const search = servicePosListRoute.useSearch();
   const navigate = servicePosListRoute.useNavigate();
@@ -158,7 +168,7 @@ function ServicePosListPage(): React.JSX.Element {
                 <th>Vendor</th>
                 <th>SO / Cost Center</th>
                 <th style={{ color: '#7c3aed' }}>Expense</th>
-                <th className="td-ctr">Lines</th>
+                <th>Lines</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>Total</th>
                 <th>Status</th>
                 <th>Terms</th>
@@ -242,6 +252,32 @@ function ServicePosListPage(): React.JSX.Element {
   );
 }
 
+// Mirror of legacy vndLabel L1492: "Name [CODE]" with the code muted, falling
+// back to whichever of the two is present. Legacy re-looks-up the vendor in
+// db.vendors; the list row already carries both fields, so no lookup is needed.
+function VendorLabel({
+  code,
+  name,
+}: {
+  code: string | null;
+  name: string | null;
+}): React.JSX.Element {
+  if (!code && !name) return <>—</>;
+  const shownName = name ?? code ?? '';
+  const shownCode = code ?? '';
+  if (shownName && shownCode && shownName !== shownCode) {
+    return (
+      <>
+        {shownName}{' '}
+        <span className="text3" style={{ fontSize: 10 }}>
+          [{shownCode}]
+        </span>
+      </>
+    );
+  }
+  return <>{shownName || shownCode}</>;
+}
+
 function Row({ po }: { po: ServicePoListItem }): React.JSX.Element {
   return (
     <tr>
@@ -256,17 +292,21 @@ function Row({ po }: { po: ServicePoListItem }): React.JSX.Element {
         </Link>
       </td>
       <td className="text2" style={{ fontSize: 11 }}>{po.spoDate}</td>
-      <td>{po.vendorName ?? po.vendorCodeText ?? '—'}</td>
+      <td>
+        <VendorLabel code={po.vendorCodeText} name={po.vendorName} />
+      </td>
       <td className="text2" style={{ fontSize: 11 }}>
         {po.costCenter === 'general' ? 'General' : (po.soNoText ?? '—')}
       </td>
       <td style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>{po.expenseHead}</td>
-      <td className="td-ctr">{po.lineCount}</td>
+      <td style={{ fontSize: 11 }}>{po.lineCount}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
         ₹{Math.round(po.total).toLocaleString('en-IN')}
       </td>
       <td>
-        <span style={{ fontWeight: 700, color: statusColor(po.status) }}>{po.status}</span>
+        <span style={{ fontWeight: 700, color: statusColor(po.status) }}>
+          {STATUS_LABEL[po.status] ?? po.status}
+        </span>
       </td>
       <td className="text3" style={{ fontSize: 11 }}>{po.paymentTerms}</td>
     </tr>

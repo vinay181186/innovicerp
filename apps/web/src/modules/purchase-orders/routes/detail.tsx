@@ -1,6 +1,39 @@
-// PO detail page (UI-003-04).
+// PO detail page (UI-003-04). Ports legacy `viewPO(id)` L26299-26438 — the real
+// PO detail renderer. NOT `renderPurchaseOrders()` L25209, which is the LIST
+// (router key `purchaseorders`, already ported in routes/list.tsx). Legacy
+// packages the detail as a `showModalLg` off the list's View action (L25259);
+// our shell is a route + panels, so the panel/back-link chrome is ours and the
+// CONTENT below mirrors legacy section-for-section:
+//   L26364-26376  Vendor box | PO Details box (2-col)
+//   L26377-26399  summary tiles
+//   L26400-26404  ▸ PO LINE ITEMS (n) + table
+//
+// Legacy deltas kept deliberately (see report / ISSUE-153..156):
+//  - No Grand Total tile (L26394-26398) and no Subtotal/SGST/CGST/Grand totals
+//    box (L26405-26429): the API returns no totals, and legacy derives them in
+//    the browser (`totalVal*sgstPct/100`). Computing tax on a legal document in
+//    React is frontend business logic (CLAUDE.md rule 1) — not faked here.
+//    Subtotal/Total Qty/Received tiles reuse the reduces this page already had.
+//  - No GRN RECEIPTS table + Print QC Report (L26430-26437): the PO detail
+//    payload carries no GRNs, and fetching them is a new API call.
+//  - No per-line Status column (L26347 `badge(p.status)`):
+//    `purchaseOrderLineSchema` has no status field — lines carry no status.
+//  - "Source" occupies legacy's SO Line slot (L26340): the payload has
+//    `sourceSoLineId`/`sourceJcOpId` (uuids) but no SO line NUMBER, so legacy's
+//    `L1 [CPO:2]` cannot be reproduced. Same precedent as list.tsx's PR ref.
+//  - No two-value type badge (L26306-26307 `Job Work PO`/`With Material PO`):
+//    `PO_TYPES` has FOUR values and legacy's vocabulary has two — labelling an
+//    `outsource`/`service` PO "With Material PO" is exactly the ISSUE-124 error
+//    in markup. The Type field renders the real enum value instead.
+//  - Dates render as stored (`YYYY-MM-DD`), not legacy `fmt()`'s `15-Jul-26`:
+//    list.tsx renders them the same way, so formatting only here would open an
+//    ISSUE-098-shaped seam inside one module. Closes module-wide with ISSUE-040.
+//
+// Kept over legacy (never delete a working feature): Back link, Approve/Reject,
+// Delete, Assign task, Issue DC / Receive (new GRN), Due date, Tax type, GST
+// split, PR ref, Approved at.
 
-import type { PurchaseOrderDetail, PurchaseOrderLine } from '@innovic/shared';
+import type { PurchaseOrderDetail, PurchaseOrderLine, Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
@@ -270,41 +303,42 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 : 'Failed to delete purchase order.'}
             </div>
           ) : null}
+          <VendorAndPoDetails detail={detail} vendor={vendor} />
+          <SummaryTiles
+            lineCount={detail.lines.length}
+            totalQty={totalQty}
+            receivedQty={receivedQty}
+            totalValue={totalValue}
+          />
           <DetailGrid detail={detail} />
         </div>
       </div>
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({detail.lines.length})</div>
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            qty <b style={{ color: 'var(--text)' }}>{receivedQty}</b>/{totalQty} received
-            {totalValue > 0 ? (
-              <>
-                {' '}
-                · value <b style={{ color: 'var(--text)' }}>₹{totalValue.toFixed(2)}</b>
-              </>
-            ) : null}
-          </span>
+          <div className="panel-title">▸ PO Line Items ({detail.lines.length})</div>
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
               <tr>
                 <th>#</th>
-                <th>Item</th>
+                <th>Item Code</th>
                 <th>Item Name</th>
-                <th className="td-right">Qty</th>
-                <th className="td-right">Rate</th>
-                <th className="td-right">Received</th>
-                <th>Due</th>
                 <th>Source</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th style={{ color: 'var(--green)' }}>Amount</th>
+                <th style={{ color: 'var(--green)' }}>Received</th>
+                <th style={{ color: 'var(--red)' }}>Pending</th>
+                <th>Due</th>
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={11} className="empty-state">
                     No lines on this PO yet.
                   </td>
                 </tr>
@@ -556,56 +590,183 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   );
 }
 
+// Legacy L26336-26348. Cell classes mirror legacy exactly: money/qty are
+// `td-ctr mono` (legacy centres them — right-aligning would be an improvement,
+// not parity), Item Code is `td-code` on the <td> in var(--purple) (a real
+// token with no utility class), Received is always green and Pending flips
+// red/green on >0.
 function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
   const { line: l } = props;
-  const color =
-    l.receivedQty >= l.qty && l.qty > 0
-      ? 'var(--green)'
-      : l.receivedQty > 0
-        ? 'var(--amber)'
-        : 'var(--text3)';
+  const amount = l.qty * Number(l.rate);
+  const pending = Math.max(0, l.qty - l.receivedQty);
   return (
     <tr>
-      <td className="mono">{l.lineNo}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
+      <td className="td-ctr mono fw-700">{l.lineNo}</td>
+      <td className="td-code" style={{ color: 'var(--purple)' }}>
         {l.itemCode ?? l.itemCodeText ?? '—'}
       </td>
       <td>{l.itemName}</td>
-      <td className="td-right mono">{l.qty}</td>
-      <td className="td-right mono">
+      <td className="mono" style={{ fontSize: 10, color: 'var(--cyan)' }}>
+        {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
+      </td>
+      <td className="td-ctr mono fw-700">{l.qty}</td>
+      <td className="td-ctr mono" style={{ fontSize: 11 }}>
         {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
       </td>
-      <td className="td-right mono" style={{ color, fontWeight: 700 }}>
-        {l.receivedQty}
+      <td className="td-ctr mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+      <td className="td-ctr mono green fw-700">{l.receivedQty}</td>
+      <td
+        className="td-ctr mono"
+        style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}
+      >
+        {pending}
       </td>
-      <td className="text2" style={{ fontSize: 11 }}>
-        {l.dueDate ?? '—'}
-      </td>
+      <td style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
       <td className="text3" style={{ fontSize: 11 }}>
-        {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
+        {l.lineRemarks ?? '—'}
       </td>
     </tr>
   );
 }
 
+// Legacy L26364-26376 — Vendor box | PO Details box. The vendor's address /
+// GST / contact were already fetched by `useVendor` but rendered nowhere on
+// this page (print-only); legacy shows them here.
+function VendorAndPoDetails(props: {
+  detail: PurchaseOrderDetail;
+  vendor: Vendor | null | undefined;
+}): React.JSX.Element {
+  const { detail, vendor } = props;
+  const address = [vendor?.addressLine1, vendor?.city, vendor?.state].filter(Boolean).join(', ');
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 14,
+        marginBottom: 16,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: 14,
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div
+          className="text3"
+          style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 6 }}
+        >
+          Vendor
+        </div>
+        <div className="fw-700">{detail.vendorName ?? detail.vendorCodeText ?? '—'}</div>
+        {vendor ? (
+          <div className="text3" style={{ fontSize: 11 }}>
+            {address || '—'}
+          </div>
+        ) : null}
+        {vendor ? (
+          <div className="text3" style={{ fontSize: 11 }}>
+            GST: {vendor.gstNumber ?? '—'} | Contact: {vendor.contactPerson ?? '—'}
+          </div>
+        ) : null}
+      </div>
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: 14,
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div
+          className="text3"
+          style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 6 }}
+        >
+          PO Details
+        </div>
+        <div style={{ fontSize: 12 }}>
+          Date: <b>{detail.poDate}</b> | PR:{' '}
+          <b className="cyan">{detail.prCodeText ?? '—'}</b>
+        </div>
+        {detail.remarks ? (
+          <div className="text3" style={{ fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap' }}>
+            Remarks: {detail.remarks}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// Legacy L26377-26399 — summary tiles. Legacy hand-rolls these boxes inline
+// with `.mono .fw-700` values; it does NOT use the `.stat-card` KPI tiles
+// (those are the list's filter row, L25332). Mirrored as legacy has them.
+// Legacy's 5th tile (Grand Total, L26394) needs tax math the API does not
+// return — see the header note.
+function SummaryTiles(props: {
+  lineCount: number;
+  totalQty: number;
+  receivedQty: number;
+  totalValue: number;
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 10,
+        marginBottom: 16,
+      }}
+    >
+      <Tile label="Lines" value={String(props.lineCount)} color="var(--cyan)" />
+      <Tile label="Total Qty" value={String(props.totalQty)} />
+      <Tile label="Received" value={String(props.receivedQty)} color="var(--green)" />
+      <Tile label="Subtotal" value={`₹${props.totalValue.toFixed(2)}`} />
+    </div>
+  );
+}
+
+function Tile(props: { label: string; value: string; color?: string }): React.JSX.Element {
+  return (
+    <div
+      style={{
+        background: 'var(--bg3)',
+        padding: 10,
+        borderRadius: 8,
+        textAlign: 'center',
+        border: '1px solid var(--border)',
+      }}
+    >
+      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+        {props.label}
+      </div>
+      <div
+        className="mono fw-700"
+        style={props.color ? { fontSize: 18, color: props.color } : { fontSize: 18 }}
+      >
+        {props.value}
+      </div>
+    </div>
+  );
+}
+
+// Header fields legacy's PO Details box (L26371-26375) has no slot for. Date /
+// PR ref / Remarks live in that box above, so they are not repeated here.
 function DetailGrid(props: { detail: PurchaseOrderDetail }): React.JSX.Element {
   const { detail } = props;
   return (
     <div className="form-grid form-grid-3">
       <Pair label="Type" value={detail.poType.replaceAll('_', ' ')} />
-      <Pair label="Date" value={detail.poDate} />
       <Pair label="Due date" value={detail.dueDate ?? '—'} />
       <Pair label="Tax type" value={detail.taxType ?? '—'} />
       <Pair
         label="GST split"
         value={`SGST ${detail.sgstPct}% · CGST ${detail.cgstPct}% · IGST ${detail.igstPct}%`}
       />
-      <Pair label="PR ref" value={detail.prCodeText ?? '—'} />
       <Pair label="Approved at" value={detail.approvedAt ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
-      </div>
     </div>
   );
 }

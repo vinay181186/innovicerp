@@ -36,12 +36,6 @@ function logTypeBadge(t: 'start' | 'complete' | 'qc'): string {
   return 'b-green';
 }
 
-function shiftBadge(s: string): string {
-  if (s === 'day') return 'b-blue';
-  if (s === 'night') return 'b-grey';
-  return 'b-cyan';
-}
-
 function fmtDate(d: string): string {
   const dt = new Date(d + 'T00:00:00');
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -90,20 +84,13 @@ function OpLogListPage(): React.JSX.Element {
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 14,
-          gap: 8,
-          flexWrap: 'wrap',
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            ☰ Operation Log
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Read-only audit of every shop-floor entry (Op Start / Complete / QC Inspection). Corrections happen via a new log entry — entries are never edited or deleted.
-          </div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Operation Log
         </div>
         <span className="mono text3" style={{ fontSize: 12 }}>
-          {total.toLocaleString('en-IN')} entries
+          {total} entries
         </span>
       </div>
 
@@ -192,7 +179,7 @@ function OpLogListPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Log No.</th>
-                <th>JC</th>
+                <th>JC No.</th>
                 <th>Date</th>
                 <th className="td-ctr">Op</th>
                 <th>Type</th>
@@ -228,8 +215,8 @@ function OpLogListPage(): React.JSX.Element {
                 items.map((r) => (
                   <tr key={r.id}>
                     <td className="mono text3" style={{ fontSize: 11 }}>{r.logNo}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>{r.jcNo}</td>
-                    <td className="text2" style={{ fontSize: 11 }}>{fmtDate(r.logDate)}</td>
+                    <td className="td-code cyan">{r.jcNo}</td>
+                    <td className="text2">{fmtDate(r.logDate)}</td>
                     <td className="td-ctr mono">{r.opSeq}</td>
                     <td>
                       <span className={`badge ${logTypeBadge(r.logType)}`}>{r.logType}</span>
@@ -237,14 +224,14 @@ function OpLogListPage(): React.JSX.Element {
                         <span className="badge b-purple" style={{ marginLeft: 4, fontSize: 9 }}>TPI</span>
                       ) : null}
                     </td>
-                    <td><span className={`badge ${shiftBadge(r.shift)}`}>{r.shift}</span></td>
+                    <td className="text2">{r.shift}</td>
                     <td>
                       <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)' }}>
-                        {r.machineCode ?? '—'}
+                        {r.machineCode ?? '?'}
                       </span>
                     </td>
-                    <td>{r.operation ?? '—'}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{r.qty}</td>
+                    <td>{r.operation ?? '?'}</td>
+                    <td className="td-ctr mono fw-700 green">{r.qty}</td>
                     <td className="td-ctr mono fw-700" style={{ color: r.rejectQty > 0 ? 'var(--red)' : 'var(--text3)' }}>
                       {r.rejectQty}
                     </td>

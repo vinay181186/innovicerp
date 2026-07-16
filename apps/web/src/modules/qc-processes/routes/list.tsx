@@ -1,4 +1,12 @@
-// QC Process Master list — Phase A item 3. Mirrors legacy renderQCProcessMaster (L23440).
+// QC Process Master list — Phase A item 3. Mirrors legacy renderQCProcessMaster (L23446).
+//
+// Legacy puts the alignment/format classes on the <td> itself (L23450
+// `td-ctr mono fw-700`, L23451 `fw-700`, L23453 `td-ctr mono`) — not on a
+// wrapper span. `.td-ctr` is text-align:center (innovic-theme.css:401), which
+// is inert on an inline <span>, so those columns rendered left-aligned
+// (ISSUE-020). Carry the class through the column def's `meta.tdClass` so the
+// flexRender loop can put it where legacy has it. The ColumnMeta augmentation
+// lives once, in @/types/tanstack-table.d.ts — do not re-declare it here.
 
 import type { ListQcProcessesQuery, QcProcess } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -16,7 +24,7 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useQcProcessesList } from '../api';
+import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -65,26 +73,24 @@ function QcProcessesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useQcProcessesList(query);
+  const softDelete = useSoftDeleteQcProcess();
 
   const columns = useMemo<ColumnDef<QcProcess>[]>(
     () => [
       {
         header: '#',
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="td-ctr mono fw-700">
-            {(search.page - 1) * PAGE_SIZE + row.index + 1}
-          </span>
-        ),
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => (search.page - 1) * PAGE_SIZE + row.index + 1,
       },
       {
         header: 'QC Process Name',
         accessorKey: 'code',
+        meta: { tdClass: 'fw-700' },
         cell: ({ row }) => (
           <Link
             to="/qc-processes/$id"
             params={{ id: row.original.id }}
-            className="fw-700"
             style={{ color: 'var(--green)', textDecoration: 'none' }}
           >
             {row.original.code}
@@ -94,18 +100,18 @@ function QcProcessesListPage(): React.JSX.Element {
       {
         header: 'Description',
         accessorKey: 'description',
+        meta: { tdClass: 'text2' },
         cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.description ?? '—'}
-          </span>
+          <span style={{ fontSize: 11 }}>{row.original.description ?? '—'}</span>
         ),
       },
       {
-        header: 'Std time (min)',
+        header: 'Std Time (min)',
         id: 'defaultCycleTimeMin',
         accessorFn: (r) => Number(r.defaultCycleTimeMin),
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => (
-          <span className="td-ctr mono" style={{ fontSize: 11 }}>
+          <span style={{ fontSize: 11 }}>
             {Number(row.original.defaultCycleTimeMin) > 0
               ? Number(row.original.defaultCycleTimeMin).toFixed(2)
               : '—'}
@@ -121,8 +127,40 @@ function QcProcessesListPage(): React.JSX.Element {
           </span>
         ),
       },
+      {
+        header: 'Actions',
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {canWrite ? (
+              <Link
+                to="/qc-processes/$id/edit"
+                params={{ id: row.original.id }}
+                className="btn btn-ghost btn-sm"
+              >
+                Edit
+              </Link>
+            ) : null}
+            {canWrite ? (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={softDelete.isPending}
+                onClick={() => {
+                  if (confirm(`Delete QC process "${row.original.code}"?`)) {
+                    softDelete.mutate(row.original.id);
+                  }
+                }}
+              >
+                Del
+              </button>
+            ) : null}
+          </div>
+        ),
+      },
     ],
-    [search.page],
+    [search.page, canWrite, softDelete],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -236,7 +274,7 @@ function QcProcessesListPage(): React.JSX.Element {
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}

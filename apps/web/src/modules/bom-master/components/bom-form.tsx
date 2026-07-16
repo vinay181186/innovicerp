@@ -74,6 +74,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
+  // header suffix, the revision-note indicator and the save-button label.
+  const nextRevision = (bom?.revision ?? 0) + 1;
+
   // Items list — drives the code autocomplete + Excel-import resolution.
   // Limit 1000 should cover any company's item master at our scale; revisit
   // if the item master grows past that.
@@ -234,7 +238,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title">
-            {mode === 'create' ? '📦 New BOM' : `📦 Edit BOM — ${bom?.bomNo ?? ''}`}
+            {mode === 'create'
+              ? '📦 New BOM'
+              : `📦 Edit BOM — ${bom?.bomNo ?? ''} (Rev ${bom?.revision ?? 1} → ${nextRevision})`}
           </div>
         </div>
         <div className="panel-body">
@@ -247,7 +253,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 className="innovic-input"
                 value={header.bomNo}
                 onChange={(e) => setHeader({ ...header, bomNo: e.target.value })}
-                placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : ''}
+                placeholder={mode === 'create' ? 'BOM-NNNN (auto if blank)' : 'BOM-0001'}
               />
             </div>
             <div className="form-grp">
@@ -270,30 +276,27 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   setHeader({ ...header, status: e.target.value as BomFormHeaderDraft['status'] })
                 }
               >
-                <option value="draft">Draft</option>
                 <option value="active">Active</option>
+                <option value="draft">Draft</option>
                 <option value="obsolete">Obsolete</option>
               </select>
             </div>
-            {mode === 'edit' && bom ? (
-              <div className="form-grp">
-                <span className="form-label">Revision</span>
-                <div
-                  className="mono fw-700"
-                  style={{ color: 'var(--amber)', paddingTop: 7, fontSize: 14 }}
-                >
-                  Rev {bom.revision} →{' '}
-                  <span style={{ color: 'var(--green)' }}>Rev {bom.revision + 1}</span>
-                </div>
-              </div>
-            ) : null}
+            <div className="form-grp">
+              <span className="form-label">Revision</span>
+              <input
+                className="innovic-input fw-700"
+                value={String(bom?.revision ?? 1)}
+                readOnly
+                style={{ color: 'var(--amber)' }}
+              />
+            </div>
           </div>
         </div>
       </div>
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">📦 Part List ({lines.length})</div>
+          <div className="panel-title">📦 Part List / Items ({lines.length})</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
@@ -305,6 +308,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
+              style={{ color: 'var(--green)' }}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload size={13} /> Import Excel
@@ -348,19 +352,19 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 36 }}>#</th>
+                <th style={{ width: 30 }}>#</th>
                 <th>Item Code ★</th>
                 <th>Name</th>
                 <th style={{ width: 90 }}>Qty / Set ★</th>
-                <th style={{ width: 140 }}>Type</th>
-                <th style={{ width: 44 }}></th>
+                <th style={{ width: 120 }}>Type</th>
+                <th style={{ width: 40 }}></th>
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty-state">
-                    No items yet — click <strong>+ Add Item</strong> or import Excel.
+                    No items yet. Click <strong>+ Add Item</strong>.
                   </td>
                 </tr>
               ) : (
@@ -377,7 +381,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                           list="bom-items-dl"
                           value={line.childItemCodeText}
                           onChange={(e) => onItemCodeChange(idx, e.target.value)}
-                          placeholder="Search item code…"
+                          placeholder="🔍 Search item code or name..."
                           style={{ fontSize: 12 }}
                         />
                       </td>
@@ -433,7 +437,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       <datalist id="bom-items-dl">
         {(itemsList?.items ?? []).map((i) => (
           <option key={i.id} value={i.code}>
-            {i.name}
+            {i.code} — {i.name}
+            {i.material ? ` [${i.material}]` : ''}
           </option>
         ))}
       </datalist>
@@ -442,6 +447,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title">📋 Revision Note</div>
+            <div className="text3" style={{ fontSize: 11 }}>
+              Rev {bom?.revision ?? 1} → <b style={{ color: 'var(--green)' }}>Rev {nextRevision}</b>
+            </div>
           </div>
           <div className="panel-body">
             <textarea
@@ -449,8 +457,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               rows={2}
               value={revisionNote}
               onChange={(e) => setRevisionNote(e.target.value)}
-              placeholder="Auto-generated diff note will be used if you leave this blank. You can override here."
+              placeholder="Auto-generated on save. You can edit..."
             />
+            <div className="form-help">
+              ℹ Note is auto-generated when you save. You can edit it before saving.
+            </div>
           </div>
         </div>
       ) : null}
@@ -495,7 +506,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           className="btn btn-primary"
           disabled={Boolean(validationError) || submitting}
         >
-          {submitting ? 'Saving…' : mode === 'create' ? 'Create BOM' : 'Save Revision'}
+          {submitting ? 'Saving…' : mode === 'create' ? 'Save BOM' : `Save as Rev ${nextRevision}`}
         </button>
       </div>
     </form>

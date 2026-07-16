@@ -204,6 +204,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
   return (
     <span
       style={{
+        display: 'inline-block',
         padding: '2px 9px',
         borderRadius: 12,
         fontSize: 10,
@@ -222,8 +223,8 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
   const v = value.toLowerCase().replace(/[\s/]/g, '');
   const colors: Record<string, string> = {
     critical: 'var(--red)',
-    high: 'var(--amber)',
-    major: 'var(--amber)',
+    high: 'var(--orange)',
+    major: 'var(--orange)',
     medium: 'var(--amber)',
     low: 'var(--green)',
     minor: 'var(--green)',
@@ -250,6 +251,7 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
   return (
     <span
       style={{
+        display: 'inline-block',
         padding: '2px 9px',
         borderRadius: kind === 'status' ? 4 : 12,
         fontSize: 10,
@@ -393,7 +395,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
             gap: 10,
           }}
         >
@@ -443,31 +445,50 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                   </span>
                 </div>
                 <div style={{ padding: 6 }}>
-                  {ts.map((t) => (
-                    <div
-                      key={t.id}
-                      style={{
-                        background: 'var(--bg2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
-                        padding: 10,
-                        marginBottom: 6,
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => setViewTask(t)}
-                    >
-                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
-                        {t.title}
-                      </div>
+                  {ts.map((t) => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    const isOverdue =
+                      t.dueDate != null && t.dueDate < today && t.status !== 'Completed';
+                    const taskIssues = detail.issues.filter(
+                      (i) =>
+                        i.designTaskId === t.id &&
+                        (i.status === 'Open' || i.status === 'In Progress'),
+                    ).length;
+                    return (
                       <div
-                        style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 10 }}
+                        key={t.id}
+                        style={{
+                          background: 'var(--bg2)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 6,
+                          padding: 10,
+                          marginBottom: 6,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setViewTask(t)}
                       >
-                        <Badge value={t.priority} />
-                        <span className="text3">👤 {t.assigneeText ?? ''}</span>
-                        {t.dueDate ? <span className="text3">📅 {t.dueDate}</span> : null}
+                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                          {t.title}
+                        </div>
+                        <div
+                          style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 10 }}
+                        >
+                          <Badge value={t.priority} />
+                          <span className="text3">👤 {t.assigneeText ?? ''}</span>
+                          {t.dueDate ? (
+                            <span style={{ color: isOverdue ? 'var(--red)' : 'var(--text3)' }}>
+                              📅 {t.dueDate}
+                            </span>
+                          ) : null}
+                          {taskIssues > 0 ? (
+                            <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                              ⚠{taskIssues}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -850,7 +871,9 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                     ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
                   return (
                     <tr key={i.id} style={{ cursor: 'pointer' }} onClick={() => setViewIssue(i)}>
-                      <td className="fw-700">{i.title}</td>
+                      <td className="fw-700" style={{ maxWidth: 250 }}>
+                        {i.title}
+                      </td>
                       <td style={{ fontSize: 11, color: 'var(--text2)' }}>{i.partText ?? '—'}</td>
                       <td>
                         <Badge value={i.severity} />
@@ -1236,7 +1259,7 @@ function ChecklistTab({
       {!allTasksDone ? (
         <div
           style={{
-            background: 'rgba(196,122,0,0.08)',
+            background: 'var(--amber3)',
             border: '1px solid rgba(196,122,0,0.3)',
             borderRadius: 8,
             padding: '10px 14px',
@@ -1251,7 +1274,7 @@ function ChecklistTab({
       {!allIssuesClosed && detail.issues.length > 0 ? (
         <div
           style={{
-            background: 'rgba(220,38,38,0.06)',
+            background: 'var(--red3)',
             border: '1px solid rgba(220,38,38,0.3)',
             borderRadius: 8,
             padding: '10px 14px',
@@ -1310,7 +1333,7 @@ function ChecklistTab({
                       width: 20,
                       height: 20,
                       borderRadius: 4,
-                      border: `2px solid ${checked ? 'var(--green)' : 'var(--border)'}`,
+                      border: `2px solid ${checked ? 'var(--green)' : 'var(--border2)'}`,
                       background: checked ? 'var(--green)' : 'var(--bg)',
                       display: 'flex',
                       alignItems: 'center',
@@ -1339,7 +1362,7 @@ function ChecklistTab({
       {allChecked && allTasksDone && allIssuesClosed ? (
         <div
           style={{
-            background: 'rgba(22,163,74,0.08)',
+            background: 'var(--green3)',
             border: '1px solid rgba(22,163,74,0.3)',
             borderRadius: 8,
             padding: 20,
@@ -1378,6 +1401,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [subTab, setSubTab] = useState<'dcr' | 'dcn'>('dcr');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [showAddDcr, setShowAddDcr] = useState(false);
   const [showAddDcn, setShowAddDcn] = useState(false);
   const [editDcr, setEditDcr] = useState<DesignDcr | null>(null);
@@ -1390,6 +1414,10 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
   ).length;
   const acceptedDcrs = dcrs.filter((d) => d.status === 'Accepted').length;
   const activeDcns = dcns.filter((d) => d.status !== 'Released').length;
+  // Legacy filters the table rows but leaves the sub-tab counts + tiles on the
+  // unfiltered lists (L8084-8085 vs L8094/L8116).
+  const fDcrs = dcrs.filter((d) => statusFilter === 'all' || d.status === statusFilter);
+  const fDcns = dcns.filter((d) => statusFilter === 'all' || d.status === statusFilter);
 
   return (
     <div>
@@ -1445,25 +1473,46 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             📝 DCN Register ({dcns.length})
           </button>
         </div>
-        {canWrite ? (
-          subTab === 'dcr' ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setShowAddDcr(true)}
-            >
-              <Plus size={12} /> New DCR
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => setShowAddDcn(true)}
-            >
-              <Plus size={12} /> New DCN
-            </button>
-          )
-        ) : null}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <select
+            style={{
+              padding: '5px 8px',
+              fontSize: 11,
+              background: 'var(--bg3)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              color: 'var(--text)',
+            }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="all">All Status</option>
+            {(subTab === 'dcr' ? DESIGN_DCR_STATUSES : DESIGN_DCN_STATUSES).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {canWrite ? (
+            subTab === 'dcr' ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowAddDcr(true)}
+              >
+                <Plus size={12} /> New DCR
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setShowAddDcn(true)}
+              >
+                <Plus size={12} /> New DCN
+              </button>
+            )
+          ) : null}
+        </div>
       </div>
 
       {subTab === 'dcr' ? (
@@ -1472,52 +1521,82 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>DCR No.</th>
+                  <th>DCR No</th>
                   <th>Title</th>
-                  <th>Change Type</th>
+                  <th>Type</th>
                   <th>Part</th>
                   <th>Priority</th>
                   <th>Status</th>
                   <th>Requested By</th>
                   <th>Date</th>
+                  <th>Age</th>
+                  <th>DCN</th>
                 </tr>
               </thead>
               <tbody>
-                {dcrs.length === 0 ? (
+                {fDcrs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
-                      No DCRs yet
+                    <td colSpan={10} className="empty-state">
+                      No DCRs yet. Create a Design Change Request when a post-release change is
+                      needed.
                     </td>
                   </tr>
                 ) : (
-                  dcrs.map((d) => (
-                    <tr
-                      key={d.id}
-                      style={{ cursor: canWrite ? 'pointer' : 'default' }}
-                      onClick={() => canWrite && setEditDcr(d)}
-                    >
-                      <td className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 11 }}>
-                        {d.code}
-                      </td>
-                      <td className="fw-700">{d.title}</td>
-                      <td>
-                        <Badge value={d.changeType} />
-                      </td>
-                      <td style={{ fontSize: 11, color: 'var(--text2)' }}>
-                        {d.partAffected ?? '—'}
-                      </td>
-                      <td>
-                        <Badge value={d.priority} />
-                      </td>
-                      <td>
-                        <Badge value={d.status} kind="status" />
-                      </td>
-                      <td style={{ fontSize: 11 }}>{d.requestedByText ?? ''}</td>
-                      <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {d.requestDate}
-                      </td>
-                    </tr>
-                  ))
+                  fDcrs.map((d) => {
+                    const ageMs = Date.now() - new Date(d.requestDate).getTime();
+                    const age = Math.max(0, Math.round(ageMs / 86400000));
+                    const linked = dcns.find((n) => n.linkedDcrId === d.id);
+                    return (
+                      <tr
+                        key={d.id}
+                        style={{ cursor: canWrite ? 'pointer' : 'default' }}
+                        onClick={() => canWrite && setEditDcr(d)}
+                      >
+                        <td className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 11 }}>
+                          {d.code}
+                        </td>
+                        <td style={{ fontWeight: 600, maxWidth: 220 }}>{d.title}</td>
+                        <td>
+                          <Badge value={d.changeType} />
+                        </td>
+                        <td style={{ fontSize: 11, color: 'var(--text2)' }}>
+                          {d.partAffected ?? ''}
+                        </td>
+                        <td>
+                          <Badge value={d.priority} />
+                        </td>
+                        <td>
+                          <Badge value={d.status} kind="status" />
+                        </td>
+                        <td style={{ fontSize: 11 }}>{d.requestedByText ?? ''}</td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                          {d.requestDate}
+                        </td>
+                        <td
+                          className="mono fw-700"
+                          style={{
+                            color:
+                              age > 5 && d.status !== 'Accepted' && d.status !== 'Rejected'
+                                ? 'var(--red)'
+                                : 'var(--text3)',
+                          }}
+                        >
+                          {age}d
+                        </td>
+                        <td>
+                          {linked ? (
+                            <span
+                              style={{ color: 'var(--green)', fontWeight: 700, fontSize: 10 }}
+                            >
+                              ✔ {linked.code}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1529,7 +1608,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>DCN No.</th>
+                  <th>DCN No</th>
                   <th>Title</th>
                   <th>Linked DCR</th>
                   <th>Status</th>
@@ -1537,14 +1616,14 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                 </tr>
               </thead>
               <tbody>
-                {dcns.length === 0 ? (
+                {fDcns.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="empty-state">
-                      No DCNs yet
+                      No DCNs yet. Create from an accepted DCR.
                     </td>
                   </tr>
                 ) : (
-                  dcns.map((d) => {
+                  fDcns.map((d) => {
                     const linked = dcrs.find((x) => x.id === d.linkedDcrId);
                     return (
                       <tr
@@ -1552,11 +1631,14 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                         style={{ cursor: canWrite ? 'pointer' : 'default' }}
                         onClick={() => canWrite && setEditDcn(d)}
                       >
-                        <td className="mono fw-700" style={{ color: 'var(--green)', fontSize: 11 }}>
+                        <td
+                          className="mono fw-700"
+                          style={{ color: 'var(--purple)', fontSize: 11 }}
+                        >
                           {d.code}
                         </td>
-                        <td className="fw-700">{d.title}</td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                        <td style={{ fontWeight: 600, maxWidth: 220 }}>{d.title}</td>
+                        <td style={{ color: 'var(--cyan)', fontWeight: 700, fontSize: 11 }}>
                           {linked?.code ?? '—'}
                         </td>
                         <td>

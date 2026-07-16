@@ -6,7 +6,7 @@ import {
   STORE_ISSUE_REF_TYPES,
   type StoreIssueRefType,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
@@ -39,9 +39,18 @@ function StoreIssuesListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📋 Item Issue Register</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📋 Item Issue Register
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
             className="innovic-input"
@@ -51,7 +60,7 @@ function StoreIssuesListPage(): React.JSX.Element {
               setSearch(e.target.value);
               setPage(1);
             }}
-            style={{ width: 240, fontSize: 12 }}
+            style={{ minWidth: 220, fontSize: 13 }}
           />
           {canWrite ? (
             <button
@@ -76,13 +85,6 @@ function StoreIssuesListPage(): React.JSX.Element {
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load issues'}
-            </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">📋</div>
-              No issues recorded — click <strong>+ New Issue</strong>.
             </div>
           </div>
         ) : data ? (
@@ -118,35 +120,40 @@ function StoreIssuesListPage(): React.JSX.Element {
                         {iss.itemCode ?? iss.itemCodeText ?? '—'}
                       </span>
                     </td>
-                    <td>{iss.itemName}</td>
+                    <td>{iss.itemName || '—'}</td>
                     <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
                       {iss.qty}
                     </td>
-                    <td>{iss.issuedTo}</td>
+                    <td>{iss.issuedTo || '—'}</td>
                     <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {iss.refType ? `${iss.refType} ${iss.refNo ?? ''}`.trim() : iss.refNo ?? '—'}
+                      {`${iss.refType ?? ''} ${iss.refNo || '—'}`}
                     </td>
                     <td className="text3" style={{ fontSize: 11 }}>
-                      {iss.purpose ?? '—'}
+                      {iss.purpose || '—'}
                     </td>
                     <td
                       className="text3"
                       style={{
                         fontSize: 11,
-                        maxWidth: 120,
+                        maxWidth: 100,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                       }}
                       title={iss.remarks ?? ''}
                     >
-                      {iss.remarks ?? '—'}
+                      {iss.remarks || '—'}
                     </td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {iss.issuedByName ?? '—'}
-                    </td>
+                    <td>{iss.issuedByName || '—'}</td>
                   </tr>
                 ))}
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-state">
+                      No issues recorded — click + New Issue
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -192,9 +199,16 @@ function StoreIssuesListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
         💡 Item Issue Register tracks material/consumables issued from Store. Stock is auto-deducted.
-        For returnable tools, use Tool Issue Register (coming soon).
+        For returnable tools, use{' '}
+        <Link
+          to="/tool-issues"
+          style={{ color: 'var(--cyan)', cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          Tool Issue Register
+        </Link>
+        .
       </div>
 
       {showModal ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
@@ -259,57 +273,33 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📋 New Item Issue
+      <div className="modal">
+        <div className="modal-hdr">
+          <span className="modal-title">📋 New Item Issue</span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+            ✕
+          </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </Field>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label">Date</label>
+              <input
+                type="date"
+                className="innovic-input"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
 
-          <Field label="Qty to Issue ★">
-            <input
-              type="number"
-              min={1}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{ fontSize: 16, fontWeight: 700 }}
-            />
-          </Field>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Item ★ (type to search Item Master)">
+            <div className="form-grp form-full">
+              <label className="form-label">Item ★ (type to search from Item Master)</label>
               <input
                 type="text"
                 className="innovic-input"
@@ -351,11 +341,23 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                   ))}
                 </div>
               ) : null}
-            </Field>
-          </div>
+            </div>
 
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Issued To ★">
+            <div className="form-grp">
+              <label className="form-label">Qty to Issue ★</label>
+              <input
+                type="number"
+                min={1}
+                className="innovic-input"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                placeholder="0"
+                style={{ fontSize: 16, fontWeight: 700 }}
+              />
+            </div>
+
+            <div className="form-grp">
+              <label className="form-label">Issued To ★</label>
               <input
                 type="text"
                 className="innovic-input"
@@ -363,35 +365,36 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 value={issuedTo}
                 onChange={(e) => setIssuedTo(e.target.value)}
               />
-            </Field>
-          </div>
+            </div>
 
-          <Field label="Reference Type">
-            <select
-              className="innovic-select"
-              value={refType}
-              onChange={(e) => setRefType(e.target.value as StoreIssueRefType)}
-            >
-              {STORE_ISSUE_REF_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
+            <div className="form-grp">
+              <label className="form-label">Reference Type</label>
+              <select
+                className="innovic-select"
+                value={refType}
+                onChange={(e) => setRefType(e.target.value as StoreIssueRefType)}
+              >
+                {STORE_ISSUE_REF_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <Field label="Reference No.">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="e.g. JC-00001, SO-001"
-              value={refNo}
-              onChange={(e) => setRefNo(e.target.value)}
-            />
-          </Field>
+            <div className="form-grp">
+              <label className="form-label">Reference No.</label>
+              <input
+                type="text"
+                className="innovic-input"
+                placeholder="e.g. JC-00001, SO-001"
+                value={refNo}
+                onChange={(e) => setRefNo(e.target.value)}
+              />
+            </div>
 
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Purpose">
+            <div className="form-grp">
+              <label className="form-label">Purpose</label>
               <input
                 type="text"
                 className="innovic-input"
@@ -399,11 +402,10 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
               />
-            </Field>
-          </div>
+            </div>
 
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Remarks">
+            <div className="form-grp form-full">
+              <label className="form-label">Remarks</label>
               <input
                 type="text"
                 className="innovic-input"
@@ -411,28 +413,26 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
               />
-            </Field>
+            </div>
           </div>
+
+          {err ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 8,
+                background: 'rgba(239,68,68,0.08)',
+                color: 'var(--red)',
+                borderRadius: 4,
+                fontSize: 12,
+              }}
+            >
+              {err}
+            </div>
+          ) : null}
         </div>
 
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div
-          style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}
-        >
+        <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
@@ -447,36 +447,11 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              'Save Issue'
+              'Save'
             )}
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
     </div>
   );
 }

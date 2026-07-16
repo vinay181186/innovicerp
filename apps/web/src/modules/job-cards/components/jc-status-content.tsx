@@ -15,23 +15,35 @@ import { JcStatusBadge } from './jc-status-badge';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 
+// Mirrors legacy badge() (L1959-1970) for the op status strings it maps.
+// Two legacy entries are inert: badge('In Progress') → `b-yellow` and
+// badge('Running') → `b-running`, neither of which legacy's <style> defines —
+// so they render unstyled in legacy too. We keep our `b-amber` for both rather
+// than port a no-op class (same call the SO Status port made for `b-blue`).
 const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  waiting: { label: 'Waiting', cls: 'b-grey' },
+  waiting: { label: 'Waiting', cls: 'b-red' },
   available: { label: 'Available', cls: 'b-blue' },
   in_progress: { label: 'In Progress', cls: 'b-amber' },
   running: { label: 'Running', cls: 'b-amber' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
   complete: { label: 'Complete', cls: 'b-green' },
-  pr_raised: { label: 'PR Raised', cls: 'b-blue' },
-  po_created: { label: 'PO Created', cls: 'b-cyan' },
+  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
+  po_created: { label: 'PO Created', cls: 'b-blue' },
   at_vendor: { label: 'At Vendor', cls: 'b-amber' },
   received: { label: 'Received', cls: 'b-cyan' },
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
-  outsource: { label: 'Outsource', cls: 'b-grey' },
+  outsource: { label: 'Outsource', cls: 'b-amber' },
 };
 
-const fmtLog = (l: OpLog): string =>
-  `${l.logDate} · ${l.shift} · +${l.qty}${l.operatorName ? ' · ' + l.operatorName : ''}`;
+// Legacy op-status → progress-bar colour (L11033). Legacy tests only
+// 'In Progress' here, so 'Running' falls through to blue — mirrored verbatim.
+const barColor = (status: string): string =>
+  status === 'complete' ? 'var(--green)' : status === 'in_progress' ? 'var(--amber)' : 'var(--blue)';
+
+// Legacy renders bare 'HH:MM' (its op_log startTime is a time input); our
+// `op_log.start_time` is a `time` column serialised 'HH:MM:SS'. Bare clock
+// time — no timezone involved, so no ISSUE-065 exposure.
+const fmtTime = (t: string | null): string => (t ? t.slice(0, 5) : '');
 
 const cardStyle = (bg: string, brd: string): React.CSSProperties => ({
   background: bg,
@@ -74,13 +86,51 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
     return m;
   }, [logs]);
   const opById = useMemo(() => new Map(ops.map((o) => [o.id, o])), [ops]);
-  const timeline = useMemo(
-    () =>
-      [...logs]
-        .filter((l) => l.logType !== 'start')
-        .sort((a, b) => (b.logDate + (b.startTime ?? '')).localeCompare(a.logDate + (a.startTime ?? ''))),
-    [logs],
-  );
+
+  // Legacy _allEvents (L11091-11142): every op_log row for this JC — including
+  // 'start' entries, which our previous port dropped — shaped into an icon feed
+  // and grouped by date, latest first.
+  //
+  // Legacy also folds in NC register events, NC dispositions, and OSP PR/PO
+  // events from the activity log (L11106-11131). None of those have a
+  // server-side source on this page's endpoints, so they are reported as a gap
+  // rather than derived in the browser.
+  const eventDays = useMemo(() => {
+    const events = logs.map((l) => {
+      const op = opById.get(l.jcOpId);
+      const machine = op ? (op.machineCode ?? op.machineCodeText ?? '?') : '?';
+      const operator = l.operatorName ?? '';
+      const label = l.logType === 'start' ? 'Started' : l.logType === 'qc' ? 'QC Entry' : 'Completed';
+      const detail =
+        l.logType === 'start'
+          ? `on ${machine} by ${operator}`
+          : l.logType === 'qc'
+            ? `+${l.qty} accepted${l.rejectQty > 0 ? `, ${l.rejectQty} rejected` : ''} — ${operator}`
+            : `+${l.qty} pcs — ${operator}`;
+      return {
+        id: l.id,
+        date: l.logDate,
+        time: fmtTime(l.startTime),
+        sort: `${l.logDate}T${fmtTime(l.startTime) || '99:99'}`,
+        icon: l.logType === 'start' ? '▶' : l.logType === 'qc' ? '🔬' : '✔',
+        color: l.logType === 'start' ? 'var(--amber)' : 'var(--green)',
+        title: `Op${op?.opSeq ?? '?'}: ${op?.operation ?? '?'} — ${label}`,
+        detail: `${detail}${l.shift ? ` • ${l.shift}` : ''}`,
+        remarks: l.remarks ?? '',
+        logType: l.logType,
+        qty: l.qty,
+      };
+    });
+    events.sort((a, b) => b.sort.localeCompare(a.sort));
+    const days: { date: string; events: typeof events }[] = [];
+    for (const e of events) {
+      const key = e.date || 'Unknown';
+      const last = days.find((d) => d.date === key);
+      if (last) last.events.push(e);
+      else days.push({ date: key, events: [e] });
+    }
+    return { days, total: events.length };
+  }, [logs, opById]);
 
   if (isLoading) {
     return (
@@ -123,13 +173,18 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
         </button>
       </div>
 
+      {/* Legacy _jcDrwSec (L11263). Legacy pairs the header with a
+          `🖨 Drawing` button (printDrawingFile(id,'jc')); we have no drawing-only
+          print path on this page, so the header carries the label alone. */}
       {drawingUrl ? (
-        <div style={{ ...cardStyle('var(--bg3)', 'var(--border)'), marginBottom: 14 }}>
-          <div style={{ ...lblStyle, marginBottom: 6 }}>Drawing</div>
+        <div style={{ marginBottom: 14, padding: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>▸ DRAWING</span>
+          </div>
           <img
             src={drawingUrl}
             alt="JC drawing"
-            style={{ maxHeight: 160, maxWidth: '100%', borderRadius: 4, border: '1px solid var(--border2)', display: 'block' }}
+            style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 4, border: '1px solid var(--border2)', display: 'block' }}
           />
         </div>
       ) : null}
@@ -169,25 +224,25 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
           <div style={{ marginBottom: 6 }}>
             <JcStatusBadge status={jc.computedStatus} />
           </div>
-          <div style={{ height: 6, background: 'var(--bg5)', borderRadius: 3 }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: '#3b82f6', borderRadius: 3 }} />
+          <div className="prog-wrap">
+            <div className="prog-bar" style={{ width: `${pct}%`, background: 'var(--blue)' }} />
           </div>
           <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 3 }}>
             {doneOps}/{totalOps} ops · {pct}%
           </div>
         </div>
-        <div style={cardStyle('var(--green3, #dcfce7)', 'var(--green2, #86efac)')}>
-          <div style={{ ...lblStyle, color: 'var(--green)' }}>Completed Qty</div>
+        <div style={cardStyle('var(--green3)', 'var(--green2)')}>
+          <div style={{ ...lblStyle, color: 'var(--green2)', marginBottom: 6 }}>Completed Qty</div>
           <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--green)' }}>{completed}</div>
-          <div style={{ fontSize: 11, color: 'var(--green)' }}>of {jc.orderQty} ordered</div>
+          <div style={{ fontSize: 11, color: 'var(--green2)' }}>of {jc.orderQty} ordered</div>
         </div>
         <div
           style={cardStyle(
-            pending > 0 ? 'var(--red3, #fee2e2)' : 'var(--green3, #dcfce7)',
-            pending > 0 ? '#fca5a5' : 'var(--green2, #86efac)',
+            pending > 0 ? 'var(--red3)' : 'var(--green3)',
+            pending > 0 ? 'var(--red2)' : 'var(--green2)',
           )}
         >
-          <div style={{ ...lblStyle, color: pending > 0 ? 'var(--red)' : 'var(--green)' }}>Pending Qty</div>
+          <div style={{ ...lblStyle, color: pending > 0 ? 'var(--red2)' : 'var(--green2)', marginBottom: 6 }}>Pending Qty</div>
           <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: pending > 0 ? 'var(--red)' : 'var(--green)' }}>
             {pending}
           </div>
@@ -205,33 +260,99 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
             sortedOps.map((o, i) => {
               const isQc = o.opType === 'qc';
               const isOut = o.opType === 'outsource';
+              const st = o.computedStatus;
+              // Legacy L11213-11216 bg / bdr / opColor / doneColor ladders.
+              // (Legacy's OSP branch is skipped: jc_ops.op_type has no 'osp'
+              // value in this system — OSP is handled at op-entry start.)
+              const bg =
+                st === 'complete'
+                  ? 'var(--green3)'
+                  : st === 'qc_pending'
+                    ? 'rgba(34,197,94,0.12)'
+                    : isOut
+                      ? 'rgba(255,176,32,0.12)'
+                      : isQc
+                        ? 'rgba(34,197,94,0.08)'
+                        : st === 'in_progress' || st === 'running'
+                          ? 'var(--amber3)'
+                          : st === 'available'
+                            ? 'var(--blue3)'
+                            : 'var(--bg4)';
+              const bdr =
+                st === 'complete'
+                  ? 'var(--green2)'
+                  : st === 'qc_pending'
+                    ? 'rgba(34,197,94,0.5)'
+                    : isOut
+                      ? 'rgba(255,176,32,0.4)'
+                      : isQc
+                        ? 'rgba(34,197,94,0.3)'
+                        : st === 'in_progress' || st === 'running'
+                          ? 'var(--amber2)'
+                          : st === 'available'
+                            ? 'var(--blue2)'
+                            : 'var(--border2)';
+              const opColor =
+                st === 'complete'
+                  ? 'var(--green)'
+                  : isQc
+                    ? 'var(--green)'
+                    : isOut
+                      ? 'var(--amber)'
+                      : st === 'in_progress' || st === 'running'
+                        ? 'var(--amber)'
+                        : st === 'available'
+                          ? 'var(--blue)'
+                          : 'var(--text3)';
+              const doneColor =
+                st === 'complete' || st === 'qc_pending'
+                  ? 'var(--green)'
+                  : st === 'in_progress' || st === 'running'
+                    ? 'var(--amber)'
+                    : 'var(--text3)';
               const flowQty = isQc ? o.qcAcceptedQty : o.completedQty;
-              const flowTotal = isQc ? o.inputAvail || jc.orderQty : jc.orderQty;
-              const accent =
-                o.computedStatus === 'complete' ? 'var(--green)' : isQc ? 'var(--green)' : isOut ? 'var(--amber)' : 'var(--cyan)';
+              const flowLabel = isQc
+                ? `${flowQty}/${o.inputAvail || jc.orderQty}`
+                : `${flowQty}/${jc.orderQty}`;
               return (
                 <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div
                     style={{
-                      background: o.computedStatus === 'complete' ? 'var(--green3, #dcfce7)' : 'var(--bg4)',
-                      border: `1px solid ${o.computedStatus === 'complete' ? 'var(--green2, #86efac)' : 'var(--border2)'}`,
+                      background: bg,
+                      border: `1px solid ${bdr}`,
                       borderRadius: 6,
                       padding: '6px 10px',
                       textAlign: 'center',
                       minWidth: 80,
                     }}
                   >
-                    <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                    <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
                       Op{o.opSeq}
-                      {isQc ? ' 🔬' : isOut ? ' 🏭' : ''}
+                      {isOut ? ' 🏭' : ''}
+                      {isQc ? ' 🔬' : ''}
                     </div>
-                    <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: accent }}>
-                      {isQc ? 'QC' : isOut ? 'OUTSOURCE' : (o.machineCode ?? o.machineCodeText ?? '—')}
+                    {isQc ? (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--green)' }}>QC</div>
+                        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
+                      </>
+                    ) : isOut ? (
+                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--amber)' }}>OUTSOURCE</div>
+                    ) : (
+                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
+                        {o.machineCode ?? o.machineCodeText ?? '—'}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 9, color: 'var(--text3)' }}>
+                      {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
                     </div>
-                    <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation.split(' ').slice(0, 2).join(' ')}</div>
-                    <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: flowQty > 0 ? 'var(--green)' : 'var(--text3)' }}>
-                      {flowQty}/{flowTotal}
-                    </div>
+                    {isOut ? (
+                      <div style={{ fontSize: 9, marginTop: 3, fontWeight: 700, color: 'var(--amber)' }}>
+                        {o.outsourceStatus ?? 'Pending'}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>{flowLabel}</div>
+                    )}
                   </div>
                   {i < sortedOps.length - 1 ? <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span> : null}
                 </div>
@@ -276,6 +397,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                   <th>Input</th>
                   <th>Done</th>
                   <th style={{ color: 'var(--amber)' }}>Avail</th>
+                  <th>Progress</th>
                   <th>Status</th>
                   <th>Recent Logs</th>
                   <th>Action</th>
@@ -284,7 +406,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
               <tbody>
                 {sortedOps.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="empty-state">No operations on this job card.</td>
+                    <td colSpan={13} className="empty-state">No operations</td>
                   </tr>
                 ) : (
                   sortedOps.map((o) => {
@@ -292,7 +414,8 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                     const isQc = o.opType === 'qc';
                     const bal = isQc ? o.qcPending : o.available;
                     const opLogs = (logsByOp.get(o.id) ?? []).slice(0, 3);
-                    const done = isQc ? o.qcAcceptedQty : o.completedQty;
+                    const isOut = o.opType === 'outsource';
+                    const pctOp = jc.orderQty > 0 ? Math.min(100, Math.round((o.completedQty / jc.orderQty) * 100)) : 0;
                     return (
                       <tr
                         key={o.id}
@@ -304,47 +427,142 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                               : undefined
                         }
                       >
-                        <td className="td-ctr mono fw-700">{o.opSeq}</td>
-                        <td style={{ fontSize: 11 }}>
-                          {isQc ? '🔬 QC' : o.opType === 'outsource' ? '🏭 Out' : (o.machineCode ?? o.machineCodeText ?? '—')}
+                        <td className="td-ctr mono fw-700" style={{ fontSize: 15 }}>
+                          {o.opSeq}
+                          {isQc ? (
+                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--green)' }}>🔬 QC</div>
+                          ) : o.qcRequired ? (
+                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--green)' }}>QC</div>
+                          ) : null}
+                          {isOut ? <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--amber)' }}>🏭 OUT</div> : null}
+                        </td>
+                        <td>
+                          {isQc ? (
+                            <div
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '4px 8px',
+                                background: 'rgba(34,197,94,0.12)',
+                                border: '1px solid rgba(34,197,94,0.3)',
+                                borderRadius: 4,
+                              }}
+                            >
+                              <span style={{ fontSize: 11 }}>🔬</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>QC</span>
+                            </div>
+                          ) : isOut ? (
+                            <>
+                              <div style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>🏭 Outsource</div>
+                              <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.outsourceStatus ?? 'Pending'}</div>
+                            </>
+                          ) : (
+                            <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)', display: 'inline-block', lineHeight: 1.25, verticalAlign: 'top' }}>
+                              <span style={{ fontWeight: 700, display: 'block' }}>{o.machineCode ?? o.machineCodeText ?? '—'}</span>
+                            </span>
+                          )}
                         </td>
                         <td>{o.operation}</td>
                         <td className="td-ctr mono">{Number(o.cycleTimeMin) || '—'}</td>
-                        <td style={{ fontSize: 10 }}>
-                          {o.program ? <span style={{ color: 'var(--blue)' }}>{o.program}</span> : null}
-                          {o.toolNo ? <span style={{ color: 'var(--cyan)' }}> · {o.toolNo}</span> : null}
-                          {!o.program && !o.toolNo ? '—' : null}
+                        <td style={{ fontSize: 11 }}>
+                          {o.program ? (
+                            <span className="mono" style={{ color: 'var(--blue)' }}>{o.program}</span>
+                          ) : null}
+                          {o.toolNo ? (
+                            <>
+                              {o.program ? <br /> : null}
+                              <span style={{ color: 'var(--cyan)', fontSize: 10 }}>{o.toolNo}</span>
+                            </>
+                          ) : null}
+                          {!o.program && !o.toolNo ? <span className="text3">—</span> : null}
                         </td>
                         <td className="td-ctr">{jc.orderQty}</td>
                         <td className="td-ctr text2">{o.inputAvail}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                          {done}
-                          {isQc && o.qcRejectedQty > 0 ? <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{o.qcRejectedQty} rej</div> : null}
-                          {isQc && o.qcPending > 0 ? <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} pend</div> : null}
+                        <td className="td-ctr mono fw-700">
+                          {isQc ? (
+                            <>
+                              <div style={{ fontSize: 13, color: 'var(--green)' }}>{o.qcAcceptedQty}</div>
+                              <div style={{ fontSize: 9, color: 'var(--green)' }}>✓ accepted</div>
+                              {o.qcRejectedQty > 0 ? (
+                                <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{o.qcRejectedQty} rej</div>
+                              ) : null}
+                              {o.qcPending > 0 ? (
+                                <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} pending</div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <span style={{ color: 'var(--green)' }}>{o.completedQty}</span>
+                              {o.qcRequired ? (
+                                <>
+                                  <div style={{ fontSize: 9, color: 'var(--green)' }}>✓{o.qcAcceptedQty} acc</div>
+                                  {o.qcRejectedQty > 0 ? (
+                                    <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{o.qcRejectedQty} rej</div>
+                                  ) : null}
+                                  {o.qcPending > 0 ? (
+                                    <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} pend</div>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </>
+                          )}
                         </td>
-                        <td className="td-ctr mono fw-700" style={{ color: bal > 0 ? 'var(--amber)' : 'var(--text3)' }}>{bal}</td>
+                        <td className="td-ctr">
+                          <span className="mono fw-700" style={{ fontSize: 15, color: bal > 0 ? 'var(--amber)' : 'var(--text3)' }}>
+                            {bal}
+                          </span>
+                        </td>
+                        <td style={{ minWidth: 90 }}>
+                          <div className="prog-wrap" style={{ marginBottom: 3 }}>
+                            <div className="prog-bar" style={{ width: `${pctOp}%`, background: barColor(o.computedStatus) }} />
+                          </div>
+                          <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text3)' }}>{pctOp}%</div>
+                        </td>
                         <td>
                           <span className={`badge ${st.cls}`}>{st.label}</span>
                         </td>
-                        <td style={{ fontSize: 10, lineHeight: 1.6 }}>
+                        <td style={{ fontSize: 11, lineHeight: 1.7 }}>
                           {opLogs.length === 0 ? (
-                            <span className="text3">No entries</span>
+                            <span style={{ color: 'var(--text3)', fontSize: 11 }}>No entries</span>
                           ) : (
-                            opLogs.map((l) => <div key={l.id}>{fmtLog(l)}</div>)
+                            opLogs.map((l, li) => (
+                              <span key={l.id} style={{ fontSize: 11, color: 'var(--text2)' }}>
+                                {li > 0 ? <br /> : null}
+                                {l.logDate} · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
+                                {l.operatorName ?? ''}
+                              </span>
+                            ))
                           )}
                         </td>
+                        {/* Legacy L11067-11085. Legacy's outsource branch offers
+                            Create PR / PR-No / PO-link actions off
+                            o.outsourcePRNo / o.outsourcePONo — neither field is on
+                            our enriched op shape, so outsource ops keep our
+                            existing Op Entry route (reported, not dropped). */}
                         <td>
-                          {o.computedStatus === 'complete' ? (
-                            <span style={{ color: 'var(--green)', fontSize: 11 }}>✓ Done</span>
-                          ) : isQc ? (
-                            <button type="button" className="btn btn-sm" style={{ color: 'var(--green)' }} onClick={openOpEntry}>
-                              🔬 QC{o.qcPending > 0 ? ` (${o.qcPending})` : ''}
+                          {isQc ? (
+                            o.qcPending > 0 ? (
+                              <button type="button" className="btn btn-sm" style={{ color: 'var(--green)' }} onClick={openOpEntry}>
+                                🔬 QC ({o.qcPending})
+                              </button>
+                            ) : o.computedStatus === 'complete' ? (
+                              <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Done</span>
+                            ) : (
+                              <span style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</span>
+                            )
+                          ) : o.computedStatus !== 'complete' ? (
+                            <button type="button" className="btn btn-sm btn-primary" onClick={openOpEntry}>
+                              ✚ Log
                             </button>
                           ) : (
-                            <button type="button" className="btn btn-sm btn-primary" onClick={openOpEntry}>
-                              {o.computedStatus === 'available' || o.computedStatus === 'waiting' ? '▶ Start' : '✚ Log'}
-                            </button>
+                            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
                           )}
+                          {!isQc && !isOut && (o.computedStatus === 'available' || o.computedStatus === 'waiting') ? (
+                            <button type="button" className="btn btn-sm" style={{ marginTop: 3 }} onClick={openOpEntry}>
+                              ▶ Start
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     );
@@ -356,53 +574,67 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
         </div>
       ) : null}
 
-      {/* Completion Log */}
+      {/* Log history — legacy L11144-11161, L11259-11260. A per-date grouped
+          icon feed, not a table. */}
       <div className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-        ▸ Completion Log ({timeline.length} entries)
+        ▸ Completion Log ({eventDays.total} entries)
       </div>
-      <div className="panel">
-        <div className="tbl-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}>
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Shift</th>
-                <th>Operation</th>
-                <th>Type</th>
-                <th style={{ textAlign: 'center' }}>Qty</th>
-                <th>Operator</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeline.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="empty-state">No log entries yet.</td>
-                </tr>
-              ) : (
-                timeline.map((l) => {
-                  const op = opById.get(l.jcOpId);
-                  return (
-                    <tr key={l.id}>
-                      <td className="text2" style={{ fontSize: 11 }}>{l.logDate}</td>
-                      <td className="text2" style={{ fontSize: 11 }}>{l.shift}</td>
-                      <td style={{ fontSize: 11 }}>{op ? `Op${op.opSeq}: ${op.operation}` : '—'}</td>
-                      <td>
-                        <span className={`badge ${l.logType === 'qc' ? 'b-green' : 'b-cyan'}`}>{l.logType}</span>
-                      </td>
-                      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                        +{l.qty}
-                        {l.rejectQty > 0 ? <span style={{ color: 'var(--red)' }}> / -{l.rejectQty}</span> : null}
-                      </td>
-                      <td style={{ fontSize: 11 }}>{l.operatorName ?? '—'}</td>
-                      <td className="text3" style={{ fontSize: 11 }}>{l.remarks ?? ''}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: '0 12px' }}>
+        {eventDays.total === 0 ? (
+          <div className="empty-state" style={{ padding: 16 }}>No log entries yet</div>
+        ) : (
+          eventDays.days.map((day) => (
+            <div key={day.date} style={{ marginBottom: 12 }}>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--cyan)',
+                  padding: '4px 0',
+                  borderBottom: '1px solid var(--border)',
+                  marginBottom: 6,
+                }}
+              >
+                📅 {day.date}
+              </div>
+              {day.events.map((e) => (
+                <div
+                  key={e.id}
+                  style={{ display: 'flex', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', alignItems: 'flex-start' }}
+                >
+                  <div style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{e.icon}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: e.color }}>{e.title}</span>
+                      {e.time ? (
+                        <span className="mono" style={{ fontSize: 10, color: 'var(--text3)' }}>{e.time}</span>
+                      ) : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 1 }}>
+                      {e.detail}
+                      {e.remarks ? (
+                        <>
+                          {' • '}
+                          <i>{e.remarks}</i>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                  {e.logType !== 'start' ? (
+                    <div className="mono fw-700" style={{ fontSize: 13, flexShrink: 0 }}>
+                      {e.logType === 'qc' ? (
+                        `+${e.qty}`
+                      ) : (
+                        <b style={{ color: 'var(--green)' }}>+{e.qty}</b>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

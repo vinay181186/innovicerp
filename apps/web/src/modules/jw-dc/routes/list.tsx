@@ -157,13 +157,6 @@ function OutwardView(): React.JSX.Element {
               {error instanceof Error ? error.message : 'Failed to load outward DCs'}
             </div>
           </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">📤</div>
-              No outward DCs. Click <strong>+ New Outward DC</strong>.
-            </div>
-          </div>
         ) : data ? (
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -188,9 +181,15 @@ function OutwardView(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((dc) => (
-                  <OutwardRow key={dc.id} dc={dc} />
-                ))}
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-state">
+                      No outward DCs. Click + New Outward DC.
+                    </td>
+                  </tr>
+                ) : (
+                  data.items.map((dc) => <OutwardRow key={dc.id} dc={dc} />)
+                )}
               </tbody>
             </table>
           </div>
@@ -236,7 +235,7 @@ function OutwardView(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
         💡 Material returns are tracked in 📥 Inward tab. ⚠ RETURNABLE — material comes back after
         processing.
       </div>
@@ -262,23 +261,20 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
 
   return (
     <tr>
-      <td>
+      <td className="mono fw-700">
         <Link
           to="/jw-dc/$id"
           params={{ id: dc.id }}
-          className="mono fw-700"
-          style={{ color: 'var(--purple)' }}
+          style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
         >
           {dc.code}
         </Link>
       </td>
-      <td className="text2" style={{ fontSize: 11 }}>
-        {dc.dcDate}
-      </td>
+      <td style={{ fontSize: 11 }}>{dc.dcDate}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
         {dc.jwpoCodeText ?? '—'}
       </td>
-      <td className="fw-700">{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
+      <td style={{ fontWeight: 600 }}>{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
       <td className="td-ctr">{dc.linesCount}</td>
       <td
         className="td-ctr mono fw-700"
@@ -299,14 +295,16 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
         <span style={{ fontWeight: 700, color: stColor }}>{stLabel}</span>
       </td>
       <td>
-        <Link
-          to="/jw-dc/$id"
-          params={{ id: dc.id }}
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: 10 }}
-        >
-          👁 View
-        </Link>
+        <div style={{ display: 'flex', gap: 3 }}>
+          <Link
+            to="/jw-dc/$id"
+            params={{ id: dc.id }}
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 10 }}
+          >
+            👁 View
+          </Link>
+        </div>
       </td>
     </tr>
   );
@@ -370,14 +368,6 @@ function InwardView(): React.JSX.Element {
               {error instanceof Error ? error.message : 'Failed to load inward entries'}
             </div>
           </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">📥</div>
-              No inward entries. Click <strong>+ New Inward Entry</strong> when material returns
-              from vendor.
-            </div>
-          </div>
         ) : data ? (
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -398,31 +388,38 @@ function InwardView(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((inv) => (
-                  <tr key={inv.id}>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>
-                      {inv.code}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {inv.inwardDate}
-                    </td>
-                    <td
-                      className="mono"
-                      style={{ color: 'var(--purple)', fontSize: 11 }}
-                    >
-                      {inv.dcCodeText ?? '—'}
-                    </td>
-                    <td className="fw-700">{inv.vendorNameText ?? '—'}</td>
-                    <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
-                    <td className="td-ctr mono fw-700">{inv.totalReceivedQty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
-                      {inv.totalOkQty}
-                    </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
-                      {inv.totalRejectedQty > 0 ? inv.totalRejectedQty : '—'}
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="empty-state">
+                      No inward entries. Click + New Inward Entry when material returns from
+                      vendor.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  data.items.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+                        {inv.code}
+                      </td>
+                      <td style={{ fontSize: 11 }}>{inv.inwardDate}</td>
+                      <td
+                        className="mono"
+                        style={{ color: 'var(--purple)', fontSize: 11 }}
+                      >
+                        {inv.dcCodeText ?? '—'}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{inv.vendorNameText ?? '—'}</td>
+                      <td style={{ fontSize: 11 }}>{inv.vendorChallanNo ?? '—'}</td>
+                      <td className="td-ctr mono fw-700">{inv.totalReceivedQty}</td>
+                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                        {inv.totalOkQty}
+                      </td>
+                      <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                        {inv.totalRejectedQty > 0 ? inv.totalRejectedQty : '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -562,75 +559,63 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   };
 
   return (
-    <ModalShell onClose={onClose} title="📤 New Outward DC (Returnable Gate Pass)">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Date">
+    <ModalShell
+      onClose={onClose}
+      title="📤 New Outward DC (Returnable Gate Pass)"
+      onSave={onSave}
+      saving={createMut.isPending}
+      saveLabel="Save Outward DC"
+    >
+      <div className="form-grid" style={{ marginBottom: 14 }}>
+        <div className="form-grp">
+          <label className="form-label">Date</label>
           <input
             type="date"
             className="innovic-input"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
-        </Field>
-        <div></div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JWPO ★">
-            <select
-              className="innovic-select"
-              value={poId ?? ''}
-              onChange={(e) => setPoId(e.target.value || null)}
+        </div>
+        <div className="form-grp form-full">
+          <label className="form-label">
+            JWPO<span className="req">★</span>
+          </label>
+          <select
+            className="innovic-select"
+            value={poId ?? ''}
+            onChange={(e) => setPoId(e.target.value || null)}
+          >
+            <option value="">-- Select JWPO --</option>
+            {(poData?.items ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        {selectedPo ? (
+          <div className="form-grp form-full">
+            <div
+              style={{
+                padding: '8px 12px',
+                background: 'var(--bg3)',
+                borderRadius: 6,
+                border: '1px solid var(--border)',
+                fontSize: 12,
+              }}
             >
-              <option value="">— Select a JWPO —</option>
-              {(poData?.items ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Vehicle No.">
-          <input
-            type="text"
-            className="innovic-input"
-            value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
-            placeholder="GJ-05-XX-1234"
-          />
-        </Field>
-        <Field label="Remarks">
-          <input
-            type="text"
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Packing, handling notes…"
-          />
-        </Field>
+              <b>Vendor:</b> {selectedPo.vendorName ?? selectedPo.vendorCodeText ?? '—'} |{' '}
+              <b>PO:</b> {selectedPo.code} | <b>Lines:</b> {lines.length}
+            </div>
+          </div>
+        ) : null}
       </div>
-
-      {selectedPo ? (
-        <div
-          style={{
-            marginTop: 14,
-            padding: '8px 12px',
-            background: 'var(--bg3)',
-            borderRadius: 6,
-            border: '1px solid var(--border)',
-            fontSize: 12,
-          }}
-        >
-          <b>Vendor:</b> {selectedPo.vendorName ?? selectedPo.vendorCodeText ?? '—'} |{' '}
-          <b>PO:</b> {selectedPo.code} | <b>Lines:</b> {lines.length}
-        </div>
-      ) : null}
 
       {lines.length > 0 ? (
         <div
           style={{
-            marginTop: 14,
             border: '1px solid var(--border)',
-            borderRadius: 6,
+            borderRadius: 8,
             overflow: 'hidden',
           }}
         >
@@ -734,14 +719,30 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
         </div>
       ) : null}
 
-      {err ? <ErrorBox message={err} /> : null}
+      <div className="form-grid" style={{ marginTop: 14 }}>
+        <div className="form-grp">
+          <label className="form-label">Vehicle No.</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={vehicleNo}
+            onChange={(e) => setVehicleNo(e.target.value)}
+            placeholder="GJ-05-XX-1234"
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Remarks</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Packing, handling notes..."
+          />
+        </div>
+      </div>
 
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Outward DC"
-      />
+      {err ? <ErrorBox message={err} /> : null}
     </ModalShell>
   );
 }
@@ -858,34 +859,42 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   };
 
   return (
-    <ModalShell onClose={onClose} title="📥 New Inward Entry">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Date">
+    <ModalShell
+      onClose={onClose}
+      title="📥 New Inward Entry"
+      onSave={onSave}
+      saving={createMut.isPending}
+      saveLabel="Save Inward"
+    >
+      <div className="form-grid" style={{ marginBottom: 14 }}>
+        <div className="form-grp">
+          <label className="form-label">Date</label>
           <input
             type="date"
             className="innovic-input"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
-        </Field>
-        <div></div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JW DC ★ (with pending returns)">
-            <select
-              className="innovic-select"
-              value={dcId ?? ''}
-              onChange={(e) => setDcId(e.target.value || null)}
-            >
-              <option value="">-- Select DC --</option>
-              {pendingDcs.map((dc) => (
-                <option key={dc.id} value={dc.id}>
-                  {dc.code} — {dc.vendorNameText ?? dc.vendorCodeText ?? ''} ({dc.jwpoCodeText})
-                </option>
-              ))}
-            </select>
-          </Field>
         </div>
-        <Field label="Vendor Challan No.">
+        <div className="form-grp form-full">
+          <label className="form-label">
+            JW DC<span className="req">★</span> (select DC with pending returns)
+          </label>
+          <select
+            className="innovic-select"
+            value={dcId ?? ''}
+            onChange={(e) => setDcId(e.target.value || null)}
+          >
+            <option value="">-- Select DC --</option>
+            {pendingDcs.map((dc) => (
+              <option key={dc.id} value={dc.id}>
+                {dc.code} — {dc.vendorNameText ?? dc.vendorCodeText ?? ''} ({dc.jwpoCodeText})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Vendor Challan No.</label>
           <input
             type="text"
             className="innovic-input"
@@ -893,8 +902,9 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setVendorChallan(e.target.value)}
             placeholder="Vendor reference"
           />
-        </Field>
-        <Field label="Vehicle No.">
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Vehicle No.</label>
           <input
             type="text"
             className="innovic-input"
@@ -902,26 +912,14 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
             onChange={(e) => setVehicleNo(e.target.value)}
             placeholder="GJ-05-XX-5678"
           />
-        </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Condition notes, issues…"
-            />
-          </Field>
         </div>
       </div>
 
       {lines.length > 0 ? (
         <div
           style={{
-            marginTop: 14,
             border: '1px solid var(--border)',
-            borderRadius: 6,
+            borderRadius: 8,
             overflow: 'hidden',
           }}
         >
@@ -1053,113 +1051,73 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
         </div>
       ) : null}
 
-      {err ? <ErrorBox message={err} /> : null}
+      <div className="form-grp" style={{ marginTop: 14 }}>
+        <label className="form-label">Remarks</label>
+        <input
+          type="text"
+          className="innovic-input"
+          value={remarks}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Condition notes, issues..."
+        />
+      </div>
 
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Inward"
-      />
+      {err ? <ErrorBox message={err} /> : null}
     </ModalShell>
   );
 }
 
 // ─── Shared bits ──────────────────────────────────────────────────────────
 
+// Mirrors legacy showModalLg (L28032): .overlay > .modal.modal-lg with
+// .modal-hdr / .modal-body / .modal-footer.
 function ModalShell({
   onClose,
   title,
+  onSave,
+  saving,
+  saveLabel,
   children,
 }: {
   onClose: () => void;
   title: string;
+  onSave: () => void;
+  saving: boolean;
+  saveLabel: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 95vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
+      <div className="modal modal-lg">
+        <div className="modal-hdr">
+          <span className="modal-title">{title}</span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+            ✕
+          </button>
         </div>
-        {children}
+        <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+          {children}
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-success" disabled={saving} onClick={onSave}>
+            {saving ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              <>✓ {saveLabel}</>
+            )}
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function ModalActions({
-  onClose,
-  onSave,
-  saving,
-  saveLabel,
-}: {
-  onClose: () => void;
-  onSave: () => void;
-  saving: boolean;
-  saveLabel: string;
-}): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-      <button type="button" className="btn btn-ghost" onClick={onClose}>
-        Cancel
-      </button>
-      <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
-        {saving ? (
-          <>
-            <Loader2 size={14} className="inline animate-spin" /> Saving…
-          </>
-        ) : (
-          saveLabel
-        )}
-      </button>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
     </div>
   );
 }

@@ -14,6 +14,20 @@ export const invoiceListRoute = createRoute({
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
+// Mirror of legacy fmt() (L1484): '' → '—', else dd Mon yy (en-IN).
+const fmt = (d: string | null | undefined): string => {
+  if (!d) return '—';
+  try {
+    return new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: '2-digit',
+    });
+  } catch {
+    return d;
+  }
+};
+
 function InvoiceListPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useInvoiceList();
 
@@ -33,14 +47,22 @@ function InvoiceListPage(): React.JSX.Element {
   }
 
   const s = data.summary;
-  const cards: { label: string; value: string; color: string }[] = [
-    { label: 'TOTAL INVOICED', value: inr(s.totalInvoiced), color: 'var(--green)' },
-    { label: 'TOTAL RECEIVED', value: inr(s.totalReceived), color: 'var(--cyan)' },
-    { label: 'OUTSTANDING', value: inr(s.outstanding), color: 'var(--amber)' },
-    { label: 'OVERDUE', value: inr(s.overdueAmount), color: 'var(--red)' },
-    { label: 'UNPAID', value: String(s.unpaidCount), color: 'var(--red)' },
-    { label: 'PARTIAL', value: String(s.partialCount), color: 'var(--amber)' },
-    { label: 'PAID', value: String(s.paidCount), color: 'var(--green)' },
+  // Legacy L21139-21145: money tiles 18px, count tiles 20px, OVERDUE carries an
+  // "N inv" sub-line (server-supplied count — never computed here).
+  const cards: { label: string; value: string; color: string; size: number; sub?: string }[] = [
+    { label: 'TOTAL INVOICED', value: inr(s.totalInvoiced), color: 'var(--green)', size: 18 },
+    { label: 'TOTAL RECEIVED', value: inr(s.totalReceived), color: 'var(--cyan)', size: 18 },
+    { label: 'OUTSTANDING', value: inr(s.outstanding), color: 'var(--amber)', size: 18 },
+    {
+      label: 'OVERDUE',
+      value: inr(s.overdueAmount),
+      color: 'var(--red)',
+      size: 18,
+      sub: `${s.overdueCount} inv`,
+    },
+    { label: 'UNPAID', value: String(s.unpaidCount), color: 'var(--red)', size: 20 },
+    { label: 'PARTIAL', value: String(s.partialCount), color: 'var(--amber)', size: 20 },
+    { label: 'PAID', value: String(s.paidCount), color: 'var(--green)', size: 20 },
   ];
 
   return (
@@ -65,7 +87,8 @@ function InvoiceListPage(): React.JSX.Element {
         {cards.map((c) => (
           <div key={c.label} className="panel" style={{ padding: 10, textAlign: 'center' }}>
             <div className="text3" style={{ fontSize: 9 }}>{c.label}</div>
-            <div className="mono fw-700" style={{ fontSize: 18, color: c.color }}>{c.value}</div>
+            <div className="mono fw-700" style={{ fontSize: c.size, color: c.color }}>{c.value}</div>
+            {c.sub ? <div style={{ fontSize: 9, color: 'var(--red)' }}>{c.sub}</div> : null}
           </div>
         ))}
       </div>
@@ -79,17 +102,18 @@ function InvoiceListPage(): React.JSX.Element {
                 <th>Date</th>
                 <th>SO</th>
                 <th>Client</th>
-                <th className="td-ctr">Amount</th>
-                <th className="td-ctr">Paid</th>
-                <th className="td-ctr">Balance</th>
+                <th>Amount</th>
+                <th>Paid</th>
+                <th>Balance</th>
                 <th>Status</th>
                 <th>Due Date</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {data.invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">No invoices yet. Click + New Invoice.</td>
+                  <td colSpan={10} className="empty-state">No invoices yet. Click + New Invoice.</td>
                 </tr>
               ) : (
                 data.invoices.map((inv) => (
@@ -104,9 +128,9 @@ function InvoiceListPage(): React.JSX.Element {
                         {inv.code}
                       </Link>
                     </td>
-                    <td style={{ fontSize: 11 }}>{inv.invoiceDate}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{inv.soCode ?? '—'}</td>
-                    <td className="fw-700">{inv.clientName ?? '—'}</td>
+                    <td style={{ fontSize: 11 }}>{fmt(inv.invoiceDate)}</td>
+                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{inv.soCode ?? ''}</td>
+                    <td className="fw-700">{inv.clientName ?? ''}</td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{inr(inv.grandTotal)}</td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid)}</td>
                     <td className="td-ctr mono fw-700" style={{ color: inv.balance > 0 ? 'var(--red)' : 'var(--green)' }}>
@@ -120,7 +144,29 @@ function InvoiceListPage(): React.JSX.Element {
                         <span style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700, marginLeft: 4 }}>⚠ OVERDUE</span>
                       ) : null}
                     </td>
-                    <td style={{ fontSize: 11, color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>{inv.dueDate ?? '—'}</td>
+                    <td style={{ fontSize: 11, color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>{fmt(inv.dueDate)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        <Link
+                          to="/invoices/$id"
+                          params={{ id: inv.id }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 10 }}
+                        >
+                          👁
+                        </Link>
+                        {inv.status !== 'paid' ? (
+                          <Link
+                            to="/invoices/$id"
+                            params={{ id: inv.id }}
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 10, color: 'var(--green)' }}
+                          >
+                            💳 Pay
+                          </Link>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

@@ -91,13 +91,24 @@ function BackupPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">💾 Backup & Export</div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          💾 Backup & Export
+        </div>
+      </div>
 
       {/* Summary cards */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: 8,
           marginBottom: 16,
         }}
@@ -124,7 +135,7 @@ function BackupPage(): React.JSX.Element {
 
       {/* Action panel */}
       <div className="panel" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>📤 Export</div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>📤 Export Options</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"

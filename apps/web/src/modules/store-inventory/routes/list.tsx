@@ -1,7 +1,12 @@
 // Store / Inventory (PL-SI-1) — per-item current stock dashboard.
 // Mirrors legacy renderStore (HTML L24803). 4-tile KPI strip + filter +
 // per-item table with In Stock, Min Qty, On PO, Mfg Pending, + actions:
-// ± Adjust (modal), Min Qty (modal). History routes to /store-transactions.
+// ± Adjust (modal), Min Qty (modal).
+//
+// Two legacy features are NOT ported (reported as parity gaps):
+//   - per-row History button (legacy L24847/24953) — needs a per-item txn
+//     fetch; /store-transactions cannot filter by item from the URL today.
+//   - Recent Store Transactions panel (legacy L24903) — not on this payload.
 
 import type {
   AdjustStockInput,
@@ -109,16 +114,10 @@ function StoreInventoryPage(): React.JSX.Element {
                     <th>Name</th>
                     <th>Material</th>
                     <th>UOM</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                      In Stock
-                    </th>
-                    <th className="td-ctr">Min Qty</th>
-                    <th className="td-ctr" style={{ color: 'var(--blue)' }}>
-                      On PO
-                    </th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>
-                      Mfg Pending
-                    </th>
+                    <th style={{ color: 'var(--green)' }}>In Stock</th>
+                    <th>Min Qty</th>
+                    <th style={{ color: 'var(--blue)' }}>On PO</th>
+                    <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
                     {canWrite ? <th>Actions</th> : null}
                   </tr>
                 </thead>
@@ -126,7 +125,7 @@ function StoreInventoryPage(): React.JSX.Element {
                   {data.rows.length === 0 ? (
                     <tr>
                       <td colSpan={canWrite ? 9 : 8} className="empty-state">
-                        No items in this view
+                        No items in master
                       </td>
                     </tr>
                   ) : (
@@ -137,10 +136,8 @@ function StoreInventoryPage(): React.JSX.Element {
                           background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
                         }}
                       >
-                        <td>
-                          <span className="td-code" style={{ color: 'var(--purple)' }}>
-                            {row.itemCode}
-                          </span>
+                        <td className="td-code" style={{ color: 'var(--purple)' }}>
+                          {row.itemCode}
                         </td>
                         <td className="fw-700">{row.itemName}</td>
                         <td className="text2" style={{ fontSize: 11 }}>
@@ -222,9 +219,9 @@ function StoreInventoryPage(): React.JSX.Element {
             </div>
           </div>
 
-          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-            💡 Stock is automatically updated via GRN (inward) and Item Issues (outward). Use{' '}
-            <b>± Adjust</b> for manual corrections.
+          <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
+            💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ± Adjust
+            for manual corrections.
           </div>
         </>
       ) : null}
@@ -253,95 +250,52 @@ function KpiStrip({
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
   const tiles: Array<{
-    key: FilterKey;
+    variant: 'cyan' | 'green' | 'red' | 'amber';
     label: string;
     value: number | string;
-    color: string;
     sub?: string;
     onClick?: () => void;
   }> = [
     {
-      key: 'all',
+      variant: 'cyan',
       label: 'Total Items',
       value: summary.totalItems,
-      color: 'var(--cyan)',
-      sub: `${summary.totalStockPieces} total pieces`,
+      sub: `${summary.totalStockPieces} total pieces in store`,
       onClick: () => setFilter('all'),
     },
     {
-      key: 'all',
+      variant: 'green',
       label: 'Items in Stock',
       value: summary.itemsInStockCount,
-      color: 'var(--green)',
     },
     {
-      key: 'low',
+      variant: 'red',
       label: 'Low Stock Alert',
       value: summary.lowStockCount,
-      color: 'var(--red)',
       sub: 'Below minimum level',
       onClick: () => setFilter(filter === 'low' ? 'all' : 'low'),
     },
     {
-      key: 'zero',
+      variant: 'amber',
       label: 'Zero Stock',
       value: summary.zeroStockCount,
-      color: 'var(--amber)',
       onClick: () => setFilter(filter === 'zero' ? 'all' : 'zero'),
     },
   ];
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      {tiles.map((t, i) => {
-        const active = filter !== 'all' && t.key === filter;
-        return (
-          <div
-            key={i}
-            onClick={t.onClick}
-            style={{
-              padding: 14,
-              background: 'var(--bg2)',
-              border: '1px solid var(--border)',
-              borderTop: `3px solid ${t.color}`,
-              borderRadius: 6,
-              cursor: t.onClick ? 'pointer' : 'default',
-              textAlign: 'center',
-              boxShadow: active ? `0 0 0 2px ${t.color}` : undefined,
-              transition: 'box-shadow .15s',
-            }}
-          >
-            <div
-              className="text3"
-              style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-            >
-              {t.label}
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 22,
-                fontWeight: 700,
-                color: t.color,
-                marginTop: 2,
-              }}
-            >
-              {t.value}
-            </div>
-            {t.sub ? (
-              <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
-                {t.sub}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+    <div className="stat-grid">
+      {tiles.map((t, i) => (
+        <div
+          key={i}
+          className={`stat-card ${t.variant}`}
+          onClick={t.onClick}
+          style={t.onClick ? { cursor: 'pointer' } : undefined}
+        >
+          <div className="stat-label">{t.label}</div>
+          <div className="stat-val">{t.value}</div>
+          {t.sub ? <div className="stat-sub">{t.sub}</div> : null}
+        </div>
+      ))}
     </div>
   );
 }
@@ -383,61 +337,54 @@ function AdjustModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`± Stock Adjustment — ${row.itemCode}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`± Stock Adjustment — ${row.itemCode} (${row.itemName})`}
+    >
       <div
         style={{
           marginBottom: 12,
           padding: 10,
           background: 'var(--bg3)',
-          borderRadius: 6,
-          fontSize: 12,
+          borderRadius: 8,
         }}
       >
-        <span className="text3">Current Stock:</span>{' '}
-        <span className="mono fw-700" style={{ fontSize: 18, color: 'var(--green)' }}>
+        <span className="text3" style={{ fontSize: 11 }}>
+          Current Stock:
+        </span>
+        <span
+          className="mono fw-700"
+          style={{ fontSize: 18, color: 'var(--green)', marginLeft: 8 }}
+        >
           {row.inStock} {row.uom}
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Adjustment Type
-          </div>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">Adjustment Type</label>
           <select
             className="innovic-select"
             value={direction}
             onChange={(e) => setDirection(e.target.value as 'add' | 'remove')}
           >
             <option value="add">+ Add Stock</option>
-            <option value="remove">− Remove Stock</option>
+            <option value="remove">- Remove Stock</option>
           </select>
         </div>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Quantity ★
-          </div>
+        <div className="form-grp">
+          <label className="form-label">Quantity ★</label>
           <input
             type="number"
             min={1}
             className="innovic-input"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
+            placeholder="0"
             style={{ fontSize: 16, fontWeight: 700 }}
           />
         </div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Reason / Remarks ★
-          </div>
+        <div className="form-grp form-full">
+          <label className="form-label">Reason / Remarks ★</label>
           <input
             type="text"
             className="innovic-input"
@@ -510,22 +457,17 @@ function SetMinModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode}`}>
+    <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode} (${row.itemName})`}>
       <div
         className="text3"
         style={{ fontSize: 12, marginBottom: 10 }}
       >
-        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a 🔴 LOW tag
+        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ LOW tag
         when current stock ≤ this value. Use 0 to disable.
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Min Stock Qty
-          </div>
+      <div className="form-grid">
+        <div className="form-grp form-full">
+          <label className="form-label">Min Stock Qty</label>
           <input
             type="number"
             min={0}
@@ -643,18 +585,14 @@ function ManualReceiveModal({
 
   return (
     <ModalShell onClose={onClose} title="+ Manual Stock Receipt">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ gridColumn: 'span 2' }}>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Item ★
-          </div>
+      <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">Item ★</label>
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search item…"
+            placeholder="🔍 Search item..."
+            style={{ fontSize: 12 }}
             value={selected ? `${selected.itemCode} — ${selected.itemName}` : itemSearch}
             onChange={(e) => {
               setItemId(null);
@@ -696,13 +634,8 @@ function ManualReceiveModal({
             </div>
           ) : null}
         </div>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Quantity ★
-          </div>
+        <div className="form-grp">
+          <label className="form-label">Quantity ★</label>
           <input
             type="number"
             min={1}
@@ -713,13 +646,8 @@ function ManualReceiveModal({
             style={{ fontSize: 16, fontWeight: 700 }}
           />
         </div>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Source
-          </div>
+        <div className="form-grp">
+          <label className="form-label">Source</label>
           <select
             className="innovic-select"
             value={source}
@@ -731,13 +659,8 @@ function ManualReceiveModal({
             <option>Other</option>
           </select>
         </div>
-        <div>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Reference No.
-          </div>
+        <div className="form-grp">
+          <label className="form-label">Reference No.</label>
           <input
             type="text"
             className="innovic-input"
@@ -746,13 +669,8 @@ function ManualReceiveModal({
             placeholder="JC / PO / GRN number"
           />
         </div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
-          >
-            Remarks
-          </div>
+        <div className="form-grp form-full">
+          <label className="form-label">Remarks</label>
           <input
             type="text"
             className="innovic-input"

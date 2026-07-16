@@ -50,8 +50,10 @@ export function DrawingUploadField({
   const fileName = value ? (value.split('/').pop() ?? value) : null;
 
   return (
-    <div className="form-grp">
-      <label className="form-label">Drawing File</label>
+    <div className="form-grp form-full">
+      <label className="form-label">
+        Drawing File <span className="form-help">(Image/PDF)</span>
+      </label>
       <input
         type="file"
         className="innovic-input"
@@ -68,17 +70,12 @@ export function DrawingUploadField({
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void view()}>
             📎 {fileName}
           </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ color: 'var(--red)' }}
-            onClick={() => onChange(undefined)}
-          >
-            ✕ Remove
+          <button type="button" className="btn btn-danger btn-sm" onClick={() => onChange(undefined)}>
+            Remove
           </button>
         </div>
       ) : (
-        <div className="form-help">PDF or image. Stored privately; opened via a short-lived link.</div>
+        <div className="form-help">Stored privately; opened via a short-lived link.</div>
       )}
       {err ? <div className="form-error">{err}</div> : null}
     </div>

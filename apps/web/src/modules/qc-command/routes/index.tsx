@@ -80,6 +80,8 @@ function QcCommandPage(): React.JSX.Element {
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 16,
+          flexWrap: 'wrap',
+          gap: 8,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
@@ -110,9 +112,9 @@ function QcCommandPage(): React.JSX.Element {
             }}
           >
             <Stat label="QC Pending" value={stats?.pendingOps ?? 0} color="var(--red)" />
-            <Stat label="Overdue" value={stats?.overdue ?? 0} color="var(--red)" />
+            <Stat label="Overdue" value={stats?.overdue ?? 0} color="var(--red)" accent />
             <Stat label="Oldest" value={`${stats?.oldestAgeDays ?? 0}d`} color="var(--amber)" />
-            <Stat label="Rework Items" value={stats?.reworkItems ?? 0} color="var(--purple)" />
+            <Stat label="Rework Items" value={stats?.reworkItems ?? 0} color="#8B5CF6" />
             <Stat
               label="First-Pass Yield"
               value={`${stats?.fpyPct ?? 0}%`}
@@ -143,7 +145,8 @@ function QcCommandPage(): React.JSX.Element {
                   color: tab === t.id ? 'var(--red)' : 'var(--text3)',
                 }}
               >
-                {t.label}
+                {/* Legacy L18644 suffixes the queue tab with the pending count. */}
+                {t.id === 'queue' ? `${t.label} (${stats?.pendingOps ?? 0})` : t.label}
               </div>
             ))}
           </div>
@@ -161,9 +164,7 @@ function QcCommandPage(): React.JSX.Element {
           {tab === 'fpy' && cmd.data ? <FpyTab fpy={cmd.data.fpy} /> : null}
           {tab === 'rework' ? <ReworkTab rework={cmd.data?.rework ?? []} /> : null}
           {tab === 'pareto' && cmd.data ? <ParetoTab pareto={cmd.data.pareto} /> : null}
-          {tab === 'inspector' ? (
-            <InspectorTab perf={cmd.data?.inspectorPerf ?? []} />
-          ) : null}
+          {tab === 'inspector' ? <InspectorTab perf={cmd.data?.inspectorPerf ?? []} /> : null}
         </>
       )}
 
@@ -178,21 +179,29 @@ function QcCommandPage(): React.JSX.Element {
   );
 }
 
-function Stat(props: { label: string; value: number | string; color: string }): React.JSX.Element {
+// Legacy hand-rolls these tiles (L18633-18638) rather than using .stat-card —
+// bg2 + --border, except Overdue (`accent`) which gets a red wash, red border
+// and a red label (L18634). Values are plain 26px/700, not mono.
+function Stat(props: {
+  label: string;
+  value: number | string;
+  color: string;
+  accent?: boolean;
+}): React.JSX.Element {
   return (
     <div
       style={{
         textAlign: 'center',
         padding: 14,
         borderRadius: 10,
-        background: 'var(--bg3)',
-        border: '1px solid var(--border)',
+        background: props.accent ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
+        border: props.accent ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
       }}
     >
-      <div className="text3" style={{ fontSize: 10 }}>
+      <div style={{ fontSize: 10, color: props.accent ? 'var(--red)' : 'var(--text3)' }}>
         {props.label}
       </div>
-      <div className="mono fw-700" style={{ fontSize: 26, color: props.color }}>
+      <div className="fw-700" style={{ fontSize: 26, color: props.color }}>
         {props.value}
       </div>
     </div>

@@ -159,189 +159,219 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 
   return (
     <div>
+      <div className="section-hdr" style={{ marginBottom: 8 }}>
+        📦 OSP Delivery Challan &amp; Outward
+      </div>
+
       <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Delivery Challans
       </Link>
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">New delivery challan</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Issuing material against PO <span className="mono">{po.code}</span> — vendor{' '}
-              <b style={{ color: 'var(--text)' }}>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>.
-              Submit will flip linked outsource ops to <span className="mono">sent</span> and write a
-              stock OUT ledger row per item.
-            </div>
-          </div>
+      <div className="panel" style={{ padding: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cyan)', marginBottom: 12 }}>
+          ➕ Create OSP Delivery Challan
         </div>
-        <div className="panel-body">
-          <div className="form-grid form-grid-3">
-            <div className="form-grp">
-              <label className="form-label" htmlFor="dc-code">
-                DC code<span className="req">★</span>
-              </label>
-              <input
-                id="dc-code"
-                className="innovic-input"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="DC-NNNNN"
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="dc-date">
-                DC date
-              </label>
-              <input
-                id="dc-date"
-                type="date"
-                className="innovic-input"
-                value={dcDate}
-                onChange={(e) => setDcDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="dc-transport">
-                Transport / vehicle
-              </label>
-              <input
-                id="dc-transport"
-                className="innovic-input"
-                value={transport}
-                onChange={(e) => setTransport(e.target.value)}
-                placeholder="optional"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="panel-title">Lines</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Enter ship qty per PO line. Lines with qty 0 are skipped.
+        <div
+          style={{
+            background: 'var(--bg)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            padding: 12,
+            margin: '14px 0',
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))',
+              gap: 10,
+            }}
+          >
+            <div>
+              <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO NO.</span>
+              <br />
+              <b className="mono" style={{ color: 'var(--cyan)' }}>
+                {po.code}
+              </b>
+            </div>
+            <div>
+              <span style={{ fontSize: 9, color: 'var(--text3)' }}>VENDOR</span>
+              <br />
+              <b>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>
+            </div>
+            <div>
+              <span style={{ fontSize: 9, color: 'var(--text3)' }}>PROCESS</span>
+              <br />
+              <b style={{ color: 'var(--purple)' }}>{po.remarks || ''}</b>
+            </div>
+            <div>
+              <span style={{ fontSize: 9, color: 'var(--text3)' }}>LINES</span>
+              <br />
+              <b>{po.lines.length}</b>
             </div>
           </div>
         </div>
-        <div className="panel-body">
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Item</th>
-                  <th className="td-right">PO qty</th>
-                  <th className="td-right">Ship qty</th>
-                  <th>Material</th>
-                  <th>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lineDrafts.map((l, idx) => (
-                  <tr key={l.purchaseOrderLineId}>
-                    <td className="td-ctr mono">{idx + 1}</td>
-                    <td>
-                      <span className="mono">{l.itemCodeText}</span>
-                      {l.itemNameText ? (
-                        <div className="text3" style={{ fontSize: 11 }}>
-                          {l.itemNameText}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="td-right mono">{l.poLineQty}</td>
-                    <td className="td-right">
+
+        <div className="form-grid">
+          <div className="form-grp">
+            <label className="form-label" htmlFor="dc-code">
+              DC No.<span className="req">★</span>
+            </label>
+            <input
+              id="dc-code"
+              className="innovic-input"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="OSP-DC-NNNNN"
+            />
+          </div>
+          <div className="form-grp">
+            <label className="form-label" htmlFor="dc-date">
+              DC Date
+            </label>
+            <input
+              id="dc-date"
+              type="date"
+              className="innovic-input"
+              value={dcDate}
+              onChange={(e) => setDcDate(e.target.value)}
+            />
+          </div>
+          <div className="form-grp">
+            <label className="form-label" htmlFor="dc-transport">
+              Transporter
+            </label>
+            <input
+              id="dc-transport"
+              className="innovic-input"
+              value={transport}
+              onChange={(e) => setTransport(e.target.value)}
+              placeholder="Transport name"
+            />
+          </div>
+        </div>
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', margin: '14px 0 6px' }}>
+          Items to Send
+        </div>
+        <div className="tbl-wrap" style={{ marginBottom: 14 }}>
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item Code</th>
+                <th>Name</th>
+                <th style={{ textAlign: 'right' }}>PO Qty</th>
+                <th style={{ textAlign: 'right', color: 'var(--green)' }}>Send Now ★</th>
+                <th>Material</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lineDrafts.map((l, idx) => (
+                <tr key={l.purchaseOrderLineId}>
+                  <td className="mono">{idx + 1}</td>
+                  <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                    {l.itemCodeText}
+                  </td>
+                  <td>{l.itemNameText}</td>
+                  <td className="td-right mono">{l.poLineQty}</td>
+                  <td className="td-right">
                       <input
                         type="number"
                         step="1"
                         min={0}
                         max={l.poLineQty}
                         className="innovic-input"
-                        value={l.shipQty}
-                        onChange={(e) =>
-                          setLineDrafts((prev) => {
-                            const next = prev.slice();
-                            next[idx] = { ...next[idx]!, shipQty: e.target.value };
-                            return next;
-                          })
-                        }
-                        style={{ width: 90, textAlign: 'right' }}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="innovic-input"
-                        value={l.materialText}
-                        onChange={(e) =>
-                          setLineDrafts((prev) => {
-                            const next = prev.slice();
-                            next[idx] = { ...next[idx]!, materialText: e.target.value };
-                            return next;
-                          })
-                        }
-                        placeholder="optional"
-                        style={{ width: 130 }}
-                      />
-                    </td>
-                    <td>
-                      <textarea
-                        rows={1}
-                        className="innovic-textarea"
-                        value={l.dcRemarks}
-                        onChange={(e) =>
-                          setLineDrafts((prev) => {
-                            const next = prev.slice();
-                            next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
-                            return next;
-                          })
-                        }
-                        placeholder="optional"
-                        style={{ width: 200 }}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      value={l.shipQty}
+                      onChange={(e) =>
+                        setLineDrafts((prev) => {
+                          const next = prev.slice();
+                          next[idx] = { ...next[idx]!, shipQty: e.target.value };
+                          return next;
+                        })
+                      }
+                      style={{
+                        width: 80,
+                        textAlign: 'right',
+                        fontWeight: 700,
+                        color: 'var(--green)',
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="innovic-input"
+                      value={l.materialText}
+                      onChange={(e) =>
+                        setLineDrafts((prev) => {
+                          const next = prev.slice();
+                          next[idx] = { ...next[idx]!, materialText: e.target.value };
+                          return next;
+                        })
+                      }
+                      placeholder="optional"
+                      style={{ width: 130 }}
+                    />
+                  </td>
+                  <td>
+                    <textarea
+                      rows={1}
+                      className="innovic-textarea"
+                      value={l.dcRemarks}
+                      onChange={(e) =>
+                        setLineDrafts((prev) => {
+                          const next = prev.slice();
+                          next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
+                          return next;
+                        })
+                      }
+                      placeholder="optional"
+                      style={{ width: 200 }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {submitError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid #fca5a5',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              marginBottom: 10,
+            }}
+          >
+            {submitError}
           </div>
-        </div>
-      </div>
+        ) : null}
 
-      {submitError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {submitError}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            className="btn btn-success"
+            style={{ fontSize: 14, padding: '10px 24px' }}
+            onClick={() => void onSubmit()}
+            disabled={!canSubmit || submitting}
+          >
+            {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {submitting ? 'Creating…' : '✔ Save DC'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void navigate({ to: '/delivery-challans' })}
+          >
+            Cancel
+          </button>
         </div>
-      ) : null}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => void navigate({ to: '/delivery-challans' })}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => void onSubmit()}
-          disabled={!canSubmit || submitting}
-        >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-          {submitting ? 'Creating…' : 'Create DC'}
-        </button>
       </div>
     </div>
   );

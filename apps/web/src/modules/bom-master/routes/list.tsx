@@ -55,7 +55,7 @@ function BomMastersListPage(): React.JSX.Element {
           <input
             className="innovic-input"
             style={{ width: 220 }}
-            placeholder="Search BOM No. or name…"
+            placeholder="Search BOM..."
             value={search ?? ''}
             onChange={(e) =>
               void navigate({
@@ -123,7 +123,7 @@ function BomMastersListPage(): React.JSX.Element {
               ) : !data || data.items.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="empty-state">
-                    No BOMs yet — click <strong>+ New BOM</strong>
+                    No BOMs created yet — click <strong>+ New BOM</strong>
                   </td>
                 </tr>
               ) : (
@@ -142,9 +142,8 @@ function BomMastersListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, padding: '6px 4px 0', marginTop: 4 }}>
-        💡 BOM Master defines part lists (items + qty per set). Link a BOM to an Equipment SO line
-        to auto-spawn child JCs / PRs based on each line&apos;s type. Use <strong>Edit</strong> to
-        bump the revision with a diff-tracked change log.
+        💡 BOM Master defines part lists (items + qty per set). Link a BOM to Equipment SO orders.
+        Use <strong>Revise</strong> to create a new revision with change log.
       </div>
     </div>
   );

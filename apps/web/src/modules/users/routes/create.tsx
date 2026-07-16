@@ -92,19 +92,27 @@ function UserCreatePage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">👤 Add new user</div>
+            <div className="panel-title">👤 Add New User</div>
+            {/* Legacy _unifiedUserForm (L13474) bundles department + form access and the
+                PO-approver flag into this one window. This port splits them: dept / form
+                permissions live on Access Control and the approver flag on Approval Config,
+                so the tip must not promise them here (ISSUE-021, same rewording as the list). */}
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Creates the login + the app account in one step. Hand the email and password to the
-              user — they can sign in immediately. Set department / form access on the next screen.
+              user — they can sign in immediately. Department / form access is set on{' '}
+              <b>Access Control</b>.
             </div>
           </div>
         </div>
         <div className="panel-body">
           <form onSubmit={handleSubmit(onValid)}>
-            <div className="form-grid form-grid-3">
+            {/* Field order mirrors legacy BASIC INFO (L13484-13495): Name, Role, Email —
+                then this port's own fields (password, phone, status), then legacy's
+                APPROVAL RIGHTS limit (L13538) last. Legacy's PIN (backup) has no port. */}
+            <div className="form-grid">
               <div className="form-grp">
                 <label className="form-label" htmlFor="fullName">
-                  Full name<span className="req">★</span>
+                  Name<span className="req">★</span>
                 </label>
                 <input
                   id="fullName"
@@ -117,10 +125,24 @@ function UserCreatePage(): React.JSX.Element {
                   })}
                 />
                 {formState.errors.fullName ? (
-                  <div className="form-help" style={{ color: 'var(--red)' }}>
-                    {formState.errors.fullName.message}
-                  </div>
+                  <div className="form-error">{formState.errors.fullName.message}</div>
                 ) : null}
+              </div>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="role">
+                  Role<span className="req">★</span>
+                </label>
+                {/* Legacy's own <select> (L13486-13492) lists admin/manager/sr_engineer/
+                    engineer/jn_engineer/operator/viewer — a set that does not map to ours.
+                    Porting it would drop qc/procurement/dispatch/design and silently rewrite
+                    those users' roles on save (ISSUE-104). Our USER_ROLES stays. */}
+                <select id="role" className="innovic-select fw-700" {...register('role')}>
+                  {USER_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="email">
@@ -139,11 +161,11 @@ function UserCreatePage(): React.JSX.Element {
                   })}
                 />
                 {formState.errors.email ? (
-                  <div className="form-help" style={{ color: 'var(--red)' }}>
-                    {formState.errors.email.message}
-                  </div>
+                  <div className="form-error">{formState.errors.email.message}</div>
                 ) : (
-                  <div className="form-help">This is the login email — cannot be changed later here.</div>
+                  <div className="form-help">
+                    This is the login email — cannot be changed later here.
+                  </div>
                 )}
               </div>
               <div className="form-grp">
@@ -163,24 +185,10 @@ function UserCreatePage(): React.JSX.Element {
                   })}
                 />
                 {formState.errors.password ? (
-                  <div className="form-help" style={{ color: 'var(--red)' }}>
-                    {formState.errors.password.message}
-                  </div>
+                  <div className="form-error">{formState.errors.password.message}</div>
                 ) : (
                   <div className="form-help">Shown so you can copy it — share securely.</div>
                 )}
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="role">
-                  Role<span className="req">★</span>
-                </label>
-                <select id="role" className="innovic-select fw-700" {...register('role')}>
-                  {USER_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="phone">
@@ -195,27 +203,6 @@ function UserCreatePage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" htmlFor="approvalLimit">
-                  PO approval limit (₹)
-                </label>
-                <input
-                  id="approvalLimit"
-                  className="innovic-input"
-                  type="number"
-                  min={0}
-                  step={10000}
-                  autoComplete="off"
-                  placeholder="e.g. 100000"
-                  disabled={role === 'admin'}
-                  {...register('approvalLimit')}
-                />
-                <div className="form-help">
-                  {role === 'admin'
-                    ? 'Admins can approve any PO (unlimited).'
-                    : 'Max PO value this user can approve. Blank = use company manager limit.'}
-                </div>
-              </div>
-              <div className="form-grp">
                 <label className="form-label" htmlFor="isActive">
                   Status
                 </label>
@@ -227,6 +214,27 @@ function UserCreatePage(): React.JSX.Element {
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
+              </div>
+              <div className="form-grp">
+                <label className="form-label" htmlFor="approvalLimit">
+                  Approval Limit (₹)
+                </label>
+                <input
+                  id="approvalLimit"
+                  className="innovic-input"
+                  type="number"
+                  min={0}
+                  step={1000}
+                  autoComplete="off"
+                  placeholder="e.g. 100000"
+                  disabled={role === 'admin'}
+                  {...register('approvalLimit')}
+                />
+                <div className="form-help">
+                  {role === 'admin'
+                    ? 'Admin has unlimited approval.'
+                    : 'PO above this amount will need higher authority approval. Blank = use company manager limit.'}
+                </div>
               </div>
             </div>
 
@@ -262,7 +270,7 @@ function UserCreatePage(): React.JSX.Element {
                   {formState.isSubmitting || create.isPending ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : null}
-                  Create user
+                  Create User
                 </button>
               </div>
             </div>

@@ -321,6 +321,10 @@
 .stat-card.red::after {
   background: var(--red);
 }
+/* No `.stat-card.blue` — deliberate. Legacy defines exactly these four variants
+   (L97-102) yet writes `stat-card blue` on the QC (L23608), PO (L25336) and GRN
+   (L26487) tiles, so those render a 2px bar with NO background in legacy too.
+   Adding a blue rule here would diverge from legacy, not match it. Leave it. */
 .stat-label {
   font-size: var(--fs-mono);
   color: var(--text3);
@@ -396,6 +400,75 @@
 }
 .td-ctr {
   text-align: center;
+}
+
+/* Ported verbatim from legacy's main stylesheet (L119-122). Pins the first
+   column while `.tbl-wrap` scrolls horizontally — legacy composes them as
+   `<div class="tbl-wrap tbl-frozen">` on its widest tables: Job Cards (L5784,
+   15 cols), Sales Orders (L11970), PO (L25349), GRN (L26492). The port shipped
+   `tbl-wrap` alone, so those tables lost the JC/SO No. as soon as you scrolled
+   right. The three background rules exist so the pinned cell stays opaque over
+   the zebra (`nth-child(even)`) and hover rules — without them the scrolled
+   content shows through. */
+.tbl-frozen tbody td:first-child,
+.tbl-frozen thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--bg2);
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+}
+.tbl-frozen thead th:first-child {
+  z-index: 6;
+  background: var(--bg3);
+}
+.tbl-frozen tbody tr:nth-child(even) td:first-child {
+  background: var(--bg3);
+}
+.tbl-frozen tbody tr:hover td:first-child {
+  background: var(--bg4);
+}
+
+/* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.
+   `--sig-*` already exist in tokens.css and are byte-identical to legacy's
+   (L34/L37), so these are a clean copy. The port had approximated both:
+   the unread dot with inline styles (losing the box-shadow halo) and the
+   linked ref with `badge b-cyan` — a cyan PILL where legacy is a blue mono
+   SQUARE chip. */
+.task-unread {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sig-critical);
+  margin-right: 6px;
+  vertical-align: middle;
+  box-shadow: 0 0 0 2px var(--sig-critical-bg);
+}
+.task-linked-ref {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--sig-info-bg);
+  color: var(--sig-info);
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* Ported verbatim from legacy L272. Used for small inline chips (e.g. the Item
+   Master UOM cell, legacy L11492; Route Card Rev, L10107). Distinct from
+   `.badge`, which is pill-shaped — `.tag` is square-ish and mono. */
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--mono);
 }
 
 /* Plan modal — Operations Routing + Required QC Documents tables. Roomy cells +

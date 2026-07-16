@@ -43,6 +43,31 @@ function waitColor(days: number | null): string {
   return 'var(--green)';
 }
 
+// Legacy L4066 scales each distribution bar against the largest reason
+// (`barW = count / maxReason * 100`), so the top reason always fills the
+// cell. This is bar geometry only — the percentage shown beside the bar is
+// the server-computed `pct` (share of all rejections), never this value.
+function barWidthPct(count: number, maxCount: number): number {
+  if (maxCount <= 0) return 0;
+  return Math.round((count / maxCount) * 100);
+}
+
+// Legacy L4019: green when the average response is within a day, amber
+// otherwise — including the no-measurable-response case.
+function respColor(avgDays: string | null): string {
+  if (avgDays !== null && Number.parseFloat(avgDays) <= 1) return 'var(--green)';
+  return 'var(--amber)';
+}
+
+// Legacy L4050 tints the wait chip with the matching colour at 0.1 alpha.
+// No theme class exists for this, and legacy writes it inline too.
+function waitTint(days: number | null): string {
+  if (days === null) return 'transparent';
+  if (days >= 3) return 'rgba(239,68,68,0.1)';
+  if (days >= 2) return 'rgba(245,158,11,0.1)';
+  return 'rgba(34,197,94,0.1)';
+}
+
 function QcDashboardPage(): React.JSX.Element {
   const search = qcDashboardRoute.useSearch();
   const navigate = qcDashboardRoute.useNavigate();
@@ -52,6 +77,14 @@ function QcDashboardPage(): React.JSX.Element {
     month: search.month,
     engineer: search.engineer,
   });
+
+  // Largest reason count — the scale the legacy distribution bars are drawn
+  // against (L4063). Read off the server's sorted top-8 list; no aggregate is
+  // recomputed here.
+  const maxReasonCount = (data?.topRejectionReasons ?? []).reduce(
+    (max, r) => (r.count > max ? r.count : max),
+    0,
+  );
 
   // Sync local month input when URL changes externally (back/forward, deep link).
   useMemo(() => {
@@ -170,12 +203,18 @@ function QcDashboardPage(): React.JSX.Element {
           >
             <div className="panel">
               <div className="panel-hdr">
-                <span className="panel-title">⚠ Pending Calls — Oldest First</span>
-                <span className="mono" style={{ color: 'var(--amber)', fontSize: 12 }}>
-                  {data.summary.pendingCalls}
+                <span className="panel-title">
+                  ⚠ Pending Calls ({data.summary.pendingCalls}) — Oldest First
                 </span>
+                <Link
+                  to="/qc-call-register"
+                  className="btn btn-primary btn-sm"
+                  style={{ fontSize: 10 }}
+                >
+                  ▶ Go to QC Register
+                </Link>
               </div>
-              <div className="tbl-wrap" style={{ maxHeight: 320, overflowY: 'auto' }}>
+              <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
                 <table className="innovic-table">
                   <thead>
                     <tr>
@@ -184,7 +223,7 @@ function QcDashboardPage(): React.JSX.Element {
                       <th>Item</th>
                       <th>Called</th>
                       <th>Wait</th>
-                      <th style={{ textAlign: 'center' }}>Qty</th>
+                      <th>Qty</th>
                       <th>SO</th>
                     </tr>
                   </thead>
@@ -216,8 +255,14 @@ function QcDashboardPage(): React.JSX.Element {
                           <td style={{ fontSize: 11 }}>{row.qcCallDate ?? '—'}</td>
                           <td className="td-ctr">
                             <span
-                              className="fw-700"
-                              style={{ fontSize: 12, color: waitColor(row.waitDays) }}
+                              style={{
+                                fontWeight: 800,
+                                fontSize: 12,
+                                color: waitColor(row.waitDays),
+                                padding: '2px 8px',
+                                background: waitTint(row.waitDays),
+                                borderRadius: 4,
+                              }}
                             >
                               {row.waitDays === null ? '—' : `${row.waitDays}d`}
                             </span>
@@ -239,86 +284,90 @@ function QcDashboardPage(): React.JSX.Element {
             <div className="panel">
               <div className="panel-hdr">
                 <span className="panel-title">📊 Engineer Performance — {data.month}</span>
-                <span className="mono text3" style={{ fontSize: 11 }}>
-                  {data.summary.monthCalls} calls
-                </span>
               </div>
-              <div className="tbl-wrap" style={{ maxHeight: 320, overflowY: 'auto' }}>
+              <div className="tbl-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
                 <table className="innovic-table">
                   <thead>
                     <tr>
                       <th>Engineer</th>
-                      <th style={{ textAlign: 'center' }}>Calls</th>
-                      <th style={{ textAlign: 'center', color: 'var(--green)' }}>Accept</th>
-                      <th style={{ textAlign: 'center', color: 'var(--red)' }}>Reject</th>
-                      <th style={{ textAlign: 'center' }}>Rate</th>
-                      <th style={{ textAlign: 'center' }}>Avg Resp</th>
+                      <th>Calls</th>
+                      <th style={{ color: 'var(--green)' }}>Accept</th>
+                      <th style={{ color: 'var(--red)' }}>Reject</th>
+                      <th>Rate</th>
+                      <th>Avg Resp</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.engineerPerf.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="empty-state">
-                          No QC logs this month.
+                          No data
                         </td>
                       </tr>
                     ) : (
-                      <>
-                        {data.engineerPerf.map((row) => {
-                          const selected = data.engineer === row.engineer;
-                          return (
-                            <tr
-                              key={row.engineer}
-                              style={{
-                                cursor: 'pointer',
-                                background: selected ? 'var(--bg4)' : undefined,
-                              }}
-                              onClick={() => applyEngineer(selected ? '' : row.engineer)}
-                            >
-                              <td className="fw-700" style={{ color: selected ? 'var(--cyan)' : undefined }}>
-                                {row.engineer}
-                                {selected ? ' ◀' : ''}
-                              </td>
-                              <td className="td-ctr mono fw-700">{row.calls}</td>
-                              <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
-                                {row.acceptedQty}
-                              </td>
-                              <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
-                                {row.rejectedQty}
-                              </td>
-                              <td
-                                className="td-ctr mono fw-700"
-                                style={{ color: rateColor(row.ratePct) }}
-                              >
-                                {row.ratePct === null ? '—' : `${row.ratePct}%`}
-                              </td>
-                              <td className="td-ctr mono text3">
-                                {row.avgResponseDays === null ? '—' : `${row.avgResponseDays}d`}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        <tr style={{ background: 'var(--bg4)', fontWeight: 700 }}>
-                          <td>TOTAL</td>
-                          <td className="td-ctr mono">{data.summary.monthCalls}</td>
-                          <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
-                            {data.engineerPerf.reduce((s, r) => s + r.acceptedQty, 0)}
-                          </td>
-                          <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
-                            {data.engineerPerf.reduce((s, r) => s + r.rejectedQty, 0)}
-                          </td>
-                          <td
-                            className="td-ctr mono"
-                            style={{ color: rateColor(data.summary.monthRatePct) }}
+                      data.engineerPerf.map((row) => {
+                        const selected = data.engineer === row.engineer;
+                        return (
+                          <tr
+                            key={row.engineer}
+                            style={{
+                              cursor: 'pointer',
+                              background: selected ? 'rgba(34,211,238,0.08)' : undefined,
+                            }}
+                            onClick={() => applyEngineer(selected ? '' : row.engineer)}
                           >
-                            {data.summary.monthRatePct === null
-                              ? '—'
-                              : `${data.summary.monthRatePct}%`}
-                          </td>
-                          <td></td>
-                        </tr>
-                      </>
+                            <td
+                              className="fw-700"
+                              style={{ color: selected ? 'var(--cyan)' : 'var(--text)' }}
+                            >
+                              {row.engineer}
+                              {selected ? ' ◀' : ''}
+                            </td>
+                            <td className="td-ctr mono fw-700">{row.calls}</td>
+                            <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                              {row.acceptedQty}
+                            </td>
+                            <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                              {row.rejectedQty}
+                            </td>
+                            <td
+                              className="td-ctr mono fw-700"
+                              style={{ color: rateColor(row.ratePct) }}
+                            >
+                              {row.ratePct === null ? '—' : `${row.ratePct}%`}
+                            </td>
+                            <td className="td-ctr mono" style={{ color: respColor(row.avgResponseDays) }}>
+                              {row.avgResponseDays === null ? '—' : `${row.avgResponseDays}d`}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
+                    {/* Legacy L4113 appends TOTAL unconditionally, even with no rows. */}
+                    <tr style={{ background: 'var(--bg4)', fontWeight: 700 }}>
+                      <td>TOTAL</td>
+                      <td className="td-ctr mono">{data.summary.monthCalls}</td>
+                      <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
+                        {data.summary.monthAccepted}
+                      </td>
+                      <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
+                        {data.summary.monthRejected}
+                      </td>
+                      {/* Legacy's TOTAL cell uses a 2-tier green/amber scale (L4113),
+                          not the 3-tier rateColor() used on the per-engineer rows. */}
+                      <td
+                        className="td-ctr mono"
+                        style={{
+                          color:
+                            data.summary.monthRatePct !== null && data.summary.monthRatePct >= 95
+                              ? 'var(--green)'
+                              : 'var(--amber)',
+                        }}
+                      >
+                        {data.summary.monthRatePct === null ? '—' : `${data.summary.monthRatePct}%`}
+                      </td>
+                      <td></td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -335,7 +384,7 @@ function QcDashboardPage(): React.JSX.Element {
                 <thead>
                   <tr>
                     <th>Reason</th>
-                    <th style={{ textAlign: 'center' }}>Count</th>
+                    <th>Count</th>
                     <th>Distribution</th>
                   </tr>
                 </thead>
@@ -343,13 +392,13 @@ function QcDashboardPage(): React.JSX.Element {
                   {data.topRejectionReasons.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="empty-state">
-                        No rejections recorded this month.
+                        No rejections this month
                       </td>
                     </tr>
                   ) : (
                     data.topRejectionReasons.map((row) => (
                       <tr key={row.reasonCategory}>
-                        <td className="fw-700" style={{ fontSize: 12, textTransform: 'capitalize' }}>
+                        <td style={{ fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
                           {row.reasonCategory}
                         </td>
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>
@@ -360,7 +409,7 @@ function QcDashboardPage(): React.JSX.Element {
                             <div
                               style={{
                                 height: 14,
-                                width: `${Math.max(row.pct, 2)}%`,
+                                width: `${barWidthPct(row.count, maxReasonCount)}%`,
                                 background: 'var(--red)',
                                 borderRadius: 3,
                                 minWidth: 4,

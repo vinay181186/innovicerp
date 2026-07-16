@@ -1,14 +1,18 @@
 // Operator Master list (UI-003-02).
-// Ports legacy renderOperators (legacy/InnovicERP_v82_12_3.html L13699) to
-// Innovic chrome. Columns: Operator ID | Name | Department | Skills /
-// Machines | Status | Actions.
+// Ports legacy renderOperators (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L13699-13725) to Innovic chrome. Legacy columns, in order (L13721):
+// Operator ID | Name | Department | Skills / Machines | Status | Actions.
+// Legacy row cells (L13702-13710) carry .td-code / .fw-700 / .text2 on the <td>
+// itself, so rows render as plain <tr>/<td> markup; TanStack Table is kept for
+// the column defs + client-side sort that drives <SortableHead>.
+// Legacy sorts Operator ID / Name / Department / Status only (sTh, L13721) —
+// Skills / Machines and Actions are plain <th>.
 
 import type { ListOperatorsQuery, Operator } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import {
   type ColumnDef,
   type SortingState,
-  flexRender,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -19,7 +23,7 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useOperatorsList } from '../api';
+import { useOperatorsList, useSoftDeleteOperator } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -70,80 +74,22 @@ function OperatorsListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
+  const softDelete = useSoftDeleteOperator();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
+  // Headers + sort accessors only — cells render as plain <td> below so legacy's
+  // per-cell classes land on the <td>, matching L13702-13710.
   const columns = useMemo<ColumnDef<Operator>[]>(
     () => [
-      {
-        header: 'Operator ID',
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/operators/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Name',
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
-      },
-      {
-        header: 'Department',
-        accessorKey: 'department',
-        cell: ({ row }) => (
-          <span className="text2">{row.original.department ?? '—'}</span>
-        ),
-      },
-      {
-        header: 'Skills / Machines',
-        accessorKey: 'skills',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 12 }}>
-            {row.original.skills ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'isActive',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-grey'}`}>
-            {row.original.isActive ? 'Active' : 'Inactive'}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <Link
-              to="/operators/$id"
-              params={{ id: row.original.id }}
-              className="btn btn-ghost btn-sm"
-            >
-              View
-            </Link>
-            {canWrite ? (
-              <Link
-                to="/operators/$id/edit"
-                params={{ id: row.original.id }}
-                className="btn btn-ghost btn-sm"
-              >
-                Edit
-              </Link>
-            ) : null}
-          </div>
-        ),
-      },
+      { header: 'Operator ID', accessorKey: 'code' },
+      { header: 'Name', accessorKey: 'name' },
+      { header: 'Department', accessorKey: 'department' },
+      // Legacy L13721 renders a plain <th> here — not an sTh — so no sort.
+      { header: 'Skills / Machines', accessorKey: 'skills', enableSorting: false },
+      { header: 'Status', accessorKey: 'isActive' },
+      { header: 'Actions', enableSorting: false },
     ],
-    [canWrite],
+    [],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -240,15 +186,59 @@ function OperatorsListPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                table.getRowModel().rows.map((row) => {
+                  const op = row.original;
+                  return (
+                    <tr key={row.id}>
+                      <td className="td-code" style={{ color: 'var(--cyan)' }}>
+                        <Link
+                          to="/operators/$id"
+                          params={{ id: op.id }}
+                          style={{ color: 'inherit', textDecoration: 'none' }}
+                        >
+                          {op.code}
+                        </Link>
                       </td>
-                    ))}
-                  </tr>
-                ))
+                      <td className="fw-700">{op.name}</td>
+                      <td className="text2">{op.department ?? '—'}</td>
+                      <td className="text2" style={{ fontSize: 12 }}>
+                        {op.skills ?? '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${op.isActive ? 'b-green' : 'b-grey'}`}>
+                          {op.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {canWrite ? (
+                            <Link
+                              to="/operators/$id/edit"
+                              params={{ id: op.id }}
+                              className="btn btn-ghost btn-sm"
+                            >
+                              Edit
+                            </Link>
+                          ) : null}
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              disabled={softDelete.isPending}
+                              onClick={() => {
+                                if (confirm(`Move operator "${op.name}" to Trash?`)) {
+                                  softDelete.mutate(op.id);
+                                }
+                              }}
+                            >
+                              Del
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

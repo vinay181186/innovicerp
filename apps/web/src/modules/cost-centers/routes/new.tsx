@@ -46,7 +46,7 @@ function CostCenterNewPage(): React.JSX.Element {
             mode="create"
             suggestedCode={suggestedCode}
             submitError={submitError}
-            submitLabel="Add Cost Center"
+            submitLabel="Save"
             onCancel={() => void navigate({ to: '/cost-centers' })}
             onSubmit={async (values: CreateCostCenterInput) => {
               setSubmitError(null);

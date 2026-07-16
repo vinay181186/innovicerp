@@ -24,6 +24,7 @@ import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
 import { downloadJwLineTemplate, parseJwLineFile } from '../lib/import-export';
@@ -140,6 +141,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   }
 
   const gstPercent = Number(watch('header.gstPercent')) || 0;
+
+  // Legacy `_jwFillRmItem` (L12746): resolve the typed Client Material code
+  // against the item master to confirm the pick inline.
+  const clientMaterialCode = watch('header.clientMaterial') ?? '';
+  const matchedRmItem = clientMaterialCode.trim()
+    ? itemsByCode.get(clientMaterialCode.trim().toUpperCase())
+    : undefined;
 
   /** On item-code change, fill empty line fields from the master (fill-only, so
    *  manual edits are never clobbered); UOM mirrors the master. */
@@ -306,12 +314,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ))}
       </datalist>
 
-      {/* Header */}
-      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+      {/* Header — legacy jwHeaderForm L12797 renders a 2-col `.form-grid`
+          (same as soHeaderForm); `.form-full` still spans the row. */}
+      <div className="form-grid" style={{ marginBottom: 16 }}>
+        {/* No ★: `code` is `.optional()` and the server generates the next
+            IN-JW-##### in series when omitted — the field's own help text says
+            "leave blank to auto-generate on save", and useDocNumber treats empty
+            as valid, so nothing enforces a star here. Matches the PO form. */}
         <DocNumberInput
           type="job_work_order"
           label="JWSO No."
-          required={isCreate}
           readOnly={isEdit}
           value={watch('header.code') ?? ''}
           onChange={(v) => setValue('header.code', v)}
@@ -446,13 +458,24 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       {/* Client Material Details (legacy L12839) */}
       <div style={{ border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: 12, margin: '0 0 16px', background: 'rgba(34,197,94,0.04)' }}>
         <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
-        <div className="form-grid form-grid-3">
+        <div className="form-grid">
           <div className="form-grp form-full">
             <label className="form-label">Client Material (Party Supplied Item)</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input className="innovic-input" style={{ flex: 1 }} autoComplete="off" list="dlRmItems" placeholder="🔍 Search -rm items…" {...register('header.clientMaterial')} />
               <Link to="/items/new" className="btn btn-ghost btn-sm" title="Create a new -rm item" style={{ whiteSpace: 'nowrap' }}>+ New</Link>
             </div>
+            {/* Legacy `fJwRmItemInfo` (L12849 / _jwFillRmItem L12746): confirms the
+                typed code against the item master. Legacy also shows a "⚠ Item not
+                found in master" branch; that is NOT ported — legacy searched the
+                whole client-side `db.items`, whereas `items` here is one 200-row
+                page, so absence from the page does not prove absence from the
+                master and the warning would fire falsely. Positive match only. */}
+            {matchedRmItem ? (
+              <div className="form-help" style={{ color: 'var(--green)' }}>
+                ✅ <b>{matchedRmItem.name}</b>{matchedRmItem.material ? ` [${matchedRmItem.material}]` : ''}
+              </div>
+            ) : null}
           </div>
           <div className="form-grp">
             <label className="form-label">Material Qty (Client Supplied)</label>
@@ -476,13 +499,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadJwLineTemplate()}>⬇ Template</button>
           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
           <input ref={lineFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportLines(f); }} />
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add line</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
         </div>
       </div>
       {importMsg ? <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>{importMsg} <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button></div> : null}
 
       {fields.length === 0 ? (
-        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>No lines yet. Click <strong>Add line</strong> — at least one is required.</div>
+        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>No lines yet — click <strong>+ Add Line</strong>. At least one is required.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {fields.map((field, idx) => {
@@ -492,7 +515,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', fontWeight: 700 }}>
                   <span>Line {idx + 1}</span>
                   <span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span style={{ color: 'var(--green)' }}>Amount ₹{amt.toFixed(2)}</span>
+                    <span style={{ color: 'var(--green)' }}>Amount ₹{inrFormat(amt)}</span>
                     <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
                   </span>
                 </div>
@@ -551,9 +574,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
+          {/* Footer derived from the legacy call sites: addJW L12890 and editJW
+              L12926 both call showModalLg(title, body, onSave) with NO saveLabel,
+              so L28034 derives it from the title — both titles contain "JW" →
+              "Save JW" — and L28044 renders `&#10003; ${_saveLabel}` on
+              .btn-success. Same label in both modes, by construction. */}
+          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create JWSO')}
+            {props.submitLabel ?? '✓ Save JW'}
           </button>
         </div>
       </div>
@@ -644,7 +672,7 @@ function Tot({ label, value, bold }: { label: string; value: number; bold?: bool
   return (
     <div style={{ textAlign: 'right' }}>
       <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
-      <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{value.toFixed(2)}</div>
+      <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{inrFormat(value)}</div>
     </div>
   );
 }

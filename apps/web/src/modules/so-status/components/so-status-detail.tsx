@@ -11,7 +11,6 @@ import type {
   SoStatusJc,
   SoStatusLine,
   SoStatusOp,
-  SoStatusOpStatus,
   SoStatusOutsourceAlert,
   SoStatusPendingOsPrOp,
 } from '@innovic/shared';
@@ -41,6 +40,34 @@ const TYPE_LABEL: Record<string, string> = {
   equipment: 'Equipment',
   with_material: 'With Material',
 };
+
+// Line-status pill colour + label (legacy L4324-4325).
+const LINE_STATUS_COLOR: Record<SoStatusLine['status'], string> = {
+  complete: 'var(--green)',
+  qc_pending: 'var(--amber)',
+  no_jc: 'var(--text3)',
+  in_progress: 'var(--cyan)',
+};
+const LINE_STATUS_LABEL: Record<SoStatusLine['status'], string> = {
+  complete: 'Complete',
+  qc_pending: 'QC Pending',
+  no_jc: 'No JC',
+  in_progress: 'In Progress',
+};
+
+// Tracker-chip palette. Legacy hard-codes dark-theme hex per chip (L4422-4427);
+// per ISSUE-067 those map to the light-theme tokens here, with legacy's 0x08 /
+// 0x30 alpha washes expressed as rgba of the token hex (var() can't be
+// suffixed with an alpha — ISSUE-063).
+type ChipTint = { color: string; bg: string; border: string };
+const CHIP_TINT = {
+  cyan: { color: 'var(--cyan)', bg: 'rgba(0,136,187,0.03)', border: 'rgba(0,136,187,0.19)' },
+  purple: { color: 'var(--purple)', bg: 'rgba(124,58,237,0.03)', border: 'rgba(124,58,237,0.19)' },
+  blue: { color: 'var(--blue)', bg: 'rgba(37,99,235,0.03)', border: 'rgba(37,99,235,0.19)' },
+  green: { color: 'var(--green)', bg: 'rgba(22,163,74,0.03)', border: 'rgba(22,163,74,0.19)' },
+  green2: { color: 'var(--green2)', bg: 'rgba(21,128,61,0.03)', border: 'rgba(21,128,61,0.19)' },
+  amber: { color: 'var(--amber)', bg: 'rgba(196,122,0,0.03)', border: 'rgba(196,122,0,0.19)' },
+} satisfies Record<string, ChipTint>;
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
@@ -107,9 +134,9 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
         </div>
       </div>
 
-      {/* SO header (legacy L4283-4310) */}
-      <div className="panel" style={{ marginBottom: 14 }}>
-        <div className="panel-body" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {/* SO header (legacy L4283-4310) — a bare bordered block, not a panel. */}
+      <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 14, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--cyan)' }}>{header.code}</div>
             <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
@@ -119,9 +146,10 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           <HeaderFact label="CUSTOMER" value={header.customerName ?? '—'} sub={header.clientPoNo ? `PO: ${header.clientPoNo}` : undefined} bold />
           <HeaderFact label="SO DATE" value={header.soDate} />
           <HeaderFact label="DUE DATE" value={header.dueDate ?? '—'} color={dueOverdue ? 'var(--red)' : undefined} bold />
+          {/* PROGRESS fact + header bar have no legacy counterpart — kept (ours is a superset). */}
           <HeaderFact label="PROGRESS" value={`${header.totalDoneQty}/${header.totalQty} · ${header.overallCompletionPct}%`} />
           {header.remarks ? (
-            <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ flex: 1 }}>
               <div className="text3" style={{ fontSize: 10 }}>REMARKS</div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>{header.remarks}</div>
             </div>
@@ -129,22 +157,20 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
           <div style={{ flexBasis: '100%' }}>
             <ProgBar pct={header.overallCompletionPct} />
           </div>
-          {header.type === 'equipment' && header.equipmentInfo ? (
-            <div style={{ flexBasis: '100%' }}>
-              <EquipmentBomBanner
-                soId={header.id}
-                info={header.equipmentInfo}
-                bomStatus={header.bomStatus}
-                bomLinked={!!header.bomMasterId}
-                onPlanBom={
-                  equipmentSoLineId
-                    ? () => setModal({ kind: 'equip-bom', soLineId: equipmentSoLineId })
-                    : null
-                }
-              />
-            </div>
-          ) : null}
         </div>
+        {header.type === 'equipment' && header.equipmentInfo ? (
+          <EquipmentBomBanner
+            soId={header.id}
+            info={header.equipmentInfo}
+            bomStatus={header.bomStatus}
+            bomLinked={!!header.bomMasterId}
+            onPlanBom={
+              equipmentSoLineId
+                ? () => setModal({ kind: 'equip-bom', soLineId: equipmentSoLineId })
+                : null
+            }
+          />
+        ) : null}
       </div>
 
       {lines.length === 0 ? (
@@ -253,9 +279,11 @@ function EquipmentBomBanner({
   // falls back to navigating to the Planning screen (e.g. planning not loaded).
   onPlanBom: (() => void) | null;
 }): React.JSX.Element {
-  const bomStatusCls = bomStatus === 'BOM Pending' ? 'b-amber' : bomStatus === 'BOM Planned' ? 'b-green' : 'b-cyan';
+  // Legacy renders BOM STATUS as bold coloured text (L4300), not a badge.
+  const bomStatusColor =
+    bomStatus === 'BOM Pending' ? 'var(--amber)' : bomStatus === 'BOM Planned' ? 'var(--green)' : 'var(--cyan)';
   return (
-    <div style={{ marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap', padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, border: '1px solid var(--border)' }}>
+    <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap', padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, border: '1px solid var(--border)' }}>
       <div>
         <div className="text3" style={{ fontSize: 10 }}>EQUIPMENT</div>
         <div style={{ fontWeight: 700, color: 'var(--purple)' }}>{info.equipmentItemCode ?? '—'} {info.equipmentItemName ?? ''}</div>
@@ -266,7 +294,7 @@ function EquipmentBomBanner({
       </div>
       <div>
         <div className="text3" style={{ fontSize: 10 }}>BOM STATUS</div>
-        <span className={`badge ${bomStatusCls}`}>{bomStatus ?? 'BOM Pending'}</span>
+        <div style={{ fontWeight: 700, color: bomStatusColor }}>{bomStatus ?? 'BOM Pending'}</div>
       </div>
       {bomLinked && info.bomNo ? (
         <>
@@ -312,10 +340,10 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>#</th><th>Item Code</th><th>Item Name</th><th className="td-right">Qty/Set</th>
-              <th className="td-right" style={{ color: 'var(--cyan)' }}>Total Need</th><th>Type</th>
-              <th className="td-right" style={{ color: 'var(--green)' }}>Stock</th>
-              <th className="td-right" style={{ color: 'var(--red)' }}>Shortfall</th><th>Plan Status</th>
+              <th>#</th><th>Item Code</th><th>Item Name</th><th>Qty/Set</th>
+              <th style={{ color: 'var(--cyan)', fontWeight: 800 }}>Total Need</th><th>Type</th>
+              <th style={{ color: 'var(--green)' }}>Stock</th>
+              <th style={{ color: 'var(--red)' }}>Shortfall</th><th>Plan Status</th>
             </tr>
           </thead>
           <tbody>
@@ -328,11 +356,11 @@ function BomItemsTable({ bomNo, equipmentQty, items }: { bomNo: string; equipmen
                   <td className="td-ctr mono fw-700">{idx + 1}</td>
                   <td className="td-code" style={{ color: 'var(--purple)' }}>{c.childItemCode}</td>
                   <td>{c.childItemName}</td>
-                  <td className="td-right mono">{c.qtyPerSet}</td>
-                  <td className="td-right mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>{c.totalNeed}</td>
+                  <td className="td-ctr mono fw-700">{c.qtyPerSet}</td>
+                  <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>{c.totalNeed}</td>
                   <td><span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>{typeLabel}</span></td>
-                  <td className="td-right mono fw-700" style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{c.stockQty}</td>
-                  <td className="td-right mono fw-700" style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}>{c.shortfall}{c.shortfall <= 0 ? ' ✅' : ''}</td>
+                  <td className="td-ctr mono fw-700" style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{c.stockQty}</td>
+                  <td className="td-ctr mono fw-700" style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}>{c.shortfall}{c.shortfall <= 0 ? ' ✅' : ''}</td>
                   <td>
                     {c.planStatus ? (
                       <>
@@ -385,95 +413,113 @@ function LinePanel({
     if (planningLine && planningLine.remaining > 0) onCreatePlan();
     else navigate({ to: '/planning', search: { soId } });
   };
+  const statusColor = LINE_STATUS_COLOR[line.status];
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <div>
-          <div className="td-code" style={{ color: 'var(--purple)', fontSize: 14, fontWeight: 700 }}>
-            #{line.lineNo} · {line.itemCode ?? line.itemCodeText ?? '—'}
-          </div>
-          <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-            {line.partName ?? '—'}
-            {line.clientPoLineNo ? ` · client PO L#${line.clientPoLineNo}` : ''}
-          </div>
+    <div className="panel" style={{ marginBottom: 12 }}>
+      {/* Line header (legacy L4438-4453) */}
+      <div className="panel-hdr" style={{ gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>LINE {line.lineNo}</span>
+          {line.clientPoLineNo ? (
+            <span style={{ fontSize: 10, color: 'var(--purple)', fontWeight: 700 }}>[CPO:{line.clientPoLineNo}]</span>
+          ) : null}
+          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>{line.itemCode ?? line.itemCodeText ?? ''}</span>
+          <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <LineStatusBadge status={line.status} />
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)', minWidth: 110, textAlign: 'right' }}>
-            {line.doneQty}/{line.orderQty} · <b style={{ color: 'var(--text)' }}>{line.completionPct}%</b>
-          </span>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap', marginLeft: 'auto' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="text3" style={{ fontSize: 10 }}>SO QTY</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{line.orderQty}</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div className="text3" style={{ fontSize: 10 }}>PROGRESS</div>
+            <div style={{ width: 90, height: 8, background: 'var(--bg5)', borderRadius: 4, margin: '4px auto 2px' }}>
+              <div style={{ width: `${line.completionPct}%`, height: '100%', background: statusColor, borderRadius: 4 }} />
+            </div>
+            <div className="text3" style={{ fontSize: 10 }}>{line.completionPct}%</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: `1px solid ${statusColor}`, color: statusColor }}>
+              {LINE_STATUS_LABEL[line.status]}
+            </span>
+          </div>
         </div>
       </div>
-      <div className="panel-body">
-        <ProgBar pct={line.completionPct} />
-        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-          <Chip label="JC Issued" qty={line.chips.jcIssued.qty} total={line.chips.jcIssued.total} />
-          <Chip label="PO Raised" qty={line.chips.poRaised.qty} total={line.chips.poRaised.total} />
-          <Chip label="GRN Recd" qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
-          <Chip label="QC Accepted" qty={line.chips.qcAccepted.qty} total={line.chips.qcAccepted.total} />
-          <Chip label="Produced" qty={line.chips.produced.qty} total={line.chips.produced.total} />
-          <Chip label="Dispatched" qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
-        </div>
 
+      {/* Status tracker strip (legacy L4420-4435) */}
+      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Chip label="JC Issued" icon="📋" tint={CHIP_TINT.cyan} qty={line.chips.jcIssued.qty} total={line.chips.jcIssued.total} />
+          <Chip label="PO Raised" icon="🛒" tint={CHIP_TINT.purple} qty={line.chips.poRaised.qty} total={line.chips.poRaised.total} />
+          <Chip label="GRN Recd" icon="📦" tint={CHIP_TINT.blue} qty={line.chips.grnReceived.qty} total={line.chips.grnReceived.total} />
+          <Chip label="QC Accepted" icon="✅" tint={CHIP_TINT.green} qty={line.chips.qcAccepted.qty} total={line.chips.qcAccepted.total} />
+          <Chip label="Produced" icon="⚙" tint={CHIP_TINT.green2} qty={line.chips.produced.qty} total={line.chips.produced.total} />
+          <Chip label="Dispatched" icon="🚚" tint={CHIP_TINT.amber} qty={line.chips.dispatched.qty} total={line.chips.dispatched.total} />
+        </div>
         <OutsourceAlertRows alert={line.outsourceAlert} />
+      </div>
 
-        <div style={{ marginTop: 16 }}>
-          <div className="section-hdr" style={{ marginBottom: 6 }}>Linked Job Cards ({line.jobCards.length})</div>
-          {line.jobCards.length === 0 ? (
-            <div className="text3" style={{ fontSize: 12, padding: 8 }}>No Job Cards yet for this line.</div>
-          ) : (
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>JC</th><th>Item</th><th className="td-right">Qty</th><th>Progress</th>
-                    <th className="td-right">Remaining</th><th>Priority</th><th>Due</th><th>Status</th><th>Ops</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {line.jobCards.map((jc) => (
-                    <JcRow key={jc.id} jc={jc} pendingOpsForJc={line.outsourceAlert.pendingOps.filter((p) => p.jcId === jc.id)} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {/* Linked Job Cards (legacy L4455-4458) */}
+      <div className="tbl-wrap">
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th>JC No.</th><th>Item Code</th><th>JC Qty</th><th>Completed</th>
+              <th style={{ color: 'var(--red)' }}>Remaining</th><th>Priority</th><th>Due Date</th>
+              <th>JC Status</th><th>Operations</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {line.jobCards.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="text3" style={{ padding: '10px 14px', fontSize: 12, fontStyle: 'italic' }}>
+                  No Job Cards linked to this SO line.
+                </td>
+              </tr>
+            ) : (
+              line.jobCards.map((jc) => (
+                <JcRow key={jc.id} jc={jc} pendingOpsForJc={line.outsourceAlert.pendingOps.filter((p) => p.jcId === jc.id)} />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-        {/* Per-line action footer: Plan (no direct Job Card) + Create PO. */}
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {showAssemblyBom ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
-              onClick={onAssemblyBom}
-            >
-              📦 BOM Planning ({planningLine?.bomPartsCount ?? 0} parts)
-            </button>
-          ) : null}
-          {showPlan ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
-              onClick={onPlan}
-              title="Create a plan for this line (planning → execute → Job Card)"
-            >
-              <Plus size={12} /> Plan {remainingToPlan} pcs
-            </button>
-          ) : !showAssemblyBom && !isEquipmentLine ? (
-            <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully planned</span>
-          ) : null}
+      {/* Per-line action footer (legacy L4459-4462): ours plans instead of
+          creating a Job Card directly — legacy's button also only redirects to
+          Planning (_soStatusCreateJC L4565-4569). */}
+      <div style={{ padding: '8px 16px', background: 'var(--bg)', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {showAssemblyBom ? (
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}
+            onClick={onAssemblyBom}
+          >
+            📦 BOM Planning ({planningLine?.bomPartsCount ?? 0} parts)
+          </button>
+        ) : null}
+        {showPlan ? (
           <button
             type="button"
             className="btn btn-sm"
             style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
-            onClick={() => navigate({ to: '/purchase-orders/new', search: { soLineId: line.id } as never })}
+            onClick={onPlan}
+            title="Create a plan for this line (planning → execute → Job Card)"
           >
-            🛒 Create PO
+            <Plus size={12} /> Plan {remainingToPlan} pcs
           </button>
-        </div>
+        ) : !showAssemblyBom && !isEquipmentLine ? (
+          <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ Fully allocated</span>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-sm"
+          style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
+          onClick={() => navigate({ to: '/purchase-orders/new', search: { soLineId: line.id } as never })}
+        >
+          🛒 Create PO
+        </button>
       </div>
     </div>
   );
@@ -482,60 +528,69 @@ function LinePanel({
 function OutsourceAlertRows({ alert }: { alert: SoStatusOutsourceAlert }): React.JSX.Element | null {
   const hasAlert = alert.atVendorQty > 0 || alert.atVendorOpCount > 0 || alert.pendingPrCount > 0 || alert.prRaisedCount > 0;
   if (!hasAlert) return null;
+  // Legacy L4429-4431. NOTE: legacy also renders three further alert rows here
+  // — "⏳ QC Pending: N pcs", "⚠ GRN QC Rejected: N pcs" and "⚠ Production QC
+  // Rejected: N pcs" (L4432-4434). GET /so-status returns no grnRejected /
+  // line-level qcRejected figure, so they are not rendered rather than
+  // recomputed in the browser (CLAUDE.md rule 1). Reported, not fixed.
   return (
-    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <>
       {alert.atVendorOpCount > 0 ? (
-        <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
-          🏭 At Vendor: {alert.atVendorQty} pcs across {alert.atVendorOpCount} outsource op{alert.atVendorOpCount === 1 ? '' : 's'}
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
+          🏭 At Vendor: {alert.atVendorQty} pcs across {alert.atVendorOpCount} outsource op(s)
         </div>
       ) : null}
       {alert.pendingPrCount > 0 ? (
-        <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>
-          📋 {alert.pendingPrCount} outsource op{alert.pendingPrCount === 1 ? '' : 's'} awaiting Purchase Request
+        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>
+          📋 {alert.pendingPrCount} outsource op(s) awaiting Purchase Request
         </div>
       ) : null}
       {alert.prRaisedCount > 0 ? (
-        <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
-          🛒 {alert.prRaisedCount} PR{alert.prRaisedCount === 1 ? '' : 's'} raised, awaiting PO creation
+        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
+          🛒 {alert.prRaisedCount} PR(s) raised, awaiting PO creation
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
 function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoStatusPendingOsPrOp[] }): React.JSX.Element {
   const navigate = useNavigate();
+  const jcColor = jc.status === 'complete' ? 'var(--green)' : jc.status === 'qc_pending' ? 'var(--amber)' : 'var(--cyan)';
+  // Legacy shows "▶N running" beside the JC No (L4349) off db.runningOps; the
+  // server flags each op with `running`, so this counts server-owned rows only.
+  const runCount = jc.ops.filter((op) => op.running).length;
+  const dueOverdue = !!jc.dueDate && jc.dueDate < todayStr() && jc.status !== 'complete';
   return (
     <tr>
-      <td>
-        <Link to="/job-cards/$id" params={{ id: jc.id }} className="td-code" style={{ color: 'var(--cyan)' }}>{jc.code}</Link>
+      <td style={{ paddingLeft: 28, width: 130 }}>
+        <Link to="/job-cards/$id" params={{ id: jc.id }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', textDecoration: 'underline dotted' }}>{jc.code}</Link>
+        {runCount > 0 ? <span style={{ fontSize: 10, color: 'var(--amber)', marginLeft: 4 }}>▶{runCount} running</span> : null}
       </td>
-      <td><span className="text3" style={{ fontSize: 12 }}>{jc.itemCode ?? '—'}</span></td>
-      <td className="td-right">{jc.orderQty}</td>
-      <td style={{ minWidth: 140 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 11 }}>
-          <span>{jc.doneQty}</span>
-          <ProgBar pct={jc.completionPct} small />
-          <span style={{ color: 'var(--text3)' }}>{jc.completionPct}%</span>
-        </div>
+      <td style={{ fontSize: 12 }}>{jc.itemCode ?? '—'}</td>
+      <td className="td-ctr" style={{ fontSize: 12 }}>{jc.orderQty}</td>
+      <td className="td-ctr">
+        <span style={{ fontSize: 13, fontWeight: 700, color: jcColor }}>{jc.doneQty}</span>
+        <span style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 6, width: 80, height: 5, background: 'var(--bg5)', borderRadius: 3 }}>
+          <span style={{ display: 'block', width: `${jc.completionPct}%`, height: '100%', background: jcColor, borderRadius: 3 }} />
+        </span>
+        <span className="text3" style={{ fontSize: 10, marginLeft: 4 }}>{jc.completionPct}%</span>
       </td>
-      <td className="td-right" style={{ color: jc.remainingQty > 0 ? 'var(--red2)' : 'var(--text3)' }}>{jc.remainingQty}</td>
-      <td><span className="text3" style={{ fontSize: 12, textTransform: 'capitalize' }}>{jc.priority}</span></td>
-      <td><span className="text3" style={{ fontSize: 12 }}>{jc.dueDate ?? '—'}</span></td>
+      <td className="td-ctr" style={{ fontSize: 12, color: jc.remainingQty > 0 ? 'var(--red)' : 'var(--green)' }}>{jc.remainingQty}</td>
+      <td><JcPriorityBadge priority={jc.priority} /></td>
+      <td style={{ fontSize: 11, color: dueOverdue ? 'var(--red)' : 'var(--text3)' }}>{jc.dueDate ?? '—'}</td>
       <td><JcStatusBadge status={jc.status} /></td>
-      <td>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {jc.ops.map((op) => <OpChip key={op.id} op={op} />)}
-          {jc.ops.length === 0 ? <span className="text3" style={{ fontSize: 11 }}>no ops</span> : null}
-        </div>
+      <td style={{ whiteSpace: 'nowrap' }}>
+        {jc.ops.map((op) => <OpChip key={op.id} op={op} />)}
+        {jc.ops.length === 0 ? <span className="text3" style={{ fontSize: 11 }}>no ops</span> : null}
         {pendingOpsForJc.length > 0 ? (
-          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div style={{ marginTop: 2 }}>
             {pendingOpsForJc.map((p) => (
               <button
                 key={`${p.jcId}-${p.opSeq}`}
                 type="button"
                 className="btn btn-sm"
-                style={{ background: 'rgba(255,176,32,0.1)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.3)', fontSize: 9, padding: '2px 8px' }}
+                style={{ background: 'rgba(255,176,32,0.1)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.3)', fontSize: 9, padding: '2px 8px', margin: 1 }}
                 title={`Raise PR for Op ${p.opSeq} — ${p.operation}`}
                 onClick={() => navigate({ to: '/purchase-requests', search: { jc: p.jcCode, op: p.opSeq } as never })}
               >
@@ -545,57 +600,99 @@ function JcRow({ jc, pendingOpsForJc }: { jc: SoStatusJc; pendingOpsForJc: SoSta
           </div>
         ) : null}
       </td>
+      <td>
+        <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 8px' }}>View</Link>
+      </td>
     </tr>
   );
 }
 
-function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
-  const cls = opStatusBadgeClass(op.status);
-  const icon = op.opType === 'outsource' ? '🏭' : op.opType === 'qc' || op.qcRequired ? '🔧' : null;
-  const title =
-    `Op ${op.opSeq} — ${op.operation} (${op.opType})\n` +
-    `input ${op.inputAvail} · completed ${op.completed}` +
-    (op.qcRequired || op.opType === 'qc' ? ` · qc-acc ${op.qcAccepted}/${op.qcRejected}-rej/${op.qcPending}-pend` : '') +
-    `\nstatus: ${op.status}`;
+// Legacy badge(jc.priority) L4354 → badge() map L1964: High=b-amber, Normal=b-grey.
+function JcPriorityBadge({ priority }: { priority: string }): React.JSX.Element {
   return (
-    <span className={`badge ${cls}`} style={{ padding: '1px 5px', fontSize: 10, textTransform: 'none' }} title={title}>
-      {icon ? `${icon} ` : ''}Op{op.opSeq}{op.status === 'complete' ? ' ✓' : ''}
-    </span>
+    <span className={`badge ${priority === 'high' ? 'b-amber' : 'b-grey'}`} style={{ textTransform: 'capitalize' }}>{priority}</span>
   );
 }
 
-function ProgBar({ pct, small = false }: { pct: number; small?: boolean }): React.JSX.Element {
+// Legacy op chip (L4335-4341): an inline outlined chip — not a .badge. The
+// trailing ✓ marks QC-REQUIRED (op.qcReq), not completion. 🏭 marks outsource.
+function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
+  const isOS = op.opType === 'outsource';
+  const ic = opChipColor(op);
+  const title =
+    `Op ${op.opSeq} — ${op.operation} (${op.opType})` +
+    (isOS ? ` [OUTSOURCE: ${op.outsourceStatus ?? 'pending'}]` : '') +
+    `\ninput ${op.inputAvail} · completed ${op.completed}` +
+    (op.qcRequired || op.opType === 'qc' ? ` · qc-acc ${op.qcAccepted}/${op.qcRejected}-rej/${op.qcPending}-pend` : '') +
+    `\nstatus: ${op.status}`;
+  return (
+    <>
+      <span
+        className="mono"
+        title={title}
+        style={{
+          fontSize: 9,
+          padding: '1px 5px',
+          borderRadius: 3,
+          border: `1px solid ${ic}`,
+          color: ic,
+          ...(isOS ? { background: 'rgba(255,176,32,0.06)' } : {}),
+        }}
+      >
+        {isOS ? '🏭' : ''}Op{op.opSeq}{op.qcRequired ? '✓' : ''}
+      </span>{' '}
+    </>
+  );
+}
+
+// Mirrors legacy's `ic` ternary (L4337) over our richer op-status union.
+function opChipColor(op: SoStatusOp): string {
+  if (op.status === 'complete') return 'var(--green)';
+  if (op.status === 'qc_pending' || op.status === 'in_progress' || op.status === 'running') return 'var(--amber)';
+  if (op.opType === 'outsource') {
+    if (op.outsourceStatus === 'sent' || op.outsourceStatus === 'po_created') return 'var(--purple)';
+    if (op.outsourceStatus === 'pr_raised') return 'var(--blue)';
+    return 'var(--amber)';
+  }
+  return 'var(--text3)';
+}
+
+function ProgBar({ pct }: { pct: number }): React.JSX.Element {
   const color = pct >= 100 ? 'var(--green)' : pct >= 70 ? 'var(--blue)' : pct > 0 ? 'var(--amber)' : 'var(--bg4)';
   return (
-    <div className="prog-wrap" style={small ? { height: 4, width: 60 } : undefined}>
+    <div className="prog-wrap">
       <div className="prog-bar" style={{ width: `${Math.max(2, pct)}%`, background: color }} />
     </div>
   );
 }
 
-function Chip({ label, qty, total }: { label: string; qty: number; total: number }): React.JSX.Element {
+// Legacy _stChip (L4396-4406): icon + label on the left, val/total on the
+// right, a colour-filled bar beneath. Unfilled (val=0) chips stay grey.
+function Chip({ label, icon, tint, qty, total }: { label: string; icon: string; tint: ChipTint; qty: number; total: number }): React.JSX.Element {
   const pct = total > 0 ? Math.min(100, Math.round((qty / total) * 100)) : 0;
+  const filled = qty > 0;
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '6px 8px', background: 'var(--bg2)' }}>
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600 }}>
-        {qty}<span className="text3" style={{ fontWeight: 400 }}> / {total}</span>
-        <span className="text3" style={{ fontWeight: 400, float: 'right', fontSize: 11 }}>{pct}%</span>
+    <div
+      style={{
+        flex: 1,
+        minWidth: 100,
+        padding: '8px 10px',
+        background: filled ? tint.bg : 'var(--bg3)',
+        border: `1px solid ${filled ? tint.border : 'var(--border)'}`,
+        borderRadius: 6,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+        <span className="text3" style={{ fontSize: 10, fontWeight: 600 }}>{icon} {label}</span>
+        <span className="mono" style={{ fontSize: 13, fontWeight: 800, color: filled ? tint.color : 'var(--text3)' }}>
+          {qty}<span className="text3" style={{ fontSize: 10, fontWeight: 400 }}> /{total}</span>
+        </span>
       </div>
-      <ProgBar pct={pct} small />
+      <div style={{ height: 4, background: 'var(--bg5)', borderRadius: 2 }}>
+        <div style={{ width: `${pct}%`, height: 4, background: tint.color, borderRadius: 2 }} />
+      </div>
     </div>
   );
-}
-
-function LineStatusBadge({ status }: { status: 'no_jc' | 'complete' | 'qc_pending' | 'in_progress' }): React.JSX.Element {
-  const map: Record<typeof status, { cls: string; label: string }> = {
-    no_jc: { cls: 'b-grey', label: 'No JC' },
-    complete: { cls: 'b-green', label: 'Complete' },
-    qc_pending: { cls: 'b-amber', label: 'QC Pending' },
-    in_progress: { cls: 'b-blue', label: 'In Progress' },
-  };
-  const m = map[status];
-  return <span className={`badge ${m.cls}`}>{m.label}</span>;
 }
 
 function JcStatusBadge({ status }: { status: 'complete' | 'qc_pending' | 'in_progress' | 'no_ops' }): React.JSX.Element {
@@ -607,30 +704,4 @@ function JcStatusBadge({ status }: { status: 'complete' | 'qc_pending' | 'in_pro
   };
   const m = map[status];
   return <span className={`badge ${m.cls}`}>{m.label}</span>;
-}
-
-function opStatusBadgeClass(status: SoStatusOpStatus): string {
-  switch (status) {
-    case 'complete':
-      return 'b-green';
-    case 'qc_pending':
-      return 'b-amber';
-    case 'running':
-    case 'in_progress':
-      return 'b-blue';
-    case 'available':
-      return 'b-cyan';
-    case 'waiting':
-      return 'b-grey';
-    case 'outsource_pending':
-    case 'outsource_pr_raised':
-      return 'b-amber';
-    case 'outsource_po_created':
-    case 'outsource_at_vendor':
-      return 'b-blue';
-    case 'outsource_received':
-      return 'b-green';
-    default:
-      return 'b-grey';
-  }
 }

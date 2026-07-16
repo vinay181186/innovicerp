@@ -1,7 +1,18 @@
-// Job Card create/edit form — parity with legacy jcModalBody (L5943) + addJC
-// (L6020) / editJC (L6076): JC details with SO/WO/JW cascade + balance, drawing
-// attachment, operation routing (machine/QC/outsource + reorder), and QC docs.
-// Started ops (hasStarted) are locked from removal/retype, mirroring _hasOpStarted.
+// Job Card create/edit form.
+//
+// Legacy counterpart: `jcModalBody(jc)` L5943 — the ONE body builder both entry
+// points pass to showModalLg: addJC L6025 calls `jcModalBody(null)`, editJC
+// L6086 calls `jcModalBody(jc)`. Both pass the explicit saveLabel 'Save Job
+// Card', so showModalLg L28042-44 renders Cancel (.btn-ghost) + .btn-success
+// with the `&#10003;` prefix → "✓ Save Job Card". jcModalOpsHtml L5868 and
+// jcModalDocsHtml L5809 are delegates called from inside jcModalBody (L6012 /
+// L6016), not counterparts. renderJobCards L5739 is the LIST, not this form.
+//
+// Legacy section order: JOB CARD DETAILS → DRAWING ATTACHMENT → OPERATION
+// ROUTING → QC DOCUMENTS. Mirrored below.
+//
+// Started ops (hasStarted) are locked from removal/retype, mirroring
+// _hasOpStarted L6151.
 
 import type {
   JobCardEditModel,
@@ -150,6 +161,11 @@ export function JobCardForm({
   const selectedSource = sourceLineId
     ? sourceOptions.find((o) => o.lineId === sourceLineId)
     : undefined;
+
+  // Ops counter (legacy jcModalOpsHtml L5927 — note legacy pluralises "op(s)"
+  // off the TOTAL row count, not the non-QC count; mirrored).
+  const opCount = ops.filter((o) => o.opType !== 'qc').length;
+  const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
   const onSourceChange = (val: string): void => {
     setSourceText(val);
@@ -366,30 +382,21 @@ export function JobCardForm({
           <div className="panel-title">▸ Job Card Details</div>
         </div>
         <div className="panel-body">
-          <div className="form-grid form-grid-3">
+          <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">JC No.</label>
               <input className="innovic-input" value={model?.code ?? '(auto on save)'} readOnly />
             </div>
             <div className="form-grp">
-              <label className="form-label">Date</label>
+              <label className="form-label">
+                Date <span className="text3">(auto: today)</span>
+              </label>
               <input
                 type="date"
                 className="innovic-input"
                 value={jcDate}
                 onChange={(e) => setJcDate(e.target.value)}
               />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Priority</label>
-              <select
-                className="innovic-select"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
-              >
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
             </div>
             <div className="form-grp form-full">
               <label className="form-label">
@@ -416,6 +423,28 @@ export function JobCardForm({
                 placeholder={isEdit ? '🔍 Search SO/WO/JWSO number…' : '🔍 Search JWSO number…'}
                 onChange={(e) => onSourceChange(e.target.value)}
               />
+              {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
+              {selectedSource ? (
+                <div style={{ fontSize: 11, marginTop: 4 }}>
+                  <span className="cyan fw-700">
+                    {selectedSource.type === 'jw' ? '[JW] ' : ''}Line {selectedSource.lineNo || 1}
+                  </span>
+                  {selectedSource.clientPoLineNo ? (
+                    <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                      {' '}
+                      [CPO:{selectedSource.clientPoLineNo}]
+                    </span>
+                  ) : null}{' '}
+                  — {selectedSource.code}
+                  {selectedSource.partName ? (
+                    <>
+                      {' · '}
+                      <b>{selectedSource.partName}</b>
+                    </>
+                  ) : null}{' '}
+                  · <span className="text3">{selectedSource.customerName ?? ''}</span>
+                </div>
+              ) : null}
               {selectedSource ? (
                 <div
                   style={{
@@ -436,6 +465,17 @@ export function JobCardForm({
                   </b>
                 </div>
               ) : null}
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Priority</label>
+              <select
+                className="innovic-select"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as 'normal' | 'high')}
+              >
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
             </div>
             <div className="form-grp form-full">
               <label className="form-label">
@@ -470,49 +510,88 @@ export function JobCardForm({
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
+            {/* Remarks has no legacy counterpart (jcModalBody has no such field),
+                but job_cards.remarks is a real column the service persists —
+                kept per "legacy has fewer fields than ours → keep ours". */}
             <div className="form-grp form-full">
               <label className="form-label">Remarks</label>
               <textarea
-                className="innovic-input"
+                className="innovic-textarea"
                 rows={2}
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Optional notes for this job card"
               />
             </div>
-            <div className="form-grp">
-              <label className="form-label">Drawing</label>
-              <label
-                style={{
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  background: 'var(--bg4)',
-                  border: '1px solid var(--border2)',
-                  borderRadius: 'var(--radius)',
-                  fontSize: 12,
-                }}
-              >
-                📎 {drawingName || 'Attach Drawing'}
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  style={{ display: 'none' }}
-                  onChange={(e) => void onDrawing(e.target.files?.[0])}
-                />
-              </label>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* ── OPERATIONS ROUTING ── */}
+      {/* ── DRAWING ATTACHMENT (legacy jcModalBody L5996-6006) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
-          <div className="panel-title">▸ Operations — Routing Sequence</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="panel-title">
+            ▸ Drawing Attachment <span className="text3">(optional — image or PDF)</span>
+          </div>
+        </div>
+        <div className="panel-body">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <label
+              style={{
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                background: 'var(--bg4)',
+                border: '1px solid var(--border2)',
+                borderRadius: 'var(--radius)',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'var(--text2)',
+              }}
+            >
+              📎 Attach Drawing
+              <input
+                type="file"
+                accept="image/*,.pdf"
+                style={{ display: 'none' }}
+                onChange={(e) => void onDrawing(e.target.files?.[0])}
+              />
+            </label>
+            <span className="text3" style={{ fontSize: 12 }}>
+              {drawingName || 'No file attached'}
+            </span>
+            {drawingFilePath ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setDrawingFilePath(null);
+                  setDrawingName('');
+                }}
+              >
+                ✕ Remove
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* ── OPERATION ROUTING (legacy jcModalBody L6007-6013 + jcModalOpsHtml L5868) ── */}
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel-hdr">
+          <div className="panel-title">
+            ▸ Operations — Routing Sequence{' '}
+            <span className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+              Program / Tool Details are per-operation
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="text3" style={{ fontSize: 11 }}>
+              {opCount} op{ops.length !== 1 ? 's' : ''}
+              {qcCount > 0 ? ` + ${qcCount} QC` : ''}
+            </span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp(false)}>
               + Add Op
             </button>
@@ -529,15 +608,25 @@ export function JobCardForm({
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
+              {/* Column order mirrors legacy tHead L5932. Two deliberate
+                  deviations, both documented in the report:
+                  - "Cycle (min)": legacy's header reads "Cycle(h)" but our
+                    column is jc_ops.cycle_time_min (minutes) — porting the
+                    "(h)" label would mislabel the unit users type into.
+                  - "QC": legacy BUILDS a qcCell (L5898) but never inserts it
+                    into the row (L5923) — dead code, so legacy renders no QC
+                    column. Ours binds jc_ops.qc_required, a real field. Kept. */}
               <tr>
-                <th style={{ width: 30 }}>#</th>
+                <th style={{ width: 32 }}>#</th>
                 <th style={{ width: 150 }}>Machine</th>
                 <th>Operation</th>
-                <th style={{ width: 80 }}>Cycle (min)</th>
-                <th style={{ width: 110 }}>Program</th>
+                <th style={{ width: 80 }} className="text3">
+                  Cycle (min)
+                </th>
+                <th style={{ width: 110, color: 'var(--blue)' }}>Program</th>
                 <th>Tool Details</th>
                 <th style={{ width: 60 }}>QC</th>
-                <th style={{ width: 180, color: 'var(--amber)' }}>Outsource</th>
+                <th style={{ minWidth: 180, color: 'var(--amber)' }}>Outsource</th>
                 <th style={{ width: 90 }} />
               </tr>
             </thead>
@@ -545,29 +634,48 @@ export function JobCardForm({
               {ops.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="empty-state">
-                    No operations yet — add machining or QC steps.
+                    No operations yet — click “+ Add Op” for machining steps or “+ Add QC Op” for QC
+                    inspection steps.
                   </td>
                 </tr>
               ) : (
                 ops.map((o, i) => {
                   const isQc = o.opType === 'qc';
                   const isOut = o.opType === 'outsource';
+                  const machineName =
+                    machines.find((m) => m.code === o.machineCode)?.name ?? '';
                   return (
-                    <tr key={i} style={isQc ? { background: 'rgba(34,197,94,0.06)' } : undefined}>
-                      <td className="td-ctr mono fw-700">{i + 1}</td>
+                    <tr
+                      key={i}
+                      style={
+                        isQc
+                          ? {
+                              background: 'rgba(34,197,94,0.06)',
+                              borderLeft: '3px solid var(--green)',
+                            }
+                          : undefined
+                      }
+                    >
+                      <td className={`td-ctr mono fw-700 ${isQc ? 'green' : 'text3'}`}>{i + 1}</td>
                       <td>
                         {isQc ? (
-                          <span className="badge b-green">🔬 QC</span>
+                          <span className="badge b-green">🔬 QC INSPECTION</span>
                         ) : (
-                          <input
-                            className="innovic-input"
-                            list="dlJcMachine"
-                            value={o.machineCode}
-                            placeholder="🔍 Machine ★"
-                            disabled={isOut}
-                            onChange={(e) => setOp(i, { machineCode: e.target.value })}
-                            style={{ fontSize: 11 }}
-                          />
+                          <>
+                            <input
+                              className="innovic-input"
+                              list="dlJcMachine"
+                              value={o.machineCode}
+                              placeholder="🔍 Machine ★"
+                              disabled={isOut}
+                              onChange={(e) => setOp(i, { machineCode: e.target.value })}
+                              style={{ fontSize: 11 }}
+                            />
+                            {/* Resolved machine name (legacy #mn_i, L5892). */}
+                            <div className="cyan" style={{ fontSize: 10, marginTop: 2, minHeight: 13 }}>
+                              {machineName}
+                            </div>
+                          </>
                         )}
                       </td>
                       <td>
@@ -590,34 +698,65 @@ export function JobCardForm({
                           style={{ fontSize: 12 }}
                         />
                       </td>
+                      {/* QC rows render literal em-dashes for Program / Tool
+                          Details (legacy `emptyCells` L5879), not disabled
+                          inputs. */}
                       <td>
-                        <input
-                          className="innovic-input"
-                          value={o.program}
-                          disabled={isQc}
-                          onChange={(e) => setOp(i, { program: e.target.value })}
-                          style={{ fontSize: 12 }}
-                        />
+                        {isQc ? (
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            —
+                          </span>
+                        ) : (
+                          <input
+                            className="innovic-input"
+                            value={o.program}
+                            placeholder="CNC program"
+                            onChange={(e) => setOp(i, { program: e.target.value })}
+                            style={{ fontSize: 12 }}
+                          />
+                        )}
                       </td>
                       <td>
-                        <input
-                          className="innovic-input"
-                          value={o.toolDetails}
-                          disabled={isQc}
-                          placeholder="Insert, fixtures, setup"
-                          onChange={(e) => setOp(i, { toolDetails: e.target.value })}
-                          style={{ fontSize: 12 }}
-                        />
+                        {isQc ? (
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            —
+                          </span>
+                        ) : (
+                          <input
+                            className="innovic-input"
+                            value={o.toolDetails}
+                            placeholder="Insert, fixtures, setup notes"
+                            onChange={(e) => setOp(i, { toolDetails: e.target.value })}
+                            style={{ fontSize: 12 }}
+                          />
+                        )}
                       </td>
                       <td className="td-ctr">
                         {isQc ? (
                           <span className="badge b-green">YES</span>
                         ) : (
-                          <input
-                            type="checkbox"
-                            checked={o.qcRequired}
-                            onChange={(e) => setOp(i, { qcRequired: e.target.checked })}
-                          />
+                          <label
+                            style={{
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 3,
+                            }}
+                            title="QC Required after this operation"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={o.qcRequired}
+                              onChange={(e) => setOp(i, { qcRequired: e.target.checked })}
+                            />
+                            <span
+                              className={o.qcRequired ? 'green' : 'text3'}
+                              style={{ fontSize: 9, fontWeight: 700 }}
+                            >
+                              {o.qcRequired ? 'YES' : 'NO'}
+                            </span>
+                          </label>
                         )}
                       </td>
                       <td>
@@ -717,27 +856,37 @@ export function JobCardForm({
         </div>
       </div>
 
-      {/* ── QC DOCUMENTS ── */}
+      {/* ── QC DOCUMENTS (legacy jcModalBody L6014-6017 + jcModalDocsHtml L5809) ── */}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-hdr">
-          <div className="panel-title">▸ QC Documents</div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() =>
-              setDocs((prev) => [
-                ...prev,
-                { docType: 'MIR', fileName: '', storagePath: '', fileSize: null },
-              ])
-            }
-          >
-            + Add Document
-          </button>
+          <div className="panel-title">
+            ▸ QC Documents{' '}
+            <span className="text3" style={{ fontSize: 10, fontWeight: 400 }}>
+              MIR • MCR • Inspection Reports &amp; other QC files
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="text3" style={{ fontSize: 11 }}>
+              {docs.length} doc{docs.length !== 1 ? 's' : ''} attached
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                setDocs((prev) => [
+                  ...prev,
+                  { docType: 'MIR', fileName: '', storagePath: '', fileSize: null },
+                ])
+              }
+            >
+              + Add Document
+            </button>
+          </div>
         </div>
         <div className="panel-body">
           {docs.length === 0 ? (
             <div className="empty-state" style={{ fontSize: 12 }}>
-              No QC documents — attach MIR, MCR, Inspection Reports, etc.
+              No QC documents — click “+ Add Document” to attach MIR, MCR, Inspection Reports, etc.
             </div>
           ) : (
             <table className="innovic-table">
@@ -823,13 +972,17 @@ export function JobCardForm({
         >
           Cancel
         </button>
+        {/* Footer derived from the CALL SITE: addJC L6073 and editJC L6124 both
+            pass saveLabel 'Save Job Card' to showModalLg, whose L28042-44 footer
+            is Cancel (.btn-ghost) + .btn-success rendering `&#10003; ${label}`
+            — the ✓ prefixes even an explicitly-passed label. */}
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-success"
           disabled={submitting}
           onClick={() => void onSubmit()}
         >
-          {submitting ? <Loader2 size={13} className="animate-spin" /> : null} Save Job Card
+          {submitting ? <Loader2 size={13} className="animate-spin" /> : null} ✓ Save Job Card
         </button>
       </div>
     </div>

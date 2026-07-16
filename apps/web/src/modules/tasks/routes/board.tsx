@@ -5,7 +5,7 @@
 
 import type { TaskRow } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
@@ -112,12 +112,11 @@ function TaskBoardPage(): React.JSX.Element {
             className="panel"
             onClick={() => toggleStatus(c.key)}
             style={{
-              minWidth: 130,
+              minWidth: 120,
               padding: 12,
               textAlign: 'center',
               cursor: 'pointer',
               border: `2px solid ${statusFilter === c.key ? c.color : 'transparent'}`,
-              background: 'var(--bg2)',
             }}
           >
             <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase' }}>{c.label}</div>
@@ -150,7 +149,7 @@ function TaskBoardPage(): React.JSX.Element {
 
       {/* Table */}
       <div className="panel">
-        <div className="tbl-wrap">
+        <div className="tbl-wrap tbl-frozen">
           <table className="innovic-table">
             <thead>
               <tr>
@@ -214,13 +213,13 @@ function TaskRowView({
   return (
     <tr>
       <td className="td-code mono fw-700" style={{ color: 'var(--cyan)', fontSize: 11 }}>
-        {t.isUnread ? <span title="Unread — new task" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', marginRight: 5 }} /> : null}
+        {t.isUnread ? <span className="task-unread" title="Unread — new task" /> : null}
         {t.code}
       </td>
       <td style={{ fontWeight: 600 }}>
         {t.title}
         {t.linkedRef?.display ? (
-          <span className="badge b-cyan" style={{ marginLeft: 6, fontSize: 10 }} title={`Linked to ${t.linkedRef.display}`}>
+          <span className="task-linked-ref" title={`Linked to ${t.linkedRef.display}`}>
             🔗 {t.linkedRef.display}
           </span>
         ) : null}
@@ -239,11 +238,16 @@ function TaskRowView({
       </td>
       <td style={{ fontSize: 10, color: 'var(--text3)' }}>
         {t.createdDate}
-        {t.startedDate ? <><br />▶ {t.startedDate}</> : null}
-        {t.completedDate ? <><br />✅ {t.completedDate}</> : null}
+        {t.startedDate ? <><br />▶{t.startedDate}</> : null}
+        {t.completedDate ? <><br />✅{t.completedDate}</> : null}
       </td>
       <td>
         <div style={{ display: 'flex', gap: 3 }}>
+          {t.linkedRef?.navPage ? (
+            <Link to={t.linkedRef.navPage} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} title={`Open linked ${t.linkedRef.display}`}>
+              🔗
+            </Link>
+          ) : null}
           <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => onView(t.id)} title="View">
             👁
           </button>

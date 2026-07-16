@@ -27,10 +27,10 @@ function ProdSoListPage(): React.JSX.Element {
         <input
           type="text"
           className="innovic-input"
-          placeholder="🔍 Search SO, customer…"
+          placeholder="🔍 Search SO, customer..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 280, fontSize: 12 }}
+          style={{ width: 220 }}
         />
       </div>
       <div className="panel">
@@ -45,10 +45,6 @@ function ProdSoListPage(): React.JSX.Element {
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load'}
             </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">No SOs found</div>
           </div>
         ) : data ? (
           <div className="tbl-wrap">
@@ -71,6 +67,13 @@ function ProdSoListPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="empty-state">
+                      No SOs found
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((r) => (
                   <tr key={r.soId}>
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
@@ -78,18 +81,7 @@ function ProdSoListPage(): React.JSX.Element {
                     </td>
                     <td>{r.customerName}</td>
                     <td>
-                      <span
-                        style={{
-                          padding: '2px 8px',
-                          borderRadius: 10,
-                          fontSize: 10,
-                          fontWeight: 700,
-                          background: 'rgba(37,99,235,0.10)',
-                          color: 'var(--blue)',
-                        }}
-                      >
-                        {r.soType.replace(/_/g, ' ')}
-                      </span>
+                      <span className="badge b-grey">{r.soType.replace(/_/g, ' ')}</span>
                     </td>
                     <td className="td-ctr">{r.linesCount}</td>
                     <td className="td-ctr mono fw-700">{r.totalQty}</td>
@@ -107,7 +99,7 @@ function ProdSoListPage(): React.JSX.Element {
                         style={{
                           width: 80,
                           height: 6,
-                          background: 'var(--bg4)',
+                          background: 'var(--bg5)',
                           borderRadius: 3,
                           display: 'inline-block',
                           verticalAlign: 'middle',

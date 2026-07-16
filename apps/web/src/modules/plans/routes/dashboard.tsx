@@ -43,11 +43,14 @@ const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = {
   cancelled: { cls: 'b-grey', label: 'Cancelled' },
 };
 
+// Legacy renderPlanDashboard L10049–10051 shows three short tags: 🛒 Buy /
+// 🛠 Asm / 🏭 Mfg. Legacy only branches on direct_purchase + assembly; every
+// other type (incl. full_outsource) falls through to the 🏭 Mfg tag.
 const TYPE_LABEL: Record<PlanType, { icon: string; label: string }> = {
-  manufacture: { icon: '🏭', label: 'Manufacture' },
-  direct_purchase: { icon: '🛒', label: 'Direct Purchase' },
-  full_outsource: { icon: '📦', label: 'Full Outsource' },
-  assembly: { icon: '🔧', label: 'Assembly' },
+  manufacture: { icon: '🏭', label: 'Mfg' },
+  direct_purchase: { icon: '🛒', label: 'Buy' },
+  full_outsource: { icon: '🏭', label: 'Mfg' },
+  assembly: { icon: '🛠', label: 'Asm' },
 };
 
 // Tile order matches legacy L10014–10020. Filter key matches the KPI shape.
@@ -188,7 +191,7 @@ function NeedsPlanningTable({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>SO/JWSO</th>
+                <th>SO/JW</th>
                 <th className="td-ctr">Line</th>
                 <th>Item</th>
                 <th>Part Name</th>
@@ -362,7 +365,7 @@ function RecentPlansTable({
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search plans…"
+            placeholder="Search plans..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ minWidth: 220, fontSize: 12 }}
@@ -383,13 +386,13 @@ function RecentPlansTable({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Plan #</th>
+                <th>Plan No.</th>
                 <th>Date</th>
                 <th>Type</th>
+                <th>SO/JW</th>
+                <th className="td-ctr">Line</th>
                 <th>Item</th>
-                <th>SO</th>
-                <th className="td-right">Order Qty</th>
-                <th className="td-right">Plan Qty</th>
+                <th className="td-ctr">Qty</th>
                 <th className="td-ctr">Ops</th>
                 <th>Start</th>
                 <th>End</th>
@@ -435,6 +438,12 @@ function PlanRow({ row }: { row: RecentPlanRow }): React.JSX.Element {
         </span>
       </td>
       <td>
+        <span className="text3" style={{ fontSize: 12 }}>
+          {row.soCodeText ?? '—'}
+        </span>
+      </td>
+      <td className="td-ctr">{row.lineNo ?? '—'}</td>
+      <td>
         <div>{row.itemCode ?? row.itemCodeText ?? '—'}</div>
         {row.itemName ?? row.itemNameText ? (
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
@@ -442,14 +451,10 @@ function PlanRow({ row }: { row: RecentPlanRow }): React.JSX.Element {
           </div>
         ) : null}
       </td>
-      <td>
-        <span className="text3" style={{ fontSize: 12 }}>
-          {row.soCodeText ?? '—'}
-          {row.lineNo ? ` · L#${row.lineNo}` : ''}
-        </span>
+      <td className="td-ctr fw-700">
+        {row.planQty}
+        <span className="text3"> /{row.orderQty}</span>
       </td>
-      <td className="td-right">{row.orderQty}</td>
-      <td className="td-right">{row.planQty}</td>
       <td className="td-ctr">{row.opsCount}</td>
       <td>
         <span className="text3" style={{ fontSize: 11 }}>
@@ -487,7 +492,7 @@ function PlanActions({ row }: { row: RecentPlanRow }): React.JSX.Element {
         className="btn btn-sm btn-ghost"
         title="Edit plan"
       >
-        <Pencil size={12} /> Edit
+        <Pencil size={12} />
       </Link>
     );
   }

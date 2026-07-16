@@ -44,13 +44,11 @@ function PendingSoValuePage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">💰 Pending SO Value</div>
+      <div className="section-hdr" style={{ marginBottom: 12 }}>
+        💰 Pending SO Value
       </div>
 
-      <div
-        style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}
-      >
+      <div style={{ display: 'flex', gap: 5, marginBottom: 14 }}>
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -61,7 +59,6 @@ function PendingSoValuePage(): React.JSX.Element {
               fontWeight: 700,
               background: filter === f.key ? 'var(--blue)' : 'var(--bg4)',
               color: filter === f.key ? '#fff' : 'var(--text2)',
-              border: '1px solid var(--border)',
             }}
           >
             {f.label}
@@ -89,26 +86,14 @@ function PendingSoValuePage(): React.JSX.Element {
         <>
           <KpiStrip totals={data.totals} />
 
-          <div
-            style={{
-              display: 'flex',
-              gap: 10,
-              marginBottom: 8,
-              alignItems: 'center',
-            }}
-          >
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Search SO, customer…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ minWidth: 240, fontSize: 12 }}
-            />
-            <span className="text3" style={{ fontSize: 12 }}>
-              {filtered.length} of {data.rows.length} SOs
-            </span>
-          </div>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Search SO, customer..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ minWidth: 220, marginBottom: 8 }}
+          />
 
           {filtered.length === 0 ? (
             <div className="panel">
@@ -131,14 +116,14 @@ function PendingSoValuePage(): React.JSX.Element {
                       <th>Customer</th>
                       <th>SO Date</th>
                       <th>Due Date</th>
-                      <th className="td-right">Order Value</th>
-                      <th className="td-right">Dispatched</th>
-                      <th className="td-right" style={{ color: 'var(--amber)' }}>
+                      <th style={{ textAlign: 'right' }}>Order Value</th>
+                      <th style={{ textAlign: 'right' }}>Dispatched</th>
+                      <th style={{ textAlign: 'right', color: 'var(--amber)' }}>
                         Pending Value
                       </th>
-                      <th className="td-right">Invoiced</th>
-                      <th className="td-right">Received</th>
-                      <th className="td-right">Outstanding</th>
+                      <th style={{ textAlign: 'right' }}>Invoiced</th>
+                      <th style={{ textAlign: 'right' }}>Received</th>
+                      <th style={{ textAlign: 'right' }}>Outstanding</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -152,18 +137,22 @@ function PendingSoValuePage(): React.JSX.Element {
               </div>
             </div>
           )}
-          <div
-            className="text3"
-            style={{ fontSize: 11, marginTop: 8 }}
-          >
-            💡 Pending Value = Order Value − Dispatched Value. Outstanding =
-            Invoiced − Received.
+          {/* Legacy's tip opens "Click any SO row to see line-level breakdown."
+              (_psvDetail L19382) — that modal was never ported, so only the
+              second, true clause is copied. */}
+          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+            💡 Pending Value = Order Value − Dispatched Value.
           </div>
         </>
       ) : null}
     </div>
   );
 }
+
+// Legacy colours the Invoiced figures `var(--teal,#0d9488)` (L19338/19359/19371).
+// `--teal` is undefined in both systems, so legacy renders its own #0d9488
+// fallback — this ports that literal, fallback included.
+const TEAL = 'var(--teal, #0d9488)';
 
 const inr = (v: string | number): string => {
   const n = Number(v);
@@ -187,14 +176,14 @@ function KpiStrip({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
         gap: 8,
         marginBottom: 16,
       }}
     >
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-          Total Order Value
+        <div className="text3" style={{ fontSize: 9 }}>
+          TOTAL ORDER VALUE
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--cyan)' }}>
           {inr(totals.orderValue)}
@@ -204,8 +193,8 @@ function KpiStrip({
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-          Dispatched Value
+        <div className="text3" style={{ fontSize: 9 }}>
+          DISPATCHED VALUE
         </div>
         <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
           {inr(totals.dispatchedValue)}
@@ -222,8 +211,8 @@ function KpiStrip({
           border: '2px solid var(--amber)',
         }}
       >
-        <div style={{ fontSize: 9, color: 'var(--amber)', fontWeight: 700, textTransform: 'uppercase' }}>
-          Pending Dispatch
+        <div style={{ fontSize: 9, color: 'var(--amber)', fontWeight: 700 }}>
+          PENDING DISPATCH
         </div>
         <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--amber)' }}>
           {inr(totals.pendingValue)}
@@ -233,10 +222,10 @@ function KpiStrip({
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-          Invoiced
+        <div className="text3" style={{ fontSize: 9 }}>
+          INVOICED
         </div>
-        <div className="mono fw-700" style={{ fontSize: 16, color: '#14b8a6' }}>
+        <div className="mono fw-700" style={{ fontSize: 16, color: TEAL }}>
           {inr(totals.invoicedValue)}
         </div>
         <div className="text3" style={{ fontSize: 9 }}>
@@ -244,8 +233,8 @@ function KpiStrip({
         </div>
       </div>
       <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
-        <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-          Outstanding
+        <div className="text3" style={{ fontSize: 9 }}>
+          OUTSTANDING
         </div>
         <div
           className="mono fw-700"
@@ -303,7 +292,7 @@ function PsvRow({ row }: { row: PendingSoValueRow }): React.JSX.Element {
       >
         {inr(row.pendingValue)}
       </td>
-      <td className="td-right mono" style={{ color: '#14b8a6' }}>
+      <td className="td-right mono" style={{ color: TEAL }}>
         {inr(row.invoicedValue)}
       </td>
       <td className="td-right mono" style={{ color: 'var(--green)' }}>
@@ -327,35 +316,45 @@ function TotalsRow({
 }: {
   totals: PendingSoValueResponse['totals'];
 }): React.JSX.Element {
+  // Legacy puts background:var(--bg4) on the <tr> (L19366). Our
+  // `.innovic-table tbody tr:nth-child(even) td` paints the cells on top of the
+  // row, so the highlight would vanish whenever the totals row lands on an even
+  // index. Carrying the background on each <td> reproduces legacy's rendering.
+  const cell = { background: 'var(--bg4)' } as const;
   return (
-    <tr style={{ background: 'var(--bg4)', borderTop: '2px solid var(--border)' }}>
-      <td colSpan={4} className="td-right text2" style={{ fontSize: 12, fontWeight: 700 }}>
+    <tr style={{ borderTop: '2px solid var(--border)', fontWeight: 700 }}>
+      <td colSpan={4} className="td-right text2" style={{ ...cell, fontSize: 12 }}>
         TOTAL
       </td>
-      <td className="td-right mono fw-700">{inr(totals.orderValue)}</td>
-      <td className="td-right mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-right mono" style={cell}>
+        {inr(totals.orderValue)}
+      </td>
+      <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
         {inr(totals.dispatchedValue)}
       </td>
-      <td className="td-right mono fw-700" style={{ color: 'var(--amber)' }}>
+      <td className="td-right mono" style={{ ...cell, color: 'var(--amber)' }}>
         {inr(totals.pendingValue)}
       </td>
-      <td className="td-right mono fw-700" style={{ color: '#14b8a6' }}>
+      <td className="td-right mono" style={{ ...cell, color: TEAL }}>
         {inr(totals.invoicedValue)}
       </td>
-      <td className="td-right mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
         {inr(totals.receivedValue)}
       </td>
-      <td className="td-right mono fw-700" style={{ color: 'var(--red)' }}>
+      <td className="td-right mono" style={{ ...cell, color: 'var(--red)' }}>
         {inr(totals.outstandingValue)}
       </td>
-      <td />
+      <td style={cell} />
     </tr>
   );
 }
 
+// Legacy badge() L1959-1970 maps the SO statuses it knows: Open→b-cyan,
+// Closed/Completed→b-green, Cancelled→b-red. 'draft' and 'dispatched' have no
+// entry there, so legacy falls through to b-grey — mirrored here.
 function badgeColor(status: string): string {
-  if (status === 'closed' || status === 'dispatched') return 'green';
-  if (status === 'cancelled') return 'grey';
-  if (status === 'open') return 'blue';
+  if (status === 'open') return 'cyan';
+  if (status === 'closed') return 'green';
+  if (status === 'cancelled') return 'red';
   return 'grey';
 }

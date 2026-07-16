@@ -16,48 +16,46 @@ export function MachineCard({
   isSelected,
   onSelect,
 }: Props): React.JSX.Element {
-  const accent = running ? 'var(--green)' : isSelected ? 'var(--cyan)' : 'var(--border2)';
   return (
     <button
       type="button"
       onClick={onSelect}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 3,
-        minWidth: 140,
-        border: `2px solid ${accent}`,
+        display: 'block',
+        width: '100%',
+        minWidth: 130,
+        border: `2px solid ${isSelected ? 'var(--cyan)' : 'var(--border)'}`,
         borderRadius: 10,
-        background: isSelected ? 'var(--bg4)' : 'var(--bg3)',
+        background: isSelected ? 'var(--cyan3)' : 'var(--bg3)',
         padding: 12,
         textAlign: 'left',
         cursor: 'pointer',
+        transition: 'all .15s',
       }}
     >
-      <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
+      <div className="mono cyan" style={{ fontWeight: 800, fontSize: 14 }}>
         {machine.code}
-      </span>
-      <span className="text3" style={{ fontSize: 11 }}>
+      </div>
+      <div className="text3" style={{ fontSize: 10, marginBottom: 6 }}>
         {machine.name}
-      </span>
-      <span
+      </div>
+      <div
         style={{
           fontSize: 11,
           fontWeight: 700,
           color: running ? 'var(--green)' : 'var(--text3)',
         }}
       >
-        {running ? '● Running' : '○ Idle'}
-      </span>
+        {running ? '🟢 Running' : '⚪ Idle'}
+      </div>
       {running ? (
         <>
-          <span className="mono" style={{ fontSize: 11 }}>
+          <div className="mono text2" style={{ fontSize: 11, marginTop: 3 }}>
             {running.jobCardCode}
-          </span>
-          <span className="text3" style={{ fontSize: 10 }}>
-            Op {running.opSeq}: {running.operation}
-          </span>
+          </div>
+          <div className="text3" style={{ fontSize: 10 }}>
+            Op{running.opSeq}: {running.operation}
+          </div>
         </>
       ) : null}
     </button>

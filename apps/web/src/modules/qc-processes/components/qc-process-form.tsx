@@ -1,4 +1,25 @@
 // QC Process Master shared form (create + edit).
+//
+// Legacy has NO shared body builder: addQCProcess (L23475) and editQCProcess
+// (L23492) each inline their own literal into showModal(). The two literals are
+// field-identical — same 4 fields, same order, same `.form-grid` — differing
+// only where a mode must differ (placeholder= on create vs value=/selected on
+// edit). So one component is a faithful port; per-mode drift is not.
+//
+// Footer: both call sites use showModal (NOT showModalLg), whose footer is
+// hard-coded Cancel / Save at L28026-27 — so "Save" in BOTH modes, no ✓ prefix.
+//
+// Grid: legacy uses plain `.form-grid` (2 columns, theme L613) — NOT
+// `.form-grid-3`. Cycle Time + Status fill one 2-col row.
+//
+// `★` is create-only on the name: updateQcProcessInputSchema omits `code` and
+// service.ts updateQcProcess never writes it, so on edit the field is readonly
+// and not submitted at all — starring it there would describe a constraint the
+// edit path does not enforce. Mirrors the cost-centers master, same asymmetry.
+//
+// UNITS: legacy labels this "(hrs)" and stores hours; our column is
+// `default_cycle_time_min` numeric(8,2) — MINUTES. Label tracks OUR column, as
+// the already-ported list header ("Std Time (min)") does. See report.
 
 import type { CreateQcProcessInput, QcProcess, UpdateQcProcessInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
@@ -64,10 +85,10 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid form-grid-3">
+      <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="code">
-            QC Process Name<span className="req">★</span>
+            QC Process Name{!isEdit ? <span className="req">★</span> : null}
           </label>
           <input
             id="code"
@@ -75,7 +96,9 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             autoFocus={!isEdit}
             autoComplete="off"
             readOnly={isEdit}
-            placeholder="e.g. Dimensional Check, Hardness Test, Visual Inspection"
+            {...(isEdit
+              ? {}
+              : { placeholder: 'e.g. Dimensional Check, Hardness Test, Visual Inspection' })}
             {...register('code', {
               required: !isEdit ? 'Name is required' : false,
               maxLength: { value: 64, message: 'Max 64 chars' },
@@ -93,7 +116,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             id="description"
             className="innovic-input"
             autoComplete="off"
-            placeholder="What does this QC process involve?"
+            {...(isEdit ? {} : { placeholder: 'What does this QC process involve?' })}
             {...register('description', {
               maxLength: { value: 1000, message: 'Max 1000 chars' },
             })}
@@ -105,7 +128,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="defaultCycleTimeMin">
-            Default cycle time (minutes)
+            Default Cycle Time (min)
           </label>
           <input
             id="defaultCycleTimeMin"
@@ -113,7 +136,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
             step="0.01"
             min={0}
             className="innovic-input"
-            placeholder="e.g. 15"
+            {...(isEdit ? {} : { placeholder: '15' })}
             {...register('defaultCycleTimeMin', {
               valueAsNumber: true,
               min: { value: 0, message: 'Must be ≥ 0' },
@@ -161,7 +184,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
           ) : null}
           <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Add QC Process')}
+            {props.submitLabel ?? 'Save'}
           </button>
         </div>
       </div>

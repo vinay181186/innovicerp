@@ -35,7 +35,7 @@ function QcProcessNewPage(): React.JSX.Element {
           <QcProcessForm
             mode="create"
             submitError={submitError}
-            submitLabel="Add QC Process"
+            submitLabel="Save"
             onCancel={() => void navigate({ to: '/qc-processes' })}
             onSubmit={async (values: CreateQcProcessInput) => {
               setSubmitError(null);

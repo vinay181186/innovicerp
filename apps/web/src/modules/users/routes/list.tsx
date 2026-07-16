@@ -102,19 +102,19 @@ function UsersListPage(): React.JSX.Element {
         ),
       },
       {
+        header: 'Role',
+        accessorKey: 'role',
+        cell: ({ row }) => (
+          <span className={`badge ${roleBadgeClass(row.original.role)}`}>{row.original.role}</span>
+        ),
+      },
+      {
         header: 'Email',
         accessorKey: 'email',
         cell: ({ row }) => (
           <span className="mono" style={{ fontSize: 11 }}>
             {row.original.email}
           </span>
-        ),
-      },
-      {
-        header: 'Role',
-        accessorKey: 'role',
-        cell: ({ row }) => (
-          <span className={`badge ${roleBadgeClass(row.original.role)}`}>{row.original.role}</span>
         ),
       },
       {
@@ -162,13 +162,16 @@ function UsersListPage(): React.JSX.Element {
         header: 'Actions',
         enableSorting: false,
         cell: ({ row }) => (
-          <Link
-            to="/users/$id/edit"
-            params={{ id: row.original.id }}
-            className="btn btn-ghost btn-sm"
-          >
-            <Pencil size={13} /> Edit
-          </Link>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Link
+              to="/users/$id/edit"
+              params={{ id: row.original.id }}
+              className="btn btn-primary btn-sm"
+              style={{ fontSize: 11 }}
+            >
+              <Pencil size={13} /> Edit
+            </Link>
+          </div>
         ),
       },
     ],
@@ -210,14 +213,8 @@ function UsersListPage(): React.JSX.Element {
           gap: 8,
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            👥 User Management
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Manage team — add a user, rename, change role, deactivate. Click <b>+ Add User</b> to
-            create a login and app account in one step.
-          </div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          👥 User Management
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
@@ -271,7 +268,7 @@ function UsersListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          <Link to="/users/new" className="btn btn-primary btn-sm">
+          <Link to="/users/new" className="btn btn-primary">
             <Plus size={14} /> Add User
           </Link>
         </div>
@@ -367,6 +364,17 @@ function UsersListPage(): React.JSX.Element {
             Next <ChevronRight size={14} />
           </button>
         </div>
+      </div>
+
+      {/* Legacy L13469 tips this as "Edit manages everything ... all in one window" — that
+          describes legacy's _unifiedUserForm. This port deliberately splits it: Edit owns the
+          basic fields + approval limit + password, while department / form permissions live on
+          Access Control, and email is owned by Supabase Auth. Tip reworded to match what Edit
+          actually does — see ISSUE-021. */}
+      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+        💡 Click <b>✏ Edit</b> to manage a user: name, role, phone, status, PO approval limit and
+        password. Department + form permissions are managed on <b>Access Control</b>. Click{' '}
+        <b>+ Add User</b> to create a login and app account in one step.
       </div>
     </div>
   );

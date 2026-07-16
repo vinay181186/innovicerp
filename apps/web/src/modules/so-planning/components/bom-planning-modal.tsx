@@ -8,6 +8,7 @@
 // Existing plans are shown disabled.
 
 import type {
+  PlanStatus,
   PlanningBomChild,
   PlanningBomResponse,
   CreatePlanInput,
@@ -31,6 +32,30 @@ type RowState = {
   checked: boolean;
   qty: number;
 };
+
+// Legacy renders the raw stored (Title Case) status text. Kept per-file, matching
+// the plans module's existing convention (routes/list.tsx, detail.tsx, dashboard.tsx).
+const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
+  in_planning: 'In Planning',
+  planned: 'Planned',
+  jc_created: 'JC Created',
+  pr_created: 'PR Created',
+  in_production: 'In Production',
+  complete: 'Complete',
+  cancelled: 'Cancelled',
+};
+
+// Status colour for the "Plan Status" cell. The two legacy builders differ:
+// showBOMPlanning (assembly, L7137) has a 'PR Created' → purple branch;
+// showEquipBOMPlanning (L8867) omits it, so PR Created falls through to green.
+// Ported as-is rather than "corrected" — legacy is the spec.
+function bomPlanStColor(status: PlanStatus, mode: 'equipment' | 'assembly'): string {
+  if (status === 'in_planning') return 'var(--amber)';
+  if (status === 'planned') return 'var(--blue)';
+  if (status === 'jc_created') return 'var(--cyan)';
+  if (status === 'pr_created' && mode === 'assembly') return 'var(--purple)';
+  return 'var(--green)';
+}
 
 export function BomPlanningModal({
   mode,
@@ -135,7 +160,7 @@ export function BomPlanningModal({
       </button>
       <button
         type="button"
-        className="btn btn-primary"
+        className="btn btn-success"
         disabled={submitting || isLoading || !data}
         onClick={submit}
       >
@@ -145,7 +170,9 @@ export function BomPlanningModal({
             …
           </>
         ) : (
-          `Create ${unplannedCount} Plans`
+          // showModalLg with an explicit saveLabel → btn-success, and L28044
+          // renders `&#10003; ${_saveLabel}` so the ✓ prefixes the label too.
+          `✓ Create ${unplannedCount} Plans`
         )}
       </button>
     </>
@@ -282,8 +309,10 @@ function BomBody({
           marginBottom: 8,
         }}
       >
-        📦 BOM Explosion — {data.orderQty} {mode === 'equipment' ? 'sets' : 'units'} ×{' '}
-        {data.bomNo}
+        {/* Equipment (L8899): "📦 BOM Explosion — N sets × BOM-NO".
+            Assembly  (L7172): "📦 BOM Explosion — N units" — no BOM no. */}
+        📦 BOM Explosion — {data.orderQty}{' '}
+        {mode === 'equipment' ? `sets × ${data.bomNo}` : 'units'}
       </div>
 
       <div
@@ -354,14 +383,40 @@ function BomBody({
                   </td>
                   <td style={{ minWidth: 120 }}>
                     {c.existingPlan ? (
-                      <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>
-                        {c.existingPlan.planStatus}{' '}
+                      <>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: bomPlanStColor(c.existingPlan.planStatus, mode),
+                          }}
+                        >
+                          {PLAN_STATUS_LABEL[c.existingPlan.planStatus]}
+                        </span>
                         {c.existingPlan.jcCode ? (
-                          <span className="mono" style={{ fontSize: 10 }}>
-                            {c.existingPlan.jcCode}
-                          </span>
+                          <>
+                            {' '}
+                            <span
+                              className="mono"
+                              style={{ fontSize: 10, color: 'var(--cyan)' }}
+                            >
+                              {c.existingPlan.jcCode}
+                            </span>
+                          </>
                         ) : null}
-                      </span>
+                        {/* Only the assembly builder shows the DP PR no. (L7141);
+                            the equipment builder omits it. */}
+                        {mode === 'assembly' && c.existingPlan.dpPrCode ? (
+                          <>
+                            {' '}
+                            <span
+                              className="mono"
+                              style={{ fontSize: 10, color: 'var(--purple)' }}
+                            >
+                              {c.existingPlan.dpPrCode}
+                            </span>
+                          </>
+                        ) : null}
+                      </>
                     ) : (
                       <span style={{ color: 'var(--text3)', fontSize: 11 }}>Not planned</span>
                     )}
@@ -439,8 +494,11 @@ function BomBody({
       )}
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
-        ℹ Total Need = {mode === 'equipment' ? 'Equipment Qty' : 'Order Qty'} × Qty per Set.
-        Shortfall = Total Need − Current Stock.
+        {/* The two modes have different footnotes in legacy — equipment L8901,
+            assembly L7185. They are not interchangeable. */}
+        {mode === 'equipment'
+          ? 'ℹ Total Need = Equipment Qty × Qty per Set. Shortfall = Total Need − Current Stock.'
+          : 'ℹ Shortfall = Total Need − Current Stock. You can adjust Qty to Plan up to Total Need if you want to plan more than shortfall.'}
       </div>
 
       {submitErr ? (

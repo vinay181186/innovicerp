@@ -80,10 +80,10 @@ function SoStatusIndexPage(): React.JSX.Element {
       }}
     >
       {/* Left selector pane */}
-      <div style={{ width: 270, minWidth: 270, borderRight: '1px solid var(--border)', overflowY: 'auto', background: 'var(--bg2)' }}>
+      <div style={{ width: 260, minWidth: 260, borderRight: '1px solid var(--border)', overflowY: 'auto', background: 'var(--bg2)' }}>
         <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'var(--bg3)', position: 'sticky', top: 0, zIndex: 1 }}>
           <div className="text3" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}>
-            📊 SELECT SO / WO
+            SELECT SO / WO
           </div>
           <input
             className="innovic-input"

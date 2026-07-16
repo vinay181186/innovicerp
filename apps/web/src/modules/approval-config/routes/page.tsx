@@ -11,7 +11,7 @@
 
 import type { ApprovalConfig, UserRole } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -55,11 +55,9 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   if (!isAdmin) {
     return (
-      <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          <Lock size={14} style={{ display: 'inline', marginRight: 6 }} />
-          Admin access required for Approval Configuration.
-        </div>
+      <div className="empty-state" style={{ color: 'var(--red)' }}>
+        <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
+        Admin access required for Approval Configuration.
       </div>
     );
   }
@@ -120,7 +118,7 @@ function ApprovalConfigPage(): React.JSX.Element {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 14,
+          marginBottom: 16,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
@@ -413,7 +411,7 @@ function ApprovalConfigPage(): React.JSX.Element {
       </div>
 
       {/* Invoice Approval */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14, opacity: 0.85 }}>
+      <div className="panel" style={{ padding: 16, marginBottom: 14, opacity: 0.7 }}>
         <div
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >

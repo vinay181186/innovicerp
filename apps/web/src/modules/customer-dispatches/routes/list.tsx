@@ -176,7 +176,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
           </select>
           <input
             className="innovic-input"
-            placeholder="🔍 Search item, customer…"
+            placeholder="Search item, customer…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 200, fontSize: 12 }}

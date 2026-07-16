@@ -99,13 +99,6 @@ function PartyMaterialsListPage(): React.JSX.Element {
               {error instanceof Error ? error.message : 'Failed to load party materials'}
             </div>
           </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">🏭</div>
-              No party materials — click <strong>+ Add Material</strong>.
-            </div>
-          </div>
         ) : data ? (
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -130,6 +123,13 @@ function PartyMaterialsListPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-state">
+                      No party materials — click + Add Material
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((pm) => (
                   <tr key={pm.id}>
                     <td>
@@ -143,16 +143,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     </td>
                     <td>{pm.material ?? '—'}</td>
                     <td className="td-ctr">
-                      <span
-                        className="tag"
-                        style={{
-                          background: 'var(--bg4)',
-                          color: 'var(--text2)',
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          fontSize: 11,
-                        }}
-                      >
+                      <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--text2)' }}>
                         {pm.uom}
                       </span>
                     </td>
@@ -193,13 +184,8 @@ function PartyMaterialsListPage(): React.JSX.Element {
                         {canDelete ? (
                           <button
                             type="button"
-                            className="btn btn-sm"
-                            style={{
-                              fontSize: 11,
-                              background: 'rgba(239,68,68,0.08)',
-                              color: 'var(--red)',
-                              border: '1px solid rgba(239,68,68,0.3)',
-                            }}
+                            className="btn btn-danger btn-sm"
+                            style={{ fontSize: 11 }}
                             onClick={() => onDelete(pm)}
                           >
                             Del
@@ -254,7 +240,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
         💡 Party Material Master tracks raw materials supplied by clients for Job Work orders. Stock
         is updated via Party Material GRN. Separate from company inventory.
       </div>

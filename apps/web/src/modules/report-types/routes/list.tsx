@@ -48,7 +48,6 @@ function ReportMasterPage(): React.JSX.Element {
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 14,
-          gap: 8,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
@@ -71,8 +70,8 @@ function ReportMasterPage(): React.JSX.Element {
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
           <span className="text2" style={{ fontSize: 12 }}>
-            💡 Define report/document types here. These appear as options when adding QC document
-            requirements in SO/JW Planning.
+            💡 Define report/document types here. These will appear as options when adding QC
+            document requirements in SO/JW Planning.
           </span>
         </div>
       </div>
@@ -224,7 +223,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
         onClick={(e) => e.stopPropagation()}
       >
         <div className="panel-hdr">
-          <span className="panel-title">📄 {row ? 'Edit' : 'Add'} Report Type</span>
+          <span className="panel-title">{row ? '✏ Edit Report Type' : '📄 Add Report Type'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
             ✕
           </button>
@@ -233,7 +232,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
           <div className="form-grid">
             <div className="form-grp form-full">
               <label className="form-label">
-                Report / Document Name <span className="form-label-required">★</span>
+                Report / Document Name <span className="req">★</span>
               </label>
               <input
                 className="innovic-input"
@@ -249,7 +248,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
                 className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="When is this document needed?"
+                placeholder="Brief description of when this document is needed"
               />
             </div>
             <div className="form-grp">

@@ -59,10 +59,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div className="panel-title">Dispose</div>
+        <div className="panel-title">✏ Disposition — {nc.code}</div>
         <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
           Rejected qty:{' '}
-          <b style={{ color: 'var(--text)' }}>{Number(nc.rejectedQty).toFixed(0)}</b>
+          <b style={{ color: 'var(--text)' }}>{Number(nc.rejectedQty)}</b>
         </span>
       </div>
       <div className="panel-body">
@@ -94,7 +94,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             {nc.operationText ?? nc.qcOperationText ?? (nc.opSeq == null ? '—' : '')}
           </CtxField>
           <CtxField label="REJECTED QTY">
-            <span style={{ color: 'var(--red)' }}>{Number(nc.rejectedQty).toFixed(0)} pcs</span>
+            <span className="red">{Number(nc.rejectedQty)} pcs</span>
           </CtxField>
           <CtxField label="REASON">
             {nc.reasonCategory.replaceAll('_', ' ')}
@@ -102,10 +102,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
           </CtxField>
         </div>
         <form onSubmit={submit}>
-          <div className="form-grid form-grid-3">
+          <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="dispAction">
-                Action<span className="req">★</span>
+                Disposition<span className="req">★</span>
               </label>
               <select
                 id="dispAction"
@@ -114,7 +114,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 onChange={(e) => setAction(e.target.value as NcDisposition | '')}
                 required
               >
-                <option value="">— Select action —</option>
+                <option value="">-- Select Action --</option>
                 {NC_DISPOSITIONS.map((a) => (
                   <option key={a} value={a}>
                     {a.replaceAll('_', ' ')}
@@ -124,9 +124,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             </div>
 
             {action === 'rework' ? (
-              <div className="form-grp">
+              <div className="form-grp form-full">
                 <label className="form-label" htmlFor="dispReworkOp">
-                  Rework to op_seq
+                  Rework to Operation
                 </label>
                 {reworkOps.length > 0 ? (
                   <select
@@ -166,9 +166,9 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             ) : null}
 
             {action === 'scrap' ? (
-              <div className="form-grp">
+              <div className="form-grp form-full">
                 <label className="form-label" htmlFor="dispScrapCost">
-                  Scrap cost (₹)
+                  Scrap Cost (₹)
                 </label>
                 <input
                   id="dispScrapCost"
@@ -192,7 +192,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 id="dispRemarks"
                 className="innovic-textarea"
                 rows={2}
-                placeholder="Disposition notes…"
+                placeholder="Additional notes..."
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
               />
@@ -227,7 +227,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              A supplementary JC will be created with qty {Number(nc.rejectedQty).toFixed(0)} and
+              A supplementary JC will be created with qty {Number(nc.rejectedQty)} and
               the origin's source SO/JW link inherited. Code:{' '}
               <span className="mono">&lt;origin&gt;-S&lt;n&gt;</span>.
             </div>
@@ -255,7 +255,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             </button>
             <button type="submit" className="btn btn-primary" disabled={pending || !action}>
               {pending ? <Loader2 size={13} className="animate-spin" /> : null}
-              Apply disposition
+              Save
             </button>
           </div>
         </form>

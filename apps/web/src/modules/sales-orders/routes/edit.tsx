@@ -88,10 +88,8 @@ function SalesOrderNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New Sales Order</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Header + line items in a single save.
-            </div>
+            {/* Legacy addSO L12425 modal title. */}
+            <div className="panel-title">New SO / WO</div>
           </div>
         </div>
         <div className="panel-body">
@@ -183,11 +181,10 @@ function SalesOrderEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Sales Order
+            {/* Legacy _editFullSO L12549 modal title — this route is the
+                all-lines editor, so it mirrors that title, not editSOLine's. */}
+            <div className="panel-title">
+              Edit SO — {detail.code} ({detail.lines.length} lines)
             </div>
           </div>
         </div>

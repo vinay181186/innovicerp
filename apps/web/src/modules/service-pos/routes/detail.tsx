@@ -17,10 +17,6 @@ export const servicePosDetailRoute = createRoute({
   component: ServicePosDetailPage,
 });
 
-function inr(n: number): string {
-  return Math.round(n).toLocaleString('en-IN');
-}
-
 function statusColor(s: string): string {
   if (s === 'approved') return 'var(--green)';
   if (s === 'pending') return 'var(--amber)';
@@ -28,6 +24,16 @@ function statusColor(s: string): string {
   if (s === 'cancelled') return 'var(--red)';
   return 'var(--text3)';
 }
+
+// Legacy stores the status title-cased and prints it verbatim (_spoRegister
+// L27651 / _spoPrint L27712). Our enum is lower-case, so map back.
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  pending: 'Pending',
+  approved: 'Approved',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
 
 function ServicePosDetailPage(): React.JSX.Element {
   const { id } = servicePosDetailRoute.useParams();
@@ -115,11 +121,11 @@ function ServicePosDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {po.vendorName ?? po.vendorCodeText ?? '—'}
+              <VendorLabel code={po.vendorCodeText} name={po.vendorName} />
               <span
                 style={{ fontWeight: 700, color: statusColor(po.status), fontSize: 12 }}
               >
-                {po.status}
+                {STATUS_LABEL[po.status] ?? po.status}
               </span>
             </div>
           </div>
@@ -205,7 +211,7 @@ function ServicePosDetailPage(): React.JSX.Element {
             <Pair label="Cost Center" value={po.costCenter === 'general' ? 'General' : (po.soNoText ?? '—')} />
             <Pair label="Expense Head" value={po.expenseHead} />
             <Pair label="Payment Terms" value={po.paymentTerms} />
-            <Pair label="Tax Type" value={po.taxType.replace('_', '+')} />
+            <Pair label="Tax Type" value={po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} />
             <Pair label="GST %" value={`${po.gstPct}%`} />
             <Pair
               label="Approved"
@@ -258,7 +264,7 @@ function ServicePosDetailPage(): React.JSX.Element {
                     TOTAL
                   </td>
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
-                    ₹{inr(po.total)}
+                    ₹{po.total.toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
@@ -268,6 +274,30 @@ function ServicePosDetailPage(): React.JSX.Element {
       </div>
     </div>
   );
+}
+
+// Mirror of legacy vndLabel L1492: "Name [CODE]" with the code muted.
+function VendorLabel({
+  code,
+  name,
+}: {
+  code: string | null;
+  name: string | null;
+}): React.JSX.Element {
+  if (!code && !name) return <>—</>;
+  const shownName = name ?? code ?? '';
+  const shownCode = code ?? '';
+  if (shownName && shownCode && shownName !== shownCode) {
+    return (
+      <>
+        {shownName}{' '}
+        <span className="text3" style={{ fontSize: 10 }}>
+          [{shownCode}]
+        </span>
+      </>
+    );
+  }
+  return <>{shownName || shownCode}</>;
 }
 
 function Pair({ label, value }: { label: string; value: string | number }): React.JSX.Element {

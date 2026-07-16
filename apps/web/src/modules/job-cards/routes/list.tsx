@@ -30,6 +30,12 @@ import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
+// Legacy renderJobCards puts the alignment/format classes on the <td> itself
+// (L5754 `td-ctr mono fw-700`, L5755 `td-ctr`, L5762, L5765) — not on a wrapper
+// span. `.td-ctr` is text-align:center (innovic-theme.css:397), which is inert
+// on an inline <span>, so those columns rendered left-aligned (ISSUE-020).
+// Carry the class through the column def so the flexRender loop can put it
+// where legacy has it.
 const PAGE_SIZE = 25;
 
 const listSearchSchema = z.object({
@@ -180,7 +186,8 @@ function JobCardsListPage(): React.JSX.Element {
         },
       },
       {
-        header: 'CPO Ln',
+        // Legacy L5786 colours this header purple, matching its cell text.
+        header: () => <span style={{ color: 'var(--purple)' }}>CPO Ln</span>,
         accessorKey: 'clientPoLineNo',
         cell: ({ row }) => (
           <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
@@ -205,12 +212,16 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'Order Qty',
         accessorKey: 'orderQty',
-        cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.orderQty}</span>,
+        // Legacy L5754: <td class="td-ctr mono fw-700">
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => <>{row.original.orderQty}</>,
       },
       {
         id: 'completed',
         accessorFn: (r) => r.lastOpCompletedQty,
         header: () => <span style={{ color: 'var(--green)' }}>Completed</span>,
+        // Legacy L5755: <td class="td-ctr"> wrapping the qty, bar and pct directly.
+        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => {
           const done = row.original.lastOpCompletedQty;
           const pct =
@@ -218,10 +229,8 @@ function JobCardsListPage(): React.JSX.Element {
               ? Math.min(100, Math.round((done / row.original.orderQty) * 100))
               : 0;
           return (
-            <div className="td-ctr">
-              <span className="mono fw-700" style={{ color: 'var(--green)' }}>
-                {done}
-              </span>
+            <>
+              <span className="mono fw-700 green">{done}</span>
               <div
                 style={{
                   width: 52,
@@ -241,7 +250,7 @@ function JobCardsListPage(): React.JSX.Element {
                 />
               </div>
               <div style={{ fontSize: 9, color: 'var(--text3)', textAlign: 'center' }}>{pct}%</div>
-            </div>
+            </>
           );
         },
       },
@@ -249,15 +258,13 @@ function JobCardsListPage(): React.JSX.Element {
         id: 'pending',
         accessorFn: (r) => Math.max(0, r.orderQty - r.lastOpCompletedQty),
         header: () => <span style={{ color: 'var(--red)' }}>Pending</span>,
+        // Legacy L5762: <td class="td-ctr mono fw-700" style="color:…"> — only the
+        // colour is per-row, so it stays on an inner span.
+        meta: { tdClass: 'td-ctr mono fw-700' },
         cell: ({ row }) => {
           const pending = Math.max(0, row.original.orderQty - row.original.lastOpCompletedQty);
           return (
-            <span
-              className="td-ctr mono fw-700"
-              style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)' }}
-            >
-              {pending}
-            </span>
+            <span style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)' }}>{pending}</span>
           );
         },
       },
@@ -285,10 +292,12 @@ function JobCardsListPage(): React.JSX.Element {
       {
         header: 'Ops Done',
         accessorKey: 'doneOps',
+        // Legacy L5765: <td class="td-ctr text2">
+        meta: { tdClass: 'td-ctr text2' },
         cell: ({ row }) => (
-          <span className="td-ctr text2">
+          <>
             {row.original.doneOps}/{row.original.totalOps}
-          </span>
+          </>
         ),
       },
       {
@@ -394,14 +403,8 @@ function JobCardsListPage(): React.JSX.Element {
           gap: 8,
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Job Cards
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Production batches with computed status, ops progress, and source SO/JW link. Click a
-            code to open in Op Entry.
-          </div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          Job Cards
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isFetching && !isLoading ? (
@@ -542,7 +545,7 @@ function JobCardsListPage(): React.JSX.Element {
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}

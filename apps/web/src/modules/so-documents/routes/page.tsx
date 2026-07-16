@@ -44,6 +44,16 @@ function fmtDate(iso: string | null): string {
   return y && m && day ? `${day}-${m}-${y}` : d;
 }
 
+// Legacy renders the SO status through badge() (L19507/19535), whose map
+// (L1959-1970) knows Open→b-cyan, Closed/Completed→b-green, Cancelled→b-red and
+// falls through to b-grey for anything else ('draft', 'dispatched').
+function soBadgeColor(status: string): string {
+  if (status === 'open') return 'cyan';
+  if (status === 'closed') return 'green';
+  if (status === 'cancelled') return 'red';
+  return 'grey';
+}
+
 function fmtSize(bytes: number | null): string {
   const b = bytes ?? 0;
   if (b >= 1048576) return `${(b / 1048576).toFixed(1)} MB`;
@@ -99,12 +109,15 @@ function SoDocumentsPage(): React.JSX.Element {
           className="innovic-select"
           value={selectedSo}
           onChange={(e) => selectSo(e.target.value)}
-          style={{ minWidth: 300, fontSize: 12 }}
+          style={{ minWidth: 280 }}
         >
-          <option value="">— Select SO —</option>
+          <option value="">-- Select SO --</option>
+          {/* Legacy counts active fileRegistry rows only (L19485), which is the
+              same set its TOTAL FILES card shows. Adding qcCount here made the
+              selector disagree with our own TOTAL FILES card. */}
           {(overview?.rows ?? []).map((r) => (
             <option key={r.salesOrderId} value={r.salesOrderId}>
-              {r.soCode} — {r.customerName ?? ''} ({r.fileCount + r.qcCount} files)
+              {r.soCode} — {r.customerName ?? ''} ({r.fileCount} files)
             </option>
           ))}
         </select>
@@ -176,7 +189,7 @@ function OverviewTable({
                   </td>
                   <td>{r.customerName ?? ''}</td>
                   <td>
-                    <span className="badge b-grey">{r.status}</span>
+                    <span className={`badge b-${soBadgeColor(r.status)}`}>{r.status}</span>
                   </td>
                   <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
                     {r.fileCount}
@@ -190,7 +203,7 @@ function OverviewTable({
                   <td className="td-ctr">
                     {r.archivedCount ? (
                       <span style={{ fontSize: 10, color: 'var(--amber)' }}>
-                        📦 {r.archivedCount}
+                        📦 {r.archivedCount} archived
                       </span>
                     ) : null}
                   </td>
@@ -265,19 +278,34 @@ function SoDetailView({ soId }: { soId: string }): React.JSX.Element {
           marginBottom: 16,
         }}
       >
-        <StatCard label="TOTAL FILES" value={String(data.totals.fileCount)} color="var(--green)" />
+        <StatCard
+          label="TOTAL FILES"
+          value={String(data.totals.fileCount)}
+          color="var(--green)"
+          size={24}
+        />
         <StatCard
           label="TOTAL SIZE"
           value={`${(data.totals.totalSize / 1048576).toFixed(1)} MB`}
           color="var(--cyan)"
+          size={18}
         />
-        <StatCard label="QC DOCS" value={String(data.totals.qcCount)} color="var(--text2)" />
+        {/* QC DOCS has no legacy counterpart; it surfaces the read-only
+            qc_documents union our file registry adds. Inserted here so legacy's
+            own four cards keep their order. */}
+        <StatCard label="QC DOCS" value={String(data.totals.qcCount)} color="var(--text2)" size={24} />
         <StatCard
           label="ARCHIVED"
           value={String(data.totals.archivedCount)}
           color="var(--amber)"
+          size={24}
         />
-        <StatCard label="STATUS" value={data.so.status} color="var(--text)" />
+        <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
+          <div style={{ fontSize: 9, color: 'var(--text3)' }}>STATUS</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>
+            <span className={`badge b-${soBadgeColor(data.so.status)}`}>{data.so.status}</span>
+          </div>
+        </div>
       </div>
 
       {/* Action bar */}
@@ -308,13 +336,14 @@ function SoDetailView({ soId }: { soId: string }): React.JSX.Element {
             <span className="panel-title">📁 SO-Level Documents (not linked to a line)</span>
           </div>
           <div>
-            {unlinked.map((f) => (
+            {unlinked.map((f, fi) => (
               <FileRow
                 key={`${f.source}-${f.id}`}
                 file={f}
                 canWrite={canWrite}
                 deleting={deleteDoc.isPending && deleteDoc.variables === f.id}
                 onDelete={onDelete}
+                idx={fi}
               />
             ))}
           </div>
@@ -338,15 +367,17 @@ function StatCard({
   label,
   value,
   color,
+  size,
 }: {
   label: string;
   value: string;
   color: string;
+  size: number;
 }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
       <div style={{ fontSize: 9, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: 20, color }}>
+      <div className="mono fw-700" style={{ fontSize: size, color }}>
         {value}
       </div>
     </div>
@@ -383,8 +414,10 @@ function LinePanel({
           📦 Line {line.lineNo}: {line.itemCode ?? ''} — {line.itemName ?? ''}
           {line.orderQty ? ` (Qty: ${line.orderQty})` : ''}
         </span>
+        {/* Legacy's line header is always KB (L19586), unlike the per-file
+            rows which switch to MB above 1 MB. */}
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-          {files.length} files · {fmtSize(lineSize)}
+          {files.length} files · {(lineSize / 1024).toFixed(0)} KB
         </span>
       </div>
       {files.length === 0 ? (
@@ -409,13 +442,14 @@ function LinePanel({
               >
                 {SO_DOC_CATEGORY_LABELS[cat]} ({catFiles.length})
               </div>
-              {catFiles.map((f) => (
+              {catFiles.map((f, fi) => (
                 <FileRow
                   key={`${f.source}-${f.id}`}
                   file={f}
                   canWrite={canWrite}
                   deleting={deletingId === f.id}
                   onDelete={onDelete}
+                  idx={fi}
                 />
               ))}
             </div>
@@ -431,11 +465,14 @@ function FileRow({
   canWrite,
   deleting,
   onDelete,
+  idx,
 }: {
   file: SoDocumentFile;
   canWrite: boolean;
   deleting: boolean;
   onDelete: (f: SoDocumentFile) => void;
+  /** Position within its group — drives legacy's zebra striping (L19599). */
+  idx: number;
 }): React.JSX.Element {
   const meta = [
     file.docType ?? file.category,
@@ -455,6 +492,7 @@ function FileRow({
         gap: 10,
         padding: '8px 14px',
         borderBottom: '1px solid var(--border)',
+        background: idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)',
       }}
     >
       <div style={{ fontSize: 16 }}>{fileIcon(file)}</div>

@@ -1,13 +1,21 @@
 // Outsource Jobs (OSP) — mirror of legacy renderOutsourceJobs (L27044).
 //
-// Pulls every PR with pr_type='jw_osp', shows status cards + SO filter +
-// a checkbox-selectable table. "Create JW PO from Selected" opens a
-// modal to choose vendor + per-line rate; POST batches them into a
-// single JW PO via /purchase-orders/from-pr-batch.
+// Pulls every PR with pr_type='jw_osp', shows status cards + search +
+// JC-source filter + a checkbox-selectable table. "Create PO from Selected"
+// opens a modal to choose vendor + per-line rate; POST batches them into a
+// single JW PO via /purchase-orders/from-pr-batch (service.ts L1148 — traced
+// against legacy `_ospCreatePO` L27166-27207: PO insert, per-PR line insert
+// with rate override, PR stamp to po_created + poId + vendor, activity log.
+// Ours is a superset — it adds a code-uniqueness check and blocks already-
+// converted/cancelled PRs. Legacy's handler does NOT touch jc_ops here.
+//
+// Legacy's "SO" and "Plan" columns are not portable: PurchaseRequestListItem
+// exposes sourceJcCode/sourceJcOpSeq (used here), a bare sourceSoLineId uuid
+// with no code join, and no plan field at all. See report / ISSUE-067.
 
 import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, ShoppingCart, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
@@ -67,18 +75,41 @@ function OutsourceJobsPage(): React.JSX.Element {
   const [poCode, setPoCode] = useState('');
   const [rateOverrides, setRateOverrides] = useState<Record<string, number>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Legacy `searchBox('ospSearch','ospTable',…)` (L27104) filters the rendered
+  // rows client-side on their text content (searchFilter L1513). Mirrored here
+  // over the fields this table actually renders.
+  const [searchText, setSearchText] = useState('');
 
   const allPrs = data?.items ?? [];
 
   // Client-side filter for status + SO (legacy filters by these in-page).
   const filtered = useMemo(() => {
+    const q = searchText.toLowerCase().trim();
     return allPrs.filter((pr) => {
       if (search.soNo && pr.sourceJcCode !== search.soNo) return false;
       if (search.statusBand === 'open' && pr.status !== 'open' && pr.status !== 'approved') return false;
       if (search.statusBand === 'po_created' && pr.status !== 'po_created') return false;
+      if (q) {
+        const hay = [
+          pr.code,
+          pr.sourceJcCode,
+          pr.itemCode,
+          pr.itemCodeText,
+          pr.itemName,
+          pr.operation,
+          pr.vendorName,
+          pr.vendorCodeText,
+          pr.poCode,
+          pr.status,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     });
-  }, [allPrs, search.soNo, search.statusBand]);
+  }, [allPrs, search.soNo, search.statusBand, searchText]);
 
   // Distinct source JC codes for SO filter.
   const soNos = useMemo(() => {
@@ -179,14 +210,8 @@ function OutsourceJobsPage(): React.JSX.Element {
           marginBottom: 14,
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            📦 Outsource Jobs (OSP)
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            JW_OSP Purchase Requests auto-generated from outsource JC ops. Select multiple PRs to
-            club into one JW PO.
-          </div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📦 Outsource Jobs (OSP)
         </div>
         {canEdit && selectedIds.size > 0 ? (
           <button
@@ -195,7 +220,7 @@ function OutsourceJobsPage(): React.JSX.Element {
             onClick={openModal}
             disabled={createBatchMut.isPending}
           >
-            <ShoppingCart size={14} /> Create JW PO from {selectedIds.size} selected
+            🛒 Create PO from Selected
           </button>
         ) : null}
       </div>
@@ -260,8 +285,17 @@ function OutsourceJobsPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* SO filter */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+      {/* Search + JC-source filter (legacy L27103-27106) */}
+      <div
+        style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}
+      >
+        <input
+          className="innovic-input"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="🔍 Search PR, JC, item, vendor..."
+          style={{ width: 220, fontSize: 12 }}
+        />
         <select
           className="innovic-select"
           value={search.soNo ?? ''}
@@ -341,9 +375,8 @@ function OutsourceJobsPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Select open PRs using checkboxes → Click <b>Create JW PO from N selected</b>. You can
-        club multiple PRs into one PO (same vendor). Vendor and rate can be changed during PO
-        creation.
+        💡 Select open PRs using checkboxes → Click <b>🛒 Create PO</b>. You can club multiple PRs
+        into 1 PO (same vendor). Vendor and rate can be changed during PO creation.
       </div>
 
       {/* Batch-create modal */}
@@ -403,7 +436,7 @@ function OutsourceJobsPage(): React.JSX.Element {
                 <b>{totalSelectedQty}</b> · Est. value:{' '}
                 <b style={{ color: 'var(--green)' }}>₹{inr(totalSelectedValue)}</b>
               </div>
-              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div className="form-grid-3">
                 <div className="form-grp">
                   <label className="form-label">PO No. <span className="req">★</span></label>
                   <input
@@ -414,17 +447,8 @@ function OutsourceJobsPage(): React.JSX.Element {
                   />
                 </div>
                 <div className="form-grp">
-                  <label className="form-label">PO Date</label>
-                  <input
-                    type="date"
-                    className="innovic-input"
-                    value={poDate}
-                    onChange={(e) => setPoDate(e.target.value)}
-                  />
-                </div>
-                <div className="form-grp">
                   <label className="form-label" style={{ color: 'var(--purple)' }}>
-                    Vendor <span className="req">★</span>
+                    Vendor <span className="req">★</span> (can change from suggested)
                   </label>
                   <select
                     className="innovic-select"
@@ -439,10 +463,19 @@ function OutsourceJobsPage(): React.JSX.Element {
                     ))}
                   </select>
                 </div>
+                <div className="form-grp">
+                  <label className="form-label">PO Date</label>
+                  <input
+                    type="date"
+                    className="innovic-input"
+                    value={poDate}
+                    onChange={(e) => setPoDate(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)' }}>
-                PO Lines (rate editable per line)
+                PO Lines (rate is editable per line)
               </div>
               <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
                 <table className="innovic-table">
@@ -480,13 +513,14 @@ function OutsourceJobsPage(): React.JSX.Element {
                               value={rate}
                               min={0}
                               step={0.01}
+                              placeholder="₹0"
                               onChange={(e) =>
                                 setRateOverrides((prev) => ({
                                   ...prev,
                                   [pr.id]: Number(e.target.value) || 0,
                                 }))
                               }
-                              style={{ width: 100, fontSize: 12, fontWeight: 700, color: 'var(--green)', textAlign: 'right' }}
+                              style={{ width: 80, fontSize: 12, fontWeight: 700, color: 'var(--green)', textAlign: 'right' }}
                             />
                           </td>
                           <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
@@ -557,7 +591,7 @@ function OspRow({
   onToggle: (checked: boolean) => void;
 }): React.JSX.Element {
   return (
-    <tr style={{ background: selected ? 'rgba(124,58,237,0.06)' : undefined }}>
+    <tr>
       <td className="td-ctr">
         {canSelect ? (
           <input
@@ -582,13 +616,18 @@ function OspRow({
       <td className="td-ctr mono fw-700">{pr.qty}</td>
       <td style={{ fontSize: 11 }}>
         {pr.vendorName ?? <span style={{ color: 'var(--amber)' }}>TBD</span>}
+        {pr.vendorCodeText && pr.vendorCodeText !== pr.vendorName ? (
+          <span style={{ color: 'var(--text3)', fontSize: 10 }}> [{pr.vendorCodeText}]</span>
+        ) : null}
       </td>
       <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
         {Number(pr.estCost) > 0 ? `₹${Number(pr.estCost).toFixed(2)}` : '—'}
       </td>
       <td style={{ fontSize: 11 }}>{pr.requiredDate ?? '—'}</td>
       <td>
-        <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>{pr.status}</span>
+        <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>
+          {pr.status.replaceAll('_', ' ')}
+        </span>
         {pr.poCode ? (
           <span className="mono" style={{ fontSize: 10, marginLeft: 4, color: 'var(--cyan)' }}>
             {pr.poCode}

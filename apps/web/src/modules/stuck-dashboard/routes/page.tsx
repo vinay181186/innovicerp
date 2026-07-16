@@ -17,8 +17,12 @@ export const stuckDashboardRoute = createRoute({
   component: StuckDashboardPage,
 });
 
+// Severity ramp for the "over by" columns (legacy L18138 `over>10?'#7f1d1d':
+// over>5?'#b91c1c':'#ea580c'`). Legacy's literals are tuned for its DARK theme;
+// this port is light, so map to the nearest tokens and keep the three distinct
+// escalating steps rather than copying the hex (ISSUE-067).
 function overColor(over: number): string {
-  return over > 10 ? '#7f1d1d' : over > 5 ? '#b91c1c' : '#ea580c';
+  return over > 10 ? 'var(--red2)' : over > 5 ? 'var(--red)' : 'var(--orange)';
 }
 
 function StuckDashboardPage(): React.JSX.Element {
@@ -61,12 +65,17 @@ function StuckDashboardPage(): React.JSX.Element {
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8,
-          margin: '12px 0 16px',
+          gap: 10,
+          marginBottom: 16,
         }}
       >
         <Tile label="Total Stuck" value={data.summary.totalStuck} color="var(--amber)" />
-        <Tile label="Critical (>5d over)" value={data.summary.criticalStuck} color="var(--red)" />
+        <Tile
+          label="Critical (>5d over)"
+          value={data.summary.criticalStuck}
+          color="var(--red)"
+          critical
+        />
         <Tile label="Stages Affected" value={data.summary.stagesAffected} color="var(--blue)" />
       </div>
 
@@ -76,11 +85,11 @@ function StuckDashboardPage(): React.JSX.Element {
           style={{
             padding: 60,
             color: 'var(--green)',
-            background: 'rgba(34,197,94,0.05)',
-            borderRadius: 12,
+            background: 'var(--sig-ok-bg)',
+            borderRadius: 'var(--radius2)',
           }}
         >
-          <div style={{ fontSize: 40 }}>✅</div>
+          <div style={{ fontSize: 48 }}>✅</div>
           <div style={{ fontSize: 16, fontWeight: 700, marginTop: 10 }}>
             All activities on track
           </div>
@@ -89,101 +98,119 @@ function StuckDashboardPage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        stageOrder.map(([stage, items]) => {
-          const color = items[0]!.color;
-          return (
-            <div key={stage} style={{ marginBottom: 20 }}>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color,
-                  marginBottom: 8,
-                  padding: '6px 12px',
-                  background: 'var(--bg2)',
-                  borderRadius: 6,
-                  borderLeft: `3px solid ${color}`,
-                }}
-              >
-                {stage} ({items.length})
-              </div>
-              <div className="panel">
-                <div className="tbl-wrap">
-                  <table className="innovic-table">
-                    <thead>
-                      <tr>
-                        <th>SO</th>
-                        <th>Customer</th>
-                        <th className="td-ctr">Stuck For</th>
-                        <th className="td-ctr">Threshold</th>
-                        <th className="td-ctr">Over By</th>
-                        <th>Since</th>
-                        <th>Detail</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((it, i) => {
-                        const over = it.days - it.threshold;
-                        const oc = overColor(over);
-                        return (
-                          <tr key={`${it.soId}:${it.stage}:${i}`}>
-                            <td>
-                              <Link
-                                to="/sales-orders/$id"
-                                params={{ id: it.soId }}
-                                className="td-code"
-                                style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-                              >
-                                {it.soNo}
-                              </Link>
-                            </td>
-                            <td style={{ fontSize: 12 }}>{it.customer ?? '—'}</td>
-                            <td className="td-ctr mono fw-700" style={{ color: oc }}>
-                              {it.days} days
-                            </td>
-                            <td className="td-ctr mono text3">{it.threshold} days</td>
-                            <td className="td-ctr mono fw-700" style={{ color: oc }}>
-                              +{over}d
-                            </td>
-                            <td className="text3" style={{ fontSize: 11 }}>
-                              {it.since ?? '—'}
-                            </td>
-                            <td style={{ fontSize: 11 }}>{it.detail}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+        <>
+          {stageOrder.map(([stage, items]) => {
+            const color = items[0]!.color;
+            return (
+              <div key={stage} style={{ marginBottom: 20 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color,
+                    marginBottom: 8,
+                    padding: '6px 12px',
+                    background: 'var(--bg2)',
+                    borderRadius: 6,
+                    borderLeft: `3px solid ${color}`,
+                  }}
+                >
+                  {stage} ({items.length})
+                </div>
+                <div className="panel">
+                  <div className="tbl-wrap">
+                    <table className="innovic-table">
+                      <thead>
+                        <tr>
+                          <th>SO</th>
+                          <th>Customer</th>
+                          <th className="td-ctr">Stuck For</th>
+                          <th className="td-ctr">Threshold</th>
+                          <th className="td-ctr">Over By</th>
+                          <th>Since</th>
+                          <th>Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((it, i) => {
+                          const over = it.days - it.threshold;
+                          const oc = overColor(over);
+                          return (
+                            <tr key={`${it.soId}:${it.stage}:${i}`}>
+                              <td>
+                                <Link
+                                  to="/sales-orders/$id"
+                                  params={{ id: it.soId }}
+                                  className="td-code"
+                                  style={{ color: 'var(--cyan)', textDecoration: 'underline' }}
+                                >
+                                  {it.soNo}
+                                </Link>
+                              </td>
+                              <td style={{ fontSize: 12 }}>{it.customer ?? '—'}</td>
+                              <td className="td-ctr mono fw-700" style={{ color: oc }}>
+                                {it.days} days
+                              </td>
+                              <td className="td-ctr mono text3">{it.threshold} days</td>
+                              <td className="td-ctr mono fw-700" style={{ color: oc }}>
+                                +{over}d
+                              </td>
+                              <td className="text3" style={{ fontSize: 11 }}>
+                                {it.since ?? '—'}
+                              </td>
+                              <td style={{ fontSize: 11 }}>{it.detail}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+          {/* Legacy emits the tip only on the populated branch — the empty
+              branch returns early (L18128), before the tip line (L18153). */}
+          <div className="text3" style={{ fontSize: 11, marginTop: 12 }}>
+            💡 Click any SO to open it. Thresholds (days): design {data.thresholds.design} · plan{' '}
+            {data.thresholds.planToJc} · material {data.thresholds.materialProc} · production op{' '}
+            {data.thresholds.productionOp} · QC {data.thresholds.qc} · assembly{' '}
+            {data.thresholds.assembly}.
+          </div>
+        </>
       )}
-      <div className="text3" style={{ fontSize: 11, marginTop: 12 }}>
-        💡 Click any SO to open it. Thresholds (days): design {data.thresholds.design} · plan{' '}
-        {data.thresholds.planToJc} · material {data.thresholds.materialProc} · production op{' '}
-        {data.thresholds.productionOp} · QC {data.thresholds.qc} · assembly {data.thresholds.assembly}.
-      </div>
     </div>
   );
 }
 
+// Legacy hand-rolls these tiles inline (L18123-18125) — they are NOT .panel and
+// NOT .stat-card. The Critical tile carries a red wash + red label; legacy spells
+// it rgba(239,68,68,0.06)/rgba(239,68,68,0.3) against its dark theme, which maps
+// to the light theme's signal tokens (ISSUE-067). Legacy sets no font-family on
+// the value, so no `mono` here — unlike the table's qty cells, which do use it.
 function Tile({
   label,
   value,
   color,
+  critical = false,
 }: {
   label: string;
   value: number;
   color: string;
+  critical?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 10 }}>
-        {label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 26, color }}>
+    <div
+      style={{
+        textAlign: 'center',
+        padding: 14,
+        borderRadius: 'var(--radius2)',
+        background: critical ? 'var(--sig-critical-bg)' : 'var(--bg2)',
+        border: `1px solid ${critical ? 'var(--sig-critical-bd)' : 'var(--border)'}`,
+      }}
+    >
+      <div style={{ fontSize: 10, color: critical ? 'var(--red)' : 'var(--text3)' }}>{label}</div>
+      <div className="fw-700" style={{ fontSize: 26, color }}>
         {value}
       </div>
     </div>

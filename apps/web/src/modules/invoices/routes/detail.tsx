@@ -1,7 +1,29 @@
-// Invoice detail — mirror of legacy _viewInvoice (L21273) + _addPayment.
-// Shows the invoice as an A4-portrait paper preview (the EXACT markup the
-// print produces — user direction 2026-06-06: screen = print), plus header
-// stats, inline add-payment and the payments panel.
+// Invoice detail — ports legacy _viewInvoice (L21273, verified) plus the
+// _addPayment form (L21243). Legacy renders both as modals off renderInvoices
+// (L21096, the router's only `invoices` key L2457); the port is a route with a
+// real URL, and add-payment is an inline panel rather than a second modal.
+//
+// Legacy deltas kept deliberately (do NOT "fix" without reading these):
+//  - Legacy's plain lines table (L21303: # / Item / Name / Qty / Rate / Amount)
+//    is replaced by the A4 paper preview — the same markup the print emits
+//    (user direction 2026-06-06: screen = print; the same direction drives
+//    lib/print/letterhead.ts, which names Invoice explicitly). No column is
+//    lost: the preview carries Sl/Description/Qty/UOM/Rate/Amount.
+//  - Action buttons stay in the page header. Legacy puts them at the end of the
+//    modal body (L21306); after a 1123px-tall A4 preview that would bury them.
+//  - Status renders as a badge (list mapping L21115) in place of legacy's
+//    "(status)" parenthetical in the modal title (L21311).
+//
+// Money: every figure here is server-owned (subtotal/gstAmount/grandTotal/
+// totalPaid/balance from service.ts rowToInvoice). `balance` is NOT re-derived
+// in the browser — legacy computes it client-side at L21275, we do not.
+//
+// Known divergence (reported, not fixed here — needs the one shared IST/date
+// helper): dates render as raw ISO. Legacy fmt() (L1484) shows "15 Jul 26" and
+// the sibling list.tsx carries its own copy of that helper; adding a second
+// copy here would be one more of the ~12 divergent fmt()s. All three date
+// columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
+// so no UTC-shift bug exists at these render sites.
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -17,7 +39,15 @@ export const invoiceDetailRoute = createRoute({
   component: InvoiceDetailPage,
 });
 
+// Legacy renderInvoices L21110 / _viewInvoice L21296 render rupees as
+// Math.round + en-IN (whole rupees, no paise) on both list and detail. The
+// shared inrFormat() is 2dp and is what the print doc uses — a different
+// format for a different surface, matching legacy's own split.
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
+// BUG (reported): toISOString() is UTC, so before 05:30 IST this defaults the
+// payment date to YESTERDAY. Legacy today() (L1486-87) uses local components
+// and is correct. Left as-is on purpose — the fix is the one shared IST helper
+// (date-fns-tz), not a second local implementation here.
 const todayStr = (): string => new Date().toISOString().slice(0, 10);
 
 function InvoiceDetailPage(): React.JSX.Element {
@@ -35,6 +65,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [payAmt, setPayAmt] = useState('');
   const [payMode, setPayMode] = useState('NEFT');
   const [payRef, setPayRef] = useState('');
+  const [payNotes, setPayNotes] = useState('');
   const [payErr, setPayErr] = useState<string | null>(null);
 
   if (isLoading) {
@@ -62,21 +93,31 @@ function InvoiceDetailPage(): React.JSX.Element {
         amount,
         mode: payMode,
         refNo: payRef || undefined,
+        notes: payNotes || undefined,
       });
       setPayOpen(false);
       setPayAmt('');
       setPayRef('');
+      setPayNotes('');
     } catch (e) {
       setPayErr(e instanceof Error ? e.message : 'Failed to record payment');
     }
   }
 
-  const stats: { label: string; value: string; color?: string }[] = [
-    { label: 'SUBTOTAL', value: inr(inv.subtotal) },
-    { label: `GST ${inv.gstPercent}%`, value: inr(inv.gstAmount), color: 'var(--amber)' },
-    { label: 'TOTAL', value: inr(inv.grandTotal), color: 'var(--green)' },
-    { label: 'PAID', value: inr(inv.totalPaid), color: 'var(--cyan)' },
-    { label: 'BALANCE', value: inr(inv.balance), color: inv.balance > 0 ? 'var(--red)' : 'var(--green)' },
+  // Legacy _viewInvoice L21296-21300: five separate .panel cards, 16px for
+  // SUBTOTAL/GST and 18px for TOTAL/PAID/BALANCE. `balance` is server-owned
+  // (service.ts rowToInvoice L64) — never re-derived here.
+  const stats: { label: string; value: string; size: number; color?: string }[] = [
+    { label: 'SUBTOTAL', value: inr(inv.subtotal), size: 16 },
+    { label: `GST ${inv.gstPercent}%`, value: inr(inv.gstAmount), size: 16, color: 'var(--amber)' },
+    { label: 'TOTAL', value: inr(inv.grandTotal), size: 18, color: 'var(--green)' },
+    { label: 'PAID', value: inr(inv.totalPaid), size: 18, color: 'var(--cyan)' },
+    {
+      label: 'BALANCE',
+      value: inr(inv.balance),
+      size: 18,
+      color: inv.balance > 0 ? 'var(--red)' : 'var(--green)',
+    },
   ];
 
   return (
@@ -87,7 +128,7 @@ function InvoiceDetailPage(): React.JSX.Element {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Invoice {inv.code}{' '}
+          📄 Invoice — {inv.code}{' '}
           <span className={`badge ${inv.status === 'paid' ? 'b-green' : inv.status === 'partial' ? 'b-amber' : 'b-red'}`}>
             {inv.status}
           </span>
@@ -104,17 +145,17 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel" style={{ padding: 12, marginBottom: 14, display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {stats.map((s) => (
-          <div key={s.label}>
+          <div key={s.label} className="panel" style={{ padding: 10, minWidth: 100, textAlign: 'center' }}>
             <div className="text3" style={{ fontSize: 9 }}>{s.label}</div>
-            <div className="mono fw-700" style={{ fontSize: 16, color: s.color }}>{s.value}</div>
+            <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-        SO: <b>{inv.soCode ?? '—'}</b> · Client: <b>{inv.clientName ?? '—'}</b> · Due: <b>{inv.dueDate ?? '—'}</b>
+        SO: <b>{inv.soCode ?? ''}</b> | Client: <b>{inv.clientName ?? ''}</b> | Due: <b>{inv.dueDate ?? '—'}</b>
       </div>
 
       {payOpen ? (
@@ -133,13 +174,15 @@ function InvoiceDetailPage(): React.JSX.Element {
                 <input
                   type="number"
                   className="innovic-input"
+                  min="0"
+                  step="0.01"
                   value={payAmt}
                   placeholder={String(Math.round(inv.balance))}
                   onChange={(e) => setPayAmt(e.target.value)}
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label">Mode</label>
+                <label className="form-label">Payment Mode</label>
                 <select className="innovic-input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
                   {['NEFT', 'RTGS', 'Cheque', 'Cash', 'UPI', 'Other'].map((m) => (
                     <option key={m}>{m}</option>
@@ -148,7 +191,21 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
               <div className="form-grp">
                 <label className="form-label">Reference No.</label>
-                <input className="innovic-input" value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+                <input
+                  className="innovic-input"
+                  placeholder="UTR / Cheque No."
+                  value={payRef}
+                  onChange={(e) => setPayRef(e.target.value)}
+                />
+              </div>
+              <div className="form-grp form-full">
+                <label className="form-label">Notes</label>
+                <input
+                  className="innovic-input"
+                  placeholder="Payment remarks..."
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                />
               </div>
             </div>
             {payErr ? <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{payErr}</div> : null}
@@ -180,14 +237,14 @@ function InvoiceDetailPage(): React.JSX.Element {
       {inv.payments.length > 0 ? (
         <div className="panel">
           <div className="panel-hdr">
-            <span className="panel-title">💳 Payments ({inv.payments.length})</span>
+            <span className="panel-title">💳 PAYMENTS ({inv.payments.length})</span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th className="td-ctr">Amount</th>
+                  <th>Amount</th>
                   <th>Mode</th>
                   <th>Ref No.</th>
                   <th>Notes</th>
@@ -197,10 +254,10 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{p.paymentDate}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{inr(p.amount)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>{inr(p.amount)}</td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? '—'}</td>
-                    <td style={{ fontSize: 11 }} className="text3">{p.notes ?? '—'}</td>
+                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>
+                    <td style={{ fontSize: 11 }} className="text3">{p.notes ?? ''}</td>
                   </tr>
                 ))}
               </tbody>

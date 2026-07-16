@@ -20,6 +20,21 @@ function inr(v: number): string {
   return `₹${Math.round(v).toLocaleString('en-IN')}`;
 }
 
+// Legacy's per-category text colour for the Category cell, ported verbatim from
+// renderStockValuation L21038 (local to this page — not a shared colour fn).
+// NOTE: legacy keys this on its own six-value item.category taxonomy. Our
+// `category` is items.item_type ('component' | 'assembly'), so every real row
+// currently falls through to the same var(--text3) legacy gives an unmapped
+// category. See ISSUE-043 — the taxonomy gap, not the colour map, is the defect.
+const CAT_COLOR: Record<string, string> = {
+  'Raw Material': 'var(--blue)',
+  Component: 'var(--cyan)',
+  'Finished Goods': 'var(--green)',
+  'Bought Out': 'var(--purple)',
+  Consumable: 'var(--amber)',
+};
+const catColor = (c: string): string => CAT_COLOR[c] ?? 'var(--text3)';
+
 function StockValuationPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<StockValuationResponse>({
     queryKey: ['stock-valuation'],
@@ -63,9 +78,11 @@ function StockValuationPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">📦 Stock Valuation</div>
+      <div className="section-hdr" style={{ marginBottom: 12 }}>
+        📦 Stock Valuation
+      </div>
 
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0 8px' }}>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
         {catKeys.map((k) => (
           <button
             key={k}
@@ -83,12 +100,28 @@ function StockValuationPage(): React.JSX.Element {
         ))}
       </div>
 
+      {/* Legacy L20980 — the zero-stock toggle sits directly under the category
+          filter buttons, above the summary cards. */}
+      <label
+        style={{
+          fontSize: 11,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          marginBottom: 14,
+          cursor: 'pointer',
+        }}
+      >
+        <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} /> Show
+        zero-stock items
+      </label>
+
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: 8,
-          marginBottom: 14,
+          marginBottom: 16,
         }}
       >
         <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
@@ -115,22 +148,22 @@ function StockValuationPage(): React.JSX.Element {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-        <input
-          className="innovic-input"
-          placeholder="🔍 Search item code or name…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ fontSize: 12, padding: '6px 10px', minWidth: 220 }}
-        />
-        <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-          <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} />{' '}
-          Show zero-stock items
-        </label>
+      {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...').
+          Width/padding mirror legacy's own inline styles; our .innovic-input is
+          width:100%, which legacy's classless input is not. */}
+      <input
+        className="innovic-input"
+        placeholder="🔍 Search item code or name..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        style={{ padding: '7px 12px', width: 220 }}
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginLeft: 'auto' }}
+          className="btn btn-sm"
+          style={{ fontSize: 11 }}
           onClick={() => exportStockValuation(rows)}
         >
           ⬇ Export to Excel
@@ -146,9 +179,13 @@ function StockValuationPage(): React.JSX.Element {
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>UOM</th>
-                <th className="td-ctr">Stock Qty</th>
-                <th className="td-ctr">Rate</th>
-                <th className="td-ctr">Stock Value</th>
+                {/* Legacy L21032 right-aligns these three. Inline, not .td-right,
+                    because `.innovic-table th` (0,1,1) sets text-align:left and
+                    outranks any single utility class on a <th> — see ISSUE-044.
+                    Legacy uses inline here for the same reason. */}
+                <th style={{ textAlign: 'right' }}>Stock Qty</th>
+                <th style={{ textAlign: 'right' }}>Rate</th>
+                <th style={{ textAlign: 'right' }}>Stock Value</th>
                 <th>Last GRN</th>
               </tr>
             </thead>
@@ -162,7 +199,11 @@ function StockValuationPage(): React.JSX.Element {
               ) : (
                 filtered.map((r) => (
                   <tr key={r.itemId}>
-                    <td style={{ fontSize: 10, fontWeight: 700 }}>{r.category}</td>
+                    <td>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: catColor(r.category) }}>
+                        {r.category}
+                      </span>
+                    </td>
                     <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                       {r.code}
                     </td>
@@ -171,16 +212,16 @@ function StockValuationPage(): React.JSX.Element {
                       {r.uom}
                     </td>
                     <td
-                      className="td-ctr mono fw-700"
+                      className="td-right mono fw-700"
                       style={{ color: r.stockQty > 0 ? (r.lowStock ? 'var(--red)' : 'var(--green)') : 'var(--text3)' }}
                     >
                       {r.stockQty}
                       {r.lowStock ? ' ⚠' : ''}
                     </td>
-                    <td className="td-ctr mono" style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
+                    <td className="td-right mono" style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
                       {r.hasRate ? inr(r.rate) : 'No Rate'}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ color: r.value > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                    <td className="td-right mono fw-700" style={{ color: r.value > 0 ? 'var(--green)' : 'var(--text3)' }}>
                       {inr(r.value)}
                     </td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>
@@ -191,11 +232,11 @@ function StockValuationPage(): React.JSX.Element {
               )}
             </tbody>
             <tfoot>
-              <tr style={{ background: 'var(--bg4)', fontWeight: 700 }}>
-                <td colSpan={6} className="td-ctr">
+              <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
+                <td colSpan={6} className="td-right" style={{ fontSize: 12, color: 'var(--text2)' }}>
                   TOTAL ({filtered.length} items)
                 </td>
-                <td className="td-ctr mono" style={{ color: 'var(--cyan)' }}>
+                <td className="td-right mono" style={{ color: 'var(--cyan)' }}>
                   {inr(tblTotal)}
                 </td>
                 <td />
@@ -205,7 +246,8 @@ function StockValuationPage(): React.JSX.Element {
         </div>
       </div>
       <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Stock Value = on-hand qty × last GRN rate (or last PO rate). ⚠ = below minimum stock.
+        💡 Stock Value = Current Stock Qty × Last GRN Rate (or PO Rate if no GRN). ⚠ = below minimum stock.
+        Items with no rate show “No Rate”.
       </div>
     </div>
   );

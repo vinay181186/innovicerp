@@ -8,11 +8,11 @@ import {
   type DesignWorkLogEntry,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useDesignProjectsList } from '../../design-projects/api';
+import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
 import {
   useCreateDesignWorkLog,
   useDeleteDesignWorkLog,
@@ -20,6 +20,21 @@ import {
 } from '../api';
 
 type TabKey = 'entry' | 'daily' | 'weekly' | 'project' | 'alerts';
+
+// Legacy _dpWlEntry catColors (HTML L7975). Categories outside this map
+// ('Client Support', 'Testing/FEA', 'Other') fall back to --text3, as in legacy.
+const CAT_COLORS: Record<string, string> = {
+  Design: 'var(--blue)',
+  Review: 'var(--purple)',
+  Rework: 'var(--red)',
+  'Issue Resolution': 'var(--orange)',
+  Meeting: 'var(--amber)',
+  Documentation: 'var(--green)',
+};
+
+function catColor(cat: string): string {
+  return CAT_COLORS[cat] ?? 'var(--text3)';
+}
 
 export const designWorkLogListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -98,12 +113,20 @@ function EntryTab(): React.JSX.Element {
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
+  // Legacy L7954 offers every project that is not Released — that is
+  // Design Active + In Review + On Hold. The `active` server filter is
+  // status = 'Design Active' only, so filter client-side instead.
   const { data: projData } = useDesignProjectsList({
-    filter: 'active',
+    filter: 'all',
     limit: 200,
     offset: 0,
   });
-  const projects = projData?.items ?? [];
+  const projects = (projData?.items ?? []).filter((p) => p.status !== 'Released');
+
+  // Legacy _dpWlProjChange (L7989) repopulates the Task select from the
+  // selected project's tasks.
+  const { data: projDetail } = useDesignProjectDetail(projectId || undefined);
+  const projTasks = projDetail?.tasks ?? [];
 
   const { data } = useDesignWorkLogList({
     engineer: engineer || undefined,
@@ -178,20 +201,25 @@ function EntryTab(): React.JSX.Element {
           style={{ padding: 16, marginBottom: 16, borderLeft: '3px solid var(--blue)' }}
         >
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>📝 Log Work Entry</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-            <Field label="Date">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label">Date</label>
               <input
                 type="date"
                 className="innovic-input"
                 value={logDate}
                 onChange={(e) => setLogDate(e.target.value)}
               />
-            </Field>
-            <Field label="Project ★">
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Project ★</label>
               <select
                 className="innovic-select"
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
+                onChange={(e) => {
+                  setProjectId(e.target.value);
+                  setTask('');
+                }}
               >
                 <option value="">— Select —</option>
                 {projects.map((p) => (
@@ -200,16 +228,24 @@ function EntryTab(): React.JSX.Element {
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Task">
-              <input
-                className="innovic-input"
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Task</label>
+              <select
+                className="innovic-select"
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
-                placeholder="(optional) task title"
-              />
-            </Field>
-            <Field label="Category">
+              >
+                <option value="">— General —</option>
+                {projTasks.map((t) => (
+                  <option key={t.id} value={t.title}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Category</label>
               <select
                 className="innovic-select"
                 value={category}
@@ -219,26 +255,29 @@ function EntryTab(): React.JSX.Element {
                   <option key={c}>{c}</option>
                 ))}
               </select>
-            </Field>
-            <Field label="Hours ★">
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Hours ★</label>
               <input
                 type="number"
                 min={0.5}
                 step={0.5}
                 max={12}
                 className="innovic-input"
+                style={{ width: 80 }}
                 value={hours}
                 onChange={(e) => setHours(e.target.value)}
               />
-            </Field>
-            <Field label="What did you do?">
+            </div>
+            <div className="form-grp form-full">
+              <label className="form-label">What did you do?</label>
               <input
                 className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief description…"
+                placeholder="Brief description..."
               />
-            </Field>
+            </div>
           </div>
           {err ? (
             <div
@@ -257,7 +296,7 @@ function EntryTab(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-primary"
-            style={{ marginTop: 10 }}
+            style={{ marginTop: 6 }}
             disabled={createMut.isPending}
             onClick={onSave}
           >
@@ -266,9 +305,7 @@ function EntryTab(): React.JSX.Element {
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
               </>
             ) : (
-              <>
-                <Plus size={14} /> Save Entry
-              </>
+              'Save Entry'
             )}
           </button>
         </div>
@@ -318,67 +355,72 @@ function EntryTab(): React.JSX.Element {
                 {dayHrs.toFixed(1)}h
               </span>
             </div>
-            {dayLogs.map((l) => (
-              <div
-                key={l.id}
-                style={{
-                  display: 'flex',
-                  gap: 10,
-                  padding: '8px 12px',
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  marginBottom: 4,
-                  alignItems: 'center',
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>
-                    {l.taskText ?? 'General'}{' '}
-                    <span
-                      style={{
-                        fontSize: 9,
-                        padding: '1px 6px',
-                        borderRadius: 10,
-                        background: 'rgba(37,99,235,0.10)',
-                        color: 'var(--blue)',
-                      }}
-                    >
-                      {l.category}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-                    {l.projectName ?? ''}
-                  </div>
-                  {l.description ? (
-                    <div style={{ fontSize: 11, color: 'var(--text2)' }}>{l.description}</div>
-                  ) : null}
-                </div>
+            {dayLogs.map((l) => {
+              const cc = catColor(l.category);
+              return (
                 <div
+                  key={l.id}
                   style={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    fontFamily: 'var(--mono)',
-                    color: 'var(--blue)',
+                    display: 'flex',
+                    gap: 10,
+                    padding: '8px 12px',
+                    background: 'var(--bg3)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                    marginBottom: 4,
+                    alignItems: 'center',
                   }}
                 >
-                  {l.hours}h
-                </div>
-                {canWrite ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 10 }}
-                    disabled={deleteMut.isPending}
-                    onClick={() => {
-                      if (window.confirm('Delete entry?')) deleteMut.mutate(l.id);
+                  <div
+                    style={{ width: 3, height: 28, borderRadius: 2, background: cc, flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>
+                      {l.taskText ?? 'General'}{' '}
+                      <span
+                        style={{
+                          fontSize: 9,
+                          padding: '1px 6px',
+                          borderRadius: 10,
+                          color: cc,
+                        }}
+                      >
+                        {l.category}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                      {l.projectName ?? ''}
+                    </div>
+                    {l.description ? (
+                      <div style={{ fontSize: 11, color: 'var(--text2)' }}>{l.description}</div>
+                    ) : null}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      fontFamily: 'var(--mono)',
+                      color: cc,
                     }}
                   >
-                    <Trash2 size={12} />
-                  </button>
-                ) : null}
-              </div>
-            ))}
+                    {l.hours}h
+                  </div>
+                  {canWrite ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 10 }}
+                      disabled={deleteMut.isPending}
+                      onClick={() => {
+                        if (window.confirm('Delete entry?')) deleteMut.mutate(l.id);
+                      }}
+                    >
+                      🗑
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -390,20 +432,25 @@ function EntryTab(): React.JSX.Element {
 
 function DailyTab(): React.JSX.Element {
   const [viewDate, setViewDate] = useState(todayStr());
+  const [viewEng, setViewEng] = useState<string>('All');
   const { data } = useDesignWorkLogList({
     fromDate: viewDate,
     toDate: viewDate,
     limit: 500,
     offset: 0,
   });
-  const logs = data?.items ?? [];
+  const allDayLogs = data?.items ?? [];
+
+  // Legacy L7994-7997: the engineer cards always show that engineer's full day,
+  // while the entry list and the Total tile follow the selected engineer.
+  const logs = viewEng === 'All' ? allDayLogs : allDayLogs.filter((l) => l.engineerText === viewEng);
   const totalHrs = logs.reduce((s, l) => s + l.hours, 0);
 
   const engineers = useMemo(() => {
     const s = new Set<string>();
-    logs.forEach((l) => s.add(l.engineerText));
+    allDayLogs.forEach((l) => s.add(l.engineerText));
     return Array.from(s).sort();
-  }, [logs]);
+  }, [allDayLogs]);
 
   // Group by engineer
   const byEng: Record<string, DesignWorkLogEntry[]> = {};
@@ -441,6 +488,23 @@ function DailyTab(): React.JSX.Element {
           value={viewDate}
           onChange={(e) => setViewDate(e.target.value)}
         />
+        <select
+          style={{
+            padding: '6px 10px',
+            fontSize: 12,
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            color: 'var(--text)',
+          }}
+          value={viewEng}
+          onChange={(e) => setViewEng(e.target.value)}
+        >
+          <option value="All">All Engineers</option>
+          {engineers.map((e) => (
+            <option key={e}>{e}</option>
+          ))}
+        </select>
       </div>
 
       <div
@@ -452,12 +516,20 @@ function DailyTab(): React.JSX.Element {
         }}
       >
         {engineers.map((eng) => {
-          const hrs = byEng[eng]!.reduce((s, l) => s + l.hours, 0);
+          const hrs = allDayLogs
+            .filter((l) => l.engineerText === eng)
+            .reduce((s, l) => s + l.hours, 0);
           return (
             <div
               key={eng}
               className="panel"
-              style={{ textAlign: 'center', padding: 10 }}
+              style={{
+                textAlign: 'center',
+                padding: 10,
+                cursor: 'pointer',
+                border: `1px solid ${viewEng === eng ? 'var(--blue)' : 'var(--border)'}`,
+              }}
+              onClick={() => setViewEng(viewEng === eng ? 'All' : eng)}
             >
               <div
                 style={{
@@ -612,13 +684,13 @@ function WeeklyTab(): React.JSX.Element {
               <tr>
                 <th>Engineer</th>
                 {weekDates.map((dt) => (
-                  <th key={dt} className="td-ctr" style={{ fontSize: 10 }}>
+                  <th key={dt} style={{ textAlign: 'center', fontSize: 10 }}>
                     {dayName(dt)}
                     <br />
                     {dt.slice(5)}
                   </th>
                 ))}
-                <th className="td-ctr">Total</th>
+                <th style={{ textAlign: 'center' }}>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -1027,36 +1099,7 @@ function Tile({
       <div className="text3" style={{ fontSize: 10 }}>
         {label}
       </div>
-      <div
-        style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      {children}
+      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }

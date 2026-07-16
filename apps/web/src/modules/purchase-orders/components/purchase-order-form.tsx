@@ -9,10 +9,11 @@ import {
   type PurchaseOrderDetail,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { Fragment, useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { inrFormat } from '@/lib/print/doc-print';
 import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
@@ -50,6 +51,10 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
+  // ISSUE-065 mech 1 (reported, not fixed here — a fix is a logic change): this is
+  // today in UTC, so between 00:00 and 05:29 IST it defaults the PO to YESTERDAY.
+  // Legacy `today()` L1485-87 builds the string from LOCAL date components and is
+  // correct; this is a port regression.
   poDate: new Date().toISOString().slice(0, 10),
   poType: 'standard',
   status: 'draft',
@@ -110,6 +115,30 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
     return m;
   }, [items]);
 
+  // Live totals — mirror of legacy `_poUpdateTotal()` L25502. Preview only; see the
+  // note at the summary panel. Legacy falls back to 9/9/18 when a pct box is blank;
+  // our header defaults are 0 (schema `.default(0)`) and are left alone here.
+  const watchedLines = watch('lines');
+  const watchedTaxType = watch('header.taxType');
+  const isIgst = watchedTaxType === 'igst';
+  const sgstPctNum = Number(watch('header.sgstPct')) || 0;
+  const cgstPctNum = Number(watch('header.cgstPct')) || 0;
+  const igstPctNum = Number(watch('header.igstPct')) || 0;
+  const subtotal = (watchedLines ?? []).reduce(
+    (s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0),
+    0,
+  );
+  const totalQty = (watchedLines ?? []).reduce((s, l) => s + (Number(l.qty) || 0), 0);
+  const igst = isIgst ? (subtotal * igstPctNum) / 100 : 0;
+  const sgst = isIgst ? 0 : (subtotal * sgstPctNum) / 100;
+  const cgst = isIgst ? 0 : (subtotal * cgstPctNum) / 100;
+  const grandTotal = subtotal + sgst + cgst + igst;
+
+  // Legacy's 9-column line table (L25489); `Received` is an extra column of ours,
+  // appended last so legacy's own column order is preserved.
+  const colCount = isEdit ? 10 : 9;
+  const remarksSpan = isEdit ? 8 : 7;
+
   const onValid = async (values: FormValues): Promise<void> => {
     const headerOut = {
       ...values.header,
@@ -151,12 +180,11 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      {/* Header */}
-      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+      {/* Header — legacy `poHeaderForm()` L25605 (2-col `.form-grid`, not 3). */}
+      <div className="form-grid">
         <DocNumberInput
           type="purchase_order"
           label="PO No."
-          required={isCreate}
           readOnly={isEdit}
           value={watch('header.code') ?? ''}
           onChange={(v) => setValue('header.code', v)}
@@ -164,7 +192,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
         />
         <div className="form-grp">
           <label className="form-label" htmlFor="poDate">
-            Date<span className="req">★</span>
+            PO Date<span className="req">★</span>
           </label>
           <input
             id="poDate"
@@ -175,7 +203,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="poType">
-            Type
+            PO Type
           </label>
           <select id="poType" className="innovic-select" {...register('header.poType')}>
             {PO_TYPES.map((t) => (
@@ -185,7 +213,6 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             ))}
           </select>
         </div>
-
         <div className="form-grp">
           <label className="form-label" htmlFor="status">
             Status
@@ -198,31 +225,8 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             ))}
           </select>
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dueDate">
-            Due date
-          </label>
-          <input
-            id="dueDate"
-            type="date"
-            className="innovic-input"
-            {...register('header.dueDate')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="prCodeText">
-            PR ref (audit)
-          </label>
-          <input
-            id="prCodeText"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="PR-NNNNN (when applicable)"
-            {...register('header.prCodeText')}
-          />
-        </div>
 
-        <div className="form-grp">
+        <div className="form-grp form-full">
           <label className="form-label" htmlFor="vendorId">
             Vendor
           </label>
@@ -248,58 +252,27 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="taxType">
-            Tax type
+          <label className="form-label" htmlFor="dueDate">
+            Due date
           </label>
-          <select id="taxType" className="innovic-select" {...register('header.taxType')}>
-            <option value="">— None —</option>
-            <option value="sgst_cgst">SGST + CGST</option>
-            <option value="igst">IGST</option>
-            <option value="none">None</option>
-          </select>
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="sgstPct">
-            SGST %
-          </label>
-          <input
-            id="sgstPct"
-            type="number"
-            step="0.01"
-            min={0}
-            className="innovic-input"
-            {...register('header.sgstPct', { valueAsNumber: true })}
-          />
+          <input id="dueDate" type="date" className="innovic-input" {...register('header.dueDate')} />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="cgstPct">
-            CGST %
+          <label className="form-label" htmlFor="prCodeText">
+            PR ref (audit)
           </label>
           <input
-            id="cgstPct"
-            type="number"
-            step="0.01"
-            min={0}
+            id="prCodeText"
             className="innovic-input"
-            {...register('header.cgstPct', { valueAsNumber: true })}
+            autoComplete="off"
+            placeholder="PR-NNNNN (when applicable)"
+            {...register('header.prCodeText')}
           />
         </div>
+        {/* Legacy L25661 uses a single-line <input> here. Kept as a textarea: the
+            column is max(2000) and may already hold multi-line text, which an
+            <input> silently strips on value assignment (ISSUE-104 class). */}
         <div className="form-grp">
-          <label className="form-label" htmlFor="igstPct">
-            IGST %
-          </label>
-          <input
-            id="igstPct"
-            type="number"
-            step="0.01"
-            min={0}
-            className="innovic-input"
-            {...register('header.igstPct', { valueAsNumber: true })}
-          />
-        </div>
-
-        <div className="form-grp form-full">
           <label className="form-label" htmlFor="remarks">
             Remarks
           </label>
@@ -307,186 +280,388 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             id="remarks"
             className="innovic-textarea"
             rows={2}
+            placeholder="Notes"
             {...register('header.remarks')}
           />
         </div>
       </div>
 
-      {/* Lines */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 8,
-        }}
-      >
+      {/* Line items — legacy `poHeaderForm()` L25664-25674 + `_poLinesHtml()` L25487. */}
+      <div>
         <div
-          className="form-label"
-          style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}
+          className="mono fw-700 cyan"
+          style={{
+            fontSize: 11,
+            margin: '12px 0 6px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
         >
-          Line items
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => append({ ...NEW_LINE })}
-        >
-          <Plus size={13} /> Add line
-        </button>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>
-          No lines yet. Click <strong>Add line</strong> — at least one is required.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {fields.map((field, idx) => (
-            <div
-              key={field.id}
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: 10,
-                background: 'var(--bg2)',
-              }}
+          <span>▸ PO LINE ITEMS</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
+              {fields.length} line{fields.length !== 1 ? 's' : ''} · Qty:{' '}
+              <b className="cyan">{totalQty}</b>
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => append({ ...NEW_LINE })}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 8,
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                  fontFamily: 'var(--mono)',
-                  textTransform: 'uppercase',
-                  fontWeight: 700,
-                }}
-              >
-                <span>Line {idx + 1}</span>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm btn-icon"
-                  onClick={() => remove(idx)}
-                  aria-label={`Remove line ${idx + 1}`}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-              <div className="form-grid form-grid-3">
-                <div className="form-grp">
-                  <label className="form-label">Item Code</label>
-                  {(() => {
+              + Add Line
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: '1px solid var(--border2)',
+            borderRadius: 'var(--radius)',
+            overflow: 'hidden',
+          }}
+        >
+          <div className="tbl-wrap">
+            <table className="innovic-table" style={{ minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 32 }}>#</th>
+                  <th>Item / SO Line ★</th>
+                  <th>Name</th>
+                  <th>Mat.</th>
+                  <th style={{ width: 80 }}>Qty ★</th>
+                  <th style={{ width: 90 }}>Rate (₹)</th>
+                  <th style={{ width: 85, textAlign: 'right' }}>Amount</th>
+                  <th style={{ width: 85 }}>Due Date</th>
+                  {isEdit ? <th style={{ width: 80 }}>Received</th> : null}
+                  <th style={{ width: 28 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {fields.length === 0 ? (
+                  <tr>
+                    <td colSpan={colCount} className="empty-state" style={{ padding: 14 }}>
+                      No lines — click + Add Line
+                    </td>
+                  </tr>
+                ) : (
+                  fields.map((field, idx) => {
+                    const rowBg = idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)';
+                    const line = watchedLines?.[idx];
+                    const matchedItem = itemsByCode.get(
+                      (line?.itemCodeText ?? '').trim().toUpperCase(),
+                    );
+                    const lineAmt = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
                     const lineCodeReg = register(`lines.${idx}.itemCodeText` as const);
                     return (
-                      <input
-                        className="innovic-input"
-                        list="dlPoItems"
-                        autoComplete="off"
-                        placeholder="🔍 ITM-001"
-                        {...lineCodeReg}
-                        onChange={(e) => {
-                          void lineCodeReg.onChange(e);
-                          const match = itemsByCode.get(e.target.value.trim().toUpperCase());
-                          if (match) {
-                            setValue(`lines.${idx}.itemId` as const, match.id, {
-                              shouldDirty: true,
-                            });
-                            setValue(`lines.${idx}.itemName` as const, match.name, {
-                              shouldDirty: true,
-                              shouldValidate: true,
-                            });
-                          } else {
-                            setValue(`lines.${idx}.itemId` as const, undefined, {
-                              shouldDirty: true,
-                            });
-                          }
-                        }}
-                      />
+                      <Fragment key={field.id}>
+                        <tr style={{ background: rowBg }}>
+                          <td
+                            className="td-ctr mono fw-700 cyan"
+                            style={{ width: 32 }}
+                            rowSpan={2}
+                          >
+                            {idx + 1}
+                          </td>
+                          <td style={{ minWidth: 140 }}>
+                            <input
+                              className="innovic-input"
+                              list="dlPoItems"
+                              autoComplete="off"
+                              placeholder="🔍 Item code…"
+                              {...lineCodeReg}
+                              onChange={(e) => {
+                                void lineCodeReg.onChange(e);
+                                const match = itemsByCode.get(e.target.value.trim().toUpperCase());
+                                if (match) {
+                                  setValue(`lines.${idx}.itemId` as const, match.id, {
+                                    shouldDirty: true,
+                                  });
+                                  setValue(`lines.${idx}.itemName` as const, match.name, {
+                                    shouldDirty: true,
+                                    shouldValidate: true,
+                                  });
+                                } else {
+                                  setValue(`lines.${idx}.itemId` as const, undefined, {
+                                    shouldDirty: true,
+                                  });
+                                }
+                              }}
+                            />
+                          </td>
+                          {/* Legacy renders Name as a read-only span auto-filled from Item
+                              Master (it hard-requires on-master items). Ours stays an input:
+                              `itemName` is min(1) in our schema and PO accepts off-master
+                              free text, so the value must remain user-editable. */}
+                          <td style={{ minWidth: 90 }}>
+                            <input
+                              className="innovic-input"
+                              autoComplete="off"
+                              {...register(`lines.${idx}.itemName` as const, {
+                                required: 'Item name is required',
+                              })}
+                            />
+                            {errors.lines?.[idx]?.itemName?.message ? (
+                              <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
+                            ) : null}
+                          </td>
+                          <td className="text3" style={{ minWidth: 50, fontSize: 11 }}>
+                            {matchedItem?.material ?? ''}
+                          </td>
+                          <td style={{ width: 80 }}>
+                            <input
+                              type="number"
+                              min={1}
+                              className="innovic-input"
+                              style={{ textAlign: 'center', fontWeight: 800, color: 'var(--cyan)' }}
+                              placeholder="Qty ★"
+                              {...register(`lines.${idx}.qty` as const, {
+                                valueAsNumber: true,
+                                min: { value: 1, message: 'Min 1' },
+                              })}
+                            />
+                          </td>
+                          <td style={{ width: 90 }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              className="innovic-input"
+                              style={{ textAlign: 'right' }}
+                              placeholder="₹ Rate"
+                              {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
+                            />
+                          </td>
+                          <td className="td-right" style={{ width: 85 }}>
+                            <span
+                              className={lineAmt > 0 ? 'mono fw-700 green' : 'mono fw-700 text3'}
+                              style={{ fontSize: 13 }}
+                            >
+                              {lineAmt > 0 ? `₹${inrFormat(lineAmt)}` : '—'}
+                            </span>
+                          </td>
+                          <td style={{ width: 85 }}>
+                            <input
+                              type="date"
+                              className="innovic-input"
+                              {...register(`lines.${idx}.dueDate` as const)}
+                            />
+                          </td>
+                          {isEdit ? (
+                            <td style={{ width: 80 }}>
+                              <input
+                                type="number"
+                                className="innovic-input"
+                                readOnly
+                                title="Received qty is mutated only by GRN cascade (T-036c)"
+                                value={field.receivedQty ?? 0}
+                              />
+                            </td>
+                          ) : null}
+                          <td style={{ width: 28 }} rowSpan={2}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm btn-icon"
+                              onClick={() => remove(idx)}
+                              title="Remove"
+                              aria-label={`Remove line ${idx + 1}`}
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                        <tr style={{ background: rowBg }}>
+                          <td colSpan={remarksSpan} style={{ padding: '0 6px 6px' }}>
+                            <input
+                              className="innovic-input"
+                              autoComplete="off"
+                              placeholder="Remarks for this line…"
+                              {...register(`lines.${idx}.lineRemarks` as const)}
+                            />
+                          </td>
+                        </tr>
+                      </Fragment>
                     );
-                  })()}
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">
-                    Item Name<span className="req">★</span>
-                  </label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.itemName` as const, {
-                      required: 'Item name is required',
-                    })}
-                  />
-                  {errors.lines?.[idx]?.itemName?.message ? (
-                    <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
-                  ) : null}
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">
-                    Qty<span className="req">★</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="innovic-input"
-                    {...register(`lines.${idx}.qty` as const, {
-                      valueAsNumber: true,
-                      min: { value: 1, message: 'Min 1' },
-                    })}
-                  />
-                </div>
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-                <div className="form-grp">
-                  <label className="form-label">Rate (₹)</label>
+        {/* TAX — legacy L25675-25712. */}
+        <div
+          style={{
+            marginTop: 12,
+            padding: 14,
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: 14,
+            }}
+          >
+            <div>
+              <div
+                className="mono fw-700 cyan"
+                style={{ fontSize: 11, letterSpacing: '.06em', marginBottom: 8 }}
+              >
+                ▸ TAX
+              </div>
+              {/* Legacy uses a 2-state toggle (`_poTaxToggle` L25563) that can only ever
+                  write 'sgst_cgst' | 'igst'. Kept as a select: our `taxType` column is a
+                  free string and existing rows may hold null / 'none', which the toggle
+                  cannot represent and would silently rewrite on edit (ISSUE-104). */}
+              <div className="form-grp" style={{ marginBottom: 10, maxWidth: 200 }}>
+                <label className="form-label" htmlFor="taxType">
+                  Tax type
+                </label>
+                <select id="taxType" className="innovic-select" {...register('header.taxType')}>
+                  <option value="">— None —</option>
+                  <option value="sgst_cgst">SGST + CGST</option>
+                  <option value="igst">IGST</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+              {isIgst ? (
+                <div className="form-grp" style={{ maxWidth: 120 }}>
+                  <label className="form-label" htmlFor="igstPct">
+                    IGST %
+                  </label>
                   <input
+                    id="igstPct"
                     type="number"
                     step="0.01"
                     min={0}
                     className="innovic-input"
-                    {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
+                    {...register('header.igstPct', { valueAsNumber: true })}
                   />
                 </div>
-                {isEdit ? (
-                  <div className="form-grp">
-                    <label className="form-label">Received</label>
+              ) : (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div className="form-grp" style={{ maxWidth: 120 }}>
+                    <label className="form-label" htmlFor="sgstPct">
+                      SGST %
+                    </label>
                     <input
+                      id="sgstPct"
                       type="number"
+                      step="0.01"
+                      min={0}
                       className="innovic-input"
-                      readOnly
-                      title="Received qty is mutated only by GRN cascade (T-036c)"
-                      value={field.receivedQty ?? 0}
+                      {...register('header.sgstPct', { valueAsNumber: true })}
                     />
                   </div>
-                ) : null}
-                <div className="form-grp">
-                  <label className="form-label">Due date</label>
-                  <input
-                    type="date"
-                    className="innovic-input"
-                    {...register(`lines.${idx}.dueDate` as const)}
-                  />
+                  <div className="form-grp" style={{ maxWidth: 120 }}>
+                    <label className="form-label" htmlFor="cgstPct">
+                      CGST %
+                    </label>
+                    <input
+                      id="cgstPct"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className="innovic-input"
+                      {...register('header.cgstPct', { valueAsNumber: true })}
+                    />
+                  </div>
                 </div>
-
-                <div className="form-grp form-full">
-                  <label className="form-label">Line Remarks</label>
-                  <input
-                    className="innovic-input"
-                    autoComplete="off"
-                    {...register(`lines.${idx}.lineRemarks` as const)}
-                  />
+              )}
+            </div>
+            {/* Preview of unsaved form input only: neither create nor update transmits a
+                total (`createPurchaseOrderInputSchema` has no total field) and the service
+                stores only taxType + pcts — so no server-owned figure is recomputed here. */}
+            <div style={{ minWidth: 300 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ minWidth: 300 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '6px 0',
+                      borderBottom: '1px solid var(--border)',
+                    }}
+                  >
+                    <span className="text2">Subtotal</span>
+                    <span className="mono fw-700" style={{ fontSize: 14 }}>
+                      ₹{inrFormat(subtotal)}
+                    </span>
+                  </div>
+                  {isIgst ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        padding: '6px 0',
+                        borderBottom: '1px solid var(--border)',
+                      }}
+                    >
+                      <span className="text2">IGST ({igstPctNum}%)</span>
+                      <span className="mono amber">₹{inrFormat(igst)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          padding: '6px 0',
+                          borderBottom: '1px solid var(--border)',
+                        }}
+                      >
+                        <span className="text2">SGST ({sgstPctNum}%)</span>
+                        <span className="mono amber">₹{inrFormat(sgst)}</span>
+                      </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          padding: '6px 0',
+                          borderBottom: '1px solid var(--border)',
+                        }}
+                      >
+                        <span className="text2">CGST ({cgstPctNum}%)</span>
+                        <span className="mono amber">₹{inrFormat(cgst)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '8px 0',
+                      fontSize: 16,
+                    }}
+                  >
+                    <span className="fw-700">Grand Total</span>
+                    <span className="mono fw-700 green" style={{ fontSize: 18 }}>
+                      ₹{inrFormat(grandTotal)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          ))}
+          </div>
         </div>
-      )}
+        {/* Legacy L25713 prints "📌 Items must exist in Item Master. If SO/JW is
+            selected, lines auto-populate." Not copied: neither claim is true here —
+            our schema accepts off-master `itemCodeText`, and the SO/JW link has no
+            header field to bind to. Shipping it would describe constraints nothing
+            enforces (ISSUE-100). */}
+      </div>
 
       <datalist id="dlPoItems">
         {items.map((it) => (
           <option key={it.id} value={it.code}>
-            {it.name}
+            {it.code} — {it.name}
+            {it.material ? ` [${it.material}]` : ''}
           </option>
         ))}
       </datalist>
@@ -507,15 +682,24 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             {props.submitError}
           </div>
         ) : null}
+        {/* Footer per the call sites: both `addPO()` L25733 and `editPO()` L25799 call
+            showModalLg(...) with NO saveLabel, so the L28034 fallback derives the label
+            from the title — '+ New Purchase Order' and 'Edit PO — …' both match the
+            'Purchase Order'/'PO' branch first → '✓ Save PO' on .btn-success, Cancel on
+            .btn-ghost. Identical in both modes. */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {props.onCancel ? (
             <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
+          <button
+            type="submit"
+            className="btn btn-success"
+            disabled={formState.isSubmitting || (isCreate && !docNoValid)}
+          >
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PO')}
+            {props.submitLabel ?? '✓ Save PO'}
           </button>
         </div>
       </div>

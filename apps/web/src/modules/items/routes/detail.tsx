@@ -1,7 +1,28 @@
 // Item detail page (UI-003-01).
-// Header card + details grid + stock history sub-panel. Mirrors
-// legacy viewItemDetail flow with the Innovic .panel / .form-grid
-// chrome.
+// Ports legacy viewItemDetail (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L11743-11811, incl. _stockLedgerHtml L11815-11833) to the Innovic .panel /
+// .form-grid chrome. Legacy renders this as a modal (showModalLg L11810); the
+// port is a route — same content, real URL.
+//
+// Legacy deltas kept deliberately:
+//  - Stock Ledger keeps our Type badge + Source + Qty + "Stock before → after"
+//    instead of legacy's Type / IN / OUT / Balance split. Legacy derives IN vs
+//    OUT from `isIn = t.type==='IN'` (L11823), so anything not IN is rendered as
+//    an outward move — our ledger has a third type (`adjust`) that this would
+//    misreport. Legacy's Balance is a browser-side running total (L11821) which
+//    would be wrong on a capped, newest-first list; stockBefore/stockAfter come
+//    from the server per row, so we show those.
+//  - Dates render as the raw ISO txnDate. Legacy's fmt() (L1484) is "15-Jul-26";
+//    the shared fmtDate() is dd-MM-yyyy. Neither matches the other, so rather
+//    than approximate we leave the sortable ISO value and log the divergence.
+//  - The detail grid carries itemType / hsnCode / description / drawing-file
+//    actions, which legacy's modal has no counterpart for. Kept — dropping live
+//    fields to reach parity would lose working behaviour.
+//
+// Legacy sections with no data source in the port (reported, NOT stubbed):
+// the drawing thumbnail (L11775), the 4-tile stat grid (L11777-11798), the
+// Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
+// route-card / job-card / running-op reads this page does not have.
 
 import type { Company, Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -15,6 +36,10 @@ import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-b
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem, useSoftDeleteItem } from '../api';
 import { printItemDrawing } from '../lib/print-drawing';
+
+// Rows pulled for the ledger sub-panel. The panel discloses the cap against the
+// server's `total` whenever there are more (legacy lists every txn, L11816).
+const LEDGER_LIMIT = 20;
 
 export const itemDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -191,13 +216,24 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
 function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
   const { data, isLoading, isError } = useStoreTransactionsList({
     itemId: props.itemId,
-    limit: 20,
+    limit: LEDGER_LIMIT,
     offset: 0,
   });
+  // `total` is the server's count across the whole filter set (no LIMIT), so the
+  // cap notice below is truthful without any browser-side counting.
+  const total = data?.total ?? 0;
+  const capped = total > LEDGER_LIMIT;
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div className="panel-title">Stock History</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <div className="panel-title">Stock Ledger</div>
+          {capped ? (
+            <span className="text3" style={{ fontSize: 11 }}>
+              Showing latest {LEDGER_LIMIT} of {total}
+            </span>
+          ) : null}
+        </div>
         <Link to="/store-transactions" className="btn btn-ghost btn-sm">
           View full ledger →
         </Link>
@@ -208,29 +244,30 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             <tr>
               <th>Date</th>
               <th>Type</th>
-              <th className="td-right">Qty</th>
               <th>Source</th>
-              <th>Ref</th>
+              <th>Ref No.</th>
+              <th className="td-right">Qty</th>
               <th>Stock before → after</th>
+              <th>Remarks</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="empty-state">
+                <td colSpan={7} className="empty-state">
                   <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading stock history…
                 </td>
               </tr>
             ) : isError ? (
               <tr>
-                <td colSpan={6} className="empty-state" style={{ color: 'var(--red)' }}>
+                <td colSpan={7} className="empty-state" style={{ color: 'var(--red)' }}>
                   Failed to load stock history.
                 </td>
               </tr>
             ) : (data?.items.length ?? 0) === 0 ? (
               <tr>
-                <td colSpan={6} className="empty-state">
-                  No stock transactions for this item yet.
+                <td colSpan={7} className="empty-state">
+                  No stock transactions recorded
                 </td>
               </tr>
             ) : (
@@ -242,15 +279,18 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                   <td>
                     <TxnTypeBadge type={r.txnType} />
                   </td>
-                  <td className="td-right mono fw-700">{r.qty}</td>
                   <td className="text2" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                     {r.sourceType.replaceAll('_', ' ')}
                   </td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
                     {r.sourceRef}
                   </td>
+                  <td className="td-right mono fw-700">{r.qty}</td>
                   <td className="mono" style={{ fontSize: 11 }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
+                  </td>
+                  <td className="text3" style={{ fontSize: 10 }}>
+                    {r.remarks ?? ''}
                   </td>
                 </tr>
               ))

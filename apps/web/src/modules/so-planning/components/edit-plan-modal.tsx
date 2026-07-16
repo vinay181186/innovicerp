@@ -2,9 +2,11 @@
 // (process/QC/OSP), Full Outsource section, Direct Purchase section, and
 // Required QC Documents section. Mirrors legacy editPlan (HTML L9500).
 //
-// Save vs. Save & Finalize:
-//   Save        → updatePlan() only, status stays in_planning
-//   Save & Finalize → updatePlan() + finalizePlan(), status → planned
+// Save Draft vs. ✓ Save Plan:
+//   Save Draft  → updatePlan() only, status stays in_planning. NOT in legacy —
+//                 legacy's single save always transitions to Planned. Kept.
+//   ✓ Save Plan → updatePlan() + finalizePlan(), status → planned. This is the
+//                 legacy button (showModalLg saveLabel 'Save Plan', L9765).
 // Once status is jc_created / pr_created / etc., the parent doesn't open
 // this modal (uses view-only navigation instead).
 
@@ -15,7 +17,7 @@ import type {
   PlanType,
   UpdatePlanInput,
 } from '@innovic/shared';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useCostCentersList } from '@/modules/cost-centers/api';
@@ -277,21 +279,38 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             …
           </>
         ) : (
-          'Save & Finalize'
+          // Legacy editPlan: showModalLg(title, body, onSave, 'Save Plan') →
+          // btn-success rendering `&#10003; Save Plan` (L28044). Its single save
+          // always sets status='Planned', i.e. it is this button, not Save Draft.
+          '✓ Save Plan'
         )}
       </button>
     </>
   );
 
-  const typeBtn = (val: PlanType, icon: string, label: string, help: string, color: string) => (
+  // `active` is passed in rather than derived from `planType === val`: legacy's
+  // Manufacture tab lights up for anything that is NOT direct_purchase/full_outsource
+  // (L9609), which is what keeps an `assembly` plan showing a selected tab.
+  // `activeBg` is legacy's literal rgba; the border/label use the CSS token like
+  // legacy does (var(--cyan)/var(--purple)/var(--green)) — the previous hard-coded
+  // #22d3ee/#22c55e were the DARK theme's values (ISSUE-067).
+  const typeBtn = (
+    val: PlanType,
+    icon: string,
+    label: string,
+    help: string,
+    color: string,
+    activeBg: string,
+    active: boolean,
+  ) => (
     <label
       style={{
         flex: 1,
         cursor: 'pointer',
         padding: '10px 14px',
         borderRadius: 8,
-        border: `2px solid ${planType === val ? color : 'var(--border)'}`,
-        background: planType === val ? `${color}1A` : 'var(--bg)',
+        border: `2px solid ${active ? color : 'var(--border)'}`,
+        background: active ? activeBg : 'var(--bg)',
         textAlign: 'center',
       }}
       onClick={() => setPlanType(val)}
@@ -388,9 +407,33 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           Plan Type ★
         </label>
         <div style={{ display: 'flex', gap: 8 }}>
-          {typeBtn('manufacture', '🏭', 'Manufacture', 'Job Card + Operations', '#22d3ee')}
-          {typeBtn('full_outsource', '📦', 'Full Outsource', 'Our material, vendor does all', '#7c3aed')}
-          {typeBtn('direct_purchase', '🛒', 'Direct Purchase', 'Buy finished item (with material)', '#22c55e')}
+          {typeBtn(
+            'manufacture',
+            '🏭',
+            'Manufacture',
+            'Job Card + Operations',
+            'var(--cyan)',
+            'rgba(34,211,238,0.08)',
+            planType !== 'direct_purchase' && planType !== 'full_outsource',
+          )}
+          {typeBtn(
+            'full_outsource',
+            '📦',
+            'Full Outsource',
+            'Our material, vendor does all',
+            'var(--purple)',
+            'rgba(124,58,237,0.08)',
+            planType === 'full_outsource',
+          )}
+          {typeBtn(
+            'direct_purchase',
+            '🛒',
+            'Direct Purchase',
+            'Buy finished item (with material)',
+            'var(--green)',
+            'rgba(34,197,94,0.08)',
+            planType === 'direct_purchase',
+          )}
         </div>
       </div>
 
@@ -449,7 +492,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 className="btn btn-ghost btn-sm"
                 onClick={() => addOp('process')}
               >
-                <Plus size={12} /> Add Op
+                + Add Op
               </button>
               <button
                 type="button"
@@ -574,7 +617,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               className="btn btn-danger btn-sm btn-icon"
                               onClick={() => removeOp(op.uid)}
                             >
-                              <Trash2 size={11} />
+                              ×
                             </button>
                           </td>
                         </tr>
@@ -659,7 +702,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               gap: 6,
                               fontSize: 10,
                               fontWeight: 700,
-                              color: 'var(--amber)',
+                              // Legacy L9576: amber only while ticked, else text3.
+                              color: isOS ? 'var(--amber)' : 'var(--text3)',
                               cursor: 'pointer',
                               letterSpacing: '.04em',
                             }}
@@ -700,6 +744,22 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                 valueLabel={op.outsourceVendorText || undefined}
                                 selectedLabel={(o) => o.code ?? o.name}
                               />
+                              {/* Legacy L9578 renders a ₹/pc cost input beside the
+                                  vendor picker on an outsourced op. It was missing
+                                  here, so plan_ops.outsource_cost could only ever be
+                                  saved as its 0 default. */}
+                              <input
+                                className="innovic-input"
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={op.outsourceCost}
+                                onChange={(e) =>
+                                  updateOp(op.uid, { outsourceCost: Number(e.target.value) })
+                                }
+                                placeholder="₹/pc"
+                                style={{ marginTop: 4 }}
+                              />
                             </div>
                           ) : null}
                         </td>
@@ -709,7 +769,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             className="btn btn-danger btn-sm btn-icon"
                             onClick={() => removeOp(op.uid)}
                           >
-                            <Trash2 size={11} />
+                            ×
                           </button>
                         </td>
                       </tr>
@@ -1011,7 +1071,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             setRequiredDocs((prev) => prev.filter((_, idx) => idx !== i))
                           }
                         >
-                          <Trash2 size={11} />
+                          ×
                         </button>
                       </td>
                     </tr>

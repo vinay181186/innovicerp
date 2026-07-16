@@ -1,20 +1,28 @@
 import type { ComputedJcOpStatus, RunningOpStatus } from '@innovic/shared';
 
-// Mirrors the legacy color palette (lines 4333, 5237, 5395 — green=complete,
-// amber=qc/at_vendor, cyan=running, gray=waiting).
-const JC_OP_TONE: Record<ComputedJcOpStatus, string> = {
-  waiting: 'bg-muted text-muted-foreground',
-  available: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  in_progress: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
-  running: 'bg-green-500/15 text-green-700 dark:text-green-300',
-  qc_pending: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  complete: 'bg-green-600 text-white',
-  pr_raised: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  po_created: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  at_vendor: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  received: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
-  ready_for_pr: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  outsource: 'bg-muted text-muted-foreground',
+// Badge modifier per legacy `badge()` (HTML L1959-1970), which is the colour
+// function Op Entry's Ready-to-Process table calls at L5268. The previous map
+// here was Tailwind tone classes citing lines that hold no colour table.
+//
+// Two legacy keys resolve to modifiers that its MAIN stylesheet never defines:
+// 'In Progress'/'At Vendor' -> .b-yellow and 'Running' -> .b-running. Both are
+// declared only inside the print-window stylesheet written by document.write
+// (HTML L10555-10561), so on the legacy SCREEN they render as a bare `.badge`
+// with no fill. We reproduce that by emitting `badge` alone — matching legacy's
+// rendering while using only classes that exist in innovic-theme.css.
+const JC_OP_BADGE: Record<ComputedJcOpStatus, string> = {
+  waiting: 'b-red',
+  available: 'b-blue',
+  in_progress: '', // legacy b-yellow — undefined on screen
+  running: '', // legacy b-running — undefined on screen
+  qc_pending: 'b-amber',
+  complete: 'b-green',
+  pr_raised: 'b-amber',
+  po_created: 'b-blue',
+  at_vendor: '', // legacy b-yellow — undefined on screen
+  received: 'b-cyan',
+  ready_for_pr: 'b-amber',
+  outsource: 'b-amber',
 };
 
 const RUNNING_TONE: Record<RunningOpStatus, string> = {
@@ -39,13 +47,7 @@ const LABELS: Record<ComputedJcOpStatus, string> = {
 };
 
 export function JcOpStatusBadge({ status }: { status: ComputedJcOpStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${JC_OP_TONE[status]}`}
-    >
-      {LABELS[status]}
-    </span>
-  );
+  return <span className={`badge ${JC_OP_BADGE[status]}`.trim()}>{LABELS[status]}</span>;
 }
 
 export function RunningOpStatusBadge({ status }: { status: RunningOpStatus }) {

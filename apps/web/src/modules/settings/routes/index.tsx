@@ -95,21 +95,19 @@ function SettingsPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr" style={{ marginBottom: 14 }}>
-        ⚙ Settings
-      </div>
-
-      <div className="panel" style={{ marginBottom: 12 }}>
+      {/* Legacy L13355–13365 puts the signed-in-user card ABOVE the section header. */}
+      <div className="panel" style={{ marginBottom: 16 }}>
         <div
           className="panel-body"
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
         >
           <div>
+            {/* Legacy L13357 shows cu.name here; MeResponse has no name, so email is the identity. */}
             <div className="fw-700" style={{ fontSize: 14 }}>
               {me?.email ?? 'Guest'}
             </div>
             <div className="text3" style={{ fontSize: 11 }}>
-              <span className="mono">{me?.role ?? 'unknown'}</span> access
+              {me?.role ?? 'unknown'} access
               {me?.companyId ? (
                 <>
                   {' '}
@@ -118,7 +116,7 @@ function SettingsPage(): React.JSX.Element {
               ) : null}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="button"
               className="btn btn-danger btn-sm"
@@ -133,16 +131,18 @@ function SettingsPage(): React.JSX.Element {
               disabled={signingOut}
             >
               {signingOut ? <Loader2 size={13} className="animate-spin" /> : null}
-              Sign out
+              Sign Out
             </button>
           </div>
         </div>
       </div>
 
+      <div className="section-hdr">Settings</div>
+
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">🏢 Company info</div>
+            <span className="panel-title">🏢 Company info</span>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               {isAdmin
                 ? 'Editable by admins. Used on printed documents (SO / JC / PO / DC / Invoice headers).'

@@ -1,5 +1,9 @@
-// Item new + edit routes (UI-003-01). Both wrap <ItemForm> in the
-// Innovic panel chrome with a section header + back link.
+// Item new + edit routes (UI-003-01). Legacy addItem/editItem
+// (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L11598, L11609) open
+// these as modals via showModal('Add Item'|'Edit Item', itemForm(...)). We serve
+// them as routes instead — a pre-existing, deliberate container divergence — so
+// the modal's hdr/body/footer shape maps onto panel-hdr + panel-body +
+// modal-footer, and the ✕ close maps onto the back link. Titles match legacy.
 
 import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -43,21 +47,14 @@ function ItemNewPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div className="panel-title">+ New Item</div>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Create a master record for a component or assembly.
-            </div>
-          </div>
+          <div className="panel-title">Add Item</div>
         </div>
-        <div className="panel-body">
-          <ItemForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/items' })}
-          />
-        </div>
+        <ItemForm
+          mode="create"
+          onSubmit={onSubmit}
+          submitError={submitError}
+          onCancel={() => void navigate({ to: '/items' })}
+        />
       </div>
     </div>
   );
@@ -112,27 +109,15 @@ function ItemEditPage(): React.JSX.Element {
       </Link>
       <div className="panel">
         <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--purple)', fontSize: 14, fontWeight: 700 }}
-            >
-              {item.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Item
-            </div>
-          </div>
+          <div className="panel-title">Edit Item</div>
         </div>
-        <div className="panel-body">
-          <ItemForm
-            mode="edit"
-            item={item}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/items/$id', params: { id } })}
-          />
-        </div>
+        <ItemForm
+          mode="edit"
+          item={item}
+          onSubmit={onSubmit}
+          submitError={submitError}
+          onCancel={() => void navigate({ to: '/items/$id', params: { id } })}
+        />
       </div>
     </div>
   );

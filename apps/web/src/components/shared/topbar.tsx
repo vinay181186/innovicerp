@@ -35,6 +35,19 @@ const TITLE_MAP: Record<string, string> = {
   '/saved-reports': 'Saved Reports',
   '/bom-masters': 'BOM Master',
   '/route-cards': 'Route Card Master',
+  // Acronym routes: the deriveTitle fallback humanizes per-word, so an absent key
+  // renders "Qc Call Register" / "Capa" / "Tpi". Labels below are legacy's own
+  // (its nav registry), not invented. QC Call Register additionally has no
+  // in-content title — legacy renders none and the port now matches — so the
+  // topbar is its ONLY title.
+  '/qc-call-register': 'QC Call Register',
+  '/qc-command': 'QC Command Center',
+  '/qc-history': 'QC History',
+  '/qc-processes': 'QC Process Master',
+  '/qc-docs': 'QC Documents',
+  '/incoming-qc': 'Incoming QC',
+  '/capa': 'CAPA',
+  '/tpi': 'TPI',
 };
 
 function deriveTitle(pathname: string): string {

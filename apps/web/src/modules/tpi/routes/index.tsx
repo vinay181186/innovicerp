@@ -99,7 +99,7 @@ function TpiPage(): React.JSX.Element {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 14,
+          marginBottom: 16,
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
@@ -127,14 +127,24 @@ function TpiPage(): React.JSX.Element {
       ) : (
         <>
           <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="panel-hdr">
-              <span className="panel-title">
+            {/* Legacy L21472 hand-rolls this strip rather than using .panel-hdr /
+                .panel-title (13px bold on --bg4, 10/14 padding) — mirrored. */}
+            <div
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg4)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: 13 }}>
                 <span style={{ color: 'var(--amber)' }}>⏳</span> Pending TPI ({pending.length})
               </span>
             </div>
-            <div className="panel-body">
+            <div style={{ padding: 10 }}>
               {pending.length === 0 ? (
-                <div className="empty-state" style={{ color: 'var(--green)' }}>
+                <div className="empty-state" style={{ padding: 20, color: 'var(--green)' }}>
                   ✅ No pending TPI calls
                 </div>
               ) : (
@@ -152,8 +162,17 @@ function TpiPage(): React.JSX.Element {
           </div>
 
           <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title">
+            {/* Legacy L21477 hand-rolls this strip too — same shape as Pending. */}
+            <div
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg4)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: 13 }}>
                 <span style={{ color: 'var(--green)' }}>✅</span> TPI Completed Records (
                 {completed.length})
               </span>
@@ -164,7 +183,7 @@ function TpiPage(): React.JSX.Element {
                 disabled={completed.length === 0}
                 onClick={() => void exportTpiRecords(completed)}
               >
-                ⬇ Export
+                ⬇ Excel
               </button>
             </div>
             <div className="tbl-wrap">
@@ -195,8 +214,12 @@ function TpiPage(): React.JSX.Element {
                       </td>
                     </tr>
                   ) : (
-                    completed.map((l) => (
-                      <tr key={l.logId}>
+                    completed.map((l, i) => (
+                      // Legacy L21451 stripes rows inline: odd --bg, even --bg3.
+                      // `.innovic-table tbody tr:nth-child(even) td` already paints
+                      // the even ones (td beats tr), so this supplies the --bg the
+                      // odd rows would otherwise miss.
+                      <tr key={l.logId} style={{ background: i % 2 === 0 ? 'var(--bg)' : 'var(--bg3)' }}>
                         <td className="fw-700 cyan" style={{ fontSize: 12 }}>
                           {l.jcCode}
                         </td>
@@ -316,7 +339,7 @@ function PendingTpi(props: {
         border: `1px solid ${open ? 'var(--green)' : 'var(--border)'}`,
         borderRadius: 8,
         marginBottom: 8,
-        background: 'var(--bg3)',
+        background: 'var(--bg2)',
         overflow: 'hidden',
       }}
     >
@@ -359,13 +382,22 @@ function PendingTpi(props: {
 
       {open ? (
         <div style={{ padding: 14, background: 'rgba(34,197,94,0.04)', borderTop: '2px solid var(--green)' }}>
-          <div className="form-grid">
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 12 }}>
+            ✅ TPI Entry — {o.jcCode} Op{o.opSeq}
+          </div>
+
+          {/* Legacy L21413-21416: Date | Shift */}
+          <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label">Date</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Date
+              </label>
               <input type="date" className="innovic-input" value={logDate} onChange={(e) => setLogDate(e.target.value)} />
             </div>
             <div className="form-grp">
-              <label className="form-label">Shift</label>
+              <label className="form-label" style={{ fontSize: 10 }}>
+                Shift
+              </label>
               <select className="innovic-select" value={shift} onChange={(e) => setShift(e.target.value as Shift)}>
                 {SHIFTS.map((s) => (
                   <option key={s} value={s}>
@@ -374,65 +406,133 @@ function PendingTpi(props: {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Legacy L21417-21420: the big centred Accept / Reject qty inputs */}
+          <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>
+              <label className="form-label" style={{ fontSize: 10, color: 'var(--green)' }}>
                 ✅ Accept Qty (max {o.qcPending})
               </label>
-              <input type="number" className="innovic-input" min={0} max={o.qcPending} value={accept} onChange={(e) => setAccept(e.target.value)} placeholder="0" style={{ fontWeight: 700, color: 'var(--green)' }} />
+              <input
+                type="number"
+                className="innovic-input"
+                min={0}
+                max={o.qcPending}
+                value={accept}
+                onChange={(e) => setAccept(e.target.value)}
+                placeholder="0"
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: 'var(--green)',
+                  textAlign: 'center',
+                  padding: 8,
+                  border: '2px solid var(--green)',
+                  background: 'var(--bg)',
+                }}
+              />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--red)' }}>
+              <label className="form-label" style={{ fontSize: 10, color: 'var(--red)' }}>
                 ❌ Reject Qty
               </label>
-              <input type="number" className="innovic-input" min={0} max={o.qcPending} value={reject} onChange={(e) => setReject(e.target.value)} placeholder="0" style={{ fontWeight: 700, color: 'var(--red)' }} />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--purple)' }}>
-                Inspector Name ★
-              </label>
-              <input className="innovic-input" value={inspector} onChange={(e) => setInspector(e.target.value)} placeholder="e.g. Mr. Sharma" />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--purple)' }}>
-                Organization ★
-              </label>
-              <input className="innovic-input" value={organization} onChange={(e) => setOrganization(e.target.value)} placeholder="e.g. L&T QA Department" />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--purple)' }}>
-                TPI Certificate No.
-              </label>
-              <input className="innovic-input" value={certNo} onChange={(e) => setCertNo(e.target.value)} placeholder="e.g. TPI-2026-045" />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Remarks</label>
-              <input className="innovic-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Observations…" />
-            </div>
-            <div className="form-grp form-full">
-              <QcReportAttach
-                companyId={companyId}
-                fileName={qcReportName}
-                onUploaded={(path, name) => {
-                  setQcReportPath(path);
-                  setQcReportName(name);
-                }}
-                onClear={() => {
-                  setQcReportPath(null);
-                  setQcReportName(null);
+              <input
+                type="number"
+                className="innovic-input"
+                min={0}
+                max={o.qcPending}
+                value={reject}
+                onChange={(e) => setReject(e.target.value)}
+                placeholder="0"
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: 'var(--red)',
+                  textAlign: 'center',
+                  padding: 8,
+                  border: '2px solid var(--red)',
+                  background: 'var(--bg)',
                 }}
               />
             </div>
           </div>
+
+          {/* Legacy L21421-21428: purple "TPI DETAILS (Required)" box. The purple
+              belongs to the box + its heading — legacy's labels inside are plain. */}
+          <div
+            style={{
+              border: '1px solid var(--purple)',
+              borderRadius: 8,
+              padding: 12,
+              marginBottom: 12,
+              background: 'rgba(139,92,246,0.04)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
+              🔍 TPI DETAILS (Required)
+            </div>
+            <div className="form-grid" style={{ gap: 10 }}>
+              <div className="form-grp">
+                <label className="form-label" style={{ fontSize: 10 }}>
+                  Inspector Name ★
+                </label>
+                <input className="innovic-input" style={{ fontWeight: 700 }} value={inspector} onChange={(e) => setInspector(e.target.value)} placeholder="e.g. Mr. Sharma" />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" style={{ fontSize: 10 }}>
+                  Organization ★
+                </label>
+                <input className="innovic-input" value={organization} onChange={(e) => setOrganization(e.target.value)} placeholder="e.g. L&T QA Department" />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" style={{ fontSize: 10 }}>
+                  TPI Certificate No.
+                </label>
+                <input className="innovic-input" style={{ fontWeight: 700, color: 'var(--purple)' }} value={certNo} onChange={(e) => setCertNo(e.target.value)} placeholder="e.g. TPI-2026-045" />
+              </div>
+              <div className="form-grp">
+                <label className="form-label" style={{ fontSize: 10 }}>
+                  Remarks
+                </label>
+                <input className="innovic-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Observations…" />
+              </div>
+            </div>
+          </div>
+
+          {/* Legacy L21429-21433: attach row sits between the details box and the
+              action buttons. QcReportAttach renders the same picker + × Remove. */}
+          <div style={{ marginBottom: 12 }}>
+            <QcReportAttach
+              companyId={companyId}
+              fileName={qcReportName}
+              onUploaded={(path, name) => {
+                setQcReportPath(path);
+                setQcReportName(name);
+              }}
+              onClear={() => {
+                setQcReportPath(null);
+                setQcReportName(null);
+              }}
+            />
+          </div>
+
           {err ? (
-            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>
+            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>
               {err}
             </div>
           ) : null}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onToggle}>
               Cancel
             </button>
-            <button type="button" className="btn btn-success" disabled={submit.isPending} onClick={() => void send()}>
+            <button
+              type="button"
+              className="btn"
+              style={{ background: 'var(--green)', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 24px' }}
+              disabled={submit.isPending}
+              onClick={() => void send()}
+            >
               {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit TPI
             </button>
           </div>

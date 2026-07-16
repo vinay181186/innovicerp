@@ -1,12 +1,32 @@
-// Sales Order form — header + type-branching body. 1:1 mirror of legacy
+// Sales Order form — header + type-branching body. Mirror of legacy
 // soHeaderForm (L12183) / _soLinesHtml (L12158) / _soLineRowHtml (L11985) /
-// addSO (L12413), with three deliberate, user-approved deviations from the HTML:
-//   • Status + Cost Center are NOT on the create form (removed by product
-//     decision; Finance derives the cost centre from the SO No.).
+// _soTotalsHtml (L12366) / _soMilestonesHtml (L12392).
+//
+// Verified legacy delegation chain (soForm L12634 and editSO L12528 are both
+// one-line delegates and render nothing themselves):
+//   create → addSO(existingSoNo) L12413 → showModalLg(title, soHeaderForm(prefill))
+//   edit   → _editFullSO(soNo)   L12531 → showModalLg(title, soHeaderForm(first))
+//            (editSOLine L12465 edits ONE line — legacy stores one row per SO
+//             line; our edit route loads the whole SO, so _editFullSO is the
+//             true counterpart.)
+// Both modes call the SAME builder, so legacy is field-identical across modes
+// by construction, and both derive the footer label "Save SO" from the modal
+// title via showModalLg L28034 — hence one shared submit label here.
+//
+// `isEquip` is NOT a mode branch: legacy derives it from the record's type
+// (L12186) and re-toggles it live on change (_onSoTypeChangeFull L12175), which
+// is what watch('header.type') does here.
+//
+// Deliberate, user-approved deviations from the HTML:
+//   • Status + Cost Center are NOT on the form (removed by product decision;
+//     Finance derives the cost centre from the SO No.). Legacy's 2-option
+//     Status select could not represent our 5 SO_STATUSES anyway.
 //   • Item Code on a component line MUST come from Item Master — enforced by a
 //     server-searched picker (you can only pick a master item), matching the
 //     legacy _badIC "Item not in Item Master" rule (L12443).
 //   • Equipment value is captured ₹/unit (total = rate × qty), not an absolute.
+//   • Due Date is captured once on the header and applied to every line on save;
+//     legacy captures it per line (see the Due Date column at L12164).
 //
 // Everything else mirrors the HTML: searchable client + item pickers, line
 // table with per-line Amount, SO totals (subtotal / GST / grand + item·pcs
@@ -28,6 +48,7 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
+import { inrFormat } from '@/lib/print/doc-print';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
@@ -439,8 +460,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid(false))}>
-      {/* Header */}
-      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+      {/* Header — legacy soHeaderForm L12196 renders a 2-col `.form-grid` in the
+          order: SO/WO No. · Date · Type · Client · Client PO No. · Remarks · GST %. */}
+      <div className="form-grid" style={{ marginBottom: 16 }}>
         <DocNumberInput
           type="sales_order"
           label="SO/WO No."
@@ -465,13 +487,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </select>
         </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
-          <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
-            {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
-          </select>
-        </div>
-
         <div className="form-grp form-full">
           <label className="form-label">Client<span className="req">★</span> (type to search)</label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
@@ -487,7 +502,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 onSearch={setClientSearch}
                 loading={clientsFetching}
                 options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
-                placeholder="🔍 Type client code or name…"
+                placeholder="🔍 Type client code or name..."
                 valueLabel={
                   selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientLabel || undefined
                 }
@@ -504,8 +519,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            {/* No ★: clientPoNo is schema-optional (max(64).optional()) and legacy
+                stars neither mode — an attached Email Ref satisfies the rule. */}
             <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
-              Client PO No. {isCreate ? <span className="req">★</span> : null}
+              Client PO No.
             </label>
             <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
             {emailFileName ? (
@@ -558,17 +575,24 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           ) : null}
         </div>
 
-        <div className="form-grp form-full">
+        <div className="form-grp">
           <label className="form-label" htmlFor="remarks">Remarks</label>
           <textarea id="remarks" className="innovic-textarea" rows={2} placeholder="Notes" {...register('header.remarks')} />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
+          <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
+            {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
+          </select>
         </div>
       </div>
 
       {isEquip ? (
         /* ── Equipment Details (legacy L12258) ── */
         <div>
-          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '4px 0 8px' }}>▸ EQUIPMENT DETAILS</div>
-          <div className="form-grid form-grid-3">
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '12px 0 8px' }}>▸ EQUIPMENT DETAILS</div>
+          <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Equipment / Part No.<span className="req">★</span></label>
               <input className="innovic-input" autoComplete="off" list="dlSoEquipItems" placeholder="Equipment ID" {...register('lines.0.itemCodeText', { required: isEquip ? 'Part No. is required' : false, onChange: (e) => fillEquipFromItem(e.target.value) })} />
@@ -601,8 +625,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       ) : (
         /* ── Component / With-Material line items (legacy L12278) ── */
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>▸ SO Line Items</div>
+          {/* Legacy L12279 styles this heading exactly like ▸ EQUIPMENT DETAILS. */}
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '12px 0 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>▸ SO LINE ITEMS</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadSoLineTemplate()}>⬇ Template</button>
               <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
@@ -643,13 +668,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
             <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 940 }}>
               <thead>
+                {/* Legacy column order (L12163): # · Item Code ★ · Part Name ·
+                    Material · Drawing No. · Client PO Ln · Qty ★ · Rate ₹ · Amount.
+                    UOM is ours (legacy carries it invisibly) — kept, not dropped. */}
                 <tr>
-                  <th style={{ width: '5%' }}>Sr No.</th>
-                  <th style={{ width: '9%' }}>Client PO Ln</th>
+                  <th style={{ width: '5%' }}>#</th>
                   <th style={{ width: '20%' }}>Item Code <span className="req">★</span></th>
                   <th style={{ width: '15%' }}>Part Name</th>
                   <th style={{ width: '9%' }}>Material</th>
                   <th style={{ width: '11%' }}>Drawing No.</th>
+                  <th style={{ width: '9%' }}>Client PO Ln</th>
                   <th style={{ width: '6%' }}>UOM</th>
                   <th style={{ width: '8%' }} className="td-ctr">Qty <span className="req">★</span></th>
                   <th style={{ width: '8%', color: 'var(--green)' }}>Rate ₹</th>
@@ -659,7 +687,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               </thead>
               <tbody>
                 {fields.length === 0 ? (
-                  <tr><td colSpan={11} className="empty-state" style={{ padding: 14 }}>No lines yet — click <strong>+ Add Line</strong> or import from Excel.</td></tr>
+                  /* colSpan 11 = the real column count; legacy's colspan="10"
+                     (L12166) undercounts its own 11 columns — bug not copied. */
+                  <tr><td colSpan={11} className="empty-state" style={{ padding: 14 }}>No lines yet — click &ldquo;+ Add Line&rdquo;</td></tr>
                 ) : (
                   fields.map((field, idx) => {
                     const ln = watchedLines?.[idx];
@@ -667,7 +697,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     return (
                       <tr key={field.id}>
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td>
                           <SearchableSelect
                             id={`soln-ic-${idx}`}
@@ -676,21 +705,23 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             onSearch={setItemSearch}
                             loading={itemsFetching}
                             options={items.map((it) => ({ id: it.id, code: it.code, name: it.name }))}
-                            placeholder="🔍 Search item…"
+                            placeholder="🔍 Search item code or name..."
                             valueLabel={ln?.itemCodeText || undefined}
                             // Show only the code in the field once picked; the dropdown
                             // still lists "CODE — Name".
                             selectedLabel={(o) => o.code ?? o.name}
                           />
                         </td>
-                        {/* Auto-filled from the item master — read-only (set by pickItem). */}
-                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.partName` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.material` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.drawingNo` as const)} /></td>
-                        <td><input className="innovic-input" autoComplete="off" readOnly title="From Item Master" style={{ background: 'var(--bg4)', color: 'var(--text2)' }} {...register(`lines.${idx}.uom` as const)} /></td>
-                        <td><input type="number" min={1} className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
-                        <td><input type="number" step="0.01" min={0} className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
-                        <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${amt.toFixed(2)}` : '—'}</td>
+                        {/* Auto-filled from the item master — read-only (set by pickItem).
+                            `.innovic-input[readonly]` already carries the affordance. */}
+                        <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.partName` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.material` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.drawingNo` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
+                        <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
+                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                         <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button></td>
                       </tr>
                     );
@@ -699,50 +730,66 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               </tbody>
             </table>
           </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>ⓘ Items must exist in Item Master first — pick from the search list. Use <b>⬇ Template</b> → fill in Excel → <b>📄 Import Excel</b> to bulk-add.</div>
+          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>ⓘ Items must exist in Item Master first. Add lines manually or use <b>⬇ Template</b> → fill in Excel → <b>📄 Import Excel</b> to bulk-add lines.</div>
 
-          {/* SO Totals (legacy L12291 / _soTotalsHtml L12366) */}
-          <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '10px 16px', background: 'rgba(34,197,94,0.03)' }}>
-            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <Tot label="Subtotal" value={subtotal} />
-              <Tot label={`GST (${gstPercent}%)`} value={gstAmt} />
-              <Tot label="Grand Total" value={grand} bold />
+          {/* SO Totals (legacy L12291 / _soTotalsHtml L12366) — right-aligned
+              stacked rows in a min-width:320px block. */}
+          <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '12px 16px', background: 'rgba(34,197,94,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ minWidth: 320 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
+                  <span className="text3">Subtotal:</span>
+                  <span className="mono fw-700 text2">₹{inrFormat(subtotal)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
+                  <span className="text3">GST ({gstPercent}%):</span>
+                  <span className="mono fw-700 amber">₹{inrFormat(gstAmt)}</span>
+                </div>
+                <div style={{ borderTop: '2px solid var(--green)', margin: '4px 0' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 16 }}>
+                  <span className="green" style={{ fontWeight: 800 }}>GRAND TOTAL:</span>
+                  <span className="mono fw-700 green" style={{ fontSize: 18 }}>₹{inrFormat(grand)}</span>
+                </div>
+                <div className="text3" style={{ fontSize: 10, textAlign: 'right' }}>{lineCount} items • {totalPcs} total pcs</div>
+              </div>
             </div>
-            <div className="text3" style={{ fontSize: 10, textAlign: 'right', marginTop: 4 }}>{lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs</div>
           </div>
 
-          {/* Delivery Schedule / Milestones (ISSUE-015, legacy L12294) */}
-          <div style={{ marginTop: 16 }}>
+          {/* Delivery Schedule / Milestones (ISSUE-015, legacy L12294 /
+              _soMilestonesHtml L12392) — purple-bordered box + plain table.
+              `--purple` is a real token with no utility class → inline. */}
+          <div style={{ border: '1px solid var(--purple)', borderRadius: 8, padding: 12, marginTop: 12, background: 'rgba(139,92,246,0.03)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div className="form-label" style={{ fontSize: 12, marginBottom: 0, textTransform: 'uppercase' }}>📅 Delivery Schedule / Milestones</div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>📅 DELIVERY SCHEDULE / MILESTONES</span>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
             </div>
             {msFields.length === 0 ? (
-              <div className="text3" style={{ fontSize: 11 }}>No delivery lots planned. Optional — click <strong>Add Lot</strong> to schedule partial deliveries.</div>
+              <div className="text3" style={{ fontSize: 11, padding: 8, textAlign: 'center' }}>No delivery lots defined. Click + Add Lot for staggered delivery.</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {msFields.map((field, idx) => (
-                  <div key={field.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, background: 'var(--bg2)', display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div className="form-grp" style={{ width: 80 }}>
-                      <label className="form-label">Lot #</label>
-                      <input type="number" min={1} className="innovic-input" {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} />
-                    </div>
-                    <div className="form-grp" style={{ width: 110 }}>
-                      <label className="form-label">Qty</label>
-                      <input type="number" min={0} className="innovic-input" {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} />
-                    </div>
-                    <div className="form-grp" style={{ width: 160 }}>
-                      <label className="form-label">Due Date</label>
-                      <input type="date" className="innovic-input" {...register(`milestones.${idx}.dueDate` as const)} />
-                    </div>
-                    <div className="form-grp" style={{ flex: 1, minWidth: 160 }}>
-                      <label className="form-label">Remarks</label>
-                      <input className="innovic-input" autoComplete="off" placeholder="e.g. 1st lot" {...register(`milestones.${idx}.remarks` as const)} />
-                    </div>
-                    <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button>
-                  </div>
-                ))}
-              </div>
+              <table className="innovic-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th>Lot</th>
+                    <th>Qty</th>
+                    <th>Due Date</th>
+                    <th>Remarks</th>
+                    <th style={{ width: 30 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {msFields.map((field, idx) => (
+                    <tr key={field.id}>
+                      {/* Legacy prints the row index here; ours keeps the editable
+                          Lot # the save reads (`lotNo`) — feature retained. */}
+                      <td style={{ width: 80 }}><input type="number" min={1} className="innovic-input td-ctr mono fw-700" style={{ color: 'var(--purple)' }} {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} /></td>
+                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
+                      <td><input type="date" className="innovic-input" style={{ fontSize: 11 }} {...register(`milestones.${idx}.dueDate` as const)} /></td>
+                      <td><input className="innovic-input" autoComplete="off" placeholder="e.g. 1st lot" style={{ fontSize: 11 }} {...register(`milestones.${idx}.remarks` as const)} /></td>
+                      <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
@@ -769,9 +816,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               Save as draft
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
+          {/* Legacy footer: addSO L12427 / editSOLine L12476 / _editFullSO L12619
+              all reach showModalLg (L28032) with no explicit saveLabel, so the
+              title-derived label is "Save SO" in BOTH modes, on .btn-success. */}
+          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create SO')}
+            {props.submitLabel ?? '✓ Save SO'}
           </button>
         </div>
       </div>
@@ -854,15 +904,6 @@ function QuickAddClient({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Tot({ label, value, bold }: { label: string; value: number; bold?: boolean }): React.JSX.Element {
-  return (
-    <div style={{ textAlign: 'right' }}>
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
-      <div className="mono" style={{ fontSize: bold ? 18 : 14, fontWeight: 700, color: bold ? 'var(--green)' : 'var(--text)' }}>₹{value.toFixed(2)}</div>
     </div>
   );
 }

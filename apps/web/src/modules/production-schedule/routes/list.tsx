@@ -16,6 +16,33 @@ import { useProductionSchedule, useRescheduleJcOp } from '../api';
 const COL_WIDTH = 48; // px per day
 const ROW_HEIGHT = 48;
 
+const FILTER_BTNS = [
+  ['all', 'All Ops'],
+  ['active', 'Active Only'],
+  ['history', 'History'],
+  ['future', 'Future'],
+] as const satisfies ReadonlyArray<readonly [ProductionScheduleFilter, string]>;
+
+// Bar colours — legacy _psBarColor (HTML L15570) + legend (L15662-15666), with
+// legacy's hardcoded hex mapped to the nearest design token (legacy was a dark
+// theme; this port is light). Legend and bars read from this one source so the
+// two can't drift apart.
+const BAR_PALETTE: Record<
+  ProductionScheduleBar['colorKind'],
+  { bg: string; border: string; fg: string }
+> = {
+  ok: { bg: 'var(--sig-ok-bg)', border: 'var(--sig-ok)', fg: 'var(--green2)' },
+  tight: { bg: 'var(--sig-warn-bg)', border: 'var(--sig-warn)', fg: 'var(--amber2)' },
+  at_risk: { bg: 'var(--sig-critical-bg)', border: 'var(--sig-critical)', fg: 'var(--red2)' },
+  running: { bg: 'var(--sig-info)', border: 'var(--blue2)', fg: '#fff' },
+  done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
+};
+
+// FIXME(ISSUE-065): toISOString() yields the UTC date, so between 00:00 and
+// 05:30 IST this returns YESTERDAY. That misdates the default window start,
+// the "Today" button and the highlighted "today" column on a date-critical
+// screen. Legacy's today() (HTML L1485) used LOCAL date parts and was correct.
+// Not fixed here: needs one shared IST helper across all 53 call sites.
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -136,20 +163,15 @@ function ProductionSchedulePage(): React.JSX.Element {
       >
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11, color: 'var(--text3)', marginRight: 4 }}>Show:</span>
-          {(['all', 'active', 'history', 'future'] as const).map((f) => (
+          {FILTER_BTNS.map(([f, label]) => (
             <button
               key={f}
               type="button"
-              className="btn btn-sm"
-              style={{
-                fontSize: 11,
-                background: filter === f ? 'var(--blue)' : 'var(--bg4)',
-                color: filter === f ? '#fff' : 'var(--text2)',
-                border: `1px solid ${filter === f ? 'var(--blue)' : 'var(--border)'}`,
-              }}
+              className={`btn ${filter === f ? 'btn-primary' : 'btn-ghost'} btn-sm`}
+              style={{ fontSize: 10, padding: '4px 10px' }}
               onClick={() => setFilter(f)}
             >
-              {f === 'all' ? 'All Ops' : f === 'active' ? 'Active Only' : f === 'history' ? 'History' : 'Future'}
+              {label}
             </button>
           ))}
         </div>
@@ -196,11 +218,11 @@ function ProductionSchedulePage(): React.JSX.Element {
           borderRadius: 6,
         }}
       >
-        <LegendDot bg="#dcfce7" border="#16a34a" label="On schedule" />
-        <LegendDot bg="#fef3c7" border="#d97706" label="Tight (≤ 2-day buffer)" />
-        <LegendDot bg="#fee2e2" border="#dc2626" label="Will miss due date" />
-        <LegendDot bg="#dbeafe" border="#1d4ed8" label="Currently running" />
-        <LegendDot bg="#e2e8f0" border="#64748b" label="Completed" />
+        <LegendDot kind="ok" label="On schedule" />
+        <LegendDot kind="tight" label="Tight (≤ 2-day buffer)" />
+        <LegendDot kind="at_risk" label="Will miss due date" />
+        <LegendDot kind="running" label="Currently running" />
+        <LegendDot kind="done" label="Completed" />
       </div>
 
       {/* Stats */}
@@ -213,10 +235,10 @@ function ProductionSchedulePage(): React.JSX.Element {
         }}
       >
         <StatCard label="Total Ops" value={stats.total} color="var(--text)" />
-        <StatCard label="On Schedule" value={stats.onSchedule} color="var(--green)" />
-        <StatCard label="Tight" value={stats.tight} color="var(--amber)" />
-        <StatCard label="At Risk" value={stats.atRisk} color="var(--red)" />
-        <StatCard label="Running Now" value={stats.running} color="var(--blue)" />
+        <StatCard label="On Schedule" value={stats.onSchedule} color="var(--sig-ok)" />
+        <StatCard label="Tight" value={stats.tight} color="var(--sig-warn)" />
+        <StatCard label="At Risk" value={stats.atRisk} color="var(--sig-critical)" />
+        <StatCard label="Running Now" value={stats.running} color="var(--sig-info)" />
         <StatCard label="Unscheduled" value={stats.unscheduled} color="var(--text3)" />
       </div>
 
@@ -238,22 +260,23 @@ function ProductionSchedulePage(): React.JSX.Element {
           </div>
         </div>
       ) : !data || data.machines.length === 0 ? (
-        <div className="panel" style={{ padding: 40, textAlign: 'center' }}>
+        <div className="panel empty-state">
           <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>No operations to display</div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-            No Job Card operations match the current filter or window. Try "All Ops" or move the
-            window date.
+          <div style={{ fontSize: 11 }}>
+            No Job Card operations match the current filter or window. Try &quot;All Ops&quot;
+            filter, move the window date, or create some Job Cards first.
           </div>
         </div>
       ) : (
+        <>
         <div className="panel" style={{ padding: 0, overflow: 'auto', maxHeight: 600 }}>
           <table
             style={{
               borderCollapse: 'collapse',
               width: '100%',
               fontSize: 10,
-              minWidth: 200 + 30 * COL_WIDTH,
+              minWidth: 220 + 30 * COL_WIDTH,
             }}
           >
             <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg2)' }}>
@@ -281,7 +304,11 @@ function ProductionSchedulePage(): React.JSX.Element {
                     : d.isWeekend
                       ? 'var(--bg3)'
                       : 'var(--bg2)';
-                  const col = d.isToday ? '#3b82f6' : d.isWeekend ? 'var(--text3)' : 'var(--text)';
+                  const col = d.isToday
+                    ? 'var(--sig-info)'
+                    : d.isWeekend
+                      ? 'var(--text3)'
+                      : 'var(--text)';
                   return (
                     <th
                       key={d.iso}
@@ -318,12 +345,12 @@ function ProductionSchedulePage(): React.JSX.Element {
                       fontWeight: 700,
                     }}
                   >
-                    <div>{m.machineCode}</div>
-                    {m.machineName ? (
+                    <div>{m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}</div>
+                    {m.machineType ? (
                       <div
                         style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400 }}
                       >
-                        {m.machineName}
+                        {m.machineType}
                       </div>
                     ) : null}
                   </td>
@@ -364,6 +391,29 @@ function ProductionSchedulePage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+
+        {/* Help text — legacy HTML L15762. Legacy's "Click any bar to see
+            operation details" and "Auto-Schedule ..." clauses are omitted:
+            neither the op-detail modal nor the Auto-Schedule button is ported
+            (no endpoint exists), so the text would advertise features this
+            page does not have. */}
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            background: 'var(--sig-info-bg)',
+            border: '1px solid var(--sig-info-bd)',
+            borderRadius: 6,
+            fontSize: 11,
+            color: 'var(--text2)',
+            lineHeight: 1.6,
+          }}
+        >
+          <b style={{ color: 'var(--sig-info)' }}>How to use:</b>{' '}
+          {canWrite ? <><b>Drag</b> a bar to a different machine row or day to reschedule. </> : null}
+          Color shows schedule health: green = on track, yellow = tight, red = will miss due date.
+        </div>
+        </>
       )}
     </div>
   );
@@ -383,22 +433,12 @@ function Bar({
     30 - colIdx,
   );
   const widthPx = spanDays * COL_WIDTH - 4;
-  const palette: Record<
-    string,
-    { bg: string; border: string; fg: string }
-  > = {
-    ok: { bg: '#dcfce7', border: '#16a34a', fg: '#166534' },
-    tight: { bg: '#fef3c7', border: '#d97706', fg: '#92400e' },
-    at_risk: { bg: '#fee2e2', border: '#dc2626', fg: '#7f1d1d' },
-    running: { bg: '#dbeafe', border: '#1d4ed8', fg: '#1e3a8a' },
-    done: { bg: '#e2e8f0', border: '#64748b', fg: '#334155' },
-  };
-  const c = palette[bar.colorKind] ?? palette.ok!;
+  const c = BAR_PALETTE[bar.colorKind];
   return (
     <div
       draggable={canWrite}
       onDragStart={(e) => e.dataTransfer.setData('text/jc-op-id', bar.jcOpId)}
-      title={`${bar.jcCode} Op${bar.opSeq} — ${bar.operation}${bar.dueDate ? ` (Due ${bar.dueDate})` : ''}`}
+      title={`${bar.jcCode} Op${bar.opSeq} ${bar.operation}${bar.dueDate ? ` (Due ${bar.dueDate})` : ''}`}
       style={{
         position: 'absolute',
         left: 2,
@@ -417,38 +457,52 @@ function Bar({
         zIndex: 2 + colIdx,
       }}
     >
-      <div style={{ fontWeight: 700 }}>
-        {bar.jcCode} Op{bar.opSeq}
+      <div
+        style={{
+          fontWeight: 700,
+          fontSize: 10,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {bar.jcCode} · Op{bar.opSeq}
       </div>
-      <div style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-        {bar.operation}
+      <div
+        style={{
+          fontSize: 9,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {bar.operation || '-'}
       </div>
     </div>
   );
 }
 
 function LegendDot({
-  bg,
-  border,
+  kind,
   label,
 }: {
-  bg: string;
-  border: string;
+  kind: ProductionScheduleBar['colorKind'];
   label: string;
 }): React.JSX.Element {
+  const c = BAR_PALETTE[kind];
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
       <span
         style={{
-          width: 12,
-          height: 12,
-          borderRadius: 3,
-          background: bg,
-          border: `1.5px solid ${border}`,
           display: 'inline-block',
+          width: 14,
+          height: 10,
+          background: c.bg,
+          border: `1.5px solid ${c.border}`,
+          borderRadius: 3,
         }}
       />
-      <span style={{ color: 'var(--text2)' }}>{label}</span>
+      {label}
     </div>
   );
 }
@@ -470,10 +524,9 @@ function StatCard({
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 9,
           textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
+          letterSpacing: '.04em',
         }}
       >
         {label}

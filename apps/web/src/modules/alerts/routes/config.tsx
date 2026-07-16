@@ -1,26 +1,26 @@
 // Alert configuration (T-041d Phase A). Admin/manager-only — toggles
 // per-rule on/off, persisted as alert_config rows. Mirrors legacy
-// `renderAlertConfig` (legacy HTML L22427) which gated on `isAdmin()`;
-// our service layer additionally allows `manager` role to match the
-// `manager_write` RLS policy.
+// `renderAlertConfig` (legacy HTML L22427):
+//   - `.section-hdr` "🔔 Alert Configuration" (L22446)
+//   - `.panel > .tbl-wrap > table`: Active · Code · Department · Alert Name
+//     (L22447-22449); `<th style="width:40px">` on Active
+//   - checkbox `accent-color:var(--green)`, name cell dimmed to opacity .4
+//     when inactive (L22438-22441)
+//   - tip line (L22450)
+// Legacy gated on `isAdmin()` and returned a bare `.empty-state`
+// "⛔ Admin access required" (L22428); our service layer additionally allows
+// `manager` to match the `manager_write` RLS policy — gate left as-is.
+//
+// Port-only beyond legacy's four columns: the rule `description` sub-line and
+// the Status (override/default) column — both real server fields.
 
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Settings } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAlertConfig, useToggleAlert } from '../api';
-import { DEPT_LABEL, DEPT_TONE } from '../lib/dept';
+import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 
 export const alertsConfigRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,41 +33,42 @@ function AlertsConfigPage() {
   const canEdit = session?.role === 'admin' || session?.role === 'manager';
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/alerts">
-            <ArrowLeft />
-            Back to alerts
-          </Link>
-        </Button>
+    <div>
+      {/* Header — legacy L22446 is a bare `.section-hdr`. The Back link has no
+          legacy counterpart (legacy navigated from its sidebar); kept because
+          it is the port's only in-page route back to the dashboard. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          🔔 Alert Configuration
+        </div>
+        <Link to="/alerts" className="btn btn-ghost" style={{ fontSize: 12 }}>
+          ← Back to Alerts
+        </Link>
+      </div>
 
-        <div className="flex items-start gap-3">
-          <Settings className="mt-1 h-6 w-6 text-muted-foreground" />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Alert configuration</h1>
-            <p className="text-sm text-muted-foreground">
-              Toggle per-rule on/off for this company. Operators see the dashboard but can't change
-              toggles.
-            </p>
+      {!canEdit ? (
+        // Legacy L22428: bare `.empty-state` "⛔ Admin access required" (its
+        // inline padding:40px is already the class default in our theme). The
+        // role sentence below is ours — it is the only thing telling the user
+        // why the table is hidden.
+        <div className="empty-state">
+          ⛔ Admin access required
+          <div style={{ fontSize: 11, marginTop: 8 }}>
+            Your role ({session?.role ?? 'unknown'}) cannot change alert configuration. The dashboard
+            remains visible — only admin/manager can flip toggles.
           </div>
         </div>
-
-        {!canEdit ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Admin access required</CardTitle>
-              <CardDescription>
-                Your role ({session?.role ?? 'unknown'}) cannot change alert configuration. The
-                dashboard remains visible — only admin/manager can flip toggles.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <ConfigTable />
-        )}
-      </div>
-    </main>
+      ) : (
+        <ConfigTable />
+      )}
+    </div>
   );
 }
 
@@ -76,28 +77,27 @@ function ConfigTable() {
   const toggle = useToggleAlert();
   const [pending, setPending] = useState<string | null>(null);
 
+  // Legacy read from an in-memory `db` and had no loading/error states; these
+  // mirror the sibling dashboard's `.panel > .empty-state` shape.
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="py-6">
-          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading…
-          </div>
-        </CardContent>
-      </Card>
+      <div className="panel">
+        <div className="empty-state">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading…
+        </div>
+      </div>
     );
   }
   if (isError || !data) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Failed to load configuration</CardTitle>
-          <CardDescription>
-            {error instanceof Error ? error.message : 'Unknown error'}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div className="panel">
+        <div className="empty-state">
+          <span style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load configuration.'}
+          </span>
+        </div>
+      </div>
     );
   }
 
@@ -112,58 +112,77 @@ function ConfigTable() {
   };
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-16">Active</TableHead>
-              <TableHead className="w-24">Code</TableHead>
-              <TableHead className="w-32">Dept</TableHead>
-              <TableHead>Alert</TableHead>
-              <TableHead className="w-28">Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.entries.map((e) => (
-              <TableRow key={e.code} className={e.active ? '' : 'opacity-60'}>
-                <TableCell>
-                  <input
-                    type="checkbox"
-                    checked={e.active}
-                    disabled={pending === e.code}
-                    onChange={(ev) => onToggle(e.code, ev.target.checked)}
-                    className="h-4 w-4 cursor-pointer accent-emerald-600 disabled:cursor-wait"
-                  />
-                </TableCell>
-                <TableCell>
-                  <span className="font-mono text-xs text-muted-foreground">{e.code}</span>
-                </TableCell>
-                <TableCell>
-                  <span className={`text-xs font-bold uppercase ${DEPT_TONE[e.dept].text}`}>
-                    {DEPT_LABEL[e.dept]}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <div className="font-medium">{e.name}</div>
-                  <div className="text-xs text-muted-foreground">{e.description}</div>
-                </TableCell>
-                <TableCell>
-                  {e.isOverridden ? (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                      override
+    <>
+      {/* Table — legacy L22447-22449. Legacy's zebra striping was an inline
+          per-row background; our `.innovic-table tbody tr:nth-child(even) td`
+          rule does the same job. */}
+      <div className="panel">
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th style={{ width: 40 }}>Active</th>
+                <th>Code</th>
+                <th>Department</th>
+                <th>Alert Name</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.entries.map((e) => (
+                <tr key={e.code}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={e.active}
+                      disabled={pending === e.code}
+                      onChange={(ev) => onToggle(e.code, ev.target.checked)}
+                      style={{
+                        width: 16,
+                        height: 16,
+                        accentColor: 'var(--green)',
+                        cursor: pending === e.code ? 'wait' : 'pointer',
+                      }}
+                    />
+                  </td>
+                  <td className="mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    {e.code}
+                  </td>
+                  <td>
+                    <span style={{ fontWeight: 700, color: DEPT_COLOR[e.dept] }}>
+                      {DEPT_LABEL[e.dept]}
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
-                      default
-                    </span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+                  </td>
+                  <td style={{ fontWeight: 600, opacity: e.active ? 1 : 0.4 }}>
+                    {e.name}
+                    <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)' }}>
+                      {e.description}
+                    </div>
+                  </td>
+                  <td>
+                    {e.isOverridden ? (
+                      <span className="badge b-amber">override</span>
+                    ) : (
+                      <span className="badge b-grey">default</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Tip — legacy L22450, minus its trailing clause "for users with
+          department access". Legacy `renderAlerts` filtered rows through
+          `_hasDeptAccess` (L22326); our `runAllAlerts` does not — every
+          company member sees every active alert. The clause is dropped rather
+          than copied so the page does not advertise a filter that is not
+          wired up (see the dept-access gap raised against alerts/service.ts;
+          fixing it is a backend authorization change, not a UI one). */}
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+        💡 Toggle alerts on/off. Active alerts will show in Alerts Dashboard.
+      </div>
+    </>
   );
 }

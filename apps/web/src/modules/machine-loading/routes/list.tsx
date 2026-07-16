@@ -25,11 +25,34 @@ export const machineLoadingRoute = createRoute({
   component: MachineLoadingPage,
 });
 
+// Legacy badge() (HTML L1959-1970) maps load status → colour:
+// Overloaded→b-red · High Load→b-amber · Manageable→b-green · Clear→b-green.
 function loadBadgeClass(status: MachineLoadStatus): string {
   if (status === 'Overloaded') return 'b-red';
   if (status === 'High Load') return 'b-amber';
-  if (status === 'Manageable') return 'b-green';
-  return 'b-grey';
+  return 'b-green'; // Manageable + Clear (legacy L1963)
+}
+
+// Legacy badge() op-status map (L1961-1963). `b-yellow` (In Progress) and
+// `b-running` (Running) are declared ONLY in legacy's print-only <style> block
+// (L10559-10561), never in its main sheet at L10 — so legacy renders both as an
+// unstyled `.badge` pill on screen. Empty class here reproduces that exactly;
+// neither class exists in our theme either.
+const OP_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
+  complete: { label: 'Complete', cls: 'b-green' },
+  in_progress: { label: 'In Progress', cls: '' },
+  running: { label: 'Running', cls: '' },
+  available: { label: 'Available', cls: 'b-blue' },
+  waiting: { label: 'Waiting', cls: 'b-red' },
+  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
+};
+
+function OpStatusBadge({ status }: { status: string }): React.JSX.Element {
+  const known = OP_STATUS_BADGES[status];
+  // Legacy's fallback is `m[status] || 'b-grey'` with the raw status text.
+  const label = known?.label ?? status.replaceAll('_', ' ');
+  const cls = known ? known.cls : 'b-grey';
+  return <span className={cls ? `badge ${cls}` : 'badge'}>{label}</span>;
 }
 
 function barColor(pct: number): string {
@@ -39,17 +62,12 @@ function barColor(pct: number): string {
   return 'var(--bg5)';
 }
 
+// Legacy progBar() (L1972-1975) — .prog-wrap/.prog-bar are ported to our theme
+// (innovic-theme.css L763/L769); only the width+colour are inline, as in legacy.
 function ProgBar({ pct }: { pct: number }): React.JSX.Element {
   return (
-    <div style={{ height: 6, background: 'var(--bg5)', borderRadius: 3, overflow: 'hidden' }}>
-      <div
-        style={{
-          width: `${Math.min(100, pct)}%`,
-          height: '100%',
-          background: barColor(pct),
-          borderRadius: 3,
-        }}
-      />
+    <div className="prog-wrap">
+      <div className="prog-bar" style={{ width: `${Math.min(100, pct)}%`, background: barColor(pct) }} />
     </div>
   );
 }
@@ -81,6 +99,12 @@ function MachineLoadingPage(): React.JSX.Element {
     () => (selMachineId ? machines.filter((m) => m.machineId === selMachineId) : machines),
     [machines, selMachineId],
   );
+
+  // Legacy's selMach IS the machine code (its PK); ours is a uuid, so the panel
+  // title (legacy L5179: `${selMach} — Job Queue`) needs a lookup.
+  const selMachineCode = selMachineId
+    ? (machines.find((m) => m.machineId === selMachineId)?.machineCode ?? null)
+    : null;
 
   function selectMachine(id: string): void {
     void navigate({
@@ -118,6 +142,7 @@ function MachineLoadingPage(): React.JSX.Element {
           <div
             style={{
               display: 'flex',
+              background: 'var(--bg3)',
               border: '1px solid var(--border2)',
               borderRadius: 'var(--radius)',
               overflow: 'hidden',
@@ -179,11 +204,12 @@ function MachineLoadingPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Machine cards */}
+          {/* Machine cards — legacy .mach-cards (L221): 5 fixed columns, gap 10,
+              margin-bottom 16. Not ported to our theme, so inlined verbatim. */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gridTemplateColumns: 'repeat(5, 1fr)',
               gap: 10,
               marginBottom: 16,
             }}
@@ -204,7 +230,7 @@ function MachineLoadingPage(): React.JSX.Element {
           </div>
 
           {view === 'ops' ? (
-            <OperationView ops={filteredOps} selMachineId={selMachineId} />
+            <OperationView ops={filteredOps} selMachineCode={selMachineCode} />
           ) : (
             <JobQueueView machines={queueMachines} ops={allOps} onPrint={onPrintQueue} />
           )}
@@ -227,18 +253,27 @@ function MachineLoadCardView({
 }): React.JSX.Element {
   const pct = Math.min(150, Math.round(card.loadPct * 100));
   return (
+    // Legacy .mach-card (L222) + .mach-card.sel (L223) inlined — neither is in
+    // our theme. Selected state mirrors legacy's own intent: renderLoading emits
+    // `.selected`, which legacy never defines (only `.sel`), so its selected card
+    // gets no highlight; renderJobQueue (L10371) works around the same bug by
+    // inlining the border/shadow. We keep the highlight — see report.
     <button
       type="button"
       onClick={onClick}
       style={{
         textAlign: 'left',
-        border: `2px solid ${selected ? 'var(--cyan)' : 'var(--border2)'}`,
-        borderRadius: 10,
-        background: selected ? 'var(--bg4)' : 'var(--bg3)',
-        padding: 12,
+        background: 'var(--bg2)',
+        border: '1px solid var(--border)',
+        borderColor: selected ? 'var(--cyan)' : 'var(--border)',
+        boxShadow: selected ? '0 0 0 1px var(--cyan)' : undefined,
+        borderRadius: 'var(--radius2)',
+        padding: 14,
         cursor: 'pointer',
+        position: 'relative',
       }}
     >
+      {/* Legacy .mach-id (L224) is not in our theme — inline approximation kept. */}
       <div className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
         {card.machineCode}
       </div>
@@ -284,10 +319,42 @@ function Num({ val, lbl, color }: { val: number; lbl: string; color?: string }):
   );
 }
 
-function OpRow({ op, idx }: { op: MachineLoadOp; idx: number }): React.JSX.Element {
+// `queue` = legacy's qRows treatment (L5102-5103): the next-up job (available>0)
+// gets a tinted row and an amber index. The ops view (L5061-5075) has neither.
+function OpRow({
+  op,
+  idx,
+  queue = false,
+}: {
+  op: MachineLoadOp;
+  idx: number;
+  queue?: boolean;
+}): React.JSX.Element {
+  const isNext = op.available > 0;
+  if (queue) {
+    return (
+      <tr style={isNext ? { background: 'rgba(255,176,32,0.04)' } : undefined}>
+        <td
+          className="td-ctr mono fw-700"
+          style={{ color: isNext ? 'var(--amber)' : 'var(--text3)', fontSize: 13 }}
+        >
+          {idx + 1}
+        </td>
+        <OpRowCells op={op} />
+      </tr>
+    );
+  }
   return (
     <tr>
       <td className="td-ctr mono text3">{idx + 1}</td>
+      <OpRowCells op={op} />
+    </tr>
+  );
+}
+
+function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
+  return (
+    <>
       <td className="td-code cyan">{op.jobCardCode}</td>
       <td style={{ fontSize: 11 }}>
         {op.itemCode ?? ''}
@@ -321,26 +388,26 @@ function OpRow({ op, idx }: { op: MachineLoadOp; idx: number }): React.JSX.Eleme
           {op.pendingHrs}h
         </span>
       </td>
-      <td className="text3" style={{ fontSize: 11, textTransform: 'capitalize' }}>
-        {op.computedStatus.replaceAll('_', ' ')}
+      <td>
+        <OpStatusBadge status={op.computedStatus} />
       </td>
-    </tr>
+    </>
   );
 }
 
 function OperationView({
   ops,
-  selMachineId,
+  selMachineCode,
 }: {
   ops: MachineLoadOp[];
-  selMachineId: string | null;
+  selMachineCode: string | null;
 }): React.JSX.Element {
   return (
-    <div className="panel" style={{ marginBottom: 16 }}>
+    <div className="panel">
       <div className="panel-hdr">
         <span className="panel-title">
-          {selMachineId
-            ? 'Machine queue — sorted by Priority → Due Date'
+          {selMachineCode
+            ? `${selMachineCode} — Job Queue`
             : 'All Open Operations — sorted by Priority → Due Date'}
         </span>
         <span className="mono" style={{ color: 'var(--amber)', fontSize: 12 }}>
@@ -394,7 +461,7 @@ function JobQueueView({
 }): React.JSX.Element {
   if (machines.length === 0) {
     return (
-      <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel">
         <div className="empty-state" style={{ padding: 32 }}>
           No machines configured
         </div>
@@ -402,23 +469,56 @@ function JobQueueView({
     );
   }
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div>
       {machines.map((m) => {
         const machOps = ops.filter((o) => o.machineId === m.machineId);
         const pct = Math.min(150, Math.round(m.loadPct * 100));
+        // Legacy renders an empty machine with a reduced header and a hardcoded
+        // badge('Clear') — not m.loadStatus (L5083-5091).
+        if (machOps.length === 0) {
+          return (
+            <div className="panel" key={m.machineId} style={{ marginBottom: 12 }}>
+              <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
+                <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
+                  {m.machineCode}
+                </span>
+                <span className="text3 mono" style={{ fontSize: 11 }}>
+                  {m.name}
+                </span>
+                <span className="badge b-green">Clear</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onPrint(m.machineId)}
+                  title={`Print ${m.machineCode} queue`}
+                >
+                  <Printer size={12} /> Print
+                </button>
+              </div>
+              <div className="empty-state" style={{ padding: 20 }}>
+                ✓ No jobs in queue
+              </div>
+            </div>
+          );
+        }
         return (
           <div className="panel" key={m.machineId} style={{ marginBottom: 14 }}>
-            <div className="panel-hdr">
-              <span className="panel-title">
-                <span className="mono fw-700">{m.machineCode}</span>{' '}
-                <span className="text3" style={{ fontWeight: 400 }}>
-                  {m.name} — {m.machineType ?? '—'}
-                </span>{' '}
-                <span className="mono text3" style={{ fontSize: 11 }}>
-                  · {pct}% · {m.pendingHrs}h · {m.daysToClear}d
+            <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
+                  {m.machineCode}
                 </span>
-              </span>
-              <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="text2" style={{ fontSize: 12 }}>
+                  {m.name} — {m.machineType ?? '—'}
+                </span>
+                <div style={{ flex: 1, maxWidth: 120 }}>
+                  <ProgBar pct={pct} />
+                </div>
+                <span className="mono text3" style={{ fontSize: 11 }}>
+                  {pct}% · {m.pendingHrs}h · {m.daysToClear}d
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className={`badge ${loadBadgeClass(m.loadStatus)}`}>{m.loadStatus}</span>
                 <span className="mono" style={{ color: 'var(--amber)', fontSize: 11 }}>
                   {machOps.length} jobs
@@ -431,40 +531,34 @@ function JobQueueView({
                 >
                   <Printer size={12} /> Print
                 </button>
-              </span>
+              </div>
             </div>
-            {machOps.length === 0 ? (
-              <div className="empty-state" style={{ padding: 20 }}>
-                ✓ No jobs in queue
-              </div>
-            ) : (
-              <div className="tbl-wrap">
-                <table className="innovic-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>JC No.</th>
-                      <th>Part No / Item</th>
-                      <th>SO No.</th>
-                      <th>Op</th>
-                      <th>Operation</th>
-                      <th>Priority</th>
-                      <th>Due</th>
-                      <th>Order</th>
-                      <th>Done</th>
-                      <th style={{ color: 'var(--amber)' }}>Avail★</th>
-                      <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {machOps.map((op, i) => (
-                      <OpRow key={op.jcOpId} op={op} idx={i} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className="tbl-wrap">
+              <table className="innovic-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>JC No.</th>
+                    <th>Part No / Item</th>
+                    <th>SO No.</th>
+                    <th>Op</th>
+                    <th>Operation</th>
+                    <th>Priority</th>
+                    <th>Due</th>
+                    <th>Order</th>
+                    <th>Done</th>
+                    <th style={{ color: 'var(--amber)' }}>Avail★</th>
+                    <th style={{ color: 'var(--red)' }}>Pend Hrs</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {machOps.map((op, i) => (
+                    <OpRow key={op.jcOpId} op={op} idx={i} queue />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         );
       })}
@@ -474,7 +568,8 @@ function JobQueueView({
 
 function CapacitySummary({ machines }: { machines: MachineLoadCard[] }): React.JSX.Element {
   return (
-    <div className="panel">
+    // Legacy `<div class="panel mt-16">` (L5189); .mt-16 (L268) is not in our theme.
+    <div className="panel" style={{ marginTop: 16 }}>
       <div className="panel-hdr">
         <span className="panel-title">Capacity Summary</span>
       </div>

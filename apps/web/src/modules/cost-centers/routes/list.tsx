@@ -1,4 +1,12 @@
-// Cost Center Master list — Phase A item 4. Mirrors legacy renderCostCenters L17165.
+// Cost Center Master list — Phase A item 4.
+// Ports legacy renderCostCenters (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L17165-17189) to Innovic chrome. Legacy columns, in order (L17186):
+// Code | Name | Department | Type | Description | Status | Actions.
+// Legacy row cells (L17170-17176) carry .mono/.fw-700/.text3 on the <td> itself,
+// so rows render as plain <tr>/<td>; TanStack Table is kept for the column defs +
+// client-side sort that drives <SortableHead> (sortable headers are a DELTA over
+// legacy's plain <th> — see ISSUE-016/019).
+// Actions (L17176): ✏ edit + ✖ delete, both gated on write access.
 
 import {
   COST_CENTER_DEPARTMENTS,
@@ -10,7 +18,6 @@ import { Link, createRoute } from '@tanstack/react-router';
 import {
   type ColumnDef,
   type SortingState,
-  flexRender,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
@@ -21,7 +28,7 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCostCentersList } from '../api';
+import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -74,58 +81,19 @@ function CostCentersListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useCostCentersList(query);
+  const softDelete = useSoftDeleteCostCenter();
 
+  // Headers + sort accessors only — cells render as plain <td> below so legacy's
+  // per-cell classes land on the <td> itself, matching L17170-17176.
   const columns = useMemo<ColumnDef<CostCenter>[]>(
     () => [
-      {
-        header: 'Code',
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/cost-centers/$id"
-            params={{ id: row.original.id }}
-            className="td-code fw-700"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Name',
-        accessorKey: 'name',
-        cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
-      },
-      {
-        header: 'Department',
-        accessorKey: 'department',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>{row.original.department ?? '—'}</span>
-        ),
-      },
-      {
-        header: 'Type',
-        accessorKey: 'type',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.type ?? '—'}</span>,
-      },
-      {
-        header: 'Description',
-        accessorKey: 'description',
-        cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11 }}>
-            {row.original.description ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'isActive',
-        cell: ({ row }) => (
-          <span className={`badge ${row.original.isActive ? 'b-green' : 'b-amber'}`}>
-            {row.original.isActive ? 'Active' : 'Inactive'}
-          </span>
-        ),
-      },
+      { header: 'Code', accessorKey: 'code' },
+      { header: 'Name', accessorKey: 'name' },
+      { header: 'Department', accessorKey: 'department' },
+      { header: 'Type', accessorKey: 'type' },
+      { header: 'Description', accessorKey: 'description' },
+      { header: 'Status', accessorKey: 'isActive' },
+      { header: 'Actions', enableSorting: false },
     ],
     [],
   );
@@ -272,15 +240,58 @@ function CostCentersListPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                table.getRowModel().rows.map((row) => {
+                  const cc = row.original;
+                  return (
+                    <tr key={row.id}>
+                      <td className="mono fw-700 cyan">
+                        <Link
+                          to="/cost-centers/$id"
+                          params={{ id: cc.id }}
+                          style={{ color: 'inherit', textDecoration: 'none' }}
+                        >
+                          {cc.code}
+                        </Link>
                       </td>
-                    ))}
-                  </tr>
-                ))
+                      <td className="fw-700">{cc.name}</td>
+                      <td>{cc.department ?? '—'}</td>
+                      <td>{cc.type ?? '—'}</td>
+                      <td className="text3" style={{ fontSize: 11 }}>
+                        {cc.description ?? '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${cc.isActive ? 'b-green' : 'b-grey'}`}>
+                          {cc.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td>
+                        {canWrite ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <Link
+                              to="/cost-centers/$id/edit"
+                              params={{ id: cc.id }}
+                              className="btn btn-ghost btn-sm"
+                            >
+                              ✏
+                            </Link>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              disabled={softDelete.isPending}
+                              onClick={() => {
+                                if (confirm('Delete this cost center?')) {
+                                  softDelete.mutate(cc.id);
+                                }
+                              }}
+                            >
+                              ✖
+                            </button>
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

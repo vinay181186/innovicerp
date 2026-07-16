@@ -27,7 +27,7 @@ function NcRegisterNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">Report NC</div>
+            <div className="panel-title">❌ Report Non-Conformance</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Status starts as <span className="mono">pending</span> until disposition.
             </div>
@@ -37,7 +37,7 @@ function NcRegisterNewPage(): React.JSX.Element {
           <NcRegisterForm
             mode="create"
             submitError={submitError}
-            submitLabel="Report NC"
+            submitLabel="Save"
             onCancel={() => void navigate({ to: '/nc-register' })}
             onSubmit={async (values: CreateNcRegisterInput) => {
               setSubmitError(null);

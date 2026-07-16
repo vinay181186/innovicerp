@@ -132,14 +132,11 @@ function ServicePosNewPage(): React.JSX.Element {
       </Link>
 
       <div className="panel" style={{ padding: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--green)', marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--green)', marginBottom: 14 }}>
           ➕ New Service PO
         </div>
 
-        <div
-          className="form-grid"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}
-        >
+        <div className="form-grid">
           <div className="form-grp">
             <label className="form-label">SPO No. <span className="req">★</span></label>
             <input
@@ -240,7 +237,7 @@ function ServicePosNewPage(): React.JSX.Element {
                 <th style={{ fontSize: 10 }}>Description <span className="req">★</span></th>
                 <th style={{ width: 80, fontSize: 10 }}>Qty</th>
                 <th style={{ width: 110, fontSize: 10 }}>Rate (₹)</th>
-                <th style={{ width: 110, fontSize: 10, textAlign: 'right' }}>Amount</th>
+                <th style={{ width: 100, fontSize: 10, textAlign: 'right' }}>Amount</th>
                 <th style={{ width: 30 }} />
               </tr>
             </thead>
@@ -275,6 +272,7 @@ function ServicePosNewPage(): React.JSX.Element {
                       value={l.rate}
                       min={0}
                       step={0.01}
+                      placeholder="₹"
                       onChange={(e) => updateLine(i, { rate: Number(e.target.value) || 0 })}
                       style={{ width: 100, fontSize: 12, textAlign: 'right' }}
                     />
@@ -385,15 +383,7 @@ function ServicePosNewPage(): React.JSX.Element {
           </div>
         </div>
 
-        <div
-          className="form-grid"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: 12,
-            marginTop: 12,
-          }}
-        >
+        <div className="form-grid" style={{ marginTop: 12 }}>
           <div className="form-grp">
             <label className="form-label">Payment Terms</label>
             <select

@@ -64,13 +64,24 @@ function DesignIssuesAllPage(): React.JSX.Element {
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">⚠ All Design Issues</div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          ⚠ All Design Issues
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search…"
+            placeholder="🔍 Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ width: 220, fontSize: 12 }}
@@ -102,10 +113,6 @@ function DesignIssuesAllPage(): React.JSX.Element {
               {error instanceof Error ? error.message : 'Failed to load'}
             </div>
           </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">No issues</div>
-          </div>
         ) : data ? (
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -122,6 +129,13 @@ function DesignIssuesAllPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="empty-state">
+                      No issues
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((i) => {
                   const stale =
                     i.ageDays > 5 && i.status !== 'Resolved' && i.status !== 'Closed';
@@ -154,15 +168,17 @@ function DesignIssuesAllPage(): React.JSX.Element {
                         {i.ageDays}d
                       </td>
                       <td>
-                        <AssignTaskButton
-                          linkedRef={{
-                            type: 'design_issue',
-                            id: i.id,
-                            display: `Design issue: ${i.title}`,
-                            navPage: `/design-projects/${i.designProjectId}`,
-                          }}
-                          suggestedTitle={`Resolve design issue: ${i.title}`}
-                        />
+                        {i.status !== 'Closed' && i.status !== 'Resolved' ? (
+                          <AssignTaskButton
+                            linkedRef={{
+                              type: 'design_issue',
+                              id: i.id,
+                              display: `Design issue: ${i.title}`,
+                              navPage: `/design-projects/${i.designProjectId}`,
+                            }}
+                            suggestedTitle={`Resolve design issue: ${i.title}`}
+                          />
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -189,35 +205,23 @@ function Tile({
 }): React.JSX.Element {
   return (
     <div
+      className="panel"
       onClick={onClick}
-      style={{
-        padding: 14,
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderTop: `3px solid ${color}`,
-        borderRadius: 6,
-        cursor: onClick ? 'pointer' : 'default',
-        textAlign: 'center',
-      }}
+      style={{ textAlign: 'center', padding: 12, cursor: 'pointer' }}
     >
-      <div
-        className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>
-        {value}
-      </div>
+      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
 
 function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.Element {
   const v = value.toLowerCase().replace(/[\s/]/g, '');
+  // Colour map mirrors legacy _dpBadge (HTML L7555-7562) exactly — note Major
+  // is orange there, not amber.
   const colors: Record<string, string> = {
     critical: 'var(--red)',
-    major: 'var(--amber)',
+    major: 'var(--orange)',
     minor: 'var(--green)',
     open: 'var(--red)',
     inprogress: 'var(--blue)',
@@ -228,6 +232,7 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
   return (
     <span
       style={{
+        display: 'inline-block',
         padding: '2px 9px',
         borderRadius: kind === 'status' ? 4 : 12,
         fontSize: 10,

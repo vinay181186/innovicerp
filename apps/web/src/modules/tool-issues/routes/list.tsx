@@ -10,7 +10,7 @@ import {
   type ToolIssueListItem,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus, Undo2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -50,6 +50,18 @@ function ToolIssuesListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Legacy renders the stat cards ABOVE the header row — renderToolIssue L24018. */}
+      {data?.summary ? (
+        <KpiStrip
+          summary={data.summary}
+          filter={filter}
+          setFilter={(k) => {
+            setFilter(k);
+            setPage(1);
+          }}
+        />
+      ) : null}
+
       <div
         className="mb-3 flex items-center justify-between gap-3"
         style={{ flexWrap: 'wrap' }}
@@ -59,13 +71,13 @@ function ToolIssuesListPage(): React.JSX.Element {
           <input
             type="text"
             className="innovic-input"
-            placeholder="🔍 Search…"
+            placeholder="🔍 Search..."
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
-            style={{ minWidth: 200, fontSize: 12 }}
+            style={{ minWidth: 160, fontSize: 12 }}
           />
           <select
             className="innovic-select"
@@ -86,22 +98,11 @@ function ToolIssuesListPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => setShowNew(true)}
             >
-              <Plus size={14} /> Issue Tool
+              + Issue Tool
             </button>
           ) : null}
         </div>
       </div>
-
-      {data?.summary ? (
-        <KpiStrip
-          summary={data.summary}
-          filter={filter}
-          setFilter={(k) => {
-            setFilter(k);
-            setPage(1);
-          }}
-        />
-      ) : null}
 
       <div className="panel">
         {isLoading ? (
@@ -114,13 +115,6 @@ function ToolIssuesListPage(): React.JSX.Element {
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load tool issues'}
-            </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">🔧</div>
-              No tool issues — click <strong>+ Issue Tool</strong>.
             </div>
           </div>
         ) : data ? (
@@ -145,15 +139,22 @@ function ToolIssuesListPage(): React.JSX.Element {
                   <th className="td-ctr" style={{ color: 'var(--amber)' }}>
                     Used
                   </th>
-                  {canWrite ? <th className="td-ctr">Action</th> : null}
+                  <th className="td-ctr">Action</th>
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="empty-state">
+                      No tool issues — click + Issue Tool
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((ti) => (
                   <tr
                     key={ti.id}
                     style={{
-                      background: ti.isOverdue ? 'rgba(239,68,68,0.03)' : undefined,
+                      background: ti.isOverdue ? 'rgba(239,68,68,0.03)' : 'var(--bg)',
                     }}
                   >
                     <td>
@@ -210,30 +211,24 @@ function ToolIssuesListPage(): React.JSX.Element {
                     >
                       {ti.returnConsumedQty}
                     </td>
-                    {canWrite ? (
-                      <td className="td-ctr">
-                        {ti.returnStatus !== 'returned' ? (
-                          <button
-                            type="button"
-                            className="btn btn-sm"
-                            onClick={() => setReturnTarget(ti)}
-                            style={{
-                              background: 'rgba(20,184,166,0.08)',
-                              color: '#14b8a6',
-                              border: '1px solid rgba(20,184,166,0.3)',
-                              fontSize: 11,
-                              fontWeight: 700,
-                            }}
-                          >
-                            <Undo2 size={12} /> Return
-                          </button>
-                        ) : (
-                          <span className="text3" style={{ fontSize: 11 }}>
-                            ✓
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
+                    <td className="td-ctr">
+                      {ti.returnStatus !== 'returned' && canWrite ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => setReturnTarget(ti)}
+                          style={{
+                            background: 'rgba(20,184,166,0.08)',
+                            color: '#14b8a6',
+                            border: '1px solid rgba(20,184,166,0.3)',
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                        >
+                          ↩ Return
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -281,9 +276,9 @@ function ToolIssuesListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
         🔧 Tool Issue Register tracks returnable items (tools, inserts, spanners, fixtures).
-        Return button records Good / Damaged / Consumed breakdown. Good qty adds back to stock.
+        Return button records Good/Damaged/Consumed breakdown. Good qty added back to stock.
       </div>
 
       {showNew ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
@@ -374,13 +369,16 @@ function KpiStrip({
     { key: 'all', label: 'Total', value: summary.total, color: 'var(--blue)' },
     { key: 'out', label: 'Currently Out', value: summary.out, color: 'var(--red)' },
     { key: 'returned', label: 'Returned', value: summary.returned, color: 'var(--green)' },
-    { key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red)' },
   ];
+  // Legacy only emits the Overdue card when the count is non-zero (L24016).
+  if (summary.overdue > 0) {
+    tiles.push({ key: 'overdue', label: 'Overdue', value: summary.overdue, color: 'var(--red)' });
+  }
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
         gap: 10,
         marginBottom: 16,
       }}
@@ -391,36 +389,18 @@ function KpiStrip({
           onClick={() => setFilter(t.key === filter && t.key !== 'all' ? 'all' : t.key)}
           style={{
             cursor: 'pointer',
+            textAlign: 'center',
             padding: 12,
+            borderRadius: 10,
             background: t.key === 'overdue' ? 'rgba(239,68,68,0.06)' : 'var(--bg2)',
             border:
-              t.key === 'overdue' && summary.overdue > 0
-                ? '1px solid rgba(239,68,68,0.3)'
-                : '1px solid var(--border)',
-            borderTop: `3px solid ${t.color}`,
-            borderRadius: 6,
-            textAlign: 'center',
-            boxShadow: filter === t.key ? `0 0 0 2px ${t.color}` : undefined,
-            transition: 'box-shadow .15s',
+              t.key === 'overdue' ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)',
           }}
         >
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-          >
+          <div style={{ fontSize: 10, color: t.key === 'overdue' ? 'var(--red)' : 'var(--text3)' }}>
             {t.label}
           </div>
-          <div
-            style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 22,
-              fontWeight: 700,
-              color: t.color,
-              marginTop: 2,
-            }}
-          >
-            {t.value}
-          </div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.value}</div>
         </div>
       ))}
     </div>
@@ -488,8 +468,12 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   };
 
   return (
-    <ModalShell title="🔧 Issue Tool" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    <ModalShell
+      title="🔧 Issue Tool"
+      onClose={onClose}
+      footer={<ModalFooter onClose={onClose} onSave={onSave} saving={createMut.isPending} />}
+    >
+      <div className="form-grid">
         <Field label="Date">
           <input
             type="date"
@@ -498,64 +482,62 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             onChange={(e) => setDate(e.target.value)}
           />
         </Field>
-        <Field label="Expected Return ★">
+        <Field label="Tool / Item ★ (type to search)" full>
           <input
-            type="date"
+            type="text"
             className="innovic-input"
-            value={expRet}
-            onChange={(e) => setExpRet(e.target.value)}
+            placeholder="🔍 Type item code or name..."
+            value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
+            onChange={(e) => {
+              setItemId(null);
+              setItemSearch(e.target.value);
+            }}
+            style={{ width: '100%', fontSize: 13, fontWeight: 600 }}
           />
-        </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Tool / Item ★">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Type item code or name…"
-              value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
-              onChange={(e) => {
-                setItemId(null);
-                setItemSearch(e.target.value);
+          {!itemId && itemSearch && itemsData ? (
+            <div
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                background: 'var(--bg2)',
+                marginTop: 4,
+                maxHeight: 180,
+                overflowY: 'auto',
               }}
-            />
-            {!itemId && itemSearch && itemsData ? (
-              <div
-                style={{
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  background: 'var(--bg2)',
-                  marginTop: 4,
-                  maxHeight: 180,
-                  overflowY: 'auto',
-                }}
-              >
-                {itemsData.items.slice(0, 20).map((it) => (
-                  <div
-                    key={it.id}
-                    onClick={() => {
-                      setItemId(it.id);
-                      setItemSearch('');
-                    }}
-                    style={{
-                      padding: '6px 10px',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                  >
-                    <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.code}</span> —{' '}
-                    {it.name}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </Field>
-        </div>
-        <Field label="Qty ★">
+            >
+              {itemsData.items.slice(0, 20).map((it) => (
+                <div
+                  key={it.id}
+                  onClick={() => {
+                    setItemId(it.id);
+                    setItemSearch('');
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    borderBottom: '1px solid var(--border)',
+                  }}
+                >
+                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.code}</span> —{' '}
+                  {it.name}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {selectedItem ? (
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+              <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{selectedItem.code}</span> —{' '}
+              {selectedItem.name} | {selectedItem.uom}
+            </div>
+          ) : null}
+        </Field>
+        <Field label="Qty to Issue ★">
           <input
             type="number"
             min={1}
             className="innovic-input"
+            placeholder="0"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             style={{ fontSize: 16, fontWeight: 700 }}
@@ -568,6 +550,14 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             placeholder="Person / Dept / Machine"
             value={issuedTo}
             onChange={(e) => setIssuedTo(e.target.value)}
+          />
+        </Field>
+        <Field label="Expected Return Date ★">
+          <input
+            type="date"
+            className="innovic-input"
+            value={expRet}
+            onChange={(e) => setExpRet(e.target.value)}
           />
         </Field>
         <Field label="Reference Type">
@@ -592,35 +582,26 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
             onChange={(e) => setRefNo(e.target.value)}
           />
         </Field>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Purpose">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="CNC Turning / Grinding / Assembly"
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-            />
-          </Field>
-        </div>
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-            />
-          </Field>
-        </div>
+        <Field label="Purpose">
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="CNC Turning / Grinding / Assembly"
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+          />
+        </Field>
+        <Field label="Remarks" full>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="Additional notes"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
+        </Field>
       </div>
       {err ? <ErrorBanner msg={err} /> : null}
-      <ModalFooter
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Issue"
-      />
     </ModalShell>
   );
 }
@@ -675,7 +656,11 @@ function ReturnModal({
   };
 
   return (
-    <ModalShell title={`↩ Return — ${issue.code}`} onClose={onClose}>
+    <ModalShell
+      title={`↩ Return — ${issue.code}`}
+      onClose={onClose}
+      footer={<ModalFooter onClose={onClose} onSave={onSave} saving={mut.isPending} />}
+    >
       <div
         style={{
           background: 'var(--bg3)',
@@ -711,7 +696,7 @@ function ReturnModal({
         ) : null}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-grid">
         <Field label="Return Date">
           <input
             type="date"
@@ -735,14 +720,14 @@ function ReturnModal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: 14,
-          margin: '12px 0',
+          marginBottom: 12,
         }}
       >
-        <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>
           Return breakdown (max {remaining})
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-          <Field label="Returned Good (stock +)">
+        <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+          <Field label="Returned Good (stock +)" labelColor="var(--green)">
             <input
               type="number"
               min={0}
@@ -759,7 +744,7 @@ function ReturnModal({
               }}
             />
           </Field>
-          <Field label="Damaged">
+          <Field label="Damaged" labelColor="var(--red)">
             <input
               type="number"
               min={0}
@@ -776,7 +761,7 @@ function ReturnModal({
               }}
             />
           </Field>
-          <Field label="Consumed">
+          <Field label="Consumed / Used Up" labelColor="var(--amber)">
             <input
               type="number"
               min={0}
@@ -800,57 +785,48 @@ function ReturnModal({
         <input
           type="text"
           className="innovic-input"
+          placeholder="Condition notes..."
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
         />
       </Field>
 
       {err ? <ErrorBanner msg={err} /> : null}
-      <ModalFooter onClose={onClose} onSave={onSave} saving={mut.isPending} saveLabel="Record Return" />
     </ModalShell>
   );
 }
 
 // ─── Shared modal helpers ─────────────────────────────────────────────────
 
+// Mirrors legacy showModal (L28015-31): .overlay > .modal > .modal-hdr / .modal-body /
+// .modal-footer. showModal takes exactly three args, so the footer is always Cancel / Save.
 function ModalShell({
   title,
   onClose,
+  footer,
   children,
 }: {
   title: string;
   onClose: () => void;
+  footer: React.ReactNode;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
+      <div className="modal">
+        <div className="modal-hdr">
+          <span className="modal-title">{title}</span>
+          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
+            ✕
+          </button>
         </div>
-        {children}
+        <div className="modal-body">{children}</div>
+        {footer}
       </div>
     </div>
   );
@@ -858,24 +834,20 @@ function ModalShell({
 
 function Field({
   label,
+  labelColor,
+  full,
   children,
 }: {
   label: string;
+  labelColor?: string;
+  full?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div>
-      <div
-        className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
-      >
+    <div className={full ? 'form-grp form-full' : 'form-grp'}>
+      <label className="form-label" style={labelColor ? { color: labelColor } : undefined}>
         {label}
-      </div>
+      </label>
       {children}
     </div>
   );
@@ -898,34 +870,29 @@ function ErrorBanner({ msg }: { msg: string }): React.JSX.Element {
   );
 }
 
+// showModal hard-codes Cancel / Save (L28026-27). _toolReturn passes a 4th 'Save Return'
+// arg (L24125) but showModal takes only three, so that label is dead in legacy.
 function ModalFooter({
   onClose,
   onSave,
   saving,
-  saveLabel,
 }: {
   onClose: () => void;
   onSave: () => void;
   saving: boolean;
-  saveLabel: string;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+    <div className="modal-footer">
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
       </button>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={onSave}
-        disabled={saving}
-      >
+      <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>
         {saving ? (
           <>
             <Loader2 size={14} className="inline animate-spin" /> Saving…
           </>
         ) : (
-          saveLabel
+          'Save'
         )}
       </button>
     </div>

@@ -93,11 +93,12 @@ function DeliveryChallansListPage(): React.JSX.Element {
       {
         header: 'DC No.',
         accessorKey: 'code',
+        // Legacy L27434: <td class="mono fw-700" style="color:var(--cyan)">
+        meta: { tdClass: 'mono fw-700' },
         cell: ({ row }) => (
           <Link
             to="/delivery-challans/$id"
             params={{ id: row.original.id }}
-            className="td-code"
             style={{ color: 'var(--cyan)', textDecoration: 'none' }}
           >
             {row.original.code}
@@ -110,18 +111,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
             {row.original.dcDate}
-          </span>
-        ),
-      },
-      {
-        header: 'Vendor',
-        id: 'vendor',
-        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
-            {row.original.vendorName ?? (
-              <span className="text3">{row.original.vendorCodeText}</span>
-            )}
           </span>
         ),
       },
@@ -156,6 +145,18 @@ function DeliveryChallansListPage(): React.JSX.Element {
         },
       },
       {
+        header: 'Vendor',
+        id: 'vendor',
+        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
+        cell: ({ row }) => (
+          <span style={{ fontSize: 11 }}>
+            {row.original.vendorName ?? (
+              <span className="text3">{row.original.vendorCodeText}</span>
+            )}
+          </span>
+        ),
+      },
+      {
         header: 'SO',
         id: 'so',
         accessorFn: (r) => r.soCode ?? r.soRefText ?? '',
@@ -168,17 +169,17 @@ function DeliveryChallansListPage(): React.JSX.Element {
       {
         header: 'Lines',
         accessorKey: 'lineCount',
-        cell: ({ row }) => (
-          <span className="td-ctr mono fw-700">{row.original.lineCount}</span>
-        ),
+        // ISSUE-020: td-ctr is text-align:center and was inert on the <span>.
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => row.original.lineCount,
       },
       {
-        header: 'Total qty',
+        // Legacy L27440 calls this "Sent": <td class="td-ctr mono fw-700">.
+        header: 'Sent',
         id: 'totalQty',
         accessorFn: (r) => Number(r.totalQty),
-        cell: ({ row }) => (
-          <span className="td-ctr mono">{Number(row.original.totalQty).toFixed(2)}</span>
-        ),
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => Number(row.original.totalQty).toFixed(2),
       },
       {
         header: 'Status',
@@ -220,7 +221,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="innovic-input"
-            placeholder="Search DC code, vendor, item…"
+            placeholder="🔍 Search DC, PO, vendor..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}
@@ -296,14 +297,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No DCs
+                    No OSP DCs yet.
                   </td>
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}

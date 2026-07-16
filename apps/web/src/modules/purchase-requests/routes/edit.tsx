@@ -43,7 +43,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="panel-title">+ New Purchase Request</div>
+            <div className="panel-title">📝 New Purchase Request</div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Procurement intent — pick a vendor + item, set qty + cost.
             </div>

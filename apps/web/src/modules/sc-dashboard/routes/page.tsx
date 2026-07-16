@@ -7,7 +7,7 @@
 import type { ScDashboardResponse } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -22,12 +22,15 @@ function inr(n: number): string {
   return Math.round(n).toLocaleString('en-IN');
 }
 
+// Legacy renders the PO status verbatim ('Open' / 'Partial' / 'Closed' /
+// 'QC Pending') with b-green / b-amber / b-blue (L16891, L16995). Our status
+// column is a lower-snake enum, so map it back to legacy's labels.
 function statusBadge(s: string): { cls: string; label: string } {
-  if (s === 'closed') return { cls: 'b-green', label: 'closed' };
-  if (s === 'partial') return { cls: 'b-amber', label: 'partial' };
-  if (s === 'qc_pending') return { cls: 'b-amber', label: 'qc pending' };
-  if (s === 'cancelled') return { cls: 'b-grey', label: 'cancelled' };
-  return { cls: 'b-blue', label: 'open' };
+  if (s === 'closed') return { cls: 'b-green', label: 'Closed' };
+  if (s === 'partial') return { cls: 'b-amber', label: 'Partial' };
+  if (s === 'qc_pending') return { cls: 'b-amber', label: 'QC Pending' };
+  if (s === 'cancelled') return { cls: 'b-grey', label: 'Cancelled' };
+  return { cls: 'b-blue', label: 'Open' };
 }
 
 function ScDashboardPage(): React.JSX.Element {
@@ -103,54 +106,214 @@ function ScDashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="section-hdr">🔗 Supply Chain Dashboard</div>
-
-      {/* Summary cards */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 14,
         }}
       >
-        <Card label="OPEN POs" value={data.summary.openPos} color="var(--blue)" />
-        <Card label="PARTIAL POs" value={data.summary.partialPos} color="var(--amber)" />
-        <Card label="CLOSED POs" value={data.summary.closedPos} color="var(--green)" />
-        <Card label="CANCELLED" value={data.summary.cancelledPos} color="var(--red)" />
-        <Card
-          label="ORDER VAL"
-          value={`₹${inr(data.summary.totalOrderVal)}`}
-          color="var(--cyan)"
-        />
-        <Card
-          label="RECEIVED VAL"
-          value={`₹${inr(data.summary.totalRecvVal)}`}
-          color="var(--green)"
-        />
-        <Card
-          label="PENDING VAL"
-          value={`₹${inr(data.summary.pendingVal)}`}
-          color="var(--amber)"
-        />
-        <Card label="GRN TOTAL" value={data.summary.grnCount} color="var(--cyan)" />
-        <Card label="GRN TODAY" value={data.summary.todayGrn} color="var(--green)" />
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📊 Supply Chain Dashboard
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
+            🛒 PO Master
+          </Link>
+          <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
+            📥 GRN
+          </Link>
+          <Link to="/store-inventory" className="btn btn-ghost btn-sm">
+            🏬 Store
+          </Link>
+          <Link to="/vendors" className="btn btn-ghost btn-sm">
+            🏭 Vendors
+          </Link>
+        </div>
       </div>
 
-      {/* Vendor-wise summary */}
-      <Section title="🏢 By Vendor (Open + Partial + QC-Pending)">
+      {/* Summary Cards — legacy's .stat-grid (L17011). Legacy shows 4 tiles
+          derived by browser-side reduce over its full in-memory PO array;
+          ours are 9 server-computed, uncapped figures off `summary`. Tiles
+          kept as-is (they are correct and legacy's are not reproducible from
+          the payload — see report), rendered in legacy's tile vocabulary. */}
+      <div className="stat-grid">
+        <Card label="OPEN POs" value={data.summary.openPos} accent="" />
+        <Card label="PARTIAL POs" value={data.summary.partialPos} accent="amber" />
+        <Card label="CLOSED POs" value={data.summary.closedPos} accent="green" />
+        <Card label="CANCELLED" value={data.summary.cancelledPos} accent="red" />
+        <Card label="ORDER VAL" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
+        <Card label="RECEIVED VAL" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
+        <Card label="PENDING VAL" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
+        <Card label="GRN TOTAL" value={data.summary.grnCount} accent="cyan" />
+        <Card label="GRN TODAY" value={data.summary.todayGrn} accent="green" />
+      </div>
+
+      {/* ═══ PENDING PO TRACKER with Filters (legacy L17030 — first panel
+          under the tiles, ahead of the vendor/SO/purchase summaries) ═══ */}
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-hdr">
+          <span className="panel-title">🔍 Pending PO Tracker</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {isFiltered ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--red)', fontSize: 11 }}
+                onClick={clearFilters}
+              >
+                ✕ Clear Filters
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div
+          style={{
+            padding: '10px 14px',
+            background: 'var(--bg3)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            gap: 12,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <FilterInput
+            label="Vendor"
+            listId="dlScVnd"
+            value={fltVendor}
+            onChange={setFltVendor}
+            options={filterOpts.vendors}
+            width={140}
+          />
+          <FilterInput
+            label="Item"
+            listId="dlScItm"
+            value={fltItem}
+            onChange={setFltItem}
+            options={filterOpts.items}
+            width={160}
+          />
+          <FilterInput
+            label="SO/JW"
+            listId="dlScSO"
+            value={fltSo}
+            onChange={setFltSo}
+            options={filterOpts.sos}
+            width={120}
+          />
+          <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
+            {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
+            {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pend Qty:{' '}
+            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span> · Pend Value:{' '}
+            <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+          </div>
+        </div>
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th>PO No.</th>
+                <th>Ln</th>
+                <th>Date</th>
+                <th>Vendor</th>
+                <th>SO/JW</th>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="td-ctr">Order Qty</th>
+                <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
+                <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
+                <th>Rate</th>
+                <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pend Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPending.length === 0 ? (
+                <tr>
+                  <td colSpan={13} className="empty-state">
+                    No pending PO lines{isFiltered ? ' (try clearing filters)' : ''}
+                  </td>
+                </tr>
+              ) : (
+                filteredPending.map((p) => {
+                  const sb = statusBadge(p.status);
+                  return (
+                    <tr key={`${p.poId}:${p.lineNo}`}>
+                      <td>
+                        <Link
+                          to="/purchase-orders/$id"
+                          params={{ id: p.poId }}
+                          className="td-code cyan"
+                          style={{ textDecoration: 'underline dotted' }}
+                        >
+                          {p.poNo}
+                        </Link>
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                        {p.lineNo}
+                      </td>
+                      <td style={{ fontSize: 11 }}>{p.poDate}</td>
+                      <td className="fw-700" style={{ fontSize: 12 }}>
+                        {p.vendorName ?? p.vendorCode ?? '—'}
+                      </td>
+                      <td className="text2" style={{ fontSize: 11 }}>
+                        {p.soCode ?? '—'}
+                      </td>
+                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                        {p.itemCode ?? '—'}
+                      </td>
+                      <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
+                      <td className="td-ctr mono fw-700">{p.qty}</td>
+                      <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
+                        {p.receivedQty}
+                      </td>
+                      <td
+                        className="td-ctr mono fw-700"
+                        style={{ color: 'var(--red)', fontSize: 14 }}
+                      >
+                        {p.pendingQty}
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                        {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                        {p.pendingVal > 0 ? `₹${inr(p.pendingVal)}` : '—'}
+                      </td>
+                      <td>
+                        <span className={`badge ${sb.cls}`}>{sb.label}</span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Vendor-wise Open PO (legacy L17071) */}
+      <Section
+        title="🏭 Vendor-wise Open PO Summary"
+        meta={
+          <span className="mono" style={{ fontSize: 12, color: 'var(--amber)' }}>
+            {data.byVendor.length} vendors with open POs
+          </span>
+        }
+      >
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Vendor</th>
+              <th>Vendor Name</th>
               <th>Code</th>
-              <th className="td-ctr">Lines</th>
+              <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Items</th>
-              <th className="td-ctr">Total Qty</th>
+              <th className="td-ctr">Order Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-              <th className="td-ctr">Total ₹</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending ₹</th>
+              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th className="td-ctr">Order Value</th>
+              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
             </tr>
           </thead>
           <tbody>
@@ -164,7 +327,7 @@ function ScDashboardPage(): React.JSX.Element {
                 return (
                   <tr key={(v.vendorId ?? v.vendorCode ?? 'unknown')}>
                     <td className="fw-700">{v.vendorName ?? v.vendorCode ?? '—'}</td>
-                    <td style={{ fontSize: 11 }}>{v.vendorCode ?? '—'}</td>
+                    <td className="td-code" style={{ fontSize: 11 }}>{v.vendorCode ?? '—'}</td>
                     <td className="td-ctr mono">{v.lines}</td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>{v.uniqueItems}</td>
                     <td className="td-ctr mono fw-700">{v.totalQty}</td>
@@ -186,32 +349,39 @@ function ScDashboardPage(): React.JSX.Element {
         </table>
       </Section>
 
-      {/* SO-wise summary */}
-      <Section title="📋 By Sales Order">
+      {/* SO / JW-wise Open PO (legacy L17083) */}
+      <Section
+        title="📋 SO / JW-wise Open PO Summary"
+        meta={
+          <span className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+            {data.bySo.length} orders with open POs
+          </span>
+        }
+      >
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>SO</th>
-              <th className="td-ctr">Lines</th>
+              <th>SO / JW Reference</th>
+              <th className="td-ctr">PO Lines</th>
               <th className="td-ctr">Vendors</th>
-              <th className="td-ctr">Total Qty</th>
+              <th className="td-ctr">Order Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-              <th className="td-ctr">Total ₹</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending ₹</th>
+              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
+              <th className="td-ctr">Order Value</th>
+              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
             </tr>
           </thead>
           <tbody>
             {data.bySo.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-state">No SO-linked POs</td>
+                <td colSpan={8} className="empty-state">No open POs</td>
               </tr>
             ) : (
               data.bySo.map((s) => {
                 const pendQty = s.totalQty - s.receivedQty;
                 return (
                   <tr key={s.soRefId ?? '_unlinked_'}>
-                    <td>{s.soCode ?? <span className="text3">No SO linked</span>}</td>
+                    <td>{s.soCode ?? <span className="text3">No SO/JW linked</span>}</td>
                     <td className="td-ctr mono">{s.lines}</td>
                     <td className="td-ctr" style={{ fontSize: 11 }}>{s.uniqueVendors}</td>
                     <td className="td-ctr mono fw-700">{s.totalQty}</td>
@@ -233,30 +403,37 @@ function ScDashboardPage(): React.JSX.Element {
         </table>
       </Section>
 
-      {/* Complete PO summary */}
-      <Section title={`🛒 Complete Purchase Summary (${data.poSummary.length}) — Grand total ₹${inr(grandOrderTotal)}`}>
+      {/* Complete Purchase Summary (legacy L17095) */}
+      <Section
+        title="📦 Complete Purchase Summary"
+        meta={
+          <span className="mono" style={{ fontSize: 12, color: 'var(--green)' }}>
+            {data.poSummary.length} POs · Grand Total: ₹{inr(grandOrderTotal)}
+          </span>
+        }
+      >
         <table className="innovic-table">
           <thead>
             <tr>
               <th>PO No.</th>
               <th>Date</th>
               <th>Vendor</th>
-              <th>SO</th>
+              <th>SO/JW</th>
               <th className="td-ctr">Lines</th>
-              <th className="td-ctr">Total Qty</th>
+              <th className="td-ctr">Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
               <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-              <th className="td-ctr">Value ₹</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax ₹</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand ₹</th>
-              <th className="td-ctr">GRN</th>
+              <th className="td-ctr">Subtotal</th>
+              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax</th>
+              <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand Total</th>
+              <th className="td-ctr">GRNs</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {data.poSummary.length === 0 ? (
               <tr>
-                <td colSpan={13} className="empty-state">No active POs</td>
+                <td colSpan={13} className="empty-state">No purchase orders</td>
               </tr>
             ) : (
               data.poSummary.map((g) => {
@@ -268,8 +445,8 @@ function ScDashboardPage(): React.JSX.Element {
                       <Link
                         to="/purchase-orders/$id"
                         params={{ id: g.poId }}
-                        className="td-code"
-                        style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+                        className="td-code cyan"
+                        style={{ textDecoration: 'none' }}
                       >
                         {g.poNo}
                       </Link>
@@ -307,155 +484,35 @@ function ScDashboardPage(): React.JSX.Element {
         </table>
       </Section>
 
-      {/* Pending PO Tracker (with Vendor / Item / SO filters) */}
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <div className="panel-hdr">
-          <span className="panel-title">🔍 Pending PO Tracker</span>
-          {isFiltered ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--red)', fontSize: 11 }}
-              onClick={clearFilters}
-            >
-              <X size={12} /> Clear filters
-            </button>
-          ) : null}
-        </div>
-        <div
-          style={{
-            padding: '10px 14px',
-            background: 'var(--bg3)',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            gap: 12,
-            flexWrap: 'wrap',
-            alignItems: 'center',
-          }}
-        >
-          <FilterInput
-            label="Vendor"
-            listId="dlScVnd"
-            value={fltVendor}
-            onChange={setFltVendor}
-            options={filterOpts.vendors}
-            width={150}
-          />
-          <FilterInput
-            label="Item"
-            listId="dlScItm"
-            value={fltItem}
-            onChange={setFltItem}
-            options={filterOpts.items}
-            width={160}
-          />
-          <FilterInput
-            label="SO/JW"
-            listId="dlScSO"
-            value={fltSo}
-            onChange={setFltSo}
-            options={filterOpts.sos}
-            width={120}
-          />
-          <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-            {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
-            {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pend Qty:{' '}
-            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span> · Pend Value:{' '}
-            <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
-          </div>
-        </div>
-        <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>PO No.</th>
-              <th className="td-ctr">Line</th>
-              <th>Date</th>
-              <th>Vendor</th>
-              <th>SO</th>
-              <th>Item</th>
-              <th>Item Name</th>
-              <th className="td-ctr">Qty</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
-              <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-              <th className="td-ctr">Rate</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending ₹</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPending.length === 0 ? (
-              <tr>
-                <td colSpan={13} className="empty-state">
-                  {isFiltered ? 'No pending lines match the filters' : 'No pending lines'}
-                </td>
-              </tr>
-            ) : (
-              filteredPending.map((p) => {
-                const sb = statusBadge(p.status);
-                return (
-                  <tr key={`${p.poId}:${p.lineNo}`}>
-                    <td>
-                      <Link
-                        to="/purchase-orders/$id"
-                        params={{ id: p.poId }}
-                        className="td-code"
-                        style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-                      >
-                        {p.poNo}
-                      </Link>
-                    </td>
-                    <td className="td-ctr mono">{p.lineNo}</td>
-                    <td style={{ fontSize: 11 }}>{p.poDate}</td>
-                    <td className="fw-700" style={{ fontSize: 12 }}>
-                      {p.vendorName ?? p.vendorCode ?? '—'}
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>{p.soCode ?? '—'}</td>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>{p.itemCode ?? '—'}</td>
-                    <td style={{ fontSize: 12 }}>{p.itemName ?? '—'}</td>
-                    <td className="td-ctr mono fw-700">{p.qty}</td>
-                    <td className="td-ctr mono" style={{ color: 'var(--green)', fontWeight: 700 }}>
-                      {p.receivedQty}
-                    </td>
-                    <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
-                      {p.pendingQty}
-                    </td>
-                    <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{p.rate.toFixed(2)}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
-                      ₹{inr(p.pendingVal)}
-                    </td>
-                    <td>
-                      <span className={`badge ${sb.cls}`}>{sb.label}</span>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-        </div>
-      </div>
-
-      {/* Recent GRN */}
-      <Section title="📦 Recent GRN (last 8)">
+      {/* Recent GRN Activity (legacy L17107). Legacy's Item / Accepted /
+          Rejected columns are GRN-line fields that this payload does not
+          carry — reported, not fabricated. */}
+      <Section
+        title="📥 Recent GRN Activity"
+        meta={
+          <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
+            View All →
+          </Link>
+        }
+      >
         <table className="innovic-table">
           <thead>
             <tr>
               <th>GRN No.</th>
               <th>Date</th>
-              <th>PO</th>
+              <th>PO No.</th>
               <th>Vendor</th>
             </tr>
           </thead>
           <tbody>
             {data.recentGrn.length === 0 ? (
               <tr>
-                <td colSpan={4} className="empty-state">No recent GRN</td>
+                <td colSpan={4} className="empty-state">No GRN entries yet</td>
               </tr>
             ) : (
               data.recentGrn.map((g) => (
                 <tr key={g.grnNo}>
-                  <td className="td-code" style={{ color: 'var(--cyan)' }}>{g.grnNo}</td>
+                  <td className="td-code cyan">{g.grnNo}</td>
                   <td style={{ fontSize: 11 }}>{g.grnDate}</td>
                   <td className="mono" style={{ fontSize: 11, color: 'var(--blue)' }}>
                     {g.poNo ?? 'Manual'}
@@ -471,13 +528,22 @@ function ScDashboardPage(): React.JSX.Element {
   );
 }
 
-function Card({ label, value, color }: { label: string; value: string | number; color: string }): React.JSX.Element {
+// Legacy's stat-card (L17012) — the accent is the 2px top bar from the
+// variant class, not the value colour. `accent=''` is legacy's un-accented
+// tile: it defines only cyan/amber/green/red, so a "blue" tile renders bare.
+function Card({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  accent: '' | 'cyan' | 'amber' | 'green' | 'red';
+}): React.JSX.Element {
   return (
-    <div className="panel" style={{ padding: 12, textAlign: 'center' }}>
-      <div className="text3" style={{ fontSize: 9 }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: 20, color }}>
-        {value}
-      </div>
+    <div className={accent ? `stat-card ${accent}` : 'stat-card'}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-val">{value}</div>
     </div>
   );
 }
@@ -521,11 +587,23 @@ function FilterInput({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): React.JSX.Element {
+// Legacy pairs every panel-title on this page with a right-hand meta note or
+// button in the same .panel-hdr (L17074, L17086, L17098, L17110). There is no
+// .panel-meta class — legacy inline-styles a .mono span.
+function Section({
+  title,
+  meta,
+  children,
+}: {
+  title: string;
+  meta?: React.ReactNode;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
       <div className="panel-hdr">
         <span className="panel-title">{title}</span>
+        {meta}
       </div>
       <div className="tbl-wrap">{children}</div>
     </div>

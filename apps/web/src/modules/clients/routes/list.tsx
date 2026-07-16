@@ -1,8 +1,10 @@
 // Client Master list (UI-003-02).
-// Ports legacy renderClients (legacy/InnovicERP_v82_12_3.html L12969) to
-// Innovic chrome. Columns: Code | Client Name | Address | Contact | Email
-// | Actions (matches legacy header). TanStack Table for column defs;
-// rendering via plain <table className="innovic-table">.
+// Ports legacy renderClients (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L12969-12995) to Innovic chrome. Legacy columns, in order:
+// Code | Client Name | Address | Contact | Email | <blank actions th> (L12991).
+// Status is a port-only column: legacy clients have no status field, ours carry
+// isActive and the API filters on it (see ISSUES.md logged delta).
+// TanStack Table for column defs; rendering via plain <table className="innovic-table">.
 
 import type { Client, ListClientsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -152,16 +154,9 @@ function ClientsListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Actions',
+        header: '',
         cell: ({ row }) => (
           <div style={{ display: 'flex', gap: 4 }}>
-            <Link
-              to="/clients/$id"
-              params={{ id: row.original.id }}
-              className="btn btn-ghost btn-sm"
-            >
-              View
-            </Link>
             {canWrite ? (
               <Link
                 to="/clients/$id/edit"
@@ -222,7 +217,7 @@ function ClientsListPage(): React.JSX.Element {
             placeholder="🔍 Search client, code…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 220, fontSize: 12 }}
+            style={{ width: 200, fontSize: 12 }}
           />
           <select
             className="innovic-select"

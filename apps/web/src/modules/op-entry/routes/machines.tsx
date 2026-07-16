@@ -1,6 +1,6 @@
 import type { JcOpEnriched, RunningOp } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Play } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { useMachinesList } from '@/modules/machines/api';
@@ -86,20 +86,16 @@ function MachineOpEntryPage() {
           justifyContent: 'space-between',
           alignItems: 'center',
           marginBottom: 14,
-          gap: 8,
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            Machine Op Entry
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Pick a machine to log work; running machines show the active session.
-          </div>
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          ⚙ Machine Op Entry
         </div>
-        <Link to="/op-entry" className="btn btn-ghost btn-sm">
-          <ArrowLeft size={14} /> JC-wise entry
-        </Link>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/op-entry" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+            📋 JC-wise Entry
+          </Link>
+        </div>
       </div>
 
       {machines.isLoading ? (
@@ -112,7 +108,7 @@ function MachineOpEntryPage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
             gap: 10,
             marginBottom: 16,
           }}
@@ -131,12 +127,80 @@ function MachineOpEntryPage() {
 
       {selectedMachine ? (
         selectedRunning && runningOpRow ? (
-          <div>
-            <div style={{ marginBottom: 8 }}>
-              <span className="mono fw-700" style={{ fontSize: 15 }}>
-                {selectedMachine.code}
-              </span>{' '}
-              <span style={{ color: 'var(--green)', fontWeight: 700 }}>● Running</span>
+          <div
+            style={{
+              background: 'var(--bg3)',
+              border: '2px solid var(--green)',
+              borderRadius: 10,
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
+                {selectedMachine.code} — <span style={{ color: 'var(--green)' }}>🟢 Running</span>
+              </div>
+              <div className="text3" style={{ fontSize: 11 }}>
+                Started: {selectedRunning.startTime} by {selectedRunning.operatorName ?? ''}
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  background: 'var(--bg)',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div className="text3" style={{ fontSize: 9 }}>
+                  JOB CARD
+                </div>
+                <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
+              </div>
+              <div
+                style={{
+                  background: 'var(--bg)',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div className="text3" style={{ fontSize: 9 }}>
+                  OPERATION
+                </div>
+                <div className="fw-700">
+                  Op{runningOpRow.opSeq}: {runningOpRow.operation}
+                </div>
+              </div>
+              <div
+                style={{
+                  background: 'var(--bg)',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div className="text3" style={{ fontSize: 9 }}>
+                  AVAILABLE
+                </div>
+                <div className="mono fw-700 amber" style={{ fontSize: 18 }}>
+                  {runningOpRow.available}
+                </div>
+              </div>
             </div>
             <OpEntryForm op={runningOpRow} activeRunningId={selectedRunning.id} />
           </div>
@@ -147,14 +211,18 @@ function MachineOpEntryPage() {
         ) : (
           <PendingOpsSection
             machineCode={selectedMachine.code}
+            machineName={selectedMachine.name}
             ops={pendingOps}
             isLoading={machineOps.isLoading}
           />
         )
       ) : (
-        <div className="panel">
-          <div className="empty-state">
-            Select a machine above to view its session or pending jobs.
+        <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: 30, textAlign: 'center' }}>
+          <div className="empty-icon" style={{ fontSize: 24 }}>
+            ⬅
+          </div>
+          <div className="text3" style={{ fontSize: 14 }}>
+            Select a machine from above to view status and enter production data
           </div>
         </div>
       )}
@@ -164,11 +232,12 @@ function MachineOpEntryPage() {
 
 interface PendingOpsSectionProps {
   machineCode: string;
+  machineName: string;
   ops: JcOpEnriched[];
   isLoading: boolean;
 }
 
-function PendingOpsSection({ machineCode, ops, isLoading }: PendingOpsSectionProps) {
+function PendingOpsSection({ machineCode, machineName, ops, isLoading }: PendingOpsSectionProps) {
   const start = useStartOp();
   function handleStart(opId: string) {
     void start.mutateAsync({
@@ -179,60 +248,69 @@ function PendingOpsSection({ machineCode, ops, isLoading }: PendingOpsSectionPro
     });
   }
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <span className="panel-title">
-          <span className="mono fw-700">{machineCode}</span> —{' '}
-          <span className="text3">○ Idle</span>
-        </span>
+    <div
+      style={{
+        background: 'var(--bg3)',
+        border: '2px solid var(--border)',
+        borderRadius: 10,
+        padding: 16,
+      }}
+    >
+      <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)', marginBottom: 4 }}>
+        {machineCode} — <span className="text3">⚪ Idle</span>
       </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>JC</th>
-              <th>Op</th>
-              <th>Operation</th>
-              <th style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={5} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading pending jobs…
-                </td>
-              </tr>
-            ) : ops.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="empty-state">
-                  No pending jobs assigned to this machine.
-                </td>
-              </tr>
-            ) : (
-              ops.map((op) => (
-                <tr key={op.id}>
-                  <td className="td-code cyan">{op.jobCardCode}</td>
-                  <td className="mono">{op.opSeq}</td>
-                  <td>{op.operation}</td>
-                  <td className="td-ctr mono fw-700 amber">{op.available}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleStart(op.id)}
-                      disabled={start.isPending}
-                    >
-                      <Play size={13} /> Start
-                    </button>
-                  </td>
+      <div className="text3" style={{ fontSize: 12, marginBottom: 14 }}>
+        {machineName}
+      </div>
+      {isLoading ? (
+        <div className="empty-state" style={{ padding: 20 }}>
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading pending jobs…
+        </div>
+      ) : ops.length > 0 ? (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
+            Pending Jobs for this Machine ({ops.length})
+          </div>
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>JC No.</th>
+                  <th>Op</th>
+                  <th>Operation</th>
+                  <th style={{ color: 'var(--amber)' }}>Avail</th>
+                  <th></th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {ops.map((op) => (
+                  <tr key={op.id}>
+                    <td className="mono fw-700 cyan">{op.jobCardCode}</td>
+                    <td className="mono">Op{op.opSeq}</td>
+                    <td>{op.operation}</td>
+                    <td className="td-ctr mono fw-700 amber">{op.available}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => handleStart(op.id)}
+                        disabled={start.isPending}
+                      >
+                        ▶ Start
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <div className="empty-state" style={{ padding: 20 }}>
+          No pending jobs for this machine. All operations assigned to {machineCode} are either
+          complete or waiting for input.
+        </div>
+      )}
     </div>
   );
 }

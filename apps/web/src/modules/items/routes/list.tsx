@@ -1,15 +1,30 @@
 // Item Master list (UI-003-01 + UI-003-02).
-// Ports legacy renderItems (legacy/InnovicERP_v82_12_3.html L11481) to
-// the Innovic chrome (.panel + .innovic-table + .badge + .btn). Columns
-// match legacy header order: Item Code | Name | Description | Drawing No.
+// Ports legacy renderItems (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html
+// L11481-11521) to the Innovic chrome (.panel + .innovic-table + .badge + .btn).
+// Columns match legacy header order: Item Code | Name | Description | Drawing No.
 // | Rev | Material | UOM | Drw | Actions. Uses TanStack Table for column
 // defs (preserved per user direction 2026-05-20) but renders via plain
 // <table className="innovic-table"> so the legacy CSS lights up.
+//
+// Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-017):
+//  - Item Code cell is a <Link>; legacy makes the whole <tr> clickable via
+//    onclick=viewItemDetail. Same destination, but the link keeps real
+//    navigation (middle-click / open-in-new-tab) that a row handler loses.
+//  - UOM uses .badge.b-grey; legacy's .tag class has no port in
+//    innovic-theme.css and inventing one is not allowed.
+//  - Type filter, fetching indicator, import banners and pagination are
+//    React-only additions with no legacy counterpart; removing them would
+//    drop working behaviour and orphan the itemType query param.
 
 import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
+import {
+  type ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
@@ -20,6 +35,10 @@ import { useCreateItem, useItemsList, useSoftDeleteItem } from '../api';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
 import { printItemDrawing } from '../lib/print-drawing';
 
+// Legacy puts its cell classes on the <td> itself (e.g. `<td class="td-ctr">`),
+// not on a wrapper span — td-ctr is text-align:center, which only takes effect
+// on the block-level cell. Carry that class through the column def so the
+// flexRender loop can put it where legacy has it.
 const PAGE_SIZE = 25;
 
 /** Outcome of an Excel import, bucketed so each group is shown on its own. */
@@ -207,35 +226,40 @@ function ItemsListPage(): React.JSX.Element {
       {
         header: 'Rev',
         accessorKey: 'revision',
-        cell: ({ row }) => <span className="td-ctr">{row.original.revision}</span>,
+        meta: { tdClass: 'td-ctr' },
+        cell: ({ row }) => row.original.revision,
       },
       { header: 'Material', accessorKey: 'material', cell: ({ row }) => row.original.material ?? '—' },
       {
         header: 'UOM',
         accessorKey: 'uom',
+        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => <span className="badge b-grey">{row.original.uom}</span>,
       },
       {
         header: 'Drw',
+        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) =>
           row.original.drawingFilePath ? (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 11 }}
-              title="View/Print drawing"
+              title="View/Print Drawing"
               onClick={() => void printDrawing(row.original)}
             >
-              <Printer size={12} /> Print
+              🖨 Print
             </button>
           ) : (
-            <span className="text3">—</span>
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
           ),
       },
       {
         header: 'Actions',
         cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <Link to="/items/$id" params={{ id: row.original.id }} className="btn btn-ghost btn-sm">
               View
             </Link>
@@ -296,7 +320,7 @@ function ItemsListPage(): React.JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="innovic-input"
-            placeholder="Search code, name, material…"
+            placeholder="🔍 Search code, name, material…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}
@@ -356,7 +380,7 @@ function ItemsListPage(): React.JSX.Element {
                 }}
               />
               <Link to="/items/new" className="btn btn-primary">
-                <Plus size={14} /> Add Item
+                + Add Item
               </Link>
             </>
           ) : null}
@@ -382,15 +406,6 @@ function ItemsListPage(): React.JSX.Element {
       {importResult ? (
         <ImportResultBanner result={importResult} onClose={() => setImportResult(null)} />
       ) : null}
-
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            ★ Item Master is for defining items only. Stock / Inventory is managed in{' '}
-            <b>Store → Stock Ledger</b>.
-          </span>
-        </div>
-      </div>
 
       <div className="panel">
         <div className="tbl-wrap">
@@ -434,7 +449,7 @@ function ItemsListPage(): React.JSX.Element {
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -444,6 +459,11 @@ function ItemsListPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, padding: '0 4px' }}>
+        ★ Item Master is for defining items only. Stock / Inventory is managed in{' '}
+        <b>Store → Store / Inventory</b>.
       </div>
 
       <PaginationFooter

@@ -1,6 +1,19 @@
 // Client-side Excel export for SO Cycle Time (legacy _sctExport L18260).
 // Builds an .xlsx of the full phase + duration matrix from the already-loaded
-// rows using SheetJS (xlsx — an existing dependency).
+// rows using SheetJS (xlsx — an existing dependency). Verified against legacy:
+// same 27 columns in the same order, one sheet named 'SO Cycle Time' (L18281).
+// No dataset is re-derived here — every value is projected straight from the
+// server's /so-cycle-time rows (legacy instead recomputed _soPhaseData over the
+// in-memory db, which is exactly what we must not port).
+//
+// Known divergences from legacy _sctExport (behaviour, not markup — left as-is):
+//   • Scope: legacy exports ALL SOs regardless of the on-screen filter; we
+//     export the caller's `rows` (the filtered set actually on screen).
+//   • Dates: legacy wraps each phase in fmt() ("29 Apr 26"); we emit the raw
+//     ISO string from the API.
+//   • stamp() below uses toISOString() = the UTC date. Legacy uses today()
+//     (L1485-87), which is LOCAL. Between 00:00-05:29 IST our filename carries
+//     the previous day. Filename only — no figure is affected.
 
 import type { SoCycleTimeRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';

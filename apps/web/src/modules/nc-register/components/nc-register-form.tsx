@@ -202,7 +202,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid form-grid-3">
+      <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
             NC No.<span className="req">★</span>
@@ -230,31 +230,19 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             {...register('ncDate', { required: 'Date is required' })}
           />
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="reportedByText">
-            Reported by
-          </label>
-          <input
-            id="reportedByText"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Operator name (snapshot)"
-            {...register('reportedByText')}
-          />
-        </div>
 
         {!isEdit ? (
           <>
             <div className="form-grp">
               <label className="form-label" htmlFor="jobCardId">
-                Job card<span className="req">★</span>
+                JC No.<span className="req">★</span>
               </label>
               <select
                 id="jobCardId"
                 className="innovic-select"
                 {...register('jobCardId', { required: 'Job card is required' })}
               >
-                <option value="">— Pick a JC —</option>
+                <option value="">-- Select JC --</option>
                 {jcs.map((jc) => (
                   <option key={jc.id} value={jc.id}>
                     {jc.code} — {jc.itemCode} {jc.itemName}
@@ -331,7 +319,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                     });
                   }}
                 >
-                  <option value="">{selectedJcId ? '— Select op —' : '— Pick a JC first —'}</option>
+                  <option value="">{selectedJcId ? '-- Select --' : '-- Select JC first --'}</option>
                   {opsForJc.map((op) => (
                     <option key={op.id} value={op.id}>
                       Op{op.opSeq}: {op.operation}
@@ -375,14 +363,15 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
             <div className="form-grp">
               <label className="form-label" htmlFor="rejectedQty">
-                Rejected qty<span className="req">★</span>
+                Rejected Qty<span className="req">★</span>
               </label>
               <input
                 id="rejectedQty"
                 type="number"
                 min={1}
                 step="0.01"
-                className="innovic-input"
+                placeholder="Qty"
+                className="innovic-input fw-700 red"
                 {...register('rejectedQty', {
                   valueAsNumber: true,
                   min: { value: 0.01, message: 'Must be > 0' },
@@ -397,7 +386,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
 
         <div className="form-grp">
           <label className="form-label" htmlFor="reasonCategory">
-            Reason category
+            Reason Category
           </label>
           <select id="reasonCategory" className="innovic-select" {...register('reasonCategory')}>
             {NC_REASON_CATEGORIES.map((r) => (
@@ -407,16 +396,28 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
             ))}
           </select>
         </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="reportedByText">
+            Reported by
+          </label>
+          <input
+            id="reportedByText"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Operator name (snapshot)"
+            {...register('reportedByText')}
+          />
+        </div>
 
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="reason">
-            Problem / Defect description<span className="req">★</span>
+            Problem / Defect Description<span className="req">★</span>
           </label>
           <textarea
             id="reason"
             className="innovic-textarea"
             rows={3}
-            placeholder="Describe the defect or problem in detail…"
+            placeholder="Describe the defect or problem in detail..."
             {...register('reason', {
               validate: (v) =>
                 (v?.trim().length ?? 0) > 0 || 'Describe the problem/defect',
@@ -458,9 +459,9 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Report NC')}
+          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}✓{' '}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Save')}
           </button>
         </div>
       </div>

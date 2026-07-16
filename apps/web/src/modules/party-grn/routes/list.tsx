@@ -96,16 +96,25 @@ function PartyGrnListPage(): React.JSX.Element {
       </div>
 
       <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: 10,
-          marginBottom: 14,
-        }}
+        className="stat-grid"
+        style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 14 }}
       >
-        <KpiTile label="Total GRNs" value={summary.totalGrns} color="var(--cyan)" />
-        <KpiTile label="Total Received" value={summary.totalReceived} color="var(--green)" />
-        <KpiTile label="Today" value={summary.today} color="var(--amber)" />
+        <div className="stat-card cyan">
+          <div className="stat-label">TOTAL GRNs</div>
+          <div className="stat-val">{summary.totalGrns}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-label">TOTAL RECEIVED</div>
+          <div className="stat-val" style={{ color: 'var(--green)' }}>
+            {summary.totalReceived}
+          </div>
+        </div>
+        <div className="stat-card amber">
+          <div className="stat-label">TODAY</div>
+          <div className="stat-val" style={{ color: 'var(--amber)' }}>
+            {summary.today}
+          </div>
+        </div>
       </div>
 
       <div className="panel">
@@ -119,13 +128,6 @@ function PartyGrnListPage(): React.JSX.Element {
           <div className="panel-body">
             <div className="empty-state" style={{ color: 'var(--red)' }}>
               {error instanceof Error ? error.message : 'Failed to load party GRNs'}
-            </div>
-          </div>
-        ) : data && data.items.length === 0 ? (
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">📥</div>
-              No party material GRNs — click <strong>+ New Party GRN</strong>.
             </div>
           </div>
         ) : data ? (
@@ -148,6 +150,13 @@ function PartyGrnListPage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
+                {data.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="empty-state">
+                      No party material GRNs — click + New Party GRN
+                    </td>
+                  </tr>
+                ) : null}
                 {data.items.map((g) => (
                   <tr key={g.id}>
                     <td>
@@ -182,7 +191,7 @@ function PartyGrnListPage(): React.JSX.Element {
                       className="text3"
                       style={{
                         fontSize: 11,
-                        maxWidth: 120,
+                        maxWidth: 100,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -191,9 +200,7 @@ function PartyGrnListPage(): React.JSX.Element {
                     >
                       {g.remarks ?? '—'}
                     </td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {g.receivedByText ?? '—'}
-                    </td>
+                    <td>{g.receivedByText ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -241,45 +248,12 @@ function PartyGrnListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
         💡 Party Material GRN records raw material received from clients for Job Work. Received qty
         is added to Party Material stock. Linked to JWSO No. / Client PO.
       </div>
 
       {showModal ? <NewPartyGrnModal onClose={() => setShowModal(false)} /> : null}
-    </div>
-  );
-}
-
-function KpiTile({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        padding: 14,
-        background: 'var(--bg2)',
-        border: '1px solid var(--border)',
-        borderTop: `3px solid ${color}`,
-        borderRadius: 6,
-        textAlign: 'center',
-      }}
-    >
-      <div
-        className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color }}>
-        {value}
-      </div>
     </div>
   );
 }
@@ -549,8 +523,8 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
           </div>
           <div
             style={{
-              border: '1px solid var(--border)',
-              borderRadius: 6,
+              border: '1px solid var(--border2)',
+              borderRadius: 'var(--radius)',
               overflow: 'hidden',
             }}
           >
@@ -562,6 +536,7 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
                   <th style={{ padding: 6, fontSize: 11, minWidth: 220 }}>
                     Material (Party Material Master) ★
                   </th>
+                  <th style={{ padding: 6, fontSize: 11 }}>Material Name</th>
                   <th style={{ padding: 6, fontSize: 11, color: 'var(--green)', width: 100 }}>
                     Qty ★
                   </th>
@@ -744,6 +719,7 @@ function LineRow({
           </div>
         ) : null}
       </td>
+      <td style={{ padding: 6, fontSize: 11, color: 'var(--text2)' }}>{selected?.name ?? ''}</td>
       <td style={{ padding: 6 }}>
         <input
           type="number"

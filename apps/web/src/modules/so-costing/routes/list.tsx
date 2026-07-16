@@ -1,5 +1,15 @@
 // SO Costing list — mirror of legacy renderSOCosting (L17249). Per-SO Material
-// + Outsource + Machine-Time cost. Row → detail. Read-only.
+// + Outsource + Machine-Time cost. Row → detail. Read-only. All money comes
+// from so-costing/service.ts (no LIMIT, so no silent cap) — nothing is summed
+// in the browser.
+//
+// Legacy deltas kept deliberately:
+//  - SO No is a <Link>; legacy L17286 makes the whole <tr> clickable via
+//    onclick=_soCostDetail. Same destination — see ISSUE-017, which settled
+//    this pattern (the link keeps middle-click / open-in-new-tab).
+//  - Money renders 2dp via the shared inrFormat; legacy L17291-96 uses
+//    toFixed(0) here but toFixed(2) on the detail, so legacy's own list and
+//    detail disagree on the same figure. 2dp keeps them consistent.
 
 import type { ListSoCostingResponse } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -7,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
 export const soCostingListRoute = createRoute({
@@ -15,7 +26,7 @@ export const soCostingListRoute = createRoute({
   component: SoCostingListPage,
 });
 
-const money = (v: number): string => (v > 0 ? `₹${Math.round(v).toLocaleString('en-IN')}` : '—');
+const money = (v: number): string => (v > 0 ? `₹${inrFormat(v)}` : '—');
 
 function SoCostingListPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQuery<ListSoCostingResponse>({
@@ -84,11 +95,10 @@ function SoCostingListPage(): React.JSX.Element {
               ) : (
                 rows.map((r) => (
                   <tr key={r.soId}>
-                    <td>
+                    <td className="mono fw-700">
                       <Link
                         to="/so-costing/$id"
                         params={{ id: r.soId }}
-                        className="td-code"
                         style={{ color: 'var(--cyan)', textDecoration: 'none' }}
                       >
                         {r.soNo}

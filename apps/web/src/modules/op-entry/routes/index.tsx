@@ -1,5 +1,5 @@
-import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowRight, Loader2, Search } from 'lucide-react';
+import { createRoute } from '@tanstack/react-router';
+import { Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -81,27 +81,7 @@ function OpEntryPage() {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Operation Entry
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <Link to="/op-entry/machines" className="btn btn-ghost btn-sm">
-            <ArrowRight size={14} /> Machine view
-          </Link>
-          <Link to="/op-entry/running" className="btn btn-ghost btn-sm">
-            <ArrowRight size={14} /> Live ops board
-          </Link>
-        </div>
-      </div>
+      <div className="section-hdr">Operation Entry</div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-body">

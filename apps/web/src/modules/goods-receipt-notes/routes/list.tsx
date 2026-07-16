@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNotesList } from '../api';
 
@@ -74,20 +75,22 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   const columns = useMemo<ColumnDef<GoodsReceiptNoteListItem>[]>(
     () => [
       {
+        // Legacy L26462 — <td class="td-code cyan">. Legacy renders plain text;
+        // the React port links to the GRN detail page (kept — extra affordance).
         header: 'GRN No.',
         accessorKey: 'code',
         cell: ({ row }) => (
           <Link
             to="/goods-receipt-notes/$id"
             params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            className="td-code cyan"
           >
             {row.original.code}
           </Link>
         ),
       },
       {
+        // Legacy L26463 — <td style="font-size:11px">.
         header: 'Date',
         accessorKey: 'grnDate',
         cell: ({ row }) => (
@@ -97,14 +100,14 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'PO',
+        // Legacy L26464/L26494 — <td class="mono"> header "PO/JWPO".
+        header: 'PO/JWPO',
         id: 'po',
         accessorFn: (r) => r.poCode ?? r.poCodeText ?? '',
+        meta: { tdClass: 'mono' },
         cell: ({ row }) =>
           row.original.poCode ? (
-            <span className="mono" style={{ fontSize: 11 }}>
-              {row.original.poCode}
-            </span>
+            <span style={{ fontSize: 11 }}>{row.original.poCode}</span>
           ) : (
             <span className="text3" style={{ fontSize: 11 }}>
               {row.original.poCodeText ?? '—'}
@@ -112,9 +115,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           ),
       },
       {
+        // Legacy L26465 — <td class="fw-700" style="font-size:12px">.
         header: 'Vendor',
         id: 'vendor',
         accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
+        meta: { tdClass: 'fw-700' },
         cell: ({ row }) => (
           <span style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
@@ -122,66 +127,84 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'DC',
-        accessorKey: 'dcNo',
-        cell: ({ row }) => (
-          <span className="mono" style={{ fontSize: 11 }}>
-            {row.original.dcNo ?? '—'}
-          </span>
-        ),
-      },
-      {
+        // Occupies legacy's "Item Code" slot (L26466). Legacy GRN is flat —
+        // one item per receipt — so it prints a single itemCode. Our GRN is
+        // header+lines (ADR-015), and the list row carries no item code, so
+        // this surfaces the line count instead. See report: Item Code needs
+        // an API change to render here.
         header: 'Lines',
         accessorKey: 'lineCount',
-        cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span>,
+        meta: { tdClass: 'td-ctr mono' },
+        cell: ({ row }) => row.original.lineCount,
       },
       {
+        // Legacy L26467 — <td class="td-ctr mono fw-700">.
         header: 'Received',
         accessorKey: 'totalReceivedQty',
-        cell: ({ row }) => (
-          <span className="td-ctr mono fw-700">{row.original.totalReceivedQty}</span>
-        ),
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => row.original.totalReceivedQty,
       },
       {
-        // Legacy renderGRN L26468 — QC Accepted total across lines (green).
-        header: 'QC Accepted',
+        // Legacy L26468 — <td class="td-ctr mono fw-700" style="color:var(--green)">.
+        header: () => <span className="green">QC Accepted</span>,
         accessorKey: 'totalQcAcceptedQty',
-        cell: ({ row }) => (
-          <span
-            className="td-ctr mono fw-700"
-            style={{ color: 'var(--green)' }}
-          >
-            {row.original.totalQcAcceptedQty}
-          </span>
-        ),
+        meta: { tdClass: 'td-ctr mono fw-700 green' },
+        cell: ({ row }) => row.original.totalQcAcceptedQty,
       },
       {
-        // Legacy renderGRN L26469 — QC Rejected total across lines (red).
-        header: 'QC Rejected',
+        // Legacy L26469 — <td class="td-ctr mono" style="color:var(--red)">.
+        // Legacy deliberately omits fw-700 here (Accepted has it, Rejected does not).
+        header: () => <span className="red">QC Rejected</span>,
         accessorKey: 'totalQcRejectedQty',
-        cell: ({ row }) => (
-          <span
-            className="td-ctr mono"
-            style={{ color: 'var(--red)', fontWeight: 700 }}
-          >
-            {row.original.totalQcRejectedQty}
-          </span>
-        ),
+        meta: { tdClass: 'td-ctr mono red' },
+        cell: ({ row }) => row.original.totalQcRejectedQty,
       },
       {
+        // No legacy equivalent column — legacy shows a header-level QC Status
+        // badge here (L26470), which our list row cannot express (QC status is
+        // per line). Kept: it is the closest working signal we have.
         header: 'QC pending',
         accessorKey: 'qcPendingCount',
+        meta: { tdClass: 'td-ctr mono fw-700' },
         cell: ({ row }) => {
           const p = row.original.qcPendingCount;
-          return (
-            <span
-              className="td-ctr mono"
-              style={{ color: p === 0 ? 'var(--green)' : 'var(--amber)', fontWeight: 700 }}
-            >
-              {p}
-            </span>
-          );
+          return <span className={p === 0 ? 'green' : 'amber'}>{p}</span>;
         },
+      },
+      {
+        // Legacy L26471/L26498 — "Ref" column: invoice no. then DC no.
+        // <td style="font-size:10px;color:var(--text3)">.
+        header: 'Ref',
+        id: 'ref',
+        accessorFn: (r) => [r.invoiceNo, r.dcNo].filter(Boolean).join(' '),
+        meta: { tdClass: 'text3' },
+        cell: ({ row }) => (
+          <span style={{ fontSize: 10 }}>
+            {[row.original.invoiceNo, row.original.dcNo].filter(Boolean).join(' ')}
+          </span>
+        ),
+      },
+      {
+        // Legacy L26458-26460/L26472 — trailing blank-header column holding the
+        // "assign to QC user" button. Legacy gates on qcStatus==='Pending';
+        // our nearest signal is "has any line awaiting QC" (qcPendingCount>0),
+        // which also covers legacy's 'Partial'. AssignTaskButton self-gates to
+        // admin/manager.
+        header: '',
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.qcPendingCount > 0 ? (
+            <AssignTaskButton
+              linkedRef={{
+                type: 'GRN',
+                id: row.original.id,
+                display: row.original.code,
+                navPage: '/incoming-qc',
+              }}
+              suggestedTitle={`Inspect ${row.original.code}`}
+            />
+          ) : null,
       },
     ],
     [],
@@ -268,17 +291,31 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         />
       ) : null}
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 GRN creates receipt record with <b>QC Pending</b> status. Go to{' '}
-            <b>Incoming QC</b> to inspect and accept/reject. Only QC-accepted qty moves to Store
-            inventory.
-          </span>
-        </div>
-      </div>
-
       <div className="panel">
+        <div className="panel-hdr">
+          <span className="panel-title">
+            GRN Register{' '}
+            {search.qcStatus ? (
+              <span className="amber" style={{ fontSize: 12 }}>
+                ({search.qcStatus.replaceAll('_', ' ')})
+              </span>
+            ) : null}
+          </span>
+          {search.qcStatus ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                void navigate({
+                  search: (prev) => ({ ...prev, qcStatus: undefined, page: 1 }),
+                  replace: true,
+                })
+              }
+            >
+              Show All
+            </button>
+          ) : null}
+        </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <SortableHead table={table} />
@@ -299,14 +336,14 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No goods receipt notes
+                    No GRN entries yet
                   </td>
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -316,6 +353,12 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Legacy L26502-26503 — plain tip line under the register panel. */}
+      <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
+        💡 GRN creates receipt record with <b>QC Pending</b> status. Go to <b>Incoming QC</b> to
+        inspect and accept/reject. Only QC-accepted qty moves to Store inventory.
       </div>
 
       <div
@@ -386,7 +429,9 @@ function GrnKpiStrip({
     key: 'all' | 'qcpending' | 'qccleared' | 'today';
     label: string;
     value: number;
-    color: string;
+    /** stat-card accent variant (legacy L26484-26487). */
+    variant: string;
+    accent: string;
     onClick?: () => void;
     active: boolean;
     sub?: string;
@@ -395,7 +440,8 @@ function GrnKpiStrip({
       key: 'all',
       label: 'Total GRNs',
       value: summary.total,
-      color: 'var(--cyan)',
+      variant: 'cyan',
+      accent: 'var(--cyan)',
       onClick: () => onSelectStatus(undefined),
       active: activeStatus === null,
     },
@@ -403,7 +449,8 @@ function GrnKpiStrip({
       key: 'qcpending',
       label: 'QC Pending',
       value: summary.qcPending,
-      color: 'var(--amber)',
+      variant: 'amber',
+      accent: 'var(--amber)',
       onClick: () => onSelectStatus('pending'),
       active: activeStatus === 'pending',
       sub: '→ Go to Incoming QC',
@@ -412,65 +459,39 @@ function GrnKpiStrip({
       key: 'qccleared',
       label: 'QC Cleared',
       value: summary.qcCleared,
-      color: 'var(--green)',
+      variant: 'green',
+      accent: 'var(--green)',
       onClick: () => onSelectStatus('completed'),
       active: activeStatus === 'completed',
     },
     {
+      // `blue` is intentionally accent-less: legacy writes `stat-card blue`
+      // here (L26487) but only ever defines cyan/amber/green/red (L97-102), so
+      // this tile has no accent bar in legacy either. Matching that is correct;
+      // adding a .blue rule would diverge.
       key: 'today',
       label: 'Today',
       value: summary.today,
-      color: 'var(--blue)',
+      variant: 'blue',
+      accent: 'var(--blue)',
       active: false,
     },
   ];
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
+    <div className="stat-grid">
       {tiles.map((t) => (
         <div
           key={t.key}
+          className={`stat-card ${t.variant}`}
           onClick={t.onClick}
           style={{
-            padding: 14,
-            background: 'var(--bg2)',
-            border: '1px solid var(--border)',
-            borderTop: `3px solid ${t.color}`,
-            borderRadius: 6,
             cursor: t.onClick ? 'pointer' : 'default',
-            boxShadow: t.active ? `0 0 0 2px ${t.color}` : undefined,
-            transition: 'box-shadow .15s',
-            textAlign: 'center',
+            boxShadow: t.active ? `0 0 0 2px ${t.accent}` : undefined,
           }}
         >
-          <div
-            className="text3"
-            style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
-          >
-            {t.label}
-          </div>
-          <div
-            style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 22,
-              fontWeight: 700,
-              color: t.color,
-              marginTop: 2,
-            }}
-          >
-            {t.value}
-          </div>
-          {t.sub ? (
-            <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
-              {t.sub}
-            </div>
-          ) : null}
+          <div className="stat-label">{t.label}</div>
+          <div className="stat-val">{t.value}</div>
+          {t.sub ? <div className="stat-sub">{t.sub}</div> : null}
         </div>
       ))}
     </div>

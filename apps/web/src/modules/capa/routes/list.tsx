@@ -36,7 +36,10 @@ function statusColor(s: string): string {
   return 'var(--text3)';
 }
 
-type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; capa: CapaRecord };
+type ModalState =
+  | { kind: 'none' }
+  | { kind: 'new' }
+  | { kind: 'edit'; capa: CapaRecord; readOnly: boolean };
 
 function CapaPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useCapaList();
@@ -84,7 +87,7 @@ function CapaPage(): React.JSX.Element {
             <button
               type="button"
               className="btn btn-primary"
-              style={{ background: 'var(--purple)', borderColor: 'var(--purple)' }}
+              style={{ background: 'var(--purple)' }}
               onClick={() => setModal({ kind: 'new' })}
             >
               ➕ New CAPA
@@ -116,10 +119,14 @@ function CapaPage(): React.JSX.Element {
                 borderRadius: 8,
                 marginBottom: 12,
                 fontSize: 12,
-                color: 'var(--amber)',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
               }}
             >
-              ⚠️ <b>{overdue.length} CAPA(s) overdue!</b> {overdue.map((c) => c.code).join(', ')}
+              <span style={{ fontSize: 16 }}>⚠️</span>
+              <b style={{ color: 'var(--amber)' }}>{overdue.length} CAPA(s) overdue!</b>{' '}
+              {overdue.map((c) => c.code).join(', ')}
             </div>
           ) : null}
 
@@ -135,17 +142,15 @@ function CapaPage(): React.JSX.Element {
             </div>
           ) : null}
 
-          <div className="panel" style={{ marginBottom: 10, padding: '10px 14px' }}>
-            <input
-              className="innovic-input"
-              style={{ width: 280, fontSize: 12 }}
-              placeholder="🔍 Search CAPA, NC, problem…"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
-          </div>
+          <input
+            className="innovic-input"
+            style={{ minWidth: 220, fontSize: 13 }}
+            placeholder="🔍 Search CAPA, NC, problem..."
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+          />
 
-          <div className="panel">
+          <div className="panel" style={{ marginTop: 10 }}>
             <div className="tbl-wrap">
               <table className="innovic-table">
                 <thead>
@@ -166,7 +171,7 @@ function CapaPage(): React.JSX.Element {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="empty-state">
-                        No CAPAs. Create from NC Register or click ➕ New CAPA.
+                        No CAPAs created yet. Create from NC Register or click + New CAPA.
                       </td>
                     </tr>
                   ) : (
@@ -194,7 +199,7 @@ function CapaPage(): React.JSX.Element {
                         </td>
                         <td style={{ fontSize: 11 }}>{c.capaDate}</td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--red)' }}>
-                          {c.ncRefs.join(', ') || '—'}
+                          {c.ncRefs.join(', ')}
                         </td>
                         <td style={{ fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.problem}>
                           {c.problem}
@@ -213,34 +218,39 @@ function CapaPage(): React.JSX.Element {
                           </span>
                         </td>
                         <td>
-                          <span style={{ display: 'inline-flex', gap: 4 }}>
+                          <div style={{ display: 'flex', gap: 3 }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ fontSize: 10 }}
+                              onClick={() => setModal({ kind: 'edit', capa: c, readOnly: true })}
+                            >
+                              👁
+                            </button>
                             {canWrite && c.status !== 'Closed' ? (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
-                                onClick={() => setModal({ kind: 'edit', capa: c })}
+                                style={{ fontSize: 10 }}
+                                onClick={() => setModal({ kind: 'edit', capa: c, readOnly: false })}
                               >
-                                ✏ Edit
+                                ✏
                               </button>
-                            ) : (
-                              <button
-                                type="button"
+                            ) : null}
+                            {c.status !== 'Closed' ? (
+                              <AssignTaskButton
+                                linkedRef={{
+                                  type: 'capa',
+                                  id: c.id,
+                                  display: `CAPA ${c.code}`,
+                                  navPage: '/capa',
+                                }}
+                                suggestedTitle={`Continue ${c.code}`}
                                 className="btn btn-ghost btn-sm"
-                                onClick={() => setModal({ kind: 'edit', capa: c })}
-                              >
-                                👁 View
-                              </button>
-                            )}
-                            <AssignTaskButton
-                              linkedRef={{
-                                type: 'capa',
-                                id: c.id,
-                                display: `CAPA ${c.code}`,
-                                navPage: '/capa',
-                              }}
-                              suggestedTitle={`Action CAPA ${c.code}`}
-                            />
-                          </span>
+                                label=""
+                              />
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -258,7 +268,7 @@ function CapaPage(): React.JSX.Element {
       {modal.kind === 'edit' ? (
         <EditCapaModal
           capa={modal.capa}
-          readOnly={!canWrite}
+          readOnly={modal.readOnly || !canWrite}
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
@@ -505,7 +515,10 @@ function EditCapaModal({
   );
 
   return (
-    <Overlay title={`${readOnly ? '👁' : '✏'} CAPA — ${capa.code} (5-Step)`} onClose={onClose}>
+    <Overlay
+      title={`${readOnly ? '👁' : '✏'} CAPA — ${capa.code} (5-Step Process)`}
+      onClose={onClose}
+    >
       <div
         style={{
           background: 'rgba(124,58,237,0.06)',
@@ -516,8 +529,21 @@ function EditCapaModal({
           fontSize: 12,
         }}
       >
-        <b style={{ color: 'var(--purple)' }}>{capa.code}</b> · {capa.type} · NC:{' '}
-        {capa.ncRefs.join(', ') || '—'} · JC: {capa.jcNo ?? '—'} · Item: {capa.itemCode ?? '—'}
+        <b style={{ color: 'var(--purple)' }}>{capa.code}</b> |{' '}
+        <span
+          style={{
+            fontSize: 10,
+            padding: '2px 6px',
+            borderRadius: 3,
+            color: capa.type === 'Corrective' ? 'var(--red)' : 'var(--blue)',
+            background:
+              capa.type === 'Corrective' ? 'rgba(220,38,38,0.1)' : 'rgba(37,99,235,0.1)',
+          }}
+        >
+          {capa.type}
+        </span>{' '}
+        | NC: {capa.ncRefs.join(', ') || '—'} | JC: {capa.jcNo ?? '—'} | Item:{' '}
+        {capa.itemCode ?? '—'}
       </div>
 
       <fieldset disabled={readOnly} style={{ border: 'none', padding: 0, margin: 0 }}>
@@ -572,20 +598,20 @@ function EditCapaModal({
               <input className="innovic-input" value={f.verifiedBy ?? ''} onChange={(e) => set('verifiedBy', e.target.value)} placeholder="QC Head / Manager" />
             </div>
             <div className="form-grp">
-              <label className="form-label">Verified Date</label>
+              <label className="form-label">Verification Date</label>
               <input type="date" className="innovic-input" value={f.verifiedDate ?? ''} onChange={(e) => set('verifiedDate', e.target.value)} />
             </div>
           </div>
         </Step>
         <Step n={5} title="Preventive Action & Closure">
-          <textarea className="innovic-input" rows={2} value={f.preventiveAction ?? ''} onChange={(e) => set('preventiveAction', e.target.value)} placeholder="Preventive action to stop recurrence…" />
+          <textarea className="innovic-input" rows={2} value={f.preventiveAction ?? ''} onChange={(e) => set('preventiveAction', e.target.value)} placeholder="Systemic changes to prevent recurrence..." />
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Effectiveness</label>
               <select className="innovic-select" value={f.effectiveness} onChange={(e) => set('effectiveness', e.target.value as UpdateCapaInput['effectiveness'])}>
                 {CAPA_EFFECTIVENESS.map((e2) => (
                   <option key={e2 || 'none'} value={e2}>
-                    {e2 || '— Not assessed —'}
+                    {e2 || '— Select —'}
                   </option>
                 ))}
               </select>

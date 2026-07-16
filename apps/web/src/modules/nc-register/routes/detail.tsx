@@ -336,7 +336,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
               {capaError}
             </div>
           ) : null}
-          <DetailGrid detail={detail} />
+          <DetailGrid detail={detail} jcCode={jcCode} />
+          {detail.disposition || detail.dispositionDate ? <DispositionBlock detail={detail} /> : null}
         </div>
       </div>
 
@@ -367,84 +368,146 @@ function NcRegisterDetailPage(): React.JSX.Element {
           }}
         />
       ) : null}
-
-      {detail.disposition || detail.dispositionDate ? (
-        <div className="panel">
-          <div className="panel-hdr">
-            <div>
-              <div className="panel-title">Disposition</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Set during the disposition workflow (T-040b cascade).
-              </div>
-            </div>
-          </div>
-          <div className="panel-body">
-            <DispositionGrid detail={detail} />
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-function DetailGrid(props: { detail: NcRegister }): React.JSX.Element {
+function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React.JSX.Element {
+  const { detail, jcCode } = props;
+  // Legacy renders "Op<seq>: <operation>" as one fused field (HTML L22729).
+  const operation = detail.operationText ?? detail.qcOperationText;
+  return (
+    <>
+      {/* Context strip — legacy `_viewNC` header block (HTML L22721-22726). */}
+      <div
+        style={{
+          padding: 12,
+          background: 'var(--bg3)',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          marginBottom: 14,
+          display: 'flex',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <CtxField label="REJ NO.">
+          <b className="red">{detail.code}</b>
+        </CtxField>
+        <CtxField label="DATE">
+          <b>{detail.ncDate}</b>
+        </CtxField>
+        <CtxField label="JC">
+          <b className="cyan">{jcCode ?? '—'}</b>
+        </CtxField>
+        <CtxField label="SO">
+          <b>{detail.soCodeText ?? '—'}</b>
+        </CtxField>
+        <CtxField label="STATUS">
+          <NcStatusBadge status={detail.status} />
+        </CtxField>
+      </div>
+      <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
+        <InlinePair label="Item:">
+          {detail.itemCodeText} — {detail.itemNameText ?? ''}
+        </InlinePair>
+        <InlinePair label="Operation:">
+          {detail.opSeq != null ? `Op${detail.opSeq}` : ''}
+          {detail.opSeq != null && operation ? ': ' : ''}
+          {operation ?? (detail.opSeq == null ? '—' : '')}
+        </InlinePair>
+        <InlinePair label="Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+        <InlinePair label="Rejected Qty:">
+          <span className="red">{Number(detail.rejectedQty)} pcs</span>
+        </InlinePair>
+        <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
+        <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
+        <InlinePair label="Reason Category:">{detail.reasonCategory.replaceAll('_', ' ')}</InlinePair>
+        <InlinePair label="Reason:">{detail.reason ?? '—'}</InlinePair>
+        {detail.timeLogged ? (
+          <div className="form-full">
+            <span className="text3">⏰ Time Logged:</span> <b>{detail.timeLogged}</b>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+// Disposition block — legacy `_viewNC` tinted panel (HTML L22738-22749). Blue
+// tint mapped from legacy's dark-theme #3b82f6 to the light-theme --blue
+// (#2563eb) at the same alpha, per the light-theme port.
+function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
   const { detail } = props;
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="NC date" value={detail.ncDate} />
-      <Pair label="Item code" value={detail.itemCodeText} />
-      <Pair label="Item name" value={detail.itemNameText ?? '—'} />
-      <Pair label="Job card" value={detail.jobCardId ? '— linked —' : '—'} />
-      <Pair label="Op seq" value={detail.opSeq != null ? String(detail.opSeq) : '—'} />
-      <Pair label="Operation" value={detail.operationText ?? detail.qcOperationText ?? '—'} />
-      <Pair label="Machine" value={detail.machineCodeText ?? '—'} />
-      <Pair label="Operator" value={detail.operatorText ?? '—'} />
-      <Pair label="SO No." value={detail.soCodeText ?? '—'} />
-      <Pair label="Rejected qty" value={Number(detail.rejectedQty).toFixed(2)} />
-      <Pair label="Reason category" value={detail.reasonCategory.replaceAll('_', ' ')} />
-      <Pair label="Reported by" value={detail.reportedByText ?? '—'} />
-      <Pair label="Time logged" value={detail.timeLogged ?? '—'} />
-      <div className="form-grp form-full">
-        <span className="form-label">Defect description</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.reason ?? '—'}</div>
+    <div
+      style={{
+        padding: '10px 14px',
+        background: 'rgba(37, 99, 235, 0.05)',
+        border: '1px solid rgba(37, 99, 235, 0.2)',
+        borderRadius: 8,
+        marginBottom: 10,
+      }}
+    >
+      <div className="fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
+        DISPOSITION
+      </div>
+      <div className="form-grid" style={{ fontSize: 12 }}>
+        <InlinePair label="Action:">
+          <NcDispositionBadge disposition={detail.disposition} />
+        </InlinePair>
+        <InlinePair label="Date:">{detail.dispositionDate ?? '—'}</InlinePair>
+        <InlinePair label="By:">{detail.dispositionByText ?? ''}</InlinePair>
+        {detail.disposition === 'rework' ? (
+          <InlinePair label="Rework Op:">
+            {detail.reworkOpSeq != null ? `Op${detail.reworkOpSeq}` : '—'}
+          </InlinePair>
+        ) : null}
+        {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
+            (HTML L22536) and our close-rework flow captures it. Kept. */}
+        {detail.disposition === 'rework' && detail.reworkDoneQty ? (
+          <InlinePair label="Rework Done Qty:">
+            {Number(detail.reworkDoneQty)}/{Number(detail.rejectedQty)} done
+          </InlinePair>
+        ) : null}
+        {detail.disposition === 'scrap' && Number(detail.scrapCost) > 0 ? (
+          <InlinePair label="Scrap Cost:">
+            <span className="red">₹{Number(detail.scrapCost).toFixed(2)}</span>
+          </InlinePair>
+        ) : null}
+        {detail.disposition === 'make_fresh' && detail.reworkJcCodeText ? (
+          <InlinePair label="New JC:">
+            <span className="cyan">{detail.reworkJcCodeText}</span>
+          </InlinePair>
+        ) : null}
+        {detail.dispositionRemarks ? (
+          <div className="form-full">
+            <span className="text3">Remarks:</span> {detail.dispositionRemarks}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-function DispositionGrid(props: { detail: NcRegister }): React.JSX.Element {
-  const { detail } = props;
+// Legacy renders body fields as inline "Label: <b>value</b>" pairs inside a
+// 2-col grid (HTML L22728-22736), not as stacked .form-label groups.
+function InlinePair(props: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="Action" value={<NcDispositionBadge disposition={detail.disposition} />} />
-      <Pair label="Disposed on" value={detail.dispositionDate ?? '—'} />
-      <Pair label="Disposed by" value={detail.dispositionByText ?? '—'} />
-      <Pair label="Rework JC" value={detail.reworkJcCodeText ?? '—'} />
-      <Pair
-        label="Rework op"
-        value={detail.reworkOpSeq != null ? String(detail.reworkOpSeq) : '—'}
-      />
-      <Pair
-        label="Rework done qty"
-        value={detail.reworkDoneQty ? Number(detail.reworkDoneQty).toFixed(2) : '—'}
-      />
-      <Pair
-        label="Scrap cost"
-        value={Number(detail.scrapCost) > 0 ? `₹${Number(detail.scrapCost).toFixed(2)}` : '—'}
-      />
-      <div className="form-grp form-full">
-        <span className="form-label">Disposition remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.dispositionRemarks ?? '—'}</div>
-      </div>
+    <div>
+      <span className="text3">{props.label}</span> <b>{props.children}</b>
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
+    <div>
+      <span className="text3" style={{ fontSize: 10 }}>
+        {props.label}
+      </span>
+      <br />
+      {props.children}
     </div>
   );
 }

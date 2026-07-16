@@ -69,7 +69,7 @@ function CostCenterEditPage(): React.JSX.Element {
             mode="edit"
             detail={detail}
             submitError={submitError}
-            submitLabel="Save changes"
+            submitLabel="Save"
             onCancel={() =>
               void navigate({ to: '/cost-centers/$id', params: { id: detail.id } })
             }

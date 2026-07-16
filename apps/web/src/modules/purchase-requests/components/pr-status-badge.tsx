@@ -1,14 +1,16 @@
 // PR status → legacy .badge .b-* class (UI-002).
-// open=blue (active) → approved=cyan (progressing) → po_created=green
-// (terminal — PR consumed by a PO) → cancelled=grey.
+// Colours follow legacy renderPurchaseRequests `stColor` (L6253): Pending
+// (=`open` here) amber → Approved blue → PO Created green → Cancelled red.
+// The port previously used blue/cyan/green/grey, which signalled `open` as
+// steady-state and `cancelled` as neutral — legacy flags both.
 
 import type { PrStatus } from '@innovic/shared';
 
 const CLASSES: Record<PrStatus, string> = {
-  open: 'b-blue',
-  approved: 'b-cyan',
+  open: 'b-amber',
+  approved: 'b-blue',
   po_created: 'b-green',
-  cancelled: 'b-grey',
+  cancelled: 'b-red',
 };
 
 export function PrStatusBadge(props: { status: PrStatus }) {

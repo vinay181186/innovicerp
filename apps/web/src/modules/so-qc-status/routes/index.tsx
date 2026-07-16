@@ -4,10 +4,16 @@
 // pills, an overall % progress bar, an expandable detail row (Incoming Material
 // QC / TPI / QC Documents sub-tables), and a TOTAL footer. Legacy chrome.
 //
-// Deferred: per-GRN-line / per-TPI "Report View" download link (owned by a
-// separate QC-report-attachment task) — the detail sub-tables omit it.
+// Not ported (no server-side source — do NOT approximate):
+//   • QC Documents sub-table "Action" column (legacy L18579 = 5 cols; ours 4).
+//     Legacy links d.url (fileData/downloadUrl); soQcDocDetailSchema carries no
+//     path/url field, so the column would be permanently empty. Needs the doc
+//     download path on the API before it can be rendered.
+//
+// The SO selector is fed by sales-orders' list hook (limit 20), NOT by this
+// module's own uncapped /so-qc-status list endpoint — see report/ISSUE note.
 
-import type { SoQcLine, SoQcStageOp } from '@innovic/shared';
+import type { SoQcLine, SoQcStageOp, SoStatus } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -15,6 +21,7 @@ import { z } from 'zod';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
+import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoQcStatus } from '../api';
 
@@ -87,8 +94,13 @@ function SoQcStatusPage(): React.JSX.Element {
       {!search.so ? (
         <div className="panel">
           <div className="empty-state">
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🔬</div>
-            Select a Sales Order to view its per-line QC status.
+            <div className="empty-icon">🔬</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>
+              Select a Sales Order to view QC status
+            </div>
+            <div style={{ fontSize: 12, marginTop: 6 }}>
+              This report shows all QC stages for each SO line in table format
+            </div>
           </div>
         </div>
       ) : detail.isLoading ? (
@@ -126,8 +138,8 @@ function SoQcStatusPage(): React.JSX.Element {
               <span style={{ marginLeft: 12, fontSize: 14, fontWeight: 600 }}>
                 {detail.data.so.customerName ?? '—'}
               </span>
-              <span className="badge b-blue" style={{ marginLeft: 12 }}>
-                {detail.data.so.status}
+              <span style={{ marginLeft: 12 }}>
+                <SoStatusBadge status={detail.data.so.status as SoStatus} />
               </span>
             </div>
             <div className="text3" style={{ fontSize: 12 }}>
@@ -140,12 +152,6 @@ function SoQcStatusPage(): React.JSX.Element {
           <SummaryStrip lines={detail.data.lines} />
 
           <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title">Per-line QC Status</span>
-              <span className="text3" style={{ fontSize: 11 }}>
-                {detail.data.lines.length} lines
-              </span>
-            </div>
             <div className="tbl-wrap">
               <table className="innovic-table">
                 <thead>
@@ -179,12 +185,10 @@ function SoQcStatusPage(): React.JSX.Element {
                 </tbody>
               </table>
             </div>
-            <div className="panel-body">
-              <span className="text3" style={{ fontSize: 11 }}>
-                💡 QC stages from JC shown directly. Click any line row to expand Incoming QC, TPI &
-                Document detail tables. ⚠ = No QC stage defined.
-              </span>
-            </div>
+          </div>
+          <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+            💡 QC stages from JC shown directly. Click any line row to expand Incoming QC, TPI &
+            Document detail tables. ⚠ = No QC stage defined.
           </div>
         </>
       )}

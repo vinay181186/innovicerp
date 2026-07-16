@@ -1,4 +1,30 @@
 // Purchase Orders list (UI-003-04). Ports legacy renderPurchaseOrders L25209.
+//
+// Column order follows legacy L25350-25355: PO No. | Lines | Date | Vendor |
+// SO/JW | Total Qty | Received | Pending | Value | Status | Actions.
+//
+// Legacy puts its cell classes on the <td> itself (e.g. `<td class="td-ctr mono
+// fw-700">` for Total Qty), not on a wrapper span — `td-ctr` is
+// text-align:center, which only takes effect on the block-level cell. Carry the
+// class through the column def so the flexRender loop can put it where legacy
+// has it (ISSUE-020).
+//
+// Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-030):
+//  - No "Value" column (legacy L25256): the list payload carries no rate/value
+//    aggregate (`purchaseOrderListItemSchema` has lineCount/totalQty/receivedQty
+//    only), and summing it needs the lines. Not faked.
+//  - "PR ref" occupies legacy's SO/JW slot: the payload has `prCodeText` but no
+//    SO/JW back-reference (legacy reads first.soRefId → CASCADE.findOrder).
+//  - No stat-card filter row (L25332-25345) and no "PO Creation Pending —
+//    Approved PRs" panel (L25315-25331). See ISSUE-030.
+//  - No expand-to-lines (L25276-25303) — the list payload has no lines — and so
+//    the tip line at L25358 that advertises it is not shipped either (trap 1,
+//    ISSUE-017).
+//  - No Approve/Reject/Print row actions: see ISSUE-030. Both live on the
+//    detail page, one click away via View.
+//  - Search placeholder says what the API actually matches, not legacy's
+//    "Search PO, vendor, item…" (trap 1 — legacy's box is a client-side filter
+//    over rendered rows; ours is a server-side code/PR-ref/vendor-code match).
 
 import {
   type ListPurchaseOrdersQuery,
@@ -22,6 +48,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -78,107 +105,166 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   const columns = useMemo<ColumnDef<PurchaseOrderListItem>[]>(
     () => [
+      // Legacy L25248: the type badge sits inside the PO No. cell, after the
+      // code — it is not a column of its own. (The expand caret and the `Rev N`
+      // tag are not ported: no line data on the list payload, no poRevision
+      // field.)
       {
         header: 'PO No.',
         accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/purchase-orders/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{ color: 'var(--cyan)', fontWeight: 800, textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Type',
-        accessorKey: 'poType',
+        meta: { tdClass: 'td-code cyan' },
         cell: ({ row }) => {
-          const t = row.original.poType;
-          const isJW = t === 'job_work';
+          const isJW = row.original.poType === 'job_work';
           return (
-            <span
-              style={{
-                fontSize: 10,
-                padding: '1px 6px',
-                borderRadius: 3,
-                background: isJW ? 'rgba(196,122,0,0.12)' : 'rgba(0,136,187,0.12)',
-                color: isJW ? 'var(--amber)' : 'var(--cyan)',
-                border: `1px solid ${isJW ? 'rgba(196,122,0,0.3)' : 'rgba(0,136,187,0.3)'}`,
-                fontWeight: 700,
-              }}
-            >
-              {isJW ? 'JW' : 'MAT'}
-            </span>
+            <>
+              <Link
+                to="/purchase-orders/$id"
+                params={{ id: row.original.id }}
+                style={{ color: 'inherit', fontWeight: 800, textDecoration: 'underline dotted' }}
+              >
+                {row.original.code}
+              </Link>
+              <span
+                style={{
+                  fontSize: 9,
+                  padding: '1px 6px',
+                  borderRadius: 3,
+                  marginLeft: 6,
+                  background: isJW ? 'rgba(196,122,0,0.12)' : 'rgba(0,136,187,0.12)',
+                  color: isJW ? 'var(--amber)' : 'var(--cyan)',
+                  border: `1px solid ${isJW ? 'rgba(196,122,0,0.3)' : 'rgba(0,136,187,0.3)'}`,
+                  fontWeight: 700,
+                }}
+              >
+                {isJW ? 'JW' : 'MAT'}
+              </span>
+            </>
           );
         },
       },
       {
+        header: 'Lines',
+        accessorKey: 'lineCount',
+        meta: { tdClass: 'td-ctr mono' },
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.lineCount}</span>,
+      },
+      {
         header: 'Date',
         accessorKey: 'poDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.poDate}
-          </span>
-        ),
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.poDate}</span>,
       },
       {
         header: 'Vendor',
         id: 'vendor',
         accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
+        meta: { tdClass: 'fw-700' },
         cell: ({ row }) => (
-          <span className="fw-700" style={{ fontSize: 12 }}>
+          <span style={{ fontSize: 12 }}>
             {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
           </span>
         ),
       },
+      // Legacy's slot 5 is SO/JW (L25252). We have no SO/JW back-reference on
+      // the payload; `prCodeText` is the upstream-document reference this port
+      // does carry, so it takes the slot. See ISSUE-030.
       {
-        header: 'Lines',
-        accessorKey: 'lineCount',
-        cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span>,
+        header: 'PR ref',
+        accessorKey: 'prCodeText',
+        meta: { tdClass: 'mono text3' },
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.prCodeText ?? '—'}</span>,
       },
       {
         header: 'Total Qty',
         accessorKey: 'totalQty',
-        cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.totalQty}</span>,
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => row.original.totalQty,
       },
+      // Legacy L25254 is unconditionally green with no "/total" suffix — Total
+      // Qty is the adjacent column and Pending is its own. The port's
+      // green/amber/grey ramp was invented semantics; dropped (ISSUE-030).
       {
         header: 'Received',
         accessorKey: 'receivedQty',
+        meta: { tdClass: 'td-ctr mono green fw-700' },
+        cell: ({ row }) => row.original.receivedQty,
+      },
+      {
+        header: 'Pending',
+        id: 'pending',
+        accessorFn: (r) => r.totalQty - r.receivedQty,
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => {
-          const r = row.original.receivedQty;
-          const t = row.original.totalQty;
-          const color =
-            r >= t && t > 0 ? 'var(--green)' : r > 0 ? 'var(--amber)' : 'var(--text3)';
+          const pend = row.original.totalQty - row.original.receivedQty;
           return (
-            <span className="td-ctr mono" style={{ color, fontWeight: 700 }}>
-              {r}
-              <span className="text3" style={{ fontSize: 10 }}>
-                {' '}
-                /{t}
-              </span>
+            <span style={{ color: pend > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
+              {pend}
             </span>
           );
         },
-      },
-      {
-        header: 'PR ref',
-        accessorKey: 'prCodeText',
-        cell: ({ row }) => (
-          <span className="mono text3" style={{ fontSize: 11 }}>
-            {row.original.prCodeText ?? '—'}
-          </span>
-        ),
       },
       {
         header: 'Status',
         accessorKey: 'status',
         cell: ({ row }) => <PoStatusBadge status={row.original.status} />,
       },
+      // Legacy L25258-25274 (rowActions). View is legacy's primary button; the
+      // rest are its dropdown items, rendered inline here because the
+      // `.row-actions*` menu chrome is in no stylesheet (ISSUE-030).
+      {
+        header: 'Actions',
+        id: 'actions',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const po = row.original;
+          return (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Link
+                to="/purchase-orders/$id"
+                params={{ id: po.id }}
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11, padding: '4px 10px' }}
+                title="View"
+              >
+                👁 View
+              </Link>
+              {canWrite && po.status !== 'closed' ? (
+                <Link
+                  to="/purchase-orders/$id/edit"
+                  params={{ id: po.id }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 10, padding: '2px 6px' }}
+                >
+                  ✎ Edit
+                </Link>
+              ) : null}
+              {canWrite && po.poType === 'job_work' && po.status !== 'draft' ? (
+                <Link
+                  to="/delivery-challans/new"
+                  search={{ poId: po.id }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 10, padding: '2px 6px' }}
+                >
+                  📦 Create DC
+                </Link>
+              ) : null}
+              {po.status !== 'closed' && po.status !== 'cancelled' ? (
+                <AssignTaskButton
+                  linkedRef={{
+                    type: 'purchase_order',
+                    id: po.id,
+                    display: `PO ${po.code}`,
+                    navPage: `/purchase-orders/${po.id}`,
+                  }}
+                  suggestedTitle={`Follow up ${po.code}`}
+                  label=""
+                />
+              ) : null}
+            </div>
+          );
+        },
+      },
     ],
-    [],
+    [canWrite],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -195,6 +281,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
+  // Legacy L25347-25348: when a filter is on, the panel title names it and a
+  // "Show All" button clears it. Legacy's `_poFlt` is set by the stat cards;
+  // ours by the status / type selects, which drive the same table.
+  const activeFilter = [search.status, search.poType]
+    .filter((v): v is PoStatus | PoType => Boolean(v))
+    .map((v) => v.replaceAll('_', ' '))
+    .join(', ');
+
   return (
     <div>
       <div
@@ -207,12 +301,12 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         }}
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Purchase Orders
+          🛒 Purchase Orders
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             className="innovic-input"
-            placeholder="Search code, PR ref, vendor code…"
+            placeholder="🔍 Search code, PR ref, vendor code…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}
@@ -269,6 +363,30 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       </div>
 
       <div className="panel">
+        <div className="panel-hdr">
+          <span className="panel-title">
+            Purchase Orders{' '}
+            {activeFilter ? (
+              <span className="amber" style={{ fontSize: 12 }}>
+                ({activeFilter})
+              </span>
+            ) : null}
+          </span>
+          {activeFilter ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() =>
+                void navigate({
+                  search: (prev) => ({ ...prev, status: undefined, poType: undefined, page: 1 }),
+                  replace: true,
+                })
+              }
+            >
+              Show All
+            </button>
+          ) : null}
+        </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <SortableHead table={table} />
@@ -293,14 +411,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               ) : table.getRowModel().rows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length} className="empty-state">
-                    No purchase orders
+                    No purchase orders yet
                   </td>
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <tr key={row.id}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id}>
+                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}

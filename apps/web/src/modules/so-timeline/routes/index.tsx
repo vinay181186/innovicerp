@@ -30,65 +30,53 @@ function SoTimelinePage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📅 SO Timeline</div>
-        <select
-          className="innovic-select"
-          value={selectedSoId ?? ''}
-          onChange={(e) => setSelectedSoId(e.target.value || null)}
-          style={{ minWidth: 280, fontSize: 13 }}
-        >
-          <option value="">— Select SO —</option>
-          {soList.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.code} — {s.customerName ?? ''} ({s.type.replaceAll('_', ' ')})
-            </option>
-          ))}
-        </select>
+      {/* Legacy L19979-19983: flex header, section-hdr with margin-bottom:0, select in a flex box. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📅 SO Timeline
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select
+            className="innovic-select"
+            value={selectedSoId ?? ''}
+            onChange={(e) => setSelectedSoId(e.target.value || null)}
+            style={{ minWidth: 250 }}
+          >
+            <option value="">— Select SO —</option>
+            {soList.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.code} — {s.customerName ?? ''} ({s.type.replaceAll('_', ' ')})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {ovLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading SO list…
-            </div>
-          </div>
+        <div className="empty-state">
+          <Loader2 size={14} className="inline animate-spin" /> Loading SO list…
         </div>
       ) : ovError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              Failed to load SO list.
-            </div>
-          </div>
+        <div className="empty-state" style={{ color: 'var(--red)' }}>
+          Failed to load SO list.
         </div>
       ) : !selectedSoId ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state">
-              <div className="empty-icon">📅</div>
-              Select a Sales Order above to view its timeline.
-            </div>
-          </div>
-        </div>
+        /* Legacy L19987. */
+        <div className="empty-state">Select a Sales Order above to view its timeline.</div>
       ) : timelineQ.isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading timeline…
-            </div>
-          </div>
+        <div className="empty-state">
+          <Loader2 size={14} className="inline animate-spin" /> Loading timeline…
         </div>
       ) : timelineQ.isError || !timelineQ.data ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {timelineQ.error instanceof Error
-                ? timelineQ.error.message
-                : 'Failed to load timeline'}
-            </div>
-          </div>
+        <div className="empty-state" style={{ color: 'var(--red)' }}>
+          {timelineQ.error instanceof Error ? timelineQ.error.message : 'Failed to load timeline'}
         </div>
       ) : (
         <TimelineBody data={timelineQ.data} />
@@ -102,58 +90,84 @@ function TimelineBody({
 }: {
   data: import('@innovic/shared').SoTimelineResponse;
 }): React.JSX.Element {
+  // Legacy L17844: header line is the SO number only — no customer/type/count.
+  const header = (
+    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+      📅 SO Timeline — {data.soCode}
+    </div>
+  );
+
   if (data.events.length === 0) {
+    // Legacy L17845.
     return (
-      <div className="panel">
-        <div className="panel-body">
-          <div className="empty-state">
-            <div className="empty-icon">📅</div>
-            No events recorded for this SO yet.
-          </div>
-        </div>
-      </div>
+      <>
+        {header}
+        <div className="empty-state">No events recorded yet.</div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="panel" style={{ marginBottom: 12, padding: '12px 14px' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>{data.soCode}</div>
-        <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-          {data.customerName ?? '—'} · {data.type.replaceAll('_', ' ')} · {data.events.length}{' '}
-          event{data.events.length === 1 ? '' : 's'}
-        </div>
-      </div>
-
-      <div className="panel" style={{ padding: 0 }}>
+      {header}
+      {/* Legacy L17847-17862: vertical rail at left:13px with a colour dot per event. */}
+      <div style={{ position: 'relative', paddingLeft: 30 }}>
+        <div
+          style={{
+            position: 'absolute',
+            left: 13,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            background: 'var(--border)',
+          }}
+        />
         {data.events.map((evt, idx) => (
-          <div
-            key={`${evt.kind}-${idx}-${evt.date}`}
-            style={{
-              padding: '10px 14px',
-              borderLeft: `3px solid ${evt.color}`,
-              borderBottom:
-                idx < data.events.length - 1 ? '1px solid var(--border)' : undefined,
-              fontSize: 12,
-            }}
-          >
+          <div key={`${evt.kind}-${idx}-${evt.date}`} style={{ position: 'relative', marginBottom: 16 }}>
             <div
               style={{
+                position: 'absolute',
+                left: -24,
+                top: 4,
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: evt.color,
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'start',
-                gap: 12,
-                marginBottom: 4,
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                color: '#fff',
+                zIndex: 1,
+                border: '2px solid var(--bg)',
               }}
             >
-              <span style={{ fontWeight: 700 }}>
-                {evt.icon} {evt.label}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
-                {formatTimelineDate(evt.date)}
-              </span>
+              {evt.icon}
             </div>
-            <div style={{ color: 'var(--text2)', lineHeight: 1.5 }}>{evt.detail}</div>
+            <div
+              style={{
+                background: 'var(--bg2)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 14px',
+                borderLeft: `3px solid ${evt.color}`,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 2,
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 700, color: evt.color }}>{evt.label}</span>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>
+                  {formatTimelineDate(evt.date)}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>{evt.detail}</div>
+            </div>
           </div>
         ))}
       </div>

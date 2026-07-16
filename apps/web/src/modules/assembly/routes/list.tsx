@@ -1,11 +1,19 @@
 // Assembly Tracker list (PL-5 + PL-5b). All Equipment SOs with assembled /
 // dispatched counts + status badge. Click-through to the per-SO tracker.
 //
-// PL-5b parity port (renderAssemblyTracker L28738–28774):
+// PL-5b parity port (renderAssemblyTracker L28738–28787):
 //   - 5 status tiles (Total / Waiting / Ready / Assembling / Done) above table
 //   - Search input + status filter dropdown
-//   - Due Date column with red-when-overdue colour
-// See docs/PARITY/assytracker.md §1–6 for the gap analysis.
+//   - Due Date column
+// Legacy renders ONE screen: an accordion of per-SO cards. The port splits it —
+// this list is legacy's collapsed card header (L28782–28787); the expanded body
+// (L28788–28884) is /assemblies/$soId. Both map to renderAssemblyTracker in
+// docs/page-registry.yaml. See docs/PARITY/assytracker.md §0/§8 for that DELTA.
+//
+// Port additions with NO legacy counterpart (kept deliberately, not parity):
+//   - red/bold Due when overdue (legacy L28785 prints the date unstyled)
+//   - active-tile ring + click-to-toggle (legacy tiles only set the filter)
+//   - Dispatched column (legacy shows it only in the expanded body, L28795)
 
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -23,12 +31,31 @@ export const assemblyListRoute = createRoute({
 type StatusKey = AssemblyListItem['status'];
 type FilterKey = 'all' | StatusKey;
 
-const STATUS_BADGE: Record<StatusKey, { cls: string; label: string }> = {
-  waiting: { cls: 'b-amber', label: 'Waiting' },
-  ready: { cls: 'b-green', label: 'Ready' },
-  assembling: { cls: 'b-cyan', label: 'Assembling' },
-  done: { cls: 'b-teal', label: 'Done' },
+// Badge colours mirror legacy L28778–28781 (green / cyan / teal / amber).
+const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
+  waiting: 'b-amber',
+  ready: 'b-green',
+  assembling: 'b-cyan',
+  done: 'b-teal',
 };
+
+// Legacy badge text (L28778–28781). Legacy's waiting variant reads
+// "Waiting — <readyCount>/<totalCount>", but the /assemblies list payload
+// carries no component-readiness counts (the service never computes them for
+// the list — see service.ts listAssemblies), so the counter is omitted rather
+// than computed in the browser.
+function statusBadgeLabel(row: AssemblyListItem): string {
+  switch (row.status) {
+    case 'ready':
+      return 'ALL READY ✓';
+    case 'assembling':
+      return `Assembling ${row.assembledQty}/${row.orderQty}`;
+    case 'done':
+      return `Done ✓ ${row.assembledQty}/${row.orderQty}`;
+    case 'waiting':
+      return 'Waiting';
+  }
+}
 
 // Tile order matches legacy L28747–28749.
 const TILES: Array<{ key: FilterKey; label: string; color: string }> = [
@@ -107,7 +134,7 @@ function AssemblyListPage(): React.JSX.Element {
                 <div className="empty-state">
                   <div className="empty-icon">🔧</div>
                   {data.items.length === 0
-                    ? 'No Equipment SOs found. Create one on the Sales Orders page with type=equipment.'
+                    ? 'No equipment assembly orders found. Create an Equipment SO with a linked BOM to see assembly tracking here.'
                     : 'No results match your filter.'}
                 </div>
               </div>
@@ -130,7 +157,6 @@ function AssemblyListPage(): React.JSX.Element {
                   </thead>
                   <tbody>
                     {filtered.map((row) => {
-                      const status = STATUS_BADGE[row.status];
                       const overdue =
                         row.dueDate !== null && row.dueDate < today && row.status !== 'done';
                       return (
@@ -162,7 +188,9 @@ function AssemblyListPage(): React.JSX.Element {
                             {row.dispatchedQty}
                           </td>
                           <td>
-                            <span className={`badge ${status.cls}`}>{status.label}</span>
+                            <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>
+                              {statusBadgeLabel(row)}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -193,7 +221,7 @@ function KpiTiles({
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
         gap: 10,
-        marginBottom: 16,
+        marginBottom: 20,
       }}
     >
       {TILES.map((t) => {

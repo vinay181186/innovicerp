@@ -1,7 +1,11 @@
 // Client create + edit form (UI-003-03). Field order matches legacy
-// clientForm (legacy/InnovicERP_v82_12_3.html L12996): Code, Name (full),
-// Address (full), Contact Person, Email. Extends legacy with Phone, GST,
-// City/State/Pincode, Status (from current shared schema).
+// clientForm (legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html L12996),
+// which addClient (L13006) and editClient (L13018) both render: Code,
+// Name (full), Address (full), Contact Person, Email. Extends legacy with
+// Phone, GST, City/State/Pincode, Status (from current shared schema).
+// Legacy marks Client Code required (user-typed, uniqueness-checked); here
+// code is auto-generated server-side and is optional in the shared schema,
+// so it carries no req marker.
 
 import {
   type Client,
@@ -105,7 +109,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <div className="form-help">Generated automatically in series (CLI-…) when you save.</div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
-        <div className="form-grp">
+        <div className="form-grp form-full">
           <label className="form-label" htmlFor="name">
             Client Name<span className="req">★</span>
           </label>
@@ -117,7 +121,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
           <label className="form-label" htmlFor="addressLine1">
             Address
           </label>
-          <textarea id="addressLine1" className="innovic-textarea" rows={2} placeholder="City / address" {...register('addressLine1')} />
+          <input id="addressLine1" className="innovic-input" autoComplete="off" placeholder="City / address" {...register('addressLine1')} />
         </div>
 
         <div className="form-grp">
@@ -185,7 +189,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Create Client'}
+        submitLabel={props.submitLabel ?? 'Save'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />
@@ -215,11 +219,11 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <input id="code" className="innovic-input" value={props.client.code} readOnly />
           <div className="form-help">Code cannot be changed after creation.</div>
         </div>
-        <div className="form-grp">
+        <div className="form-grp form-full">
           <label className="form-label" htmlFor="name">
             Client Name<span className="req">★</span>
           </label>
-          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+          <input id="name" className="innovic-input" autoComplete="off" placeholder="Full company name" {...register('name')} />
           {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
         </div>
 
@@ -227,20 +231,20 @@ function EditClientForm(props: EditMode): React.JSX.Element {
           <label className="form-label" htmlFor="addressLine1">
             Address
           </label>
-          <textarea id="addressLine1" className="innovic-textarea" rows={2} {...register('addressLine1')} />
+          <input id="addressLine1" className="innovic-input" autoComplete="off" placeholder="City / address" {...register('addressLine1')} />
         </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="contactPerson">
             Contact Person
           </label>
-          <input id="contactPerson" className="innovic-input" autoComplete="off" {...register('contactPerson')} />
+          <input id="contactPerson" className="innovic-input" autoComplete="off" placeholder="Name / phone" {...register('contactPerson')} />
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="email">
             Email
           </label>
-          <input id="email" className="innovic-input" type="email" autoComplete="off" {...register('email')} />
+          <input id="email" className="innovic-input" type="email" autoComplete="off" placeholder="email@domain.com" {...register('email')} />
           {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
         </div>
 
@@ -295,7 +299,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
 
       <FormFooter
         isSubmitting={formState.isSubmitting}
-        submitLabel={props.submitLabel ?? 'Save changes'}
+        submitLabel={props.submitLabel ?? 'Save'}
         submitError={props.submitError ?? null}
         onCancel={props.onCancel}
       />

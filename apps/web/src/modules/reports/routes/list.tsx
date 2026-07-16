@@ -1,10 +1,8 @@
 import type { ReportColumn, ReportDefinition } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowRight, BarChart3, Loader2, Sparkles } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiDownload } from '@/lib/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useReportList, useReportRun } from '../api';
@@ -20,16 +18,22 @@ export const reportsListRoute = createRoute({
   component: ReportsListPage,
 });
 
-// Per-dept header colour matches legacy `deptColors` (HTML L20033).
+// Per-dept accent, mirroring legacy `deptColors` (HTML L20033) — used for the
+// dept-page header and for the per-report chips, exactly as legacy colours its
+// report tabs. Legacy's hexes are mapped to the nearest theme token rather than
+// copied literally (the port is a light theme; legacy was dark):
+//   #2563EB → --blue · #D97706 → --amber · #DC2626 → --red · #16A34A → --green
+//   #0D9488 → --dept-finance · #0891B2 → --cyan · #7C3AED → --purple
+// Groups legacy has no colour for fall back to var(--cyan), as legacy does.
 const DEPT_COLOR: Record<string, string> = {
-  Purchase: '#2563EB',
-  Store: '#D97706',
-  Quality: '#DC2626',
-  QC: '#DC2626',
-  Sales: '#16A34A',
-  Finance: '#0D9488',
-  Production: '#0891B2',
-  Design: '#7C3AED',
+  Purchase: 'var(--blue)',
+  Store: 'var(--amber)',
+  Quality: 'var(--red)',
+  QC: 'var(--red)',
+  Sales: 'var(--green)',
+  Finance: 'var(--dept-finance)',
+  Production: 'var(--cyan)',
+  Design: 'var(--purple)',
 };
 
 function ReportsListPage() {
@@ -52,36 +56,34 @@ function ReportsListPage() {
 
   if (isDeptMode) {
     // Dept-summary mode — mirrors legacy renderDeptReport(dept) chrome
-    // verbatim (HTML L20029): purple section title + .panel/.innovic-table
-    // for each report, Excel-only export per panel.
+    // (HTML L20029): dept-coloured section title + .panel/.innovic-table per
+    // report, Excel-only export per panel. Legacy shows one report at a time
+    // behind a tab row (L20037–20043); we stack every dept report instead, so
+    // nothing is hidden behind a tab.
     const dept = search.group!;
     const titleColor = DEPT_COLOR[dept] ?? 'var(--cyan)';
     return (
       <div style={{ padding: 20 }}>
-        <div className="section-hdr" style={{ color: titleColor, marginBottom: 16 }}>
-          📊 {dept} Reports
+        <div className="section-hdr" style={{ marginBottom: 8, color: titleColor }}>
+          <span style={{ fontSize: 16 }}>📊</span> {dept} Reports
         </div>
 
         {isLoading ? (
           <div className="panel">
-            <div className="panel-body">
-              <div className="text3" style={{ fontSize: 12 }}>
-                <Loader2 size={14} className="inline animate-spin" /> Loading reports…
-              </div>
+            <div className="panel-body text3" style={{ fontSize: 12 }}>
+              <Loader2 size={14} className="inline animate-spin" /> Loading reports…
             </div>
           </div>
         ) : isError || !data ? (
           <div className="panel">
-            <div className="panel-body">
-              <div className="empty-state" style={{ color: 'var(--red)' }}>
-                {error instanceof Error ? error.message : 'Failed to load reports'}
-              </div>
+            <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+              {error instanceof Error ? error.message : 'Failed to load reports'}
             </div>
           </div>
         ) : (deptReports?.length ?? 0) === 0 ? (
           <div className="panel">
-            <div className="panel-body">
-              <div className="empty-state">No reports configured for the {dept} department.</div>
+            <div className="panel-body empty-state">
+              No reports configured for this department.
             </div>
           </div>
         ) : (
@@ -92,79 +94,75 @@ function ReportsListPage() {
   }
 
   return (
-    <main className="container max-w-5xl py-10">
-      <div className="space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <BarChart3 className="mt-1 h-6 w-6 text-muted-foreground" />
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-              <p className="text-sm text-muted-foreground">
-                Server-defined reports — pick one, fill the filters, run.
-              </p>
-            </div>
-          </div>
-          <Button asChild variant="outline">
-            <Link to="/saved-reports">
-              <Sparkles />
-              Saved reports
-            </Link>
-          </Button>
+    <div style={{ padding: 20 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <div className="section-hdr" style={{ marginBottom: 0 }}>
+          📊 Reports
         </div>
-
-        {isLoading ? (
-          <Card>
-            <CardContent className="py-6">
-              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading reports…
-              </div>
-            </CardContent>
-          </Card>
-        ) : isError || !data ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Failed to load reports</CardTitle>
-              <CardDescription>
-                {error instanceof Error ? error.message : 'Unknown error'}
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <div className="space-y-6">
-            {Object.entries(grouped).map(([group, reports]) => (
-              <div key={group} className="space-y-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group}
-                </h2>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {reports.map((report) => (
-                    <Link
-                      key={report.slug}
-                      to="/reports/$slug"
-                      params={{ slug: report.slug }}
-                      className="group flex items-start justify-between gap-3 rounded-lg border bg-card p-4 text-card-foreground transition-colors hover:bg-accent"
-                    >
-                      <div className="space-y-1">
-                        <div className="font-medium">{report.title}</div>
-                        <p className="text-xs text-muted-foreground">{report.description}</p>
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          {report.columns.length} columns ·{' '}
-                          {report.filters.length === 0
-                            ? 'no filters'
-                            : `${report.filters.length} filter${report.filters.length === 1 ? '' : 's'}`}
-                        </div>
-                      </div>
-                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <Link to="/saved-reports" className="btn btn-sm btn-ghost">
+          ✨ Saved Reports
+        </Link>
       </div>
-    </main>
+      <div className="text3" style={{ fontSize: 12, marginBottom: 16 }}>
+        Server-defined reports — pick one, fill the filters, run.
+      </div>
+
+      {isLoading ? (
+        <div className="panel">
+          <div className="panel-body text3" style={{ fontSize: 12 }}>
+            <Loader2 size={14} className="inline animate-spin" /> Loading reports…
+          </div>
+        </div>
+      ) : isError || !data ? (
+        <div className="panel">
+          <div className="panel-body empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load reports'}
+          </div>
+        </div>
+      ) : (
+        Object.entries(grouped).map(([group, reports]) => {
+          const color = DEPT_COLOR[group] ?? 'var(--cyan)';
+          return (
+            <div key={group}>
+              <div className="section-hdr" style={{ marginBottom: 8, color }}>
+                {group}
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 16 }}>
+                {reports.map((report) => (
+                  <Link
+                    key={report.slug}
+                    to="/reports/$slug"
+                    params={{ slug: report.slug }}
+                    className="btn btn-sm"
+                    style={{
+                      fontWeight: 700,
+                      background: color,
+                      color: '#fff',
+                      border: `1px solid ${color}`,
+                    }}
+                    title={`${report.description} — ${report.columns.length} columns · ${
+                      report.filters.length === 0
+                        ? 'no filters'
+                        : `${report.filters.length} filter${report.filters.length === 1 ? '' : 's'}`
+                    }`}
+                  >
+                    {report.title}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
   );
 }
 
@@ -259,15 +257,7 @@ function InlineReportPanel({ report }: { report: ReportDefinition }): React.JSX.
               data.rows.map((row, i) => (
                 <tr key={i}>
                   {report.columns.map((c, ci) => (
-                    <td
-                      key={c.key}
-                      style={{
-                        textAlign: c.type === 'number' ? 'right' : undefined,
-                        fontFamily: c.type === 'number' ? 'var(--mono)' : undefined,
-                        fontWeight: ci === 0 ? 700 : undefined,
-                        color: ci === 0 ? 'var(--cyan)' : tintForCell(c, row[c.key]),
-                      }}
-                    >
+                    <td key={c.key} style={cellStyle(c, row[c.key], ci)}>
                       {formatCell(c, row[c.key])}
                     </td>
                   ))}
@@ -291,12 +281,40 @@ function formatCell(col: ReportColumn, raw: unknown): string {
   return String(raw);
 }
 
-/** Conditional colours for known status keywords — matches legacy `_rptTbl` (HTML L20096–20100). */
-function tintForCell(col: ReportColumn, raw: unknown): string | undefined {
-  if (typeof raw !== 'string') {
-    if (col.type === 'number' && raw === 0) return 'var(--text3)';
-    return undefined;
+/** Per-cell style, transcribing legacy `_rptTbl`'s inline-style cascade
+ *  (HTML L20090–20101). Legacy appends each rule to one style string, so the
+ *  LAST write wins per property: a status colour overrides the column-0 cyan,
+ *  and a numeric zero renders muted. Legacy sniffs numeric columns from the
+ *  first five rows (L20076–20078); the server types them for us, so `col.type`
+ *  stands in for legacy's `numCols[ci]`. */
+function cellStyle(col: ReportColumn, raw: unknown, ci: number): React.CSSProperties {
+  const st: React.CSSProperties = {};
+  const isNum = typeof raw === 'number';
+  if (isNum) {
+    st.textAlign = 'right';
+    st.fontFamily = 'var(--mono)';
+    st.fontWeight = 600;
+  } else if (col.type === 'number') {
+    st.textAlign = 'right';
+    st.fontFamily = 'var(--mono)';
   }
+  if (ci === 0) {
+    st.fontWeight = 700;
+    st.color = 'var(--cyan)';
+  }
+  if (isNum && raw === 0) st.color = 'var(--text3)';
+  if (typeof raw === 'string') {
+    const tint = statusColor(raw);
+    if (tint) {
+      st.color = tint;
+      st.fontWeight = 700;
+    }
+  }
+  return st;
+}
+
+/** Conditional colours for known status keywords — matches legacy `_rptTbl` (HTML L20096–20100). */
+function statusColor(raw: string): string | undefined {
   if (
     ['DELAYED', 'ZERO', 'Pending', 'Cancelled', 'NO GRN', 'Not Planned', 'Open'].includes(raw)
   ) {

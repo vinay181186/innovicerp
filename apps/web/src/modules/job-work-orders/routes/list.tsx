@@ -1,8 +1,14 @@
-// JW Master list — ONE ROW PER JWSO (#6, matches the SO Master list). Columns:
-// JWSO NO. · DATE · CLIENT · CLIENT PO · LINES · TOTAL QTY · JC QTY · MATERIAL ·
+// JW Master list — ONE ROW PER JWSO (#6, matches the SO Master list). Columns,
+// in legacy renderJWMaster thead order (L12685, with Line → Lines per the
+// grouped SO Master L11863):
+// JWSO NO. · LINES · DATE · CLIENT · CLIENT PO · TOTAL QTY · JC QTY · MATERIAL ·
 // DUE · STATUS · REMARKS · (Edit Del). Material is colored text (✓ Full / ◑
 // Partial / ✕ Not Received) keyed on header materialReceivedQty vs the header
 // clientMaterialQty (expected client-supplied material).
+//
+// NOT ported from legacy L12656 — the Client PO 📎 attachment link: JW carries no
+// clientPoFilePath (SO does; packages/shared/src/schemas/sales-order.ts:136), so
+// the link would need a DB column + upload route. Not faked here (ISSUE-031).
 
 import {
   type JobWorkOrderDetail,
@@ -97,49 +103,73 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     if (confirm(`Move JW ${code} to Trash?`)) deleteMut.mutate(jwId);
   };
 
+  // Column order mirrors legacy renderJWMaster thead L12685:
+  //   JW No. | Line | Date | Client | Client PO | Item Code | Part Name | Qty |
+  //   JC Qty | Material | Due | Status | Remarks | (actions)
+  // Item Code / Part Name are line-level here (header+lines model, ADR-012) and
+  // live in the expand panel — exactly as legacy renderSOmaster L11858 drops
+  // them from its grouped header row. Legacy JW's per-record "Line" number
+  // becomes the "Lines" count, rendered as legacy SO Master does (L11863).
+  // Cell classes ride on meta.tdClass so they land on the <td> like legacy;
+  // flexRender only renders inner content, so a td-ctr on a <span> is inert
+  // (ISSUE-020).
   const columns = useMemo<ColumnDef<JobWorkOrderListItem>[]>(
     () => [
       {
-        header: '',
-        id: 'expand',
-        enableSorting: false,
+        // Legacy has no separate expander column — the ▶/▼ marker sits inside
+        // the No. cell (renderSOmaster L11860). Kept as a button because the
+        // React chevron is what toggles expand (the row itself opens the JWSO).
+        header: 'JWSO No.',
+        accessorKey: 'code',
+        meta: { tdClass: 'td-code cyan' },
         cell: ({ row }) => {
           const isExpanded = expandedId === row.original.jwId;
           return (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.jwId); }}
-              aria-label={isExpanded ? 'Collapse' : 'Expand'}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, display: 'inline-flex', alignItems: 'center' }}
-            >
-              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.jwId); }}
+                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 0, width: 16, display: 'inline-flex', alignItems: 'center' }}
+              >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
+                {row.original.code}
+              </Link>
+            </span>
           );
         },
       },
       {
-        header: 'JWSO No.',
-        accessorKey: 'code',
+        header: 'Lines',
+        accessorKey: 'lineCount',
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => (
-          <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} className="td-code cyan" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
-            {row.original.code}
-          </Link>
+          <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
+            {row.original.lineCount} line{row.original.lineCount > 1 ? 's' : ''}
+          </span>
         ),
       },
-      { header: 'Date', accessorKey: 'jwDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
-      { header: 'Client', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
-      { header: 'Client PO', accessorKey: 'clientPoNo', cell: ({ row }) => <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
-      { header: 'Lines', accessorKey: 'lineCount', cell: ({ row }) => <span className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>{row.original.lineCount}</span> },
-      { header: 'Total Qty', accessorKey: 'totalQty', cell: ({ row }) => <span className="td-ctr mono fw-700">{row.original.totalQty}</span> },
+      { header: 'Date', accessorKey: 'jwDate', meta: { tdClass: 'text2' }, cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.jwDate}</span> },
+      { header: 'Client', accessorKey: 'customerName', meta: { tdClass: 'fw-700' }, cell: ({ row }) => row.original.customerName ?? '—' },
+      { header: 'Client PO', accessorKey: 'clientPoNo', meta: { tdClass: 'td-code mono' }, cell: ({ row }) => <span style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span> },
+      {
+        header: 'Total Qty',
+        accessorKey: 'totalQty',
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => row.original.totalQty,
+      },
       {
         header: 'JC Qty',
         accessorKey: 'jcQty',
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => {
           const jc = row.original.jcQty;
           const tot = row.original.totalQty;
           const color = jc >= tot && tot > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
           return (
-            <span className="td-ctr mono" style={{ fontSize: 11 }}>
+            <span style={{ fontSize: 11 }}>
               <span style={{ color }}>{jc}</span>
               <span className="text3" style={{ fontSize: 10 }}> /{tot}</span>
             </span>
@@ -150,8 +180,9 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         header: 'Material',
         id: 'material',
         accessorFn: (r) => Number(r.materialReceivedQty ?? 0),
+        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => (
-          <span className="td-ctr" style={{ fontSize: 11 }}>
+          <span style={{ fontSize: 11 }}>
             <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} expected={Number(row.original.clientMaterialQty ?? 0)} />
           </span>
         ),
@@ -159,18 +190,20 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {
         header: 'Due',
         accessorKey: 'earliestDueDate',
+        meta: { tdClass: 'text2 td-ctr' },
         cell: ({ row }) => {
           const due = row.original.earliestDueDate;
           const overdue = !!due && due < today && row.original.status === 'open';
-          return <span className="text2 td-ctr" style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due ?? '—'}</span>;
+          return <span style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due ?? '—'}</span>;
         },
       },
       { header: 'Status', accessorKey: 'status', cell: ({ row }) => <SoStatusBadge status={row.original.status} /> },
       {
         header: 'Remarks',
         accessorKey: 'remarks',
+        meta: { tdClass: 'text3' },
         cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11, maxWidth: 110, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
+          <span style={{ fontSize: 11, maxWidth: 110, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
             {row.original.remarks ?? ''}
           </span>
         ),
@@ -221,7 +254,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       </div>
 
       <div style={{ padding: '10px 14px', background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
-        📌 <b style={{ color: 'var(--green)' }}>Job Work:</b> Client provides raw material → we machine/process it → deliver finished parts back to client. Track client material receipt here.
+        <b style={{ color: 'var(--green)' }}>📌 Job Work:</b> Client provides raw material → We machine/process it → Deliver finished parts back to client. Track client material receipt here.
       </div>
 
       <div className="panel">
@@ -244,7 +277,11 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                         onClick={() => void navigate({ to: '/job-work-orders/$id', params: { id: row.original.jwId } })}
                         style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
                       >
-                        {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
                       </tr>
                       {isExpanded ? (
                         <tr>

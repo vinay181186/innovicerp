@@ -53,6 +53,10 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
+  // ISSUE-065 mech.1 (inlined expression, NOT fixed here — reported): this is
+  // UTC-derived, so between 00:00 and 05:30 IST it defaults Date to YESTERDAY.
+  // Legacy today() L1485-87 is correct because it reads LOCAL getFullYear/
+  // getMonth/getDate. Also module-level, so it is frozen at first import.
   grnDate: new Date().toISOString().slice(0, 10),
 };
 
@@ -194,11 +198,14 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid form-grid-3" style={{ marginBottom: 16 }}>
+      {/* Header — field order, labels and placeholders verbatim from legacy
+          addGRN() L26537-26543 (2-col .form-grid, as legacy L26537). No ★ on
+          GRN No.: legacy renders it readonly/auto (L26538) and our schema has
+          code .optional() — "blank = auto". */}
+      <div className="form-grid" style={{ marginBottom: 16 }}>
         <DocNumberInput
           type="grn"
           label="GRN No."
-          required={isCreate}
           readOnly={isEdit}
           value={watch('header.code') ?? ''}
           onChange={(v) => setValue('header.code', v)}
@@ -215,6 +222,64 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             {...register('header.grnDate', { required: 'Date is required' })}
           />
         </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="invoiceNo">
+            Invoice No.
+          </label>
+          <input
+            id="invoiceNo"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Supplier invoice"
+            {...register('header.invoiceNo')}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="dcNo">
+            DC / Challan No.
+          </label>
+          <input
+            id="dcNo"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="Delivery challan"
+            {...register('header.dcNo')}
+          />
+        </div>
+
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">
+            Remarks
+          </label>
+          {/* Legacy uses <input> (L26542); kept as <textarea> — remarks is
+              z.string().max(2000) so CR/LF survives; <input> would strip it. */}
+          <textarea
+            id="remarks"
+            className="innovic-textarea"
+            rows={2}
+            placeholder="Notes"
+            {...register('header.remarks')}
+          />
+        </div>
+      </div>
+
+      {/* ▸ SELECT PO — legacy addGRN() L26545-26550. Legacy resolves the vendor
+          from the PO and shows it read-only (_grnRefreshPOLines L26672-26673);
+          our vendor fields stay because they are the only vendor entry point
+          without legacy's Manual mode. */}
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--cyan)',
+          fontFamily: 'var(--mono)',
+          fontWeight: 700,
+          letterSpacing: '.06em',
+          marginBottom: 6,
+        }}
+      >
+        ▸ SELECT PO
+      </div>
+      <div className="form-grid" style={{ marginBottom: 16 }}>
         <div className="form-grp">
           <label className="form-label" htmlFor="purchaseOrderId">
             Purchase Order
@@ -233,7 +298,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             ))}
           </select>
         </div>
-
         <div className="form-grp">
           <label className="form-label" htmlFor="poCodeText">
             PO ref (audit)
@@ -267,41 +331,6 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
             className="innovic-input"
             autoComplete="off"
             {...register('header.vendorCodeText')}
-          />
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="dcNo">
-            DC No.
-          </label>
-          <input
-            id="dcNo"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.dcNo')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="invoiceNo">
-            Invoice No.
-          </label>
-          <input
-            id="invoiceNo"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('header.invoiceNo')}
-          />
-        </div>
-
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          <textarea
-            id="remarks"
-            className="innovic-textarea"
-            rows={2}
-            {...register('header.remarks')}
           />
         </div>
       </div>
@@ -556,9 +585,17 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
+          {/* Create footer derived from the legacy CALL SITE: addGRN() passes an
+              explicit saveLabel 'Create GRN' to showModalLg (L26567/L26622), and
+              showModalLg L28044 renders `&#10003; ${_saveLabel}` on a
+              .btn-success. Edit has no legacy counterpart — left as-is. */}
+          <button
+            type="submit"
+            className={`btn ${isEdit ? 'btn-primary' : 'btn-success'}`}
+            disabled={formState.isSubmitting || (isCreate && !docNoValid)}
+          >
             {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create GRN')}
+            {props.submitLabel ?? (isEdit ? 'Save changes' : '✓ Create GRN')}
           </button>
         </div>
       </div>

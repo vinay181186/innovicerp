@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
+import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
 import {
@@ -42,6 +43,13 @@ import {
 import { SoStatusBadge } from '../components/so-status-badge';
 import { exportSoListExcel } from '../lib/import-export';
 
+// ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
+// `<td class="td-ctr mono fw-700">`), not on a wrapper span. td-ctr is
+// text-align:center, which does nothing on an inline <span>, and
+// `.innovic-table td` sets no text-align of its own — so those columns rendered
+// left-aligned where legacy centres them. Carry the class through the column def
+// so the flexRender loop puts it where legacy has it. Mirrors the augmentation
+// in items/routes/list.tsx.
 const PAGE_SIZE = 25;
 
 /** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
@@ -157,50 +165,64 @@ function SalesOrdersListPage(): React.JSX.Element {
     }
   }
 
+  // Column order mirrors legacy renderSOmaster thead L11971:
+  //   SO/WO No. | Lines | Date | Client | Client PO | Total Qty | JC Qty | Due |
+  //   Type | Status | Remarks | (actions)
+  // "Raised By" has no legacy counterpart and is kept (see report) next to Client.
   const columns = useMemo<ColumnDef<SalesOrderListItem>[]>(
     () => [
       {
-        header: '',
-        id: 'expand',
-        enableSorting: false,
+        // Legacy has no separate expander column — the ▶/▼ marker sits inside the
+        // SO No. cell (L11860). Kept as a button because, unlike legacy (where the
+        // whole row calls _editFullSO), the React chevron is what toggles expand.
+        header: 'SO/WO No.',
+        accessorKey: 'code',
+        meta: { tdClass: 'td-code cyan' },
         cell: ({ row }) => {
           const isExpanded = expandedId === row.original.id;
           return (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.id); }}
-              aria-label={isExpanded ? 'Collapse' : 'Expand'}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 2, display: 'inline-flex', alignItems: 'center' }}
-            >
-              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </button>
+            <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 800 }}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.id); }}
+                aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 0, width: 16, display: 'inline-flex', alignItems: 'center' }}
+              >
+                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              <Link to="/sales-orders/$id" params={{ id: row.original.id }} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
+                {row.original.code}
+              </Link>
+            </span>
           );
         },
       },
       {
-        header: 'SO No.',
-        accessorKey: 'code',
+        header: 'Lines',
+        accessorKey: 'lineCount',
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => (
-          <Link to="/sales-orders/$id" params={{ id: row.original.id }} className="td-code" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
-            {row.original.code}
-          </Link>
+          <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
+            {row.original.lineCount} line{row.original.lineCount > 1 ? 's' : ''}
+          </span>
         ),
       },
       { header: 'Date', accessorKey: 'soDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.soDate}</span> },
-      { header: 'Customer', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
+      { header: 'Client', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
       { header: 'Raised By', accessorKey: 'createdByName', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.createdByName ?? '—'}</span> },
       {
         header: 'Client PO',
         accessorKey: 'clientPoNo',
+        meta: { tdClass: 'td-code mono' },
         cell: ({ row }) => (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span className="td-code mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>
+            <span style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>
             {row.original.clientPoFilePath ? (
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 style={{ padding: '0 4px', fontSize: 12 }}
-                title="View client PO document"
+                title="View Client PO Document"
                 onClick={(e) => { e.stopPropagation(); void openClientPoFile(row.original.clientPoFilePath!); }}
               >
                 📎
@@ -210,41 +232,23 @@ function SalesOrdersListPage(): React.JSX.Element {
         ),
       },
       {
-        id: 'type',
-        accessorKey: 'type',
-        enableSorting: false, // header hosts a filter <select>
-        header: () => (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            Type
-            <select
-              value={search.type ?? ''}
-              title="Filter by type"
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                const v = e.target.value as SoType | '';
-                void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true });
-              }}
-              style={{ fontSize: 10, padding: '0 2px', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer' }}
-            >
-              <option value="">▾ All</option>
-              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
-            </select>
-          </span>
-        ),
-        cell: ({ row }) => <span className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{row.original.type.replaceAll('_', ' ')}</span>,
+        header: 'Total Qty',
+        accessorKey: 'totalQty',
+        meta: { tdClass: 'td-ctr mono fw-700' },
+        cell: ({ row }) => row.original.totalQty,
       },
-      { header: 'Lines', accessorKey: 'lineCount', cell: ({ row }) => <span className="td-ctr mono">{row.original.lineCount}</span> },
-      { header: 'Total Qty', accessorKey: 'totalQty', cell: ({ row }) => <span className="td-ctr mono">{row.original.totalQty}</span> },
       {
         header: 'JC Qty',
         accessorKey: 'jcQty',
+        meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => {
           const jc = row.original.jcQty;
           const total = row.original.totalQty;
           const color = jc >= total && total > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
           return (
-            <span className="td-ctr mono" style={{ color, fontWeight: 700 }}>
-              {jc}<span className="text3" style={{ fontSize: 10 }}> /{total}</span>
+            <span style={{ fontSize: 11 }}>
+              <span style={{ color }}>{jc}</span>
+              <span className="text3" style={{ fontSize: 10 }}> /{total}</span>
             </span>
           );
         },
@@ -252,13 +256,21 @@ function SalesOrdersListPage(): React.JSX.Element {
       {
         header: 'Due',
         accessorKey: 'earliestDueDate',
+        meta: { tdClass: 'text2 td-ctr' },
         cell: ({ row }) => {
           const due = row.original.earliestDueDate;
           if (!due) return <span className="text3">—</span>;
           const today = new Date().toISOString().slice(0, 10);
           const overdue = due < today && row.original.status === 'open';
-          return <span className="text2" style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due}{overdue ? ' ⚠' : ''}</span>;
+          return <span style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due}{overdue ? ' ⚠' : ''}</span>;
         },
+      },
+      {
+        header: 'Type',
+        accessorKey: 'type',
+        // Legacy renders the type through badge() (L11870), which has no map entry
+        // for either SO type and so falls through to b-grey.
+        cell: ({ row }) => <span className="badge b-grey">{row.original.type.replaceAll('_', ' ')}</span>,
       },
       {
         header: 'Status',
@@ -276,7 +288,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         header: 'Remarks',
         accessorKey: 'remarks',
         cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11, maxWidth: 120, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
+          <span className="text3" style={{ fontSize: 11, maxWidth: 80, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
             {row.original.remarks ?? ''}
           </span>
         ),
@@ -288,9 +300,25 @@ function SalesOrdersListPage(): React.JSX.Element {
             enableSorting: false,
             cell: ({ row }: { row: { original: SalesOrderListItem } }) => (
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                <Link to="/sales-orders/$id/edit" params={{ id: row.original.id }} className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} title="Add / edit lines">
+                <Link to="/sales-orders/$id/edit" params={{ id: row.original.id }} className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} title="Add line to this SO">
                   + Line
                 </Link>
+                {row.original.status !== 'closed' ? (
+                  <AssignTaskButton
+                    linkedRef={{
+                      type: 'sales_order',
+                      id: row.original.id,
+                      display: `SO ${row.original.code}`,
+                      navPage: `/sales-orders/${row.original.id}`,
+                    }}
+                    suggestedTitle={
+                      row.original.type === 'equipment' && row.original.bomStatus === 'BOM Pending'
+                        ? `Create BOM for ${row.original.code}`
+                        : `Follow up ${row.original.code}`
+                    }
+                    label=""
+                  />
+                ) : null}
                 {row.original.status !== 'closed' ? (
                   <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} onClick={() => onDeleteSo(row.original)}>
                     Del
@@ -301,7 +329,7 @@ function SalesOrdersListPage(): React.JSX.Element {
           } as ColumnDef<SalesOrderListItem>]
         : []),
     ],
-    [expandedId, canWrite, search.type, navigate],
+    [expandedId, canWrite],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -359,7 +387,7 @@ function SalesOrdersListPage(): React.JSX.Element {
               ) : isError ? (
                 <tr><td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load sales orders'}</td></tr>
               ) : table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length} className="empty-state">No orders — click + New SO / WO</td></tr>
+                <tr><td colSpan={columns.length} className="empty-state">No orders — click + New SO/WO</td></tr>
               ) : (
                 table.getRowModel().rows.map((row) => {
                   const isExpanded = expandedId === row.original.id;
@@ -369,7 +397,11 @@ function SalesOrdersListPage(): React.JSX.Element {
                         onClick={() => void navigate({ to: '/sales-orders/$id', params: { id: row.original.id } })}
                         style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
                       >
-                        {row.getVisibleCells().map((cell) => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
                       </tr>
                       {isExpanded ? (
                         <tr>
@@ -427,12 +459,12 @@ function EquipmentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {canWrite ? <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>✏ Edit</Link> : null}
           {so.bomMasterId ? (
             <Link to="/planning" className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>📦 Plan BOM Items</Link>
           ) : (
             <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
           )}
-          {canWrite ? <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>✏ Edit</Link> : null}
           {canWrite ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Delete SO ${so.code}?`)) softDelete.mutate(so.id); }}>Del</button> : null}
         </div>
       </div>

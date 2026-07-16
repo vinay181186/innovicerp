@@ -1,6 +1,12 @@
 // BOM Master detail page — header + lines + revision log + linked SO count.
 // Mirrors the legacy expand-row contents (L8462-8491) plus the revision
-// history table (L8485-8489).
+// history table (L8485-8489) and its 👁 View (N) snapshot modal
+// (_bomViewSnapshot, L8812-8830).
+//
+// The legacy expand row's Stock column (L8464/8477) is NOT ported: it reads
+// child.stockQty off the items master, and our Item read shape has no on-hand
+// stock field (items has min_stock_qty — a threshold, not on-hand). Computing
+// it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
 
 import type { BomStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -22,10 +28,12 @@ const STATUS_BADGE: Record<BomStatus, string> = {
   obsolete: 'b-red',
 };
 
+// Legacy expand-row type icons (L8469-8470) — short forms, not the long
+// labels the BOM form's <select> uses (L8537-8539).
 const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
-  manufacture: { label: '🏭 Manufacture', color: 'var(--cyan)' },
-  purchase: { label: '🛒 Purchase', color: 'var(--green)' },
-  outsource: { label: '🏭 Outsource', color: 'var(--amber)' },
+  manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
+  purchase: { label: '🛒 Buy', color: 'var(--green)' },
+  outsource: { label: '🏭 Outsrc', color: 'var(--amber)' },
 };
 
 function BomMasterDetailPage(): React.JSX.Element {
@@ -35,6 +43,8 @@ function BomMasterDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const del = useDeleteBomMaster();
   const [delError, setDelError] = useState<string | null>(null);
+  // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
+  const [snapshotRev, setSnapshotRev] = useState<number | null>(null);
 
   const onDelete = async (): Promise<void> => {
     if (!detail) return;
@@ -77,6 +87,12 @@ function BomMasterDetailPage(): React.JSX.Element {
       </div>
     );
   }
+
+  const openSnapshot = detail.revisions.find((r) => r.revision === snapshotRev) ?? null;
+  // Legacy resolves the snapshot's item names against the live items master
+  // (L8820). We only hold the names the detail payload already joined, so an
+  // item dropped by a later revision falls back to '—' — same as legacy's miss.
+  const lineNameById = new Map(detail.lines.map((l) => [l.childItemId, l.childItemName]));
 
   return (
     <div>
@@ -170,13 +186,15 @@ function BomMasterDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">📦 Part List ({detail.lines.length})</div>
+          <div className="panel-title cyan">
+            ▸ PART LIST / ITEMS — {detail.bomNo} ({detail.lines.length})
+          </div>
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
             <thead>
               <tr>
-                <th style={{ width: 40 }}>#</th>
+                <th style={{ width: 36 }}>#</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="td-ctr">Qty / Set</th>
@@ -223,7 +241,7 @@ function BomMasterDetailPage(): React.JSX.Element {
       {detail.revisions.length > 0 ? (
         <div className="panel">
           <div className="panel-hdr">
-            <div className="panel-title">▸ Revision History ({detail.revisions.length})</div>
+            <div className="panel-title amber">▸ REVISION HISTORY ({detail.revisions.length})</div>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
@@ -233,14 +251,14 @@ function BomMasterDetailPage(): React.JSX.Element {
                   <th>Date</th>
                   <th>Changed By</th>
                   <th>Notes</th>
-                  <th className="td-ctr">Snapshot items</th>
+                  <th>Items</th>
                 </tr>
               </thead>
               <tbody>
                 {detail.revisions.map((rev) => (
                   <tr key={rev.id}>
-                    <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
-                      Rev {rev.revision}
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                      {rev.revision}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {new Date(rev.createdAt).toISOString().slice(0, 10)}
@@ -249,11 +267,92 @@ function BomMasterDetailPage(): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
                       {rev.notes ?? '—'}
                     </td>
-                    <td className="td-ctr mono">{rev.itemsSnapshot.length}</td>
+                    <td>
+                      {rev.itemsSnapshot.length > 0 ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 10 }}
+                          onClick={() => setSnapshotRev(rev.revision)}
+                        >
+                          👁 View ({rev.itemsSnapshot.length})
+                        </button>
+                      ) : (
+                        <span className="text3" style={{ fontSize: 10 }}>
+                          Current
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {openSnapshot ? (
+        <div
+          className="overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSnapshotRev(null);
+          }}
+        >
+          <div className="modal modal-lg">
+            <div className="modal-hdr">
+              <span className="modal-title">
+                📋 {detail.bomNo} — Rev {openSnapshot.revision} Snapshot (
+                {openSnapshot.itemsSnapshot.length} items)
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm btn-icon"
+                onClick={() => setSnapshotRev(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+                Archived items from Rev {openSnapshot.revision}
+              </div>
+              <table className="innovic-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Item Code</th>
+                    <th>Item Name</th>
+                    <th>Qty / Set</th>
+                    <th>Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openSnapshot.itemsSnapshot.map((it, i) => (
+                    <tr key={`${it.childItemId}-${i}`}>
+                      <td className="td-ctr mono">{i + 1}</td>
+                      <td className="td-code" style={{ color: 'var(--purple)' }}>
+                        {it.childItemCode ?? '—'}
+                      </td>
+                      <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
+                      <td className="td-ctr mono fw-700">{Number(it.qtyPerSet)}</td>
+                      <td style={{ fontSize: 11 }}>{it.bomType}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-success"
+                onClick={() => setSnapshotRev(null)}
+              >
+                ✓ Close
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

@@ -9,6 +9,10 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useCreateJwDcInward, useJwDcOutwardDetail, useJwDcOutwardList } from '@/modules/jw-dc/api';
 
+// ISSUE-065 mech.1 (named helper, NOT fixed here — reported): UTC-derived, so
+// before 05:30 IST this yields YESTERDAY. Legacy today() L1485-87 is correct —
+// it reads LOCAL getFullYear/getMonth/getDate. Reuse this helper, do not add a
+// second copy; fix all copies together.
 const today = (): string => new Date().toISOString().slice(0, 10);
 
 interface LineDraft {

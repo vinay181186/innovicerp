@@ -1,10 +1,10 @@
 // Drag-and-drop ad-hoc report builder (T-041b).
 //
-// Mirrors legacy `renderReportBuilder` (legacy HTML L17434+):
-//   - Source picker tabs at the top
-//   - Available fields list on the left, draggable
-//   - Three drop zones on the right: Columns, Filters, Group By
-//   - Live preview button + result pane
+// Mirrors legacy `renderReportBuilder` (legacy HTML L17526-17606):
+//   - Data Source picker chips at the top (L17560)
+//   - Available Fields list on the left, draggable (L17565)
+//   - Three drop zones on the right: Excel Columns / Filters / Group By (L17574-94)
+//   - Actions: Generate Excel / Preview / Clear All (L17597-17602)
 //
 // Uses native HTML5 drag & drop (matches legacy semantics, no extra deps).
 // Drag payload encoding:
@@ -20,13 +20,8 @@ import type {
   SourceDescriptor,
   SourceFieldDescriptor,
 } from '@innovic/shared';
-import { Eye, Loader2, X } from 'lucide-react';
-import { useMemo, useState, type DragEvent } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { Loader2 } from 'lucide-react';
+import { useMemo, useState, type CSSProperties, type DragEvent } from 'react';
 import { ResultTable } from './result-table';
 
 interface Props {
@@ -59,12 +54,59 @@ export interface SaveInput {
   spec: AdHocSpec;
 }
 
+// Mirrors legacy `_rbDC` (L17510): number → green, date → amber, else purple.
+// Legacy's hexes come from its own :root; we consume the same token names,
+// which tokens.css remaps for the light theme (ISSUE-067).
 const TYPE_DOT: Record<string, string> = {
-  number: 'bg-emerald-500',
-  date: 'bg-amber-500',
-  datetime: 'bg-amber-500',
-  text: 'bg-violet-500',
+  number: 'var(--green)',
+  date: 'var(--amber)',
+  datetime: 'var(--amber)',
+  text: 'var(--purple)',
 };
+
+function dotColor(type: string): string {
+  return TYPE_DOT[type] ?? 'var(--purple)';
+}
+
+// Legacy's zone boxes / chips are inline-styled (L17530-17594) — no classes
+// exist for them in either stylesheet, so they are mirrored inline against
+// our tokens rather than approximated with an invented class.
+const PANEL_TITLE: CSSProperties = { fontSize: 14, fontWeight: 700, marginBottom: 10 };
+const ZONE_TITLE: CSSProperties = { fontSize: 13, fontWeight: 700, marginBottom: 6 };
+const ZONE_HINT: CSSProperties = { fontSize: 11, color: 'var(--text3)', fontWeight: 400 };
+const CHIP: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '5px 12px',
+  borderRadius: 16,
+  fontSize: 12,
+  fontWeight: 500,
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+};
+const CHIP_X: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: 'var(--text3)',
+  cursor: 'pointer',
+  fontSize: 14,
+  lineHeight: 1,
+};
+const COMPACT_CONTROL: CSSProperties = {
+  padding: '5px 8px',
+  fontSize: 12,
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  borderRadius: 6,
+  color: 'var(--text)',
+};
+
+function dot(type: string): JSX.Element {
+  return <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor(type) }} />;
+}
 
 const ALL_OPS: FilterOp[] = ['equals', 'notEquals', 'contains', 'gt', 'lt', 'after', 'before'];
 const TEXT_OPS: FilterOp[] = ['equals', 'notEquals', 'contains'];
@@ -75,8 +117,8 @@ const OP_LABELS: Record<FilterOp, string> = {
   equals: 'equals',
   notEquals: 'not equals',
   contains: 'contains',
-  gt: '>',
-  lt: '<',
+  gt: 'greater than',
+  lt: 'less than',
   after: 'after',
   before: 'before',
 };
@@ -210,6 +252,9 @@ export function Builder(props: Props): JSX.Element {
   const removeColumn = (key: string) => setColumns((prev) => prev.filter((k) => k !== key));
   const removeFilter = (key: string) => setFilters((prev) => prev.filter((f) => f.field !== key));
 
+  // Legacy L17576: "All" fills the Columns zone with every field of the source.
+  const onAllColumns = () => setColumns((source?.fields ?? []).map((f) => f.key));
+
   const onClearAll = () => {
     setColumns([]);
     setFilters([]);
@@ -233,59 +278,65 @@ export function Builder(props: Props): JSX.Element {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      {/* Save panel */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Report details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="rb-name">Name</Label>
-              <Input
+    <form onSubmit={onSubmit}>
+      {/* Report Details — NO legacy counterpart: legacy `_rbSaveTemplate` (L17673)
+          collects the name with a prompt() and has no description / shared concept.
+          Kept (and not replaced by a prompt) — it is how saving works here. */}
+      <div className="panel">
+        <div className="panel-body">
+          <div style={PANEL_TITLE}>Report Details</div>
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="rb-name">
+                Name<span className="req">★</span>
+              </label>
+              <input
                 id="rb-name"
+                className="innovic-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Open SOs by client"
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="rb-desc">Description</Label>
-              <Input
+            <div className="form-grp">
+              <label className="form-label" htmlFor="rb-desc">
+                Description
+              </label>
+              <input
                 id="rb-desc"
+                className="innovic-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="optional"
               />
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={isShared}
-                onChange={(e) => setIsShared(e.target.checked)}
-                className="h-4 w-4 rounded border"
-              />
-              <span>
-                <span className="font-medium">Shared</span>
-                <span className="ml-2 text-xs text-muted-foreground">
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="rb-shared">
+                Shared
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                <input
+                  id="rb-shared"
+                  type="checkbox"
+                  checked={isShared}
+                  onChange={(e) => setIsShared(e.target.checked)}
+                />
+                <span style={{ color: 'var(--text2)' }}>
                   Visible to everyone in the company; only you (or admin/manager) can edit.
                 </span>
-              </span>
-            </label>
+              </label>
+            </div>
           </div>
-          {saveError ? <p className="mt-2 text-sm text-destructive">{saveError}</p> : null}
-        </CardContent>
-      </Card>
+          {saveError ? <div className="form-error">{saveError}</div> : null}
+        </div>
+      </div>
 
-      {/* Source picker */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Data source</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
+      {/* Data Source — legacy L17560 */}
+      <div className="panel">
+        <div className="panel-body">
+          <div style={PANEL_TITLE}>Data Source</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {sources.map((s) => {
               const sel = s.sourceKey === sourceKey;
               return (
@@ -293,14 +344,20 @@ export function Builder(props: Props): JSX.Element {
                   key={s.sourceKey}
                   type="button"
                   onClick={() => onChangeSource(s.sourceKey)}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    sel
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border bg-card text-muted-foreground hover:bg-accent'
-                  }`}
+                  style={{
+                    display: 'inline-block',
+                    padding: '5px 14px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: sel ? 700 : 400,
+                    cursor: 'pointer',
+                    border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`,
+                    background: sel ? 'var(--blue3)' : 'var(--bg4)',
+                    color: sel ? 'var(--blue)' : 'var(--text2)',
+                  }}
                 >
                   {s.label}
-                  <span className="ml-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text3)' }}>
                     {s.group}
                   </span>
                 </button>
@@ -308,292 +365,429 @@ export function Builder(props: Props): JSX.Element {
             })}
           </div>
           {source ? (
-            <p className="mt-2 text-xs text-muted-foreground">{source.description}</p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {/* Builder grid */}
-      <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-        {/* Available fields */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Available fields</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-              Drag → into zones
-            </p>
-            {(source?.fields ?? []).map((f) => {
-              const used = usedKeys.has(f.key);
-              return (
-                <div
-                  key={f.key}
-                  draggable={!used}
-                  onDragStart={(e) => handleDragStartField(e, f.key)}
-                  className={`flex items-center gap-2 rounded-md border bg-card px-2 py-1.5 text-xs ${
-                    used
-                      ? 'cursor-not-allowed opacity-40 line-through'
-                      : 'cursor-grab hover:bg-accent'
-                  }`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${TYPE_DOT[f.type] ?? 'bg-slate-400'}`} />
-                  <span>{f.label}</span>
-                </div>
-              );
-            })}
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-                text
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                number
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                date
-              </span>
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text3)' }}>
+              {source.description}
             </div>
-          </CardContent>
-        </Card>
+          ) : null}
+        </div>
+      </div>
 
-        {/* Drop zones */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Columns</CardTitle>
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Order = display order
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div
-                onDragOver={allowDrop}
-                onDrop={handleDropColumns}
-                className="flex min-h-[60px] flex-wrap gap-2 rounded-md border border-dashed bg-muted/30 p-3"
-              >
-                {columns.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Drop fields here</p>
-                ) : (
-                  columns.map((k, i) => {
-                    const f = fieldMap.get(k);
-                    if (!f) return null;
-                    return (
-                      <span
-                        key={k}
-                        draggable
-                        onDragStart={(e) => handleDragStartColumn(e, i)}
-                        className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs"
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${TYPE_DOT[f.type] ?? 'bg-slate-400'}`}
-                        />
-                        {f.label}
-                        <button
-                          type="button"
-                          onClick={() => removeColumn(k)}
-                          className="ml-0.5 text-muted-foreground hover:text-destructive"
-                          aria-label={`Remove ${f.label}`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    );
-                  })
-                )}
-              </div>
-            </CardContent>
-          </Card>
+      {/* Legacy L17561 — no source selected: nothing below the picker renders. */}
+      {!source ? <div className="empty-state">Select a data source to start.</div> : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Filters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div
-                onDragOver={allowDrop}
-                onDrop={handleDropFilters}
-                className="space-y-2 rounded-md border border-dashed bg-muted/30 p-3"
-              >
-                {filters.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Drop fields here to add filters</p>
-                ) : (
-                  filters.map((f) => {
-                    const fd = fieldMap.get(f.field);
-                    if (!fd) return null;
-                    const ops = opsForType(fd.type);
+      {source ? (
+        <>
+          {/* Builder grid — legacy L17563 */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '200px minmax(0,1fr)',
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            {/* Available Fields — legacy L17565 */}
+            <div className="panel" style={{ marginBottom: 0 }}>
+              <div className="panel-body">
+                <div style={ZONE_TITLE}>Available Fields</div>
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+                  Drag to right zones →
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {source.fields.map((f) => {
+                    const used = usedKeys.has(f.key);
                     return (
                       <div
-                        key={f.field}
-                        className="flex flex-wrap items-center gap-2 rounded-md border bg-card p-2 text-xs"
+                        key={f.key}
+                        draggable={!used}
+                        onDragStart={(e) => handleDragStartField(e, f.key)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '5px 10px',
+                          borderRadius: 16,
+                          fontSize: 12,
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text)',
+                          ...(used
+                            ? { opacity: 0.35, textDecoration: 'line-through' }
+                            : { cursor: 'grab' }),
+                        }}
                       >
-                        <span
-                          className={`h-2 w-2 rounded-full ${TYPE_DOT[fd.type] ?? 'bg-slate-400'}`}
-                        />
-                        <span className="min-w-[100px] font-medium">{fd.label}</span>
-                        <Select
-                          value={f.op}
-                          onChange={(e) =>
-                            setFilters((prev) =>
-                              prev.map((x) =>
-                                x.field === f.field ? { ...x, op: e.target.value as FilterOp } : x,
-                              ),
-                            )
-                          }
-                          className="h-7 text-xs"
-                        >
-                          {ALL_OPS.map((op) => (
-                            <option key={op} value={op} disabled={!ops.includes(op)}>
-                              {OP_LABELS[op]}
-                            </option>
-                          ))}
-                        </Select>
-                        <Input
-                          type={fd.type === 'date' || fd.type === 'datetime' ? 'date' : 'text'}
-                          value={f.value}
-                          onChange={(e) =>
-                            setFilters((prev) =>
-                              prev.map((x) =>
-                                x.field === f.field ? { ...x, value: e.target.value } : x,
-                              ),
-                            )
-                          }
-                          placeholder="value"
-                          className="h-7 min-w-[120px] flex-1 text-xs"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeFilter(f.field)}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={`Remove ${fd.label} filter`}
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                        {dot(f.type)}
+                        {f.label}
                       </div>
                     );
-                  })
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Group by</CardTitle>
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  One field for summary section
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div
-                onDragOver={allowDrop}
-                onDrop={handleDropGroup}
-                className="flex min-h-[44px] flex-wrap gap-2 rounded-md border border-dashed bg-muted/30 p-3"
-              >
-                {!groupBy ? (
-                  <p className="text-xs text-muted-foreground">Drop a field here</p>
-                ) : (
-                  (() => {
-                    const f = fieldMap.get(groupBy);
-                    if (!f) return null;
-                    return (
-                      <span className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-xs">
-                        <span
-                          className={`h-2 w-2 rounded-full ${TYPE_DOT[f.type] ?? 'bg-slate-400'}`}
-                        />
-                        {f.label}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setGroupBy(null);
-                            setSumCol(null);
-                          }}
-                          className="ml-0.5 text-muted-foreground hover:text-destructive"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    );
-                  })()
-                )}
-              </div>
-              {groupBy && numericFields.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <Label className="text-xs text-muted-foreground">Summarise:</Label>
-                  <Select
-                    value={sumCol ?? ''}
-                    onChange={(e) => setSumCol(e.target.value || null)}
-                    className="h-7 text-xs"
-                  >
-                    <option value="">— none —</option>
-                    {numericFields.map((f) => (
-                      <option key={f.key} value={f.key}>
-                        {f.label}
-                      </option>
-                    ))}
-                  </Select>
-                  <Label className="text-xs text-muted-foreground">Function:</Label>
-                  <Select
-                    value={sumFn}
-                    onChange={(e) => setSumFn(e.target.value as AggFunction)}
-                    className="h-7 text-xs"
-                    disabled={!sumCol}
-                  >
-                    {AGG_OPTIONS.map((fn) => (
-                      <option key={fn} value={fn}>
-                        {fn}
-                      </option>
-                    ))}
-                  </Select>
+                  })}
                 </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 10,
+                    color: 'var(--text3)',
+                    display: 'flex',
+                    gap: 6,
+                  }}
+                >
+                  <span>
+                    <span style={{ color: dotColor('text') }}>●</span> text
+                  </span>
+                  <span>
+                    <span style={{ color: dotColor('number') }}>●</span> number
+                  </span>
+                  <span>
+                    <span style={{ color: dotColor('date') }}>●</span> date
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Drop zones — legacy L17572 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Excel Columns — legacy L17574 */}
+              <div className="panel" style={{ marginBottom: 0 }}>
+                <div className="panel-body">
+                  <div
+                    style={{
+                      ...ZONE_TITLE,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span>
+                      Excel Columns <span style={ZONE_HINT}>(order = Excel order)</span>
+                    </span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 10 }}
+                        onClick={onAllColumns}
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 10 }}
+                        onClick={() => setColumns([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    onDragOver={allowDrop}
+                    onDrop={handleDropColumns}
+                    style={{
+                      minHeight: 44,
+                      border: '1.5px dashed var(--cyan)',
+                      borderRadius: 8,
+                      padding: 8,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}
+                  >
+                    {columns.length === 0 ? (
+                      <span style={{ color: 'var(--text3)', fontSize: 12, padding: 6 }}>
+                        Drop fields here
+                      </span>
+                    ) : (
+                      columns.map((k, i) => {
+                        const f = fieldMap.get(k);
+                        if (!f) return null;
+                        return (
+                          <div
+                            key={k}
+                            draggable
+                            onDragStart={(e) => handleDragStartColumn(e, i)}
+                            style={{ ...CHIP, cursor: 'grab' }}
+                          >
+                            {dot(f.type)}
+                            {f.label}
+                            <button
+                              type="button"
+                              onClick={() => removeColumn(k)}
+                              style={CHIP_X}
+                              aria-label={`Remove ${f.label}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters — legacy L17581 */}
+              <div className="panel" style={{ marginBottom: 0 }}>
+                <div className="panel-body">
+                  <div style={ZONE_TITLE}>
+                    Filters <span style={ZONE_HINT}>(drag fields here)</span>
+                  </div>
+                  <div
+                    onDragOver={allowDrop}
+                    onDrop={handleDropFilters}
+                    style={{
+                      minHeight: 44,
+                      border: '1.5px dashed var(--amber)',
+                      borderRadius: 8,
+                      padding: 8,
+                    }}
+                  >
+                    {filters.map((f) => {
+                      const fd = fieldMap.get(f.field);
+                      const ops = opsForType(fd?.type ?? 'text');
+                      return (
+                        <div
+                          key={f.field}
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            alignItems: 'center',
+                            padding: '8px 12px',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            marginBottom: 6,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: dotColor(fd?.type ?? 'text'),
+                              minWidth: 80,
+                            }}
+                          >
+                            {fd ? fd.label : f.field}
+                          </span>
+                          <select
+                            value={f.op}
+                            onChange={(e) =>
+                              setFilters((prev) =>
+                                prev.map((x) =>
+                                  x.field === f.field
+                                    ? { ...x, op: e.target.value as FilterOp }
+                                    : x,
+                                ),
+                              )
+                            }
+                            style={COMPACT_CONTROL}
+                          >
+                            {ALL_OPS.map((op) => (
+                              <option key={op} value={op} disabled={!ops.includes(op)}>
+                                {OP_LABELS[op]}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type={fd?.type === 'date' || fd?.type === 'datetime' ? 'date' : 'text'}
+                            value={f.value}
+                            onChange={(e) =>
+                              setFilters((prev) =>
+                                prev.map((x) =>
+                                  x.field === f.field ? { ...x, value: e.target.value } : x,
+                                ),
+                              )
+                            }
+                            placeholder="Value"
+                            style={{ ...COMPACT_CONTROL, flex: 1, minWidth: 100 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeFilter(f.field)}
+                            style={{ ...CHIP_X, color: 'var(--red)' }}
+                            aria-label={`Remove ${fd ? fd.label : f.field} filter`}
+                          >
+                            ✖
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <div
+                      style={{
+                        padding: 6,
+                        textAlign: 'center',
+                        color: 'var(--text3)',
+                        fontSize: 11,
+                        border: '1.5px dashed var(--border)',
+                        borderRadius: 6,
+                      }}
+                    >
+                      Drop a field here to add filter
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Group By — legacy L17587 */}
+              <div className="panel" style={{ marginBottom: 0 }}>
+                <div className="panel-body">
+                  <div style={ZONE_TITLE}>
+                    Group By <span style={ZONE_HINT}>(one field for summary sheet)</span>
+                  </div>
+                  <div
+                    onDragOver={allowDrop}
+                    onDrop={handleDropGroup}
+                    style={{
+                      minHeight: 36,
+                      border: '1.5px dashed var(--purple)',
+                      borderRadius: 8,
+                      padding: 8,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}
+                  >
+                    {!groupBy ? (
+                      <span style={{ color: 'var(--text3)', fontSize: 12, padding: 4 }}>
+                        Drop a field here
+                      </span>
+                    ) : (
+                      (() => {
+                        const f = fieldMap.get(groupBy);
+                        if (!f) return null;
+                        return (
+                          <div style={CHIP}>
+                            {dot(f.type)}
+                            {f.label}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setGroupBy(null);
+                                setSumCol(null);
+                              }}
+                              style={CHIP_X}
+                              aria-label={`Remove ${f.label}`}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                  {groupBy && numericFields.length > 0 ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 12,
+                        marginTop: 8,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>Summarize:</span>
+                        <select
+                          value={sumCol ?? ''}
+                          onChange={(e) => setSumCol(e.target.value || null)}
+                          style={COMPACT_CONTROL}
+                        >
+                          <option value="">— none —</option>
+                          {numericFields.map((f) => (
+                            <option key={f.key} value={f.key}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>Function:</span>
+                        <select
+                          value={sumFn}
+                          onChange={(e) => setSumFn(e.target.value as AggFunction)}
+                          style={COMPACT_CONTROL}
+                          disabled={!sumCol}
+                        >
+                          {AGG_OPTIONS.map((fn) => (
+                            <option key={fn} value={fn}>
+                              {fn}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions — legacy L17597 */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 16,
+              flexWrap: 'wrap',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {/* Legacy saves from the header via prompt() (_rbSaveTemplate L17673);
+              here the Report Details panel owns the name, so the submit sits
+              with the other actions. */}
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={saving || columns.length === 0 || !name.trim()}
+              >
+                {saving ? <Loader2 className="animate-spin" /> : null}💾 {saveLabel}
+              </button>
+              {onExcel ? (
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  style={{ fontSize: 14, padding: '8px 28px', fontWeight: 700 }}
+                  onClick={() => onExcel(buildSpec())}
+                  disabled={columns.length === 0 || excelLoading}
+                >
+                  📄 Generate Excel
+                </button>
               ) : null}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12 }}
+                onClick={onPreviewClick}
+                disabled={previewLoading || columns.length === 0}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11, color: 'var(--text3)' }}
+                onClick={onClearAll}
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" disabled={saving || columns.length === 0 || !name.trim()}>
-          {saving ? <Loader2 className="animate-spin" /> : null}
-          {saveLabel}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onPreviewClick}
-          disabled={previewLoading || columns.length === 0}
-        >
-          <Eye />
-          Preview
-        </Button>
-        <Button type="button" variant="ghost" onClick={onClearAll}>
-          Clear all
-        </Button>
-      </div>
-
-      {/* Preview pane */}
-      {previewLoading || preview || previewError ? (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Preview
-          </h2>
-          <ResultTable
-            data={preview}
-            isLoading={previewLoading}
-            isError={Boolean(previewError)}
-            errorMessage={previewError}
-            filenamePrefix="preview"
-            onExcel={onExcel ? () => onExcel(buildSpec()) : undefined}
-            excelLoading={excelLoading}
-          />
-        </div>
+          {/* Preview pane — legacy renders `_rbPreview` here (L17603) */}
+          {previewLoading || preview || previewError ? (
+            <ResultTable
+              data={preview}
+              isLoading={previewLoading}
+              isError={Boolean(previewError)}
+              errorMessage={previewError}
+              filenamePrefix="preview"
+              onExcel={onExcel ? () => onExcel(buildSpec()) : undefined}
+              excelLoading={excelLoading}
+            />
+          ) : null}
+        </>
       ) : null}
     </form>
   );

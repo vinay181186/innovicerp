@@ -1,11 +1,24 @@
 // SO Costing detail — mirror of legacy _soCostDetail (L17310). Per-line
-// Material/Outsource/Machine cost with op rows. Read-only.
+// Material/Outsource/Machine cost with op rows. Read-only. Every currency
+// figure here is server-owned (so-costing/service.ts); none is summed in the
+// browser.
+//
+// Legacy deltas kept deliberately:
+//  - No "Export Excel" button. Legacy L17384 wires one to _soCostExport
+//    (L17402), which re-derives the whole costing in the browser via
+//    calcEngine(). Porting it needs a server-side export; not invented here.
+//  - The op Type chip prints "(<cycle>m × <qty>)" where legacy L17362 prints
+//    "(<cycle>h × <qty> × ₹<rate>/h)". Our cycle_time_min is minutes, not
+//    hours, and legacy derives the ₹/h by dividing machTimeCost by
+//    cycleTime×qty in the browser. No hourRate is exposed on SoCostingOpRow,
+//    so the rate is omitted rather than computed here.
 
 import type { SoCostingDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 
 export const soCostingDetailRoute = createRoute({
@@ -14,16 +27,28 @@ export const soCostingDetailRoute = createRoute({
   component: SoCostingDetailPage,
 });
 
-const m2 = (v: number): string => (v > 0 ? `₹${v.toFixed(2)}` : '—');
+const m2 = (v: number): string => (v > 0 ? `₹${inrFormat(v)}` : '—');
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }): React.JSX.Element {
+// Legacy sizes only SO and TOTAL at 16px (L17386/L17392); every other stat
+// inherits the body size.
+function Stat({
+  label,
+  value,
+  color,
+  fontSize,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  fontSize?: number;
+}): React.JSX.Element {
   return (
     <div>
       <span className="text3" style={{ fontSize: 10 }}>
         {label}
       </span>
       <br />
-      <b style={{ color, fontSize: 14 }}>{value}</b>
+      <b style={{ color, fontSize }}>{value}</b>
     </div>
   );
 }
@@ -52,15 +77,15 @@ function SoCostingDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/so-costing" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+      <Link to="/so-costing" className="btn btn-ghost" style={{ marginBottom: 14 }}>
         <ArrowLeft size={14} /> Back to SO Costing
       </Link>
 
       <div
         className="panel"
-        style={{ padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 22, flexWrap: 'wrap' }}
+        style={{ padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 20, flexWrap: 'wrap' }}
       >
-        <Stat label="SO" value={data.soNo} color="var(--cyan)" />
+        <Stat label="SO" value={data.soNo} color="var(--cyan)" fontSize={16} />
         <Stat label="CUSTOMER" value={data.customer ?? '—'} />
         {data.costCenter ? (
           <Stat
@@ -72,7 +97,7 @@ function SoCostingDetailPage(): React.JSX.Element {
         <Stat label="MATERIAL" value={m2(data.grandMaterial)} color="var(--blue)" />
         <Stat label="OUTSOURCE" value={m2(data.grandOutsource)} color="var(--amber)" />
         <Stat label="MACHINE TIME" value={m2(data.grandMachineTime)} color="var(--cyan)" />
-        <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" />
+        <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
       </div>
 
       <div className="panel">
@@ -121,22 +146,27 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
       </tr>
       {line.materialCost > 0 ? (
         <tr style={{ background: 'var(--bg3)', fontSize: 11 }}>
-          <td colSpan={4} />
+          <td />
+          <td />
+          <td />
+          <td />
           <td colSpan={3} style={{ fontSize: 10, color: 'var(--blue)' }}>
             📦 Material POs
           </td>
           <td className="td-ctr mono" style={{ fontSize: 10, color: 'var(--blue)' }}>
-            ₹{line.materialCost.toFixed(2)}
+            ₹{inrFormat(line.materialCost)}
           </td>
         </tr>
       ) : null}
       {line.ops.map((op, i) => {
-        const total = op.outsourceCost + op.machineTimeCost;
         const typeLabel =
           op.opType === 'qc' ? '🔬 QC' : op.opType === 'outsource' ? '🏭 Outsource' : `⚙ ${op.machineCode ?? ''}`;
         return (
           <tr key={`${op.jcNo}-${op.opSeq}-${i}`} style={{ background: 'var(--bg3)', fontSize: 11 }}>
-            <td colSpan={4} />
+            <td />
+            <td />
+            <td />
+            <td />
             <td className="mono" style={{ color: 'var(--cyan)', fontSize: 10 }}>
               {op.jcNo}
             </td>
@@ -145,10 +175,25 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
             </td>
             <td className="text3" style={{ fontSize: 10 }}>
               {typeLabel}
-              {op.machineTimeCost > 0 ? ` (${op.cycleTimeMin}m × ${op.qty})` : ''}
+              {op.machineTimeCost > 0 ? (
+                <span style={{ color: 'var(--amber)', fontSize: 9 }}>
+                  {' '}
+                  ({op.cycleTimeMin}m × {op.qty})
+                </span>
+              ) : null}
             </td>
+            {/* Legacy L17364-67 prints the outsource and machine-time figures as
+                two separately coloured spans, not a sum. Kept that way: both are
+                server-owned, so nothing is added in the browser. */}
             <td className="td-ctr mono" style={{ fontSize: 10 }}>
-              {total > 0 ? `₹${total.toFixed(2)}` : '—'}
+              {op.outsourceCost > 0 ? (
+                <span style={{ color: 'var(--amber)' }}>₹{inrFormat(op.outsourceCost)}</span>
+              ) : null}
+              {op.outsourceCost > 0 && op.machineTimeCost > 0 ? ' + ' : null}
+              {op.machineTimeCost > 0 ? (
+                <span style={{ color: 'var(--cyan)' }}>₹{inrFormat(op.machineTimeCost)}</span>
+              ) : null}
+              {op.outsourceCost === 0 && op.machineTimeCost === 0 ? '—' : null}
             </td>
           </tr>
         );

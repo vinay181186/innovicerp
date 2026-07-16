@@ -4,7 +4,7 @@
 //   Right = per-line cards with status-specific action buttons.
 // Clicking actions opens the modals (create, edit, equip-bom, assembly-bom).
 
-import type { PlanningPlanSummary, PlanningSoListItem } from '@innovic/shared';
+import type { PlanStatus, PlanningPlanSummary, PlanningSoListItem } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -27,6 +27,20 @@ export const soPlanningWorkflowRoute = createRoute({
   validateSearch: searchSchema,
   component: PlanningWorkflowPage,
 });
+
+// Legacy renders the raw stored status text (`esc(plan.status)`), which in the
+// legacy store is Title Case ("In Planning", "JC Created", …). Our enum is
+// snake_case, so map back to the legacy label. Same {status → label} shape the
+// plans module already uses (routes/list.tsx, detail.tsx, dashboard.tsx).
+const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
+  in_planning: 'In Planning',
+  planned: 'Planned',
+  jc_created: 'JC Created',
+  pr_created: 'PR Created',
+  in_production: 'In Production',
+  complete: 'Complete',
+  cancelled: 'Cancelled',
+};
 
 type ModalState =
   | { kind: 'none' }
@@ -196,11 +210,27 @@ function RightPane({
   const executePlan = useExecutePlan();
   const navigate = useNavigate();
 
+  // Legacy always renders the header row, then the right content; with no SO
+  // selected the header reads "Select an SO" (renderSOPlanning L9439-9441).
   if (!soId) {
     return (
-      <div className="empty-state">
-        Select an SO from the left panel to view and plan its lines.
-      </div>
+      <>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 14,
+          }}
+        >
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            Select an SO
+          </div>
+        </div>
+        <div className="empty-state">
+          Select an SO from the left panel to view and plan its lines.
+        </div>
+      </>
     );
   }
   if (detail.isLoading) {
@@ -241,7 +271,9 @@ function RightPane({
         </div>
       </div>
       {so.lines.length === 0 ? (
-        <div className="empty-state">No open lines for this SO.</div>
+        <div className="empty-state">
+          Select an SO from the left panel to view and plan its lines.
+        </div>
       ) : (
         so.lines.map((line) => {
           const totalQty = line.orderQty;
@@ -604,7 +636,9 @@ function PlanCard({
         : plan.planStatus === 'jc_created'
           ? 'var(--cyan)'
           : plan.planStatus === 'pr_created'
-            ? '#8b5cf6'
+            ? // Legacy: var(--purple,#8b5cf6). --purple IS defined (#7c3aed), so
+              // the #8b5cf6 fallback is dead code in legacy and must not be ported.
+              'var(--purple)'
             : 'var(--green)';
 
   return (
@@ -643,7 +677,7 @@ function PlanCard({
           marginLeft: 'auto',
         }}
       >
-        {plan.planStatus}
+        {PLAN_STATUS_LABEL[plan.planStatus]}
       </span>
       <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
         {plan.planStatus === 'in_planning' && (
@@ -689,7 +723,7 @@ function PlanCard({
         {plan.planStatus === 'pr_created' && (
           <span
             className="mono"
-            style={{ color: '#8b5cf6', fontSize: 10, fontWeight: 700 }}
+            style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}
           >
             PR:{plan.foPrCode ?? plan.dpPrCode ?? ''}
             {plan.foMatPrCode ? (

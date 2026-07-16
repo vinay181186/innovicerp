@@ -1,7 +1,8 @@
 // Daily Production Report — mirrors legacy renderDailyReport (HTML L10823).
 
+import type { DailyReportResponse } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
@@ -56,6 +57,26 @@ function DailyReportPage(): React.JSX.Element {
     }
   };
 
+  // Per-machine 🖨 (legacy L10882). Legacy re-derives the report from the
+  // machine's logs alone, so the summary tiles count that machine only — not
+  // the page-level totals.
+  const onPrintMachine = (g: DailyReportResponse['groups'][number]): void => {
+    if (!data) return;
+    const scoped: DailyReportResponse = {
+      ...data,
+      groups: [g],
+      summary: {
+        totalPieces: g.totalQty,
+        logEntries: g.rows.length,
+        machinesActive: 1,
+        jcsActive: new Set(g.rows.map((r) => r.jcCode)).size,
+      },
+    };
+    if (!printDailyReport({ report: scoped, machineLabel: g.machineCode, company })) {
+      window.alert('Allow popups to print.');
+    }
+  };
+
   const setDate = (next: string): void => {
     void navigate({ search: (prev) => ({ ...prev, date: next || undefined }) });
   };
@@ -81,7 +102,7 @@ function DailyReportPage(): React.JSX.Element {
           disabled={!data || data.groups.length === 0}
           title="Print daily production report"
         >
-          <Printer size={13} /> Print
+          🖨 Print Full Report
         </button>
       </div>
 
@@ -131,7 +152,8 @@ function DailyReportPage(): React.JSX.Element {
             </select>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 Select a machine for per-machine report. Each machine panel has its own data.
+            Tip: Select a machine for per-machine report. Each machine panel has its own 🖨 print
+            button.
           </div>
         </div>
       </div>
@@ -173,7 +195,7 @@ function DailyReportPage(): React.JSX.Element {
             <b>No production entries for {date}</b>
             <br />
             <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-              Log completions via Op Entry to see them here.
+              Log completions via Op Entry to see them here
             </span>
           </div>
         </div>
@@ -197,16 +219,27 @@ function DailyReportPage(): React.JSX.Element {
                   {g.machineName ?? ''}
                 </span>
               </div>
-              <span
-                style={{
-                  fontFamily: 'var(--mono)',
-                  fontWeight: 700,
-                  color: 'var(--green)',
-                  fontSize: 15,
-                }}
-              >
-                {g.totalQty} pcs
-              </span>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span
+                  style={{
+                    fontFamily: 'var(--mono)',
+                    fontWeight: 700,
+                    color: 'var(--green)',
+                    fontSize: 15,
+                  }}
+                >
+                  {g.totalQty} pcs
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => onPrintMachine(g)}
+                  title={`Print report for ${g.machineCode}`}
+                  style={{ fontSize: 11 }}
+                >
+                  🖨
+                </button>
+              </div>
             </div>
             <div className="tbl-wrap">
               <table className="innovic-table">

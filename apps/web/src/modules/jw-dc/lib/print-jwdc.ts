@@ -67,8 +67,13 @@ export function printJwDc(args: {
     meta,
     lines: dc.lines.map((l) => ({
       itemCode: l.itemCodeText,
-      itemName: l.itemNameText,
+      // Legacy's printed line column is "Description / Process" and renders
+      // `itemName — process` (L24614). The port was dropping the process, so the
+      // vendor's copy of the gate pass never said what to do with the material.
+      itemName: [l.itemNameText, l.processText].filter(Boolean).join(' — '),
       qty: String(l.sentQty),
+      // Legacy hardcodes NOS on the printed DC line too (L24614) and the JW DC
+      // line carries no uom, so this is faithful — not the ISSUE-158 pattern.
       uom: 'NOS',
     })),
   };

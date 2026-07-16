@@ -123,10 +123,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid form-grid-3">
+      <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
-            PR No.<span className="req">★</span>
+            PR No.
+            {isEdit ? null : <span className="req">★</span>}
           </label>
           <input
             id="code"
@@ -151,18 +152,17 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Status
+          <label className="form-label" htmlFor="operation">
+            Operation
           </label>
-          <select id="status" className="innovic-select" {...register('status')}>
-            {PR_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
+          <input
+            id="operation"
+            className="innovic-input"
+            autoComplete="off"
+            placeholder="COATING / TURN / …"
+            {...register('operation')}
+          />
         </div>
-
         <div className="form-grp">
           <label className="form-label" htmlFor="vendorId">
             Vendor
@@ -199,10 +199,23 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             {...register('requiredDate')}
           />
         </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="status">
+            Status
+          </label>
+          <select id="status" className="innovic-select" {...register('status')}>
+            {PR_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.replaceAll('_', ' ')}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="form-grp">
           <label className="form-label" htmlFor="itemCodeText">
             Item Code
+            {isEdit ? null : <span className="req">★</span>}
           </label>
           <input
             id="itemCodeText"
@@ -223,18 +236,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             className="innovic-input"
             autoComplete="off"
             {...register('itemName')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="operation">
-            Operation
-          </label>
-          <input
-            id="operation"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="COATING / TURN / …"
-            {...register('operation')}
           />
         </div>
 
@@ -311,9 +312,9 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               Cancel
             </button>
           ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? (isEdit ? 'Save changes' : 'Create PR')}
+          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}✓{' '}
+            {props.submitLabel ?? (isEdit ? 'Save PR' : 'Create PR')}
           </button>
         </div>
       </div>
