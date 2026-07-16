@@ -2402,3 +2402,55 @@ This is already the dominant repo pattern — `purchase-orders`, `invoices`, `pl
   raw `db.insert`, so it covered the *matching* logic while the *create* path had no
   service test at all. `osp-processes/service.test.ts` now covers create→list
   round-trip and the update-freshness assertion.
+
+## ADR-058: ADR-057 applied to GRN — and why our integration tests did not catch it
+
+**Date:** 2026-07-16
+**Status:** Accepted (closes the open risk in ADR-057)
+
+### Context
+
+ADR-057 flagged the same `withUserContext` nesting live in
+`goods-receipt-notes/service.ts:610` / `:681` but had not reproduced it.
+
+Fixing it surfaced a contradiction worth recording: unlike `osp-processes`,
+**GRN already has thorough create coverage** — `goods-receipt-notes/service.test.ts`
+calls `createGoodsReceiptNote` in ~10 tests and asserts on the returned detail
+(`:153` onward). If create were broken, those tests would fail loudly. So either the
+nesting was harmless, or the tests never run.
+
+Rather than reason further, the driver semantics were probed directly (read-only,
+`pg_backend_pid()`, no application data touched), reproducing the exact nesting shape
+against the real DB:
+
+```
+outer connection pid : 1302602
+inner connection pid : 1302603   -> DIFFERENT
+```
+
+A nested `db.transaction()` is definitively a **separate connection**, hence a
+separate transaction that cannot see the outer's uncommitted rows. ADR-057's
+mechanism is confirmed, not inferred.
+
+### Decision
+
+Apply ADR-057 to GRN: extract `getGoodsReceiptNoteInternal(tx, id, companyId)` and
+call it from create/update on the existing `tx`. `getGoodsReceiptNote` stays a thin
+`withUserContext` wrapper, so routes are unchanged.
+
+### Consequences
+
+- Positive: `createGoodsReceiptNote` / `updateGoodsReceiptNote` persist correctly;
+  update returns fresh rows. ADR-057's open risk is closed.
+- **The real finding — our integration tests cannot run.** They require a live DB,
+  but `innovicerp/.env.local` carries a placeholder `DATABASE_URL`, and the only real
+  database is production (which CLAUDE.md §9 forbids testing against). So the GRN
+  suite has never executed, and coverage that exists on paper caught nothing. This
+  bug reached production *through* a well-tested module.
+- Risks: **this is systemic, not a GRN quirk.** Every service integration suite in
+  the repo is in the same position. Until a dev/test database exists (CLAUDE.md §9:
+  "a separate Supabase project for tests, OR a local Postgres container"), service
+  correctness is only ever verified by typecheck + review, and any bug of this class
+  ships silently. **Provisioning that test DB should be a task.**
+- Both fixes here are verified by typecheck, lint, the pid probe above, and review —
+  **not** by executing the test suites.

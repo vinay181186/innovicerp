@@ -363,17 +363,20 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
   };
 }
 
-export async function getGoodsReceiptNote(
+/** Read one GRN on an EXISTING transaction. Callers already inside
+ *  `withUserContext` MUST use this, not `getGoodsReceiptNote` — nesting
+ *  `withUserContext` opens a second transaction on a second pooled connection,
+ *  which cannot see the outer transaction's uncommitted rows (ADR-057). */
+async function getGoodsReceiptNoteInternal(
+  tx: DbTransaction,
   id: string,
-  user: AuthContext,
+  companyId: string,
 ): Promise<GoodsReceiptNoteDetail> {
-  const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    // Per docs/PARITY/linked-display-audit (memory project_linked_display_audit):
-    // when an FK is set (vendor_id / purchase_order_id / line.item_id) we
-    // resolve the joined display value here so the UI can render the actual
-    // name/code rather than falling back to a "— linked —" placeholder.
-    const headerRows = await tx.execute(sql`
+  // Per docs/PARITY/linked-display-audit (memory project_linked_display_audit):
+  // when an FK is set (vendor_id / purchase_order_id / line.item_id) we
+  // resolve the joined display value here so the UI can render the actual
+  // name/code rather than falling back to a "— linked —" placeholder.
+  const headerRows = await tx.execute(sql`
       SELECT
         grn.id, grn.company_id AS "companyId", grn.code,
         grn.grn_date AS "grnDate",
@@ -397,10 +400,10 @@ export async function getGoodsReceiptNote(
         AND grn.deleted_at IS NULL
       LIMIT 1
     `);
-    const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
-    if (!headerRow) throw new NotFoundError(`Goods receipt note ${id} not found`);
+  const headerRow = (headerRows as unknown as Array<Record<string, unknown>>)[0];
+  if (!headerRow) throw new NotFoundError(`Goods receipt note ${id} not found`);
 
-    const lineResult = await tx.execute(sql`
+  const lineResult = await tx.execute(sql`
       SELECT
         gnl.id, gnl.company_id AS "companyId",
         gnl.goods_receipt_note_id AS "goodsReceiptNoteId",
@@ -429,56 +432,63 @@ export async function getGoodsReceiptNote(
         AND gnl.deleted_at IS NULL
       ORDER BY gnl.line_no ASC
     `);
-    const lineRows = lineResult as unknown as Array<Record<string, unknown>>;
+  const lineRows = lineResult as unknown as Array<Record<string, unknown>>;
 
-    return {
-      id: headerRow['id'] as string,
-      companyId: headerRow['companyId'] as string,
-      code: headerRow['code'] as string,
-      grnDate: dateLike(headerRow['grnDate']),
-      purchaseOrderId: (headerRow['purchaseOrderId'] as string | null) ?? null,
-      poCodeText: (headerRow['poCodeText'] as string | null) ?? null,
-      vendorId: (headerRow['vendorId'] as string | null) ?? null,
-      vendorCodeText: (headerRow['vendorCodeText'] as string | null) ?? null,
-      dcNo: (headerRow['dcNo'] as string | null) ?? null,
-      invoiceNo: (headerRow['invoiceNo'] as string | null) ?? null,
-      remarks: (headerRow['remarks'] as string | null) ?? null,
-      createdAt: tsLike(headerRow['createdAt']),
-      createdBy: headerRow['createdBy'] as string,
-      updatedAt: tsLike(headerRow['updatedAt']),
-      updatedBy: headerRow['updatedBy'] as string,
-      deletedAt: maybeTsLike(headerRow['deletedAt']),
-      poCode: (headerRow['poCode'] as string | null) ?? null,
-      vendorName: (headerRow['vendorName'] as string | null) ?? null,
-      lines: lineRows.map((r) => ({
-        id: r['id'] as string,
-        companyId: r['companyId'] as string,
-        goodsReceiptNoteId: r['goodsReceiptNoteId'] as string,
-        lineNo: Number(r['lineNo']),
-        purchaseOrderLineId: (r['purchaseOrderLineId'] as string | null) ?? null,
-        itemId: (r['itemId'] as string | null) ?? null,
-        itemCodeText: (r['itemCodeText'] as string | null) ?? null,
-        itemName: String(r['itemName'] ?? ''),
-        receivedQty: Number(r['receivedQty'] ?? 0),
-        dcRefNo: (r['dcRefNo'] as string | null) ?? null,
-        qcStatus: r['qcStatus'] as GoodsReceiptNoteLine['qcStatus'],
-        qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
-        qcRejectedQty: Number(r['qcRejectedQty'] ?? 0),
-        qcDate: maybeDateLike(r['qcDate']),
-        qcRemarks: (r['qcRemarks'] as string | null) ?? null,
-        qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
-        qcReportPath: (r['qcReportPath'] as string | null) ?? null,
-        qcReportName: (r['qcReportName'] as string | null) ?? null,
-        remarks: (r['remarks'] as string | null) ?? null,
-        createdAt: tsLike(r['createdAt']),
-        createdBy: r['createdBy'] as string,
-        updatedAt: tsLike(r['updatedAt']),
-        updatedBy: r['updatedBy'] as string,
-        deletedAt: maybeTsLike(r['deletedAt']),
-        itemCode: (r['itemCode'] as string | null) ?? null,
-      })),
-    };
-  });
+  return {
+    id: headerRow['id'] as string,
+    companyId: headerRow['companyId'] as string,
+    code: headerRow['code'] as string,
+    grnDate: dateLike(headerRow['grnDate']),
+    purchaseOrderId: (headerRow['purchaseOrderId'] as string | null) ?? null,
+    poCodeText: (headerRow['poCodeText'] as string | null) ?? null,
+    vendorId: (headerRow['vendorId'] as string | null) ?? null,
+    vendorCodeText: (headerRow['vendorCodeText'] as string | null) ?? null,
+    dcNo: (headerRow['dcNo'] as string | null) ?? null,
+    invoiceNo: (headerRow['invoiceNo'] as string | null) ?? null,
+    remarks: (headerRow['remarks'] as string | null) ?? null,
+    createdAt: tsLike(headerRow['createdAt']),
+    createdBy: headerRow['createdBy'] as string,
+    updatedAt: tsLike(headerRow['updatedAt']),
+    updatedBy: headerRow['updatedBy'] as string,
+    deletedAt: maybeTsLike(headerRow['deletedAt']),
+    poCode: (headerRow['poCode'] as string | null) ?? null,
+    vendorName: (headerRow['vendorName'] as string | null) ?? null,
+    lines: lineRows.map((r) => ({
+      id: r['id'] as string,
+      companyId: r['companyId'] as string,
+      goodsReceiptNoteId: r['goodsReceiptNoteId'] as string,
+      lineNo: Number(r['lineNo']),
+      purchaseOrderLineId: (r['purchaseOrderLineId'] as string | null) ?? null,
+      itemId: (r['itemId'] as string | null) ?? null,
+      itemCodeText: (r['itemCodeText'] as string | null) ?? null,
+      itemName: String(r['itemName'] ?? ''),
+      receivedQty: Number(r['receivedQty'] ?? 0),
+      dcRefNo: (r['dcRefNo'] as string | null) ?? null,
+      qcStatus: r['qcStatus'] as GoodsReceiptNoteLine['qcStatus'],
+      qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
+      qcRejectedQty: Number(r['qcRejectedQty'] ?? 0),
+      qcDate: maybeDateLike(r['qcDate']),
+      qcRemarks: (r['qcRemarks'] as string | null) ?? null,
+      qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
+      qcReportPath: (r['qcReportPath'] as string | null) ?? null,
+      qcReportName: (r['qcReportName'] as string | null) ?? null,
+      remarks: (r['remarks'] as string | null) ?? null,
+      createdAt: tsLike(r['createdAt']),
+      createdBy: r['createdBy'] as string,
+      updatedAt: tsLike(r['updatedAt']),
+      updatedBy: r['updatedBy'] as string,
+      deletedAt: maybeTsLike(r['deletedAt']),
+      itemCode: (r['itemCode'] as string | null) ?? null,
+    })),
+  };
+}
+
+export async function getGoodsReceiptNote(
+  id: string,
+  user: AuthContext,
+): Promise<GoodsReceiptNoteDetail> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => getGoodsReceiptNoteInternal(tx, id, companyId));
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -606,8 +616,11 @@ export async function createGoodsReceiptNote(
     );
 
     // Refetch with joins so the response carries vendorName / poCode /
-    // per-line itemCode (matches getGoodsReceiptNote shape).
-    return getGoodsReceiptNote(header.id, user);
+    // per-line itemCode (matches getGoodsReceiptNote shape). Must run on `tx`:
+    // a nested withUserContext could not see this transaction's uncommitted
+    // INSERT and would throw NotFoundError, rolling the whole create back
+    // (ADR-057).
+    return getGoodsReceiptNoteInternal(tx, header.id, companyId);
   });
 }
 
@@ -677,8 +690,10 @@ export async function updateGoodsReceiptNote(
       user,
     );
 
-    // Refetch with joins to match getGoodsReceiptNote shape.
-    return getGoodsReceiptNote(updatedHdr.id, user);
+    // Refetch with joins to match getGoodsReceiptNote shape. Must run on `tx`
+    // (ADR-057) — a nested withUserContext would read a connection that cannot
+    // see this transaction's uncommitted UPDATE and return stale rows.
+    return getGoodsReceiptNoteInternal(tx, updatedHdr.id, companyId);
   });
 }
 
