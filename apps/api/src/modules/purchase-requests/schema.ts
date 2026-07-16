@@ -2,6 +2,7 @@
 export {
   createPurchaseRequestInputSchema,
   listPurchaseRequestsQuerySchema,
+  purchaseRequestDetailSchema,
   purchaseRequestListItemSchema,
   purchaseRequestSchema,
   updatePurchaseRequestInputSchema,
@@ -11,6 +12,7 @@ export type {
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
   PurchaseRequest,
+  PurchaseRequestDetail,
   PurchaseRequestListItem,
   UpdatePurchaseRequestInput,
 } from '@innovic/shared';

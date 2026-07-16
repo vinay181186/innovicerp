@@ -1,6 +1,6 @@
 // PR detail page (UI-003-04).
 
-import type { PurchaseRequest } from '@innovic/shared';
+import type { PurchaseRequestDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -188,20 +188,14 @@ function canWrite(role: string | undefined): boolean {
   return role === 'admin' || role === 'manager';
 }
 
-function DetailGrid(props: { detail: PurchaseRequest }): React.JSX.Element {
+function DetailGrid(props: { detail: PurchaseRequestDetail }): React.JSX.Element {
   const { detail } = props;
   const estCostNum = Number(detail.estCost);
   return (
     <div className="form-grid form-grid-3">
       <Pair label="Date" value={detail.prDate} />
-      <Pair
-        label="Vendor"
-        value={detail.vendorId ? '— linked —' : (detail.vendorCodeText ?? '—')}
-      />
-      <Pair
-        label="Item code"
-        value={detail.itemCodeText ?? (detail.itemId ? '— linked —' : '—')}
-      />
+      <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
+      <Pair label="Item code" value={detail.itemCode ?? detail.itemCodeText ?? '—'} />
       <Pair label="Qty" value={String(detail.qty)} />
       <Pair label="Estimated cost" value={estCostNum > 0 ? `₹${estCostNum.toFixed(2)}` : '—'} />
       <Pair label="Required date" value={detail.requiredDate ?? '—'} />

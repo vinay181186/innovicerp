@@ -2454,3 +2454,76 @@ call it from create/update on the existing `tx`. `getGoodsReceiptNote` stays a t
   ships silently. **Provisioning that test DB should be a task.**
 - Both fixes here are verified by typecheck, lint, the pid probe above, and review —
   **not** by executing the test suites.
+
+## ADR-059: PR detail carries its vendor/item display joins (`purchaseRequestDetailSchema`)
+
+**Date:** 2026-07-16
+**Status:** Accepted
+
+### Context
+
+Reported as two symptoms: "vendor and prices are updated in PR, but unable to create
+PO" and "selected vendor does not show in PR".
+
+The data said the PR was **fine**. `IN-JWPR-00001` had `vendor_id` → "priya
+industries" and `est_cost` 1500.00 — both edits had persisted. The bug was entirely
+on the read/display side, and it was two independent defects on the same screen:
+
+1. **No vendor join on the detail read.** `purchaseRequestSchema` is the bare table
+   row; only `purchaseRequestListItemSchema` extended it with `vendorName`/`itemCode`.
+   `getPurchaseRequest` returned the bare row, so the two pages fed by it had no name
+   to render and each hand-rolled a placeholder instead:
+   - `from-pr.tsx:169` → `vendorCodeText ?? (vendorId ? '— linked —' : '—')`
+   - `purchase-requests/routes/detail.tsx:199` → `vendorId ? '— linked —' : …`
+
+   Every *other* module in the app renders `vendorName ?? vendorCodeText ?? '—'`
+   (verified: GRN, PO, DC, JW-DC, and the PR **list** itself). These two were the only
+   outliers, and both were outliers *because* the join was missing.
+
+   It stayed invisible until OSP: `osp-cascade.ts` stamps `vendor_code_text =
+   '(vendor TBD)'` (the `NO_VENDOR_TEXT` sentinel) when the matched OSP process has no
+   vendor. The user then picked a real vendor — which sets `vendor_id` but leaves the
+   sentinel in place — so the page kept rendering "(vendor TBD)" over a perfectly good
+   vendor link. Any PR whose `vendorCodeText` was null would instead have shown the
+   equally useless "— linked —".
+
+2. **Create PO failed silently.** `from-pr.tsx` registered `code` with
+   `required: 'PO No. is required'` but **rendered no field errors at all**
+   (`grep -c formState.errors` → 0). The field defaulted to empty and, unlike the main
+   PO form, did not use `DocNumberInput`. So the user had to know and hand-type
+   `IN-PO-NNNNN`; pressing "✓ Create PO" with it blank made react-hook-form abort the
+   submit with **no visible feedback** — the button simply did nothing.
+
+### Decision
+
+Add `purchaseRequestDetailSchema = purchaseRequestSchema.extend({ vendorName,
+itemCode })` and return it from `getPurchaseRequest` via `LEFT JOIN vendors/items` —
+the same joins the list already runs, per docs/PARITY/linked-display-audit. Both
+consumer pages then use the app-wide `vendorName ?? vendorCodeText ?? '—'` precedence
+and drop their placeholders.
+
+On `from-pr.tsx`, replace the manual PO No. input with `DocNumberInput
+type="purchase_order"` (prefills the next number, live duplicate check, gates submit
+via `onValidityChange`) and render the `poDate` error.
+
+### Alternatives Considered
+
+- **Add `vendorName` to `purchaseRequestSchema` itself** — rejected: that shape is the
+  table row and is also the create/update return; it would force a join into write
+  paths that have no display consumer.
+- **Resolve the name client-side from `useVendorsList`** — rejected: re-introduces a
+  200-row cap as a correctness dependency and duplicates a join the server already does.
+- **Only fix the display precedence** — rejected: without the join there is no name to
+  show, so the page could only ever pick between two placeholders.
+
+### Consequences
+
+- Positive: PR detail and Create-PO show the real vendor and item code. Create PO
+  works from a fresh page load with no manual number entry, and cannot fail silently.
+- Negative: `getPurchaseRequest` grows two LEFT JOINs (indexed FKs, single row).
+- Note: the `(vendor TBD)` sentinel is now cosmetic-only on a PR that has a real
+  `vendor_id`. Not cleared on vendor pick — worth deciding separately whether the PR
+  update should null `vendorCodeText` when `vendorId` is set.
+- Verified by typecheck + lint across shared/api/web, and by running the new join
+  against the live row (returns "priya industries "). **Not** verified by test suite —
+  see ADR-058.

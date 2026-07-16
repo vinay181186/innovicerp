@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPr } from '../api';
@@ -50,7 +51,8 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, handleSubmit, formState } = form;
+  const { register, handleSubmit, formState, watch, setValue } = form;
+  const [docNoValid, setDocNoValid] = useState(false);
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
@@ -119,9 +121,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
-              From PR {pr.code}
-            </div>
+            <div className="td-code cyan fw-700">From PR {pr.code}</div>
             <div className="panel-title" style={{ marginTop: 2 }}>
               Create Purchase Order
             </div>
@@ -159,20 +159,17 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
               <div
                 style={{
                   background: 'var(--bg3)',
-                  border: '1px dashed var(--border2)',
+                  border: '1px solid var(--border)',
                   borderRadius: 8,
-                  padding: 12,
-                  marginBottom: 16,
+                  padding: '10px 14px',
+                  marginBottom: 14,
                 }}
               >
                 <div className="form-grid">
-                  <Pair
-                    label="Vendor"
-                    value={pr.vendorCodeText ?? (pr.vendorId ? '— linked —' : '—')}
-                  />
+                  <Pair label="Vendor" value={pr.vendorName ?? pr.vendorCodeText ?? '—'} />
                   <Pair
                     label="Item"
-                    value={`${pr.itemCodeText ?? (pr.itemId ? '— linked —' : '—')} · ${pr.itemName ?? ''}`}
+                    value={`${pr.itemCode ?? pr.itemCodeText ?? '—'} · ${pr.itemName ?? ''}`}
                   />
                   <Pair label="Qty" value={String(pr.qty)} />
                   <Pair label="Est. cost" value={`₹${Number(pr.estCost).toFixed(2)}`} />
@@ -182,22 +179,21 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
               </div>
 
               <div className="form-grid form-grid-3">
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="code">
-                    PO No.<span className="req">★</span>
-                  </label>
-                  <input
-                    id="code"
-                    className="innovic-input"
-                    autoFocus
-                    autoComplete="off"
-                    placeholder="IN-PO-NNNNN"
-                    {...register('code', { required: 'PO No. is required' })}
-                  />
-                </div>
+                {/* Auto-fills the next IN-PO-##### and live-checks duplicates,
+                    same as the main PO form. Previously this was a blank manual
+                    input whose `required` error was never rendered, so pressing
+                    Create PO with an empty PO No. silently did nothing. */}
+                <DocNumberInput
+                  type="purchase_order"
+                  label="PO No."
+                  required
+                  value={watch('code') ?? ''}
+                  onChange={(v) => setValue('code', v)}
+                  onValidityChange={setDocNoValid}
+                />
                 <div className="form-grp">
                   <label className="form-label" htmlFor="poDate">
-                    Date<span className="req">★</span>
+                    PO Date<span className="req">★</span>
                   </label>
                   <input
                     id="poDate"
@@ -205,10 +201,13 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                     className="innovic-input"
                     {...register('poDate', { required: 'Date is required' })}
                   />
+                  {formState.errors.poDate?.message ? (
+                    <div className="form-error">{formState.errors.poDate.message}</div>
+                  ) : null}
                 </div>
                 <div className="form-grp">
                   <label className="form-label" htmlFor="poType">
-                    Type
+                    PO Type
                   </label>
                   <select id="poType" className="innovic-select" {...register('poType')}>
                     {PO_TYPES.map((t) => (
@@ -284,7 +283,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
 
                 <div className="form-grp form-full">
                   <label className="form-label" htmlFor="remarks">
-                    Remarks
+                    PO Remarks
                   </label>
                   <textarea
                     id="remarks"
@@ -324,11 +323,11 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                   </button>
                   <button
                     type="submit"
-                    className="btn btn-primary"
-                    disabled={formState.isSubmitting}
+                    className="btn btn-success"
+                    disabled={formState.isSubmitting || !docNoValid}
                   >
                     {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-                    Create PO
+                    ✓ Create PO
                   </button>
                 </div>
               </div>
@@ -344,7 +343,7 @@ function Pair(props: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="form-grp">
       <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
+      <div className="fw-700">{props.value}</div>
     </div>
   );
 }

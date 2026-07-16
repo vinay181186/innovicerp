@@ -3,6 +3,7 @@ import type {
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
   PurchaseRequest,
+  PurchaseRequestDetail,
   UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -44,9 +45,9 @@ export function usePurchaseRequestsList(
 }
 
 export function usePurchaseRequest(id: string | undefined) {
-  return useQuery<PurchaseRequest>({
+  return useQuery<PurchaseRequestDetail>({
     queryKey: id ? purchaseRequestsKeys.detail(id) : purchaseRequestsKeys.detail('__missing__'),
-    queryFn: () => apiFetch<PurchaseRequest>(`/purchase-requests/${id}`),
+    queryFn: () => apiFetch<PurchaseRequestDetail>(`/purchase-requests/${id}`),
     enabled: Boolean(id),
   });
 }

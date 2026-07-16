@@ -30,6 +30,7 @@ import type {
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
   PurchaseRequest,
+  PurchaseRequestDetail,
   PurchaseRequestListItem,
   UpdatePurchaseRequestInput,
 } from './schema';
@@ -296,12 +297,28 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
   };
 }
 
-export async function getPurchaseRequest(id: string, user: AuthContext): Promise<PurchaseRequest> {
+export async function getPurchaseRequest(
+  id: string,
+  user: AuthContext,
+): Promise<PurchaseRequestDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // Resolve the vendor/item display joins the list already carries (per
+    // docs/PARITY/linked-display-audit). Consumers previously had only
+    // vendorCodeText to fall back on, which on an OSP-generated PR is the
+    // '(vendor TBD)' sentinel — so a vendor picked later never showed.
     const rows = await tx
-      .select()
+      .select({
+        row: purchaseRequests,
+        vendorName: vendors.name,
+        itemCode: items.code,
+      })
       .from(purchaseRequests)
+      .leftJoin(
+        vendors,
+        and(eq(vendors.id, purchaseRequests.vendorId), isNull(vendors.deletedAt)),
+      )
+      .leftJoin(items, and(eq(items.id, purchaseRequests.itemId), isNull(items.deletedAt)))
       .where(
         and(
           eq(purchaseRequests.id, id),
@@ -310,9 +327,13 @@ export async function getPurchaseRequest(id: string, user: AuthContext): Promise
         ),
       )
       .limit(1);
-    const row = rows[0];
-    if (!row) throw new NotFoundError(`Purchase request ${id} not found`);
-    return toPurchaseRequest(row);
+    const found = rows[0];
+    if (!found) throw new NotFoundError(`Purchase request ${id} not found`);
+    return {
+      ...toPurchaseRequest(found.row),
+      vendorName: found.vendorName,
+      itemCode: found.itemCode,
+    };
   });
 }
 

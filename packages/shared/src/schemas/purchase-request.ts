@@ -56,6 +56,18 @@ export const purchaseRequestSchema = z.object({
 });
 export type PurchaseRequest = z.infer<typeof purchaseRequestSchema>;
 
+/** Detail read: header + the same vendor/item display joins the list carries.
+ *  Per docs/PARITY/linked-display-audit — when an FK is set (vendor_id /
+ *  item_id) the read resolves the joined name/code so the UI can render the
+ *  real value instead of a "— linked —" placeholder. Without these, consumers
+ *  fall back to `vendorCodeText`, which on an OSP-generated PR is the
+ *  `(vendor TBD)` sentinel — so a vendor picked later never appears. */
+export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
+  vendorName: z.string().nullable(),
+  itemCode: z.string().nullable(), // resolved from items master when itemId set
+});
+export type PurchaseRequestDetail = z.infer<typeof purchaseRequestDetailSchema>;
+
 /** List row: header + display joins for vendor name, item code/name, and the
  *  source JC op (jc code + op_seq + operation) when set. Mirrors the legacy
  *  PR list columns (`renderPRList()` in the legacy HTML). */
