@@ -297,7 +297,10 @@ export async function generateOspPrForOp(
       {
         action: 'CREATE',
         entity: 'PurchaseOrder',
-        detail: `${poCode} [OSP Auto Draft] ${op.operation}`,
+        // New-ERP enhancement (beyond legacy, which logs the vendor here, not the
+        // JC): carry the JC code so the JC completion feed can trace the OSP PO.
+        // Mirrors the PR entry above; the feed matches `detail ILIKE '%<jc.code>%'`.
+        detail: `${poCode} [OSP Auto Draft] ${op.operation} → ${jc.code}`,
         refId: poCode,
       },
       companyId,

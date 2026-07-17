@@ -243,6 +243,22 @@ describe('generateOspPr (integration)', () => {
     const op = (await db.select().from(jcOps).where(eq(jcOps.id, opPaintingId)))[0]!;
     expect(op.outsourceStatus).toBe('po_created');
     expect(op.outsourcePoLineId).not.toBeNull();
+
+    // New-ERP enhancement (beyond legacy): the OSP PO activity entry carries the
+    // JC code + "OSP", so the JC completion feed (matched by detail ILIKE
+    // '%<jc.code>%' AND '%OSP%') can now trace the PO event — osp-cascade.ts:303.
+    const poAct = (
+      await db.select().from(activityLog).where(eq(activityLog.refId, res.poCode!))
+    )[0]!;
+    expect(poAct.entity).toBe('PurchaseOrder');
+    expect(poAct.detail).toContain(`${TEST_PREFIX}JC-001`);
+    expect(poAct.detail).toContain('OSP');
+    // Regression guard: PR activity still carries the JC code (unchanged path).
+    const prAct = (
+      await db.select().from(activityLog).where(eq(activityLog.refId, res.prCode))
+    )[0]!;
+    expect(prAct.entity).toBe('PurchaseRequest');
+    expect(prAct.detail).toContain(`${TEST_PREFIX}JC-001`);
   }, 180_000);
 
   it('rejects a second generation on the same op (ConflictError)', async () => {
