@@ -69,6 +69,9 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${salesOrderLines.orderQty}), 0)::int`.as('total_qty'),
         maxDueDate: sql<string | null>`max(${salesOrderLines.dueDate})::text`.as('max_due'),
+        // Aggregated item code + part name across this SO's lines, for the
+        // client-side item search on the Planning page.
+        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${salesOrderLines.itemCodeText}, '') || ' ' || coalesce(${salesOrderLines.partName}, '')), ' '), '')`.as('items_text'),
       })
       .from(salesOrders)
       .leftJoin(
@@ -154,6 +157,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
         maxDueDate: sql<string | null>`max(${jobWorkOrderLines.dueDate})::text`.as('max_due'),
+        itemsText: sql<string>`coalesce(string_agg(distinct trim(coalesce(${jobWorkOrderLines.itemCodeText}, '') || ' ' || coalesce(${jobWorkOrderLines.partName}, '')), ' '), '')`.as('items_text'),
       })
       .from(jobWorkOrders)
       .leftJoin(
@@ -225,7 +229,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
     for (const r of jwDirectAgg) jwDirectMap.set(r.soId, Number(r.directQty));
 
     const buildItem = (
-      r: { soId: string; soCode: string; customerName: string | null; totalLines: number; totalQty: number; maxDueDate: string | null },
+      r: { soId: string; soCode: string; customerName: string | null; totalLines: number; totalQty: number; maxDueDate: string | null; itemsText: string },
       source: 'so' | 'jw',
       soType: string,
       planned: number,
@@ -246,6 +250,7 @@ export async function getPlanningSoList(user: AuthContext): Promise<PlanningSoLi
         totalPlannedQty: planned,
         planningPct: pct,
         planningStatus: classifyPlanningPct(pct),
+        itemsText: r.itemsText ?? '',
       };
     };
 

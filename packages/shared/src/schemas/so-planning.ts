@@ -22,6 +22,9 @@ export const planningSoListItemSchema = z.object({
   planningPct: z.number().int().min(0).max(100),
   /** 'fully_planned' (>= 100%), 'partial' (0 < pct < 100), 'unplanned' (0%). */
   planningStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
+  /** Aggregated item code + part name across this SO/JW's lines — for the
+   *  Planning page's client-side item search. Not shown directly. */
+  itemsText: z.string().default(''),
 });
 export type PlanningSoListItem = z.infer<typeof planningSoListItemSchema>;
 

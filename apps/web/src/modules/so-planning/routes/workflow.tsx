@@ -84,7 +84,8 @@ function PlanningWorkflowPage(): JSX.Element {
     (so) =>
       !soQuery ||
       so.soCode.toLowerCase().includes(soQuery) ||
-      (so.customerName ?? '').toLowerCase().includes(soQuery),
+      (so.customerName ?? '').toLowerCase().includes(soQuery) ||
+      (so.itemsText ?? '').toLowerCase().includes(soQuery),
   );
 
   return (
@@ -116,7 +117,7 @@ function PlanningWorkflowPage(): JSX.Element {
           <input
             className="innovic-input"
             style={{ width: '100%' }}
-            placeholder="🔍 Search SO / customer…"
+            placeholder="🔍 Search SO / customer / item…"
             value={soSearch}
             onChange={(e) => setSoSearch(e.target.value)}
           />
