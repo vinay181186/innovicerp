@@ -34,7 +34,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         jo.operation, jc.order_qty AS "orderQty",
         vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
         vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
-        jc.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
+        sol.client_po_line_no AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
         (SELECT MAX(ol.log_date) FROM public.op_log ol
           WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "pendSince"
       FROM public.v_jc_op_status vos
