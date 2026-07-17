@@ -64,6 +64,7 @@ export type PurchaseRequest = z.infer<typeof purchaseRequestSchema>;
  *  `(vendor TBD)` sentinel — so a vendor picked later never appears. */
 export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
   vendorName: z.string().nullable(),
+  vendorCode: z.string().nullable(), // resolved from vendors master when vendorId set
   itemCode: z.string().nullable(), // resolved from items master when itemId set
 });
 export type PurchaseRequestDetail = z.infer<typeof purchaseRequestDetailSchema>;

@@ -316,6 +316,7 @@ export async function getPurchaseRequest(
       .select({
         row: purchaseRequests,
         vendorName: vendors.name,
+        vendorCode: vendors.code,
         itemCode: items.code,
       })
       .from(purchaseRequests)
@@ -337,6 +338,7 @@ export async function getPurchaseRequest(
     return {
       ...toPurchaseRequest(found.row),
       vendorName: found.vendorName,
+      vendorCode: found.vendorCode,
       itemCode: found.itemCode,
     };
   });

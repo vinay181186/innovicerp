@@ -166,13 +166,20 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 }}
               >
                 <div className="form-grid">
-                  <Pair label="Vendor" value={pr.vendorName ?? pr.vendorCodeText ?? '—'} />
+                  <Pair
+                    label="Vendor"
+                    value={`${pr.vendorCode ?? pr.vendorCodeText ?? '—'}${pr.vendorName ? ` · ${pr.vendorName}` : ''}`}
+                  />
                   <Pair
                     label="Item"
                     value={`${pr.itemCode ?? pr.itemCodeText ?? '—'} · ${pr.itemName ?? ''}`}
                   />
                   <Pair label="Qty" value={String(pr.qty)} />
-                  <Pair label="Est. cost" value={`₹${Number(pr.estCost).toFixed(2)}`} />
+                  <Pair label="Est. cost / pc" value={`₹${Number(pr.estCost).toFixed(2)}`} />
+                  <Pair
+                    label="Total est."
+                    value={`₹${(Number(pr.estCost) * Number(pr.qty)).toFixed(2)}`}
+                  />
                   <Pair label="Operation" value={pr.operation ?? '—'} />
                   <Pair label="Required by" value={pr.requiredDate ?? '—'} />
                 </div>
