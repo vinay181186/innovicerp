@@ -126,7 +126,9 @@ export async function listJobCards(
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((
-          SELECT vos.completed_qty FROM public.v_jc_op_status vos
+          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
+                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END
+          FROM public.v_jc_op_status vos
           WHERE vos.job_card_id = jc.id
           ORDER BY vos.op_seq DESC LIMIT 1
         ), 0)::int AS "lastOpCompletedQty",
@@ -234,7 +236,9 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         COALESCE((
-          SELECT vos.completed_qty FROM public.v_jc_op_status vos
+          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
+                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END
+          FROM public.v_jc_op_status vos
           WHERE vos.job_card_id = jc.id
           ORDER BY vos.op_seq DESC LIMIT 1
         ), 0)::int AS "lastOpCompletedQty",
