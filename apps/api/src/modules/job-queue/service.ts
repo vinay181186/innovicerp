@@ -15,6 +15,7 @@ import type {
   ReorderJobQueueInput,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
@@ -213,5 +214,37 @@ export async function reorderMachineQueue(
     }
 
     return { ok: true };
+  });
+}
+
+/**
+ * One-time data hygiene: populate jc_ops.machine_id from machine_code_text where
+ * the FK is null but the text matches a machine code (the ADR-012 #10 fallback
+ * left by plan/route-sourced ops). Idempotent — only fills nulls with an exact
+ * company + code match, so it is safe to run repeatedly. Admin-only.
+ * Returns how many ops were linked. The queue already resolves these at read
+ * time; this just makes the FK first-class.
+ */
+export async function backfillJcOpMachineIds(user: AuthContext): Promise<{ updated: number }> {
+  requireAdminRole(user);
+  const companyId = requireCompany(user);
+  const userId = user.id;
+  return withUserContext(user, async (tx) => {
+    const updated = (await tx.execute(sql`
+      UPDATE public.jc_ops AS op
+      SET machine_id = m.id,
+          updated_at = now(),
+          updated_by = ${userId}::uuid
+      FROM public.machines AS m
+      WHERE op.company_id = ${companyId}::uuid
+        AND op.machine_id IS NULL
+        AND op.machine_code_text IS NOT NULL
+        AND op.deleted_at IS NULL
+        AND m.company_id = op.company_id
+        AND m.deleted_at IS NULL
+        AND m.code = op.machine_code_text
+      RETURNING op.id
+    `)) as unknown as Array<{ id: string }>;
+    return { updated: updated.length };
   });
 }

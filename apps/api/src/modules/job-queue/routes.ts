@@ -22,4 +22,11 @@ export async function jobQueueRoutes(app: FastifyInstance): Promise<void> {
     const input = reorderJobQueueInputSchema.parse(req.body);
     return service.reorderMachineQueue(machineId, input, req.user);
   });
+
+  // One-time (idempotent) admin action: link jc_ops that carry a machine as text
+  // only to the matching machine FK. Safe to call repeatedly.
+  app.post('/job-queue/backfill-machine-ids', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.backfillJcOpMachineIds(req.user);
+  });
 }

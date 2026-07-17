@@ -38,6 +38,7 @@ import {
   jobCards,
   jobWorkOrderLines,
   jobWorkOrders,
+  machines,
   planOps,
   plans,
   purchaseRequests,
@@ -609,13 +610,39 @@ async function executeManufacture(
     .returning();
   const jc = jcRows[0]!;
 
-  // Copy plan_ops → jc_ops verbatim.
+  // Resolve a machine_id FK for ops that only carry machine_code_text (route-card
+  // fallback, ADR-012 #10) so the Job Card ops land first-class and appear in the
+  // machine queue directly. Unmatched codes stay text-only (the queue resolves
+  // those by code at read time). Company-scoped, soft-delete filtered.
+  const unresolvedCodes = [
+    ...new Set(
+      ops
+        .filter((op) => !op.machineId && op.machineCodeText)
+        .map((op) => op.machineCodeText as string),
+    ),
+  ];
+  const machineIdByCode = new Map<string, string>();
+  if (unresolvedCodes.length > 0) {
+    const mrows = await tx
+      .select({ id: machines.id, code: machines.code })
+      .from(machines)
+      .where(
+        and(
+          eq(machines.companyId, plan.companyId),
+          isNull(machines.deletedAt),
+          inArray(machines.code, unresolvedCodes),
+        ),
+      );
+    for (const m of mrows) machineIdByCode.set(m.code, m.id);
+  }
+
+  // Copy plan_ops → jc_ops, backfilling machine_id from the code where possible.
   await tx.insert(jcOps).values(
     ops.map((op) => ({
       companyId: plan.companyId,
       jobCardId: jc.id,
       opSeq: op.opSeq,
-      machineId: op.machineId,
+      machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
       machineCodeText: op.machineCodeText,
       operation: op.operation,
       opType: op.opType,

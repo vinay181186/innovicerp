@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobQueue, useReorderJobQueue } from '../api';
+import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
 
 const searchSchema = z.object({
   machine: z.string().optional(),
@@ -39,8 +39,10 @@ function JobQueuePage(): React.JSX.Element {
   const navigate = jobQueueRoute.useNavigate();
   const selectedMachineCode = search.machine ?? '';
 
+  const isAdmin = me?.role === 'admin';
   const { data, isLoading, isError, error } = useJobQueue({});
   const reorderMut = useReorderJobQueue();
+  const backfillMut = useBackfillMachineIds();
 
   const machines = data?.machines ?? [];
   const selectedMachine = useMemo(
@@ -75,6 +77,21 @@ function JobQueuePage(): React.JSX.Element {
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
         <div className="section-hdr m-0">⬛ Job Queue View</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isAdmin ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={backfillMut.isPending}
+              title="Link operations that carry a machine as text only to the matching machine. Safe to run repeatedly."
+              onClick={() => backfillMut.mutate()}
+            >
+              {backfillMut.isPending
+                ? 'Linking…'
+                : backfillMut.isSuccess
+                  ? `Linked ${backfillMut.data.updated} op(s) ✓`
+                  : 'Link machine codes'}
+            </button>
+          ) : null}
           {selectedMachine ? (
             <button
               type="button"

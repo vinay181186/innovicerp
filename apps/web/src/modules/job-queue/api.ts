@@ -30,6 +30,19 @@ export function useJobQueue(query: JobQueueQuery) {
   });
 }
 
+/** Admin one-time hygiene: link ops that carry a machine as text only to the
+ *  matching machine FK. Idempotent. Refetches the queue on success. */
+export function useBackfillMachineIds() {
+  const qc = useQueryClient();
+  return useMutation<{ updated: number }, Error, void>({
+    mutationFn: () =>
+      apiFetch<{ updated: number }>('/job-queue/backfill-machine-ids', { method: 'POST' }),
+    onSuccess: () => {
+      void qc.refetchQueries({ queryKey: jobQueueKeys.all });
+    },
+  });
+}
+
 export function useReorderJobQueue() {
   const qc = useQueryClient();
   return useMutation<
