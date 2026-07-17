@@ -57,11 +57,7 @@ export async function getJobQueue(
         op.id AS "jcOpId",
         jc.id AS "jcId",
         jc.code AS "jcCode",
-        -- Effective machine: the resolved FK when present, else the machine
-        -- resolved from machine_code_text. Plan/route-sourced ops may carry the
-        -- machine as text only (ADR-012 #10 fallback); without this they were
-        -- silently dropped from every machine's queue.
-        COALESCE(op.machine_id, mbc.id) AS "machineId",
+        op.machine_id AS "machineId",
         i.code AS "itemCode",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
@@ -88,16 +84,15 @@ export async function getJobQueue(
       LEFT JOIN public.clients cl_so ON cl_so.id = so.client_id AND cl_so.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
-      LEFT JOIN public.machines mbc ON mbc.company_id = op.company_id
-        AND mbc.deleted_at IS NULL AND mbc.code = op.machine_code_text
+      LEFT JOIN public.clients cl_jw ON cl_jw.id = jw.client_id AND cl_jw.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       WHERE op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
-        AND op.op_type = 'process'
-        AND COALESCE(op.machine_id, mbc.id) IS NOT NULL
+        AND op.machine_id IS NOT NULL
+        AND op.op_type <> 'outsource'
         AND COALESCE(s.computed_status, 'waiting') <> 'complete'
       ORDER BY
-        COALESCE(op.machine_id, mbc.id),
+        op.machine_id,
         op.queue_position ASC NULLS LAST,
         op.op_seq ASC
     `)) as unknown as Array<Record<string, unknown>>;
@@ -173,17 +168,13 @@ export async function reorderMachineQueue(
       sql`, `,
     )}]`;
     void placeholders;
-    // Match ops by EFFECTIVE machine (resolved FK, or machine_code_text → machine)
-    // so text-only-machine ops surfaced by the queue can also be reordered.
     const opRows = (await tx.execute(sql`
-      SELECT op.id
-      FROM public.jc_ops op
-      LEFT JOIN public.machines mbc ON mbc.company_id = op.company_id
-        AND mbc.deleted_at IS NULL AND mbc.code = op.machine_code_text
-      WHERE op.id = ANY(${idArr})
-        AND op.company_id = ${companyId}::uuid
-        AND COALESCE(op.machine_id, mbc.id) = ${machineId}::uuid
-        AND op.deleted_at IS NULL
+      SELECT id
+      FROM public.jc_ops
+      WHERE id = ANY(${idArr})
+        AND company_id = ${companyId}::uuid
+        AND machine_id = ${machineId}::uuid
+        AND deleted_at IS NULL
     `)) as unknown as Array<{ id: string }>;
     if (opRows.length !== input.jcOpIds.length) {
       throw new ConflictError(
