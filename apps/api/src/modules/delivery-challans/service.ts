@@ -5,7 +5,7 @@
 // T-059b. Writes go through service.ts so cascades into jc_ops.sentQty +
 // outsource_status + store_transactions stay atomic with the DC row insert.
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallanReceiptLines,
@@ -555,6 +555,28 @@ function assignLineNos(
   return out;
 }
 
+/** Next IN-DC-NNNNN for the company (highest numeric suffix + 1, 5-digit),
+ *  mirroring nextPoCode. Used when the create form leaves the code blank. */
+async function nextDcCode(tx: DbTransaction, companyId: string): Promise<string> {
+  const prefix = 'IN-DC-';
+  const rows = await tx
+    .select({ code: deliveryChallans.code })
+    .from(deliveryChallans)
+    .where(
+      and(
+        eq(deliveryChallans.companyId, companyId),
+        isNull(deliveryChallans.deletedAt),
+        like(deliveryChallans.code, `${prefix}%`),
+      ),
+    );
+  let max = 0;
+  for (const r of rows) {
+    const m = r.code.slice(prefix.length).match(/^(\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `${prefix}${String(max + 1).padStart(5, '0')}`;
+}
+
 export async function createDeliveryChallan(
   input: CreateDeliveryChallanInput,
   user: AuthContext,
@@ -563,22 +585,29 @@ export async function createDeliveryChallan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Blank code ⇒ auto-generate the next IN-DC-##### (canonical, like PO/GRN).
+    const code = input.header.code?.trim() || (await nextDcCode(tx, companyId));
     const dup = await tx
       .select({ id: deliveryChallans.id })
       .from(deliveryChallans)
       .where(
         and(
           eq(deliveryChallans.companyId, companyId),
-          eq(deliveryChallans.code, input.header.code),
+          eq(deliveryChallans.code, code),
           isNull(deliveryChallans.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Delivery challan code "${input.header.code}" already exists`);
+      throw new ConflictError(`Delivery challan code "${code}" already exists`);
     }
 
-    await assertVendorExists(tx, input.header.vendorId, companyId);
+    // Vendor/item may be an FK OR free text (ADR-015 / ADR-012 #10), mirroring
+    // the Job-Work PO this DC is generated from. Only validate the FK when set;
+    // vendor_code_text / item_code_text always carry the human identifier.
+    if (input.header.vendorId) {
+      await assertVendorExists(tx, input.header.vendorId, companyId);
+    }
     if (input.header.purchaseOrderId) {
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
     }
@@ -586,7 +615,9 @@ export async function createDeliveryChallan(
       await assertSalesOrderLineExists(tx, input.header.salesOrderLineId, companyId);
     }
 
-    const itemIds = input.lines.map((l) => l.itemId);
+    const itemIds = input.lines
+      .map((l) => l.itemId)
+      .filter((id): id is string => Boolean(id));
     await assertItemIdsExist(tx, itemIds, companyId);
 
     const poLineIds = input.lines
@@ -626,11 +657,11 @@ export async function createDeliveryChallan(
       .insert(deliveryChallans)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         dcDate: input.header.dcDate,
         purchaseOrderId: input.header.purchaseOrderId ?? null,
         poCodeText: input.header.poCodeText,
-        vendorId: input.header.vendorId,
+        vendorId: input.header.vendorId ?? null,
         vendorCodeText: input.header.vendorCodeText,
         salesOrderLineId: input.header.salesOrderLineId ?? null,
         soRefText: input.header.soRefText ?? null,
@@ -646,7 +677,7 @@ export async function createDeliveryChallan(
       companyId,
       deliveryChallanId: header.id,
       lineNo: lineNos[i]!,
-      itemId: l.itemId,
+      itemId: l.itemId ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText ?? null,
       qty: String(l.qty),
@@ -663,16 +694,19 @@ export async function createDeliveryChallan(
     const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
     for (const dl of insertedLines) {
       const qtyInt = Math.round(Number(dl.qty));
-      await writeStoreTxnOnDcIssue({
-        tx,
-        companyId,
-        adminUserId: user.id,
-        dcCode: header.code,
-        dcDate: header.dcDate,
-        lineNo: dl.lineNo,
-        itemId: dl.itemId,
-        qty: qtyInt,
-      });
+      // Stock ledger is per-item; skip for free-text items (null item_id FK).
+      if (dl.itemId) {
+        await writeStoreTxnOnDcIssue({
+          tx,
+          companyId,
+          adminUserId: user.id,
+          dcCode: header.code,
+          dcDate: header.dcDate,
+          lineNo: dl.lineNo,
+          itemId: dl.itemId,
+          qty: qtyInt,
+        });
+      }
       if (dl.purchaseOrderLineId) {
         const result = await applyOutwardToJcOp({
           tx,

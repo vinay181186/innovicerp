@@ -25,7 +25,7 @@ export const deliveryChallanSchema = z.object({
   dcDate: z.string(),
   purchaseOrderId: z.string().uuid().nullable(),
   poCodeText: z.string(),
-  vendorId: z.string().uuid(),
+  vendorId: z.string().uuid().nullable(),
   vendorCodeText: z.string(),
   salesOrderLineId: z.string().uuid().nullable(),
   soRefText: z.string().nullable(),
@@ -44,7 +44,7 @@ export const deliveryChallanLineSchema = z.object({
   companyId: z.string().uuid(),
   deliveryChallanId: z.string().uuid(),
   lineNo: z.number().int().positive(),
-  itemId: z.string().uuid(),
+  itemId: z.string().uuid().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   qty: z.string(),
@@ -124,7 +124,9 @@ export interface ListDeliveryChallansResponse {
 
 export const createDeliveryChallanLineInputSchema = z.object({
   lineNo: z.number().int().positive().optional(),
-  itemId: z.string().uuid(),
+  // FK when the line item is in the master, else null with itemCodeText as the
+  // human identifier (ADR-012 #10) — mirrors the Job-Work PO line this DC copies.
+  itemId: z.string().uuid().nullable().optional(),
   itemCodeText: z.string().min(1),
   itemNameText: z.string().nullable().optional(),
   qty: z.number().positive(),
@@ -137,11 +139,14 @@ export type CreateDeliveryChallanLineInput = z.infer<typeof createDeliveryChalla
 
 export const createDeliveryChallanInputSchema = z.object({
   header: z.object({
-    code: z.string().min(1),
+    // Optional — blank means the server auto-generates the next IN-DC-##### code.
+    code: z.string().trim().optional(),
     dcDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     purchaseOrderId: z.string().uuid().nullable().optional(),
     poCodeText: z.string().min(1),
-    vendorId: z.string().uuid(),
+    // FK when the vendor is in the master, else null with vendorCodeText as the
+    // human identifier (ADR-015) — mirrors the Job-Work PO this DC is issued from.
+    vendorId: z.string().uuid().nullable().optional(),
     vendorCodeText: z.string().min(1),
     salesOrderLineId: z.string().uuid().nullable().optional(),
     soRefText: z.string().nullable().optional(),

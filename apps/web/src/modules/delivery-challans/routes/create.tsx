@@ -6,6 +6,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { usePurchaseOrder } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDeliveryChallan } from '../api';
@@ -40,6 +41,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   const create = useCreateDeliveryChallan();
 
   const [code, setCode] = useState('');
+  const [codeValid, setCodeValid] = useState(false);
   const [dcDate, setDcDate] = useState(new Date().toISOString().slice(0, 10));
   const [transport, setTransport] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
@@ -66,7 +68,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   const canSubmit = useMemo(
     () =>
       Boolean(po) &&
-      code.trim().length > 0 &&
+      codeValid &&
       lineDrafts.some((l) => Number(l.shipQty) > 0) &&
       lineDrafts.every((l) => {
         const q = Number(l.shipQty);
@@ -127,7 +129,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       const lines = lineDrafts
         .filter((l) => Number(l.shipQty) > 0)
         .map((l) => ({
-          itemId: l.itemId,
+          itemId: l.itemId || null,
           itemCodeText: l.itemCodeText,
           itemNameText: l.itemNameText,
           qty: Number(l.shipQty),
@@ -138,11 +140,11 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         }));
       const input: CreateDeliveryChallanInput = {
         header: {
-          code: code.trim(),
+          code: code.trim() || undefined,
           dcDate,
           purchaseOrderId: po.id,
           poCodeText: po.code,
-          vendorId: po.vendorId!,
+          vendorId: po.vendorId ?? null,
           vendorCodeText: po.vendorCodeText ?? po.code,
           transport: transport.trim() || null,
         },
@@ -214,18 +216,14 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         </div>
 
         <div className="form-grid">
-          <div className="form-grp">
-            <label className="form-label" htmlFor="dc-code">
-              DC No.<span className="req">★</span>
-            </label>
-            <input
-              id="dc-code"
-              className="innovic-input"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="OSP-DC-NNNNN"
-            />
-          </div>
+          <DocNumberInput
+            type="delivery_challan"
+            value={code}
+            onChange={setCode}
+            required
+            id="dc-code"
+            onValidityChange={setCodeValid}
+          />
           <div className="form-grp">
             <label className="form-label" htmlFor="dc-date">
               DC Date

@@ -1821,9 +1821,9 @@ export const deliveryChallans = pgTable(
       onDelete: 'set null',
     }),
     poCodeText: text('po_code_text').notNull(),
-    vendorId: uuid('vendor_id')
-      .notNull()
-      .references(() => vendors.id),
+    // Nullable: FK-or-text (ADR-015). A DC from a free-text-vendor JW PO keeps the
+    // name in vendor_code_text (NOT NULL) with vendor_id null. See migration 0063.
+    vendorId: uuid('vendor_id').references(() => vendors.id),
     vendorCodeText: text('vendor_code_text').notNull(),
     salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
@@ -1882,9 +1882,9 @@ export const deliveryChallanLines = pgTable(
       .notNull()
       .references(() => deliveryChallans.id, { onDelete: 'cascade' }),
     lineNo: integer('line_no').notNull(),
-    itemId: uuid('item_id')
-      .notNull()
-      .references(() => items.id),
+    // Nullable: FK-or-text (ADR-012 #10). A free-text line item keeps its name in
+    // item_code_text (NOT NULL) with item_id null. See migration 0063.
+    itemId: uuid('item_id').references(() => items.id),
     itemCodeText: text('item_code_text').notNull(),
     itemNameText: text('item_name_text'),
     qty: numeric('qty', { precision: 12, scale: 2 }).notNull(),
