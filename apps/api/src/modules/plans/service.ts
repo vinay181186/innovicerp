@@ -14,7 +14,7 @@
 // 0024_phase8_plans.sql. Both layers must agree; the service enforces friendly
 // errors, the DB catches anything that slips through.
 
-import { and, asc, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
   DocumentTraceability,
@@ -58,6 +58,7 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
+import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
@@ -542,11 +543,15 @@ export async function executePlan(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // Row-lock the plan so a double-clicked execute can't both read 'planned'
+    // and each emit PRs — the second waits, re-reads 'pr_created', and is
+    // rejected by the status guard below (no duplicate PRs).
     const existing = await tx
       .select()
       .from(plans)
       .where(and(eq(plans.id, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     const plan = existing[0];
     if (!plan) throw new NotFoundError(`Plan ${id} not found`);
     if (plan.planStatus !== 'planned') {
@@ -694,7 +699,7 @@ async function executeDirectPurchase(
     throw new ValidationError('direct_purchase plan requires a vendor before execute');
   }
   const today = new Date().toISOString().slice(0, 10);
-  const prCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'DP');
+  const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
 
   const prRows = await tx
     .insert(purchaseRequests)
@@ -759,7 +764,7 @@ async function executeFullOutsource(
   const today = new Date().toISOString().slice(0, 10);
 
   // 1. Primary JW PR.
-  const jwCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'FO');
+  const jwCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
   const jwRows = await tx
     .insert(purchaseRequests)
     .values({
@@ -788,7 +793,7 @@ async function executeFullOutsource(
   let materialPr: { id: string; code: string } | null = null;
   const matSrc = plan.foMaterialSrc?.trim().toLowerCase();
   if (matSrc && matSrc !== 'self' && matSrc !== 'inhouse' && matSrc !== 'in-house') {
-    const matCode = await nextPlanPrCode(tx, plan.companyId, plan.id, 'FOMAT');
+    const matCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
     const matRows = await tx
       .insert(purchaseRequests)
       .values({
@@ -840,22 +845,6 @@ async function executeFullOutsource(
   };
   if (materialPr) out.materialPrCode = materialPr.code;
   return out;
-}
-
-async function nextPlanPrCode(
-  tx: DbTransaction,
-  companyId: string,
-  planId: string,
-  kind: 'DP' | 'FO' | 'FOMAT',
-): Promise<string> {
-  const slug = planId.slice(0, 8);
-  const prefix = `PR-${kind}-${slug}-`;
-  const rows = await tx
-    .select({ value: count() })
-    .from(purchaseRequests)
-    .where(and(eq(purchaseRequests.companyId, companyId), like(purchaseRequests.code, `${prefix}%`)));
-  const seq = (rows[0]?.value ?? 0) + 1;
-  return `${prefix}${String(seq).padStart(2, '0')}`;
 }
 
 // ─── Planning dashboard ───────────────────────────────────────────────────

@@ -56,7 +56,7 @@ export function matchOspProcess<T extends { processName: string }>(
 
 /** Next IN-JWPR-NNNNN / IN-JWPO-NNNNN per company. Highest numeric suffix + 1,
  *  zero-padded to 5 digits (legacy _nextSeriesNo, 5-digit width). */
-async function nextSeriesCode(
+export async function nextSeriesCode(
   tx: DbTransaction,
   kind: 'pr' | 'po',
   companyId: string,

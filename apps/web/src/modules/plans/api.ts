@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 
 export const plansKeys = {
   all: ['plans'] as const,
@@ -116,6 +117,10 @@ export function useExecutePlan() {
       apiFetch<ExecutePlanResultShape>(`/plans/${id}/execute`, { method: 'POST' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      // The Planning workflow page reads from the so-planning keys; refresh them
+      // so an executed plan card flips to 'pr_created' and its Execute button
+      // disappears immediately (prevents a re-click that would try to re-execute).
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
     },
   });
 }
