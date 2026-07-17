@@ -12,6 +12,7 @@ import type { BomStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBomMaster, useDeleteBomMaster } from '../api';
@@ -290,6 +291,8 @@ function BomMasterDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      <RelatedDocsPanel module="bom-masters" id={detail.id} />
 
       {openSnapshot ? (
         <div

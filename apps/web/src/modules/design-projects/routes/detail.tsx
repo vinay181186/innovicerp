@@ -24,6 +24,7 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -166,6 +167,8 @@ function DesignProjectDetailPage(): React.JSX.Element {
       {tab === 'issues' ? <IssuesTab detail={data} /> : null}
       {tab === 'checklist' ? <ChecklistTab detail={data} checkDone={checkDone} /> : null}
       {tab === 'dcr' ? <DcrDcnTab detail={data} /> : null}
+
+      <RelatedDocsPanel module="design-projects" id={id} />
     </div>
   );
 }

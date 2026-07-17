@@ -23,6 +23,12 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     return service.getBomMaster(id, req.user);
   });
 
+  app.get('/bom-masters/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getBomMasterRelated(id, req.user);
+  });
+
   app.post('/bom-masters', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createBomMasterInputSchema.parse(req.body);

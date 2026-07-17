@@ -24,6 +24,12 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     return service.getPlan(id, req.user);
   });
 
+  app.get('/plans/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamsSchema.parse(req.params);
+    return service.getPlanRelated(id, req.user);
+  });
+
   app.post('/plans', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createPlanInputSchema.parse(req.body);

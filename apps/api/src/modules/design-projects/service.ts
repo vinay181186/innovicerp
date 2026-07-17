@@ -5,7 +5,7 @@
 // (HTML L7570) + _dpRenderDetail (L7623) + all helper modals.
 // Numbering: DP-NNNN / DCR-NNNN / DCN-NNNN.
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type {
   AddDesignCommentInput,
   CreateDesignDcnInput,
@@ -21,6 +21,8 @@ import type {
   DesignProjectDetail,
   DesignProjectListItem,
   DesignTask,
+  DocumentTraceability,
+  RelatedDoc,
   ListDesignProjectsQuery,
   ListDesignProjectsResponse,
   ToggleDesignChecklistItemInput,
@@ -37,6 +39,7 @@ import {
   designIssues,
   designProjects,
   designTasks,
+  designWorkLog,
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -45,6 +48,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1110,5 +1114,266 @@ export async function updateDesignDcn(
       .where(eq(designDcns.id, existing.id))
       .returning();
     return rowToDcn(updated[0]!);
+  });
+}
+
+// ─── Related documents (read-only traceability) ───────────────────────────
+//
+// GET /design-projects/:id/related. Assembles the FK-linked documents around a
+// design project into a DocumentTraceability payload. Every subquery is
+// company-scoped and soft-delete filtered, inside one withUserContext tx (RLS
+// company isolation applies too). No business rule — pure read-side shaping.
+//
+// Upstream (source):
+//   - design_projects.sales_order_id → sales_orders (the driving SO)
+//   - design_projects.client_id      → clients (the customer)
+// Downstream (children — all reference-only, no detail route exists):
+//   - design_tasks    WHERE design_project_id = :id
+//   - design_issues   WHERE design_project_id = :id
+//   - design_work_log WHERE design_project_id = :id
+//   - design_dcrs     WHERE design_project_id = :id
+//   - design_dcns     WHERE design_project_id = :id
+
+export async function getDesignProjectRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the project exists / is visible; grab its own code, date, status
+    // and the upstream FK ids.
+    const headers = await tx
+      .select({
+        id: designProjects.id,
+        code: designProjects.code,
+        status: designProjects.status,
+        startDate: designProjects.startDate,
+        salesOrderId: designProjects.salesOrderId,
+        clientId: designProjects.clientId,
+      })
+      .from(designProjects)
+      .where(
+        and(
+          eq(designProjects.id, id),
+          eq(designProjects.companyId, companyId),
+          isNull(designProjects.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Design project ${id} not found`);
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream: sales order this project was created from ──────────────────
+    const soRows = header.salesOrderId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrders)
+          .where(
+            and(
+              eq(salesOrders.id, header.salesOrderId),
+              eq(salesOrders.companyId, companyId),
+              isNull(salesOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: client (customer) ──────────────────────────────────────────
+    const clientRows = header.clientId
+      ? await tx
+          .select({ id: clients.id, code: clients.code, name: clients.name })
+          .from(clients)
+          .where(
+            and(
+              eq(clients.id, header.clientId),
+              eq(clients.companyId, companyId),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const client = clientRows[0] ?? null;
+
+    // ── Downstream: tasks / issues / work-log / DCRs / DCNs ──────────────────
+    const taskRows = await tx
+      .select({
+        id: designTasks.id,
+        title: designTasks.title,
+        status: designTasks.status,
+        date: designTasks.dueDate,
+      })
+      .from(designTasks)
+      .where(
+        and(
+          eq(designTasks.designProjectId, id),
+          eq(designTasks.companyId, companyId),
+          isNull(designTasks.deletedAt),
+        ),
+      )
+      .orderBy(desc(designTasks.createdAt));
+
+    const issueRows = await tx
+      .select({
+        id: designIssues.id,
+        title: designIssues.title,
+        status: designIssues.status,
+        date: designIssues.raisedDate,
+      })
+      .from(designIssues)
+      .where(
+        and(
+          eq(designIssues.designProjectId, id),
+          eq(designIssues.companyId, companyId),
+          isNull(designIssues.deletedAt),
+        ),
+      )
+      .orderBy(desc(designIssues.raisedDate));
+
+    // Work-log rows have no code/status — label by the task text (fallback:
+    // engineer) and carry the engineer name as the row label.
+    const workLogRows = await tx
+      .select({
+        id: designWorkLog.id,
+        taskText: designWorkLog.taskText,
+        engineerText: designWorkLog.engineerText,
+        date: designWorkLog.logDate,
+      })
+      .from(designWorkLog)
+      .where(
+        and(
+          eq(designWorkLog.designProjectId, id),
+          eq(designWorkLog.companyId, companyId),
+          isNull(designWorkLog.deletedAt),
+        ),
+      )
+      .orderBy(desc(designWorkLog.logDate));
+
+    const dcrRows = await tx
+      .select({
+        id: designDcrs.id,
+        code: designDcrs.code,
+        status: designDcrs.status,
+        date: designDcrs.requestDate,
+      })
+      .from(designDcrs)
+      .where(
+        and(
+          eq(designDcrs.designProjectId, id),
+          eq(designDcrs.companyId, companyId),
+          isNull(designDcrs.deletedAt),
+        ),
+      )
+      .orderBy(desc(designDcrs.requestDate));
+
+    const dcnRows = await tx
+      .select({
+        id: designDcns.id,
+        code: designDcns.code,
+        status: designDcns.status,
+        date: designDcns.releasedDate,
+      })
+      .from(designDcns)
+      .where(
+        and(
+          eq(designDcns.designProjectId, id),
+          eq(designDcns.companyId, companyId),
+          isNull(designDcns.deletedAt),
+        ),
+      )
+      .orderBy(desc(designDcns.createdAt));
+
+    // ── Upstream sections ────────────────────────────────────────────────────
+    const soSection = section(
+      'sales-order',
+      'Sales Order',
+      '📄',
+      'sales-order',
+      soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const clientSection = section(
+      'client',
+      'Client',
+      '👤',
+      'client',
+      client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+    );
+
+    // ── Downstream sections (all reference-only — no detail routes) ──────────
+    const tasksSection = section(
+      'design-tasks',
+      'Design Tasks',
+      '📐',
+      null,
+      taskRows.map((r) => row(r.id, r.title, r.status, r.date)),
+    );
+    const issuesSection = section(
+      'design-issues',
+      'Design Issues',
+      '⚠',
+      null,
+      issueRows.map((r) => row(r.id, r.title, r.status, r.date)),
+    );
+    const workLogSection = section(
+      'design-work-log',
+      'Work Log Entries',
+      '🕒',
+      null,
+      workLogRows.map((r) =>
+        row(r.id, r.taskText ?? r.engineerText, null, r.date, { label: r.engineerText }),
+      ),
+    );
+    const dcrSection = section(
+      'design-dcrs',
+      'DCRs',
+      '📝',
+      null,
+      dcrRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const dcnSection = section(
+      'design-dcns',
+      'DCNs',
+      '📄',
+      null,
+      dcnRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+
+    const upstream = [soSection, clientSection];
+    const downstream = [tasksSection, issuesSection, workLogSection, dcrSection, dcnSection];
+    return {
+      self: { module: 'design-projects', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.startDate),
+          label: 'Design Project created',
+          code: header.code,
+          routeKind: 'design-project',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }

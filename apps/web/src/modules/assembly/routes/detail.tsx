@@ -23,6 +23,7 @@ import type {
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Plus, RotateCcw, Truck } from 'lucide-react';
 import { useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAssemblyTracker,
@@ -193,6 +194,8 @@ function AssemblyDetailPage(): React.JSX.Element {
       </div>
 
       <UnitsPanel units={data.units} />
+
+      <RelatedDocsPanel module="assembly" id={soId} />
     </div>
   );
 }

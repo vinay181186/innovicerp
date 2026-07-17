@@ -23,6 +23,12 @@ export async function servicePosRoutes(app: FastifyInstance): Promise<void> {
     return service.getServicePo(id, req.user);
   });
 
+  app.get('/service-pos/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getServicePoRelated(id, req.user);
+  });
+
   app.post('/service-pos', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createServicePoInputSchema.parse(req.body);

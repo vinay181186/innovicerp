@@ -21,7 +21,7 @@
 // is present in the payload, run the merge; if omitted, only the header is
 // updated (existing lines untouched).
 
-import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
@@ -38,8 +38,10 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty, writeStoreTxnOnQcAccept } from './cascades';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
   GoodsReceiptNoteDetail,
@@ -1052,5 +1054,172 @@ export async function softDeleteGoodsReceiptNote(
     );
 
     return { ok: true };
+  });
+}
+
+// ─── Related documents (read-only traceability) ────────────────────────────
+
+/**
+ * Read-only document traceability for one GRN. Mirrors getSalesOrderRelated:
+ * a single withUserContext transaction, an existence check that throws
+ * NotFoundError, and company-scoped + soft-delete-filtered subqueries.
+ *
+ * A GRN is a leaf document — it credits stock via the append-only ledger
+ * (store_transactions), which is not a navigable document — so downstream is
+ * always empty.
+ *
+ * Upstream (source) relationships:
+ *   - goods_receipt_notes.purchase_order_id      → purchase_orders (the source PO)
+ *   - goods_receipt_notes.vendor_id              → vendors (master, nullable)
+ *   - goods_receipt_note_lines.item_id → DISTINCT items (master, the received items)
+ */
+export async function getGrnRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the GRN is visible before gathering related docs; grab the FK
+    // header ids for the upstream PO / vendor links.
+    const headers = await tx
+      .select({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        grnDate: goodsReceiptNotes.grnDate,
+        purchaseOrderId: goodsReceiptNotes.purchaseOrderId,
+        vendorId: goodsReceiptNotes.vendorId,
+      })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.id, id),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Goods receipt note ${id} not found`);
+
+    // ── Upstream: source purchase order (plain header FK) ───────────────────
+    const poRows = header.purchaseOrderId
+      ? await tx
+          .select({
+            id: purchaseOrders.id,
+            code: purchaseOrders.code,
+            status: purchaseOrders.status,
+            date: purchaseOrders.poDate,
+          })
+          .from(purchaseOrders)
+          .where(
+            and(
+              eq(purchaseOrders.id, header.purchaseOrderId),
+              eq(purchaseOrders.companyId, companyId),
+              isNull(purchaseOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: source vendor (master, nullable) ──────────────────────────
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const vendor = vendorRows[0] ?? null;
+
+    // ── Upstream: distinct items received on this GRN's lines (master) ───────
+    const lineItemRows = await tx
+      .selectDistinct({ itemId: goodsReceiptNoteLines.itemId })
+      .from(goodsReceiptNoteLines)
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
+          isNull(goodsReceiptNoteLines.deletedAt),
+        ),
+      );
+    const itemIds = Array.from(
+      new Set(lineItemRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
+    );
+    const itemRows =
+      itemIds.length === 0
+        ? []
+        : await tx
+            .select({ id: items.id, code: items.code, name: items.name })
+            .from(items)
+            .where(
+              and(
+                eq(items.companyId, companyId),
+                isNull(items.deletedAt),
+                inArray(items.id, itemIds),
+              ),
+            )
+            .orderBy(asc(items.code));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this GRN was built FROM) ────────────────────
+    const poSection = section(
+      'purchase-order',
+      'Purchase Order',
+      '🧾',
+      'purchase-order',
+      poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const vendorSection = section(
+      'vendor',
+      'Vendor',
+      '🏭',
+      'vendor',
+      vendor ? [row(vendor.id, vendor.code, null, null, { label: vendor.name })] : [],
+    );
+    const itemSection = section(
+      'item',
+      'Items',
+      '📦',
+      'item',
+      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
+    );
+
+    const upstream = [poSection, vendorSection, itemSection];
+    const downstream: DocumentTraceability['downstream'] = [];
+    return {
+      self: { module: 'goods-receipt-notes', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.grnDate),
+          label: 'Goods Receipt Note created',
+          code: header.code,
+          routeKind: 'grn',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }

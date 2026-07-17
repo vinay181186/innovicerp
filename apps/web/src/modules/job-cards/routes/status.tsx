@@ -3,6 +3,7 @@
 // keeps the status screen deep-linkable / shareable as a page too.
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
@@ -26,6 +27,7 @@ function JobCardStatusPage(): React.JSX.Element {
         JC Status{jc?.code ? ` - ${jc.code}` : ''}
       </div>
       <JcStatusContent id={id} />
+      <RelatedDocsPanel module="job-cards" id={id} />
     </div>
   );
 }

@@ -38,6 +38,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -349,6 +350,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           </table>
         </div>
       </div>
+
+      <RelatedDocsPanel module="purchase-orders" id={detail.id} />
 
       {/* Approve modal */}
       {approveOpen ? (

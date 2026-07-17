@@ -72,6 +72,10 @@ export function useSalesOrder(id: string | undefined) {
   });
 }
 
+// Document traceability for the SO detail page is rendered by the shared
+// <RelatedDocsPanel module="sales-orders" id={...} /> component, which fetches
+// GET /sales-orders/:id/related itself — no module-specific hook needed.
+
 /** Next suggested SO No. (MAX+1 after the highest IN-SO-#####). Used to prefill
  *  the create form with an editable, overridable suggestion. */
 export function useNextSoCode(enabled = true) {

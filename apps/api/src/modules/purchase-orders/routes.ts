@@ -25,6 +25,12 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     return service.getPurchaseOrder(id, req.user);
   });
 
+  app.get('/purchase-orders/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getPurchaseOrderRelated(id, req.user);
+  });
+
   app.post('/purchase-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createPurchaseOrderInputSchema.parse(req.body);

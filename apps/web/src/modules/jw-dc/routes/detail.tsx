@@ -15,6 +15,7 @@
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -186,6 +187,8 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           </div>
         ) : null}
       </div>
+
+      <RelatedDocsPanel module="jw-dc" id={dc.id} />
     </div>
   );
 }

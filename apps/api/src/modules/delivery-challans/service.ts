@@ -15,6 +15,7 @@ import {
   purchaseOrderLines,
   purchaseOrders,
   salesOrderLines,
+  salesOrders,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -25,6 +26,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import {
@@ -40,6 +42,7 @@ import {
   isDcFullyReconciled,
   writeStoreTxnOnDcReceive,
 } from './receipt-cascades';
+import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
   CreateDeliveryChallanReceiptInput,
@@ -1151,5 +1154,183 @@ export async function receiveAgainstDeliveryChallan(
     }
 
     return loadDeliveryChallanWithLines(tx, deliveryChallanId, companyId);
+  });
+}
+
+// ─── Related documents (read-only traceability) ────────────────────────────
+//
+// GET /delivery-challans/:id/related. FK-derived, company-scoped +
+// soft-delete-filtered, all inside a single withUserContext tx (RLS applied).
+//
+// Upstream (source):
+//   - delivery_challans.purchase_order_id      → purchase_orders (the OSP PO)
+//   - delivery_challans.vendor_id              → vendors (the receiving vendor)
+//   - delivery_challans.sales_order_line_id    → sales_order_lines → sales_orders
+//   - DISTINCT delivery_challan_lines.item_id  → items (the dispatched parts)
+// Downstream: none external — receipts are internal children of the DC.
+export async function getDeliveryChallanRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headers = await tx
+      .select({
+        id: deliveryChallans.id,
+        code: deliveryChallans.code,
+        dcDate: deliveryChallans.dcDate,
+        status: deliveryChallans.status,
+        purchaseOrderId: deliveryChallans.purchaseOrderId,
+        vendorId: deliveryChallans.vendorId,
+        salesOrderLineId: deliveryChallans.salesOrderLineId,
+      })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.id, id),
+          eq(deliveryChallans.companyId, companyId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Delivery challan ${id} not found`);
+
+    // ── Upstream: source PO (nullable header FK) ────────────────────────────
+    const poRows = header.purchaseOrderId
+      ? await tx
+          .select({
+            id: purchaseOrders.id,
+            code: purchaseOrders.code,
+            status: purchaseOrders.status,
+            date: purchaseOrders.poDate,
+          })
+          .from(purchaseOrders)
+          .where(
+            and(
+              eq(purchaseOrders.id, header.purchaseOrderId),
+              eq(purchaseOrders.companyId, companyId),
+              isNull(purchaseOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: receiving vendor (master) ─────────────────────────────────
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: source SO via the linked SO line (resolve line → header) ──
+    const soRows = header.salesOrderLineId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrderLines)
+          .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+          .where(
+            and(
+              eq(salesOrderLines.id, header.salesOrderLineId),
+              eq(salesOrderLines.companyId, companyId),
+              isNull(salesOrderLines.deletedAt),
+              isNull(salesOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: distinct dispatched items (master) ────────────────────────
+    const itemRows = await tx
+      .selectDistinct({ id: items.id, code: items.code, name: items.name })
+      .from(items)
+      .innerJoin(deliveryChallanLines, eq(deliveryChallanLines.itemId, items.id))
+      .where(
+        and(
+          eq(deliveryChallanLines.deliveryChallanId, id),
+          eq(deliveryChallanLines.companyId, companyId),
+          isNull(deliveryChallanLines.deletedAt),
+          eq(items.companyId, companyId),
+          isNull(items.deletedAt),
+        ),
+      )
+      .orderBy(asc(items.code));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      label?: string | null,
+    ) => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: null,
+      label: label ?? null,
+    });
+
+    const upstream = [
+      section(
+        'purchase-order',
+        'Purchase Order',
+        '🧾',
+        'purchase-order',
+        poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      ),
+      section(
+        'vendor',
+        'Vendor',
+        '🏭',
+        'vendor',
+        vendorRows.map((r) => row(r.id, r.code, null, null, r.name)),
+      ),
+      section(
+        'sales-order',
+        'Sales Order',
+        '📄',
+        'sales-order',
+        soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      ),
+      section(
+        'item',
+        'Items',
+        '📦',
+        'item',
+        itemRows.map((r) => row(r.id, r.code, null, null, r.name)),
+      ),
+    ];
+    const downstream: ReturnType<typeof section>[] = [];
+
+    return {
+      self: { module: 'delivery-challans', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.dcDate),
+          label: 'Delivery Challan issued',
+          code: header.code,
+          routeKind: 'delivery-challan',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }

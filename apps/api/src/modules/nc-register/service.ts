@@ -7,10 +7,12 @@
 // stays 'pending' until T-040b's dispose action flips it. SoftDelete blocks
 // once status leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
-import { items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
+import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { capaRecords, items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireOpEntryRole } from '../../lib/auth';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -360,6 +362,205 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
     if (!row) throw new NotFoundError(`NC ${id} not found`);
     const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
     return toNcRegister(row, linkedCapaCode);
+  });
+}
+
+// ─── Related documents (read-only traceability) ────────────────────────────
+//
+// GET /nc-register/:id/related. Mirrors getSalesOrderRelated: one
+// withUserContext transaction, an existence check, then company-scoped +
+// soft-delete-filtered subqueries shaped into a DocumentTraceability. Never
+// writes.
+//
+// Upstream (what this NC was raised FROM):
+//   - nc_register.job_card_id → job_cards (the JC on the shop floor)
+//   - nc_register.item_id     → items [MASTER]
+// Downstream (generated from disposition):
+//   - job_cards.parent_nc_id = :id  (supplementary / rework JCs)
+// Related (soft link — NOT an FK):
+//   - capa_records whose nc_refs jsonb array contains this NC's code
+export async function getNcRegisterRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headers = await tx
+      .select({
+        id: ncRegister.id,
+        code: ncRegister.code,
+        ncDate: ncRegister.ncDate,
+        status: ncRegister.status,
+        jobCardId: ncRegister.jobCardId,
+        jcOpId: ncRegister.jcOpId,
+        opSeq: ncRegister.opSeq,
+        itemId: ncRegister.itemId,
+      })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.id, id),
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`NC ${id} not found`);
+
+    // ── Upstream: the source Job Card ───────────────────────────────────────
+    const jcRows = header.jobCardId
+      ? await tx
+          .select({
+            id: jobCards.id,
+            code: jobCards.code,
+            date: jobCards.jcDate,
+            closedAt: jobCards.closedAt,
+          })
+          .from(jobCards)
+          .where(
+            and(
+              eq(jobCards.id, header.jobCardId),
+              eq(jobCards.companyId, companyId),
+              isNull(jobCards.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const jc = jcRows[0] ?? null;
+
+    // ── Upstream: the source Item (master) ──────────────────────────────────
+    const itemRows = header.itemId
+      ? await tx
+          .select({ id: items.id, code: items.code, name: items.name })
+          .from(items)
+          .where(
+            and(
+              eq(items.id, header.itemId),
+              eq(items.companyId, companyId),
+              isNull(items.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const item = itemRows[0] ?? null;
+
+    // ── Downstream: rework / supplementary Job Cards created from this NC ────
+    const reworkRows = await tx
+      .select({
+        id: jobCards.id,
+        code: jobCards.code,
+        date: jobCards.jcDate,
+        closedAt: jobCards.closedAt,
+      })
+      .from(jobCards)
+      .where(
+        and(
+          eq(jobCards.companyId, companyId),
+          isNull(jobCards.deletedAt),
+          eq(jobCards.parentNcId, id),
+        ),
+      )
+      .orderBy(desc(jobCards.jcDate));
+
+    // ── Related: CAPA records referencing this NC's code ────────────────────
+    // Soft link only — capa_records.nc_refs is a jsonb text-array, not an FK.
+    // Same @> containment pattern as lookupLinkedCapaCode above. CAPA has no
+    // detail route → routeKind null (reference-only rows).
+    const capaRows = await tx
+      .select({
+        id: capaRecords.id,
+        code: capaRecords.code,
+        status: capaRecords.status,
+        date: capaRecords.capaDate,
+      })
+      .from(capaRecords)
+      .where(
+        and(
+          eq(capaRecords.companyId, companyId),
+          isNull(capaRecords.deletedAt),
+          sql`${capaRecords.ncRefs} @> ${JSON.stringify([header.code])}::jsonb`,
+        ),
+      )
+      .orderBy(asc(capaRecords.code));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections ───────────────────────────────────────────────────
+    const jobCardSection = section(
+      'job-card',
+      'Job Card',
+      '📋',
+      'job-card',
+      // Plain header FK → link by the JC's own id (linkId null). job_cards has
+      // no status column; derive closed/open from closed_at. If the NC pins a
+      // specific op, surface its seq as the row label.
+      jc
+        ? [
+            row(jc.id, jc.code, jc.closedAt ? 'closed' : 'open', jc.date, {
+              ...(header.jcOpId && header.opSeq != null ? { label: `Op${header.opSeq}` } : {}),
+            }),
+          ]
+        : [],
+    );
+    const itemSection = section(
+      'item',
+      'Item',
+      '📦',
+      'item',
+      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
+    );
+
+    // ── Downstream sections ─────────────────────────────────────────────────
+    const reworkSection = section(
+      'rework-jc',
+      'Rework Job Cards',
+      '📋',
+      'job-card',
+      reworkRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+    );
+
+    // ── Related sections (lateral soft links) ───────────────────────────────
+    const capaSection = section(
+      'capa',
+      'CAPA (referenced)',
+      '🛡',
+      null,
+      capaRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+
+    const upstream = [jobCardSection, itemSection];
+    const downstream = [reworkSection];
+    const related = [capaSection];
+    return {
+      self: { module: 'nc-register', code: header.code },
+      upstream,
+      downstream,
+      related,
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.ncDate),
+          label: 'NC raised',
+          code: header.code,
+          routeKind: 'nc',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }
 

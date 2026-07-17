@@ -12,8 +12,10 @@ export {
 } from '@innovic/shared';
 export type {
   CreateSalesOrderInput,
+  DocumentTraceability,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
+  RelatedDoc,
   SalesOrder,
   SalesOrderDetail,
   SalesOrderLine,

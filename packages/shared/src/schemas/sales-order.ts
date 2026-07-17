@@ -140,6 +140,10 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
 });
 export type SalesOrderListItem = z.infer<typeof salesOrderListItemSchema>;
 
+// Document traceability for the SO detail page is served by
+// GET /sales-orders/:id/related and typed by the shared DocumentTraceability
+// schema (packages/shared/src/schemas/traceability.ts), used by every module.
+
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 /** Per-line input. itemId is preferred; itemCodeText is a fallback for legacy

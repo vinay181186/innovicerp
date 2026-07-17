@@ -25,11 +25,14 @@
 
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  assemblyUnits,
   bomMasterLines,
   bomMasterRevisions,
   bomMasters,
   items,
+  plans,
   salesOrderLines,
+  salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -39,7 +42,9 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   BomMaster,
   BomMasterDetail,
@@ -305,6 +310,194 @@ async function loadBomMasterDetail(
 export async function getBomMaster(id: string, user: AuthContext): Promise<BomMasterDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => loadBomMasterDetail(tx, id, companyId));
+}
+
+/**
+ * Read-only document traceability for a BOM master (GET /bom-masters/:id/related).
+ * FK-derived, company-scoped, soft-delete filtered — no business rule, no write.
+ *
+ * Upstream (source) relationships:
+ *   - bom_master_lines.child_item_id → DISTINCT items (the component items this BOM is built from)
+ *
+ * Downstream (consumer) relationships:
+ *   - sales_order_lines.source_bom_master_id = :id → DISTINCT sales_orders (via sales_order_id)
+ *   - plans.bom_master_id     = :id
+ *   - assembly_units.bom_master_id = :id  (assembly route is SO-scoped → linkId = sales_order_id)
+ */
+export async function getBomMasterRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the BOM exists / is visible before gathering related docs.
+    const headers = await tx
+      .select({
+        id: bomMasters.id,
+        code: bomMasters.bomNo,
+        status: bomMasters.status,
+        revisionDate: bomMasters.revisionDate,
+      })
+      .from(bomMasters)
+      .where(
+        and(
+          eq(bomMasters.id, id),
+          eq(bomMasters.companyId, companyId),
+          isNull(bomMasters.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+
+    // ── Upstream: distinct component items referenced by this BOM's lines ────
+    const itemRows = await tx
+      .selectDistinct({ id: items.id, code: items.code, name: items.name })
+      .from(items)
+      .innerJoin(bomMasterLines, eq(bomMasterLines.childItemId, items.id))
+      .where(
+        and(
+          eq(bomMasterLines.bomMasterId, id),
+          isNull(bomMasterLines.deletedAt),
+          eq(items.companyId, companyId),
+          isNull(items.deletedAt),
+        ),
+      )
+      .orderBy(asc(items.code));
+
+    // ── Downstream: distinct sales orders that source this BOM on any line ───
+    const soRows = await tx
+      .selectDistinct({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        status: salesOrders.status,
+        date: salesOrders.soDate,
+      })
+      .from(salesOrders)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.salesOrderId, salesOrders.id))
+      .where(
+        and(
+          eq(salesOrderLines.sourceBomMasterId, id),
+          isNull(salesOrderLines.deletedAt),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .orderBy(desc(salesOrders.soDate));
+
+    // ── Downstream: plans built against this BOM ─────────────────────────────
+    const planRows = await tx
+      .select({
+        id: plans.id,
+        code: plans.code,
+        status: plans.planStatus,
+        date: plans.planDate,
+      })
+      .from(plans)
+      .where(
+        and(
+          eq(plans.bomMasterId, id),
+          eq(plans.companyId, companyId),
+          isNull(plans.deletedAt),
+        ),
+      )
+      .orderBy(desc(plans.planDate));
+
+    // ── Downstream: assembly units built against this BOM ────────────────────
+    const assemblyRows = await tx
+      .select({
+        id: assemblyUnits.id,
+        salesOrderId: assemblyUnits.salesOrderId,
+        unitNo: assemblyUnits.unitNo,
+        serialNo: assemblyUnits.serialNo,
+        dispatched: assemblyUnits.dispatched,
+        date: assemblyUnits.assemblyDate,
+      })
+      .from(assemblyUnits)
+      .where(
+        and(
+          eq(assemblyUnits.bomMasterId, id),
+          eq(assemblyUnits.companyId, companyId),
+          isNull(assemblyUnits.deletedAt),
+        ),
+      )
+      .orderBy(asc(assemblyUnits.unitNo));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this BOM is built FROM) ──────────────────────
+    const itemSection = section(
+      'item',
+      'Component Items',
+      '📦',
+      'item',
+      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
+    );
+
+    // ── Downstream sections (what consumes this BOM) ─────────────────────────
+    const soSection = section(
+      'sales-orders',
+      'Sales Orders',
+      '📄',
+      'sales-order',
+      soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const plansSection = section(
+      'plans',
+      'Planning',
+      '🗂',
+      'plan',
+      planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const assemblySection = section(
+      'assembly',
+      'Assembly Units',
+      '🧩',
+      // Assembly detail is SO-scoped (/assemblies/$soId) — link each unit to its SO.
+      'assembly',
+      assemblyRows.map((r) =>
+        row(
+          r.id,
+          r.serialNo ?? `Unit #${r.unitNo}`,
+          r.dispatched ? 'dispatched' : 'assembled',
+          r.date,
+          { linkId: r.salesOrderId },
+        ),
+      ),
+    );
+
+    const upstream = [itemSection];
+    const downstream = [soSection, plansSection, assemblySection];
+    return {
+      self: { module: 'bom-masters', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.revisionDate),
+          label: 'BOM created',
+          code: header.code,
+          routeKind: 'bom-master',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
+  });
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────

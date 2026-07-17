@@ -25,6 +25,12 @@ export async function jwDcRoutes(app: FastifyInstance): Promise<void> {
     return service.getJwDcOutwardDetail(id, req.user);
   });
 
+  app.get('/jw-dc/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    return service.getJwDcRelated(id, req.user);
+  });
+
   app.get('/jw-dc/po-lines/:poId', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { poId } = poIdParam.parse(req.params);

@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
@@ -214,6 +215,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
           </table>
         </div>
       </div>
+
+      <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
     </div>
   );
 }

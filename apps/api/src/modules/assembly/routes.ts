@@ -27,6 +27,14 @@ export async function assemblyRoutes(app: FastifyInstance): Promise<void> {
     return service.getAssemblyTracker(soId, req.user);
   });
 
+  // Read-only Related Documents (traceability). Anchor id is the SO id, matching
+  // the SO-scoped detail route /assemblies/$soId. Panel fetches module="assembly".
+  app.get('/assembly/:soId/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { soId } = soParamsSchema.parse(req.params);
+    return service.getAssemblyRelated(soId, req.user);
+  });
+
   app.post('/assemblies/:soId/units', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { soId } = soParamsSchema.parse(req.params);

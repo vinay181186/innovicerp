@@ -12,10 +12,11 @@
 //     store_transactions(txn_type='in', source_type='jw_in').
 //   Rejected qty stored on the row; downstream NC integration deferred.
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreateJwDcInwardInput,
   CreateJwDcOutwardInput,
+  DocumentTraceability,
   JwDcInward,
   JwDcOutward,
   JwDcOutwardDetail,
@@ -28,6 +29,7 @@ import type {
   ListJwDcOutwardResponse,
 } from '@innovic/shared';
 import {
+  items,
   jwDcInward,
   jwDcInwardLines,
   jwDcOutward,
@@ -35,6 +37,7 @@ import {
   purchaseOrderLines,
   purchaseOrders,
   storeTransactions,
+  vendors,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import {
@@ -43,6 +46,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -332,6 +336,224 @@ export async function getJwDcOutwardDetail(
       pendingQty,
       returnStatus,
       lines,
+    };
+  });
+}
+
+// ─── Outward — related documents (read-only traceability) ────────────────
+
+/**
+ * Read-only "Related Documents" payload for one outward JW Delivery Challan.
+ * The anchor is a `jw_dc_outward` row (a returnable gate pass sent to a job-work
+ * vendor). Every subquery is company-scoped and soft-delete filtered, all inside
+ * a single withUserContext transaction so RLS company isolation applies.
+ *
+ * Upstream (source) relationships:
+ *   - jw_dc_outward.purchase_order_id → purchase_orders (the JW PO dispatched against)
+ *   - jw_dc_outward.vendor_id         → vendors (the job-work vendor) [MASTER]
+ *   - jw_dc_outward_lines.item_id     → DISTINCT items (materials sent out) [MASTER]
+ *
+ * Downstream (generated) relationships:
+ *   - jw_dc_inward.jw_dc_outward_id = :id → inward returns against this DC.
+ *     Inward DCs have no standalone detail route → shown reference-only.
+ */
+export async function getJwDcRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the outward DC exists / is visible; grab the FK ids for upstream links.
+    const headers = await tx
+      .select({
+        id: jwDcOutward.id,
+        code: jwDcOutward.code,
+        dcDate: jwDcOutward.dcDate,
+        purchaseOrderId: jwDcOutward.purchaseOrderId,
+        vendorId: jwDcOutward.vendorId,
+      })
+      .from(jwDcOutward)
+      .where(
+        and(
+          eq(jwDcOutward.id, id),
+          eq(jwDcOutward.companyId, companyId),
+          isNull(jwDcOutward.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`JW DC Outward ${id} not found`);
+
+    // Distinct items sent out on this DC's lines (upstream master link).
+    const lineRows = await tx
+      .select({ itemId: jwDcOutwardLines.itemId })
+      .from(jwDcOutwardLines)
+      .where(
+        and(
+          eq(jwDcOutwardLines.jwDcOutwardId, id),
+          isNull(jwDcOutwardLines.deletedAt),
+        ),
+      );
+    const itemIds = Array.from(
+      new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
+    );
+
+    // ── Upstream: source purchase order (Job Work PO) ───────────────────────
+    const poRows = header.purchaseOrderId
+      ? await tx
+          .select({
+            id: purchaseOrders.id,
+            code: purchaseOrders.code,
+            status: purchaseOrders.status,
+            date: purchaseOrders.poDate,
+          })
+          .from(purchaseOrders)
+          .where(
+            and(
+              eq(purchaseOrders.id, header.purchaseOrderId),
+              eq(purchaseOrders.companyId, companyId),
+              isNull(purchaseOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const po = poRows[0] ?? null;
+
+    // ── Upstream: job-work vendor (master) ──────────────────────────────────
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const vendor = vendorRows[0] ?? null;
+
+    // ── Upstream: distinct items on this DC's lines (master) ─────────────────
+    const itemRows =
+      itemIds.length === 0
+        ? []
+        : await tx
+            .select({ id: items.id, code: items.code, name: items.name })
+            .from(items)
+            .where(
+              and(
+                eq(items.companyId, companyId),
+                isNull(items.deletedAt),
+                inArray(items.id, itemIds),
+              ),
+            )
+            .orderBy(asc(items.code));
+
+    // ── Downstream: inward returns against this outward DC ──────────────────
+    const inwardRows = await tx
+      .select({
+        id: jwDcInward.id,
+        code: jwDcInward.code,
+        date: jwDcInward.inwardDate,
+      })
+      .from(jwDcInward)
+      .where(
+        and(
+          eq(jwDcInward.jwDcOutwardId, id),
+          eq(jwDcInward.companyId, companyId),
+          isNull(jwDcInward.deletedAt),
+        ),
+      )
+      .orderBy(desc(jwDcInward.inwardDate));
+
+    // ── Upstream sections (what this DC was built FROM) ─────────────────────
+    const poSection = section(
+      'purchase-order',
+      'Purchase Order',
+      '🧾',
+      'purchase-order',
+      po
+        ? [
+            {
+              id: po.id,
+              code: po.code,
+              status: po.status,
+              date: toIsoDate(po.date),
+              linkId: null,
+              label: null,
+            },
+          ]
+        : [],
+    );
+    const vendorSection = section(
+      'vendor',
+      'Vendor',
+      '🏭',
+      'vendor',
+      vendor
+        ? [
+            {
+              id: vendor.id,
+              code: vendor.code,
+              status: null,
+              date: null,
+              linkId: null,
+              label: vendor.name,
+            },
+          ]
+        : [],
+    );
+    const itemSection = section(
+      'item',
+      'Items',
+      '📦',
+      'item',
+      itemRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: null,
+        linkId: null,
+        label: r.name,
+      })),
+    );
+
+    // ── Downstream sections (generated from this DC) ────────────────────────
+    // Inward returns have no standalone detail route → reference-only (routeKind null).
+    const inwardSection = section(
+      'jw-dc-inward',
+      'Inward Returns',
+      '📥',
+      null,
+      inwardRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+
+    const upstream = [poSection, vendorSection, itemSection];
+    const downstream = [inwardSection];
+
+    const selfEvent = {
+      ts: toIsoDate(header.dcDate),
+      label: 'JW DC Outward',
+      code: header.code,
+      routeKind: 'jw-dc' as const,
+      linkId: null,
+    };
+
+    return {
+      self: { module: 'jw-dc', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(selfEvent, [...upstream, ...downstream]),
     };
   });
 }

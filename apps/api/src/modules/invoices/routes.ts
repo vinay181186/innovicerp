@@ -24,6 +24,12 @@ export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
     return service.getInvoice(id, req.user);
   });
 
+  app.get('/invoices/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getInvoiceRelated(id, req.user);
+  });
+
   app.post('/invoices', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createInvoiceInputSchema.parse(req.body);

@@ -459,4 +459,52 @@ describe('sales-orders service', () => {
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
+
+  it('getSalesOrderRelated returns all upstream + downstream groups for a fresh SO', async () => {
+    const code = `${TEST_PREFIX}REL`;
+    const created = await service.createSalesOrder(
+      {
+        header: {
+          code,
+          soDate: '2026-05-02',
+          customerName: 'Traceability Customer',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
+        lines: [{ partName: 'L1', itemId: firstItemId, uom: 'NOS', orderQty: 1, rate: 0 }],
+      },
+      admin,
+    );
+
+    const related = await service.getSalesOrderRelated(created.id, admin);
+
+    // Generic traceability shape: self + upstream/downstream section arrays.
+    expect(related.self).toEqual({ module: 'sales-orders', code });
+
+    // A fresh SO has no downstream docs — every downstream section is empty.
+    for (const s of related.downstream) {
+      expect(s.count).toBe(0);
+      expect(s.items).toEqual([]);
+    }
+    // This SO was created without a client_id (customerName-only) and no
+    // BOM-linked lines, so both upstream sections resolve empty.
+    for (const s of related.upstream) {
+      expect(s.count).toBe(0);
+      expect(s.items).toEqual([]);
+    }
+    // Downstream must include the expected document types.
+    const keys = related.downstream.map((s) => s.key);
+    expect(keys).toContain('purchase-orders');
+    expect(keys).toContain('invoices');
+    expect(keys).toContain('assembly-units');
+    // Timeline still carries the SO's own creation event.
+    expect(related.timeline.some((e) => e.label === 'Sales Order created')).toBe(true);
+  });
+
+  it('getSalesOrderRelated throws NotFoundError for an unknown SO', async () => {
+    await expect(
+      service.getSalesOrderRelated('00000000-0000-0000-0000-000000000000', admin),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
 });

@@ -23,6 +23,12 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     return service.getDeliveryChallan(id, req.user);
   });
 
+  app.get('/delivery-challans/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getDeliveryChallanRelated(id, req.user);
+  });
+
   app.post('/delivery-challans', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createDeliveryChallanInputSchema.parse(req.body);

@@ -32,6 +32,12 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     return service.getNcRegister(id, req.user);
   });
 
+  app.get('/nc-register/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getNcRegisterRelated(id, req.user);
+  });
+
   app.post('/nc-register', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createNcRegisterInputSchema.parse(req.body);

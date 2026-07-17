@@ -10,8 +10,17 @@
 // The merge helper is duplicated rather than abstracted out — rule of three.
 // If a third module (T-032 / T-038) needs the same logic, extract then.
 
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { clients, items, jobWorkOrderLines, jobWorkOrders } from '../../db/schema';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import {
+  clients,
+  items,
+  jobCards,
+  jobWorkOrderLines,
+  jobWorkOrders,
+  partyGrn,
+  plans,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
@@ -21,6 +30,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   CreateJobWorkOrderInput,
@@ -304,6 +314,227 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
     return {
       ...toJobWorkOrder(header),
       lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
+    };
+  });
+}
+
+/**
+ * Read-only document traceability for one Job Work Order (T-031 trace).
+ *
+ * Anchor: job_work_orders. Every subquery is company-scoped and soft-delete
+ * filtered, inside a single withUserContext transaction (RLS applies too).
+ *
+ * Upstream (source) relationships:
+ *   - job_work_orders.client_id                → clients (the ordering customer)
+ *   - job_work_order_lines.item_id             → DISTINCT items (parts ordered)
+ *
+ * Downstream (generated) relationships:
+ *   - job_cards.source_jw_line_id ∈ this JWO's job_work_order_lines.id
+ *   - plans.jw_line_id            ∈ JWO line ids
+ *   - party_grn.job_work_order_id = :id  (reference-only — no detail route)
+ */
+export async function getJobWorkOrderRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the JWO exists / is visible; grab jw_date + client_id for the
+    // anchor timeline event and the upstream client link.
+    const headers = await tx
+      .select({
+        id: jobWorkOrders.id,
+        code: jobWorkOrders.code,
+        jwDate: jobWorkOrders.jwDate,
+        clientId: jobWorkOrders.clientId,
+      })
+      .from(jobWorkOrders)
+      .where(
+        and(
+          eq(jobWorkOrders.id, id),
+          eq(jobWorkOrders.companyId, companyId),
+          isNull(jobWorkOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Job work order ${id} not found`);
+
+    // JW lines drive the job-card / plan joins and the upstream item link.
+    const lineRows = await tx
+      .select({ id: jobWorkOrderLines.id, itemId: jobWorkOrderLines.itemId })
+      .from(jobWorkOrderLines)
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
+    const lineIds = lineRows.map((r) => r.id);
+    const itemIds = Array.from(
+      new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
+    );
+
+    // ── Upstream: client (source customer) ──────────────────────────────────
+    const clientRows = header.clientId
+      ? await tx
+          .select({ id: clients.id, code: clients.code, name: clients.name })
+          .from(clients)
+          .where(
+            and(
+              eq(clients.id, header.clientId),
+              eq(clients.companyId, companyId),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const client = clientRows[0] ?? null;
+
+    // ── Upstream: distinct master items referenced by this JWO's lines ──────
+    const itemRows =
+      itemIds.length === 0
+        ? []
+        : await tx
+            .select({ id: items.id, code: items.code, name: items.name })
+            .from(items)
+            .where(
+              and(
+                eq(items.companyId, companyId),
+                isNull(items.deletedAt),
+                inArray(items.id, itemIds),
+              ),
+            )
+            .orderBy(asc(items.code));
+
+    // ── Downstream: job cards generated from this JWO's lines ───────────────
+    const jobCardRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: jobCards.id,
+              code: jobCards.code,
+              closedAt: jobCards.closedAt,
+              date: jobCards.jcDate,
+            })
+            .from(jobCards)
+            .where(
+              and(
+                eq(jobCards.companyId, companyId),
+                isNull(jobCards.deletedAt),
+                inArray(jobCards.sourceJwLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(jobCards.jcDate));
+
+    // Plans linked to any of this JWO's lines.
+    const planRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: plans.id,
+              code: plans.code,
+              status: plans.planStatus,
+              date: plans.planDate,
+            })
+            .from(plans)
+            .where(
+              and(
+                eq(plans.companyId, companyId),
+                isNull(plans.deletedAt),
+                inArray(plans.jwLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(plans.planDate));
+
+    // Party GRNs received against this JWO (no detail route — reference-only).
+    // party_grn has no status column, so status is null.
+    const partyGrnRows = await tx
+      .select({
+        id: partyGrn.id,
+        code: partyGrn.code,
+        date: partyGrn.grnDate,
+      })
+      .from(partyGrn)
+      .where(
+        and(
+          eq(partyGrn.jobWorkOrderId, id),
+          eq(partyGrn.companyId, companyId),
+          isNull(partyGrn.deletedAt),
+        ),
+      )
+      .orderBy(desc(partyGrn.grnDate));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this JWO was built FROM) ────────────────────
+    const clientSection = section(
+      'client',
+      'Client',
+      '👤',
+      'client',
+      client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+    );
+    const itemSection = section(
+      'item',
+      'Items',
+      '📦',
+      'item',
+      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
+    );
+
+    // ── Downstream sections (generated from this JWO) ───────────────────────
+    const jobCardsSection = section(
+      'job-cards',
+      'Job Cards',
+      '📋',
+      'job-card',
+      // job_cards has no status column — derive coarse closed/open from closed_at.
+      jobCardRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+    );
+    const plansSection = section(
+      'plans',
+      'Planning',
+      '🗂',
+      'plan',
+      planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const partyGrnSection = section(
+      'party-grn',
+      'Party GRN',
+      '📥',
+      // No party-GRN detail route exists — reference-only.
+      null,
+      partyGrnRows.map((r) => row(r.id, r.code, null, r.date)),
+    );
+
+    const upstream = [clientSection, itemSection];
+    const downstream = [jobCardsSection, plansSection, partyGrnSection];
+    return {
+      self: { module: 'job-work-orders', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.jwDate),
+          label: 'Job Work Order created',
+          code: header.code,
+          routeKind: 'job-work-order',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
     };
   });
 }

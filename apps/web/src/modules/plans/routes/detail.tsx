@@ -4,6 +4,7 @@ import type { PlanStatus, PlanType } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useExecutePlan,
@@ -330,6 +331,8 @@ function PlanDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      <RelatedDocsPanel module="plans" id={plan.id} />
     </div>
   );
 }

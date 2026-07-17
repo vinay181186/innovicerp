@@ -35,6 +35,12 @@ export async function designProjectsRoutes(app: FastifyInstance): Promise<void> 
     return service.getDesignProjectDetail(id, req.user);
   });
 
+  app.get('/design-projects/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    return service.getDesignProjectRelated(id, req.user);
+  });
+
   app.post('/design-projects', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createDesignProjectInputSchema.parse(req.body);

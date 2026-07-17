@@ -23,6 +23,12 @@ export async function purchaseRequestsRoutes(app: FastifyInstance): Promise<void
     return service.getPurchaseRequest(id, req.user);
   });
 
+  app.get('/purchase-requests/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getPurchaseRequestRelated(id, req.user);
+  });
+
   app.post('/purchase-requests', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createPurchaseRequestInputSchema.parse(req.body);

@@ -4,6 +4,7 @@ import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/sha
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -336,6 +337,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      <RelatedDocsPanel module="delivery-challans" id={dc.id} />
     </div>
   );
 }

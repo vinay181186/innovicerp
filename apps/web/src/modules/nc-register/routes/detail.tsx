@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -340,6 +341,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
           {detail.disposition || detail.dispositionDate ? <DispositionBlock detail={detail} /> : null}
         </div>
       </div>
+
+      <RelatedDocsPanel module="nc-register" id={detail.id} />
 
       {showDispose ? (
         <DisposeNcPanel

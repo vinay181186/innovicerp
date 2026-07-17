@@ -28,6 +28,15 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     return service.getSalesOrder(id, req.user);
   });
 
+  // Read-only downstream traceability (new-ERP enhancement): every document
+  // generated from this SO. Separate from getById so the SO-detail load path
+  // is untouched and cannot regress.
+  app.get('/sales-orders/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getSalesOrderRelated(id, req.user);
+  });
+
   app.post('/sales-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createSalesOrderInputSchema.parse(req.body);

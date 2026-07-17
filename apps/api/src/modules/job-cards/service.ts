@@ -12,21 +12,30 @@
 // Filters live as conditional `sql\`\`` fragments. machineId / operatorId use
 // EXISTS sub-selects on jc_ops / op_log so we don't blow up the row set.
 
-import { and, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   fileRegistry,
   items,
   jcOps,
   jobCards,
   jobWorkOrderLines,
+  jobWorkOrders,
   machines,
+  ncRegister,
+  plans,
+  purchaseOrderLines,
+  purchaseOrders,
+  purchaseRequests,
   salesOrderLines,
+  salesOrders,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
   JobCardCompletionEvent,
@@ -616,9 +625,10 @@ export async function getJobCardStatusExtras(
       ORDER BY nc.nc_date DESC
     `)) as unknown as Array<Record<string, unknown>>;
 
-    // OSP activity (legacy L11128): CREATE of an OSP Auto PR/PO referencing this
-    // JC. Our PurchaseRequest activity detail carries the JC code + "OSP";
-    // PurchaseOrder detail omits the JC code, so only PR events link here.
+    // OSP activity: CREATE of an OSP Auto PR/PO referencing this JC. Both the
+    // PurchaseRequest and PurchaseOrder activity details carry the JC code + "OSP"
+    // (the PO linkage is a new-ERP enhancement beyond legacy — osp-cascade.ts:303),
+    // so both PR and PO events link into this feed via `detail ILIKE '%<jc.code>%'`.
     const actRows = (await tx.execute(sql`
       SELECT a.id, a.entity, a.detail,
         to_char(a.ts AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS "actDate",
@@ -1253,6 +1263,298 @@ export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok
       user,
     );
     return { ok: true };
+  });
+}
+
+// ─── Related documents (read-only traceability) ──────────────────────────
+//
+// GET /job-cards/:id/related. Mirrors getSalesOrderRelated: a single
+// withUserContext transaction, an existence check, then company-scoped +
+// soft-delete-filtered subqueries feeding the shared traceability shape.
+//
+// Anchor: job_cards (code, jc_date). No status column — coarse status is
+// derived from closed_at ('closed' if set else 'open').
+//
+// Upstream (source):
+//   - job_cards.item_id            → items                               (item)
+//   - job_cards.source_so_line_id  → sales_order_lines → sales_orders    (sales-order)
+//   - job_cards.source_jw_line_id  → job_work_order_lines → job_work_orders (job-work-order)
+//   - job_cards.parent_nc_id       → nc_register                         (rework source NC)
+//
+// Downstream (generated):
+//   - nc_register.job_card_id = :id                                      (non-conformances)
+//   - plans.jc_id = :id                                                  (planning)
+//   - DISTINCT purchase_requests via this JC's jc_ops.outsource_pr_id    (OSP PRs)
+//   - DISTINCT purchase_orders via jc_ops.outsource_po_line_id
+//       → purchase_order_lines → purchase_order_id                       (OSP POs)
+export async function getJobCardRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the JC is visible before gathering related docs; grab the source
+    // FKs for the upstream links.
+    const headers = await tx
+      .select({
+        id: jobCards.id,
+        code: jobCards.code,
+        jcDate: jobCards.jcDate,
+        itemId: jobCards.itemId,
+        sourceSoLineId: jobCards.sourceSoLineId,
+        sourceJwLineId: jobCards.sourceJwLineId,
+        parentNcId: jobCards.parentNcId,
+      })
+      .from(jobCards)
+      .where(
+        and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Job card ${id} not found`);
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream: item master this JC produces ──────────────────────────────
+    const itemRows = await tx
+      .select({ id: items.id, code: items.code, name: items.name })
+      .from(items)
+      .where(
+        and(eq(items.id, header.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
+      )
+      .limit(1);
+    const item = itemRows[0] ?? null;
+
+    // ── Upstream: source Sales Order (via source_so_line_id → line → header) ─
+    const soRows = header.sourceSoLineId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrders)
+          .innerJoin(salesOrderLines, eq(salesOrderLines.salesOrderId, salesOrders.id))
+          .where(
+            and(
+              eq(salesOrderLines.id, header.sourceSoLineId),
+              eq(salesOrders.companyId, companyId),
+              isNull(salesOrders.deletedAt),
+              isNull(salesOrderLines.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const so = soRows[0] ?? null;
+
+    // ── Upstream: source Job Work Order (via source_jw_line_id → line → hdr) ─
+    const jwRows = header.sourceJwLineId
+      ? await tx
+          .select({
+            id: jobWorkOrders.id,
+            code: jobWorkOrders.code,
+            status: jobWorkOrders.status,
+            date: jobWorkOrders.jwDate,
+          })
+          .from(jobWorkOrders)
+          .innerJoin(jobWorkOrderLines, eq(jobWorkOrderLines.jobWorkOrderId, jobWorkOrders.id))
+          .where(
+            and(
+              eq(jobWorkOrderLines.id, header.sourceJwLineId),
+              eq(jobWorkOrders.companyId, companyId),
+              isNull(jobWorkOrders.deletedAt),
+              isNull(jobWorkOrderLines.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const jw = jwRows[0] ?? null;
+
+    // ── Upstream: parent NC (this JC is a rework/fresh JC spawned by an NC) ──
+    const parentNcRows = header.parentNcId
+      ? await tx
+          .select({
+            id: ncRegister.id,
+            code: ncRegister.code,
+            status: ncRegister.status,
+            date: ncRegister.ncDate,
+          })
+          .from(ncRegister)
+          .where(
+            and(
+              eq(ncRegister.id, header.parentNcId),
+              eq(ncRegister.companyId, companyId),
+              isNull(ncRegister.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const parentNc = parentNcRows[0] ?? null;
+
+    // ── Downstream: NCs raised against this JC ──────────────────────────────
+    const ncRows = await tx
+      .select({
+        id: ncRegister.id,
+        code: ncRegister.code,
+        status: ncRegister.status,
+        date: ncRegister.ncDate,
+      })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.jobCardId, id),
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .orderBy(desc(ncRegister.ncDate));
+
+    // ── Downstream: plans linked to this JC ─────────────────────────────────
+    const planRows = await tx
+      .select({
+        id: plans.id,
+        code: plans.code,
+        status: plans.planStatus,
+        date: plans.planDate,
+      })
+      .from(plans)
+      .where(and(eq(plans.jcId, id), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
+      .orderBy(desc(plans.planDate));
+
+    // ── Downstream: OSP purchase requests reachable from this JC's ops ───────
+    const prRows = await tx
+      .selectDistinct({
+        id: purchaseRequests.id,
+        code: purchaseRequests.code,
+        status: purchaseRequests.status,
+        date: purchaseRequests.prDate,
+      })
+      .from(purchaseRequests)
+      .innerJoin(jcOps, eq(jcOps.outsourcePrId, purchaseRequests.id))
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          isNull(jcOps.deletedAt),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
+      .orderBy(desc(purchaseRequests.prDate));
+
+    // ── Downstream: OSP purchase orders via ops → PO line → PO header ───────
+    const poRows = await tx
+      .selectDistinct({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        status: purchaseOrders.status,
+        date: purchaseOrders.poDate,
+      })
+      .from(purchaseOrders)
+      .innerJoin(purchaseOrderLines, eq(purchaseOrderLines.purchaseOrderId, purchaseOrders.id))
+      .innerJoin(jcOps, eq(jcOps.outsourcePoLineId, purchaseOrderLines.id))
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          isNull(jcOps.deletedAt),
+          isNull(purchaseOrderLines.deletedAt),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .orderBy(desc(purchaseOrders.poDate));
+
+    // ── Upstream sections (what this JC was built FROM) ─────────────────────
+    const itemSection = section(
+      'item',
+      'Item',
+      '📦',
+      'item',
+      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
+    );
+    const soSection = section(
+      'sales-order',
+      'Sales Order',
+      '📄',
+      'sales-order',
+      so ? [row(so.id, so.code, so.status, so.date)] : [],
+    );
+    const jwSection = section(
+      'job-work-order',
+      'Job Work Order',
+      '🛠',
+      'job-work-order',
+      jw ? [row(jw.id, jw.code, jw.status, jw.date)] : [],
+    );
+    const parentNcSection = section(
+      'parent-nc',
+      'Rework Source NC',
+      '⚠',
+      'nc',
+      parentNc ? [row(parentNc.id, parentNc.code, parentNc.status, parentNc.date)] : [],
+    );
+
+    // ── Downstream sections (generated from this JC) ────────────────────────
+    const ncSection = section(
+      'nc',
+      'Non-Conformances',
+      '⚠',
+      'nc',
+      ncRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const plansSection = section(
+      'plans',
+      'Planning',
+      '🗂',
+      'plan',
+      planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const ospPrSection = section(
+      'osp-pr',
+      'OSP Purchase Requests',
+      '📝',
+      'purchase-request',
+      prRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const ospPoSection = section(
+      'osp-po',
+      'OSP Purchase Orders',
+      '🧾',
+      'purchase-order',
+      poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+
+    const upstream = [itemSection, soSection, jwSection, parentNcSection];
+    const downstream = [ncSection, plansSection, ospPrSection, ospPoSection];
+    return {
+      self: { module: 'job-cards', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.jcDate),
+          label: 'Job Card created',
+          code: header.code,
+          routeKind: 'job-card',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }
 

@@ -13,15 +13,22 @@
 
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  assemblyUnits,
+  bomMasters,
   clients,
+  customerDispatches,
   fileRegistry,
   invoiceLines,
   invoices,
   items,
   jobCards,
   jobWorkOrders,
+  plans,
+  purchaseOrderLines,
+  purchaseOrders,
   salesOrderLines,
   salesOrders,
+  servicePos,
   soMilestones,
   users,
 } from '../../db/schema';
@@ -34,6 +41,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
 
@@ -42,8 +50,10 @@ function soDetail(code: string, customerName: string | null | undefined): string
 }
 import type {
   CreateSalesOrderInput,
+  DocumentTraceability,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
+  RelatedDoc,
   SalesOrder,
   SalesOrderDetail,
   SalesOrderLine,
@@ -420,6 +430,361 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       })),
       milestones,
       clientPoFilePath,
+    };
+  });
+}
+
+/**
+ * Downstream traceability for one SO (new-ERP-only enhancement, not in legacy).
+ * Read-only. Returns one group per related document type, each with a COUNT and
+ * a small list of `{ id, code, status, date }` rows. Every subquery is
+ * company-scoped and soft-delete filtered (`deleted_at IS NULL`), all inside a
+ * single withUserContext transaction so RLS company isolation is applied too.
+ *
+ * Upstream (source) relationships:
+ *   - sales_orders.client_id             → clients (the ordering customer)
+ *   - sales_order_lines.source_bom_master_id → DISTINCT bom_masters (equipment BOMs)
+ *
+ * Downstream (generated) relationships:
+ *   - plans.so_line_id            ∈ this SO's sales_order_lines.id
+ *   - job_cards.source_so_line_id ∈ SO line ids
+ *   - purchase_order_lines.source_so_line_id ∈ SO line ids → DISTINCT purchase_order
+ *   - customer_dispatches.sales_order_id = :id
+ *   - invoices.sales_order_id           = :id
+ *   - service_pos.so_ref_id             = :id
+ *   - assembly_units.sales_order_id     = :id
+ */
+export async function getSalesOrderRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the SO exists / is visible before gathering related docs; grab
+    // client_id for the upstream client link.
+    const headers = await tx
+      .select({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        soDate: salesOrders.soDate,
+        clientId: salesOrders.clientId,
+      })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, id),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+
+    // SO lines drive the plan / job-card / PO joins and the upstream BOM link
+    // (all reference sales_order_lines).
+    const lineRows = await tx
+      .select({ id: salesOrderLines.id, bomMasterId: salesOrderLines.sourceBomMasterId })
+      .from(salesOrderLines)
+      .where(and(eq(salesOrderLines.salesOrderId, id), isNull(salesOrderLines.deletedAt)));
+    const lineIds = lineRows.map((r) => r.id);
+    const bomMasterIds = Array.from(
+      new Set(lineRows.map((r) => r.bomMasterId).filter((v): v is string => Boolean(v))),
+    );
+
+    // ── Upstream: client (source customer) ──────────────────────────────────
+    const clientRows = header.clientId
+      ? await tx
+          .select({ id: clients.id, code: clients.code, name: clients.name })
+          .from(clients)
+          .where(
+            and(
+              eq(clients.id, header.clientId),
+              eq(clients.companyId, companyId),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const client = clientRows[0] ?? null;
+
+    // ── Upstream: distinct BOM masters referenced by this SO's equipment lines
+    const bomRows =
+      bomMasterIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: bomMasters.id,
+              code: bomMasters.bomNo,
+              status: bomMasters.status,
+              date: bomMasters.revisionDate,
+            })
+            .from(bomMasters)
+            .where(
+              and(
+                eq(bomMasters.companyId, companyId),
+                isNull(bomMasters.deletedAt),
+                inArray(bomMasters.id, bomMasterIds),
+              ),
+            )
+            .orderBy(asc(bomMasters.bomNo));
+
+    // ── Downstream: job cards generated from this SO's lines ────────────────
+    const jobCardRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: jobCards.id,
+              code: jobCards.code,
+              closedAt: jobCards.closedAt,
+              date: jobCards.jcDate,
+            })
+            .from(jobCards)
+            .where(
+              and(
+                eq(jobCards.companyId, companyId),
+                isNull(jobCards.deletedAt),
+                inArray(jobCards.sourceSoLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(jobCards.jcDate));
+
+    // Plans linked to any of this SO's lines.
+    const planRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: plans.id,
+              code: plans.code,
+              status: plans.planStatus,
+              date: plans.planDate,
+            })
+            .from(plans)
+            .where(
+              and(
+                eq(plans.companyId, companyId),
+                isNull(plans.deletedAt),
+                inArray(plans.soLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(plans.planDate));
+
+    // Distinct POs whose lines were sourced from any of this SO's lines.
+    const poRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .selectDistinct({
+              id: purchaseOrders.id,
+              code: purchaseOrders.code,
+              status: purchaseOrders.status,
+              date: purchaseOrders.poDate,
+            })
+            .from(purchaseOrders)
+            .innerJoin(
+              purchaseOrderLines,
+              eq(purchaseOrderLines.purchaseOrderId, purchaseOrders.id),
+            )
+            .where(
+              and(
+                eq(purchaseOrders.companyId, companyId),
+                isNull(purchaseOrders.deletedAt),
+                inArray(purchaseOrderLines.sourceSoLineId, lineIds),
+                isNull(purchaseOrderLines.deletedAt),
+              ),
+            )
+            .orderBy(desc(purchaseOrders.poDate));
+
+    const invoiceRows = await tx
+      .select({
+        id: invoices.id,
+        code: invoices.code,
+        status: invoices.status,
+        date: invoices.invoiceDate,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.salesOrderId, id),
+          eq(invoices.companyId, companyId),
+          isNull(invoices.deletedAt),
+        ),
+      )
+      .orderBy(desc(invoices.invoiceDate));
+
+    const dispatchRows = await tx
+      .select({
+        id: customerDispatches.id,
+        code: customerDispatches.code,
+        status: customerDispatches.status,
+        date: customerDispatches.dispatchDate,
+      })
+      .from(customerDispatches)
+      .where(
+        and(
+          eq(customerDispatches.salesOrderId, id),
+          eq(customerDispatches.companyId, companyId),
+          isNull(customerDispatches.deletedAt),
+        ),
+      )
+      .orderBy(desc(customerDispatches.dispatchDate));
+
+    const servicePoRows = await tx
+      .select({
+        id: servicePos.id,
+        code: servicePos.spoNo,
+        status: servicePos.status,
+        date: servicePos.spoDate,
+      })
+      .from(servicePos)
+      .where(
+        and(
+          eq(servicePos.soRefId, id),
+          eq(servicePos.companyId, companyId),
+          isNull(servicePos.deletedAt),
+        ),
+      )
+      .orderBy(desc(servicePos.spoDate));
+
+    // Assembly units have no status enum — derive from the `dispatched` flag —
+    // and no standalone code, so label by serial no (fallback: "Unit #N").
+    const assemblyRows = await tx
+      .select({
+        id: assemblyUnits.id,
+        unitNo: assemblyUnits.unitNo,
+        serialNo: assemblyUnits.serialNo,
+        dispatched: assemblyUnits.dispatched,
+        date: assemblyUnits.assemblyDate,
+      })
+      .from(assemblyUnits)
+      .where(
+        and(
+          eq(assemblyUnits.salesOrderId, id),
+          eq(assemblyUnits.companyId, companyId),
+          isNull(assemblyUnits.deletedAt),
+        ),
+      )
+      .orderBy(asc(assemblyUnits.unitNo));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this SO was built FROM) ─────────────────────
+    const clientSection = section(
+      'client',
+      'Client',
+      '👤',
+      'client',
+      client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+    );
+    const bomSection = section(
+      'bom-masters',
+      'BOM Masters',
+      '📐',
+      'bom-master',
+      bomRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+
+    // ── Downstream sections (generated from this SO) ────────────────────────
+    const plansSection = section(
+      'plans',
+      'Planning',
+      '🗂',
+      'plan',
+      planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const jobCardsSection = section(
+      'job-cards',
+      'Job Cards',
+      '📋',
+      'job-card',
+      // job_cards has no status column (computed from op progress); derive a
+      // coarse closed/open from closed_at honestly.
+      jobCardRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+    );
+    const poSection = section(
+      'purchase-orders',
+      'Purchase Orders',
+      '🧾',
+      'purchase-order',
+      poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const dispatchSection = section(
+      'customer-dispatches',
+      'Customer Dispatches',
+      '🚚',
+      // No customer-dispatch detail route exists — reference-only.
+      null,
+      dispatchRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const invoiceSection = section(
+      'invoices',
+      'Invoices',
+      '💰',
+      'invoice',
+      invoiceRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const servicePoSection = section(
+      'service-pos',
+      'Service Purchase Orders',
+      '🛠',
+      'service-po',
+      servicePoRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+    const assemblySection = section(
+      'assembly-units',
+      'Assembly Units',
+      '🧩',
+      // Assembly detail is SO-scoped (/assemblies/$soId) — link every unit to
+      // this SO's id.
+      'assembly',
+      assemblyRows.map((r) =>
+        row(r.id, r.serialNo ?? `Unit #${r.unitNo}`, r.dispatched ? 'dispatched' : 'assembled', r.date, {
+          linkId: id,
+        }),
+      ),
+    );
+
+    const downstream = [
+      plansSection,
+      jobCardsSection,
+      poSection,
+      dispatchSection,
+      invoiceSection,
+      servicePoSection,
+      assemblySection,
+    ];
+
+    const upstream = [clientSection, bomSection];
+    return {
+      self: { module: 'sales-orders', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.soDate),
+          label: 'Sales Order created',
+          code: header.code,
+          routeKind: 'sales-order',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
     };
   });
 }

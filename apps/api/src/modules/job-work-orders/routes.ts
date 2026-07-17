@@ -23,6 +23,12 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     return service.getJobWorkOrder(id, req.user);
   });
 
+  app.get('/job-work-orders/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getJobWorkOrderRelated(id, req.user);
+  });
+
   app.post('/job-work-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createJobWorkOrderInputSchema.parse(req.body);

@@ -28,6 +28,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useAddPayment, useInvoice } from '../api';
@@ -265,6 +266,8 @@ function InvoiceDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      <RelatedDocsPanel module="invoices" id={inv.id} />
     </div>
   );
 }

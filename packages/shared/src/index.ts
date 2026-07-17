@@ -30,6 +30,7 @@ export * from './enums/task-status';
 export * from './enums/task-priority';
 export * from './enums/daily-report-line-status';
 export * from './types/auth';
+export * from './schemas/traceability';
 export * from './schemas/item';
 export * from './schemas/client';
 export * from './schemas/vendor';

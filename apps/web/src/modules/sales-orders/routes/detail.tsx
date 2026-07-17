@@ -9,6 +9,7 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
 
@@ -263,6 +264,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
           </div>
         </div>
       ) : null}
+
+      <RelatedDocsPanel module="sales-orders" id={detail.id} />
     </div>
   );
 }

@@ -23,6 +23,12 @@ export async function goodsReceiptNotesRoutes(app: FastifyInstance): Promise<voi
     return service.getGoodsReceiptNote(id, req.user);
   });
 
+  app.get('/goods-receipt-notes/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getGrnRelated(id, req.user);
+  });
+
   app.post('/goods-receipt-notes', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createGoodsReceiptNoteInputSchema.parse(req.body);

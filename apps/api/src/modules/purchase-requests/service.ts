@@ -6,14 +6,18 @@
 // cancelled). Only the basic field updates land here in T-036a; the approve
 // + create-PO actions ship in T-036b alongside the PO module.
 
-import { and, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, or, sql } from 'drizzle-orm';
+import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
   items,
   jcOps,
   jobCards,
+  planOps,
+  plans,
   purchaseOrders,
   purchaseRequests,
   salesOrderLines,
+  salesOrders,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -24,6 +28,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import type {
   CreatePurchaseRequestInput,
@@ -569,6 +574,274 @@ export async function softDeletePurchaseRequest(
       user,
     );
     return { ok: true };
+  });
+}
+
+// ─── Traceability (read-only related-documents graph) ──────────────────────
+//
+// New-ERP navigation enhancement (not in legacy). Mirrors
+// getSalesOrderRelated: anchor existence check → company-scoped, soft-delete
+// filtered FK subqueries → DocumentTraceability. Changes no business rule.
+//
+// Edges (verified FKs only):
+//   Upstream (source):
+//     - purchase_requests.vendor_id        → vendors        (nullable)
+//     - purchase_requests.item_id          → items          (nullable)
+//     - purchase_requests.source_so_line_id → sales_order_lines → sales_orders (nullable)
+//     - purchase_requests.source_jc_op_id  → jc_ops → job_cards (nullable)
+//   Downstream (generated):
+//     - purchase_requests.po_id            → purchase_orders (nullable)
+//     - plans linked via dp_pr_id / fo_pr_id / fo_mat_pr_id / material_pr_id
+//       UNION plan_ops.outsource_pr_id (resolved to plan_id)
+export async function getPurchaseRequestRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the PR is visible before gathering related docs; grab the source
+    // FKs the upstream links resolve from.
+    const headers = await tx
+      .select({
+        id: purchaseRequests.id,
+        code: purchaseRequests.code,
+        prDate: purchaseRequests.prDate,
+        status: purchaseRequests.status,
+        vendorId: purchaseRequests.vendorId,
+        itemId: purchaseRequests.itemId,
+        sourceSoLineId: purchaseRequests.sourceSoLineId,
+        sourceJcOpId: purchaseRequests.sourceJcOpId,
+        poId: purchaseRequests.poId,
+      })
+      .from(purchaseRequests)
+      .where(
+        and(
+          eq(purchaseRequests.id, id),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Purchase request ${id} not found`);
+
+    // ── Upstream: vendor (source supplier) ─────────────────────────────────
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const vendor = vendorRows[0] ?? null;
+
+    // ── Upstream: item ─────────────────────────────────────────────────────
+    const itemRows = header.itemId
+      ? await tx
+          .select({ id: items.id, code: items.code, name: items.name })
+          .from(items)
+          .where(
+            and(
+              eq(items.id, header.itemId),
+              eq(items.companyId, companyId),
+              isNull(items.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const item = itemRows[0] ?? null;
+
+    // ── Upstream: source Sales Order (via SO line → header) ────────────────
+    const soRows = header.sourceSoLineId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrderLines)
+          .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+          .where(
+            and(
+              eq(salesOrderLines.id, header.sourceSoLineId),
+              eq(salesOrders.companyId, companyId),
+              isNull(salesOrders.deletedAt),
+              isNull(salesOrderLines.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const so = soRows[0] ?? null;
+
+    // ── Upstream: source Job Card (OSP) (via JC op → header) ───────────────
+    const jcRows = header.sourceJcOpId
+      ? await tx
+          .select({ id: jobCards.id, code: jobCards.code, date: jobCards.jcDate })
+          .from(jcOps)
+          .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+          .where(
+            and(
+              eq(jcOps.id, header.sourceJcOpId),
+              eq(jobCards.companyId, companyId),
+              isNull(jobCards.deletedAt),
+              isNull(jcOps.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const jc = jcRows[0] ?? null;
+
+    // ── Downstream: generated Purchase Order ───────────────────────────────
+    const poRows = header.poId
+      ? await tx
+          .select({
+            id: purchaseOrders.id,
+            code: purchaseOrders.code,
+            status: purchaseOrders.status,
+            date: purchaseOrders.poDate,
+          })
+          .from(purchaseOrders)
+          .where(
+            and(
+              eq(purchaseOrders.id, header.poId),
+              eq(purchaseOrders.companyId, companyId),
+              isNull(purchaseOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const po = poRows[0] ?? null;
+
+    // ── Downstream: plans linked to this PR ────────────────────────────────
+    // Header-level PR links (design-provisioned / fabrication-order / material).
+    const directPlanRows = await tx
+      .select({
+        id: plans.id,
+        code: plans.code,
+        status: plans.planStatus,
+        date: plans.planDate,
+      })
+      .from(plans)
+      .where(
+        and(
+          eq(plans.companyId, companyId),
+          isNull(plans.deletedAt),
+          or(
+            eq(plans.dpPrId, id),
+            eq(plans.foPrId, id),
+            eq(plans.foMatPrId, id),
+            eq(plans.materialPrId, id),
+          ),
+        ),
+      );
+    // Plans whose outsource op raised this PR (plan_ops.outsource_pr_id).
+    const opPlanRows = await tx
+      .selectDistinct({
+        id: plans.id,
+        code: plans.code,
+        status: plans.planStatus,
+        date: plans.planDate,
+      })
+      .from(plans)
+      .innerJoin(planOps, eq(planOps.planId, plans.id))
+      .where(
+        and(
+          eq(plans.companyId, companyId),
+          isNull(plans.deletedAt),
+          eq(planOps.outsourcePrId, id),
+          isNull(planOps.deletedAt),
+        ),
+      );
+    const planById = new Map<string, (typeof directPlanRows)[number]>();
+    for (const p of [...directPlanRows, ...opPlanRows]) planById.set(p.id, p);
+    const planRows = Array.from(planById.values());
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this PR was raised FROM) ───────────────────
+    const vendorSection = section(
+      'vendor',
+      'Vendor',
+      '🏭',
+      'vendor',
+      vendor ? [row(vendor.id, vendor.code, null, null, { label: vendor.name })] : [],
+    );
+    const itemSection = section(
+      'item',
+      'Item',
+      '📦',
+      'item',
+      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
+    );
+    const soSection = section(
+      'sales-order',
+      'Source Sales Order',
+      '📄',
+      'sales-order',
+      so ? [row(so.id, so.code, so.status, so.date)] : [],
+    );
+    const jcSection = section(
+      'job-card',
+      'Source Job Card (OSP)',
+      '📋',
+      'job-card',
+      jc ? [row(jc.id, jc.code, null, jc.date)] : [],
+    );
+
+    // ── Downstream sections (generated from this PR) ───────────────────────
+    const poSection = section(
+      'purchase-order',
+      'Purchase Order',
+      '🧾',
+      'purchase-order',
+      po ? [row(po.id, po.code, po.status, po.date)] : [],
+    );
+    const plansSection = section(
+      'plans',
+      'Planning',
+      '🗂',
+      'plan',
+      planRows.map((p) => row(p.id, p.code, p.status, p.date)),
+    );
+
+    const upstream = [vendorSection, itemSection, soSection, jcSection];
+    const downstream = [poSection, plansSection];
+    return {
+      self: { module: 'purchase-requests', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.prDate),
+          label: 'Purchase Request created',
+          code: header.code,
+          routeKind: 'purchase-request',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }
 

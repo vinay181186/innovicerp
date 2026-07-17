@@ -14,18 +14,26 @@
 // single-line PO from a PR row in one transaction, also setting PR.poId /
 // poCreatedAt / status='po_created'. Mirrors legacy `addPO()` line 25728.
 
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   approvalConfig,
+  deliveryChallans,
+  goodsReceiptNotes,
   items,
+  jcOps,
+  jobCards,
+  jwDcOutward,
   purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
+  salesOrderLines,
+  salesOrders,
   users,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -33,6 +41,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
@@ -1311,6 +1320,310 @@ export async function createPurchaseOrderFromPrBatch(
       ...toPurchaseOrder(header),
       vendorName: vendorRow?.name ?? null,
       lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
+    };
+  });
+}
+
+/**
+ * Read-only document traceability for one Purchase Order (T-060 family).
+ *
+ * Mirrors `getSalesOrderRelated`: a single withUserContext transaction, an
+ * existence check that throws NotFoundError before gathering anything, and
+ * company-scoped + soft-delete-filtered subqueries only. No writes, no schema.
+ *
+ * Upstream (source) relationships:
+ *   - purchase_orders.vendor_id              -> vendors (the supplier)
+ *   - purchase_requests.po_id = :id          -> source Purchase Requests
+ *   - purchase_order_lines.source_so_line_id -> DISTINCT sales_orders (via SO lines)
+ *   - purchase_order_lines.source_jc_op_id   -> DISTINCT job_cards (via jc_ops, OSP)
+ *
+ * Downstream (generated) relationships:
+ *   - goods_receipt_notes.purchase_order_id = :id -> GRNs
+ *   - delivery_challans.purchase_order_id   = :id -> Delivery Challans
+ *   - jw_dc_outward.purchase_order_id       = :id -> JW DC Outward
+ */
+export async function getPurchaseOrderRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the PO exists / is visible before gathering related docs; grab
+    // vendor_id for the upstream vendor link.
+    const headers = await tx
+      .select({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        poDate: purchaseOrders.poDate,
+        status: purchaseOrders.status,
+        vendorId: purchaseOrders.vendorId,
+      })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.id, id),
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Purchase order ${id} not found`);
+
+    // Upstream: vendor (source supplier).
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const vendor = vendorRows[0] ?? null;
+
+    // Upstream: source purchase requests (PR.po_id points back to this PO).
+    const prRows = await tx
+      .select({
+        id: purchaseRequests.id,
+        code: purchaseRequests.code,
+        status: purchaseRequests.status,
+        date: purchaseRequests.prDate,
+      })
+      .from(purchaseRequests)
+      .where(
+        and(
+          eq(purchaseRequests.poId, id),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
+      .orderBy(desc(purchaseRequests.prDate));
+
+    // Upstream: distinct sales orders this PO's lines were sourced from.
+    const soRows = await tx
+      .selectDistinct({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        status: salesOrders.status,
+        date: salesOrders.soDate,
+      })
+      .from(salesOrders)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.salesOrderId, salesOrders.id))
+      .innerJoin(purchaseOrderLines, eq(purchaseOrderLines.sourceSoLineId, salesOrderLines.id))
+      .where(
+        and(
+          eq(purchaseOrderLines.purchaseOrderId, id),
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(salesOrderLines.deletedAt),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .orderBy(desc(salesOrders.soDate));
+
+    // Upstream: distinct job cards (OSP) via jc_ops referenced by this PO's lines.
+    const jcRows = await tx
+      .selectDistinct({
+        id: jobCards.id,
+        code: jobCards.code,
+        date: jobCards.jcDate,
+      })
+      .from(jobCards)
+      .innerJoin(jcOps, eq(jcOps.jobCardId, jobCards.id))
+      .innerJoin(purchaseOrderLines, eq(purchaseOrderLines.sourceJcOpId, jcOps.id))
+      .where(
+        and(
+          eq(purchaseOrderLines.purchaseOrderId, id),
+          isNull(purchaseOrderLines.deletedAt),
+          isNull(jcOps.deletedAt),
+          eq(jobCards.companyId, companyId),
+          isNull(jobCards.deletedAt),
+        ),
+      )
+      .orderBy(desc(jobCards.jcDate));
+
+    // Downstream: GRNs raised against this PO. goods_receipt_notes has no
+    // status column -> reference by code/date.
+    const grnRows = await tx
+      .select({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        date: goodsReceiptNotes.grnDate,
+      })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.purchaseOrderId, id),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .orderBy(desc(goodsReceiptNotes.grnDate));
+
+    // Downstream: delivery challans issued against this PO.
+    const dcRows = await tx
+      .select({
+        id: deliveryChallans.id,
+        code: deliveryChallans.code,
+        status: deliveryChallans.status,
+        date: deliveryChallans.dcDate,
+      })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.purchaseOrderId, id),
+          eq(deliveryChallans.companyId, companyId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .orderBy(desc(deliveryChallans.dcDate));
+
+    // Downstream: JW DC Outward against this PO. jw_dc_outward has no status
+    // column -> reference by code/date.
+    const jwDcRows = await tx
+      .select({
+        id: jwDcOutward.id,
+        code: jwDcOutward.code,
+        date: jwDcOutward.dcDate,
+      })
+      .from(jwDcOutward)
+      .where(
+        and(
+          eq(jwDcOutward.purchaseOrderId, id),
+          eq(jwDcOutward.companyId, companyId),
+          isNull(jwDcOutward.deletedAt),
+        ),
+      )
+      .orderBy(desc(jwDcOutward.dcDate));
+
+    // Upstream sections (what this PO was built FROM).
+    const vendorSection = section(
+      'vendor',
+      'Vendor',
+      '\u{1F3ED}',
+      'vendor',
+      vendor
+        ? [
+            {
+              id: vendor.id,
+              code: vendor.code,
+              status: null,
+              date: null,
+              linkId: null,
+              label: vendor.name,
+            },
+          ]
+        : [],
+    );
+    const prSection = section(
+      'purchase-request',
+      'Source Purchase Request',
+      '\u{1F4DD}',
+      'purchase-request',
+      prRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: r.status,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+    const soSection = section(
+      'sales-order',
+      'Source Sales Orders',
+      '\u{1F4C4}',
+      'sales-order',
+      soRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: r.status,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+    const jcSection = section(
+      'job-card',
+      'Source Job Cards (OSP)',
+      '\u{1F4CB}',
+      'job-card',
+      jcRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+
+    // Downstream sections (generated from this PO).
+    const grnSection = section(
+      'grn',
+      'Goods Receipt Notes',
+      '\u{1F4E5}',
+      'grn',
+      grnRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+    const dcSection = section(
+      'delivery-challans',
+      'Delivery Challans',
+      '\u{1F69A}',
+      'delivery-challan',
+      dcRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: r.status,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+    const jwDcSection = section(
+      'jw-dc',
+      'JW DC Outward',
+      '\u{1F4E6}',
+      'jw-dc',
+      jwDcRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+    );
+
+    const upstream = [vendorSection, prSection, soSection, jcSection];
+    const downstream = [grnSection, dcSection, jwDcSection];
+    return {
+      self: { module: 'purchase-orders', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.poDate),
+          label: 'Purchase Order created',
+          code: header.code,
+          routeKind: 'purchase-order',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
     };
   });
 }

@@ -29,8 +29,11 @@ import type {
   AssemblyListResponse,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  DocumentTraceability,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
+  RelatedDoc,
+  RelatedSection,
   SetReadinessOverrideInput,
 } from '@innovic/shared';
 import {
@@ -45,6 +48,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -703,4 +707,121 @@ function toUnitRow(row: typeof assemblyUnits.$inferSelect): AssemblyUnitRow {
     dispatchedBy: row.dispatchedBy,
     dispatchRemarks: row.dispatchRemarks,
   };
+}
+
+// ── Related Documents (read-only traceability) ─────────────────────────────
+//
+// The Assembly Tracker is SO-scoped: its detail route is /assemblies/$soId and
+// the anchor id IS a sales_orders id. There is no assembly_unit "header" — the
+// units are terminal, so downstream is always empty. We surface where the
+// assembly came FROM:
+//   Upstream:
+//     - the Sales Order itself (the anchor SO row)
+//     - DISTINCT bom_masters referenced by this SO's assembly_units.bom_master_id
+// Every subquery is company-scoped and soft-delete filtered, inside a single
+// withUserContext transaction so RLS company isolation also applies.
+export async function getAssemblyRelated(
+  soId: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the anchor SO is visible before gathering related docs.
+    const headers = await tx
+      .select({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        status: salesOrders.status,
+        soDate: salesOrders.soDate,
+      })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, soId),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Sales order ${soId} not found`);
+
+    // ── Upstream: distinct BOM masters referenced by this SO's assembly units ─
+    const unitBomRows = await tx
+      .selectDistinct({ bomMasterId: assemblyUnits.bomMasterId })
+      .from(assemblyUnits)
+      .where(
+        and(
+          eq(assemblyUnits.salesOrderId, soId),
+          eq(assemblyUnits.companyId, companyId),
+          isNull(assemblyUnits.deletedAt),
+        ),
+      );
+    const bomMasterIds = Array.from(
+      new Set(unitBomRows.map((r) => r.bomMasterId).filter((v): v is string => Boolean(v))),
+    );
+    const bomRows =
+      bomMasterIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: bomMasters.id,
+              code: bomMasters.bomNo,
+              status: bomMasters.status,
+              date: bomMasters.revisionDate,
+            })
+            .from(bomMasters)
+            .where(
+              and(
+                eq(bomMasters.companyId, companyId),
+                isNull(bomMasters.deletedAt),
+                inArray(bomMasters.id, bomMasterIds),
+              ),
+            )
+            .orderBy(asc(bomMasters.bomNo));
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    // ── Upstream sections (what this assembly was built FROM) ────────────────
+    // The anchor SO row itself — linkId null so the row's own id (= the SO id)
+    // drives the /sales-orders/$id route.
+    const soSection = section('sales-order', 'Sales Order', '📄', 'sales-order', [
+      row(header.id, header.code, header.status, header.soDate),
+    ]);
+    const bomSection = section(
+      'bom-master',
+      'BOM Masters',
+      '📐',
+      'bom-master',
+      bomRows.map((r) => row(r.id, r.code, r.status, r.date)),
+    );
+
+    const upstream = [soSection, bomSection];
+    // Assembly units are terminal — no downstream documents.
+    const downstream: RelatedSection[] = [];
+
+    return {
+      self: { module: 'assembly', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      // The anchor has no standalone creation event distinct from the SO (which
+      // is already an upstream section), so pass null and let the timeline be
+      // built from the SO + BOM upstream rows to avoid duplicating the SO event.
+      timeline: buildTimeline(null, [...upstream, ...downstream]),
+    };
+  });
 }

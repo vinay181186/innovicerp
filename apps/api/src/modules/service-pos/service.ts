@@ -6,15 +6,17 @@
 
 import type {
   CreateServicePoInput,
+  DocumentTraceability,
   ListServicePosQuery,
   ListServicePosResponse,
+  RelatedDoc,
   ServicePo,
   ServicePoDetail,
   ServicePoLine,
   UpdateServicePoInput,
 } from '@innovic/shared';
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
-import { servicePoLines, servicePos, vendors } from '../../db/schema';
+import { salesOrders, servicePoLines, servicePos, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import {
@@ -23,6 +25,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -459,5 +462,130 @@ export async function softDeleteServicePo(id: string, user: AuthContext): Promis
       user,
     );
     return { ok: true };
+  });
+}
+
+/**
+ * Read-only document traceability for a Service PO (GET /service-pos/:id/related).
+ *
+ * A Service PO is a standalone expense document — it has no children, so the
+ * downstream set is empty. Upstream it references, when set:
+ *   - service_pos.vendor_id  → vendors        (the billed vendor)
+ *   - service_pos.so_ref_id  → sales_orders   (optional cost-center SO link)
+ *
+ * Every subquery is company-scoped, soft-delete filtered, and runs inside a
+ * single withUserContext transaction so RLS company isolation applies too.
+ */
+export async function getServicePoRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headers = await tx
+      .select({
+        id: servicePos.id,
+        code: servicePos.spoNo,
+        spoDate: servicePos.spoDate,
+        vendorId: servicePos.vendorId,
+        soRefId: servicePos.soRefId,
+      })
+      .from(servicePos)
+      .where(
+        and(
+          eq(servicePos.id, id),
+          eq(servicePos.companyId, companyId),
+          isNull(servicePos.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Service PO ${id} not found`);
+
+    // ── Upstream: billed vendor ─────────────────────────────────────────────
+    const vendorRows = header.vendorId
+      ? await tx
+          .select({ id: vendors.id, code: vendors.code, name: vendors.name })
+          .from(vendors)
+          .where(
+            and(
+              eq(vendors.id, header.vendorId),
+              eq(vendors.companyId, companyId),
+              isNull(vendors.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const vendor = vendorRows[0] ?? null;
+
+    // ── Upstream: cost-center Sales Order (nullable FK) ─────────────────────
+    const soRows = header.soRefId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrders)
+          .where(
+            and(
+              eq(salesOrders.id, header.soRefId),
+              eq(salesOrders.companyId, companyId),
+              isNull(salesOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const so = soRows[0] ?? null;
+
+    const row = (
+      id_: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+      extra?: { linkId?: string; label?: string },
+    ): RelatedDoc => ({
+      id: id_,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: extra?.linkId ?? null,
+      label: extra?.label ?? null,
+    });
+
+    const vendorSection = section(
+      'vendor',
+      'Vendor',
+      '🏭',
+      'vendor',
+      vendor ? [row(vendor.id, vendor.code, null, null, { label: vendor.name })] : [],
+    );
+    const soSection = section(
+      'sales-order',
+      'Sales Order',
+      '📄',
+      'sales-order',
+      so ? [row(so.id, so.code, so.status, so.date)] : [],
+    );
+
+    const upstream = [vendorSection, soSection];
+    const downstream: ReturnType<typeof section>[] = [];
+    return {
+      self: { module: 'service-pos', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.spoDate),
+          label: 'Service PO created',
+          code: header.code,
+          routeKind: 'service-po',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
   });
 }

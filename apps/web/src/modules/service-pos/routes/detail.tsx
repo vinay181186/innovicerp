@@ -3,6 +3,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Loader2, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -272,6 +273,8 @@ function ServicePosDetailPage(): React.JSX.Element {
           </div>
         </div>
       </div>
+
+      <RelatedDocsPanel module="service-pos" id={po.id} />
     </div>
   );
 }

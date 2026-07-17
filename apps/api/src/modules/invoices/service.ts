@@ -5,6 +5,7 @@
 import type {
   AddPaymentInput,
   CreateInvoiceInput,
+  DocumentTraceability,
   InvoiceDetail,
   InvoiceLineRow,
   InvoicePaymentRow,
@@ -23,6 +24,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
+import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -161,6 +163,112 @@ async function getInvoiceInternal(
 export async function getInvoice(id: string, user: AuthContext): Promise<InvoiceDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => getInvoiceInternal(tx, id, companyId));
+}
+
+/**
+ * Read-only document-traceability for an invoice. An invoice is a leaf document
+ * (nothing is generated FROM it), so downstream is always empty. Upstream links:
+ *   - invoices.sales_order_id → sales_orders (the SO the invoice bills against)
+ *   - invoices.client_id      → clients (the billed customer) [MASTER]
+ * Both FKs are nullable; a null FK omits that row. Company-scoped + soft-delete
+ * filtered inside a single withUserContext tx (RLS company isolation applied).
+ */
+export async function getInvoiceRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headers = await tx
+      .select({
+        id: invoices.id,
+        code: invoices.code,
+        invoiceDate: invoices.invoiceDate,
+        status: invoices.status,
+        salesOrderId: invoices.salesOrderId,
+        clientId: invoices.clientId,
+      })
+      .from(invoices)
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Invoice ${id} not found`);
+
+    // ── Upstream: sales order this invoice bills against ────────────────────
+    const soRows = header.salesOrderId
+      ? await tx
+          .select({
+            id: salesOrders.id,
+            code: salesOrders.code,
+            status: salesOrders.status,
+            date: salesOrders.soDate,
+          })
+          .from(salesOrders)
+          .where(
+            and(
+              eq(salesOrders.id, header.salesOrderId),
+              eq(salesOrders.companyId, companyId),
+              isNull(salesOrders.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const so = soRows[0] ?? null;
+
+    // ── Upstream: billed client (master) ────────────────────────────────────
+    const clientRows = header.clientId
+      ? await tx
+          .select({ id: clients.id, code: clients.code, name: clients.name })
+          .from(clients)
+          .where(
+            and(
+              eq(clients.id, header.clientId),
+              eq(clients.companyId, companyId),
+              isNull(clients.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+    const client = clientRows[0] ?? null;
+
+    const soSection = section(
+      'sales-order',
+      'Sales Order',
+      '📄',
+      'sales-order',
+      so
+        ? [{ id: so.id, code: so.code, status: so.status, date: toIsoDate(so.date), linkId: null, label: null }]
+        : [],
+    );
+    const clientSection = section(
+      'client',
+      'Client',
+      '👤',
+      'client',
+      client
+        ? [{ id: client.id, code: client.code, status: null, date: null, linkId: null, label: client.name }]
+        : [],
+    );
+
+    const upstream = [soSection, clientSection];
+    const downstream: DocumentTraceability['downstream'] = [];
+    return {
+      self: { module: 'invoices', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: toIsoDate(header.invoiceDate),
+          label: 'Invoice created',
+          code: header.code,
+          routeKind: 'invoice',
+          linkId: id,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
+  });
 }
 
 type InvLineRow = {
