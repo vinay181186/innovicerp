@@ -384,26 +384,22 @@ If triage requires Pino log diving more than once a week, T-054 should jump the 
 
 ## Database — Migrations
 
-Schema is owned by Drizzle. Two migration paths run side-by-side:
+Schema is owned by `apps/api/src/db/schema.ts`. **Migrations are hand-written SQL files applied
+manually via `apply-sql.ts` (below). The `drizzle-kit generate` / `drizzle-kit migrate` path is
+RETIRED.**
 
-- **drizzle-kit-generated migrations** — file pattern `apps/api/src/db/migrations/NNNN_<name>.sql`, generated from `apps/api/src/db/schema.ts`. Applied by `drizzle-kit migrate`. Used for tables, columns, FKs, indexes, RLS policies expressed in the schema graph.
-- **Hand-written migrations** — same folder, same numbering convention, but anything outside the drizzle schema graph: triggers, views, CHECK constraints not in schema.ts, RLS policies referencing custom helpers, one-off DDL like dropping legacy text columns. Applied by `apps/api/src/db/apply-sql.ts` (statement-by-statement runner that splits on `--> statement-breakpoint` markers).
+The drizzle-kit journal + snapshots diverged from the on-disk files long ago (the DB's
+`drizzle.__drizzle_migrations` tracking table holds ~5 of 70+ migrations; the journal stopped
+around `0015`, skipped indices, and was missing ~50 snapshots). Because ~50 historical snapshots
+can't be reconstructed, the drizzle metadata (`meta/`) was **removed** — see
+`apps/api/src/db/migrations/README.md`. **Do not run `drizzle-kit generate`/`migrate`:** `generate`
+now mis-numbers into a filename collision and `migrate` relies on the removed journal.
 
-### Generating a drizzle migration
+### Authoring a migration
 
-```
-pnpm --filter @innovic/api drizzle-kit generate
-```
-
-Creates the next-numbered SQL file in `apps/api/src/db/migrations/` plus a journal entry. Inspect the generated SQL before applying — drizzle-kit can suggest unnecessary diffs (column re-orders, default value changes); reject those by reverting the schema.ts wobble that triggered them.
-
-### Applying drizzle-generated migrations (standard path)
-
-```
-pnpm --filter @innovic/api drizzle-kit migrate
-```
-
-Executes any unapplied migrations in journal order against `DATABASE_URL`. Idempotent — already-applied entries skip.
+Create the next-numbered `apps/api/src/db/migrations/NNNN_<name>.sql` by hand — current highest is
+`0062`, so next is `0063`. Write plain SQL (prefer `CREATE OR REPLACE` / `… IF [NOT] EXISTS` so
+re-runs are safe), and keep `schema.ts` in sync by hand so the ORM types match the DB.
 
 ### Applying hand-written migrations (`apply-sql.ts`)
 
@@ -420,30 +416,22 @@ Concrete past invocations (search commit history for shape):
 - Phase 7 saved-reports trigger: `0014_phase7_saved_reports_trigger.sql`
 - Phase 8 activity-log: `0015_phase8_activity_log.sql` (drizzle-gen file applied via apply-sql to bypass the journal-orphan blocker — see below)
 
-### The journal-orphan workaround
+### The journal-orphan issue (resolved — journal removed)
 
-**Symptom:** `drizzle-kit migrate` fails with a message about a journal entry referencing a SQL file that doesn't exist (e.g. `0008_verify_no_drift` in this repo).
-
-**Root cause:** Pre-existing journal corruption from an early migration that was rolled back before the file was created or after the file was deleted. The journal table thinks the migration ran; the file is missing; drizzle-kit refuses to proceed.
-
-**Workaround (in use since Phase 5):**
-
-1. Generate the migration normally with `drizzle-kit generate` — produces an `NNNN_*.sql` file.
-2. Skip `drizzle-kit migrate`. Apply the new file directly via `apply-sql.ts`:
-   ```
-   pnpm --filter @innovic/api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_<name>.sql
-   ```
-3. Verify in Supabase Studio (or via `psql`) that the new objects exist.
-4. Manually upsert a row in the drizzle journal table so future drizzle-kit drift checks see the migration as "applied" if needed (rarely required — drizzle-kit drift detection compares schema.ts to DB state, not journal contents).
-
-**Permanent fix (deferred):** clean up the orphan journal entry. Requires identifying which legacy migration the orphan refers to + reconstructing or replaying it. Not blocking — apply-sql is the working path. Track in a follow-on task if the journal corruption ever expands beyond the single orphan.
+The old symptom was `drizzle-kit migrate` failing on a journal entry referencing a missing SQL
+file, from pre-existing journal corruption. This is no longer worked around — the divergence grew
+far beyond a single orphan (journal stopped ~`0015`, ~50 snapshots missing, on-disk file numbers
+diverged from drizzle's index), so the `meta/` journal + snapshots were **removed** and migrations
+are now purely hand-written + `apply-sql.ts` (see "Authoring a migration" above and
+`apps/api/src/db/migrations/README.md`). Do not reintroduce a `meta/` journal unless deliberately
+re-adopting drizzle-kit-driven migrations (a full squash/baseline reset).
 
 ### Rolling back a bad migration
 
 drizzle has no "down" path. To roll back:
 
 1. Write a new migration that inverts the change — drop columns added, recreate columns dropped, etc.
-2. Apply via the same path (drizzle-kit migrate or apply-sql).
+2. Apply via `apply-sql.ts`.
 3. Production rollback path is "deploy a fixed migration", not "undo the last migration."
 
 For partial-failure cases (migration applied to half a multi-statement transaction): hand-investigate the DB state, write a corrective migration, and document the incident in `docs/MIGRATION-LOG.md`.
