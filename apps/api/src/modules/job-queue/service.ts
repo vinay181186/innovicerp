@@ -58,6 +58,8 @@ export async function getJobQueue(
         jc.id AS "jcId",
         jc.code AS "jcCode",
         op.machine_id AS "machineId",
+        op.machine_code_text AS "machineCodeText",
+        op.op_type AS "opType",
         i.code AS "itemCode",
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
@@ -88,18 +90,29 @@ export async function getJobQueue(
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       WHERE op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
-        AND op.machine_id IS NOT NULL
+        AND (op.machine_id IS NOT NULL OR op.machine_code_text IS NOT NULL)
         AND op.op_type <> 'outsource'
         AND COALESCE(s.computed_status, 'waiting') <> 'complete'
       ORDER BY
-        op.machine_id,
         op.queue_position ASC NULLS LAST,
         op.op_seq ASC
     `)) as unknown as Array<Record<string, unknown>>;
 
+    // Resolve each op to its EFFECTIVE machine: the resolved FK when present,
+    // else the machine whose code matches machine_code_text. Plan/route-sourced
+    // ops legitimately carry the machine as text only (ADR-012 #10 fallback), so
+    // without this they never appear in any machine queue even though the Job
+    // Card exists. Resolution is done here in JS (not SQL) against the already
+    // loaded machine list. QC ops (machine_code_text = 'QC') resolve to nothing
+    // and are skipped.
+    const codeToId = new Map(machineRows.map((m) => [m.code, m.id]));
     const byMachine = new Map<string, { rows: JobQueueRow[]; pendingHrs: number }>();
     for (const r of rows) {
-      const mid = r['machineId'] as string;
+      if (String(r['opType'] ?? '') === 'qc') continue;
+      const fkId = (r['machineId'] as string | null) ?? null;
+      const codeId = codeToId.get(String(r['machineCodeText'] ?? '')) ?? null;
+      const mid = fkId ?? codeId;
+      if (!mid) continue;
       if (!byMachine.has(mid)) byMachine.set(mid, { rows: [], pendingHrs: 0 });
       const grp = byMachine.get(mid)!;
       grp.pendingHrs += num(r['pendingHrsRow']);
@@ -153,13 +166,16 @@ export async function reorderMachineQueue(
   return withUserContext(user, async (tx) => {
     // Verify machine exists in this company
     const machineRows = (await tx.execute(sql`
-      SELECT id FROM public.machines
+      SELECT id, code FROM public.machines
       WHERE id = ${machineId}::uuid
         AND company_id = ${companyId}::uuid
         AND deleted_at IS NULL
       LIMIT 1
-    `)) as unknown as Array<{ id: string }>;
+    `)) as unknown as Array<{ id: string; code: string | null }>;
     if (!machineRows[0]) throw new NotFoundError(`Machine ${machineId} not found`);
+    // Ops may belong to this machine by FK or by machine_code_text (ADR-012 #10);
+    // match both so text-only-machine ops surfaced by the queue can be reordered.
+    const machineCode = machineRows[0].code ?? '';
 
     // Verify all op ids belong to this machine + company
     const placeholders = input.jcOpIds.map(() => sql`?::uuid`);
@@ -173,7 +189,7 @@ export async function reorderMachineQueue(
       FROM public.jc_ops
       WHERE id = ANY(${idArr})
         AND company_id = ${companyId}::uuid
-        AND machine_id = ${machineId}::uuid
+        AND (machine_id = ${machineId}::uuid OR machine_code_text = ${machineCode})
         AND deleted_at IS NULL
     `)) as unknown as Array<{ id: string }>;
     if (opRows.length !== input.jcOpIds.length) {
