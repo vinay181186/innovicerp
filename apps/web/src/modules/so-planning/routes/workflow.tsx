@@ -54,6 +54,7 @@ function PlanningWorkflowPage(): JSX.Element {
   const { soId: soIdParam, openPlan } = soPlanningWorkflowRoute.useSearch();
   const soList = usePlanningSoList();
   const [selSoId, setSelSoId] = useState<string | null>(soIdParam ?? null);
+  const [soSearch, setSoSearch] = useState('');
   const [modal, setModal] = useState<ModalState>(
     openPlan ? { kind: 'edit', planId: openPlan } : { kind: 'none' },
   );
@@ -75,6 +76,16 @@ function PlanningWorkflowPage(): JSX.Element {
       });
     }
   }, [selSoId, soIdParam, navigate]);
+
+  // Client-side filter over the already-loaded SO list (presentational only —
+  // the auto-select-first effect reads soList.data.items directly, unaffected).
+  const soQuery = soSearch.trim().toLowerCase();
+  const visibleSos = (soList.data?.items ?? []).filter(
+    (so) =>
+      !soQuery ||
+      so.soCode.toLowerCase().includes(soQuery) ||
+      (so.customerName ?? '').toLowerCase().includes(soQuery),
+  );
 
   return (
     <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 70px)' }}>
@@ -101,17 +112,26 @@ function PlanningWorkflowPage(): JSX.Element {
         >
           Select SO/JW
         </div>
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+          <input
+            className="innovic-input"
+            style={{ width: '100%' }}
+            placeholder="🔍 Search SO / customer…"
+            value={soSearch}
+            onChange={(e) => setSoSearch(e.target.value)}
+          />
+        </div>
         {soList.isLoading && (
           <div style={{ padding: 16 }}>
             <Loader2 className="inline-block animate-spin" /> Loading…
           </div>
         )}
-        {soList.data && soList.data.items.length === 0 && (
+        {soList.data && visibleSos.length === 0 && (
           <div className="empty-state" style={{ padding: 16 }}>
             No SOs found
           </div>
         )}
-        {(soList.data?.items ?? []).map((so) => (
+        {visibleSos.map((so) => (
           <SoListRow
             key={so.soId}
             so={so}
@@ -439,10 +459,15 @@ function RightPane({
                       key={p.id}
                       plan={p}
                       onEdit={() => setModal({ kind: 'edit', planId: p.id })}
-                      onExecute={async () => {
-                        await executePlan.mutateAsync(p.id);
-                        // refetch handled by mutation onSuccess invalidation
-                      }}
+                      onExecute={() => executePlan.mutate(p.id)}
+                      isExecuting={executePlan.isPending && executePlan.variables === p.id}
+                      executeError={
+                        executePlan.isError && executePlan.variables === p.id
+                          ? executePlan.error instanceof Error
+                            ? executePlan.error.message
+                            : 'Execute failed'
+                          : null
+                      }
                       onViewJc={() => {
                         // Open the Job Card page (not Operation Entry).
                         if (p.jcId) {
@@ -618,11 +643,15 @@ function PlanCard({
   onEdit,
   onExecute,
   onViewJc,
+  isExecuting = false,
+  executeError = null,
 }: {
   plan: PlanningPlanSummary;
   onEdit: () => void;
   onExecute: () => void | Promise<void>;
   onViewJc: () => void;
+  isExecuting?: boolean;
+  executeError?: string | null;
 }): JSX.Element {
   const isDP = plan.planType === 'direct_purchase';
   const isFO = plan.planType === 'full_outsource';
@@ -701,19 +730,31 @@ function PlanCard({
               type="button"
               className="btn btn-sm"
               style={{
-                background: 'var(--green)',
+                background: executeError ? 'var(--red)' : 'var(--green)',
                 color: '#fff',
                 fontSize: 10,
                 fontWeight: 700,
+                opacity: isExecuting ? 0.7 : 1,
               }}
+              disabled={isExecuting}
+              title={executeError ?? undefined}
               onClick={onExecute}
             >
-              ⚡ Execute
+              {isExecuting ? (
+                <>
+                  <Loader2 size={11} className="inline-block animate-spin" /> Executing…
+                </>
+              ) : executeError ? (
+                '⚠ Retry'
+              ) : (
+                '⚡ Execute'
+              )}
             </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 10 }}
+              disabled={isExecuting}
               onClick={onEdit}
             >
               ✏
