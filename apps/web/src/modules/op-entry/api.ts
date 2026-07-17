@@ -19,10 +19,19 @@ import type {
   SubmitOpLogInput,
   SubmitQcLogInput,
 } from '@innovic/shared';
-import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type QueryClient,
+  type UseQueryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { jobCardsKeys } from '@/modules/job-cards/api';
+import { jcOpsBoardKeys } from '@/modules/jc-ops/api';
+import { jobQueueKeys } from '@/modules/job-queue/api';
 
 export const opEntryKeys = {
   all: ['op-entry'] as const,
@@ -86,6 +95,17 @@ interface OptimisticContext {
   prevJcOpsByKey: Array<readonly [readonly unknown[], JcOpEnriched[] | undefined]>;
 }
 
+/** Invalidate the production read-models that live OUTSIDE the op-entry module
+ *  but render the same op_log / jc_ops / status data — the Job Card Detail
+ *  (header stat cards, status extras, outsource cells) and the Job Queue board.
+ *  Called after every op-entry write so those screens refresh immediately
+ *  instead of waiting on the global staleTime / the queue's 60s interval. */
+function invalidateProductionViews(qc: QueryClient): void {
+  void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
+  void qc.invalidateQueries({ queryKey: jobQueueKeys.all });
+  void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+}
+
 export function useSubmitOpLog() {
   const qc = useQueryClient();
   return useMutation<OpLog, Error, SubmitOpLogInput, OptimisticContext>({
@@ -130,13 +150,14 @@ export function useSubmitOpLog() {
         qc.setQueryData(key, snapshot);
       }
     },
-    onSettled: (_data, _err, input) => {
+    onSettled: () => {
       // Always reconcile against the server.
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-      void qc.invalidateQueries({
-        queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }),
-      });
+      // Prefix, not the narrow {jcOpId,limit:100} key, so the JC Detail's
+      // {jobCardId,limit:300} "Recent Logs" query also refetches.
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+      invalidateProductionViews(qc);
     },
   });
 }
@@ -150,11 +171,10 @@ export function useSubmitQcLog() {
   const qc = useQueryClient();
   return useMutation<OpLog, Error, SubmitQcLogInput>({
     mutationFn: (input) => apiFetch<OpLog>('/op-entry/qc-log', { method: 'POST', json: input }),
-    onSettled: (_data, _err, input) => {
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
-      void qc.invalidateQueries({
-        queryKey: opEntryKeys.opLog({ jcOpId: input.jcOpId, limit: 100 }),
-      });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      invalidateProductionViews(qc);
     },
   });
 }
@@ -166,6 +186,7 @@ export function useStartOp() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+      invalidateProductionViews(qc);
     },
   });
 }
@@ -179,6 +200,7 @@ export function useGenerateOspPr() {
       apiFetch<GenerateOspPrResult>('/op-entry/osp-pr', { method: 'POST', json: input }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
+      invalidateProductionViews(qc);
     },
   });
 }
@@ -190,6 +212,7 @@ export function useStopOp() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+      invalidateProductionViews(qc);
     },
   });
 }
