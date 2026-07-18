@@ -154,7 +154,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       sql.raw(`
         WITH po_agg AS (
           SELECT
-            po.id, po.code, po.po_date, po.status, po.vendor_id,
+            po.id, po.code, po.po_date, po.status, po.vendor_id, po.vendor_code_text,
             po.sgst_pct, po.cgst_pct, po.igst_pct, po.tax_type,
             COUNT(pol.id) AS lines,
             COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -176,13 +176,15 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
         )
         SELECT
           p.id AS po_id, p.code AS po_no, p.po_date,
-          v.name AS vendor_name, v.code AS vendor_code,
+          COALESCE(v.name, vt.name, p.vendor_code_text) AS vendor_name,
+          COALESCE(v.code, vt.code, p.vendor_code_text) AS vendor_code,
           so.code AS so_code,
           p.lines, p.total_qty, p.received_qty, p.total_val,
           p.tax_type, p.sgst_pct, p.cgst_pct, p.igst_pct, p.status,
           COALESCE(g.c, 0) AS grn_count
         FROM po_agg p
         LEFT JOIN vendors v ON v.id = p.vendor_id
+        LEFT JOIN vendors vt ON vt.code = p.vendor_code_text AND vt.company_id = ${cid} AND vt.deleted_at IS NULL
         LEFT JOIN purchase_order_lines pl0 ON pl0.purchase_order_id = p.id AND pl0.line_no = 1
         LEFT JOIN sales_order_lines sol ON sol.id = pl0.source_so_line_id
         LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
@@ -242,7 +244,8 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       sql.raw(`
         SELECT
           po.id AS po_id, po.code AS po_no, pol.line_no, po.po_date,
-          v.code AS vendor_code, v.name AS vendor_name,
+          COALESCE(v.code, vt.code, po.vendor_code_text) AS vendor_code,
+          COALESCE(v.name, vt.name, po.vendor_code_text) AS vendor_name,
           so.code AS so_code,
           i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
           pol.qty, pol.received_qty, pol.rate,
@@ -252,6 +255,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
         FROM purchase_orders po
         JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
         LEFT JOIN vendors v ON v.id = po.vendor_id
+        LEFT JOIN vendors vt ON vt.code = po.vendor_code_text AND vt.company_id = ${cid} AND vt.deleted_at IS NULL
         LEFT JOIN items i ON i.id = pol.item_id
         LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
         LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
@@ -302,10 +306,12 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       sql.raw(`
         SELECT grn.code AS grn_no, grn.grn_date,
                po.code AS po_no,
-               v.code AS vendor_code, v.name AS vendor_name
+               COALESCE(v.code, vt.code, grn.vendor_code_text) AS vendor_code,
+               COALESCE(v.name, vt.name, grn.vendor_code_text) AS vendor_name
         FROM goods_receipt_notes grn
         LEFT JOIN purchase_orders po ON po.id = grn.purchase_order_id
         LEFT JOIN vendors v ON v.id = grn.vendor_id
+        LEFT JOIN vendors vt ON vt.code = grn.vendor_code_text AND vt.company_id = ${cid} AND vt.deleted_at IS NULL
         WHERE grn.company_id = ${cid}
           AND grn.deleted_at IS NULL
         ORDER BY grn.grn_date DESC, grn.created_at DESC
