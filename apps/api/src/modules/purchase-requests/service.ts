@@ -7,6 +7,7 @@
 // + create-PO actions ship in T-036b alongside the PO module.
 
 import { and, count, eq, isNull, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
   items,
@@ -217,7 +218,7 @@ export async function listPurchaseRequests(
         pr.created_at AS "createdAt", pr.created_by AS "createdBy",
         pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy",
         pr.deleted_at AS "deletedAt",
-        v.name AS "vendorName",
+        COALESCE(v.name, vt.name) AS "vendorName",
         i.code AS "itemCode",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
@@ -225,6 +226,8 @@ export async function listPurchaseRequests(
       FROM public.purchase_requests pr
       LEFT JOIN public.vendors v
         ON v.id = pr.vendor_id AND v.deleted_at IS NULL
+      LEFT JOIN public.vendors vt
+        ON vt.code = pr.vendor_code_text AND vt.company_id = pr.company_id AND vt.deleted_at IS NULL
       LEFT JOIN public.items i
         ON i.id = pr.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.jc_ops jo
@@ -307,6 +310,7 @@ export async function getPurchaseRequest(
   user: AuthContext,
 ): Promise<PurchaseRequestDetail> {
   const companyId = requireCompany(user);
+  const vendorByCode = alias(vendors, 'vendor_by_code');
   return withUserContext(user, async (tx) => {
     // Resolve the vendor/item display joins the list already carries (per
     // docs/PARITY/linked-display-audit). Consumers previously had only
@@ -315,14 +319,25 @@ export async function getPurchaseRequest(
     const rows = await tx
       .select({
         row: purchaseRequests,
-        vendorName: vendors.name,
-        vendorCode: vendors.code,
+        // Resolve the vendor name via the FK, else by matching the free-text
+        // vendor_code_text to a vendor's code (ADR-015 free-text fallback) — so an
+        // OSP/planning PR that stored the vendor code still shows the real name.
+        vendorName: sql<string | null>`coalesce(${vendors.name}, ${vendorByCode.name})`,
+        vendorCode: sql<string | null>`coalesce(${vendors.code}, ${vendorByCode.code})`,
         itemCode: items.code,
       })
       .from(purchaseRequests)
       .leftJoin(
         vendors,
         and(eq(vendors.id, purchaseRequests.vendorId), isNull(vendors.deletedAt)),
+      )
+      .leftJoin(
+        vendorByCode,
+        and(
+          eq(vendorByCode.code, purchaseRequests.vendorCodeText),
+          eq(vendorByCode.companyId, purchaseRequests.companyId),
+          isNull(vendorByCode.deletedAt),
+        ),
       )
       .leftJoin(items, and(eq(items.id, purchaseRequests.itemId), isNull(items.deletedAt)))
       .where(

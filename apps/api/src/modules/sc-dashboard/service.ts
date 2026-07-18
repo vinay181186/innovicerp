@@ -61,8 +61,8 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       sql.raw(`
         SELECT
           po.vendor_id,
-          v.code AS vendor_code,
-          v.name AS vendor_name,
+          COALESCE(v.code, vt.code, po.vendor_code_text) AS vendor_code,
+          COALESCE(v.name, vt.name, po.vendor_code_text) AS vendor_name,
           COUNT(pol.id) AS lines,
           COUNT(DISTINCT pol.item_id) AS unique_items,
           COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -72,10 +72,11 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
         FROM purchase_orders po
         JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
         LEFT JOIN vendors v ON v.id = po.vendor_id
+        LEFT JOIN vendors vt ON vt.code = po.vendor_code_text AND vt.company_id = po.company_id AND vt.deleted_at IS NULL
         WHERE po.company_id = ${cid}
           AND po.deleted_at IS NULL
           AND po.status IN ('open', 'partial', 'qc_pending')
-        GROUP BY po.vendor_id, v.code, v.name
+        GROUP BY po.vendor_id, v.code, v.name, po.vendor_code_text, vt.code, vt.name
         ORDER BY pending_val DESC
         LIMIT 50
       `),
