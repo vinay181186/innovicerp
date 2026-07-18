@@ -66,6 +66,13 @@ export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(), // resolved from vendors master when vendorId set
   itemCode: z.string().nullable(), // resolved from items master when itemId set
+  // Source/linked document codes resolved from the FK ids, so the detail page
+  // shows real values instead of a '— linked —' placeholder.
+  poCode: z.string().nullable(), // resolved from purchase_orders when poId set
+  sourceJcCode: z.string().nullable(), // resolved from job_cards via source_jc_op_id
+  sourceJcOpSeq: z.number().int().positive().nullable(),
+  soCode: z.string().nullable(), // resolved from sales_orders via source_so_line_id
+  soLineNo: z.number().int().positive().nullable(),
 });
 export type PurchaseRequestDetail = z.infer<typeof purchaseRequestDetailSchema>;
 

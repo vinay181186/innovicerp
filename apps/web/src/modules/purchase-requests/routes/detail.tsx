@@ -203,9 +203,23 @@ function DetailGrid(props: { detail: PurchaseRequestDetail }): React.JSX.Element
       <Pair label="Estimated cost" value={estCostNum > 0 ? `₹${estCostNum.toFixed(2)}` : '—'} />
       <Pair label="Required date" value={detail.requiredDate ?? '—'} />
       <Pair label="Operation" value={detail.operation ?? '—'} />
-      <Pair label="Source JC op" value={detail.sourceJcOpId ? '— linked —' : '—'} />
-      <Pair label="Source SO line" value={detail.sourceSoLineId ? '— linked —' : '—'} />
-      <Pair label="Linked PO" value={detail.poId ? '— linked —' : '—'} />
+      <Pair
+        label="Source JC op"
+        value={
+          detail.sourceJcCode
+            ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${detail.sourceJcOpSeq}` : ''}`
+            : '—'
+        }
+      />
+      <Pair
+        label="Source SO line"
+        value={
+          detail.soCode
+            ? `${detail.soCode}${detail.soLineNo ? ` · Line ${detail.soLineNo}` : ''}`
+            : '—'
+        }
+      />
+      <Pair label="Linked PO" value={detail.poCode ?? '—'} />
       <Pair label="Approved at" value={detail.approvedAt ?? '—'} />
       <Pair label="PO created at" value={detail.poCreatedAt ?? '—'} />
       <div className="form-grp form-full">

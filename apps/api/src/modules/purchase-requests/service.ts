@@ -325,6 +325,13 @@ export async function getPurchaseRequest(
         vendorName: sql<string | null>`coalesce(${vendors.name}, ${vendorByCode.name})`,
         vendorCode: sql<string | null>`coalesce(${vendors.code}, ${vendorByCode.code})`,
         itemCode: items.code,
+        // Resolve the source/linked document codes so the detail page shows real
+        // values instead of a '— linked —' placeholder.
+        poCode: purchaseOrders.code,
+        sourceJcCode: jobCards.code,
+        sourceJcOpSeq: jcOps.opSeq,
+        soCode: salesOrders.code,
+        soLineNo: salesOrderLines.lineNo,
       })
       .from(purchaseRequests)
       .leftJoin(
@@ -340,6 +347,23 @@ export async function getPurchaseRequest(
         ),
       )
       .leftJoin(items, and(eq(items.id, purchaseRequests.itemId), isNull(items.deletedAt)))
+      .leftJoin(
+        purchaseOrders,
+        and(eq(purchaseOrders.id, purchaseRequests.poId), isNull(purchaseOrders.deletedAt)),
+      )
+      .leftJoin(jcOps, and(eq(jcOps.id, purchaseRequests.sourceJcOpId), isNull(jcOps.deletedAt)))
+      .leftJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+      .leftJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.id, purchaseRequests.sourceSoLineId),
+          isNull(salesOrderLines.deletedAt),
+        ),
+      )
+      .leftJoin(
+        salesOrders,
+        and(eq(salesOrders.id, salesOrderLines.salesOrderId), isNull(salesOrders.deletedAt)),
+      )
       .where(
         and(
           eq(purchaseRequests.id, id),
@@ -355,6 +379,11 @@ export async function getPurchaseRequest(
       vendorName: found.vendorName,
       vendorCode: found.vendorCode,
       itemCode: found.itemCode,
+      poCode: found.poCode,
+      sourceJcCode: found.sourceJcCode,
+      sourceJcOpSeq: found.sourceJcOpSeq,
+      soCode: found.soCode,
+      soLineNo: found.soLineNo,
     };
   });
 }
