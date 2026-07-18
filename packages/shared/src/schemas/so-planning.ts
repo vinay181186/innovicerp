@@ -47,8 +47,11 @@ export const planningPlanSummarySchema = z.object({
   /** Plan-type-specific labels for the per-card status footer. */
   jcId: z.string().uuid().nullable(),
   jcCode: z.string().nullable(),
+  dpPrId: z.string().uuid().nullable(),
   dpPrCode: z.string().nullable(),
+  foPrId: z.string().uuid().nullable(),
   foPrCode: z.string().nullable(),
+  foMatPrId: z.string().uuid().nullable(),
   foMatPrCode: z.string().nullable(),
   foVendorCodeText: z.string().nullable(),
 });

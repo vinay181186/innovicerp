@@ -5,7 +5,7 @@
 // Clicking actions opens the modals (create, edit, equip-bom, assembly-bom).
 
 import type { PlanStatus, PlanningPlanSummary, PlanningSoListItem } from '@innovic/shared';
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
@@ -213,6 +213,20 @@ function SoListRow({
         </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)' }}>{so.customerName ?? '—'}</div>
+      {so.itemsText ? (
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--text3)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+          title={so.itemsText}
+        >
+          {so.itemsText}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -639,6 +653,25 @@ function RightPane({
   );
 }
 
+/** A generated PR number, clickable to its detail page when the id is known
+ *  (mirrors how a JC number links to /job-cards/$id). Falls back to plain text. */
+function PrLink({
+  id,
+  code,
+  color,
+}: {
+  id: string | null;
+  code: string;
+  color: string;
+}): React.JSX.Element {
+  if (!id) return <>{code}</>;
+  return (
+    <Link to="/purchase-requests/$id" params={{ id }} className="td-code" style={{ color }}>
+      {code}
+    </Link>
+  );
+}
+
 function PlanCard({
   plan,
   onEdit,
@@ -767,10 +800,16 @@ function PlanCard({
             className="mono"
             style={{ color: 'var(--purple)', fontSize: 10, fontWeight: 700 }}
           >
-            PR:{plan.foPrCode ?? plan.dpPrCode ?? ''}
+            PR:
+            <PrLink
+              id={plan.foPrId ?? plan.dpPrId}
+              code={plan.foPrCode ?? plan.dpPrCode ?? ''}
+              color="var(--purple)"
+            />
             {plan.foMatPrCode ? (
               <span style={{ color: 'var(--amber)', marginLeft: 4 }}>
-                Mat:{plan.foMatPrCode}
+                Mat:
+                <PrLink id={plan.foMatPrId} code={plan.foMatPrCode} color="var(--amber)" />
               </span>
             ) : null}
           </span>
