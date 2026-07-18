@@ -1,32 +1,20 @@
-// Incoming QC Call Register — a two-pane register modeled on the process QC Call
-// Register (qc-call-register/routes/index.tsx), but for GRN-based incoming QC.
-// LEFT: GRN lines pending inspection with an inline accept/reject form that
-// records QC and credits accepted qty to stock. RIGHT: completed-inspection log.
-// Data from GET /incoming-qc; the inline submit hits POST /incoming-qc/:id/inspect.
+// Incoming-QC rows for the unified QC Call Register. LEFT-pane pending GRN lines
+// with an inline accept/reject form (credits accepted qty to stock via
+// POST /incoming-qc/:id/inspect), and RIGHT-pane completed-inspection rows.
+// Extracted so the QC Call Register can show incoming-material QC alongside
+// process (JC-op) QC on a single approval screen.
 
 import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/print/doc-print';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
-import { useIncomingQc, useSubmitIncomingQc } from '../api';
-
-export const incomingQcRegisterRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'incoming-qc-register',
-  validateSearch: (search: Record<string, unknown>): { line?: string } =>
-    typeof search.line === 'string' ? { line: search.line } : {},
-  component: IncomingQcRegisterPage,
-});
+import { useSubmitIncomingQc } from '../api';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
-
-// Legacy wait colour: red ≥3, amber ≥2, else green.
 function waitColor(days: number): string {
   return days >= 3 ? 'var(--red)' : days >= 2 ? 'var(--amber)' : 'var(--green)';
 }
@@ -38,170 +26,7 @@ function waitBg(days: number): string {
       : 'rgba(34,197,94,0.1)';
 }
 
-function IncomingQcRegisterPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useIncomingQc();
-  const { line: lineParam } = incomingQcRegisterRoute.useSearch();
-  const [openId, setOpenId] = useState<string | null>(lineParam ?? null);
-  const [pendSearch, setPendSearch] = useState('');
-  const [compSearch, setCompSearch] = useState('');
-
-  const allPending = data?.pending ?? [];
-  const allCompleted = data?.completed ?? [];
-
-  const pt = pendSearch.trim().toLowerCase();
-  const ct = compSearch.trim().toLowerCase();
-  const matchP = (o: IncomingQcPendingRow): boolean =>
-    pt === '' ||
-    [o.grnNo, o.itemCode, o.itemName, o.vendorName, o.poCode].some((v) =>
-      (v ?? '').toLowerCase().includes(pt),
-    );
-  const matchC = (l: IncomingQcCompletedRow): boolean =>
-    ct === '' ||
-    [l.grnNo, l.itemCode, l.itemName, l.vendorName].some((v) => (v ?? '').toLowerCase().includes(ct));
-
-  const pending = allPending.filter(matchP);
-  const completed = allCompleted.filter(matchC);
-
-  if (isLoading) {
-    return (
-      <div className="panel">
-        <div className="empty-state">
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading incoming QC…
-        </div>
-      </div>
-    );
-  }
-  if (isError || !data) {
-    return (
-      <div className="panel">
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load incoming QC register'}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{ display: 'flex', height: 'calc(100vh - 112px)', gap: 0, margin: -16, overflow: 'hidden' }}
-    >
-      {/* LEFT: Pending Incoming QC */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          borderRight: '1px solid var(--border)',
-          minWidth: 0,
-        }}
-      >
-        <div
-          style={{
-            padding: '12px 14px',
-            background: 'var(--bg3)',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(251,191,36,0.12)',
-              border: '1px solid rgba(251,191,36,0.3)',
-              borderRadius: 6,
-              padding: '4px 12px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>
-              {data.metrics.grnsWaiting}
-            </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              PENDING
-            </div>
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>⏳ Pending Incoming QC</div>
-          <div style={{ flex: 1 }} />
-          <input
-            className="innovic-input"
-            style={{ fontSize: 12, width: 180 }}
-            placeholder="🔍 Search..."
-            value={pendSearch}
-            onChange={(e) => setPendSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {pending.length === 0 ? (
-            <div className="empty-state">
-              <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-              No material pending incoming QC
-            </div>
-          ) : (
-            pending.map((o) => (
-              <PendingRow
-                key={o.grnLineId}
-                o={o}
-                open={openId === o.grnLineId}
-                onToggle={() => setOpenId(openId === o.grnLineId ? null : o.grnLineId)}
-                onDone={() => setOpenId(null)}
-              />
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* RIGHT: Completed Incoming QC */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <div
-          style={{
-            padding: '12px 14px',
-            background: 'var(--bg3)',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(34,197,94,0.08)',
-              border: '1px solid rgba(34,197,94,0.25)',
-              borderRadius: 6,
-              padding: '4px 12px',
-              textAlign: 'center',
-            }}
-          >
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
-              {data.metrics.todayAcceptedQty}
-            </div>
-            <div className="text3" style={{ fontSize: 9 }}>
-              ACCEPTED TODAY
-            </div>
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>✅ Completed Incoming QC</div>
-          <div style={{ flex: 1 }} />
-          <input
-            className="innovic-input"
-            style={{ fontSize: 12, width: 180 }}
-            placeholder="🔍 Search..."
-            value={compSearch}
-            onChange={(e) => setCompSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {completed.length === 0 ? (
-            <div className="empty-state">No inspections yet</div>
-          ) : (
-            completed.map((l) => <CompletedRow key={l.grnLineId} l={l} />)
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PendingRow(props: {
+export function IncomingPendingRow(props: {
   o: IncomingQcPendingRow;
   open: boolean;
   onToggle: () => void;
@@ -270,6 +95,19 @@ function PendingRow(props: {
       >
         <div style={{ minWidth: 0 }}>
           <div>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                color: 'var(--purple)',
+                border: '1px solid var(--purple)',
+                borderRadius: 3,
+                padding: '0 5px',
+                marginRight: 6,
+              }}
+            >
+              INCOMING
+            </span>
             <b className="cyan" style={{ fontSize: 13 }}>
               {o.itemCode ?? '—'}
             </b>{' '}
@@ -425,7 +263,7 @@ function PendingRow(props: {
   );
 }
 
-function CompletedRow({ l }: { l: IncomingQcCompletedRow }): React.JSX.Element {
+export function IncomingCompletedRow({ l }: { l: IncomingQcCompletedRow }): React.JSX.Element {
   const dispColor =
     l.disposition === 'Rejected'
       ? 'var(--red)'
@@ -436,6 +274,19 @@ function CompletedRow({ l }: { l: IncomingQcCompletedRow }): React.JSX.Element {
     <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ minWidth: 0 }}>
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 800,
+              color: 'var(--purple)',
+              border: '1px solid var(--purple)',
+              borderRadius: 3,
+              padding: '0 5px',
+              marginRight: 6,
+            }}
+          >
+            INCOMING
+          </span>
           <b className="cyan">{l.itemCode ?? '—'}</b>{' '}
           <span className="text3" style={{ fontSize: 10 }}>
             {l.itemName ?? ''}

@@ -101,7 +101,6 @@ import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { qcDashboardRoute } from './modules/qc-dashboard/routes/index';
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
-import { incomingQcRegisterRoute } from './modules/incoming-qc/routes/register';
 import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
 import { capaListRoute } from './modules/capa/routes/list';
@@ -272,7 +271,6 @@ const routeTree = rootRoute.addChildren([
     activityLogListRoute,
     qcDashboardRoute,
     incomingQcRoute,
-    incomingQcRegisterRoute,
     qcHistoryRoute,
     qcCallRegisterRoute,
     capaListRoute,

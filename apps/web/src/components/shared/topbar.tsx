@@ -46,7 +46,6 @@ const TITLE_MAP: Record<string, string> = {
   '/qc-processes': 'QC Process Master',
   '/qc-docs': 'QC Documents',
   '/incoming-qc': 'Incoming QC',
-  '/incoming-qc-register': 'Incoming QC Register',
   '/capa': 'CAPA',
   '/tpi': 'TPI',
 };

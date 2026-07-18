@@ -19,10 +19,20 @@ import { useOperatorsList } from '@/modules/operators/api';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
+import { useIncomingQc } from '@/modules/incoming-qc/api';
+import {
+  IncomingCompletedRow,
+  IncomingPendingRow,
+} from '@/modules/incoming-qc/components/qc-call-rows';
+import type { IncomingQcPendingRow } from '@innovic/shared';
 
 export const qcCallRegisterRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'qc-call-register',
+  // ?line=<grnLineId> deep-opens that incoming-QC row (the Incoming QC page's
+  // Inspect button lands here).
+  validateSearch: (search: Record<string, unknown>): { line?: string } =>
+    typeof search.line === 'string' ? { line: search.line } : {},
   component: QcCallRegisterPage,
 });
 
@@ -54,7 +64,11 @@ function waitBg(days: number): string {
 
 function QcCallRegisterPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQcHistory();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Incoming-material QC (GRN lines) shown on the same approval screen. Optional
+  // — if it fails to load we still render process QC rather than blocking.
+  const incomingQuery = useIncomingQc();
+  const { line: lineParam } = qcCallRegisterRoute.useSearch();
+  const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
   const [pendSearch, setPendSearch] = useState('');
   const [compSearch, setCompSearch] = useState('');
 
@@ -68,10 +82,13 @@ function QcCallRegisterPage(): React.JSX.Element {
 
   const allPending = data?.pending ?? [];
   const allLogs = (data?.logs ?? []).slice(0, 30);
+  const incPending = incomingQuery.data?.pending ?? [];
+  const incCompleted = incomingQuery.data?.completed ?? [];
   // Server-owned count (op_log COUNT(*) where log_type='qc'). `data.logs` is
   // capped at LIMIT 500 by the endpoint, so counting it in the browser silently
   // under-reports past 500 entries.
-  const completeCount = data?.stats.totalEntries ?? 0;
+  const completeCount = (data?.stats.totalEntries ?? 0) + incCompleted.length;
+  const pendingCount = (data?.stats.pendingOps ?? 0) + incPending.length;
 
   const pt = pendSearch.trim().toLowerCase();
   const ct = compSearch.trim().toLowerCase();
@@ -85,9 +102,22 @@ function QcCallRegisterPage(): React.JSX.Element {
     [l.jcCode, l.soCode, l.itemCode, l.operation].some((v) =>
       (v ?? '').toLowerCase().includes(ct),
     );
+  const matchIncP = (o: IncomingQcPendingRow): boolean =>
+    pt === '' ||
+    [o.grnNo, o.itemCode, o.itemName, o.vendorName, o.poCode].some((v) =>
+      (v ?? '').toLowerCase().includes(pt),
+    );
 
   const pending = allPending.filter(matchP);
   const logs = allLogs.filter(matchC);
+  const incPendingF = incPending.filter(matchIncP);
+  const incCompletedF = incCompleted.filter(
+    (l) =>
+      ct === '' ||
+      [l.grnNo, l.itemCode, l.itemName, l.vendorName].some((v) =>
+        (v ?? '').toLowerCase().includes(ct),
+      ),
+  );
 
   if (isLoading) {
     return (
@@ -144,7 +174,7 @@ function QcCallRegisterPage(): React.JSX.Element {
             }}
           >
             <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>
-              {data.stats.pendingOps}
+              {pendingCount}
             </div>
             <div className="text3" style={{ fontSize: 9 }}>
               PENDING
@@ -161,22 +191,36 @@ function QcCallRegisterPage(): React.JSX.Element {
           />
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {pending.length === 0 ? (
+          {pending.length === 0 && incPendingF.length === 0 ? (
             <div className="empty-state">
               <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
               No pending QC calls
             </div>
           ) : (
-            pending.map((o) => (
-              <PendingCall
-                key={o.jcOpId}
-                o={o}
-                open={openId === o.jcOpId}
-                operatorNames={operatorNames}
-                onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
-                onDone={() => setOpenId(null)}
-              />
-            ))
+            <>
+              {incPendingF.map((o) => {
+                const key = `inc:${o.grnLineId}`;
+                return (
+                  <IncomingPendingRow
+                    key={key}
+                    o={o}
+                    open={openId === key}
+                    onToggle={() => setOpenId(openId === key ? null : key)}
+                    onDone={() => setOpenId(null)}
+                  />
+                );
+              })}
+              {pending.map((o) => (
+                <PendingCall
+                  key={o.jcOpId}
+                  o={o}
+                  open={openId === o.jcOpId}
+                  operatorNames={operatorNames}
+                  onToggle={() => setOpenId(openId === o.jcOpId ? null : o.jcOpId)}
+                  onDone={() => setOpenId(null)}
+                />
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -223,10 +267,17 @@ function QcCallRegisterPage(): React.JSX.Element {
           />
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {logs.length === 0 ? (
+          {logs.length === 0 && incCompletedF.length === 0 ? (
             <div className="empty-state">No QC entries yet</div>
           ) : (
-            logs.map((l) => <CompletedLog key={l.logId} l={l} />)
+            <>
+              {incCompletedF.map((l) => (
+                <IncomingCompletedRow key={`inc:${l.grnLineId}`} l={l} />
+              ))}
+              {logs.map((l) => (
+                <CompletedLog key={l.logId} l={l} />
+              ))}
+            </>
           )}
         </div>
       </div>
