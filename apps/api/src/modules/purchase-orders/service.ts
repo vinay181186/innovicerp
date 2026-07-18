@@ -784,6 +784,9 @@ export async function createPurchaseOrderFromPr(
       throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
     }
 
+    // Blank code ⇒ auto-generate the next PO code (same as the main create path).
+    const code = input.header.code?.trim() || (await nextPoCode(tx, companyId));
+
     // Code uniqueness on the new PO
     const dup = await tx
       .select({ id: purchaseOrders.id })
@@ -791,13 +794,13 @@ export async function createPurchaseOrderFromPr(
       .where(
         and(
           eq(purchaseOrders.companyId, companyId),
-          eq(purchaseOrders.code, input.header.code),
+          eq(purchaseOrders.code, code),
           isNull(purchaseOrders.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase order code "${input.header.code}" already exists`);
+      throw new ConflictError(`Purchase order code "${code}" already exists`);
     }
 
     // Insert PO header (vendor + audit-snapshot of PR code).
@@ -805,7 +808,7 @@ export async function createPurchaseOrderFromPr(
       .insert(purchaseOrders)
       .values({
         companyId,
-        code: input.header.code,
+        code,
         poDate: input.header.poDate,
         poType: input.header.poType ?? 'job_work',
         vendorId: pr.vendorId,

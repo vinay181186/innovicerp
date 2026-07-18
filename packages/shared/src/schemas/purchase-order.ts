@@ -185,7 +185,9 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
   /** Header overrides — caller supplies the PO code (auto-suggested from
    *  legacy `IN-JWPO-NNNNN` series in UI) and any tax/date adjustments. */
   header: z.object({
-    code: z.string().min(1).max(64).regex(codeRegex),
+    // Optional — blank means the server auto-generates the next PO code, same as
+    // the main create-PO path (the shared DocNumberInput reports empty as valid).
+    code: z.string().min(1).max(64).regex(codeRegex).optional(),
     poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
     poType: poTypeSchema.default('job_work'), // outsource PRs default to job_work
     dueDate: z
