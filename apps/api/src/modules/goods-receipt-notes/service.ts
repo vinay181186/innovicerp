@@ -626,6 +626,85 @@ export async function createGoodsReceiptNote(
   });
 }
 
+/**
+ * Create a GRN (pending QC) from an OSP delivery-challan receipt, INSIDE an
+ * existing transaction (the caller's — delivery-challans receive). Lines are
+ * qc_status='pending' with 0 accepted/rejected, so nothing is credited to stock
+ * here; stock credits later when Incoming QC accepts the line (parity with the
+ * regular GRN path). Returns the new GRN id + code. See the OSP-receive flow.
+ */
+export async function insertGrnForOspReceipt(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  args: {
+    grnDate: string;
+    purchaseOrderId: string | null;
+    poCodeText: string | null;
+    vendorId: string | null;
+    vendorCodeText: string | null;
+    dcNo: string | null;
+    remarks: string | null;
+    lines: Array<{
+      purchaseOrderLineId: string | null;
+      itemId: string | null;
+      itemCodeText: string | null;
+      itemName: string;
+      receivedQty: number;
+    }>;
+  },
+): Promise<{ id: string; code: string }> {
+  const code = await nextGrnCode(tx, companyId);
+  const inserted = await tx
+    .insert(goodsReceiptNotes)
+    .values({
+      companyId,
+      code,
+      grnDate: args.grnDate,
+      purchaseOrderId: args.purchaseOrderId,
+      poCodeText: args.poCodeText,
+      vendorId: args.vendorId,
+      vendorCodeText: args.vendorCodeText,
+      dcNo: args.dcNo,
+      invoiceNo: null,
+      remarks: args.remarks,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const header = inserted[0]!;
+  const lineValues = args.lines.map((l, i) => ({
+    companyId,
+    goodsReceiptNoteId: header.id,
+    lineNo: i + 1,
+    purchaseOrderLineId: l.purchaseOrderLineId,
+    itemId: l.itemId,
+    itemCodeText: l.itemCodeText,
+    itemName: l.itemName,
+    receivedQty: l.receivedQty,
+    qcStatus: 'pending' as const,
+    qcAcceptedQty: 0,
+    qcRejectedQty: 0,
+    createdBy: user.id,
+    updatedBy: user.id,
+  }));
+  const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
+  // Recompute PO-line received qty / PO status; no stock (all lines pending).
+  await runCascades(tx, companyId, user.id, insertedLines, []);
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'GoodsReceiptNote',
+      detail: `${code} — auto from OSP receipt (DC ${args.dcNo ?? ''})`,
+      refId: code,
+    },
+    companyId,
+    user,
+  );
+  return { id: header.id, code };
+}
+
 export async function updateGoodsReceiptNote(
   id: string,
   input: UpdateGoodsReceiptNoteInput,

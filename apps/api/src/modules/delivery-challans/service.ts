@@ -40,8 +40,8 @@ import {
   autoCreateNcFromOutsourceReject,
   dcHasActiveReceipts,
   isDcFullyReconciled,
-  writeStoreTxnOnDcReceive,
 } from './receipt-cascades';
+import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
@@ -1027,31 +1027,57 @@ export async function receiveAgainstDeliveryChallan(
       .values(receiptLineValues)
       .returning();
 
-    // Cascades per receipt line: stock IN, jc_op flip, auto-NC on reject.
-    // Track per-po-line aggregates so we only invoke applyReceiveToJcOp once
-    // per po_line even when multiple receipt lines target the same po_line.
+    // Cascades per receipt line: auto-GRN (pending QC) for good qty, jc_op flip,
+    // auto-NC on reject. Track per-po-line aggregates so we only invoke
+    // applyReceiveToJcOp once per po_line even when multiple receipt lines target it.
+    // NOTE: the good received qty no longer credits stock here — it goes onto an
+    // auto-created GRN (below) and credits at Incoming-QC accept, mirroring the
+    // regular GRN path. Rejected qty still opens an NC (further down), unchanged.
     const poLineQtyAdded = new Map<string, number>();
+    const grnLines: Array<{
+      purchaseOrderLineId: string | null;
+      itemId: string | null;
+      itemCodeText: string | null;
+      itemName: string;
+      receivedQty: number;
+    }> = [];
     for (const rl of insertedLines) {
       const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
       const receivedInt = Math.round(Number(rl.receivedQty));
       const rejectedInt = Math.round(Number(rl.rejectedQty));
 
-      // Stock IN — good qty only (rejected goes to NC, not stock).
-      await writeStoreTxnOnDcReceive({
-        tx,
-        companyId,
-        adminUserId: user.id,
-        receiptCode,
-        receiptDate: input.receiptDate,
-        dcLineNo: dcLine.lineNo,
-        itemId: dcLine.itemId,
-        qty: receivedInt,
-      });
+      if (receivedInt > 0) {
+        grnLines.push({
+          purchaseOrderLineId: dcLine.purchaseOrderLineId,
+          itemId: dcLine.itemId,
+          itemCodeText: dcLine.itemCodeText,
+          itemName: dcLine.itemNameText ?? dcLine.itemCodeText ?? 'Item',
+          receivedQty: receivedInt,
+        });
+      }
 
       if (dcLine.purchaseOrderLineId) {
         const prev = poLineQtyAdded.get(dcLine.purchaseOrderLineId) ?? 0;
         poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt + rejectedInt);
       }
+    }
+
+    // Auto-create the GRN (pending Incoming QC) for the good received qty. This
+    // routes OSP receive-backs through Incoming QC instead of crediting stock
+    // directly (restores the legacy receiveOutsourceOp → createGRNfromPO flow).
+    let autoGrnCode: string | null = null;
+    if (grnLines.length > 0) {
+      const grn = await insertGrnForOspReceipt(tx, companyId, user, {
+        grnDate: input.receiptDate,
+        purchaseOrderId: dcHeader.purchaseOrderId,
+        poCodeText: dcHeader.poCodeText,
+        vendorId: dcHeader.vendorId,
+        vendorCodeText: dcHeader.vendorCodeText,
+        dcNo: dcHeader.code,
+        remarks: `Auto GRN from OSP receipt ${receiptCode}`,
+        lines: grnLines,
+      });
+      autoGrnCode = grn.code;
     }
 
     // jc_op flip per po_line.
@@ -1143,7 +1169,7 @@ export async function receiveAgainstDeliveryChallan(
       {
         action: 'DC_RECEIVE',
         entity: 'DeliveryChallan',
-        detail: `${dcHeader.code} — receipt ${receiptCode}`,
+        detail: `${dcHeader.code} — receipt ${receiptCode}${autoGrnCode ? ` → GRN ${autoGrnCode} (pending QC)` : ''}`,
         refId: dcHeader.code,
       },
       companyId,
