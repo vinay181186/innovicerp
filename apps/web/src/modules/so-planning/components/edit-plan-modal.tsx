@@ -75,7 +75,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   // Full Outsource
   const [foVendor, setFoVendor] = useState<string>(plan.foVendorCodeText ?? '');
-  const [foRate, setFoRate] = useState<number>(plan.foRate ? Number(plan.foRate) : 0);
+  const [foRate, setFoRate] = useState<number | null>(plan.foRate ? Number(plan.foRate) : null);
   const [foProcess, setFoProcess] = useState<string>(plan.foProcess ?? '');
   const [foMaterialSrc, setFoMaterialSrc] = useState<string>(plan.foMaterialSrc ?? 'From Stock');
   const [foDeliveryDate, setFoDeliveryDate] = useState<string>(plan.foDeliveryDate ?? '');
@@ -84,7 +84,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   // Direct Purchase
   const [dpVendor, setDpVendor] = useState<string>(plan.dpVendorCodeText ?? '');
-  const [dpCost, setDpCost] = useState<number>(plan.dpCost ? Number(plan.dpCost) : 0);
+  const [dpCost, setDpCost] = useState<number | null>(plan.dpCost ? Number(plan.dpCost) : null);
   const [dpRemarks, setDpRemarks] = useState<string>(plan.dpRemarks ?? '');
 
   // Required QC Docs
@@ -837,8 +837,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="number"
                 min={0}
                 step="0.01"
-                value={foRate}
-                onChange={(e) => setFoRate(Number(e.target.value))}
+                value={foRate ?? ''}
+                onChange={(e) => setFoRate(e.target.value === '' ? null : Number(e.target.value))}
                 placeholder="0.00"
                 style={{ fontSize: 14, color: 'var(--green)', fontWeight: 700 }}
               />
@@ -935,8 +935,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="number"
                 min={0}
                 step="0.01"
-                value={dpCost}
-                onChange={(e) => setDpCost(Number(e.target.value))}
+                value={dpCost ?? ''}
+                onChange={(e) => setDpCost(e.target.value === '' ? null : Number(e.target.value))}
                 style={{ fontSize: 14 }}
               />
             </div>
