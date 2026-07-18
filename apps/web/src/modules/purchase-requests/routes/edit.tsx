@@ -104,6 +104,37 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     );
   }
 
+  // A PR that has been converted to a PO is locked — no edits.
+  if (detail.poId !== null || detail.status === 'po_created') {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-requests/$id" params={{ id }} className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to PR
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+            This purchase request is linked to a PO and can no longer be edited.
+            {detail.poId ? (
+              <>
+                {' '}
+                <Link
+                  to="/purchase-orders/$id"
+                  params={{ id: detail.poId }}
+                  className="td-code"
+                  style={{ color: 'var(--cyan)', fontWeight: 700 }}
+                >
+                  View the PO →
+                </Link>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <Link

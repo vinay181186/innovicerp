@@ -91,7 +91,9 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
               }}
               suggestedTitle={`Follow up on PR ${detail.code}`}
             />
-            {(detail.status === 'open' || detail.status === 'approved') && canWrite(me?.role) ? (
+            {(detail.status === 'open' || detail.status === 'approved') &&
+            !linkedToPo &&
+            canWrite(me?.role) ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: detail.id }}
@@ -100,16 +102,18 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 <FileText size={13} /> Create PO
               </Link>
             ) : null}
-            {detail.poId ? (
+            {linkedToPo && detail.poId ? (
+              // Once a PO exists this PR is locked — surface the PO to view
+              // instead of Create PO, and hide Edit below.
               <Link
                 to="/purchase-orders/$id"
                 params={{ id: detail.poId }}
-                className="btn btn-ghost btn-sm"
+                className="btn btn-primary btn-sm"
               >
-                <FileText size={13} /> Open linked PO
+                <FileText size={13} /> View linked PO
               </Link>
             ) : null}
-            {canEdit ? (
+            {canEdit && !linkedToPo ? (
               <Link
                 to="/purchase-requests/$id/edit"
                 params={{ id: detail.id }}

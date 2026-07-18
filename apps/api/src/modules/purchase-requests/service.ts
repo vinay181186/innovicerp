@@ -510,6 +510,10 @@ export async function updatePurchaseRequest(
     if (existing.length === 0) {
       throw new NotFoundError(`Purchase request ${id} not found`);
     }
+    // A PR converted to a PO is locked — no further edits.
+    if (existing[0]!.poId !== null || existing[0]!.status === 'po_created') {
+      throw new ConflictError(`Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`);
+    }
 
     if (input.vendorId !== undefined && input.vendorId !== null) {
       await assertVendorExists(tx, input.vendorId, companyId);

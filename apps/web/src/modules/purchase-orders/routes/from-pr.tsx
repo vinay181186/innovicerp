@@ -139,7 +139,17 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              This PR is already linked to a PO. Open the PR detail to navigate to it.
+              This PR is already linked to a PO.{' '}
+              {pr.poId ? (
+                <Link
+                  to="/purchase-orders/$id"
+                  params={{ id: pr.poId }}
+                  className="td-code"
+                  style={{ color: 'var(--cyan)', fontWeight: 700 }}
+                >
+                  View the PO →
+                </Link>
+              ) : null}
             </div>
           ) : isCancelled ? (
             <div
