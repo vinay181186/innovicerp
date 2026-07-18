@@ -25,9 +25,9 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import {
+  creditGrnQcStock,
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
-  writeStoreTxnOnQcAccept,
 } from '../goods-receipt-notes/cascades';
 
 function requireCompany(user: AuthContext): string {
@@ -63,7 +63,6 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       LEFT JOIN public.items i ON i.id = l.item_id
       WHERE l.company_id = ${companyId}::uuid
         AND l.deleted_at IS NULL
-        AND l.qc_status <> 'completed'
         AND (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) > 0
       ORDER BY h.grn_date ASC, h.code ASC
     `);
@@ -107,7 +106,8 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       LEFT JOIN public.items i ON i.id = l.item_id
       WHERE l.company_id = ${companyId}::uuid
         AND l.deleted_at IS NULL
-        AND l.qc_status = 'completed'
+        AND (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) <= 0
+        AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)
       ORDER BY COALESCE(l.qc_date, h.grn_date) DESC, h.code DESC
       LIMIT 20
     `);
@@ -145,7 +145,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       FROM public.goods_receipt_note_lines l
       WHERE l.company_id = ${companyId}::uuid
         AND l.deleted_at IS NULL
-        AND l.qc_status = 'completed'
+        AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)
         AND l.qc_date = CURRENT_DATE
     `);
     const t = (todayRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
@@ -177,9 +177,13 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
 
 /**
  * Record incoming QC for ONE GRN line (the Incoming QC Call Register inline
- * accept/reject). Marks the line completed, stamps the inspector, and reuses the
- * GRN QC cascades: credits accepted qty to stock (grn_qc) and recomputes the PO.
- * Narrowed to a single line so it can't disturb the rest of the GRN.
+ * accept/reject) — INCREMENTALLY. Each call adds this inspection's accept/reject
+ * onto the line's running totals, credits ONLY the newly-accepted qty to stock
+ * (grn_qc), stamps the inspector, and marks the line 'completed' only once it is
+ * fully accounted for (accepted + rejected = received). A partial inspection
+ * leaves the line 'in_progress' with the remaining qty, so it stays in the
+ * pending queue to be finished later. Narrowed to a single line so it can't
+ * disturb the rest of the GRN.
  */
 export async function submitIncomingQc(
   grnLineId: string,
@@ -195,7 +199,8 @@ export async function submitIncomingQc(
         grnId: goodsReceiptNoteLines.goodsReceiptNoteId,
         itemId: goodsReceiptNoteLines.itemId,
         receivedQty: goodsReceiptNoteLines.receivedQty,
-        qcStatus: goodsReceiptNoteLines.qcStatus,
+        acceptedQty: goodsReceiptNoteLines.qcAcceptedQty,
+        rejectedQty: goodsReceiptNoteLines.qcRejectedQty,
         poLineId: goodsReceiptNoteLines.purchaseOrderLineId,
       })
       .from(goodsReceiptNoteLines)
@@ -209,45 +214,53 @@ export async function submitIncomingQc(
       .limit(1);
     const line = rows[0];
     if (!line) throw new NotFoundError(`GRN line ${grnLineId} not found`);
-    if (line.qcStatus === 'completed') {
+
+    const priorAccepted = line.acceptedQty ?? 0;
+    const priorRejected = line.rejectedQty ?? 0;
+    const remaining = line.receivedQty - priorAccepted - priorRejected;
+    if (remaining <= 0) {
       throw new ConflictError(
-        'This item is already QC-completed — create a reversing GRN line to change it.',
+        'This item is already fully inspected — create a reversing GRN line to change it.',
       );
     }
-    const total = input.acceptedQty + input.rejectedQty;
-    if (total > line.receivedQty) {
+    const thisTotal = input.acceptedQty + input.rejectedQty;
+    if (thisTotal > remaining) {
       throw new ValidationError(
-        `Accept + reject (${total}) exceeds the received qty (${line.receivedQty}).`,
+        `Accept + reject (${thisTotal}) exceeds the remaining qty (${remaining}).`,
       );
     }
 
-    const prevQcStatus = line.qcStatus;
+    const newAccepted = priorAccepted + input.acceptedQty;
+    const newRejected = priorRejected + input.rejectedQty;
+    const fullyDone = line.receivedQty - newAccepted - newRejected <= 0;
+
     await tx
       .update(goodsReceiptNoteLines)
       .set({
-        qcStatus: 'completed',
-        qcAcceptedQty: input.acceptedQty,
-        qcRejectedQty: input.rejectedQty,
+        qcStatus: fullyDone ? 'completed' : 'in_progress',
+        qcAcceptedQty: newAccepted,
+        qcRejectedQty: newRejected,
         qcDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
         qcInspectedBy: user.id,
-        qcRemarks: input.qcRemarks ?? null,
-        qcReportPath: input.qcReportPath ?? null,
-        qcReportName: input.qcReportName ?? null,
+        // Keep prior remarks/report when this inspection doesn't supply new ones.
+        ...(input.qcRemarks !== undefined ? { qcRemarks: input.qcRemarks } : {}),
+        ...(input.qcReportPath !== undefined
+          ? { qcReportPath: input.qcReportPath, qcReportName: input.qcReportName ?? null }
+          : {}),
         updatedBy: user.id,
       })
       .where(eq(goodsReceiptNoteLines.id, grnLineId));
 
-    // Cascades — identical to the GRN QC-merge path.
-    await writeStoreTxnOnQcAccept({
+    // Credit ONLY this inspection's accepted delta to stock (one ledger row per
+    // partial accept), independent of whether the line is now fully done.
+    await creditGrnQcStock({
       tx,
       companyId,
       adminUserId: user.id,
       grnId: line.grnId,
       grnLineId: line.id,
       itemId: line.itemId,
-      qcAcceptedQty: input.acceptedQty,
-      prevQcStatus,
-      nextQcStatus: 'completed',
+      qty: input.acceptedQty,
     });
     if (line.poLineId) {
       await recalcPoLineReceivedQty(tx, line.poLineId, user.id);

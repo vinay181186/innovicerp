@@ -144,29 +144,38 @@ interface QcAcceptCascadeArgs {
 }
 
 export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promise<void> {
-  const {
-    tx,
-    companyId,
-    adminUserId,
-    grnId,
-    grnLineId,
-    itemId,
-    qcAcceptedQty,
-    prevQcStatus,
-    nextQcStatus,
-  } = args;
-  // Trigger conditions:
-  //   - status transitioned non-completed → completed
-  //   - qcAcceptedQty > 0 (rejecting everything writes no ledger row)
-  //   - itemId resolves (free-text-only items don't get stock tracking — by
-  //     design; the v_item_stock view filters where item_id IS NOT NULL)
+  const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qcAcceptedQty, prevQcStatus, nextQcStatus } =
+    args;
+  // Whole-GRN QC merge path: credit only on the non-completed → completed
+  // transition, with the full accepted qty. (The Incoming QC Register credits
+  // incrementally per inspect via creditGrnQcStock directly.)
   if (nextQcStatus !== 'completed') return;
   if (prevQcStatus === 'completed') return;
-  if (qcAcceptedQty <= 0) return;
+  await creditGrnQcStock({ tx, companyId, adminUserId, grnId, grnLineId, itemId, qty: qcAcceptedQty });
+}
+
+/**
+ * Credit `qty` accepted pcs to stock via the grn_qc ledger — the single source
+ * of truth for QC-accept stock movement. Locks the item row, reads current
+ * on-hand, inserts one 'in' store_transaction. No-op when qty ≤ 0 (rejecting
+ * everything writes nothing) or the line has no resolved item (free-text-only
+ * items aren't stock-tracked by design). Callable per-inspect for incremental
+ * QC, so multiple partial accepts on one line produce one ledger row each.
+ */
+export async function creditGrnQcStock(args: {
+  tx: DbTransaction;
+  companyId: string;
+  adminUserId: string;
+  grnId: string;
+  grnLineId: string;
+  itemId: string | null;
+  qty: number;
+}): Promise<void> {
+  const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qty } = args;
+  if (qty <= 0) return;
   if (!itemId) return;
 
   // Lock the items row to serialize concurrent QC accepts on the same item.
-  // SELECT 1 FROM items WHERE id = ... FOR UPDATE — this is the lock target.
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
 
   // Read current on-hand from v_item_stock; default to 0 when no prior txns.
@@ -176,7 +185,7 @@ export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promis
     WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
   `)) as unknown as Array<{ on_hand: number }>;
   const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + qcAcceptedQty;
+  const stockAfter = stockBefore + qty;
 
   // Look up the GRN code for the source_ref.
   const grnRows = await tx
@@ -191,12 +200,12 @@ export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promis
     txnDate: new Date().toISOString().slice(0, 10),
     itemId,
     txnType: 'in',
-    qty: qcAcceptedQty,
+    qty,
     sourceType: 'grn_qc',
     sourceRef: `${grnCode} / ln ${grnLineId.slice(0, 8)}`,
     stockBefore,
     stockAfter,
-    remarks: `GRN QC accept · ${qcAcceptedQty} pcs`,
+    remarks: `GRN QC accept · ${qty} pcs`,
     createdBy: adminUserId,
   });
 }
