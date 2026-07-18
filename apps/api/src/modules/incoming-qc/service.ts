@@ -6,15 +6,29 @@
 // items. RLS via base tables. The Inspect action lives on the GRN detail page
 // (existing goods-receipt-notes update flow), so there is no write here.
 
-import { sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   IncomingQcCompletedRow,
   IncomingQcMetrics,
   IncomingQcPendingRow,
   IncomingQcResponse,
+  SubmitIncomingQcInput,
 } from '@innovic/shared';
+import { goodsReceiptNoteLines, purchaseOrderLines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError } from '../../lib/errors';
+import { requireWriteRole } from '../../lib/auth';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
+import {
+  recalcPoHeaderStatus,
+  recalcPoLineReceivedQty,
+  writeStoreTxnOnQcAccept,
+} from '../goods-receipt-notes/cascades';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -158,5 +172,105 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
     };
 
     return { metrics, pending, completed };
+  });
+}
+
+/**
+ * Record incoming QC for ONE GRN line (the Incoming QC Call Register inline
+ * accept/reject). Marks the line completed, stamps the inspector, and reuses the
+ * GRN QC cascades: credits accepted qty to stock (grn_qc) and recomputes the PO.
+ * Narrowed to a single line so it can't disturb the rest of the GRN.
+ */
+export async function submitIncomingQc(
+  grnLineId: string,
+  input: SubmitIncomingQcInput,
+  user: AuthContext,
+): Promise<{ ok: true; grnId: string }> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select({
+        id: goodsReceiptNoteLines.id,
+        grnId: goodsReceiptNoteLines.goodsReceiptNoteId,
+        itemId: goodsReceiptNoteLines.itemId,
+        receivedQty: goodsReceiptNoteLines.receivedQty,
+        qcStatus: goodsReceiptNoteLines.qcStatus,
+        poLineId: goodsReceiptNoteLines.purchaseOrderLineId,
+      })
+      .from(goodsReceiptNoteLines)
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.id, grnLineId),
+          eq(goodsReceiptNoteLines.companyId, companyId),
+          isNull(goodsReceiptNoteLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    const line = rows[0];
+    if (!line) throw new NotFoundError(`GRN line ${grnLineId} not found`);
+    if (line.qcStatus === 'completed') {
+      throw new ConflictError(
+        'This item is already QC-completed — create a reversing GRN line to change it.',
+      );
+    }
+    const total = input.acceptedQty + input.rejectedQty;
+    if (total > line.receivedQty) {
+      throw new ValidationError(
+        `Accept + reject (${total}) exceeds the received qty (${line.receivedQty}).`,
+      );
+    }
+
+    const prevQcStatus = line.qcStatus;
+    await tx
+      .update(goodsReceiptNoteLines)
+      .set({
+        qcStatus: 'completed',
+        qcAcceptedQty: input.acceptedQty,
+        qcRejectedQty: input.rejectedQty,
+        qcDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
+        qcInspectedBy: user.id,
+        qcRemarks: input.qcRemarks ?? null,
+        qcReportPath: input.qcReportPath ?? null,
+        qcReportName: input.qcReportName ?? null,
+        updatedBy: user.id,
+      })
+      .where(eq(goodsReceiptNoteLines.id, grnLineId));
+
+    // Cascades — identical to the GRN QC-merge path.
+    await writeStoreTxnOnQcAccept({
+      tx,
+      companyId,
+      adminUserId: user.id,
+      grnId: line.grnId,
+      grnLineId: line.id,
+      itemId: line.itemId,
+      qcAcceptedQty: input.acceptedQty,
+      prevQcStatus,
+      nextQcStatus: 'completed',
+    });
+    if (line.poLineId) {
+      await recalcPoLineReceivedQty(tx, line.poLineId, user.id);
+      const poRows = await tx
+        .select({ poId: purchaseOrderLines.purchaseOrderId })
+        .from(purchaseOrderLines)
+        .where(eq(purchaseOrderLines.id, line.poLineId))
+        .limit(1);
+      if (poRows[0]) await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'GoodsReceiptNote',
+        detail: `Incoming QC — ${input.acceptedQty} accepted, ${input.rejectedQty} rejected`,
+        refId: line.grnId,
+      },
+      companyId,
+      user,
+    );
+
+    return { ok: true as const, grnId: line.grnId };
   });
 }

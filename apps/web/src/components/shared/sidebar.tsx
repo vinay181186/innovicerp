@@ -211,6 +211,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/qc-dashboard', label: 'QC Dashboard', icon: '🛡️' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
+          { to: '/incoming-qc-register', label: 'Incoming QC Register', icon: '📋' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
           { to: '/capa', label: 'CAPA', icon: '🛡' },
           { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },

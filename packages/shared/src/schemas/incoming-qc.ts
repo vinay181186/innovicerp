@@ -70,3 +70,24 @@ export const incomingQcResponseSchema = z.object({
   completed: z.array(incomingQcCompletedRowSchema),
 });
 export type IncomingQcResponse = z.infer<typeof incomingQcResponseSchema>;
+
+// ─── Inspect action (Incoming QC Call Register — inline accept/reject) ───────
+// Records QC for ONE GRN line: sets qc_accepted/rejected, marks it completed,
+// credits accepted qty to stock. Mirrors the GRN QC merge but narrowed to a
+// single line so an inline form can't disturb the rest of the GRN.
+export const submitIncomingQcInputSchema = z
+  .object({
+    acceptedQty: z.number().int().nonnegative(),
+    rejectedQty: z.number().int().nonnegative(),
+    qcDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')
+      .optional(),
+    qcRemarks: z.string().max(2000).optional(),
+    qcReportPath: z.string().optional(),
+    qcReportName: z.string().optional(),
+  })
+  .refine((v) => v.acceptedQty + v.rejectedQty > 0, {
+    message: 'Enter an accept and/or reject quantity',
+  });
+export type SubmitIncomingQcInput = z.infer<typeof submitIncomingQcInputSchema>;

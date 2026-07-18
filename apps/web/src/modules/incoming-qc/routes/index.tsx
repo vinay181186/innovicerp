@@ -278,8 +278,8 @@ function PendingRow({ r }: { r: IncomingQcPendingRow }): React.JSX.Element {
       </td>
       <td>
         <Link
-          to="/goods-receipt-notes/$id"
-          params={{ id: r.grnId }}
+          to="/incoming-qc-register"
+          search={{ line: r.grnLineId }}
           className="btn btn-primary btn-sm"
           style={{ fontSize: 11, fontWeight: 700 }}
         >
