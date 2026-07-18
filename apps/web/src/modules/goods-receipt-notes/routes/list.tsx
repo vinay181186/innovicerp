@@ -172,6 +172,31 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         },
       },
       {
+        // GRN status: 'close' once every line is fully QC-inspected, else
+        // 'pending' (any line still has QC qty remaining, incl. partial approval).
+        header: 'GRN Status',
+        accessorKey: 'grnStatus',
+        meta: { tdClass: 'td-ctr' },
+        cell: ({ row }) => {
+          const closed = row.original.grnStatus === 'close';
+          return (
+            <span
+              className={closed ? 'green' : 'amber'}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                border: `1px solid ${closed ? 'var(--green)' : 'var(--amber)'}`,
+                borderRadius: 3,
+                padding: '1px 6px',
+              }}
+            >
+              {closed ? 'Close' : 'Pending'}
+            </span>
+          );
+        },
+      },
+      {
         // Legacy L26471/L26498 — "Ref" column: invoice no. then DC no.
         // <td style="font-size:10px;color:var(--text3)">.
         header: 'Ref',

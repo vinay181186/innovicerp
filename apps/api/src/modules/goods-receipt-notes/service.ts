@@ -252,7 +252,17 @@ export async function listGoodsReceiptNotes(
         COALESCE(line_agg.total_received_qty, 0)::int AS "totalReceivedQty",
         COALESCE(line_agg.qc_accepted_qty, 0)::int AS "totalQcAcceptedQty",
         COALESCE(line_agg.qc_rejected_qty, 0)::int AS "totalQcRejectedQty",
-        COALESCE(line_agg.qc_pending_count, 0)::int AS "qcPendingCount"
+        COALESCE(line_agg.qc_pending_count, 0)::int AS "qcPendingCount",
+        -- GRN is 'close' once every line is fully QC-inspected (no qty left to
+        -- accept/reject); 'pending' while any line still has QC qty remaining
+        -- (including a line approved for only part of its received qty).
+        CASE
+          WHEN COALESCE(line_agg.line_count, 0) > 0
+            AND COALESCE(line_agg.total_received_qty, 0)
+                - COALESCE(line_agg.qc_accepted_qty, 0)
+                - COALESCE(line_agg.qc_rejected_qty, 0) <= 0
+          THEN 'close' ELSE 'pending'
+        END AS "grnStatus"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
@@ -362,6 +372,7 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     totalQcAcceptedQty: Number(r['totalQcAcceptedQty'] ?? 0),
     totalQcRejectedQty: Number(r['totalQcRejectedQty'] ?? 0),
     qcPendingCount: Number(r['qcPendingCount'] ?? 0),
+    grnStatus: r['grnStatus'] === 'close' ? 'close' : 'pending',
   };
 }
 

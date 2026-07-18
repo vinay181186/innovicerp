@@ -119,6 +119,9 @@ export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   /** Σ qcRejectedQty across lines. Legacy renderGRN L26469 column. */
   totalQcRejectedQty: z.number().int().nonnegative(),
   qcPendingCount: z.number().int().nonnegative(),
+  /** 'close' once every line is fully QC-inspected; 'pending' while any line
+   *  still has QC qty remaining (incl. a partially-approved line). */
+  grnStatus: z.enum(['pending', 'close']),
 });
 export type GoodsReceiptNoteListItem = z.infer<typeof goodsReceiptNoteListItemSchema>;
 
