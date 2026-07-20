@@ -114,9 +114,14 @@ export async function listServicePos(
         .select({
           header: servicePos,
           vendorName: vendors.name,
+          soCode: salesOrders.code,
         })
         .from(servicePos)
         .leftJoin(vendors, eq(vendors.id, servicePos.vendorId))
+        .leftJoin(
+          salesOrders,
+          and(eq(salesOrders.id, servicePos.soRefId), isNull(salesOrders.deletedAt)),
+        )
         .where(where)
         .orderBy(desc(servicePos.spoDate), desc(servicePos.createdAt))
         .limit(input.limit)
@@ -140,6 +145,7 @@ export async function listServicePos(
       items: rows.map((r) => ({
         ...toServicePo(r.header),
         vendorName: r.vendorName,
+        soCode: r.soCode,
         lineCount: lineCounts[r.header.id] ?? 0,
       })),
       total: totals[0]?.value ?? 0,
@@ -160,9 +166,13 @@ async function getServicePoInternal(
   companyId: string,
 ): Promise<ServicePoDetail> {
   const rows = await tx
-    .select({ header: servicePos, vendorName: vendors.name })
+    .select({ header: servicePos, vendorName: vendors.name, soCode: salesOrders.code })
     .from(servicePos)
     .leftJoin(vendors, eq(vendors.id, servicePos.vendorId))
+    .leftJoin(
+      salesOrders,
+      and(eq(salesOrders.id, servicePos.soRefId), isNull(salesOrders.deletedAt)),
+    )
     .where(and(eq(servicePos.id, id), eq(servicePos.companyId, companyId), isNull(servicePos.deletedAt)))
     .limit(1);
   const row = rows[0];
@@ -177,6 +187,7 @@ async function getServicePoInternal(
   return {
     ...toServicePo(row.header),
     vendorName: row.vendorName,
+    soCode: row.soCode,
     lines: lineRows.map(toLine),
   };
 }

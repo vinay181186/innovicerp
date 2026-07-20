@@ -85,6 +85,10 @@ export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
   sourceJcCode: z.string().nullable(),
   sourceJcOpSeq: z.number().int().positive().nullable(),
   poCode: z.string().nullable(), // resolved from purchase_orders when poId set
+  // Resolved from sales_orders via source_so_line_id, so the list "SO / JC"
+  // column shows the real SO for an SO-sourced PR instead of a dash.
+  soCode: z.string().nullable(),
+  soLineNo: z.number().int().positive().nullable(),
 });
 export type PurchaseRequestListItem = z.infer<typeof purchaseRequestListItemSchema>;
 

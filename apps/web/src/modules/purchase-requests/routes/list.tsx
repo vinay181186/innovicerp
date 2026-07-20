@@ -162,19 +162,33 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         header: 'SO / JC',
         accessorKey: 'sourceJcCode',
         meta: { tdClass: 'mono' },
-        cell: ({ row }) =>
-          row.original.sourceJcCode ? (
-            <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
-              {row.original.sourceJcCode}
-              {row.original.sourceJcOpSeq ? (
-                <span className="text3"> · op {row.original.sourceJcOpSeq}</span>
-              ) : null}
-            </span>
-          ) : (
+        cell: ({ row }) => {
+          // A PR is sourced from either an SO line or a JC op. Show whichever
+          // it has — the SO branch was previously missing, so SO-sourced PRs
+          // showed a dash even though source_so_line_id was set.
+          const { soCode, soLineNo, sourceJcCode, sourceJcOpSeq } = row.original;
+          if (soCode) {
+            return (
+              <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                {soCode}
+                {soLineNo ? <span className="text3"> · L{soLineNo}</span> : null}
+              </span>
+            );
+          }
+          if (sourceJcCode) {
+            return (
+              <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                {sourceJcCode}
+                {sourceJcOpSeq ? <span className="text3"> · op {sourceJcOpSeq}</span> : null}
+              </span>
+            );
+          }
+          return (
             <span className="text3" style={{ fontSize: 11 }}>
               —
             </span>
-          ),
+          );
+        },
       },
       {
         header: 'Operation',

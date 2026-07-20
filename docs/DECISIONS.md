@@ -2568,3 +2568,33 @@ route-cards (IN-RC-#####), job-cards (year-scoped IN-JC-YY-#####, display-only f
   remaining tasks are separate increments.
 - Verified by api+web typecheck and api+web lint (all green). **Not** verified by test
   suite — see ADR-058.
+
+## ADR-061: Resolve the SO code on reads that show an "SO" column/field (SO-dash fix)
+**Date:** 2026-07-20
+**Status:** Accepted
+
+### Context
+Two reads displayed an SO column/field that rendered "—" even when the row's SO link
+was set — the linked-display-audit gap (docs/PARITY) applied to sales orders. Task 2 of
+the 2026-07-20 batch. (a) Purchase-request LIST "SO / JC" column only rendered
+`sourceJcCode`; the list query never joined sales_orders, so an SO-sourced PR
+(source_so_line_id set, jc null) showed a dash — even though getPurchaseRequest (detail)
+already resolves soCode. (b) Service-PO LIST + DETAIL "SO / Cost Center" read the
+denormalized `so_no_text`, which is never populated (create only ever stores so_ref_id),
+so every SO-linked SPO showed a dash.
+
+### Decision
+Resolve the SO code on read via the FK join, mirroring the job_cards template
+(source_so_line_id → sales_order_lines → sales_orders). PR list: add the two LEFT JOINs
++ `so.code AS "soCode"`, `sol.line_no AS "soLineNo"`, carry them through toListItem, add
+both to purchaseRequestListItemSchema, and render the SO branch of the "SO / JC" column
+(SO first, else JC, else dash). Service-PO: LEFT JOIN sales_orders on so_ref_id in both
+listServicePos and getServicePoInternal, expose `soCode`, add to the list-item + detail
+schemas, and render `soCode ?? soNoText ?? '—'` in both UI spots.
+
+### Consequences
+- Positive: SO-sourced PRs and cost-center SPOs now show the real SO in the list/detail
+  instead of a dash. No schema/data change — pure read-side resolution.
+- Negative: two more indexed-FK LEFT JOINs on those reads (single/limited rows).
+- Note: the never-populated so_no_text on service_pos is now a harmless fallback behind
+  the resolved soCode. Verified by shared+api+web typecheck and api+web lint.

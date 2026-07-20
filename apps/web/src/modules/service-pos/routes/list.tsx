@@ -296,7 +296,7 @@ function Row({ po }: { po: ServicePoListItem }): React.JSX.Element {
         <VendorLabel code={po.vendorCodeText} name={po.vendorName} />
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
-        {po.costCenter === 'general' ? 'General' : (po.soNoText ?? '—')}
+        {po.costCenter === 'general' ? 'General' : (po.soCode ?? po.soNoText ?? '—')}
       </td>
       <td style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>{po.expenseHead}</td>
       <td style={{ fontSize: 11 }}>{po.lineCount}</td>

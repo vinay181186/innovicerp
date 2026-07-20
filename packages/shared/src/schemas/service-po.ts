@@ -73,12 +73,16 @@ export type ServicePo = z.infer<typeof servicePoSchema>;
 
 export const servicePoDetailSchema = servicePoSchema.extend({
   vendorName: z.string().nullable(),
+  // Resolved from sales_orders via so_ref_id, so the cost-center SO shows its
+  // real code instead of the never-populated so_no_text snapshot (a dash).
+  soCode: z.string().nullable(),
   lines: z.array(servicePoLineSchema),
 });
 export type ServicePoDetail = z.infer<typeof servicePoDetailSchema>;
 
 export const servicePoListItemSchema = servicePoSchema.extend({
   vendorName: z.string().nullable(),
+  soCode: z.string().nullable(), // resolved from sales_orders via so_ref_id
   lineCount: z.number().int().nonnegative(),
 });
 export type ServicePoListItem = z.infer<typeof servicePoListItemSchema>;

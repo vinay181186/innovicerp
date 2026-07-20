@@ -222,7 +222,9 @@ export async function listPurchaseRequests(
         i.code AS "itemCode",
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
-        po.code AS "poCode"
+        po.code AS "poCode",
+        so.code AS "soCode",
+        sol.line_no AS "soLineNo"
       FROM public.purchase_requests pr
       LEFT JOIN public.vendors v
         ON v.id = pr.vendor_id AND v.deleted_at IS NULL
@@ -236,6 +238,10 @@ export async function listPurchaseRequests(
         ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = pr.po_id AND po.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pr.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       WHERE pr.company_id = ${companyId}::uuid
         AND pr.deleted_at IS NULL
         ${searchFrag}
@@ -302,6 +308,8 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     sourceJcCode: (r['sourceJcCode'] as string | null) ?? null,
     sourceJcOpSeq: r['sourceJcOpSeq'] != null ? Number(r['sourceJcOpSeq']) : null,
     poCode: (r['poCode'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
+    soLineNo: r['soLineNo'] != null ? Number(r['soLineNo']) : null,
   };
 }
 

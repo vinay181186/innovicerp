@@ -209,7 +209,7 @@ function ServicePosDetailPage(): React.JSX.Element {
 
           <div className="form-grid form-grid-3">
             <Pair label="Date" value={po.spoDate} />
-            <Pair label="Cost Center" value={po.costCenter === 'general' ? 'General' : (po.soNoText ?? '—')} />
+            <Pair label="Cost Center" value={po.costCenter === 'general' ? 'General' : (po.soCode ?? po.soNoText ?? '—')} />
             <Pair label="Expense Head" value={po.expenseHead} />
             <Pair label="Payment Terms" value={po.paymentTerms} />
             <Pair label="Tax Type" value={po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} />
