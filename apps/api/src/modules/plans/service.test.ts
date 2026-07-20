@@ -2,12 +2,13 @@
 // uses unique plan codes so they don't trample each other. Cleanup is
 // per-prefix in afterAll + relies on global-setup for killed-run cruft.
 
-import { eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
   activityLog,
   items,
+  jcOps,
   jobCards,
   planOps,
   plans,
@@ -482,6 +483,63 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
       .where(eq(jobCards.id, result.plan.jcId!))
       .limit(1);
     expect(jc[0]?.orderQty).toBe(20);
+  });
+
+  it('executePlan(manufacture): op ticked outsource → auto JW_OSP PR linked to the jc_op', async () => {
+    const created = await service.createPlan(
+      {
+        code: `${TEST_PREFIX}P-EXEC-MFG-OSP`,
+        planDate: '2026-05-21',
+        planType: 'manufacture',
+        itemId,
+        orderQty: 12,
+        planQty: 12,
+        ops: [
+          { opSeq: 1, operation: 'turn', cycleTimeMin: 3 },
+          {
+            opSeq: 2,
+            operation: 'anodize',
+            cycleTimeMin: 0,
+            opType: 'outsource',
+            outsourceVendorText: 'PLATER-CO',
+            outsourceCost: 25,
+          },
+        ],
+      },
+      admin,
+    );
+    await service.finalizePlan(created.id, admin);
+    const result = await service.executePlan(created.id, admin);
+    if (result.plan.jcId) createdJcIds.push(result.plan.jcId);
+    expect(result.plan.planStatus).toBe('jc_created');
+
+    // The outsource op should now carry a linked PR + pr_raised status.
+    const opRow = await db
+      .select()
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, result.plan.jcId!), eq(jcOps.opSeq, 2)))
+      .limit(1);
+    expect(opRow[0]?.outsourceStatus).toBe('pr_raised');
+    expect(opRow[0]?.outsourcePrId).not.toBeNull();
+
+    // And that PR is a JW_OSP PR carrying the upstream link back to the op.
+    const pr = await db
+      .select()
+      .from(purchaseRequests)
+      .where(eq(purchaseRequests.id, opRow[0]!.outsourcePrId!))
+      .limit(1);
+    expect(pr[0]?.prType).toBe('jw_osp');
+    expect(pr[0]?.sourceJcOpId).toBe(opRow[0]!.id);
+    expect(pr[0]?.qty).toBe(12);
+    expect(pr[0]?.vendorCodeText).toBe('PLATER-CO');
+
+    // A non-outsource op stays clean (no PR raised).
+    const turnOp = await db
+      .select()
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, result.plan.jcId!), eq(jcOps.opSeq, 1)))
+      .limit(1);
+    expect(turnOp[0]?.outsourcePrId).toBeNull();
   });
 
   it('executePlan(direct_purchase): creates 1 PR, sets dp_pr_id + status=pr_created', async () => {

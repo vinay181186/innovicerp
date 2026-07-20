@@ -62,6 +62,11 @@ import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
 
+// Placeholder vendor text stamped on an auto-raised OSP PR when the outsource op
+// carries no vendor — the PR stays valid (needs vendorId OR vendorCodeText) and
+// signals the buyer to pick a vendor at PO-conversion time.
+const OSP_VENDOR_TBD = '(vendor TBD)';
+
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
@@ -642,26 +647,83 @@ async function executeManufacture(
   }
 
   // Copy plan_ops → jc_ops, backfilling machine_id from the code where possible.
-  await tx.insert(jcOps).values(
-    ops.map((op) => ({
-      companyId: plan.companyId,
-      jobCardId: jc.id,
-      opSeq: op.opSeq,
-      machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
-      machineCodeText: op.machineCodeText,
-      operation: op.operation,
-      opType: op.opType,
-      cycleTimeMin: op.cycleTimeMin,
-      program: op.program,
-      toolDetails: op.toolDetails,
-      qcRequired: op.qcRequired,
-      outsourceVendorId: op.outsourceVendorId,
-      outsourceVendorText: op.outsourceVendorText,
-      outsourceCost: op.outsourceCost,
-      createdBy: user.id,
-      updatedBy: user.id,
-    })),
-  );
+  // Capture the created jc_op ids (by op_seq) so outsource ops can be linked to
+  // their auto-raised PRs below.
+  const insertedOps = await tx
+    .insert(jcOps)
+    .values(
+      ops.map((op) => ({
+        companyId: plan.companyId,
+        jobCardId: jc.id,
+        opSeq: op.opSeq,
+        machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
+        machineCodeText: op.machineCodeText,
+        operation: op.operation,
+        opType: op.opType,
+        cycleTimeMin: op.cycleTimeMin,
+        program: op.program,
+        toolDetails: op.toolDetails,
+        qcRequired: op.qcRequired,
+        outsourceVendorId: op.outsourceVendorId,
+        outsourceVendorText: op.outsourceVendorText,
+        outsourceCost: op.outsourceCost,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })),
+    )
+    .returning({
+      id: jcOps.id,
+      opSeq: jcOps.opSeq,
+      opType: jcOps.opType,
+      operation: jcOps.operation,
+      outsourceVendorId: jcOps.outsourceVendorId,
+      outsourceVendorText: jcOps.outsourceVendorText,
+      outsourceCost: jcOps.outsourceCost,
+    });
+
+  // Auto-raise a JW_OSP purchase request for every op ticked "Outsource".
+  // Mirrors the manual OSP-PR flow (op-entry/osp-cascade) but fires at plan
+  // execute: the buyer then converts each PR → PO (editable) via the existing
+  // createPurchaseOrderFromPr bridge. The PR carries source_jc_op_id +
+  // source_so_line_id so the whole PO→DC→GRN→QC chain traces back to this JC op
+  // and its Sales Order (keeps SO-wise stock exact — see the outsource ADR).
+  const outsourceOps = insertedOps.filter((o) => o.opType === 'outsource');
+  const raisedPrCodes: string[] = [];
+  for (const op of outsourceOps) {
+    const prCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
+    const prRows = await tx
+      .insert(purchaseRequests)
+      .values({
+        companyId: plan.companyId,
+        code: prCode,
+        prDate: today,
+        status: 'open',
+        prType: 'jw_osp',
+        vendorId: op.outsourceVendorId ?? null,
+        // PR needs a vendor id OR text; flag "to be decided at PO time" when the
+        // op carries neither.
+        vendorCodeText: op.outsourceVendorId ? null : op.outsourceVendorText ?? OSP_VENDOR_TBD,
+        itemId: plan.itemId,
+        itemCodeText: plan.itemCodeText ?? null,
+        itemName: plan.itemNameText ?? null,
+        qty: plan.planQty,
+        estCost: op.outsourceCost ?? '0',
+        sourceJcOpId: op.id,
+        sourceSoLineId: plan.soLineId ?? null,
+        operation: op.operation,
+        remarks: `Auto OSP PR from plan ${plan.code} — op "${op.operation}" (${jc.code})`,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: purchaseRequests.id, code: purchaseRequests.code });
+    const pr = prRows[0]!;
+    raisedPrCodes.push(pr.code);
+
+    await tx
+      .update(jcOps)
+      .set({ outsourcePrId: pr.id, outsourceStatus: 'pr_raised', updatedBy: user.id })
+      .where(eq(jcOps.id, op.id));
+  }
 
   await tx
     .update(plans)
@@ -677,7 +739,10 @@ async function executeManufacture(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops)`,
+      detail:
+        raisedPrCodes.length > 0
+          ? `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops) + OSP PR ${raisedPrCodes.join(', ')}`
+          : `${plan.code} → JC ${jc.code} (${plan.planType}, ${ops.length} ops)`,
       refId: plan.code,
     },
     plan.companyId,
