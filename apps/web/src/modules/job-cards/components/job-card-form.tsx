@@ -28,7 +28,7 @@ import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
-import { useCreateJobCard, useJobCardSourceOptions, useUpdateJobCard } from '../api';
+import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
 
 const QC_DOC_TYPES = [
   'MIR',
@@ -113,6 +113,9 @@ export function JobCardForm({
 
   const create = useCreateJobCard();
   const update = useUpdateJobCard(model?.id ?? '');
+  // Preview the next IN-JC-YY-##### on create so the JC No. is visible before
+  // save (server still assigns authoritatively). Not fetched in edit mode.
+  const { data: nextJc } = useNextJcCode(!isEdit);
 
   // ── Header state ──
   const initialSource = model?.sourceSoLineId
@@ -415,7 +418,11 @@ export function JobCardForm({
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">JC No.</label>
-              <input className="innovic-input" value={model?.code ?? '(auto on save)'} readOnly />
+              <input
+                className="innovic-input"
+                value={model?.code ?? nextJc?.code ?? '(auto on save)'}
+                readOnly
+              />
             </div>
             <div className="form-grp">
               <label className="form-label">

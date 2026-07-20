@@ -37,6 +37,14 @@ export function useOperatorsList(
   });
 }
 
+export function useNextOperatorCode() {
+  return useQuery<{ code: string }>({
+    queryKey: [...operatorsKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/operators/next-code'),
+    staleTime: 0,
+  });
+}
+
 export function useOperator(id: string | undefined) {
   return useQuery<Operator>({
     queryKey: id ? operatorsKeys.detail(id) : operatorsKeys.detail('__missing__'),

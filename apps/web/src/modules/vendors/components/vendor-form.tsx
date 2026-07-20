@@ -9,7 +9,9 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNextVendorCode } from '../api';
 
 type CreateMode = {
   mode: 'create';
@@ -78,6 +80,15 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+
+  // Prefill the read-only code with the next server-assigned VND-### so it is
+  // visible before save. Only seed while still blank (don't clobber edits).
+  const { data: nextCode } = useNextVendorCode();
+  useEffect(() => {
+    if (nextCode?.code && !form.getValues('code')) {
+      form.setValue('code', nextCode.code);
+    }
+  }, [nextCode, form]);
 
   return (
     <form

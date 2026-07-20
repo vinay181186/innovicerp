@@ -2527,3 +2527,44 @@ via `onValidityChange`) and render the `poDate` error.
 - Verified by typecheck + lint across shared/api/web, and by running the new join
   against the live row (returns "priya industries "). **Not** verified by test suite —
   see ADR-058.
+
+## ADR-060: Auto-generated document numbers made visible in create forms (per-module next-code preview)
+**Date:** 2026-07-20
+**Status:** Accepted
+
+### Context
+Many documents auto-generate their code server-side at insert (MAX+1 per company),
+but the create form showed nothing — a blank/placeholder field ("Auto-generated on
+save", "(auto on save)", "PLN-NNNN (auto if blank)"). Users couldn't see the number
+they were about to get. Only the 5 central DocNumberInput types (SO/JW/PO/GRN/DC) and
+party-materials/party-grn prefilled. This is Task 1 of the 2026-07-20 batch.
+
+### Decision
+Follow the existing party-materials/party-grn pattern: expose a per-module
+`GET /<module>/next-code` endpoint whose service wrapper (`getNext*Code(user)`) reuses
+that module's OWN generator, so the previewed number is computed the exact same way the
+insert assigns it — preview == actual, by construction. The web side adds a
+`useNext*Code()` query hook and prefills the code field once on create while blank
+(read-only master-data fields show it; editable "auto if blank" fields prefill the value
+but stay overridable). First increment (Class A): clients (CLI-###), vendors (VND-###),
+operators (OP-###), plans (PLN-####), bom-master (BOM-#### on the `bom_no` column),
+route-cards (IN-RC-#####), job-cards (year-scoped IN-JC-YY-#####, display-only field).
+
+### Alternatives Considered
+- **Extend the central DOC_NUMBER_FORMATS registry to cover all types** — rejected: the
+  central `computeNext` hardcodes the `code` column + a simple `^prefix\d+$` shape, which
+  breaks on bom-master (`bom_no` column) and job-cards (year segment), and risks the
+  preview diverging from the module's real generator.
+- **Prefill client-side from the recent list (like nc-register)** — rejected: racy and
+  can disagree with the server's authoritative MAX+1.
+
+### Consequences
+- Positive: the next number is visible before save across all Class A create forms; one
+  uniform, low-risk pattern; each module's generator stays the single source of truth.
+- Negative: one small endpoint + hook per module (mechanical boilerplate).
+- Note: editable fields submit the shown code, so a rare concurrent create can surface a
+  ConflictError (server still enforces uniqueness); master-data forms keep the existing
+  "blank → server generates" race-safety. Class B (forms with no code field yet) and the
+  remaining tasks are separate increments.
+- Verified by api+web typecheck and api+web lint (all green). **Not** verified by test
+  suite — see ADR-058.

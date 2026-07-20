@@ -18,6 +18,11 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     return service.listPlans(query, req.user);
   });
 
+  app.get('/plans/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextPlanCode(req.user);
+  });
+
   app.get('/plans/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamsSchema.parse(req.params);

@@ -93,6 +93,12 @@ async function nextPlanCode(tx: DbTransaction, companyId: string): Promise<strin
   return `PLN-${String(max + 1).padStart(4, '0')}`;
 }
 
+/** Preview the next PLN-NNNN code for the create form (prefill before save). */
+export async function getNextPlanCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextPlanCode(tx, companyId) }));
+}
+
 function numericToString(v: number | null | undefined): string | null {
   return v == null ? null : v.toFixed(2);
 }

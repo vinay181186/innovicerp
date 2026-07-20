@@ -96,6 +96,14 @@ async function nextClientCode(tx: DbTransaction, companyId: string): Promise<str
   return `CLI-${String(max + 1).padStart(3, '0')}`;
 }
 
+/** Preview the next CLI-### for the create form, so the auto-generated code is
+ *  visible before save. Reuses the same generator the insert path uses, so the
+ *  previewed number matches what createClient assigns. */
+export async function getNextClientCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextClientCode(tx, companyId) }));
+}
+
 export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
   const companyId = requireCompany(user);

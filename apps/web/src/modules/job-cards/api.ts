@@ -48,6 +48,15 @@ export function useJobCardsList(
   });
 }
 
+export function useNextJcCode(enabled = true) {
+  return useQuery<{ code: string }>({
+    queryKey: [...jobCardsKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/job-cards/next-code'),
+    enabled,
+    staleTime: 0,
+  });
+}
+
 export function useJobCard(id: string | undefined) {
   return useQuery<JobCardListItem>({
     queryKey: id ? jobCardsKeys.detail(id) : jobCardsKeys.detail('__missing__'),

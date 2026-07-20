@@ -190,6 +190,14 @@ async function nextRouteCardCode(tx: DbTransaction, companyId: string): Promise<
   return `IN-RC-${String(next).padStart(5, '0')}`;
 }
 
+// Preview the next IN-RC-NNNNN code so the create form can prefill it
+// before save. Read-only — does not reserve the code (the actual value
+// is (re)computed atomically inside createRouteCard on submit).
+export async function getNextRouteCardCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextRouteCardCode(tx, companyId) }));
+}
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listRouteCards(

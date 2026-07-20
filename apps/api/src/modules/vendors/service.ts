@@ -95,6 +95,13 @@ async function nextVendorCode(tx: DbTransaction, companyId: string): Promise<str
   return `VND-${String(max + 1).padStart(3, '0')}`;
 }
 
+/** Preview the next VND-### for the create form (visible before save). Reuses
+ *  the insert-path generator so the preview matches the assigned code. */
+export async function getNextVendorCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextVendorCode(tx, companyId) }));
+}
+
 export async function createVendor(input: CreateVendorInput, user: AuthContext): Promise<Vendor> {
   requireWriteRole(user);
   const companyId = requireCompany(user);

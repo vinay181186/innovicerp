@@ -17,6 +17,11 @@ export async function bomMasterRoutes(app: FastifyInstance): Promise<void> {
     return service.listBomMasters(query, req.user);
   });
 
+  app.get('/bom-masters/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextBomNo(req.user);
+  });
+
   app.get('/bom-masters/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

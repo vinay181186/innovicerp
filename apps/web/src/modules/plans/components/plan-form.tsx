@@ -7,7 +7,7 @@ import type { CreatePlanInput, PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
-import { useDefaultRouteOps } from '../api';
+import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
 export interface PlanFormValues {
   code: string;
@@ -173,6 +173,17 @@ export function PlanForm({
   const update = <K extends keyof PlanFormValues>(key: K, val: PlanFormValues[K]): void => {
     setValues((v) => ({ ...v, [key]: val }));
   };
+
+  // Preview the next PLN-NNNN on create so the code is visible before save.
+  // Prefill once while the field is still blank (user can still override —
+  // the field stays editable on create). Never prefill in edit mode.
+  const { data: nextCode } = useNextPlanCode();
+  useEffect(() => {
+    if (isEdit) return;
+    if (nextCode?.code && values.code === '') {
+      update('code', nextCode.code);
+    }
+  }, [isEdit, nextCode?.code, values.code]);
 
   // Item master drives the code autosuggest + name/id auto-fill. Plans still
   // accept off-master free text, so a non-matching code is left as typed.

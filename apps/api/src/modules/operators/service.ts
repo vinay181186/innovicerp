@@ -93,6 +93,13 @@ async function nextOperatorCode(tx: DbTransaction, companyId: string): Promise<s
   return `OP-${String(max + 1).padStart(3, '0')}`;
 }
 
+/** Preview the next OP-### for the create form (visible before save). Reuses
+ *  the insert-path generator so the preview matches the assigned code. */
+export async function getNextOperatorCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextOperatorCode(tx, companyId) }));
+}
+
 export async function createOperator(
   input: CreateOperatorInput,
   user: AuthContext,

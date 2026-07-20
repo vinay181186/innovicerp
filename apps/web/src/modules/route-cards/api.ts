@@ -17,6 +17,7 @@ export const routeCardsKeys = {
   list: (q: ListRouteCardsQuery) => [...routeCardsKeys.lists(), q] as const,
   details: () => [...routeCardsKeys.all, 'detail'] as const,
   detail: (id: string) => [...routeCardsKeys.details(), id] as const,
+  nextCode: () => [...routeCardsKeys.all, 'next-code'] as const,
 };
 
 function toQueryString(q: ListRouteCardsQuery): string {
@@ -45,6 +46,17 @@ export function useRouteCard(id: string | undefined) {
     queryKey: id ? routeCardsKeys.detail(id) : routeCardsKeys.detail('__missing__'),
     queryFn: () => apiFetch<RouteCardDetail>(`/route-cards/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useNextRouteCardCode(
+  options?: Omit<UseQueryOptions<{ code: string }>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<{ code: string }>({
+    queryKey: routeCardsKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/route-cards/next-code'),
+    staleTime: 0,
+    ...options,
   });
 }
 

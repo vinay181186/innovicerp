@@ -17,6 +17,11 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
     return service.listRouteCards(query, req.user);
   });
 
+  app.get('/route-cards/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextRouteCardCode(req.user);
+  });
+
   app.get('/route-cards/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

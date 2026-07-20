@@ -12,10 +12,11 @@
 
 import type { CreateRouteCardOpInput, Item, Machine, RouteCard, Vendor } from '@innovic/shared';
 import { Plus, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
+import { useNextRouteCardCode } from '../api';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
 
@@ -118,6 +119,19 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const { data: itemsList } = useItemsList({ limit: 1000, offset: 0 });
   const { data: machinesList } = useMachinesList({ limit: 500, offset: 0 });
   const { data: vendorsList } = useVendorsList({ limit: 500, offset: 0 });
+
+  // Create-mode only: prefill the RC No with the previewed next code once,
+  // while the field is still blank. Keeps the field editable (user may
+  // override) and never clobbers a value they've already typed.
+  const { data: nextCodeData } = useNextRouteCardCode({ enabled: mode === 'create' });
+  const codePrefilled = useRef(false);
+  useEffect(() => {
+    if (mode !== 'create' || codePrefilled.current) return;
+    const next = nextCodeData?.code;
+    if (!next) return;
+    codePrefilled.current = true;
+    setHeader((prev) => (prev.code.trim() ? prev : { ...prev, code: next }));
+  }, [mode, nextCodeData]);
 
   const itemsByCode = useMemo(() => {
     const m = new Map<string, Item>();

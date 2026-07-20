@@ -6,8 +6,9 @@
 
 import type { BomLineType, BomMaster, CreateBomMasterLineInput, Item } from '@innovic/shared';
 import { Plus, Trash2, Upload, Download } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
+import { useNextBomNo } from '../api';
 
 // xlsx (~400 KB raw / 140 KB gzip) is dynamic-imported inside the two
 // handlers that need it (template download + Excel parse). Lets every
@@ -77,6 +78,16 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
   // header suffix, the revision-note indicator and the save-button label.
   const nextRevision = (bom?.revision ?? 0) + 1;
+
+  // Preview the auto-generated BOM No. on CREATE so it's visible before save.
+  // Prefill once while the field is still blank; keep it editable.
+  const { data: nextBomNo } = useNextBomNo();
+  useEffect(() => {
+    if (mode !== 'create') return;
+    const code = nextBomNo?.code;
+    if (!code) return;
+    setHeader((prev) => (prev.bomNo.trim() ? prev : { ...prev, bomNo: code }));
+  }, [mode, nextBomNo]);
 
   // Items list — drives the code autocomplete + Excel-import resolution.
   // Limit 1000 should cover any company's item master at our scale; revisit

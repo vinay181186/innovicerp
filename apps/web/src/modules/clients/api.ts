@@ -37,6 +37,14 @@ export function useClientsList(
   });
 }
 
+export function useNextClientCode() {
+  return useQuery<{ code: string }>({
+    queryKey: [...clientsKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/clients/next-code'),
+    staleTime: 0,
+  });
+}
+
 export function useClient(id: string | undefined) {
   return useQuery<Client>({
     queryKey: id ? clientsKeys.detail(id) : clientsKeys.detail('__missing__'),

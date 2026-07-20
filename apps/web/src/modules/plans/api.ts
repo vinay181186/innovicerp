@@ -136,6 +136,14 @@ export function useSoftDeletePlan() {
   });
 }
 
+export function useNextPlanCode() {
+  return useQuery<{ code: string }>({
+    queryKey: [...plansKeys.all, 'next-code'] as const,
+    queryFn: () => apiFetch<{ code: string }>('/plans/next-code'),
+    staleTime: 0,
+  });
+}
+
 export function useDefaultRouteOps(itemId: string | null) {
   return useQuery<{ ops: PlanOpInput[] }>({
     queryKey: plansKeys.defaultOps(itemId),

@@ -37,6 +37,14 @@ export function useVendorsList(
   });
 }
 
+export function useNextVendorCode() {
+  return useQuery<{ code: string }>({
+    queryKey: [...vendorsKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/vendors/next-code'),
+    staleTime: 0,
+  });
+}
+
 export function useVendor(id: string | undefined) {
   return useQuery<Vendor>({
     queryKey: id ? vendorsKeys.detail(id) : vendorsKeys.detail('__missing__'),

@@ -133,6 +133,14 @@ async function nextBomNo(tx: DbTransaction, companyId: string): Promise<string> 
   return `BOM-${String(next).padStart(4, '0')}`;
 }
 
+// Preview the next BOM-NNNN so the create form can prefill it before save.
+// Shape stays `{ code }` for consistency with the other next-code endpoints;
+// the value is the BOM number string.
+export async function getNextBomNo(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextBomNo(tx, companyId) }));
+}
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listBomMasters(

@@ -831,6 +831,13 @@ export async function nextJcCode(tx: DbTransaction, companyId: string): Promise<
   return `${prefix}${String(max + 1).padStart(5, '0')}`;
 }
 
+/** Preview the next IN-JC-YY-##### for the create form (visible before save).
+ *  Reuses the year-scoped generator so the preview matches the assigned code. */
+export async function getNextJcCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextJcCode(tx, companyId) }));
+}
+
 async function resolveItem(
   tx: DbTransaction,
   itemCode: string,

@@ -17,6 +17,7 @@ export const bomMastersKeys = {
   list: (q: ListBomMastersQuery) => [...bomMastersKeys.lists(), q] as const,
   details: () => [...bomMastersKeys.all, 'detail'] as const,
   detail: (id: string) => [...bomMastersKeys.details(), id] as const,
+  nextCode: () => [...bomMastersKeys.all, 'next-code'] as const,
 };
 
 function toQueryString(q: ListBomMastersQuery): string {
@@ -45,6 +46,14 @@ export function useBomMaster(id: string | undefined) {
     queryKey: id ? bomMastersKeys.detail(id) : bomMastersKeys.detail('__missing__'),
     queryFn: () => apiFetch<BomMasterDetail>(`/bom-masters/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useNextBomNo() {
+  return useQuery<{ code: string }>({
+    queryKey: bomMastersKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/bom-masters/next-code'),
+    staleTime: 0,
   });
 }
 
