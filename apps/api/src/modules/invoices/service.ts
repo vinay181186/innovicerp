@@ -291,7 +291,8 @@ async function loadInvoiceableLines(
   const sid = `'${soId}'::uuid`;
   const res = await tx.execute(
     sql.raw(`
-        SELECT sol.id AS so_line_id, sol.line_no, sol.item_code_text AS item_code,
+        SELECT sol.id AS so_line_id, sol.line_no,
+          COALESCE(i.code, sol.item_code_text) AS item_code,
           sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
           COALESCE((
             SELECT SUM(il.qty) FROM invoice_lines il
@@ -299,6 +300,7 @@ async function loadInvoiceableLines(
             WHERE il.sales_order_line_id = sol.id AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
           ), 0) AS invoiced_qty
         FROM sales_order_lines sol
+        LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
         WHERE sol.sales_order_id = ${sid} AND sol.company_id = ${cid} AND sol.deleted_at IS NULL
         ORDER BY sol.line_no
       `),

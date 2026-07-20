@@ -100,10 +100,12 @@ async function loadDispatchable(
   const sid = `'${soId}'::uuid`;
   const res = await tx.execute(
     sql.raw(`
-      SELECT sol.id AS so_line_id, sol.line_no, sol.item_code_text AS item_code,
+      SELECT sol.id AS so_line_id, sol.line_no,
+        COALESCE(i.code, sol.item_code_text) AS item_code,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
         COALESCE(rdy.ready, 0) AS ready_qty
       FROM sales_order_lines sol
+      LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(x.eff), 0) AS ready FROM (
           SELECT DISTINCT ON (jc.id)
