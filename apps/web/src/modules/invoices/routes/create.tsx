@@ -1,13 +1,16 @@
-// New Invoice — pick an SO, invoice up to the available (dispatched − invoiced)
-// qty per line. Mirror of legacy _createInvoice (L21152).
-// `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects
-// the dispatch's SO and prefills line qtys from that dispatch (user flow
-// 2026-06-06: dispatch → invoice the same, via pre-filled form).
+// New Invoice — pick an SO, then add invoice lines (card-per-line, like the
+// dispatch editor). Type an item code to pick from the SO's invoiceable lines;
+// Item Name + Order/Dispatched/Invoiced/Available auto-fill. Invoice up to the
+// available (dispatched − invoiced) qty per line.
+// `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
+// dispatch's SO and prefills the lines from that dispatch.
 
+import type { InvoiceableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
@@ -22,6 +25,17 @@ export const invoiceNewRoute = createRoute({
 
 const todayStr = (): string => new Date().toISOString().slice(0, 10);
 
+interface LineCard {
+  id: number;
+  soLineId: string | null;
+  qty: string;
+  rate: string;
+}
+
+// Shared grid: # | Item Code | Item Name | Order | Dispatched | Invoiced |
+// Available | Invoice Qty | Rate | ×
+const GRID = '30px 1.3fr 1.6fr 60px 84px 70px 78px 92px 92px 30px';
+
 function InvoiceNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { dispatchId } = invoiceNewRoute.useSearch();
@@ -33,9 +47,10 @@ function InvoiceNewPage(): React.JSX.Element {
   const [termsDays, setTermsDays] = useState('45');
   const [gstPercent, setGstPercent] = useState('18');
   const [remarks, setRemarks] = useState('');
-  const [qtys, setQtys] = useState<Record<string, number>>({});
-  const [rates, setRates] = useState<Record<string, number>>({});
+  const [cards, setCards] = useState<LineCard[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const nextId = useRef(1);
+  const prefilled = useRef(false);
 
   const { data: inv } = useInvoiceableSo(soId || undefined);
 
@@ -47,45 +62,85 @@ function InvoiceNewPage(): React.JSX.Element {
     setRemarks((prev) => prev || `Against dispatch ${fromDispatch.code}`);
   }, [fromDispatch]);
 
+  const lines: InvoiceableLine[] = inv?.lines ?? [];
+
+  // One-time prefill of the line cards from the source dispatch (Create Invoice
+  // from the Dispatch Register). Manual SO selection leaves cards empty.
   useEffect(() => {
-    if (!inv) return;
-    // Qty per dispatch line when invoicing a dispatch (clamped to available);
-    // otherwise default every line to its full available qty.
+    if (prefilled.current) return;
+    if (!inv || !fromDispatch || fromDispatch.status === 'cancelled') return;
+    if (fromDispatch.salesOrderId !== inv.salesOrderId) return;
     const dispatchQty = new Map<string, number>();
-    if (fromDispatch && fromDispatch.status !== 'cancelled' && fromDispatch.salesOrderId === inv.salesOrderId) {
-      for (const dl of fromDispatch.lines) {
-        if (dl.salesOrderLineId) {
-          dispatchQty.set(dl.salesOrderLineId, (dispatchQty.get(dl.salesOrderLineId) ?? 0) + dl.qty);
-        }
+    for (const dl of fromDispatch.lines) {
+      if (dl.salesOrderLineId) {
+        dispatchQty.set(dl.salesOrderLineId, (dispatchQty.get(dl.salesOrderLineId) ?? 0) + dl.qty);
       }
     }
-    const q: Record<string, number> = {};
-    const r: Record<string, number> = {};
+    const built: LineCard[] = [];
     for (const l of inv.lines) {
-      q[l.salesOrderLineId] = dispatchQty.size
-        ? Math.min(dispatchQty.get(l.salesOrderLineId) ?? 0, l.availableQty)
-        : l.availableQty;
-      r[l.salesOrderLineId] = l.rate;
+      const dq = dispatchQty.get(l.salesOrderLineId) ?? 0;
+      if (dq > 0) {
+        built.push({
+          id: nextId.current++,
+          soLineId: l.salesOrderLineId,
+          qty: String(Math.min(dq, l.availableQty)),
+          rate: String(l.rate),
+        });
+      }
     }
-    setQtys(q);
-    setRates(r);
+    if (built.length > 0) {
+      setCards(built);
+      prefilled.current = true;
+    }
   }, [inv, fromDispatch]);
 
-  const lines = (inv?.lines ?? []).map((l) => ({
-    ...l,
-    qty: qtys[l.salesOrderLineId] ?? 0,
-    useRate: rates[l.salesOrderLineId] ?? l.rate,
-  }));
-  const subtotal = lines.reduce((s, l) => s + l.qty * l.useRate, 0);
-  const gstAmt = Math.round((subtotal * Number(gstPercent || 0)) / 100 * 100) / 100;
+  function resolveLine(soLineId: string | null): InvoiceableLine | null {
+    if (!soLineId) return null;
+    return lines.find((l) => l.salesOrderLineId === soLineId) ?? null;
+  }
+  function addLine(): void {
+    setCards((cs) => [...cs, { id: nextId.current++, soLineId: null, qty: '', rate: '' }]);
+  }
+  function removeLine(id: number): void {
+    setCards((cs) => cs.filter((c) => c.id !== id));
+  }
+  function patchLine(id: number, patch: Partial<LineCard>): void {
+    setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+  function onSoChange(v: string): void {
+    setSoId(v);
+    setCards([]);
+    setErr(null);
+    prefilled.current = true; // manual pick: don't run the dispatch prefill
+  }
+
+  // Live totals from the current cards (pre-save preview; server recomputes).
+  const subtotal = cards.reduce((s, c) => {
+    const l = resolveLine(c.soLineId);
+    if (!l) return s;
+    const qty = Math.max(0, Math.min(l.availableQty, Number(c.qty) || 0));
+    return s + qty * (Number(c.rate) || 0);
+  }, 0);
+  const gstAmt = Math.round(((subtotal * Number(gstPercent || 0)) / 100) * 100) / 100;
   const grand = subtotal + gstAmt;
 
   async function submit(): Promise<void> {
     setErr(null);
-    const payloadLines = lines
-      .filter((l) => l.qty > 0)
-      .map((l) => ({ salesOrderLineId: l.salesOrderLineId, qty: l.qty, rate: l.useRate }));
     if (!soId) return setErr('Select an SO');
+    if (cards.length === 0) return setErr('Add at least one line');
+    const byLine = new Map<string, { qty: number; rate: number }>();
+    for (const c of cards) {
+      const l = resolveLine(c.soLineId);
+      if (!l) return setErr('Pick an item on every line (or remove the empty line).');
+      const qty = Math.max(0, Math.min(l.availableQty, Number(c.qty) || 0));
+      if (qty <= 0) continue;
+      byLine.set(l.salesOrderLineId, { qty, rate: Number(c.rate) || 0 });
+    }
+    const payloadLines = [...byLine.entries()].map(([salesOrderLineId, v]) => ({
+      salesOrderLineId,
+      qty: v.qty,
+      rate: v.rate,
+    }));
     if (payloadLines.length === 0) return setErr('Enter an invoice qty on at least one line');
     try {
       const created = await create.mutateAsync({
@@ -123,14 +178,10 @@ function InvoiceNewPage(): React.JSX.Element {
                 marginBottom: 12,
               }}
             >
-              🚚 Invoicing dispatch{' '}
-              <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and line qtys
-              prefilled from this dispatch (editable below).
+              🚚 Invoicing dispatch <b style={{ color: 'var(--cyan)' }}>{fromDispatch.code}</b> — SO and
+              line qtys prefilled from this dispatch (editable below).
             </div>
           ) : null}
-          {/* Field order mirrors legacy _createInvoice L21160-21167. Legacy's
-              leading "Invoice No." field is not ported: the code is
-              server-generated (nextInvoiceCode) and has no value before save. */}
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Invoice Date</label>
@@ -138,7 +189,7 @@ function InvoiceNewPage(): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label">Select SO<span className="req">★</span></label>
-              <select className="innovic-select" value={soId} onChange={(e) => setSoId(e.target.value)}>
+              <select className="innovic-select" value={soId} onChange={(e) => onSoChange(e.target.value)}>
                 <option value="">-- Select SO --</option>
                 {(soOpts?.options ?? []).map((o) => (
                   <option key={o.salesOrderId} value={o.salesOrderId}>
@@ -165,77 +216,136 @@ function InvoiceNewPage(): React.JSX.Element {
             </div>
           </div>
 
-          {inv ? (
+          {soId ? (
             <div style={{ marginTop: 14 }}>
               <div className="cyan fw-700" style={{ fontSize: 11, marginBottom: 6 }}>
                 ▸ ITEMS AVAILABLE TO INVOICE
               </div>
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Name</th>
-                    <th className="td-ctr">Order</th>
-                    <th className="td-ctr green">Dispatched</th>
-                    <th className="td-ctr">Invoiced</th>
-                    <th className="td-ctr amber">Available</th>
-                    <th className="td-ctr green">Invoice Qty</th>
-                    <th className="td-ctr">Rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inv.lines.length === 0 ? (
-                    <tr><td colSpan={8} className="empty-state">No lines</td></tr>
-                  ) : (
-                    inv.lines.map((l) => (
-                      <tr key={l.salesOrderLineId}>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>{l.itemCode ?? '—'}</td>
-                        <td style={{ fontSize: 11 }}>{l.itemName}</td>
-                        <td className="td-ctr mono">{l.orderQty}</td>
-                        <td className="td-ctr mono green">{l.dispatchedQty}</td>
-                        <td className="td-ctr mono text3">{l.invoicedQty}</td>
-                        <td className="td-ctr mono fw-700 amber">{l.availableQty}</td>
-                        <td className="td-ctr">
-                          <input
-                            type="number"
-                            className="innovic-input fw-700 green"
-                            min={0}
-                            max={l.availableQty}
-                            value={qtys[l.salesOrderLineId] ?? 0}
-                            disabled={l.availableQty <= 0}
-                            onChange={(e) =>
-                              setQtys((q) => ({
-                                ...q,
-                                [l.salesOrderLineId]: Math.max(0, Math.min(l.availableQty, Number(e.target.value) || 0)),
-                              }))
-                            }
-                            style={{ width: 70, textAlign: 'center' }}
-                          />
-                        </td>
-                        <td className="td-ctr">
-                          <input
-                            type="number"
-                            className="innovic-input"
-                            min={0}
-                            step="0.01"
-                            value={rates[l.salesOrderLineId] ?? 0}
-                            onChange={(e) =>
-                              setRates((r) => ({ ...r, [l.salesOrderLineId]: Number(e.target.value) || 0 }))
-                            }
-                            style={{ width: 90, textAlign: 'right' }}
-                          />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              {/* Pre-save preview only. Legacy's modal shows no totals (it sums
-                  inside the save callback, L21182-21195) — kept because users
-                  rely on it. These are sums over unsaved form input; no server
-                  figure exists before POST, and the server recomputes subtotal /
-                  GST / grand itself (service.ts L305-307). Nothing here is sent. */}
-              <div style={{ display: 'flex', gap: 20, justifyContent: 'flex-end', marginTop: 10, fontSize: 13 }}>
+              <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+                Add a line, then pick an item code — name and quantities auto-fill from this SO.
+              </div>
+
+              {cards.length > 0 ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: GRID,
+                    gap: 8,
+                    padding: '0 10px 4px',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: 0.4,
+                    color: 'var(--text3)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <span>#</span>
+                  <span>Item Code ★</span>
+                  <span>Item Name</span>
+                  <span style={{ textAlign: 'center' }}>Order</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatched</span>
+                  <span style={{ textAlign: 'center' }}>Invoiced</span>
+                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Invoice Qty</span>
+                  <span style={{ textAlign: 'center' }}>Rate</span>
+                  <span />
+                </div>
+              ) : null}
+
+              {cards.map((card, idx) => {
+                const line = resolveLine(card.soLineId);
+                const usedElsewhere = new Set(
+                  cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
+                );
+                const opts = lines
+                  .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
+                  .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
+                return (
+                  <div
+                    key={card.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: GRID,
+                      gap: 8,
+                      alignItems: 'center',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 10,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
+                      {idx + 1}
+                    </span>
+                    <SearchableSelect
+                      value={card.soLineId}
+                      onChange={(id) => {
+                        const l = id ? lines.find((x) => x.salesOrderLineId === id) : null;
+                        patchLine(card.id, { soLineId: id, ...(l ? { rate: String(l.rate) } : {}) });
+                      }}
+                      onSearch={() => {}}
+                      options={opts}
+                      placeholder="🔍 code or name…"
+                      emptyText="No items to invoice"
+                      valueLabel={
+                        line ? (line.itemCode ? `${line.itemCode} — ${line.itemName}` : line.itemName) : undefined
+                      }
+                    />
+                    <input
+                      className="innovic-input"
+                      readOnly
+                      placeholder="auto-filled"
+                      value={line?.itemName ?? ''}
+                      style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+                    />
+                    <span className="mono" style={{ textAlign: 'center' }}>{line ? line.orderQty : '—'}</span>
+                    <span className="mono green" style={{ textAlign: 'center' }}>{line ? line.dispatchedQty : '—'}</span>
+                    <span className="mono text3" style={{ textAlign: 'center' }}>{line ? line.invoicedQty : '—'}</span>
+                    <span className="mono fw-700 amber" style={{ textAlign: 'center' }}>{line ? line.availableQty : '—'}</span>
+                    <input
+                      type="number"
+                      className="innovic-input fw-700 green"
+                      min={0}
+                      max={line?.availableQty ?? undefined}
+                      value={card.qty}
+                      disabled={!line || line.availableQty <= 0}
+                      onChange={(e) => patchLine(card.id, { qty: e.target.value })}
+                      onBlur={(e) => {
+                        if (!line) return;
+                        const clamped = Math.max(0, Math.min(line.availableQty, Number(e.target.value) || 0));
+                        patchLine(card.id, { qty: e.target.value.trim() === '' ? '' : String(clamped) });
+                      }}
+                      style={{ textAlign: 'center' }}
+                    />
+                    <input
+                      type="number"
+                      className="innovic-input"
+                      min={0}
+                      step="0.01"
+                      value={card.rate}
+                      disabled={!line}
+                      onChange={(e) => patchLine(card.id, { rate: e.target.value })}
+                      style={{ textAlign: 'right' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      title="Remove line"
+                      onClick={() => removeLine(card.id)}
+                      style={{ color: 'var(--red)', padding: 4 }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine} style={{ marginTop: 4 }}>
+                <Plus size={14} /> Add Line
+              </button>
+
+              <div style={{ display: 'flex', gap: 20, justifyContent: 'flex-end', marginTop: 12, fontSize: 13 }}>
                 <span className="text3">Subtotal: <b className="mono fw-700 text2">₹{inrFormat(subtotal)}</b></span>
                 <span className="text3">GST: <b className="mono fw-700 amber">₹{inrFormat(gstAmt)}</b></span>
                 <span className="text3">Total: <b className="mono fw-700 green">₹{inrFormat(grand)}</b></span>
@@ -245,9 +355,6 @@ function InvoiceNewPage(): React.JSX.Element {
 
           {err ? <div className="form-error" style={{ marginTop: 10 }}>{err}</div> : null}
 
-          {/* Footer per the actual call site: _createInvoice L21170-21206 calls
-              showModalLg with an explicit saveLabel 'Create Invoice', which
-              L28044 renders as `✓ Create Invoice` on .btn-success. */}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/invoices' })}>Cancel</button>
             <button type="button" className="btn btn-success" disabled={create.isPending} onClick={() => void submit()}>
