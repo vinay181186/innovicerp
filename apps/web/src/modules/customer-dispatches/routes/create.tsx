@@ -7,6 +7,7 @@ import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions } from '../api';
 
@@ -22,7 +23,7 @@ function todayStr(): string {
 
 interface LineCard {
   id: number;
-  code: string;
+  soLineId: string | null;
   qty: string;
 }
 
@@ -53,15 +54,14 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   const lines: DispatchableLine[] = dispatchable?.lines ?? [];
 
-  // Resolve a typed item code to its dispatchable SO line (case-insensitive).
-  function resolveLine(code: string): DispatchableLine | null {
-    const c = code.trim().toLowerCase();
-    if (!c) return null;
-    return lines.find((l) => (l.itemCode ?? '').toLowerCase() === c) ?? null;
+  // Resolve a card's picked SO-line id to its dispatchable line.
+  function resolveLine(soLineId: string | null): DispatchableLine | null {
+    if (!soLineId) return null;
+    return lines.find((l) => l.salesOrderLineId === soLineId) ?? null;
   }
 
   function addLine(): void {
-    setCards((cs) => [...cs, { id: nextId.current++, code: '', qty: '' }]);
+    setCards((cs) => [...cs, { id: nextId.current++, soLineId: null, qty: '' }]);
   }
   function removeLine(id: number): void {
     setCards((cs) => cs.filter((c) => c.id !== id));
@@ -78,8 +78,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     // Resolve each card → SO line, clamp qty to available, merge duplicates.
     const byLine = new Map<string, number>();
     for (const c of cards) {
-      const line = resolveLine(c.code);
-      if (!line) return setErr(`Item code "${c.code || '(blank)'}" is not ready to dispatch on this SO`);
+      const line = resolveLine(c.soLineId);
+      if (!line) return setErr('Pick an item on every line (or remove the empty line).');
       const raw = Number(c.qty) || 0;
       const qty = Math.max(0, Math.min(line.availableQty, raw));
       if (qty <= 0) continue;
@@ -155,15 +155,6 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 Add a line, then type an item code — name and quantities auto-fill from this SO.
               </div>
 
-              {/* Shared datalist of this SO's dispatchable item codes. */}
-              <datalist id="dispatch-item-codes">
-                {lines.map((l) => (
-                  <option key={l.salesOrderLineId} value={l.itemCode ?? ''}>
-                    {l.itemName}
-                  </option>
-                ))}
-              </datalist>
-
               {cards.length > 0 ? (
                 <div
                   style={{
@@ -191,8 +182,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               ) : null}
 
               {cards.map((card, idx) => {
-                const line = resolveLine(card.code);
-                const codeKnown = card.code.trim() !== '';
+                const line = resolveLine(card.soLineId);
+                // Options = this SO's dispatchable lines, minus ones already
+                // picked on other cards (can't dispatch the same line twice).
+                const usedElsewhere = new Set(
+                  cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
+                );
+                const opts = lines
+                  .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
+                  .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
                 return (
                   <div
                     key={card.id}
@@ -211,18 +209,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                     <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
                       {idx + 1}
                     </span>
-                    <input
-                      className="innovic-input"
-                      list="dispatch-item-codes"
-                      placeholder="Code"
-                      autoComplete="off"
-                      value={card.code}
-                      onChange={(e) => patchLine(card.id, { code: e.target.value })}
-                      style={{
-                        fontFamily: 'var(--mono)',
-                        color: 'var(--purple)',
-                        borderColor: codeKnown && !line ? 'var(--red)' : undefined,
-                      }}
+                    <SearchableSelect
+                      value={card.soLineId}
+                      onChange={(id) => patchLine(card.id, { soLineId: id })}
+                      onSearch={() => {}}
+                      options={opts}
+                      placeholder="🔍 code…"
+                      emptyText="No ready items"
+                      selectedLabel={(o) => o.code ?? o.name}
+                      valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
                     />
                     <input
                       className="innovic-input"
