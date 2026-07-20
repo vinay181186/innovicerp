@@ -863,6 +863,21 @@ export async function createPurchaseOrderFromPr(
       })
       .where(eq(purchaseRequests.id, pr.id));
 
+    // Advance the linked outsource jc_op so the DC→receive cascade can complete
+    // it. Without this, an OSP PR converted here leaves the op stuck at
+    // 'pr_raised' with a null outsource_po_line_id (mirrors osp-cascade's
+    // auto-PO path, which already does this).
+    if (pr.sourceJcOpId) {
+      await tx
+        .update(jcOps)
+        .set({
+          outsourcePoLineId: insertedLines[0]!.id,
+          outsourceStatus: 'po_created',
+          updatedBy: user.id,
+        })
+        .where(eq(jcOps.id, pr.sourceJcOpId));
+    }
+
     // Audit: emit two rows in the same tx — one for the new PO (CREATE),
     // one for the PR (PR_CONVERT, status flip from this side). Keeps both
     // entities' audit trails complete from their own refId perspective.
@@ -1278,8 +1293,10 @@ export async function createPurchaseOrderFromPrBatch(
     }));
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
 
-    // Stamp every PR.
-    for (const pr of sortedPrs) {
+    // Stamp every PR + advance its linked outsource jc_op. lineRows/insertedLines
+    // are built in sortedPrs order, so insertedLines[i] is pr[i]'s PO line.
+    for (let i = 0; i < sortedPrs.length; i++) {
+      const pr = sortedPrs[i]!;
       await tx
         .update(purchaseRequests)
         .set({
@@ -1291,6 +1308,17 @@ export async function createPurchaseOrderFromPrBatch(
           updatedBy: user.id,
         })
         .where(eq(purchaseRequests.id, pr.id));
+
+      if (pr.sourceJcOpId) {
+        await tx
+          .update(jcOps)
+          .set({
+            outsourcePoLineId: insertedLines[i]!.id,
+            outsourceStatus: 'po_created',
+            updatedBy: user.id,
+          })
+          .where(eq(jcOps.id, pr.sourceJcOpId));
+      }
     }
 
     // Audit: one PO CREATE + one PR_CONVERT per PR.

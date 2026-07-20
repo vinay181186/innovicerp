@@ -5,6 +5,8 @@ import {
   activityLog,
   approvalConfig,
   items,
+  jcOps,
+  jobCards,
   purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
@@ -63,6 +65,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Test job cards + their ops first — the ops carry outsource_pr_id /
+  // outsource_po_line_id links, so drop them before the PR/PO rows.
+  const testJcs = await db
+    .select({ id: jobCards.id })
+    .from(jobCards)
+    .where(like(jobCards.code, `${TEST_PREFIX}%`));
+  for (const jc of testJcs) {
+    await db.delete(jcOps).where(eq(jcOps.jobCardId, jc.id));
+  }
+  await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
+
   // Cleanup: lines first (FK), then PRs that point at our test POs, then POs.
   const testHeaders = await db
     .select({ id: purchaseOrders.id })
@@ -393,6 +406,82 @@ describe('purchase-orders service', () => {
     expect(updated.poId).toBe(detail.id);
     expect(updated.status).toBe('po_created');
     expect(updated.poCreatedAt).not.toBeNull();
+  });
+
+  it('createPurchaseOrderFromPr advances the linked outsource jc_op (po line + po_created)', async () => {
+    // JC + one outsource op to link the PR to.
+    const jc = (
+      await db
+        .insert(jobCards)
+        .values({
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}JC-OSP`,
+          jcDate: '2026-05-03',
+          itemId: firstItemId,
+          orderQty: 5,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+    const op = (
+      await db
+        .insert(jcOps)
+        .values({
+          companyId: admin.companyId!,
+          jobCardId: jc.id,
+          opSeq: 1,
+          operation: 'anodize',
+          opType: 'outsource',
+          outsourceStatus: 'pr_raised',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+
+    const pr = (
+      await db
+        .insert(purchaseRequests)
+        .values({
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}PR-OSP`,
+          prDate: '2026-05-03',
+          status: 'open',
+          prType: 'jw_osp',
+          vendorId: firstVendorId,
+          itemId: firstItemId,
+          itemName: 'OSP Item',
+          qty: 5,
+          estCost: '0',
+          sourceJcOpId: op.id,
+          operation: 'anodize',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+
+    const detail = await service.createPurchaseOrderFromPr(
+      {
+        prId: pr.id,
+        header: {
+          code: `${TEST_PREFIX}FROM-PR-OSP`,
+          poDate: '2026-05-03',
+          poType: 'job_work',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+      },
+      admin,
+    );
+
+    // The op must now point at the new PO line and read po_created — else the
+    // DC→receive cascade can never complete the outsource.
+    const opAfter = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)).limit(1))[0]!;
+    expect(opAfter.outsourceStatus).toBe('po_created');
+    expect(opAfter.outsourcePoLineId).toBe(detail.lines[0]!.id);
   });
 
   it('createPurchaseOrderFromPr blocks when PR already converted (status=po_created)', async () => {
