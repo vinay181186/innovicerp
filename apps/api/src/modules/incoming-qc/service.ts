@@ -14,8 +14,8 @@ import type {
   IncomingQcResponse,
   SubmitIncomingQcInput,
 } from '@innovic/shared';
-import { goodsReceiptNoteLines, purchaseOrderLines } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { goodsReceiptNoteLines, jcOps, purchaseOrderLines } from '../../db/schema';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -39,6 +39,47 @@ function dispositionOf(accepted: number, rejected: number): IncomingQcCompletedR
   if (accepted > 0 && rejected > 0) return 'Partial Accept';
   if (rejected > 0) return 'Rejected';
   return 'Accepted';
+}
+
+/**
+ * Step-6 completion for OSP: push the newly QC-accepted qty back onto the
+ * outsource jc_op this GRN line came from (via its PO line's source_jc_op_id),
+ * so the operation records how much genuinely returned. `outsource_returned_qty`
+ * is what customer-dispatch readiness reads, so this is what makes a partial
+ * outsource return dispatchable. No-op unless the op is an outsource op and a
+ * positive qty was accepted. Runs in the caller's tx.
+ */
+async function creditOutsourceReturn(
+  tx: DbTransaction,
+  jcOpId: string | null,
+  acceptedDelta: number,
+  userId: string,
+): Promise<void> {
+  if (!jcOpId || acceptedDelta <= 0) return;
+  const opRows = await tx
+    .select({
+      id: jcOps.id,
+      opType: jcOps.opType,
+      sentQty: jcOps.outsourceSentQty,
+      returnedQty: jcOps.outsourceReturnedQty,
+    })
+    .from(jcOps)
+    .where(and(eq(jcOps.id, jcOpId), isNull(jcOps.deletedAt)))
+    .limit(1);
+  const op = opRows[0];
+  if (!op || op.opType !== 'outsource') return;
+  const newReturned = (op.returnedQty ?? 0) + acceptedDelta;
+  const fullyReturned = op.sentQty > 0 && newReturned >= op.sentQty;
+  await tx
+    .update(jcOps)
+    .set({
+      outsourceReturnedQty: newReturned,
+      // Flip to 'received' once the whole sent qty is back; partials keep their
+      // current status (still 'sent'/'at_vendor') but now carry a return count.
+      ...(fullyReturned ? { outsourceStatus: 'received' as const } : {}),
+      updatedBy: userId,
+    })
+    .where(eq(jcOps.id, op.id));
 }
 
 export async function getIncomingQc(user: AuthContext): Promise<IncomingQcResponse> {
@@ -265,11 +306,19 @@ export async function submitIncomingQc(
     if (line.poLineId) {
       await recalcPoLineReceivedQty(tx, line.poLineId, user.id);
       const poRows = await tx
-        .select({ poId: purchaseOrderLines.purchaseOrderId })
+        .select({
+          poId: purchaseOrderLines.purchaseOrderId,
+          sourceJcOpId: purchaseOrderLines.sourceJcOpId,
+        })
         .from(purchaseOrderLines)
         .where(eq(purchaseOrderLines.id, line.poLineId))
         .limit(1);
-      if (poRows[0]) await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
+      if (poRows[0]) {
+        await recalcPoHeaderStatus(tx, poRows[0].poId, user.id);
+        // Step 6: record the accepted qty on the source outsource op so partial
+        // returns become visible to the JC (and dispatchable — see Change 2).
+        await creditOutsourceReturn(tx, poRows[0].sourceJcOpId, input.acceptedQty, user.id);
+      }
     }
 
     await emitActivityLog(

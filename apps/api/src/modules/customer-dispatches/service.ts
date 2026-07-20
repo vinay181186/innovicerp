@@ -109,12 +109,16 @@ async function loadDispatchable(
           SELECT DISTINCT ON (jc.id)
             CASE
               WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
-              WHEN vs.op_type = 'outsource' AND vs.computed_status = 'complete' THEN vs.input_avail
-              WHEN vs.op_type = 'outsource' THEN 0
+              -- Outsource final op: dispatch up to the qty that actually came
+              -- back and passed Incoming QC (outsource_returned_qty), so partial
+              -- vendor returns are dispatchable instead of all-or-nothing.
+              WHEN vs.op_type = 'outsource' THEN COALESCE(jo.outsource_returned_qty, 0)
               ELSE vs.completed_qty
             END AS eff
           FROM job_cards jc
           JOIN v_jc_op_status vs ON vs.job_card_id = jc.id
+          LEFT JOIN jc_ops jo
+            ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
           WHERE jc.source_so_line_id = sol.id AND jc.deleted_at IS NULL
           ORDER BY jc.id, vs.op_seq DESC
         ) x
