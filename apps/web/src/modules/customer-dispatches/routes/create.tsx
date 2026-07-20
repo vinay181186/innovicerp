@@ -27,7 +27,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const [transport, setTransport] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [qtys, setQtys] = useState<Record<string, number>>({});
+  // Raw text per line so the field can be freely typed/cleared; clamped to the
+  // line's availableQty only on submit (per-keystroke clamping froze the input
+  // when it was pre-filled at the max).
+  const [qtys, setQtys] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
   const { data: dispatchable } = useDispatchableSo(soId || undefined);
@@ -35,15 +38,19 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   // Default each line's qty to its full available qty when an SO loads.
   useEffect(() => {
     if (!dispatchable) return;
-    const next: Record<string, number> = {};
-    for (const l of dispatchable.lines) next[l.salesOrderLineId] = l.availableQty;
+    const next: Record<string, string> = {};
+    for (const l of dispatchable.lines) next[l.salesOrderLineId] = String(l.availableQty);
     setQtys(next);
   }, [dispatchable]);
 
   async function submit(): Promise<void> {
     setErr(null);
     const lines = (dispatchable?.lines ?? [])
-      .map((l) => ({ salesOrderLineId: l.salesOrderLineId, qty: qtys[l.salesOrderLineId] ?? 0 }))
+      .map((l) => {
+        const raw = Number(qtys[l.salesOrderLineId]) || 0;
+        const qty = Math.max(0, Math.min(l.availableQty, raw));
+        return { salesOrderLineId: l.salesOrderLineId, qty };
+      })
       .filter((l) => l.qty > 0);
     if (!soId) return setErr('Select an SO');
     if (lines.length === 0) return setErr('Enter a dispatch qty on at least one line');
@@ -119,7 +126,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               <table className="innovic-table">
                 <thead>
                   <tr>
-                    <th>Item</th>
+                    <th>Item Code</th>
                     <th>Name</th>
                     <th className="td-ctr">Order</th>
                     <th className="td-ctr" style={{ color: 'var(--green)' }}>Ready</th>
@@ -148,17 +155,18 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                             className="innovic-input"
                             min={0}
                             max={l.availableQty}
-                            value={qtys[l.salesOrderLineId] ?? 0}
+                            value={qtys[l.salesOrderLineId] ?? ''}
                             disabled={l.availableQty <= 0}
                             onChange={(e) =>
-                              setQtys((q) => ({
-                                ...q,
-                                [l.salesOrderLineId]: Math.max(
-                                  0,
-                                  Math.min(l.availableQty, Number(e.target.value) || 0),
-                                ),
-                              }))
+                              setQtys((q) => ({ ...q, [l.salesOrderLineId]: e.target.value }))
                             }
+                            onBlur={(e) => {
+                              const clamped = Math.max(
+                                0,
+                                Math.min(l.availableQty, Number(e.target.value) || 0),
+                              );
+                              setQtys((q) => ({ ...q, [l.salesOrderLineId]: String(clamped) }));
+                            }}
                             style={{ width: 80, textAlign: 'center' }}
                           />
                         </td>
