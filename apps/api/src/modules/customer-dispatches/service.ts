@@ -110,9 +110,16 @@ async function loadDispatchable(
             CASE
               WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
               -- Outsource final op: dispatch up to the qty that actually came
-              -- back and passed Incoming QC (outsource_returned_qty), so partial
+              -- back and passed Incoming QC. Derived straight from the GRN lines
+              -- against this op's PO line (self-healing — works for returns QC'd
+              -- before outsource_returned_qty tracking existed), so partial
               -- vendor returns are dispatchable instead of all-or-nothing.
-              WHEN vs.op_type = 'outsource' THEN COALESCE(jo.outsource_returned_qty, 0)
+              WHEN vs.op_type = 'outsource' THEN COALESCE((
+                SELECT SUM(grl.qc_accepted_qty)
+                FROM goods_receipt_note_lines grl
+                WHERE grl.purchase_order_line_id = jo.outsource_po_line_id
+                  AND grl.deleted_at IS NULL
+              ), 0)
               ELSE vs.completed_qty
             END AS eff
           FROM job_cards jc
