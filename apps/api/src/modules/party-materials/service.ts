@@ -99,7 +99,8 @@ export async function listPartyMaterials(
         pm.updated_at AS "updatedAt", pm.updated_by AS "updatedBy",
         pm.deleted_at AS "deletedAt",
         c.name AS "clientName",
-        i.code AS "itemCode"
+        i.code AS "itemCode",
+        i.name AS "itemName"
       FROM public.party_materials pm
       LEFT JOIN public.clients c ON c.id = pm.client_id AND c.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = pm.item_id AND i.deleted_at IS NULL
@@ -146,15 +147,24 @@ function toListItem(r: Record<string, unknown>): PartyMaterialListItem {
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
     clientName: (r['clientName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemName: (r['itemName'] as string | null) ?? null,
   };
 }
 
 export async function getPartyMaterial(id: string, user: AuthContext): Promise<PartyMaterial> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // LEFT JOIN items to resolve itemCode/itemName from the FK (item_id), the
+    // same join listPartyMaterials uses. item_code_text is nullable, so a row
+    // linked only by item_id would otherwise show a blank item code in detail.
     const rows = await tx
-      .select()
+      .select({
+        pm: partyMaterials,
+        itemCode: items.code,
+        itemName: items.name,
+      })
       .from(partyMaterials)
+      .leftJoin(items, and(eq(items.id, partyMaterials.itemId), isNull(items.deletedAt)))
       .where(
         and(
           eq(partyMaterials.id, id),
@@ -165,7 +175,7 @@ export async function getPartyMaterial(id: string, user: AuthContext): Promise<P
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError(`Party material ${id} not found`);
-    return rowToPartyMaterial(row);
+    return rowToPartyMaterial(row.pm, { itemCode: row.itemCode, itemName: row.itemName });
   });
 }
 
@@ -361,7 +371,13 @@ export async function softDeletePartyMaterial(id: string, user: AuthContext): Pr
   });
 }
 
-function rowToPartyMaterial(row: typeof partyMaterials.$inferSelect): PartyMaterial {
+function rowToPartyMaterial(
+  row: typeof partyMaterials.$inferSelect,
+  joined: { itemCode: string | null; itemName: string | null } = {
+    itemCode: null,
+    itemName: null,
+  },
+): PartyMaterial {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -374,6 +390,8 @@ function rowToPartyMaterial(row: typeof partyMaterials.$inferSelect): PartyMater
     clientCodeText: row.clientCodeText,
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
+    itemCode: joined.itemCode,
+    itemName: joined.itemName,
     stockQty: row.stockQty,
     issuedQty: row.issuedQty,
     receivedQty: row.receivedQty,

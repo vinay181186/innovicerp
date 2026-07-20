@@ -148,7 +148,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
               className="panel-title"
               style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
             >
-              {detail.itemNameText ?? detail.itemCodeText ?? 'Untitled item'}
+              {detail.itemName ??
+                detail.itemNameText ??
+                detail.itemCode ??
+                detail.itemCodeText ??
+                'Untitled item'}
               <NcStatusBadge status={detail.status} />
               {detail.linkedCapaCode ? (
                 <Link
@@ -412,7 +416,8 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
       </div>
       <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
         <InlinePair label="Item:">
-          {detail.itemCodeText} — {detail.itemNameText ?? ''}
+          {detail.itemCode ?? detail.itemCodeText ?? '—'} —{' '}
+          {detail.itemName ?? detail.itemNameText ?? ''}
         </InlinePair>
         <InlinePair label="Operation:">
           {detail.opSeq != null ? `Op${detail.opSeq}` : ''}

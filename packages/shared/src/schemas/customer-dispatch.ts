@@ -48,7 +48,8 @@ export const customerDispatchLineRowSchema = z.object({
   id: z.string().uuid(),
   lineNo: z.number().int(),
   salesOrderLineId: z.string().uuid().nullable(),
-  itemCode: z.string().nullable(),
+  itemCode: z.string().nullable(), // resolved from items master (items.code)
+  itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   qty: z.number().int(),
 });
@@ -91,7 +92,8 @@ export const customerDispatchRegisterRowSchema = z.object({
   jcNo: z.string().nullable(), // codes of the JC(s) feeding the SO line
   soNo: z.string().nullable(),
   clientPoLineNo: z.string().nullable(),
-  itemCode: z.string().nullable(),
+  itemCode: z.string().nullable(), // resolved from items master (items.code)
+  itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   qty: z.number().int(),
   uom: z.string().nullable(),

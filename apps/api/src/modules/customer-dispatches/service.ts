@@ -18,6 +18,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   customerDispatchLines,
   customerDispatches,
+  items,
   salesOrderLines,
   salesOrders,
   storeTransactions,
@@ -274,6 +275,7 @@ type RegisterRow = {
   so_no: string | null;
   client_po_line_no: string | null;
   item_code: string | null;
+  item_code_text: string | null;
   item_name: string;
   qty: number;
   uom: string | null;
@@ -299,7 +301,8 @@ export async function listDispatchRegister(
       SELECT h.id AS dispatch_id, h.code AS dispatch_code, h.status,
         h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
         h.customer_text AS customer, h.remarks,
-        l.item_code_text AS item_code, l.item_name, l.qty,
+        i.code AS item_code, l.item_code_text AS item_code_text,
+        l.item_name, l.qty,
         sol.client_po_line_no, sol.uom::text AS uom,
         u.full_name AS dispatched_by,
         st.stock_before, st.stock_after,
@@ -307,6 +310,7 @@ export async function listDispatchRegister(
         jcs.jc_codes AS jc_no
       FROM customer_dispatch_lines l
       JOIN customer_dispatches h ON h.id = l.customer_dispatch_id
+      LEFT JOIN public.items i ON i.id = l.item_id AND i.deleted_at IS NULL
       LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
       LEFT JOIN public.users u ON u.id = h.created_by
       LEFT JOIN store_transactions st ON st.company_id = h.company_id
@@ -333,6 +337,7 @@ export async function listDispatchRegister(
         soNo: r.so_no,
         clientPoLineNo: r.client_po_line_no,
         itemCode: r.item_code,
+        itemCodeText: r.item_code_text,
         itemName: r.item_name,
         qty: Math.round(n(r.qty)),
         uom: r.uom,
@@ -367,8 +372,20 @@ async function getDispatchInternal(
   if (!h) throw new NotFoundError(`Dispatch ${id} not found`);
 
   const lineRows = await tx
-    .select()
+    .select({
+      id: customerDispatchLines.id,
+      lineNo: customerDispatchLines.lineNo,
+      salesOrderLineId: customerDispatchLines.salesOrderLineId,
+      itemCode: items.code,
+      itemCodeText: customerDispatchLines.itemCodeText,
+      itemName: customerDispatchLines.itemName,
+      qty: customerDispatchLines.qty,
+    })
     .from(customerDispatchLines)
+    .leftJoin(
+      items,
+      and(eq(items.id, customerDispatchLines.itemId), isNull(items.deletedAt)),
+    )
     .where(
       and(
         eq(customerDispatchLines.customerDispatchId, id),
@@ -381,7 +398,8 @@ async function getDispatchInternal(
     id: l.id,
     lineNo: l.lineNo,
     salesOrderLineId: l.salesOrderLineId,
-    itemCode: l.itemCodeText,
+    itemCode: l.itemCode,
+    itemCodeText: l.itemCodeText,
     itemName: l.itemName,
     qty: l.qty,
   }));

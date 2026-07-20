@@ -45,6 +45,11 @@ export const deliveryChallanLineSchema = z.object({
   deliveryChallanId: z.string().uuid(),
   lineNo: z.number().int().positive(),
   itemId: z.string().uuid().nullable(),
+  // Live items-master code/name resolved via LEFT JOIN on itemId (null when the
+  // line has no FK or the item was deleted); itemCodeText/itemNameText remain the
+  // issue-time snapshot fallback.
+  itemCode: z.string().nullable(),
+  itemName: z.string().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   qty: z.string(),

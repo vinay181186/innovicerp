@@ -788,8 +788,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
       setLines(
         detail.lines.map((l) => ({
           outwardLineId: l.id,
-          itemCode: l.itemCodeText,
-          itemName: l.itemNameText ?? '',
+          itemCode: l.itemCode ?? l.itemCodeText,
+          itemName: l.itemName ?? l.itemNameText ?? '',
           processText: l.processText,
           sentQty: l.sentQty,
           alreadyReturned: l.alreadyReturned,

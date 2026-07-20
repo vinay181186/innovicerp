@@ -143,6 +143,8 @@ function maybeDateLike(v: unknown): string | null {
 function toNcRegister(
   row: typeof ncRegister.$inferSelect,
   linkedCapaCode: string | null = null,
+  itemCode: string | null = null,
+  itemName: string | null = null,
 ): NcRegister {
   return {
     id: row.id,
@@ -157,6 +159,9 @@ function toNcRegister(
     itemId: row.itemId,
     itemCodeText: row.itemCodeText,
     itemNameText: row.itemNameText,
+    // Live values resolved from the items master (LEFT JOIN in getNcRegister).
+    itemCode,
+    itemName,
     soCodeText: row.soCodeText,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
@@ -348,8 +353,15 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
-      .select()
+      .select({
+        nc: ncRegister,
+        itemCode: items.code,
+        itemName: items.name,
+      })
       .from(ncRegister)
+      // Resolve item code/name from the live items master, not the stale
+      // *Text snapshot columns. Mirrors the LIST reader's join (and GRN detail).
+      .leftJoin(items, and(eq(items.id, ncRegister.itemId), isNull(items.deletedAt)))
       .where(
         and(
           eq(ncRegister.id, id),
@@ -358,10 +370,11 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
         ),
       )
       .limit(1);
-    const row = rows[0];
-    if (!row) throw new NotFoundError(`NC ${id} not found`);
+    const found = rows[0];
+    if (!found) throw new NotFoundError(`NC ${id} not found`);
+    const row = found.nc;
     const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
-    return toNcRegister(row, linkedCapaCode);
+    return toNcRegister(row, linkedCapaCode, found.itemCode, found.itemName);
   });
 }
 

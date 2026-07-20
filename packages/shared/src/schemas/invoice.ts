@@ -58,7 +58,10 @@ export type AddPaymentInput = z.infer<typeof addPaymentInputSchema>;
 export const invoiceLineRowSchema = z.object({
   id: z.string().uuid(),
   lineNo: z.number().int(),
+  // Resolved from the live items master (LEFT JOIN); null when unlinked/deleted.
   itemCode: z.string().nullable(),
+  // Stored snapshot fallback captured at invoice creation.
+  itemCodeText: z.string().nullable(),
   itemName: z.string(),
   qty: z.number().int(),
   rate: z.number().nonnegative(),

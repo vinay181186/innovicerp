@@ -269,6 +269,8 @@ export async function getJwDcOutwardDetail(
         jdol.line_no AS "lineNo",
         jdol.purchase_order_line_id AS "purchaseOrderLineId",
         jdol.item_id AS "itemId",
+        i.code AS "itemCode",
+        i.name AS "itemName",
         jdol.item_code_text AS "itemCodeText",
         jdol.item_name_text AS "itemNameText",
         jdol.process_text AS "processText",
@@ -280,6 +282,7 @@ export async function getJwDcOutwardDetail(
         jdol.deleted_at AS "deletedAt",
         COALESCE(ret.returned, 0)::int AS "alreadyReturned"
       FROM public.jw_dc_outward_lines jdol
+      LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT SUM(received_qty)::int AS returned
         FROM public.jw_dc_inward_lines jdil
@@ -302,6 +305,8 @@ export async function getJwDcOutwardDetail(
         lineNo: Number(r['lineNo']),
         purchaseOrderLineId: (r['purchaseOrderLineId'] as string | null) ?? null,
         itemId: (r['itemId'] as string | null) ?? null,
+        itemCode: (r['itemCode'] as string | null) ?? null,
+        itemName: (r['itemName'] as string | null) ?? null,
         itemCodeText: String(r['itemCodeText'] ?? ''),
         itemNameText: (r['itemNameText'] as string | null) ?? null,
         processText: (r['processText'] as string | null) ?? null,

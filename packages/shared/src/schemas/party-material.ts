@@ -26,6 +26,10 @@ export const partyMaterialSchema = z.object({
   clientCodeText: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
   itemCodeText: z.string().nullable(),
+  /** Joined item code (from items.code) — null when not linked to items master. */
+  itemCode: z.string().nullable(),
+  /** Joined item name (from items.name) — null when not linked to items master. */
+  itemName: z.string().nullable(),
   stockQty: z.number().int().nonnegative(),
   issuedQty: z.number().int().nonnegative(),
   receivedQty: z.number().int().nonnegative(),
@@ -40,8 +44,6 @@ export type PartyMaterial = z.infer<typeof partyMaterialSchema>;
 export const partyMaterialListItemSchema = partyMaterialSchema.extend({
   /** Joined client name (from clients.name) — falls back to client_code_text. */
   clientName: z.string().nullable(),
-  /** Joined item code (from items.code) — null when not linked to items master. */
-  itemCode: z.string().nullable(),
 });
 export type PartyMaterialListItem = z.infer<typeof partyMaterialListItemSchema>;
 

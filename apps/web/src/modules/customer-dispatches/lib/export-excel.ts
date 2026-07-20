@@ -32,7 +32,7 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.customer ?? '',
     r.jcNo ?? '',
     r.clientPoLineNo ?? '',
-    r.itemCode ?? '',
+    r.itemCode ?? r.itemCodeText ?? '',
     r.itemName,
     r.qty,
     r.uom ?? 'NOS',

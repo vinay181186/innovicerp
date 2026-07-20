@@ -596,6 +596,20 @@ function EditPartyMaterialModal({
         </Field>
 
         <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Linked Item (from Item Master)">
+            <input
+              type="text"
+              className="innovic-input"
+              value={`${row.itemCode ?? row.itemCodeText ?? '—'}${
+                row.itemName ? ` — ${row.itemName}` : ''
+              }`}
+              readOnly
+              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+            />
+          </Field>
+        </div>
+
+        <div style={{ gridColumn: 'span 2' }}>
           <Field label="Material Name ★">
             <input
               type="text"

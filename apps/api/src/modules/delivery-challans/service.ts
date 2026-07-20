@@ -252,8 +252,16 @@ async function loadDeliveryChallanWithLines(
   if (!headerRow) throw new NotFoundError(`Delivery challan ${id} not found`);
 
   const lineRows = await tx
-    .select()
+    .select({
+      line: deliveryChallanLines,
+      // Live items-master snapshot for each line's item_id (ADR-012 #10):
+      // the DC stores itemCodeText/itemNameText at issue time, but the detail
+      // page should show the current master code/name when the FK is set.
+      itemCode: items.code,
+      itemName: items.name,
+    })
     .from(deliveryChallanLines)
+    .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))
     .where(
       and(
         eq(deliveryChallanLines.deliveryChallanId, id),
@@ -349,12 +357,14 @@ async function loadDeliveryChallanWithLines(
     vendorName: (headerRow['vendorName'] as string | null) ?? null,
     poCode: (headerRow['poCode'] as string | null) ?? null,
     soCode: (headerRow['soCode'] as string | null) ?? null,
-    lines: lineRows.map((l) => ({
+    lines: lineRows.map(({ line: l, itemCode, itemName }) => ({
       id: l.id,
       companyId: l.companyId,
       deliveryChallanId: l.deliveryChallanId,
       lineNo: l.lineNo,
       itemId: l.itemId,
+      itemCode: itemCode ?? null,
+      itemName: itemName ?? null,
       itemCodeText: l.itemCodeText,
       itemNameText: l.itemNameText,
       qty: l.qty,

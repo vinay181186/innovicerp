@@ -15,7 +15,7 @@ export function printCustomerDispatchRegister(args: {
 }): boolean {
   const { rows, company } = args;
   const totalPcs = rows.reduce((s, r) => s + r.qty, 0);
-  const itemCount = new Set(rows.map((r) => r.itemCode ?? r.itemName)).size;
+  const itemCount = new Set(rows.map((r) => r.itemCode ?? r.itemCodeText ?? r.itemName)).size;
 
   const tableRows = rows
     .map(
@@ -23,7 +23,7 @@ export function printCustomerDispatchRegister(args: {
       <td>${esc(fmtDate(r.date))}</td>
       <td style="font-family:monospace;font-size:10px">${esc(r.soNo ?? '—')}</td>
       <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
-      <td style="color:#7c3aed;font-family:monospace">${esc(r.itemCode ?? '—')}</td>
+      <td style="color:#7c3aed;font-family:monospace">${esc(r.itemCode ?? r.itemCodeText ?? '—')}</td>
       <td>${esc(r.itemName)}</td>
       <td style="text-align:center;font-weight:700;color:#dc2626">${r.qty}</td>
       <td style="text-align:center">${esc(r.uom ?? 'NOS')}</td>

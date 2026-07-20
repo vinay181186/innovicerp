@@ -16,6 +16,11 @@ export const jwDcOutwardLineSchema = z.object({
   lineNo: z.number().int().positive(),
   purchaseOrderLineId: z.string().uuid().nullable(),
   itemId: z.string().uuid().nullable(),
+  // Live items-master values (LEFT JOIN items on item_id). Null when the line
+  // has no item_id or the item was deleted. Prefer these over the *_text
+  // snapshots, which can drift from the master.
+  itemCode: z.string().nullable(),
+  itemName: z.string().nullable(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   processText: z.string().nullable(),
@@ -98,6 +103,13 @@ export const jwDcInwardLineSchema = z.object({
   jwDcInwardId: z.string().uuid(),
   jwDcOutwardLineId: z.string().uuid(),
   itemId: z.string().uuid().nullable(),
+  // Live items-master values (LEFT JOIN items on item_id), mirroring the
+  // outward line. Optional because there is currently no inward *detail* read
+  // that populates them — inward lines are only surfaced via the outward
+  // detail (New Inward modal) and the inward list aggregate. Present here so a
+  // future inward detail read can expose them without another schema change.
+  itemCode: z.string().nullable().optional(),
+  itemName: z.string().nullable().optional(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   processText: z.string().nullable(),

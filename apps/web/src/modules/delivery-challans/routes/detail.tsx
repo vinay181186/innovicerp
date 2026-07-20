@@ -237,10 +237,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                       <tr key={line.id}>
                         <td className="td-ctr mono">{line.lineNo}</td>
                         <td>
-                          <span className="mono">{line.itemCodeText}</span>
-                          {line.itemNameText ? (
+                          <span className="mono">{line.itemCode ?? line.itemCodeText ?? '—'}</span>
+                          {line.itemName ?? line.itemNameText ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
-                              {line.itemNameText}
+                              {line.itemName ?? line.itemNameText}
                             </span>
                           ) : null}
                         </td>

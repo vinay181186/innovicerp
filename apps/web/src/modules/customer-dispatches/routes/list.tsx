@@ -99,7 +99,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
     const q = search.trim().toLowerCase();
     if (!q) return soRows;
     return soRows.filter((r) =>
-      [r.dispatchCode, r.jcNo, r.soNo, r.clientPoLineNo, r.itemCode, r.itemName, r.customer, r.dispatchedBy, r.remarks]
+      [r.dispatchCode, r.jcNo, r.soNo, r.clientPoLineNo, r.itemCode, r.itemCodeText, r.itemName, r.customer, r.dispatchedBy, r.remarks]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q)),
     );
@@ -116,9 +116,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
       { code: string; name: string; total: number; count: number; stock: number | null }
     >();
     for (const r of active) {
-      const key = r.itemCode ?? r.itemName;
+      const key = r.itemCode ?? r.itemCodeText ?? r.itemName;
       const cur = m.get(key) ?? {
-        code: r.itemCode ?? '—',
+        code: r.itemCode ?? r.itemCodeText ?? '—',
         name: r.itemName,
         total: 0,
         count: 0,
@@ -392,7 +392,7 @@ function DispatchRows(props: {
                     <td className="mono" style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>{l.itemCode ?? '—'}</td>
+                    <td className="td-code" style={{ color: 'var(--purple)' }}>{l.itemCode ?? l.itemCodeText ?? '—'}</td>
                     <td className="fw-700">{l.itemName}</td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--red)' }}>-{l.qty}</td>
                     <td className="td-ctr">

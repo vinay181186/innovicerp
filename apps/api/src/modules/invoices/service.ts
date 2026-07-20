@@ -20,6 +20,7 @@ import {
   invoiceLines,
   invoicePayments,
   invoices,
+  items,
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -120,16 +121,31 @@ async function getInvoiceInternal(
   const inv = rows[0];
   if (!inv) throw new NotFoundError(`Invoice ${id} not found`);
 
+  // LEFT JOIN items on the line's item_id so code/name reflect the LIVE items
+  // master, falling back to the stored snapshot (item_code_text / item_name)
+  // when the item is unlinked or soft-deleted. Mirrors goods-receipt-notes.
   const lineRows = await tx
-    .select()
+    .select({
+      id: invoiceLines.id,
+      lineNo: invoiceLines.lineNo,
+      resolvedItemCode: items.code,
+      resolvedItemName: items.name,
+      itemCodeText: invoiceLines.itemCodeText,
+      itemNameText: invoiceLines.itemName,
+      qty: invoiceLines.qty,
+      rate: invoiceLines.rate,
+      lineAmount: invoiceLines.lineAmount,
+    })
     .from(invoiceLines)
+    .leftJoin(items, and(eq(items.id, invoiceLines.itemId), isNull(items.deletedAt)))
     .where(and(eq(invoiceLines.invoiceId, id), isNull(invoiceLines.deletedAt)))
     .orderBy(asc(invoiceLines.lineNo));
   const lines: InvoiceLineRow[] = lineRows.map((l) => ({
     id: l.id,
     lineNo: l.lineNo,
-    itemCode: l.itemCodeText,
-    itemName: l.itemName,
+    itemCode: l.resolvedItemCode ?? l.itemCodeText,
+    itemCodeText: l.itemCodeText,
+    itemName: l.resolvedItemName ?? l.itemNameText,
     qty: l.qty,
     rate: n(l.rate),
     lineAmount: n(l.lineAmount),

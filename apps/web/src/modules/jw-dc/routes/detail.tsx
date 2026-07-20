@@ -154,9 +154,9 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                   <tr key={l.id}>
                     <td className="mono">{l.lineNo}</td>
                     <td className="mono" style={{ fontSize: 11 }}>
-                      {l.itemCodeText}
+                      {l.itemCode ?? l.itemCodeText ?? '—'}
                     </td>
-                    <td>{l.itemNameText ?? '—'}</td>
+                    <td>{l.itemName ?? l.itemNameText ?? '—'}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>

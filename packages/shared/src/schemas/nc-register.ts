@@ -41,6 +41,10 @@ export const ncRegisterSchema = z.object({
   itemId: z.string().uuid(),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
+  // Live item master values resolved via LEFT JOIN on items (null if the item
+  // was deleted). Prefer these over the *Text snapshot columns for display.
+  itemCode: z.string().nullable(),
+  itemName: z.string().nullable(),
   soCodeText: z.string().nullable(),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
@@ -73,8 +77,7 @@ export const ncRegisterListItemSchema = ncRegisterSchema.extend({
   jcCode: z.string().nullable(),
   jcOpSeqResolved: z.number().int().nullable(),
   jcOpOperation: z.string().nullable(),
-  itemCode: z.string().nullable(),
-  itemName: z.string().nullable(),
+  // itemCode / itemName now live on the base ncRegisterSchema (LEFT JOIN items).
 });
 export type NcRegisterListItem = z.infer<typeof ncRegisterListItemSchema>;
 

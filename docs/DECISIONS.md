@@ -2633,3 +2633,36 @@ to the detail grid, each rendering `soCode ?? '—'`.
   indexed FKs).
 - Note: Inward DC not touched (user asked for Outward). Verified by shared+api+web
   typecheck and api+web lint.
+
+## ADR-063: Resolve item code/name on detail reads that showed the snapshot/blank (item-dash fix)
+**Date:** 2026-07-20
+**Status:** Accepted
+
+### Context
+Task 3 of the 2026-07-20 batch. Six detail reads displayed the item code/name from the
+denormalized `item_code_text`/`item_name_text` snapshot (or, for party_materials, blank —
+its snapshot column is nullable) instead of resolving the live items master via the row's
+item_id FK — the linked-display-audit gap for items. Item code is manual, so a document
+holding an item_id must JOIN items on read to show the live code/name. The GRN and PR
+detail reads already do this; these six did not: nc_register (header item), delivery_challans
+(lines), invoices (lines), customer_dispatches (register + detail lines — `itemCode` was an
+alias of the snapshot), jw_dc outward (lines; inward detail is served by the same outward
+read), party_materials (header; could render blank).
+
+### Decision
+Mirror the GRN pattern in each: LEFT JOIN items on the row/line item_id (AND items deleted_at
+IS NULL), expose nullable `itemCode`/`itemName`, keep the `*_text` snapshot as a fallback,
+add the fields to the module's shared line/detail schema, and render
+`itemCode ?? itemCodeText ?? '—'` (and name likewise) in the UI. Implemented per-module in
+parallel; each kept its own read style (drizzle vs raw SQL).
+
+### Consequences
+- Positive: all six detail surfaces show the live item code/name; party_materials no longer
+  goes blank. Read-side only — no schema/data change.
+- Negative: one indexed-FK LEFT JOIN added per affected read.
+- Notes: customer_dispatches — the API's `itemCode` was previously the snapshot alias, so the
+  UI looked fine but showed stale data; now `itemCode` is JOIN-resolved with `itemCodeText`
+  fallback (register search/summary/print/export updated so free-text lines don't regress to
+  blank). jw_dc — inward has no standalone detail read; fixing the outward read covers the
+  inward modal that consumes it; inward line schema fields added as optional (nothing populates
+  them yet). Verified by shared+api+web typecheck and api+web lint.

@@ -87,7 +87,7 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
     .map(
       (l, i) =>
         `<tr><td style="${TD};text-align:center">${i + 1}</td>` +
-        `<td style="${TD}">${esc(l.itemCode ?? l.itemName)}<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
+        `<td style="${TD}">${esc(l.itemCode ?? l.itemCodeText ?? l.itemName)}<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
         `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
         `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +
         `<td style="${TD};text-align:right">${inrFormat(l.rate)}</td>` +
