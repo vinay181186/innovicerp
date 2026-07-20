@@ -214,10 +214,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                       onChange={(id) => patchLine(card.id, { soLineId: id })}
                       onSearch={() => {}}
                       options={opts}
-                      placeholder="🔍 code…"
+                      placeholder="🔍 code or name…"
                       emptyText="No ready items"
-                      selectedLabel={(o) => o.code ?? o.name}
-                      valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
+                      valueLabel={
+                        line
+                          ? line.itemCode
+                            ? `${line.itemCode} — ${line.itemName}`
+                            : line.itemName
+                          : undefined
+                      }
                     />
                     <input
                       className="innovic-input"
