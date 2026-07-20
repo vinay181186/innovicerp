@@ -27,6 +27,7 @@ import {
   bomMasters,
   items,
   itemStockBalances,
+  jcOps,
   jobCards,
   jobWorkOrderLines,
   jobWorkOrders,
@@ -50,6 +51,44 @@ function classifyPlanningPct(pct: number): 'fully_planned' | 'partial' | 'unplan
   if (pct >= 100) return 'fully_planned';
   if (pct > 0) return 'partial';
   return 'unplanned';
+}
+
+/**
+ * OSP purchase requests auto-raised for each plan's outsource ops, keyed by
+ * plan id. Walks plan.jc_id → jc_ops.outsource_pr_id → purchase_requests, so a
+ * manufacture plan's card can link straight to the PR(s). Returns [] for plans
+ * with no JC or no outsourced ops.
+ */
+async function loadOspPrsByPlan(
+  tx: DbTransaction,
+  planRows: readonly { id: string; jcId: string | null }[],
+): Promise<Map<string, { id: string; code: string }[]>> {
+  const map = new Map<string, { id: string; code: string }[]>();
+  const jcToPlan = new Map<string, string>();
+  for (const p of planRows) if (p.jcId) jcToPlan.set(p.jcId, p.id);
+  const jcIds = [...jcToPlan.keys()];
+  if (jcIds.length === 0) return map;
+
+  const rows = await tx
+    .select({
+      jobCardId: jcOps.jobCardId,
+      prId: purchaseRequests.id,
+      prCode: purchaseRequests.code,
+      opSeq: jcOps.opSeq,
+    })
+    .from(jcOps)
+    .innerJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
+    .where(and(inArray(jcOps.jobCardId, jcIds), isNull(jcOps.deletedAt)))
+    .orderBy(asc(jcOps.opSeq));
+
+  for (const r of rows) {
+    const planId = jcToPlan.get(r.jobCardId);
+    if (!planId) continue;
+    const arr = map.get(planId) ?? [];
+    arr.push({ id: r.prId, code: r.prCode });
+    map.set(planId, arr);
+  }
+  return map;
 }
 
 // ─── Left pane ───────────────────────────────────────────────────────────
@@ -342,6 +381,10 @@ export async function getPlanningSoDetail(
             .orderBy(asc(plans.code));
 
     const planIds = planRows.map((r) => r.plan.id);
+    const ospPrsMap = await loadOspPrsByPlan(
+      tx,
+      planRows.map((r) => ({ id: r.plan.id, jcId: r.plan.jcId ?? null })),
+    );
 
     // 4. Ops counts (and any outsource flag) per plan.
     const opsAgg =
@@ -389,6 +432,7 @@ export async function getPlanningSoDetail(
         foMatPrId: r.plan.foMatPrId ?? null,
         foMatPrCode: r.foMatPrCode ?? null,
         foVendorCodeText: r.plan.foVendorCodeText,
+        ospPrs: ospPrsMap.get(r.plan.id) ?? [],
       };
       const bucket = plansByLine.get(r.plan.soLineId);
       if (bucket) bucket.push(summary);
@@ -604,6 +648,10 @@ async function getJwPlanningDetail(
           .orderBy(asc(plans.code));
 
   const planIds = planRows.map((r) => r.plan.id);
+  const ospPrsMap = await loadOspPrsByPlan(
+    tx,
+    planRows.map((r) => ({ id: r.plan.id, jcId: r.plan.jcId ?? null })),
+  );
 
   // 4. Ops counts per plan.
   const opsAgg =
@@ -651,6 +699,7 @@ async function getJwPlanningDetail(
       foMatPrId: r.plan.foMatPrId ?? null,
       foMatPrCode: r.foMatPrCode ?? null,
       foVendorCodeText: r.plan.foVendorCodeText,
+      ospPrs: ospPrsMap.get(r.plan.id) ?? [],
     };
     const bucket = plansByLine.get(r.plan.jwLineId);
     if (bucket) bucket.push(summary);
@@ -887,6 +936,7 @@ export async function getPlanningBom(
         foMatPrId: null,
         foMatPrCode: null,
         foVendorCodeText: null,
+        ospPrs: [],
       });
     }
 

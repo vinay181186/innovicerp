@@ -814,6 +814,28 @@ function PlanCard({
             ) : null}
           </span>
         )}
+        {plan.ospPrs.length > 0 && (
+          <span
+            className="mono"
+            style={{
+              color: 'var(--purple)',
+              fontSize: 10,
+              fontWeight: 700,
+              display: 'inline-flex',
+              gap: 3,
+              alignItems: 'center',
+            }}
+            title="OSP purchase request(s) auto-raised for this plan's outsource op(s)"
+          >
+            PR:
+            {plan.ospPrs.map((pr, i) => (
+              <span key={pr.id}>
+                <PrLink id={pr.id} code={pr.code} color="var(--purple)" />
+                {i < plan.ospPrs.length - 1 ? ',' : ''}
+              </span>
+            ))}
+          </span>
+        )}
         {(plan.planStatus === 'jc_created' ||
           plan.planStatus === 'in_production' ||
           plan.planStatus === 'complete') && (

@@ -54,6 +54,9 @@ export const planningPlanSummarySchema = z.object({
   foMatPrId: z.string().uuid().nullable(),
   foMatPrCode: z.string().nullable(),
   foVendorCodeText: z.string().nullable(),
+  /** OSP purchase requests auto-raised for this plan's outsource ops (manufacture
+   *  plans). Each links back to the jc_op; clickable to the PR detail page. */
+  ospPrs: z.array(z.object({ id: z.string().uuid(), code: z.string() })),
 });
 export type PlanningPlanSummary = z.infer<typeof planningPlanSummarySchema>;
 
