@@ -75,7 +75,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         if (l.shipQty === '') return true;
         return !Number.isNaN(q) && q > 0 && q <= l.poLineQty;
       }),
-    [po, code, lineDrafts],
+    // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
+    // a dependency or the Save button's enabled state lags the real validity.
+    [po, codeValid, lineDrafts],
   );
 
   if (!poId) {
@@ -130,7 +132,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         .filter((l) => Number(l.shipQty) > 0)
         .map((l) => ({
           itemId: l.itemId || null,
-          itemCodeText: l.itemCodeText,
+          itemCodeText: l.itemCodeText.trim(),
           itemNameText: l.itemNameText,
           qty: Number(l.shipQty),
           uom: l.uom,
@@ -138,6 +140,16 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           materialText: l.materialText.trim() || null,
           dcRemarks: l.dcRemarks.trim() || null,
         }));
+      // Guard the one field that silently fails server validation: a PO line with
+      // no item code would send an empty itemCodeText (rejected as min length 1).
+      // Catch it here with a clear message instead of an opaque validation error.
+      if (lines.some((l) => l.itemCodeText === '')) {
+        setSubmitError(
+          'An item to send has no item code. Set the item code on the source PO line, then reopen this DC.',
+        );
+        setSubmitting(false);
+        return;
+      }
       const input: CreateDeliveryChallanInput = {
         header: {
           code: code.trim() || undefined,

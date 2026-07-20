@@ -15,6 +15,33 @@ class ApiError extends Error {
 
 type RequestInitWithJson = Omit<RequestInit, 'body'> & { json?: unknown };
 
+// Friendly, plain-language copy for the failure modes users actually hit.
+const NETWORK_MESSAGE =
+  "Couldn't reach the server. Check your internet connection and try again.";
+const SERVER_MESSAGE = 'The server had a problem. Please try again in a moment.';
+
+/**
+ * Turn a server validation payload (Zod `flatten()`: { formErrors, fieldErrors })
+ * into a single readable sentence, so the UI shows the actual reason instead of
+ * the opaque "Request validation failed". Returns null when nothing usable is
+ * present (caller falls back to the generic message).
+ */
+function humanizeValidationDetails(details: unknown): string | null {
+  const d = details as
+    | { formErrors?: unknown; fieldErrors?: Record<string, unknown> }
+    | null
+    | undefined;
+  if (!d || typeof d !== 'object') return null;
+  const parts: string[] = [];
+  if (Array.isArray(d.formErrors)) parts.push(...d.formErrors.filter((m): m is string => !!m));
+  if (d.fieldErrors && typeof d.fieldErrors === 'object') {
+    for (const [field, msgs] of Object.entries(d.fieldErrors)) {
+      if (Array.isArray(msgs) && msgs.length > 0) parts.push(`${field}: ${msgs.join(', ')}`);
+    }
+  }
+  return parts.length > 0 ? parts.join('; ') : null;
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   init: RequestInitWithJson = {},
@@ -26,22 +53,50 @@ export async function apiFetch<T = unknown>(
   if (session?.access_token) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.json !== undefined) headers.set('content-type', 'application/json');
 
-  const res = await fetch(new URL(path, env.VITE_API_URL), {
-    ...init,
-    headers,
-    body:
-      init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
-  });
+  // A dropped connection / DNS / CORS failure rejects fetch with a TypeError —
+  // translate it into a friendly ApiError instead of leaking "Failed to fetch".
+  let res: Response;
+  try {
+    res = await fetch(new URL(path, env.VITE_API_URL), {
+      ...init,
+      headers,
+      body:
+        init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
+    });
+  } catch (cause) {
+    throw new ApiError(0, 'network_error', NETWORK_MESSAGE, cause);
+  }
 
   const text = await res.text();
-  const body = text ? (JSON.parse(text) as unknown) : null;
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // Non-JSON response (e.g. a proxy/gateway HTML error page). Don't crash on
+      // JSON.parse — surface a friendly message keyed off the status.
+      if (!res.ok) {
+        throw new ApiError(
+          res.status,
+          'http_error',
+          res.status >= 500 ? SERVER_MESSAGE : `Request failed (HTTP ${res.status}).`,
+        );
+      }
+      return null as T;
+    }
+  }
 
   if (!res.ok) {
     const e = (body ?? {}) as { error?: string; message?: string; details?: unknown };
+    // For validation errors, prefer the specific field reason over the generic
+    // "Request validation failed" the server sends.
+    const friendly =
+      e.error === 'validation_error' ? humanizeValidationDetails(e.details) : null;
+    const fallback = res.status >= 500 ? SERVER_MESSAGE : `HTTP ${res.status}`;
     throw new ApiError(
       res.status,
       e.error ?? 'http_error',
-      e.message ?? `HTTP ${res.status}`,
+      friendly ?? e.message ?? fallback,
       e.details,
     );
   }
@@ -66,24 +121,30 @@ export async function apiDownload(
   if (session?.access_token) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.json !== undefined) headers.set('content-type', 'application/json');
 
-  const res = await fetch(new URL(path, env.VITE_API_URL), {
-    ...init,
-    headers,
-    body:
-      init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
-  });
+  let res: Response;
+  try {
+    res = await fetch(new URL(path, env.VITE_API_URL), {
+      ...init,
+      headers,
+      body:
+        init.json !== undefined ? JSON.stringify(init.json) : ((init as RequestInit).body ?? null),
+    });
+  } catch (cause) {
+    throw new ApiError(0, 'network_error', NETWORK_MESSAGE, cause);
+  }
 
   if (!res.ok) {
     const text = await res.text();
-    const e = (text ? JSON.parse(text) : {}) as {
-      error?: string;
-      message?: string;
-      details?: unknown;
-    };
+    let e: { error?: string; message?: string; details?: unknown } = {};
+    try {
+      e = text ? (JSON.parse(text) as typeof e) : {};
+    } catch {
+      e = {};
+    }
     throw new ApiError(
       res.status,
       e.error ?? 'http_error',
-      e.message ?? `HTTP ${res.status}`,
+      e.message ?? (res.status >= 500 ? SERVER_MESSAGE : `HTTP ${res.status}`),
       e.details,
     );
   }
