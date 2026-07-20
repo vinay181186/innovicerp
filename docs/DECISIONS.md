@@ -2666,3 +2666,30 @@ parallel; each kept its own read style (drizzle vs raw SQL).
   blank). jw_dc — inward has no standalone detail read; fixing the outward read covers the
   inward modal that consumes it; inward line schema fields added as optional (nothing populates
   them yet). Verified by shared+api+web typecheck and api+web lint.
+
+## ADR-064: Auto-number preview for create forms that had no code field (Class B)
+**Date:** 2026-07-20
+**Status:** Accepted
+
+### Context
+Class B of Task 1 (ADR-060 was Class A). Nine create forms auto-generated their code
+server-side but showed NO field for it, so the user never saw the number before saving:
+customer-dispatches (DSP-), invoices (INV-), capa (CAPA-), design-projects (DP-),
+design-tracker (DSN-), store-issues (ISS-), tool-issues (TIS-), tasks (TSK-), and jw-dc
+(both modals: JWDC-OUT- and JWIN-).
+
+### Decision
+Same per-module `/next-code` endpoint pattern as Class A/party-materials (a `getNext*Code`
+wrapper reusing the module's own generator + a `useNext*Code()` hook), but because these
+create inputs have NO code field (the server always generates on save), the added field is
+a READ-ONLY PREVIEW only — it displays `next?.code ?? '(auto on save)'` and is never added
+to the submit payload. jw-dc got two endpoints/hooks (outward + inward).
+
+### Consequences
+- Positive: every listed create form now shows the next number up front; submit paths and
+  server-side generation are unchanged (zero write-path risk).
+- Negative: one small endpoint + hook per module (mechanical).
+- Note: preview is informational — under a rare concurrent create the saved number could be
+  the previewed one +1; acceptable since nothing is typed and the server stays authoritative.
+  With this, Task 1 (make auto-generated numbers visible) is complete across all in-scope
+  modules. Verified by api+web typecheck and api+web lint.

@@ -19,6 +19,7 @@ export const taskKeys = {
   list: (f: TaskListFilters) => [...taskKeys.all, 'list', f] as const,
   detail: (id: string) => [...taskKeys.all, 'detail', id] as const,
   userOptions: () => [...taskKeys.all, 'user-options'] as const,
+  nextCode: () => [...taskKeys.all, 'next-code'] as const,
 };
 
 function toQuery(f: TaskListFilters): string {
@@ -52,6 +53,14 @@ export function useTaskUserOptions(enabled = true) {
     queryFn: () => apiFetch<{ options: TaskUserOption[] }>('/tasks/user-options'),
     staleTime: 60_000,
     enabled,
+  });
+}
+
+export function useNextTaskCode() {
+  return useQuery<{ code: string }>({
+    queryKey: taskKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/tasks/next-code'),
+    staleTime: 0,
   });
 }
 

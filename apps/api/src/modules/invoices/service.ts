@@ -383,6 +383,11 @@ async function nextInvoiceCode(tx: DbTransaction, companyId: string): Promise<st
   return `INV-${String(max + 1).padStart(4, '0')}`;
 }
 
+export async function getNextInvoiceCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextInvoiceCode(tx, companyId) }));
+}
+
 export async function createInvoice(
   input: CreateInvoiceInput,
   user: AuthContext,

@@ -34,6 +34,11 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
     return service.markTasksViewed(req.user);
   });
 
+  app.get('/tasks/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextTaskCode(req.user);
+  });
+
   app.get('/tasks/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

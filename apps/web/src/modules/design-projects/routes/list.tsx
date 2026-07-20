@@ -11,7 +11,11 @@ import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
-import { useCreateDesignProject, useDesignProjectsList } from '../api';
+import {
+  useCreateDesignProject,
+  useDesignProjectsList,
+  useNextDesignProjectCode,
+} from '../api';
 
 type FilterKey = 'all' | 'active' | 'released' | 'hold';
 
@@ -334,6 +338,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
     [soData, soId],
   );
   const mut = useCreateDesignProject();
+  const { data: next } = useNextDesignProjectCode();
 
   const onSave = (): void => {
     setErr(null);
@@ -372,6 +377,14 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
       footer={<Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save" />}
     >
       <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">Project No.</label>
+          <input
+            className="innovic-input"
+            value={next?.code ?? '(auto on save)'}
+            readOnly
+          />
+        </div>
         <div className="form-grp">
           <label className="form-label">
             Project Name<span className="req">★</span>

@@ -35,6 +35,7 @@ export const designProjectsKeys = {
       q.offset,
     ] as const,
   detail: (id: string) => [...designProjectsKeys.all, 'detail', id] as const,
+  nextCode: () => [...designProjectsKeys.all, 'next-code'] as const,
 };
 
 function buildQs(q: ListDesignProjectsQuery): string {
@@ -54,6 +55,14 @@ export function useDesignProjectsList(query: ListDesignProjectsQuery) {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useNextDesignProjectCode() {
+  return useQuery<{ code: string }>({
+    queryKey: designProjectsKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/design-projects/next-code'),
+    staleTime: 0,
   });
 }
 

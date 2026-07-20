@@ -13,6 +13,11 @@ export async function storeIssuesRoutes(app: FastifyInstance): Promise<void> {
     return service.listStoreIssues(query, req.user);
   });
 
+  app.get('/store-issues/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextStoreIssueCode(req.user);
+  });
+
   app.post('/store-issues', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createStoreIssueInputSchema.parse(req.body);

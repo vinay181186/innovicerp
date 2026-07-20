@@ -17,6 +17,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
 import {
   useCreateToolIssue,
+  useNextToolIssueCode,
   useRecordToolReturn,
   useToolIssuesList,
 } from '../api';
@@ -421,6 +422,7 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   const [err, setErr] = useState<string | null>(null);
 
   const createMut = useCreateToolIssue();
+  const { data: next } = useNextToolIssueCode();
   const { data: itemsData } = useItemsList({
     search: itemSearch.trim() || undefined,
     limit: 50,
@@ -474,6 +476,14 @@ function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Elem
       footer={<ModalFooter onClose={onClose} onSave={onSave} saving={createMut.isPending} />}
     >
       <div className="form-grid">
+        <Field label="Issue No.">
+          <input
+            type="text"
+            className="innovic-input"
+            value={next?.code ?? '(auto on save)'}
+            readOnly
+          />
+        </Field>
         <Field label="Date">
           <input
             type="date"

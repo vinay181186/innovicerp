@@ -180,6 +180,14 @@ async function nextCode(tx: DbTransaction, companyId: string): Promise<string> {
   return `TSK-${String(max + 1).padStart(4, '0')}`;
 }
 
+export async function getNextTaskCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const code = await nextCode(tx, companyId);
+    return { code };
+  });
+}
+
 export async function createTask(input: CreateTaskInput, user: AuthContext): Promise<TaskDetail> {
   requireWriteRole(user); // admin/manager assign tasks
   const companyId = requireCompany(user);

@@ -20,7 +20,7 @@ import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useUsersList } from '@/modules/users/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCapaList, useCreateCapa, useUpdateCapa } from '../api';
+import { useCapaList, useCreateCapa, useNextCapaCode, useUpdateCapa } from '../api';
 
 export const capaListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -330,6 +330,7 @@ function NewCapaModal({
   onClose: () => void;
 }): React.JSX.Element {
   const create = useCreateCapa();
+  const nextCode = useNextCapaCode();
   // NC Reference is a dropdown of NCs that don't yet have a CAPA (legacy
   // _capaForNC filter, L22832). On pick, back-fill jc/so/item/operation from
   // the chosen NC (legacy L22847-22850).
@@ -394,6 +395,14 @@ function NewCapaModal({
   return (
     <Overlay title="➕ New CAPA" onClose={onClose}>
       <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">CAPA No.</label>
+          <input
+            className="innovic-input"
+            value={nextCode.data?.code ?? '(auto on save)'}
+            readOnly
+          />
+        </div>
         <div className="form-grp">
           <label className="form-label">Type ★</label>
           <select className="innovic-select" value={type} onChange={(e) => setType(e.target.value as typeof type)}>

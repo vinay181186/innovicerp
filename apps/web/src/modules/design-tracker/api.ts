@@ -25,6 +25,7 @@ export const designTrackerKeys = {
       q.offset,
     ] as const,
   detail: (id: string) => [...designTrackerKeys.all, 'detail', id] as const,
+  nextCode: () => [...designTrackerKeys.all, 'next-code'] as const,
 };
 
 function buildQs(q: ListDesignTrackerQuery): string {
@@ -52,6 +53,14 @@ export function useDesignTrackerDetail(id: string | undefined) {
     queryKey: designTrackerKeys.detail(id ?? '__missing__'),
     queryFn: () => apiFetch<DesignTrackerDetailResponse>(`/design-tracker/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+export function useNextDesignTrackerCode() {
+  return useQuery<{ code: string }>({
+    queryKey: designTrackerKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/design-tracker/next-code'),
+    staleTime: 0,
   });
 }
 

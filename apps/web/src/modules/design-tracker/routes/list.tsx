@@ -18,6 +18,7 @@ import {
   useDesignTrackerDetail,
   useDesignTrackerList,
   useLogDesignTime,
+  useNextDesignTrackerCode,
   useReviseDesign,
   useSubmitDesignReview,
   useUpdateDesignTracker,
@@ -470,6 +471,7 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
   );
 
   const mut = useCreateDesignTracker();
+  const { data: next } = useNextDesignTrackerCode();
 
   const onSave = (): void => {
     setErr(null);
@@ -502,6 +504,15 @@ function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element
   return (
     <ModalShell onClose={onClose} title="🎨 Assign Design">
       <div className="form-grid">
+        <Field label="Design No.">
+          <input
+            type="text"
+            className="innovic-input"
+            value={next?.code ?? '(auto on save)'}
+            readOnly
+            style={{ color: 'var(--purple)', fontWeight: 700 }}
+          />
+        </Field>
         <Field label="Sales Order" req full>
           <input
             type="text"

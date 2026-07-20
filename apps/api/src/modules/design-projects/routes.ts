@@ -29,6 +29,11 @@ export async function designProjectsRoutes(app: FastifyInstance): Promise<void> 
     return service.listDesignProjects(query, req.user);
   });
 
+  app.get('/design-projects/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextDesignProjectCode(req.user);
+  });
+
   app.get('/design-projects/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);

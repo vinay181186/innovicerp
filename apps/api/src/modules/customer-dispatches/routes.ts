@@ -22,6 +22,11 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
     return { options: await service.listFinanceSoOptions(req.user) };
   });
 
+  app.get('/customer-dispatches/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextDispatchCode(req.user);
+  });
+
   app.get('/customer-dispatches/dispatchable/:soId', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { soId } = z.object({ soId: z.string().uuid() }).parse(req.params);

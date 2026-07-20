@@ -79,6 +79,14 @@ async function nextDesignCode(
   return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
 }
 
+export async function getNextDesignTrackerCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const code = await nextDesignCode(tx, companyId);
+    return { code };
+  });
+}
+
 export async function listDesignTracker(
   input: ListDesignTrackerQuery,
   user: AuthContext,

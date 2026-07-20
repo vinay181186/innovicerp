@@ -19,6 +19,12 @@ export async function designTrackerRoutes(app: FastifyInstance): Promise<void> {
     return service.listDesignTracker(query, req.user);
   });
 
+  // Must precede '/design-tracker/:id' so 'next-code' isn't captured as an :id param.
+  app.get('/design-tracker/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextDesignTrackerCode(req.user);
+  });
+
   app.get('/design-tracker/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);

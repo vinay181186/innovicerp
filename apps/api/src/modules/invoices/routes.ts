@@ -12,6 +12,11 @@ export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
     return service.listInvoices(req.user);
   });
 
+  app.get('/invoices/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextInvoiceCode(req.user);
+  });
+
   app.get('/invoices/invoiceable/:soId', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { soId } = z.object({ soId: z.string().uuid() }).parse(req.params);

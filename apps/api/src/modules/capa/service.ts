@@ -111,6 +111,14 @@ async function nextCapaNo(
   return `CAPA-${String(max + 1).padStart(4, '0')}`;
 }
 
+export async function getNextCapaCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const code = await nextCapaNo(tx, companyId);
+    return { code };
+  });
+}
+
 export async function createCapa(input: CreateCapaInput, user: AuthContext): Promise<CapaRecord> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {

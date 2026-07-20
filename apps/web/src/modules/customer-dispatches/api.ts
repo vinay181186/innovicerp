@@ -16,7 +16,17 @@ export const dispatchKeys = {
   detail: (id: string) => [...dispatchKeys.all, 'detail', id] as const,
   soOptions: () => [...dispatchKeys.all, 'so-options'] as const,
   dispatchable: (soId: string) => [...dispatchKeys.all, 'dispatchable', soId] as const,
+  nextCode: () => [...dispatchKeys.all, 'next-code'] as const,
 };
+
+// Read-only preview of the DSP-#### code the server will assign on save.
+export function useNextDispatchCode() {
+  return useQuery<{ code: string }>({
+    queryKey: dispatchKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/customer-dispatches/next-code'),
+    staleTime: 0,
+  });
+}
 
 export function useDispatchList() {
   return useQuery<ListCustomerDispatchesResponse>({

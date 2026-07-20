@@ -70,6 +70,14 @@ async function nextToolIssueCode(
   return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
 }
 
+export async function getNextToolIssueCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const code = await nextToolIssueCode(tx, companyId);
+    return { code };
+  });
+}
+
 export async function listToolIssues(
   input: ListToolIssuesQuery,
   user: AuthContext,

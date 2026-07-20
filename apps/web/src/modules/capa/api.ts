@@ -10,7 +10,16 @@ import { apiFetch } from '@/lib/api';
 export const capaKeys = {
   all: ['capa'] as const,
   list: () => [...capaKeys.all, 'list'] as const,
+  nextCode: () => [...capaKeys.all, 'next-code'] as const,
 };
+
+export function useNextCapaCode() {
+  return useQuery<{ code: string }>({
+    queryKey: capaKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/capa/next-code'),
+    staleTime: 0,
+  });
+}
 
 export function useCapaList() {
   return useQuery<ListCapaResponse>({

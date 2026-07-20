@@ -214,6 +214,13 @@ async function nextCode(tx: DbTransaction, companyId: string): Promise<string> {
   return `DSP-${String(max + 1).padStart(4, '0')}`;
 }
 
+// Read-only preview of the code createDispatch will assign on save. Reuses this
+// module's own nextCode generator so the preview matches the eventual value.
+export async function getNextDispatchCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextCode(tx, companyId) }));
+}
+
 function rowToHeader(
   r: typeof customerDispatches.$inferSelect,
   lineCount: number,

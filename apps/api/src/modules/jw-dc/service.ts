@@ -101,6 +101,16 @@ async function nextInwardCode(
   return `JWIN-${String(next).padStart(4, '0')}`;
 }
 
+export async function getNextOutwardCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextOutwardCode(tx, companyId) }));
+}
+
+export async function getNextInwardCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({ code: await nextInwardCode(tx, companyId) }));
+}
+
 // ─── Outward — list ───────────────────────────────────────────────────────
 
 export async function listJwDcOutward(

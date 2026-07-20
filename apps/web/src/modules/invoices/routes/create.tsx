@@ -14,7 +14,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
-import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo } from '../api';
+import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo, useNextInvoiceCode } from '../api';
 
 export const invoiceNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -40,6 +40,7 @@ function InvoiceNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { dispatchId } = invoiceNewRoute.useSearch();
   const { data: soOpts } = useFinanceSoOptions();
+  const { data: next } = useNextInvoiceCode();
   const create = useCreateInvoice();
 
   const [soId, setSoId] = useState('');
@@ -183,6 +184,10 @@ function InvoiceNewPage(): React.JSX.Element {
             </div>
           ) : null}
           <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label">Invoice No.</label>
+              <input className="innovic-input" readOnly value={next?.code ?? '(auto on save)'} />
+            </div>
             <div className="form-grp">
               <label className="form-label">Invoice Date</label>
               <input type="date" className="innovic-input" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />

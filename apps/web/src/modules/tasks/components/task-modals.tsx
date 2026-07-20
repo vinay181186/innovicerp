@@ -5,7 +5,7 @@
 import type { TaskDetail, TaskLinkedRef, TaskRow, TaskUserOption } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from '@innovic/shared';
 import { useState } from 'react';
-import { useCreateTask, useTaskDetail, useUpdateTaskStatus } from '../api';
+import { useCreateTask, useNextTaskCode, useTaskDetail, useUpdateTaskStatus } from '../api';
 
 export function Overlay(props: {
   title: string;
@@ -56,6 +56,7 @@ export function AssignTaskModal({
   suggestedTitle?: string | undefined;
 }): React.JSX.Element {
   const create = useCreateTask();
+  const { data: next } = useNextTaskCode();
   const [assignedTo, setAssignedTo] = useState(users[0]?.id ?? '');
   const [title, setTitle] = useState(suggestedTitle ?? '');
   const [description, setDescription] = useState('');
@@ -91,6 +92,10 @@ export function AssignTaskModal({
         </div>
       ) : null}
       <div className="form-grid">
+        <div className="form-grp">
+          <label className="form-label">Task No.</label>
+          <input className="innovic-input" value={next?.code ?? '(auto on save)'} readOnly />
+        </div>
         <div className="form-grp">
           <label className="form-label">Assign To ★</label>
           <select className="innovic-select" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}>

@@ -11,6 +11,7 @@ export const storeIssuesKeys = {
   all: ['store-issues'] as const,
   list: (q: ListStoreIssuesQuery) =>
     [...storeIssuesKeys.all, 'list', q.search ?? null, q.itemId ?? null, q.fromDate ?? null, q.toDate ?? null, q.limit, q.offset] as const,
+  nextCode: () => [...storeIssuesKeys.all, 'next-code'] as const,
 };
 
 function buildSearch(q: ListStoreIssuesQuery): string {
@@ -31,6 +32,14 @@ export function useStoreIssuesList(query: ListStoreIssuesQuery) {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useNextStoreIssueCode() {
+  return useQuery<{ code: string }>({
+    queryKey: storeIssuesKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/store-issues/next-code'),
+    staleTime: 0,
   });
 }
 

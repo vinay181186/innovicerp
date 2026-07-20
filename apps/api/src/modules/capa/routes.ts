@@ -9,6 +9,11 @@ export async function capaRoutes(app: FastifyInstance): Promise<void> {
     return service.listCapa(req.user);
   });
 
+  app.get('/capa/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextCapaCode(req.user);
+  });
+
   app.post('/capa', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const input = createCapaInputSchema.parse(req.body);

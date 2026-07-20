@@ -15,7 +15,16 @@ export const invoiceKeys = {
   detail: (id: string) => [...invoiceKeys.all, 'detail', id] as const,
   soOptions: () => [...invoiceKeys.all, 'so-options'] as const,
   invoiceable: (soId: string) => [...invoiceKeys.all, 'invoiceable', soId] as const,
+  nextCode: () => [...invoiceKeys.all, 'next-code'] as const,
 };
+
+export function useNextInvoiceCode() {
+  return useQuery<{ code: string }>({
+    queryKey: invoiceKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/invoices/next-code'),
+    staleTime: 0,
+  });
+}
 
 export function useInvoiceList() {
   return useQuery<ListInvoicesResponse>({

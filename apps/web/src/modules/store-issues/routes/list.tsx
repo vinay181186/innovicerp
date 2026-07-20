@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
-import { useCreateStoreIssue, useStoreIssuesList } from '../api';
+import { useCreateStoreIssue, useNextStoreIssueCode, useStoreIssuesList } from '../api';
 
 const PAGE_SIZE = 25;
 
@@ -229,6 +229,7 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
   const [err, setErr] = useState<string | null>(null);
 
   const createMut = useCreateStoreIssue();
+  const { data: next } = useNextStoreIssueCode();
   const { data: itemsData } = useItemsList({
     search: itemSearch.trim() || undefined,
     limit: 50,
@@ -288,6 +289,16 @@ function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element 
 
         <div className="modal-body">
           <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label">Issue No.</label>
+              <input
+                type="text"
+                className="innovic-input"
+                value={next?.code ?? '(auto on save)'}
+                readOnly
+              />
+            </div>
+
             <div className="form-grp">
               <label className="form-label">Date</label>
               <input

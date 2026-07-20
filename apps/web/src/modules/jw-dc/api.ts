@@ -28,6 +28,8 @@ export const jwDcKeys = {
       q.offset,
     ] as const,
   outwardDetail: (id: string) => [...jwDcKeys.all, 'outward', 'detail', id] as const,
+  outwardNextCode: () => [...jwDcKeys.all, 'outward', 'next-code'] as const,
+  inwardNextCode: () => [...jwDcKeys.all, 'inward', 'next-code'] as const,
   poLines: (poId: string) => [...jwDcKeys.all, 'po-lines', poId] as const,
   inwardList: (q: ListJwDcInwardQuery) =>
     [
@@ -98,6 +100,22 @@ export function useCreateJwDcOutward() {
       void qc.invalidateQueries({ queryKey: ['store-inventory'] });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
     },
+  });
+}
+
+export function useNextOutwardCode() {
+  return useQuery<{ code: string }>({
+    queryKey: jwDcKeys.outwardNextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/jw-dc/outward/next-code'),
+    staleTime: 0,
+  });
+}
+
+export function useNextInwardCode() {
+  return useQuery<{ code: string }>({
+    queryKey: jwDcKeys.inwardNextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/jw-dc/inward/next-code'),
+    staleTime: 0,
   });
 }
 

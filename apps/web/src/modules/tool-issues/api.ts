@@ -12,6 +12,7 @@ export const toolIssuesKeys = {
   all: ['tool-issues'] as const,
   list: (q: ListToolIssuesQuery) =>
     [...toolIssuesKeys.all, 'list', q.search ?? null, q.filter, q.limit, q.offset] as const,
+  nextCode: () => [...toolIssuesKeys.all, 'next-code'] as const,
 };
 
 function buildSearch(q: ListToolIssuesQuery): string {
@@ -30,6 +31,14 @@ export function useToolIssuesList(query: ListToolIssuesQuery) {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useNextToolIssueCode() {
+  return useQuery<{ code: string }>({
+    queryKey: toolIssuesKeys.nextCode(),
+    queryFn: () => apiFetch<{ code: string }>('/tool-issues/next-code'),
+    staleTime: 0,
   });
 }
 

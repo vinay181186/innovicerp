@@ -17,6 +17,11 @@ export async function toolIssuesRoutes(app: FastifyInstance): Promise<void> {
     return service.listToolIssues(query, req.user);
   });
 
+  app.get('/tool-issues/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextToolIssueCode(req.user);
+  });
+
   app.post('/tool-issues', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const input = createToolIssueInputSchema.parse(req.body);

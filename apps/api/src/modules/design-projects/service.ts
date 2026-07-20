@@ -85,6 +85,13 @@ async function nextSequence(
   return `${prefix}${String(next).padStart(4, '0')}`;
 }
 
+export async function getNextDesignProjectCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => ({
+    code: await nextSequence(tx, 'design_projects', 'DP-', companyId),
+  }));
+}
+
 // ─── Projects — list ─────────────────────────────────────────────────────
 
 export async function listDesignProjects(

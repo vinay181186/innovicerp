@@ -9,7 +9,7 @@ import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions } from '../api';
+import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
 
 export const customerDispatchNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -33,6 +33,7 @@ const GRID = '34px 1.4fr 1.8fr 70px 70px 90px 90px 110px 34px';
 function CustomerDispatchNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: soOpts } = useFinanceSoOptions();
+  const { data: next } = useNextDispatchCode();
   const create = useCreateDispatch();
 
   const [soId, setSoId] = useState('');
@@ -127,6 +128,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Dispatch No.</label>
+              <input
+                className="innovic-input"
+                readOnly
+                value={next?.code ?? '(auto on save)'}
+                style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+              />
             </div>
             <div className="form-grp">
               <label className="form-label">Dispatch Date</label>

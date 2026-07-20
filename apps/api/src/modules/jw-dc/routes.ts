@@ -19,6 +19,16 @@ export async function jwDcRoutes(app: FastifyInstance): Promise<void> {
     return service.listJwDcOutward(query, req.user);
   });
 
+  app.get('/jw-dc/outward/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextOutwardCode(req.user);
+  });
+
+  app.get('/jw-dc/inward/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextInwardCode(req.user);
+  });
+
   app.get('/jw-dc/outward/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);

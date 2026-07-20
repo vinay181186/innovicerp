@@ -69,6 +69,14 @@ async function nextStoreIssueCode(
   return `${CODE_PREFIX}${String(next).padStart(CODE_PAD, '0')}`;
 }
 
+export async function getNextStoreIssueCode(user: AuthContext): Promise<{ code: string }> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const code = await nextStoreIssueCode(tx, companyId);
+    return { code };
+  });
+}
+
 export async function listStoreIssues(
   input: ListStoreIssuesQuery,
   user: AuthContext,

@@ -22,6 +22,8 @@ import {
   useJwDcOutwardDetail,
   useJwDcOutwardList,
   useJwDcPoLines,
+  useNextInwardCode,
+  useNextOutwardCode,
 } from '../api';
 
 const PAGE_SIZE = 50;
@@ -496,6 +498,8 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const [lines, setLines] = useState<OutwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
+  const { data: next } = useNextOutwardCode();
+
   // Job-work POs for the JWPO dropdown (bug 4.1 — was a free-text picker).
   const { data: poData } = usePurchaseOrdersList({
     poType: 'job_work',
@@ -571,6 +575,15 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
       saveLabel="Save Outward DC"
     >
       <div className="form-grid" style={{ marginBottom: 14 }}>
+        <div className="form-grp">
+          <label className="form-label">Outward DC No.</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={next?.code ?? '(auto on save)'}
+            readOnly
+          />
+        </div>
         <div className="form-grp">
           <label className="form-label">Date</label>
           <input
@@ -775,6 +788,8 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
   const [lines, setLines] = useState<InwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
+  const { data: next } = useNextInwardCode();
+
   // Outward DCs with pending returns (filter client-side)
   const { data: outData } = useJwDcOutwardList({ limit: 200, offset: 0 });
   const pendingDcs = useMemo(
@@ -871,6 +886,15 @@ function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element
       saveLabel="Save Inward"
     >
       <div className="form-grid" style={{ marginBottom: 14 }}>
+        <div className="form-grp">
+          <label className="form-label">Inward No.</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={next?.code ?? '(auto on save)'}
+            readOnly
+          />
+        </div>
         <div className="form-grp">
           <label className="form-label">Date</label>
           <input
