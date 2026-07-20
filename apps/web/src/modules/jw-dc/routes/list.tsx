@@ -165,6 +165,7 @@ function OutwardView(): React.JSX.Element {
                   <th>DC No.</th>
                   <th>Date</th>
                   <th>JWPO</th>
+                  <th>SO</th>
                   <th>Vendor</th>
                   <th className="td-ctr">Items</th>
                   <th className="td-ctr" style={{ color: 'var(--purple)' }}>
@@ -183,7 +184,7 @@ function OutwardView(): React.JSX.Element {
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
+                    <td colSpan={11} className="empty-state">
                       No outward DCs. Click + New Outward DC.
                     </td>
                   </tr>
@@ -273,6 +274,9 @@ function OutwardRow({ dc }: { dc: JwDcOutwardListItem }): React.JSX.Element {
       <td style={{ fontSize: 11 }}>{dc.dcDate}</td>
       <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
         {dc.jwpoCodeText ?? '—'}
+      </td>
+      <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+        {dc.soCode ?? '—'}
       </td>
       <td style={{ fontWeight: 600 }}>{dc.vendorNameText ?? dc.vendorCodeText ?? '—'}</td>
       <td className="td-ctr">{dc.linesCount}</td>

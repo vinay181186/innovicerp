@@ -203,6 +203,7 @@ function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
       <Pair label="DC No." value={dc.code} />
       <Pair label="Date" value={dc.dcDate} />
       <Pair label="JWPO" value={dc.jwpoCodeText ?? '—'} />
+      <Pair label="SO" value={dc.soCode ?? '—'} />
       <Pair label="Vendor" value={dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
       <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
       <Pair label="Vehicle" value={dc.vehicleNo ?? '—'} />

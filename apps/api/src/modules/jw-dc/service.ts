@@ -173,9 +173,23 @@ export async function listJwDcOutward(
             AND COALESCE(rs.total_returned, 0) >= COALESCE(rs.total_sent, 0) THEN 'fully_returned'
           WHEN COALESCE(rs.total_returned, 0) > 0 THEN 'partial'
           ELSE 'out'
-        END AS "returnStatus"
+        END AS "returnStatus",
+        so_resolved.so_code AS "soCode"
       FROM public.jw_dc_outward jdo
       LEFT JOIN return_stats rs ON rs.dc_id = jdo.id
+      -- Resolve the SO(s) behind the JWPO: its lines carry source_so_line_id
+      -- (stamped from the JC's SO by the OSP cascade). Distinct-agg in case a
+      -- JWPO spans lines from more than one SO.
+      LEFT JOIN LATERAL (
+        SELECT string_agg(DISTINCT so.code, ', ' ORDER BY so.code) AS so_code
+        FROM public.purchase_order_lines pol
+        JOIN public.sales_order_lines sol
+          ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
+        JOIN public.sales_orders so
+          ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+        WHERE pol.purchase_order_id = jdo.purchase_order_id
+          AND pol.deleted_at IS NULL
+      ) so_resolved ON true
       WHERE jdo.company_id = ${companyId}::uuid
         AND jdo.deleted_at IS NULL
         ${searchFrag}
@@ -223,6 +237,7 @@ function toOutwardListItem(r: Record<string, unknown>): JwDcOutwardListItem {
     totalReturnedQty: Number(r['totalReturnedQty'] ?? 0),
     pendingQty: Number(r['pendingQty'] ?? 0),
     returnStatus: (r['returnStatus'] as 'out' | 'partial' | 'fully_returned') ?? 'out',
+    soCode: (r['soCode'] as string | null) ?? null,
   };
 }
 
@@ -313,6 +328,23 @@ export async function getJwDcOutwardDetail(
           ? 'partial'
           : 'out';
 
+    // Resolve the SO(s) behind the JWPO (its lines carry source_so_line_id,
+    // stamped from the JC's SO by the OSP cascade). Null when the JC came from
+    // a JWSO rather than an SO.
+    const soRows = header.purchaseOrderId
+      ? ((await tx.execute(sql`
+          SELECT string_agg(DISTINCT so.code, ', ' ORDER BY so.code) AS "soCode"
+          FROM public.purchase_order_lines pol
+          JOIN public.sales_order_lines sol
+            ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
+          JOIN public.sales_orders so
+            ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+          WHERE pol.purchase_order_id = ${header.purchaseOrderId}::uuid
+            AND pol.deleted_at IS NULL
+        `)) as unknown as Array<{ soCode: string | null }>)
+      : [];
+    const soCode = soRows[0]?.soCode ?? null;
+
     return {
       id: header.id,
       companyId: header.companyId,
@@ -320,6 +352,7 @@ export async function getJwDcOutwardDetail(
       dcDate: dateLike(header.dcDate),
       purchaseOrderId: header.purchaseOrderId,
       jwpoCodeText: header.jwpoCodeText,
+      soCode,
       vendorId: header.vendorId,
       vendorCodeText: header.vendorCodeText,
       vendorNameText: header.vendorNameText,

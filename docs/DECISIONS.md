@@ -2598,3 +2598,38 @@ schemas, and render `soCode ?? soNoText ?? '—'` in both UI spots.
 - Negative: two more indexed-FK LEFT JOINs on those reads (single/limited rows).
 - Note: the never-populated so_no_text on service_pos is now a harmless fallback behind
   the resolved soCode. Verified by shared+api+web typecheck and api+web lint.
+
+## ADR-062: Show the Sales Order on the JW Outward DC (OSP returnable gate pass)
+**Date:** 2026-07-20
+**Status:** Accepted
+
+### Context
+The JW Outward DC (OSP returnable gate pass) had no SO column/field at all — the user
+expected to see which Sales Order the outsourced parts belong to. The SO is not stored on
+jw_dc_outward; it is reachable through the JWPO: jw_dc_outward.purchase_order_id →
+purchase_orders → purchase_order_lines.source_so_line_id → sales_order_lines →
+sales_orders. The OSP cascade (osp-cascade.ts) stamps the JWPO line's source_so_line_id
+from the JC's sourceSoLineId, so the link is reliable — and null when the JC originated
+from a JWSO rather than an SO (no SO to show).
+
+### Decision
+Add a resolved `soCode` to the JW Outward register list and detail. Both reads resolve it
+via a LATERAL/aggregate over the JWPO's lines (string_agg DISTINCT so.code — a JWPO can in
+principle span more than one SO). Add `soCode` to jwDcOutwardListItemSchema (detail extends
+it), add an "SO" column to the outward register (between JWPO and Vendor) and an "SO" field
+to the detail grid, each rendering `soCode ?? '—'`.
+
+### Alternatives Considered
+- **Resolve via the JC-op path (source_jc_op_id → jc → sourceSoLineId)** — unnecessary: the
+  OSP cascade already copies the JC's SO line straight onto the PO line, so the direct
+  source_so_line_id path is both simpler and what the data carries.
+- **Denormalize an so_code onto jw_dc_outward at create** — rejected: read-side resolution
+  needs no migration/backfill and can't go stale.
+
+### Consequences
+- Positive: the JW Outward DC list and detail now show the real SO; a JWSO-sourced outward
+  correctly shows "—" (there is no SO). No schema/data change.
+- Negative: one LATERAL subquery per outward row on the list read (bounded by page size,
+  indexed FKs).
+- Note: Inward DC not touched (user asked for Outward). Verified by shared+api+web
+  typecheck and api+web lint.

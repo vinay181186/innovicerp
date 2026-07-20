@@ -57,6 +57,9 @@ export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
   pendingQty: z.number().int().nonnegative(),
   /** out | partial | fully_returned */
   returnStatus: z.enum(['out', 'partial', 'fully_returned']),
+  /** SO code(s) resolved via the JWPO's lines (source_so_line_id →
+   *  sales_orders). Null when the source JC came from a JWSO, not an SO. */
+  soCode: z.string().nullable(),
 });
 export type JwDcOutwardListItem = z.infer<typeof jwDcOutwardListItemSchema>;
 
