@@ -1,9 +1,12 @@
-// New Customer Dispatch — pick an SO, then dispatch up to the ready (produced +
-// QC-accepted − already dispatched) qty per line. Mirror of legacy dispatch flow.
+// New Customer Dispatch — pick an SO, then add dispatch lines (card-per-line,
+// like the SO/PO line editor). The user types an item code; the item name and
+// the order/ready/dispatched/available metrics auto-fetch from the SO's
+// dispatchable lines. Dispatch is capped at each line's available qty.
 
+import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions } from '../api';
 
@@ -17,6 +20,15 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+interface LineCard {
+  id: number;
+  code: string;
+  qty: string;
+}
+
+// Grid template shared by the header row + every card so columns line up.
+const GRID = '34px 1.4fr 1.8fr 70px 70px 90px 90px 110px 34px';
+
 function CustomerDispatchNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: soOpts } = useFinanceSoOptions();
@@ -27,33 +39,58 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const [transport, setTransport] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
-  // Raw text per line so the field can be freely typed/cleared; clamped to the
-  // line's availableQty only on submit (per-keystroke clamping froze the input
-  // when it was pre-filled at the max).
-  const [qtys, setQtys] = useState<Record<string, string>>({});
+  const [cards, setCards] = useState<LineCard[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const nextId = useRef(1);
 
   const { data: dispatchable } = useDispatchableSo(soId || undefined);
 
-  // Default each line's qty to its full available qty when an SO loads.
+  // Reset the line cards whenever the SO changes — dispatchable lines differ.
   useEffect(() => {
-    if (!dispatchable) return;
-    const next: Record<string, string> = {};
-    for (const l of dispatchable.lines) next[l.salesOrderLineId] = String(l.availableQty);
-    setQtys(next);
-  }, [dispatchable]);
+    setCards([]);
+    setErr(null);
+  }, [soId]);
+
+  const lines: DispatchableLine[] = dispatchable?.lines ?? [];
+
+  // Resolve a typed item code to its dispatchable SO line (case-insensitive).
+  function resolveLine(code: string): DispatchableLine | null {
+    const c = code.trim().toLowerCase();
+    if (!c) return null;
+    return lines.find((l) => (l.itemCode ?? '').toLowerCase() === c) ?? null;
+  }
+
+  function addLine(): void {
+    setCards((cs) => [...cs, { id: nextId.current++, code: '', qty: '' }]);
+  }
+  function removeLine(id: number): void {
+    setCards((cs) => cs.filter((c) => c.id !== id));
+  }
+  function patchLine(id: number, patch: Partial<LineCard>): void {
+    setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
 
   async function submit(): Promise<void> {
     setErr(null);
-    const lines = (dispatchable?.lines ?? [])
-      .map((l) => {
-        const raw = Number(qtys[l.salesOrderLineId]) || 0;
-        const qty = Math.max(0, Math.min(l.availableQty, raw));
-        return { salesOrderLineId: l.salesOrderLineId, qty };
-      })
-      .filter((l) => l.qty > 0);
     if (!soId) return setErr('Select an SO');
-    if (lines.length === 0) return setErr('Enter a dispatch qty on at least one line');
+    if (cards.length === 0) return setErr('Add at least one line');
+
+    // Resolve each card → SO line, clamp qty to available, merge duplicates.
+    const byLine = new Map<string, number>();
+    for (const c of cards) {
+      const line = resolveLine(c.code);
+      if (!line) return setErr(`Item code "${c.code || '(blank)'}" is not ready to dispatch on this SO`);
+      const raw = Number(c.qty) || 0;
+      const qty = Math.max(0, Math.min(line.availableQty, raw));
+      if (qty <= 0) continue;
+      byLine.set(line.salesOrderLineId, (byLine.get(line.salesOrderLineId) ?? 0) + qty);
+    }
+    const payloadLines = [...byLine.entries()].map(([salesOrderLineId, qty]) => ({
+      salesOrderLineId,
+      qty: Math.min(qty, lines.find((l) => l.salesOrderLineId === salesOrderLineId)?.availableQty ?? qty),
+    }));
+    if (payloadLines.length === 0) return setErr('Enter a dispatch qty on at least one line');
+
     try {
       await create.mutateAsync({
         salesOrderId: soId,
@@ -61,7 +98,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         transport: transport || undefined,
         vehicleNo: vehicleNo || undefined,
         remarks: remarks || undefined,
-        lines,
+        lines: payloadLines,
       });
       void navigate({ to: '/customer-dispatches' });
     } catch (e) {
@@ -82,11 +119,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label">Sales Order ★</label>
-              <select
-                className="innovic-input"
-                value={soId}
-                onChange={(e) => setSoId(e.target.value)}
-              >
+              <select className="innovic-input" value={soId} onChange={(e) => setSoId(e.target.value)}>
                 <option value="">-- Select SO --</option>
                 {(soOpts?.options ?? []).map((o) => (
                   <option key={o.salesOrderId} value={o.salesOrderId}>
@@ -97,12 +130,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label">Dispatch Date</label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={dispatchDate}
-                onChange={(e) => setDispatchDate(e.target.value)}
-              />
+              <input type="date" className="innovic-input" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)} />
             </div>
             <div className="form-grp">
               <label className="form-label">Transport</label>
@@ -118,69 +146,136 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             </div>
           </div>
 
-          {dispatchable ? (
-            <div style={{ marginTop: 14 }}>
+          {soId ? (
+            <div style={{ marginTop: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', marginBottom: 6 }}>
                 ▸ READY TO DISPATCH (produced + QC-accepted)
               </div>
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Item Code</th>
-                    <th>Name</th>
-                    <th className="td-ctr">Order</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Ready</th>
-                    <th className="td-ctr">Dispatched</th>
-                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Available</th>
-                    <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatch Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dispatchable.lines.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="empty-state">No lines</td>
-                    </tr>
-                  ) : (
-                    dispatchable.lines.map((l) => (
-                      <tr key={l.salesOrderLineId}>
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>{l.itemCode ?? '—'}</td>
-                        <td style={{ fontSize: 11 }}>{l.itemName}</td>
-                        <td className="td-ctr mono">{l.orderQty}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--green)' }}>{l.readyQty}</td>
-                        <td className="td-ctr mono text3">{l.dispatchedQty}</td>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>{l.availableQty}</td>
-                        <td className="td-ctr">
-                          <input
-                            type="number"
-                            className="innovic-input"
-                            min={0}
-                            max={l.availableQty}
-                            value={qtys[l.salesOrderLineId] ?? ''}
-                            disabled={l.availableQty <= 0}
-                            onChange={(e) =>
-                              setQtys((q) => ({ ...q, [l.salesOrderLineId]: e.target.value }))
-                            }
-                            onBlur={(e) => {
-                              const clamped = Math.max(
-                                0,
-                                Math.min(l.availableQty, Number(e.target.value) || 0),
-                              );
-                              setQtys((q) => ({ ...q, [l.salesOrderLineId]: String(clamped) }));
-                            }}
-                            style={{ width: 80, textAlign: 'center' }}
-                          />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+              <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+                Add a line, then type an item code — name and quantities auto-fill from this SO.
+              </div>
+
+              {/* Shared datalist of this SO's dispatchable item codes. */}
+              <datalist id="dispatch-item-codes">
+                {lines.map((l) => (
+                  <option key={l.salesOrderLineId} value={l.itemCode ?? ''}>
+                    {l.itemName}
+                  </option>
+                ))}
+              </datalist>
+
+              {cards.length > 0 ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: GRID,
+                    gap: 8,
+                    padding: '0 10px 4px',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: 0.4,
+                    color: 'var(--text3)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <span>#</span>
+                  <span>Item Code ★</span>
+                  <span>Item Name</span>
+                  <span style={{ textAlign: 'center' }}>Order</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Ready</span>
+                  <span style={{ textAlign: 'center' }}>Dispatched</span>
+                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</span>
+                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatch Qty</span>
+                  <span />
+                </div>
+              ) : null}
+
+              {cards.map((card, idx) => {
+                const line = resolveLine(card.code);
+                const codeKnown = card.code.trim() !== '';
+                return (
+                  <div
+                    key={card.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: GRID,
+                      gap: 8,
+                      alignItems: 'center',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 10,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
+                      {idx + 1}
+                    </span>
+                    <input
+                      className="innovic-input"
+                      list="dispatch-item-codes"
+                      placeholder="Code"
+                      autoComplete="off"
+                      value={card.code}
+                      onChange={(e) => patchLine(card.id, { code: e.target.value })}
+                      style={{
+                        fontFamily: 'var(--mono)',
+                        color: 'var(--purple)',
+                        borderColor: codeKnown && !line ? 'var(--red)' : undefined,
+                      }}
+                    />
+                    <input
+                      className="innovic-input"
+                      readOnly
+                      placeholder="auto-filled"
+                      value={line?.itemName ?? ''}
+                      style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+                    />
+                    <span className="mono" style={{ textAlign: 'center' }}>{line ? line.orderQty : '—'}</span>
+                    <span className="mono" style={{ textAlign: 'center', color: 'var(--green)' }}>
+                      {line ? line.readyQty : '—'}
+                    </span>
+                    <span className="mono text3" style={{ textAlign: 'center' }}>
+                      {line ? line.dispatchedQty : '—'}
+                    </span>
+                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--amber)' }}>
+                      {line ? line.availableQty : '—'}
+                    </span>
+                    <input
+                      type="number"
+                      className="innovic-input"
+                      min={0}
+                      max={line?.availableQty ?? undefined}
+                      value={card.qty}
+                      disabled={!line || line.availableQty <= 0}
+                      onChange={(e) => patchLine(card.id, { qty: e.target.value })}
+                      onBlur={(e) => {
+                        if (!line) return;
+                        const clamped = Math.max(0, Math.min(line.availableQty, Number(e.target.value) || 0));
+                        patchLine(card.id, { qty: e.target.value.trim() === '' ? '' : String(clamped) });
+                      }}
+                      style={{ textAlign: 'center' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      title="Remove line"
+                      onClick={() => removeLine(card.id)}
+                      style={{ color: 'var(--red)', padding: 4 }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine} style={{ marginTop: 4 }}>
+                <Plus size={14} /> Add Line
+              </button>
             </div>
           ) : null}
 
-          {err ? (
-            <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>{err}</div>
-          ) : null}
+          {err ? <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>{err}</div> : null}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/customer-dispatches' })}>
