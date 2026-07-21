@@ -2722,3 +2722,38 @@ exact new SQL against live data before shipping (11/12 now show the real SO).
 - Negative: one more LATERAL per DC read (indexed FKs, bounded rows).
 - Note: ADR-062's jw_dc_outward SO column is on an unused table (0 prod rows) — left as-is;
   it is harmless and correct should JW-DC ever be used. Verified by api typecheck + lint.
+
+## ADR-066: OSP At-Vendor / WIP reconciliation register (read-only, increment #1 of the OSP inventory fix)
+**Date:** 2026-07-21
+**Status:** Accepted
+
+### Context
+The SO-517 / CONNECTING ROD trace showed on-hand stock going negative (−30) and job-card
+status wrong throughout, because outsource (OSP) send debited finished stock (`jw_out`) while
+receive credited it (`grn_qc`) — netting to zero production, then dispatch drove it negative —
+and because there was nowhere to see "how much is physically at the vendor / in process". The
+agreed fix is four gated increments (Option A: make OSP send stock-neutral; a document-derived
+at-vendor register; qty-driven JC/SO status; a backfill). This ADR is **increment #1** — the
+safe, read-only foundation shipped first so the numbers can be eyeballed before any posting,
+status view, or data is touched.
+
+### Decision
+Add a read-only view `v_osp_wip` (migration 0064) — one row per outsource `jc_op` reconciling
+every ordered unit as `order_qty = accepted + at_vendor + not_sent`, all derived from existing
+documents (JC op counters + outward-DC receipt lines; identical receipt rollup to
+`v_jc_op_status` so they stay consistent). Surfaced through a new module `osp-wip`
+(service → `GET /osp-wip` → `useOspWip` → **Store ▸ OSP At-Vendor Register** page) with KPI
+tiles (Outsourced Ops · At-Vendor pcs · Not-Sent pcs · Total Sent) and a filterable table.
+No writes, no schema change beyond the additive view. Validated against IN-JC-26-00020
+(SO-517): order 60 = accepted 30 + at_vendor 0 + not_sent 30.
+
+Also fixed a latent typecheck error in items/routes/list.tsx (`p.code` became optional after
+ADR item-code auto-assign; import result lists now fall back to `p.code ?? p.name`).
+
+### Consequences
+- Positive: at-vendor / in-process qty is now visible and reconciles to ordered — without
+  polluting the finished-stock ledger. Foundation for increments #2–#4.
+- Negative: none functional; one more read-only view + page to maintain.
+- Next: increment #2 (OSP send → stock-neutral, `delivery-challans/cascades.ts`), #3
+  (qty-driven `v_jc_op_status`), #4 (one-time backfill of negatively-driven items). Verified
+  by workspace typecheck + api/web lint before ship.

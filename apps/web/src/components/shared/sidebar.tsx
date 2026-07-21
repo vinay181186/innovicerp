@@ -135,6 +135,7 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Report',
         items: [
           { to: '/store-inventory', label: 'Store / Inventory', icon: '📦' },
+          { to: '/osp-wip', label: 'OSP At-Vendor Register', icon: '🚚' },
           { to: '/store-transactions', label: 'Stock Ledger', icon: '📖' },
           { to: '/reports?group=Store', label: 'Store Reports', icon: '📊' },
         ],

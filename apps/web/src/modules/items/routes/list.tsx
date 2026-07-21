@@ -148,15 +148,18 @@ function ItemsListPage(): React.JSX.Element {
       const duplicates: string[] = [];
       const failures: string[] = [];
       for (const p of payloads) {
+        // Code is optional on import now (auto-assigned server-side), so fall
+        // back to the name for the result lists the user sees.
+        const label = p.code ?? p.name;
         try {
           await createItem.mutateAsync(p);
-          imported.push(p.code);
+          imported.push(label);
         } catch (e) {
           const reason = e instanceof Error ? e.message : 'failed';
           // The API rejects an existing code with `… already exists`; split those
           // out as duplicates so the user gets a clean list of what to remove.
-          if (/already exists/i.test(reason)) duplicates.push(p.code);
-          else failures.push(p.code);
+          if (/already exists/i.test(reason)) duplicates.push(label);
+          else failures.push(label);
         }
       }
       setImportResult({ total: payloads.length, imported, duplicates, failures, warnings: errors });
