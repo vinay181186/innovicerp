@@ -10,12 +10,13 @@ import type { Client, ListClientsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useClientsList, useSoftDeleteClient } from '../api';
+import { useClientsList, useCreateClient, useSoftDeleteClient } from '../api';
+import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -72,6 +73,41 @@ function ClientsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
   const softDelete = useSoftDeleteClient();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  // Excel import — parse the workbook, then create each client sequentially
+  // (each success invalidates the list via the mutation hook).
+  const createClient = useCreateClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function onImportFile(file: File): Promise<void> {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const { payloads, errors } = await parseClientImportFile(file);
+      let ok = 0;
+      const fails: string[] = [];
+      for (const p of payloads) {
+        try {
+          await createClient.mutateAsync(p);
+          ok += 1;
+        } catch (e) {
+          fails.push(`${p.name}: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      setImportMsg(
+        `Imported ${ok}/${payloads.length} client(s).` +
+          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
+          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
+      );
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   const toggleSort = useCallback(
     (field: 'code' | 'name') => {
@@ -248,6 +284,22 @@ function ClientsListPage(): React.JSX.Element {
         </div>
       </div>
 
+      {importMsg ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
+            {importMsg}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 10 }}
+              onClick={() => setImportMsg(null)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="panel">
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -349,6 +401,40 @@ function ClientsListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Excel template + import sit below the table panel (mirror of Vendor Master). */}
+      {canWrite ? (
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            onClick={() => downloadClientTemplate()}
+          >
+            ⬇ Download Excel Template
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+          >
+            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import from
+            Excel
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onImportFile(f);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

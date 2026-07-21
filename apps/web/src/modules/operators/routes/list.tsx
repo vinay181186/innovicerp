@@ -18,12 +18,13 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useOperatorsList, useSoftDeleteOperator } from '../api';
+import { useCreateOperator, useOperatorsList, useSoftDeleteOperator } from '../api';
+import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
 
@@ -76,6 +77,41 @@ function OperatorsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
   const softDelete = useSoftDeleteOperator();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  // Excel import — parse the workbook, then create each operator sequentially
+  // (each success invalidates the list via the mutation hook).
+  const createOperator = useCreateOperator();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function onImportFile(file: File): Promise<void> {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const { payloads, errors } = await parseOperatorImportFile(file);
+      let ok = 0;
+      const fails: string[] = [];
+      for (const p of payloads) {
+        try {
+          await createOperator.mutateAsync(p);
+          ok += 1;
+        } catch (e) {
+          fails.push(`${p.name}: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      setImportMsg(
+        `Imported ${ok}/${payloads.length} operator(s).` +
+          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
+          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
+      );
+    } catch (e) {
+      setImportMsg(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
 
   // Headers + sort accessors only — cells render as plain <td> below so legacy's
   // per-cell classes land on the <td>, matching L13702-13710.
@@ -156,6 +192,22 @@ function OperatorsListPage(): React.JSX.Element {
           ) : null}
         </div>
       </div>
+
+      {importMsg ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
+            {importMsg}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ marginLeft: 8, fontSize: 10 }}
+              onClick={() => setImportMsg(null)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="tbl-wrap">
@@ -292,6 +344,40 @@ function OperatorsListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {/* Excel template + import sit below the table panel (mirror of Vendors). */}
+      {canWrite ? (
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            onClick={() => downloadOperatorTemplate()}
+          >
+            ⬇ Download Excel Template
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 11 }}
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+          >
+            {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import from
+            Excel
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onImportFile(f);
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
