@@ -155,6 +155,7 @@ function ClientsListPage(): React.JSX.Element {
         cell: ({ row }) => <span className="fw-700">{row.original.name}</span>,
       },
       {
+        id: 'address',
         header: 'Address',
         cell: ({ row }) => (
           <span className="text2" style={{ fontSize: 11 }}>
@@ -190,6 +191,7 @@ function ClientsListPage(): React.JSX.Element {
         ),
       },
       {
+        id: 'actions',
         header: '',
         cell: ({ row }) => (
           <div style={{ display: 'flex', gap: 4 }}>
