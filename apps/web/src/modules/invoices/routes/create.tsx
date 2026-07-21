@@ -293,9 +293,11 @@ function InvoiceNewPage(): React.JSX.Element {
                       options={opts}
                       placeholder="🔍 code or name…"
                       emptyText="No items to invoice"
-                      valueLabel={
-                        line ? (line.itemCode ? `${line.itemCode} — ${line.itemName}` : line.itemName) : undefined
-                      }
+                      // Item Code field shows the code only; the adjacent Item
+                      // Name field carries the name. The open dropdown still
+                      // renders "CODE — Name" so you can search by either.
+                      selectedLabel={(o) => o.code ?? o.name}
+                      valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
                     />
                     <input
                       className="innovic-input"
