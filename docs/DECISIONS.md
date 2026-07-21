@@ -2757,3 +2757,47 @@ ADR item-code auto-assign; import result lists now fall back to `p.code ?? p.nam
 - Next: increment #2 (OSP send → stock-neutral, `delivery-challans/cascades.ts`), #3
   (qty-driven `v_jc_op_status`), #4 (one-time backfill of negatively-driven items). Verified
   by workspace typecheck + api/web lint before ship.
+
+## ADR-067: OSP send is stock-neutral — stop debiting finished stock on JW outward DC (increment #2)
+**Date:** 2026-07-21
+**Status:** Accepted
+
+### Context
+Root cause of the SO-517 negative-stock bug: issuing an OSP outward Delivery Challan
+(delivery_challans — "New DC → pick JW PO → ship qty") debited finished stock
+(`store_transactions` txn_type='out', source_type='jw_out'), and receiving the processed
+goods back credited it (grn_qc, +). With no BOM (one item code end-to-end), that send(−)/
+receive(+) pair nets to **zero production**, so a later dispatch(−) drove on-hand negative
+(−30). The material sent out is not "gone" and not "in finished store" — it is *at the vendor
+in process*, which is now tracked document-derived via `v_osp_wip` (ADR-066), not the ledger.
+
+### Decision
+Remove the stock-ledger movement from the OSP DC lifecycle (Option A):
+- `delivery-challans/service.ts`: drop the `writeStoreTxnOnDcIssue` call on create and the
+  `reverseStoreTxnOnDcCancel` call on cancel (both removed together — reversing a debit that
+  no longer happens would have *inflated* stock on cancel).
+- `delivery-challans/cascades.ts`: delete `writeStoreTxnOnDcIssue` / `reverseStoreTxnOnDcCancel`
+  / `DcStockTxnArgs` (now dead) and their `sql`/`storeTransactions` imports.
+- The jc_op cascades (`applyOutwardToJcOp` / `reverseOutwardFromJcOp`) are UNCHANGED — sent-qty
+  and outsource_status still update, so the register and status stay correct.
+- Updated the unit test to assert **no** ledger row is written on OSP send.
+Production is credited only on QC-accept of the return (existing qc_accept path); dispatch still
+debits; the loop closes at 0 instead of −30.
+
+### Alternatives Considered
+- Option B (keep the debit, add a separate "at vendor" liability account and net it in the
+  stock view) — rejected: more moving parts, still double-represents the same pieces, and the
+  no-BOM shop has no use for a WIP sub-ledger. Option A is simpler and matches how the floor
+  actually thinks ("it's at the vendor, it'll come back").
+
+### Consequences
+- Positive: OSP send no longer moves finished stock; combined with the register (ADR-066) the
+  identity Ordered = In-store + At-vendor + On-PO + Dispatched holds. New DCs post nothing to
+  the ledger.
+- Negative: historical `jw_out` rows already posted remain until the one-time backfill
+  (increment #4) recomputes `item_stock_balances`. Until #4 runs, previously-affected items
+  keep their old (wrong) on-hand; go-forward is correct.
+- Known dead path left as-is: `jw-dc/service.ts` still writes `jw_out`, but that module's table
+  has 0 prod rows (unused; see ADR-062/065) — out of scope, noted so it isn't a surprise if
+  JW-DC is ever activated. Verified by api typecheck + lint; integration test updated (cannot
+  run locally — only prod DB is available and must never be used for tests).

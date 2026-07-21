@@ -29,12 +29,7 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
-import {
-  applyOutwardToJcOp,
-  reverseOutwardFromJcOp,
-  reverseStoreTxnOnDcCancel,
-  writeStoreTxnOnDcIssue,
-} from './cascades';
+import { applyOutwardToJcOp, reverseOutwardFromJcOp } from './cascades';
 import {
   applyReceiveToJcOp,
   autoCreateNcFromOutsourceReject,
@@ -728,19 +723,12 @@ export async function createDeliveryChallan(
     const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
     for (const dl of insertedLines) {
       const qtyInt = Math.round(Number(dl.qty));
-      // Stock ledger is per-item; skip for free-text items (null item_id FK).
-      if (dl.itemId) {
-        await writeStoreTxnOnDcIssue({
-          tx,
-          companyId,
-          adminUserId: user.id,
-          dcCode: header.code,
-          dcDate: header.dcDate,
-          lineNo: dl.lineNo,
-          itemId: dl.itemId,
-          qty: qtyInt,
-        });
-      }
+      // Option A (ADR-067): OSP send is stock-neutral — issuing an outward JW
+      // DC no longer debits finished stock. Material out for processing is
+      // tracked as "at vendor" via v_osp_wip (jc_op counters); production is
+      // credited only on QC-accept of the return. This removes the
+      // send(−jw_out)/receive(+grn_qc) pair that netted to zero and let a
+      // later dispatch drive on-hand negative (SO-517 / CONNECTING ROD trace).
       if (dl.purchaseOrderLineId) {
         const result = await applyOutwardToJcOp({
           tx,
@@ -840,16 +828,8 @@ export async function cancelDeliveryChallan(
     const opCascades: Array<{ jcCode: string; opSeq: number; qty: number }> = [];
     for (const dl of lineRows) {
       const qtyInt = Math.round(Number(dl.qty));
-      await reverseStoreTxnOnDcCancel({
-        tx,
-        companyId,
-        adminUserId: user.id,
-        dcCode: header.code,
-        dcDate: header.dcDate,
-        lineNo: dl.lineNo,
-        itemId: dl.itemId,
-        qty: qtyInt,
-      });
+      // Option A (ADR-067): OSP send no longer touches stock, so cancel has no
+      // ledger movement to reverse — only the jc_op sent-qty is unwound below.
       if (dl.purchaseOrderLineId) {
         const result = await reverseOutwardFromJcOp({
           tx,

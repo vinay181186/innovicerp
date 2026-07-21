@@ -23,15 +23,15 @@
 //          - if outsource_dc_no matches dcCode being cancelled, clear it
 //        Idempotent — already-zero / already-downgraded rows pass through.
 //
-//   3. writeStoreTxnOnDcIssue(args) / reverseStoreTxnOnDcCancel(args)
-//        Stock ledger movements mirroring the GRN/QC pattern. Lock items row
-//        FOR UPDATE, read v_item_stock, write a store_transactions row.
-//        Issue: txn_type='out', source_type='jw_out'.
-//        Cancel: compensating txn_type='in', source_type='jw_out' (same
-//        source_type so the trace stays grouped; remarks indicate reversal).
+// Stock-ledger movement on DC issue/cancel was REMOVED in ADR-067 (Option A):
+// OSP send is now stock-neutral. Sending material out for processing no longer
+// debits finished stock (source_type='jw_out'); the qty out is tracked as
+// "at vendor" via v_osp_wip, and production is credited only on QC-accept of
+// the return. This eliminated the send(−)/receive(+) pair that netted to zero
+// and let a later dispatch drive on-hand negative (SO-517 trace).
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { jcOps, jobCards, storeTransactions } from '../../db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
+import { jcOps, jobCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 
 export interface OutwardCascadeArgs {
@@ -183,83 +183,5 @@ export async function reverseOutwardFromJcOp(
   };
 }
 
-export interface DcStockTxnArgs {
-  tx: DbTransaction;
-  companyId: string;
-  adminUserId: string;
-  dcCode: string;
-  dcDate: string;
-  lineNo: number;
-  itemId: string | null;
-  qty: number;
-}
-
-export async function writeStoreTxnOnDcIssue(args: DcStockTxnArgs): Promise<string | null> {
-  const { tx, companyId, adminUserId, dcCode, dcDate, lineNo, itemId, qty } = args;
-  if (!itemId) return null; // free-text item, no stock tracking
-  if (qty <= 0) return null;
-
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore - qty;
-
-  const inserted = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId,
-      txnDate: dcDate,
-      itemId,
-      txnType: 'out',
-      qty,
-      sourceType: 'jw_out',
-      sourceRef: `${dcCode} / ln ${lineNo}`,
-      stockBefore,
-      stockAfter,
-      remarks: `JW DC issue · ${qty} pcs`,
-      createdBy: adminUserId,
-    })
-    .returning({ id: storeTransactions.id });
-
-  return inserted[0]?.id ?? null;
-}
-
-export async function reverseStoreTxnOnDcCancel(args: DcStockTxnArgs): Promise<string | null> {
-  const { tx, companyId, adminUserId, dcCode, dcDate, lineNo, itemId, qty } = args;
-  if (!itemId) return null;
-  if (qty <= 0) return null;
-
-  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-
-  const balanceRows = (await tx.execute(sql`
-    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
-    FROM public.v_item_stock
-    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
-  `)) as unknown as Array<{ on_hand: number }>;
-  const stockBefore = Number(balanceRows[0]?.on_hand ?? 0);
-  const stockAfter = stockBefore + qty;
-
-  const inserted = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId,
-      txnDate: dcDate,
-      itemId,
-      txnType: 'in',
-      qty,
-      sourceType: 'jw_out',
-      sourceRef: `${dcCode} / ln ${lineNo} (cancel)`,
-      stockBefore,
-      stockAfter,
-      remarks: `JW DC cancel reversal · ${qty} pcs`,
-      createdBy: adminUserId,
-    })
-    .returning({ id: storeTransactions.id });
-
-  return inserted[0]?.id ?? null;
-}
+// (writeStoreTxnOnDcIssue / reverseStoreTxnOnDcCancel removed in ADR-067 —
+// OSP send is stock-neutral; see the header note above.)

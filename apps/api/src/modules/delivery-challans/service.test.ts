@@ -339,7 +339,7 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
     expect(after.outsourceSentDate).toBe('2026-05-18');
   });
 
-  it('createDeliveryChallan writes store_transactions OUT row with source_type=jw_out', async () => {
+  it('createDeliveryChallan is stock-neutral — no jw_out ledger row on OSP send (ADR-067)', async () => {
     const po = await freshJwPo('CR3', 10);
     const dcCode = `${TEST_PREFIX}CR3`;
     await service.createDeliveryChallan(
@@ -364,13 +364,10 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
       },
       admin,
     );
+    // Option A: sending material out for OSP no longer debits finished stock.
+    // The qty out is tracked as "at vendor" via v_osp_wip, not the ledger.
     const txns = await readStockTxnsFor(`${dcCode}%`);
-    expect(txns).toHaveLength(1);
-    expect(txns[0]).toMatchObject({
-      txnType: 'out',
-      qty: 3,
-      sourceType: 'jw_out',
-    });
+    expect(txns).toHaveLength(0);
   });
 
   it('createDeliveryChallan emits DC_ISSUE + OP_OUTSOURCE_SENT audit rows in same tx', async () => {
