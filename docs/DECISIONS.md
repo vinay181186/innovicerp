@@ -2801,3 +2801,51 @@ debits; the loop closes at 0 instead of −30.
   has 0 prod rows (unused; see ADR-062/065) — out of scope, noted so it isn't a surprise if
   JW-DC is ever activated. Verified by api typecheck + lint; integration test updated (cannot
   run locally — only prod DB is available and must never be used for tests).
+
+## ADR-068: Qty-driven OSP op status + one-time backfill (increments #3 & #4)
+**Date:** 2026-07-21
+**Status:** Accepted
+
+### Context
+Two residual effects of the OSP bugs remained after ADR-066/067:
+1. `v_jc_op_status` marked an outsource op `complete` on the flag
+   `outsource_status = 'received'`. But `receipt-cascades.ts` sets 'received' when everything
+   *sent* comes back (`cumulative >= sent_qty`), not when everything *ordered* is done — so
+   SO-517 (sent 30 of 60, 30 back) was flagged received → op complete → `v_jc_status` complete
+   → `tryCascadeJcComplete` set `job_cards.closed_at` and closed the SO line — with 30 pieces
+   never sent. Live-verified: IN-JC-26-00020 op read `complete`, JC `closed`, SO line `closed`.
+2. Historical `jw_out` debits (ADR-067) had already driven 10 items' on-hand down, several
+   negative (CONNECTING ROD −30, LOCKING LEVER −32, LEVER −34, SUPPORT −100, …).
+
+### Decision
+**#3 — 0065 (qty-driven status, CREATE OR REPLACE `v_jc_op_status`):** replace the flag
+short-circuit with a quantity test — an outsource op is `complete` only when accepted
+(received − rejected) ≥ the op's required input qty (order_qty for op 1, else prev output);
+add an outsource term to the `in_progress` rung so a partially-returned op reads `in_progress`,
+not the bare `received` sub-state. Column set unchanged, so dependent `v_jc_status` is
+untouched. Applied + validated: IN-JC-26-00020 op now `in_progress` (input 60, accepted 30).
+
+**#4 — 0066 (idempotent, data-only backfill):**
+- Stock: post one compensating `in` ledger row per item = net `jw_out` debit (source_type
+  `manual_adjust`, marker source_ref `OSP-BACKFILL-ADR067`, guarded by NOT EXISTS so re-runs
+  no-op). Uses the ledger — not a direct balance edit — so the trigger-maintained
+  `item_stock_balances` and any future 0020-style reconcile stay consistent. Dry-run: all 10
+  items land non-negative; every pure-OSP item (CONNECTING ROD, CONNECTING LEVER, LEVER,
+  SUPPORT, COVER) returns to exactly 0.
+- Closures: clear `closed_at` on JCs closed but not complete under the corrected view, and
+  reopen the SO/JW line + header auto-closed off the back of it (each UPDATE self-limiting).
+  Dry-run scope: exactly IN-JC-26-00020 + SO IN-SO-00517 line 23 (header already open).
+
+### Alternatives Considered
+- Recompute `item_stock_balances` directly, excluding `jw_out` rows — rejected: leaves the
+  erroneous rows in the ledger, so a future reconcile (0020 backfill block) would re-introduce
+  the debit and drift. Compensating ledger entries keep ledger = balance.
+
+### Consequences
+- Positive: OSP ops/JC/SO reflect real qty; SO-517 lands at 0 stock, JC 30-done/30-pending, SO
+  line reopened. Model consistent end-to-end (register + neutral send + qty status + clean data).
+- Negative / ops note: 0066 is a **prod data mutation** — it is applied via `apply-sql.ts` with
+  explicit operator approval (the auto classifier blocks unattended prod data writes), separate
+  from the code push. 0065 (view) is already applied. Both migration files are version-controlled.
+- The compensating rows show in the Stock Ledger as `manual_adjust` with an ADR-067 remark
+  (auditable, not silent).
