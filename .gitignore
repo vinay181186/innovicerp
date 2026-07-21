@@ -13,6 +13,11 @@ coverage/
 !.vscode/settings.shared.json
 .idea/
 *.tsbuildinfo
+# Playwright e2e artefacts (reports, traces, results — regenerated per run).
+test-results/
+playwright-report/
+blob-report/
+.playwright/
 .turbo/
 .cache/
 .claude/*
