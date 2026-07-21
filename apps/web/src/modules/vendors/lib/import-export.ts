@@ -10,8 +10,8 @@
 import type { CreateVendorInput } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
+// No Code column — the server auto-generates the next VND-### on import.
 const COLUMNS = [
-  'Code*',
   'Name*',
   'Contact Person',
   'Phone',
@@ -38,11 +38,11 @@ function getCol(row: Record<string, unknown>, keys: string[]): string {
 
 export function downloadVendorTemplate(): void {
   const sample = [
-    'VND-001', 'ABC Engineering', 'Mr. Patel', '9876543210', 'abc@email.com', '24AABCU9603R1ZN',
+    'ABC Engineering', 'Mr. Patel', '9876543210', 'abc@email.com', '24AABCU9603R1ZN',
     '123 Industrial Area', 'Ahmedabad', 'Gujarat', '380015', 'CNC Machining, Turning', 'A', 'Active',
   ];
   const ws = XLSX.utils.aoa_to_sheet([COLUMNS as unknown as string[], sample]);
-  ws['!cols'] = [12, 20, 18, 14, 22, 18, 30, 14, 12, 8, 25, 12, 18].map((wch) => ({ wch }));
+  ws['!cols'] = [20, 18, 14, 22, 18, 30, 14, 12, 8, 25, 12, 18].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Vendors');
   XLSX.writeFile(wb, 'Vendor_Import_Template.xlsx');
@@ -66,27 +66,25 @@ export async function parseVendorImportFile(file: File): Promise<VendorImportRes
 
   rows.forEach((r, i) => {
     const rowNum = i + 2;
+    // Code is optional — the server auto-generates the next VND-### when it is
+    // omitted. A file that still carries a Code column is honoured if present.
     const code = getCol(r, ['Code*', 'Code', 'code', 'Vendor Code']);
     const name = getCol(r, ['Name*', 'Name', 'name', 'Vendor Name']);
     if (!code && !name) return;
-    if (!code) {
-      errors.push(`Row ${rowNum}: Code is required — skipped`);
-      return;
-    }
     if (!name) {
       errors.push(`Row ${rowNum}: Name is required — skipped`);
       return;
     }
-    if (seen.has(code)) {
+    if (code && seen.has(code)) {
       errors.push(`Row ${rowNum}: Code "${code}" is repeated in the file — skipped`);
       return;
     }
-    seen.add(code);
+    if (code) seen.add(code);
     const ratingRaw = getCol(r, ['Rating (A/B/C)', 'Rating', 'rating']);
     const statusRaw = getCol(r, ['Status (Active/Inactive)', 'Status', 'status']);
     const email = getCol(r, ['Email', 'email']);
     payloads.push({
-      code,
+      code: code || undefined,
       name,
       contactPerson: getCol(r, ['Contact Person', 'Contact', 'contact']) || undefined,
       phone: getCol(r, ['Phone', 'phone']) || undefined,
