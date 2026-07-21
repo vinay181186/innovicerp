@@ -29,11 +29,15 @@ export const itemSchema = z.object({
 export type Item = z.infer<typeof itemSchema>;
 
 export const createItemInputSchema = z.object({
+  // Optional: the server auto-generates the next ITM-#### in the company series
+  // when omitted. The form prefills it (editable), and the rules below still
+  // apply to any value the user keeps or types.
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, underscore, hyphen')
+    .optional(),
   name: z.string().min(1).max(255),
   description: z.string().max(2000).optional(),
   drawingNo: z.string().max(64).optional(),

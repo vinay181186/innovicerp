@@ -19,7 +19,9 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNextItemCode } from '../api';
 import { DrawingUploadField } from './drawing-upload-field';
 
 type CreateMode = {
@@ -80,6 +82,16 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
 
+  // Prefill the next ITM-#### in the series (editable). The user may keep it,
+  // type their own (e.g. a customer part number — still validated by the code
+  // rules), or clear it to let the server auto-assign on save.
+  const { data: nextCode } = useNextItemCode();
+  useEffect(() => {
+    if (nextCode?.code && !form.getValues('code')) {
+      form.setValue('code', nextCode.code);
+    }
+  }, [nextCode, form]);
+
   return (
     <form
       onSubmit={form.handleSubmit(async (values) => {
@@ -97,8 +109,12 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
               className="innovic-input"
               autoFocus
               autoComplete="off"
-              placeholder="e.g. ITM-001"
-              {...register('code')}
+              placeholder="e.g. ITM-0001 (auto — editable)"
+              {...register('code', {
+                // Blank → undefined so the server auto-generates the next code;
+                // a kept/typed value is validated by the schema's code rules.
+                setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
+              })}
             />
             {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
           </div>

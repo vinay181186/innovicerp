@@ -13,6 +13,12 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
     return service.listItems(query, req.user);
   });
 
+  // Must precede '/items/:id' so 'next-code' isn't captured as an :id param.
+  app.get('/items/next-code', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getNextItemCode(req.user);
+  });
+
   app.get('/items/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

@@ -37,6 +37,14 @@ export function useItemsList(
   });
 }
 
+export function useNextItemCode() {
+  return useQuery<{ code: string }>({
+    queryKey: [...itemsKeys.all, 'next-code'],
+    queryFn: () => apiFetch<{ code: string }>('/items/next-code'),
+    staleTime: 0,
+  });
+}
+
 export function useItem(id: string | undefined) {
   return useQuery<Item>({
     queryKey: id ? itemsKeys.detail(id) : itemsKeys.detail('__missing__'),
