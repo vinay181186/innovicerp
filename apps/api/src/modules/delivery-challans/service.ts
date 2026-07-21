@@ -108,7 +108,7 @@ export async function listDeliveryChallans(
         dc.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         po.code AS "poCode",
-        so.code AS "soCode",
+        COALESCE(so.code, po_so.so_code) AS "soCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
@@ -119,6 +119,18 @@ export async function listDeliveryChallans(
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
+      -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
+      LEFT JOIN LATERAL (
+        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code
+        FROM public.purchase_order_lines pol
+        JOIN public.sales_order_lines sol2
+          ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
+        JOIN public.sales_orders so2
+          ON so2.id = sol2.sales_order_id AND so2.deleted_at IS NULL
+        WHERE pol.purchase_order_id = dc.purchase_order_id
+          AND pol.deleted_at IS NULL
+      ) po_so ON TRUE
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*) AS line_count,
@@ -234,7 +246,7 @@ async function loadDeliveryChallanWithLines(
         dc.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         po.code AS "poCode",
-        so.code AS "soCode"
+        COALESCE(so.code, po_so.so_code) AS "soCode"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
@@ -243,6 +255,18 @@ async function loadDeliveryChallanWithLines(
         ON sol.id = dc.sales_order_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      -- OSP/vendor DCs carry only purchase_order_id (no sales_order_line_id),
+      -- so resolve the SO through the PO's lines' source_so_line_id as a fallback.
+      LEFT JOIN LATERAL (
+        SELECT string_agg(DISTINCT so2.code, ', ' ORDER BY so2.code) AS so_code
+        FROM public.purchase_order_lines pol
+        JOIN public.sales_order_lines sol2
+          ON sol2.id = pol.source_so_line_id AND sol2.deleted_at IS NULL
+        JOIN public.sales_orders so2
+          ON so2.id = sol2.sales_order_id AND so2.deleted_at IS NULL
+        WHERE pol.purchase_order_id = dc.purchase_order_id
+          AND pol.deleted_at IS NULL
+      ) po_so ON TRUE
       WHERE dc.id = ${id}::uuid
         AND dc.company_id = ${companyId}::uuid
         AND dc.deleted_at IS NULL

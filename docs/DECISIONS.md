@@ -2693,3 +2693,32 @@ to the submit payload. jw-dc got two endpoints/hooks (outward + inward).
   the previewed one +1; acceptable since nothing is typed and the server stays authoritative.
   With this, Task 1 (make auto-generated numbers visible) is complete across all in-scope
   modules. Verified by api+web typecheck and api+web lint.
+
+## ADR-065: Resolve the SO on the OSP Delivery Challan via the PO (the real "OSP Outward DC")
+**Date:** 2026-07-21
+**Status:** Accepted
+
+### Context
+User reported the "OSP Outward DC" detail header SO field still showed a dash after ADR-062.
+Live-DB diagnosis (read-only) revealed the OSP outward is NOT the jw_dc_outward table
+(0 rows in prod) — it is the **delivery_challans** module ("New DC → pick a JW PO → ship
+qty"). Every OSP DC stores only purchase_order_id; its own SO fields (sales_order_line_id,
+so_ref_text) are empty, and the reads resolved soCode only from sales_order_line_id → so.
+Confirmed on all 12 live DCs: sales_order_line_id/so_ref_text null on every row, but the SO
+is reachable via purchase_order_id → purchase_order_lines.source_so_line_id →
+sales_order_lines → sales_orders (11/12 resolve; IN-DC-00007's PO line has no SO link, so a
+dash there is correct).
+
+### Decision
+In delivery-challans list + detail reads, add a LATERAL that resolves the SO through the
+PO's lines (string_agg DISTINCT) and change the projection to
+`COALESCE(so.code, po_so.so_code) AS "soCode"` — direct sales_order_line_id first, PO-path
+fallback second. UI unchanged (already renders `soCode ?? soRefText ?? '—'`). Verified the
+exact new SQL against live data before shipping (11/12 now show the real SO).
+
+### Consequences
+- Positive: OSP Delivery Challans now show their SO in list + detail. Read-side only; no
+  schema/data change.
+- Negative: one more LATERAL per DC read (indexed FKs, bounded rows).
+- Note: ADR-062's jw_dc_outward SO column is on an unused table (0 prod rows) — left as-is;
+  it is harmless and correct should JW-DC ever be used. Verified by api typecheck + lint.
