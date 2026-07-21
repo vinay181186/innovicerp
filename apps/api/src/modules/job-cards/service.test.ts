@@ -325,7 +325,9 @@ describe('job-cards service — writes (ADR-051)', () => {
     );
     expect(updated.orderQty).toBe(9);
     expect(updated.priority).toBe('high');
-    expect(updated.totalOps).toBe(1);
+    // Rule B (ADR-069): a pure-process routing with no QC gate gets a default
+    // DIR QC op appended, so the single submitted op becomes 2 (process + DIR).
+    expect(updated.totalOps).toBe(2);
   });
 
   it('createJobCard rejects a direct (non-JW) Job Card (governance)', async () => {

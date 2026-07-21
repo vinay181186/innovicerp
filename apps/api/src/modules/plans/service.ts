@@ -56,6 +56,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -655,28 +656,50 @@ async function executeManufacture(
   // Copy plan_ops → jc_ops, backfilling machine_id from the code where possible.
   // Capture the created jc_op ids (by op_seq) so outsource ops can be linked to
   // their auto-raised PRs below.
+  const opRows = ops.map((op) => ({
+    companyId: plan.companyId,
+    jobCardId: jc.id,
+    opSeq: op.opSeq,
+    machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
+    machineCodeText: op.machineCodeText,
+    operation: op.operation,
+    opType: op.opType,
+    cycleTimeMin: op.cycleTimeMin,
+    program: op.program,
+    toolDetails: op.toolDetails,
+    qcRequired: op.qcRequired,
+    outsourceVendorId: op.outsourceVendorId,
+    outsourceVendorText: op.outsourceVendorText,
+    outsourceCost: op.outsourceCost,
+    createdBy: user.id,
+    updatedBy: user.id,
+  }));
+  // Rule B (ADR-069): guarantee a terminal QC op so the JC's finished goods are
+  // credited to stock (qc_accept fires only on the last op). Route cards without
+  // a final QC would otherwise never credit stock (SPACER / IN-JC-26-00007).
+  if (needsDefaultQcOp(opRows)) {
+    opRows.push({
+      companyId: plan.companyId,
+      jobCardId: jc.id,
+      opSeq: opRows[opRows.length - 1]!.opSeq + 1,
+      machineId: null,
+      machineCodeText: 'QC',
+      operation: DEFAULT_FINAL_QC_OP,
+      opType: 'qc',
+      cycleTimeMin: '0',
+      program: null,
+      toolDetails: null,
+      qcRequired: true,
+      outsourceVendorId: null,
+      outsourceVendorText: null,
+      outsourceCost: '0',
+      createdBy: user.id,
+      updatedBy: user.id,
+    });
+  }
   const insertedOps = await tx
     .insert(jcOps)
-    .values(
-      ops.map((op) => ({
-        companyId: plan.companyId,
-        jobCardId: jc.id,
-        opSeq: op.opSeq,
-        machineId: op.machineId ?? (op.machineCodeText ? machineIdByCode.get(op.machineCodeText) ?? null : null),
-        machineCodeText: op.machineCodeText,
-        operation: op.operation,
-        opType: op.opType,
-        cycleTimeMin: op.cycleTimeMin,
-        program: op.program,
-        toolDetails: op.toolDetails,
-        qcRequired: op.qcRequired,
-        outsourceVendorId: op.outsourceVendorId,
-        outsourceVendorText: op.outsourceVendorText,
-        outsourceCost: op.outsourceCost,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })),
-    )
+    .values(opRows)
     .returning({
       id: jcOps.id,
       opSeq: jcOps.opSeq,

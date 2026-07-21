@@ -33,6 +33,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
@@ -917,6 +918,19 @@ async function assertLineBalance(
   else if (input.sourceJwLineId) await check(jobWorkOrderLines, jobCards.sourceJwLineId, input.sourceJwLineId);
 }
 
+/** Rule B (ADR-069): a JC must end with a QC op so finished goods pass a QC
+ *  gate and get credited to stock (qc_accept fires only on the last op). When
+ *  the caller's last op isn't QC, append a default DIR QC stage. Idempotent on
+ *  edit: once the JC ends with the DIR op it is re-submitted as the last op and
+ *  no new one is added. */
+function withTerminalQcOp(ops: JcOpInput[]): JcOpInput[] {
+  if (!needsDefaultQcOp(ops)) return ops;
+  return [
+    ...ops,
+    { operation: DEFAULT_FINAL_QC_OP, opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
+  ];
+}
+
 /** Validate ops (legacy addJC op validations), returning the type per op. */
 function validateOps(ops: JcOpInput[]): ResolvedOpType[] {
   return ops.map((o) => {
@@ -1007,18 +1021,19 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertLineBalance(tx, input, companyId, null);
 
-    const types = validateOps(input.ops);
+    const ops = withTerminalQcOp(input.ops);
+    const types = validateOps(ops);
     const machineMap = await resolveCodeMap(
       tx,
       machines,
-      input.ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
+      ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
       companyId,
       'Machine',
     );
     const vendorMap = await resolveCodeMap(
       tx,
       vendors,
-      input.ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
+      ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
       companyId,
       'Vendor',
     );
@@ -1044,10 +1059,10 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
       .returning({ id: jobCards.id });
     const jobCardId = jc!.id;
 
-    if (input.ops.length > 0) {
+    if (ops.length > 0) {
       await tx
         .insert(jcOps)
-        .values(buildOpRows(input.ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap));
+        .values(buildOpRows(ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap));
     }
     await registerQcDocs(tx, input, { companyId, jobCardId, jcCode: code, userId: user.id });
 
@@ -1103,18 +1118,19 @@ export async function updateJobCard(
 
     const item = await resolveItem(tx, input.itemCode, companyId);
     await assertLineBalance(tx, input, companyId, id);
-    const types = validateOps(input.ops);
+    const ops = withTerminalQcOp(input.ops);
+    const types = validateOps(ops);
     const machineMap = await resolveCodeMap(
       tx,
       machines,
-      input.ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
+      ops.filter((_, i) => types[i] === 'process').map((o) => o.machineCode ?? ''),
       companyId,
       'Machine',
     );
     const vendorMap = await resolveCodeMap(
       tx,
       vendors,
-      input.ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
+      ops.filter((_, i) => types[i] === 'outsource').map((o) => o.outsourceVendorCode ?? ''),
       companyId,
       'Vendor',
     );
@@ -1126,7 +1142,9 @@ export async function updateJobCard(
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
     const existingById = new Map(existing.map((o) => [o.id, o]));
     const started = await startedOpIds(tx, id);
-    const payloadIds = new Set(input.ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
+    // `ops` may carry an appended DIR QC op (no id) — harmless for payloadIds
+    // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
+    const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
 
     // Guard: a started op may not be removed or have its type changed (legacy
     // blocks the outsource toggle once an op has started; we extend it to
@@ -1136,7 +1154,7 @@ export async function updateJobCard(
       if (!payloadIds.has(ex.id)) {
         throw new ValidationError('Cannot remove an operation that already has logged work.');
       }
-      const inPayload = input.ops.find((o) => o.id === ex.id);
+      const inPayload = ops.find((o) => o.id === ex.id);
       if (inPayload && inPayload.opType !== ex.opType) {
         throw new ValidationError('Cannot change the type of an operation that already has logged work.');
       }
@@ -1153,16 +1171,17 @@ export async function updateJobCard(
     }
     // 2. Park kept ops' opSeq out of the 1..N range to avoid unique collisions
     //    while we renumber (jc_ops unique on (job_card_id, op_seq)).
-    const keptIds = input.ops.map((o) => o.id).filter((x): x is string => Boolean(x) && existingById.has(x!));
+    const keptIds = ops.map((o) => o.id).filter((x): x is string => Boolean(x) && existingById.has(x!));
     if (keptIds.length > 0) {
       await tx
         .update(jcOps)
         .set({ opSeq: sql`${jcOps.opSeq} + 100000` })
         .where(inArray(jcOps.id, keptIds));
     }
-    // 3. Upsert ops in payload order (final op_seq = index + 1).
-    for (let i = 0; i < input.ops.length; i += 1) {
-      const o = input.ops[i]!;
+    // 3. Upsert ops in payload order (final op_seq = index + 1). Iterates `ops`
+    //    (not input.ops) so an appended DIR QC op is inserted as the last op.
+    for (let i = 0; i < ops.length; i += 1) {
+      const o = ops[i]!;
       const t = types[i]!;
       const vals = {
         machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,

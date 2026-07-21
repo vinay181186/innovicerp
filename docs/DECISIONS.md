@@ -2849,3 +2849,50 @@ untouched. Applied + validated: IN-JC-26-00020 op now `in_progress` (input 60, a
   from the code push. 0065 (view) is already applied. Both migration files are version-controlled.
 - The compensating rows show in the Stock Ledger as `manual_adjust` with an ADR-067 remark
   (auditable, not silent).
+
+## ADR-069: Default terminal DIR QC op so every produced JC credits finished stock ("Rule B")
+**Date:** 2026-07-21
+**Status:** Accepted
+
+### Context
+Finished-goods stock is credited by exactly one event per JC: `qc_accept` fires only on a QC
+*last* op (op-entry/qc-stock-cascade.ts), and an outsource op credits via `grn_qc` when its work
+is received. A JC whose routing is pure in-house **process** ops with **no QC** therefore never
+credits stock — dispatching it drives on-hand negative. Found while backfilling the OSP fix:
+SPACER / IN-JC-26-00007 (3 process ops, produced 60, dispatched 60 → −60), a different root cause
+from the OSP `jw_out` bug (no `jw_out` row on it).
+
+### Decision
+Guarantee a terminal QC gate. When a JC's routing needs one, append a default **DIR** (Dimensional
+Inspection Report — a standard shop QC stage) QC op as the final op, at every jc_ops creation path:
+manual JW create/edit (`job-cards/service.ts`) and plan execution (`plans/service.ts`). Centralised
+in `lib/jc-default-qc.ts` (`needsDefaultQcOp` + `DEFAULT_FINAL_QC_OP`).
+
+**Trigger — deliberately narrower than "last op isn't QC".** Append DIR only when the last op is
+`process` AND the JC has **no outsource op anywhere**. An outsource op already credits the same
+pieces on receive (`grn_qc`); adding a terminal QC on top would DOUBLE-credit in the no-BOM
+single-item model (this is why SO-517 must be left alone while SPACER needs the gate). A JC that
+already ends in QC is gated; an empty routing has nothing to inspect. Encoded + unit-tested in
+`jc-default-qc.test.ts`.
+
+**Historical backfill — 0067 (idempotent, data-only):** for each already-complete JC matching the
+same rule (pure in-house, no QC, no outsource, produced > 0), post one compensating `in` = the
+produced output (last op `completed_qty`) — the credit a DIR acceptance would have made. Dry-run
+scope: exactly SPACER (+60 → 0). Guarded by a per-JC marker source_ref; ledger-based to keep
+`item_stock_balances` reconcile-consistent.
+
+### Alternatives Considered
+- "Credit stock on any final process 'complete'" (no QC op) — rejected: adds a second crediting
+  code path and double-credits JCs that also have a QC/outsource step; the QC-op approach reuses
+  the single tested `qc_accept` path.
+- Trigger on "last op isn't QC" (my first framing of "Rule B") — rejected once tracing showed it
+  double-credits any JC containing an outsource op.
+
+### Consequences
+- Positive: every produced JC now passes a QC gate that credits stock exactly once; SPACER-type
+  negatives cannot recur. SPACER lands at 0 after 0067.
+- Negative: one extra shop-floor action — a no-QC in-house job isn't "complete" until its DIR QC is
+  accepted (accepted trade-off; it's the crediting event). Edits churn the DIR op (soft-delete +
+  re-insert) when the payload omits it. Zero-op supplementary JCs (NC `make_fresh`) are untouched.
+- Ops note: 0067 is a prod data write applied via `apply-sql.ts` with operator approval, separate
+  from the code push. Verified by api typecheck + lint + the `needsDefaultQcOp` unit test (7/7).
