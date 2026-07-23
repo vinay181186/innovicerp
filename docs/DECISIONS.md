@@ -2896,3 +2896,32 @@ scope: exactly SPACER (+60 → 0). Guarded by a per-JC marker source_ref; ledger
   re-insert) when the payload omits it. Zero-op supplementary JCs (NC `make_fresh`) are untouched.
 - Ops note: 0067 is a prod data write applied via `apply-sql.ts` with operator approval, separate
   from the code push. Verified by api typecheck + lint + the `needsDefaultQcOp` unit test (7/7).
+
+## ADR-070: Outsource op numeric columns (completed_qty / available) reflect accepted qty
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+0065 made an outsource op's *status* qty-driven but left `v_jc_op_status.completed_qty` and
+`available` deriving from op_log 'complete' rows — which outsource ops never have. So the Job Card
+op detail showed "Order 60 / Input 60 / Done 0 / Avail 60" for IN-JC-26-00020, contradicting the
+OSP At-Vendor register (accepted 30, not-sent 30) and the op's own `in_progress` status. Found
+during test Part-B (user: "order 60, input 60, avail 60").
+
+### Decision
+0068 (CREATE OR REPLACE `v_jc_op_status`): for OUTSOURCE ops only, both numeric columns use the
+accepted qty (received − rejected) as "done" — the same figure the register and the prev_op_output
+LAG already use:
+`completed_qty = accepted` (was 0); `available = input − accepted` (was input). Non-outsource ops
+and the status CASE are unchanged. A consumer sweep (Explore agent) confirmed it safe:
+`so-costing` machine cost excludes `op_type IN ('outsource','qc')` (no money impact; outsource cost
+is PO qty×rate); op-entry gates + the OSP send/PR/PO path short-circuit outsource before any numeric
+gate (send qty is order_qty-driven); dispatch + the so_progress widget already special-case
+outsource. Last-op "production credit" for an outsource-last JC now credits accepted (30) instead
+of 0 — more correct.
+
+### Consequences
+- Positive: JC detail, jc-ops board, and every op-qty display now agree with the register for
+  outsource ops (IN-JC-26-00020 → Done 30 / Avail 30).
+- Negative: none functional. Ops note: 0068 is a view change applied via `apply-sql.ts` with
+  operator approval, separate from the code push (the auto classifier now gates all prod applies).
