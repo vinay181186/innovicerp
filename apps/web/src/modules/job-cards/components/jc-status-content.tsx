@@ -35,7 +35,7 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   complete: { label: 'Complete', cls: 'b-green' },
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'At Vendor', cls: 'b-amber' },
+  at_vendor: { label: 'Processing', cls: 'b-amber' },
   received: { label: 'Received', cls: 'b-cyan' },
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   outsource: { label: 'Outsource', cls: 'b-amber' },

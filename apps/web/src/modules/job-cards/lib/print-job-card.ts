@@ -32,7 +32,7 @@ const OP_STATUS_LABEL: Record<ComputedJcOpStatus, string> = {
   complete: 'Complete',
   pr_raised: 'PR Raised',
   po_created: 'PO Created',
-  at_vendor: 'At Vendor',
+  at_vendor: 'Processing',
   received: 'Received',
   ready_for_pr: 'Ready for PR',
   outsource: 'Outsource',

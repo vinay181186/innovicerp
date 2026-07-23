@@ -400,7 +400,7 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'At Vendor', cls: '' },
+  at_vendor: { label: 'Processing', cls: '' },
   received: { label: 'Received', cls: 'b-cyan' },
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
