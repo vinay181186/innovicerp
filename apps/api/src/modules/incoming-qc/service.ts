@@ -35,7 +35,13 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
-function dispositionOf(accepted: number, rejected: number): IncomingQcCompletedRow['disposition'] {
+function dispositionOf(
+  accepted: number,
+  rejected: number,
+  received: number,
+): IncomingQcCompletedRow['disposition'] {
+  // Still some qty awaiting inspection → the line is only partially done.
+  if (received - accepted - rejected > 0) return 'Partial Accept';
   if (accepted > 0 && rejected > 0) return 'Partial Accept';
   if (rejected > 0) return 'Rejected';
   return 'Accepted';
@@ -145,9 +151,11 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
+      -- Any line that has had QC activity (accepted and/or rejected), incl.
+      -- partially-inspected lines still carrying a pending balance — so a
+      -- partial accept is logged here immediately, not only once fully resolved.
       WHERE l.company_id = ${companyId}::uuid
         AND l.deleted_at IS NULL
-        AND (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) <= 0
         AND (l.qc_accepted_qty > 0 OR l.qc_rejected_qty > 0)
       ORDER BY COALESCE(l.qc_date, h.grn_date) DESC, h.code DESC
       LIMIT 20
@@ -170,7 +178,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         receivedQty: Number(r['receivedQty'] ?? 0),
         acceptedQty,
         rejectedQty,
-        disposition: dispositionOf(acceptedQty, rejectedQty),
+        disposition: dispositionOf(acceptedQty, rejectedQty, Number(r['receivedQty'] ?? 0)),
         qcRemarks: (r['qcRemarks'] as string | null) ?? null,
         qcReportPath: (r['qcReportPath'] as string | null) ?? null,
         qcReportName: (r['qcReportName'] as string | null) ?? null,

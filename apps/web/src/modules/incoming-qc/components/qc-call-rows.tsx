@@ -70,6 +70,13 @@ export function IncomingPendingRow(props: {
           ...(qcReportPath ? { qcReportPath, ...(qcReportName ? { qcReportName } : {}) } : {}),
         },
       });
+      // Reset the form so reopening this row (e.g. to clear a remaining pending
+      // balance after a partial accept) starts blank, not the just-typed qty.
+      setAccept('');
+      setReject('0');
+      setRemarks('');
+      setQcReportPath(null);
+      setQcReportName(null);
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'QC submit failed');
