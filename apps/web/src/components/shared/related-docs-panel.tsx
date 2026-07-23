@@ -303,14 +303,44 @@ function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.JSX.Ele
   );
 }
 
+/** Compact variant: one line per document type, codes as clickable links only —
+ *  no status, no date, no timeline. Purely for navigation. Used everywhere
+ *  except the SO detail (which keeps the full traceability view). */
+function CompactList({ data }: { data: DocumentTraceability }): React.JSX.Element {
+  const sections = [...data.upstream, ...data.downstream, ...data.related].filter((s) => s.count > 0);
+  return (
+    <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {sections.map((s) => (
+        <div key={s.key} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span className="text3" style={{ fontSize: 12, fontWeight: 600, minWidth: 140 }}>
+            {s.icon ? `${s.icon} ` : ''}
+            {s.title}
+          </span>
+          <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {s.items.map((doc) => (
+              <span key={doc.id} className="mono" style={{ fontSize: 12 }}>
+                {renderCode(doc.code, s.routeKind, doc.id, doc.linkId)}
+              </span>
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Fetch + render the Related Documents panel for one document. Self-contained:
- *  give it the module slug (the API route prefix) and the document id. */
+ *  give it the module slug (the API route prefix) and the document id.
+ *  `variant` defaults to 'compact' (a minimal, navigation-only doc list); the SO
+ *  detail passes 'full' for the upstream/downstream/related + timeline view. */
 export function RelatedDocsPanel({
   module,
   id,
+  variant = 'compact',
 }: {
   module: string;
   id: string;
+  variant?: 'full' | 'compact';
 }): React.JSX.Element | null {
   const { data, isLoading, isError } = useQuery<DocumentTraceability>({
     queryKey: ['related-docs', module, id],
@@ -332,12 +362,16 @@ export function RelatedDocsPanel({
       <div className="panel-hdr">
         <div className="panel-title">🔗 Related Documents</div>
       </div>
-      <div className="panel-body">
-        <SectionBlock heading="⬆ Upstream (source)" sections={data.upstream} />
-        <SectionBlock heading="⬇ Downstream (generated)" sections={data.downstream} />
-        <SectionBlock heading="↔ Related" sections={data.related} />
-        <Timeline events={data.timeline} />
-      </div>
+      {variant === 'full' ? (
+        <div className="panel-body">
+          <SectionBlock heading="⬆ Upstream (source)" sections={data.upstream} />
+          <SectionBlock heading="⬇ Downstream (generated)" sections={data.downstream} />
+          <SectionBlock heading="↔ Related" sections={data.related} />
+          <Timeline events={data.timeline} />
+        </div>
+      ) : (
+        <CompactList data={data} />
+      )}
     </div>
   );
 }

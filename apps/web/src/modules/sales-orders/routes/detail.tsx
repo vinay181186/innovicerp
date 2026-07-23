@@ -265,7 +265,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <RelatedDocsPanel module="sales-orders" id={detail.id} />
+      <RelatedDocsPanel module="sales-orders" id={detail.id} variant="full" />
     </div>
   );
 }

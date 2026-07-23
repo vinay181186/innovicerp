@@ -3012,3 +3012,28 @@ goods_receipt_note_lines.purchase_order_line_id = jc_ops.outsource_po_line_id:
   agree; register reconciles 34 = 0 + 10 + 0 + 24. No JC was found prematurely closed (no backfill
   needed). Views applied to prod before the code deploy (they select the new column).
 - Negative: two more view recreates to maintain; the outsource rollup now joins GRN lines.
+
+## ADR-074: Related Documents panel is compact/navigation-only everywhere except SO
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+The shared RelatedDocsPanel rendered a heavy Upstream/Downstream/Related status-table + timeline on
+every document detail page. User: the Related Documents section is for ease of navigation — show a
+minimal doc-type-wise list of doc names (clickable), no status/date/timeline — everywhere EXCEPT the
+Sales Order detail (which keeps the full traceability view).
+
+### Decision
+Add a `variant` prop to `components/shared/related-docs-panel.tsx` defaulting to `'compact'`: one
+line per document type (section icon+title) with the doc codes as clickable links only — no
+StatusBadge, no date column, no Document Timeline. The full view (SectionBlock tables + Timeline) is
+retained behind `variant="full"`, passed only by `sales-orders/routes/detail.tsx`. All 14 other
+detail pages (design-projects, jw-dc, bom-master, assembly, delivery-challans, invoices,
+goods-receipt-notes, job-work-orders, job-cards status, plans, nc-register, purchase-requests,
+purchase-orders, service-pos) call the panel with no variant → compact automatically. Atomic: two
+files changed, every location resolved.
+
+### Consequences
+- Positive: clean minimal navigation list everywhere; SO keeps the rich traceability. No per-page
+  edits, no API change. Verified by web typecheck + lint.
+- Negative: none; the full renderer is dead only if SO ever drops variant="full".
