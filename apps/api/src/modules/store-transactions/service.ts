@@ -39,8 +39,13 @@ export async function listStoreTransactions(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
+    // Search matches the item too: i.code/i.name cover id-resolved rows (grn_qc,
+    // dispatch, … which leave item_code_text null), st.item_code_text covers
+    // free-text rows. Both queries below already LEFT JOIN items i.
     const searchFrag = term
-      ? sql`AND (st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term})`
+      ? sql`AND (st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term}
+                 OR i.code ILIKE ${term} OR i.name ILIKE ${term}
+                 OR st.item_code_text ILIKE ${term})`
       : sql``;
     const itemFrag = input.itemId ? sql`AND st.item_id = ${input.itemId}::uuid` : sql``;
     const txnTypeFrag = input.txnType
