@@ -153,11 +153,13 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
         l.qc_remarks AS "qcRemarks",
+        COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
         l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"
       FROM public.goods_receipt_note_lines l
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
+      LEFT JOIN public.users u ON u.id = l.qc_inspected_by
       -- Any line that has had QC activity (accepted and/or rejected), incl.
       -- partially-inspected lines still carrying a pending balance — so a
       -- partial accept is logged here immediately, not only once fully resolved.
@@ -186,6 +188,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         acceptedQty,
         rejectedQty,
         disposition: dispositionOf(acceptedQty, rejectedQty, Number(r['receivedQty'] ?? 0)),
+        qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
         qcRemarks: (r['qcRemarks'] as string | null) ?? null,
         qcReportPath: (r['qcReportPath'] as string | null) ?? null,
         qcReportName: (r['qcReportName'] as string | null) ?? null,

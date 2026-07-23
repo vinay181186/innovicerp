@@ -291,7 +291,7 @@ function PendingCall(props: {
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
-  const [inspector, setInspector] = useState(session?.email ?? '');
+  const [inspector, setInspector] = useState(session?.fullName ?? session?.email ?? '');
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);

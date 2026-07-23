@@ -29,7 +29,7 @@ export function IncomingPendingRow(props: {
   const [qcDate, setQcDate] = useState(todayIso());
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
-  const [qcBy, setQcBy] = useState(session?.email ?? '');
+  const [qcBy, setQcBy] = useState(session?.fullName ?? session?.email ?? '');
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
@@ -338,6 +338,7 @@ export function IncomingCompletedRow({ l }: { l: IncomingQcCompletedRow }): Reac
         className="text3"
         style={{ display: 'flex', gap: 10, fontSize: 10, marginTop: 3, flexWrap: 'wrap' }}
       >
+        <span className="text2">👤 {l.qcInspectedBy ?? '—'}</span>
         {l.qcReportPath ? (
           <QcReportLink path={l.qcReportPath} name={l.qcReportName} label={l.qcReportName ?? '⬇'} />
         ) : null}

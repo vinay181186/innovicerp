@@ -43,6 +43,8 @@ export const incomingQcCompletedRowSchema = z.object({
   acceptedQty: z.number().int(),
   rejectedQty: z.number().int(),
   disposition: incomingQcDispositionSchema,
+  /** Who did the QC — typed name, else the resolved user's name/email. */
+  qcInspectedBy: z.string().nullable(),
   qcRemarks: z.string().nullable(),
   // QC report attachment (migration 0043) — Storage path + file name for the
   // inspection report on this GRN line (legacy _viewQCReport, HTML L23860).

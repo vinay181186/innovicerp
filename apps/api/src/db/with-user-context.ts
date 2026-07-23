@@ -5,6 +5,8 @@ import { db } from './client';
 export interface AuthContext {
   id: string;
   email: string;
+  /** Optional so test mocks needn't supply it; the auth plugin always sets it at runtime. */
+  fullName?: string | null;
   companyId: string | null;
   role: UserRole;
   isActive: boolean;
