@@ -36,7 +36,7 @@ const OP_STATUS: Record<string, { label: string; cls: string }> = {
   pr_raised: { label: 'PR Raised', cls: 'b-amber' },
   po_created: { label: 'PO Created', cls: 'b-blue' },
   at_vendor: { label: 'Processing', cls: 'b-amber' },
-  received: { label: 'Received', cls: 'b-cyan' },
+  received: { label: 'Incoming QC', cls: 'b-cyan' },
   ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
@@ -608,6 +608,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                   <th style={{ color: 'var(--green)' }}>Completed Qty</th>
                   <th style={{ color: 'var(--amber)' }}>Pending Qty</th>
                   <th style={{ color: 'var(--blue)' }}>At Vendor</th>
+                  <th style={{ color: 'var(--cyan)' }}>In QC</th>
                   <th>Status</th>
                   <th>Recent Logs</th>
                   <th>Action</th>
@@ -616,7 +617,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
               <tbody>
                 {sortedOps.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="empty-state">No operations</td>
+                    <td colSpan={13} className="empty-state">No operations</td>
                   </tr>
                 ) : (
                   sortedOps.map((o) => {
@@ -745,6 +746,15 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                           {isOut ? (
                             <span className="mono fw-700" style={{ fontSize: 14, color: o.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)' }}>
                               {o.atVendorQty}
+                            </span>
+                          ) : (
+                            <span className="text3">—</span>
+                          )}
+                        </td>
+                        <td className="td-ctr">
+                          {isOut ? (
+                            <span className="mono fw-700" style={{ fontSize: 14, color: o.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
+                              {o.inQcQty}
                             </span>
                           ) : (
                             <span className="text3">—</span>

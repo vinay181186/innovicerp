@@ -101,6 +101,9 @@ function OspWipPage(): React.JSX.Element {
                     <th className="td-ctr" style={{ color: 'var(--amber)' }}>
                       At Vendor
                     </th>
+                    <th className="td-ctr" style={{ color: 'var(--cyan)' }}>
+                      In QC
+                    </th>
                     <th className="td-ctr" style={{ color: 'var(--green)' }}>
                       Accepted
                     </th>
@@ -113,7 +116,7 @@ function OspWipPage(): React.JSX.Element {
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="empty-state">
+                      <td colSpan={13} className="empty-state">
                         No outsourced operations match this filter
                       </td>
                     </tr>
@@ -126,10 +129,11 @@ function OspWipPage(): React.JSX.Element {
           </div>
 
           <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-            💡 Every ordered piece reconciles as <b>Ordered = Accepted + At-Vendor + Not-Sent</b>.
-            "At Vendor" is material physically out for processing (sent − returned) — it is tracked
-            here, not in finished stock. Figures are derived from job-card counters and outward-DC
-            receipts; nothing is keyed in.
+            💡 Every ordered piece reconciles as{' '}
+            <b>Ordered = Accepted + In-QC + At-Vendor + Not-Sent</b>. "Accepted" is incoming-QC
+            passed; "In QC" is returned but QC still pending; "At Vendor" is material physically out
+            (sent − returned) — all tracked here, not in finished stock. Figures are derived from
+            job-card counters and the return GRN's incoming QC; nothing is keyed in.
           </div>
         </>
       ) : null}
@@ -164,6 +168,11 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
           style={{ fontSize: 14, color: row.atVendorQty > 0 ? 'var(--amber)' : 'var(--text3)' }}
         >
           {row.atVendorQty || '—'}
+        </span>
+      </td>
+      <td className="td-ctr">
+        <span className="mono fw-700" style={{ color: row.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
+          {row.inQcQty || '—'}
         </span>
       </td>
       <td className="td-ctr">

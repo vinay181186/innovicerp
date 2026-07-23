@@ -41,7 +41,7 @@ const LABELS: Record<ComputedJcOpStatus, string> = {
   pr_raised: 'PR Raised',
   po_created: 'PO Created',
   at_vendor: 'Processing',
-  received: 'Received',
+  received: 'Incoming QC',
   ready_for_pr: 'Ready for PR',
   outsource: 'Outsource',
 };

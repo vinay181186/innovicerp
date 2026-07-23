@@ -96,6 +96,7 @@ export async function listJcOpsEnriched(
         s.input_avail          AS "inputAvail",
         s.available            AS "available",
         s.at_vendor_qty        AS "atVendorQty",
+        s.in_qc_qty            AS "inQcQty",
         s.qc_pending           AS "qcPending",
         s.computed_status      AS "computedStatus"
       FROM public.jc_ops o
@@ -117,6 +118,7 @@ export async function listJcOpsEnriched(
       inputAvail: Number(r['inputAvail'] ?? 0),
       available: Number(r['available'] ?? 0),
       atVendorQty: Number(r['atVendorQty'] ?? 0),
+      inQcQty: Number(r['inQcQty'] ?? 0),
       qcPending: Number(r['qcPending'] ?? 0),
     })) as unknown as JcOpEnriched[];
   });

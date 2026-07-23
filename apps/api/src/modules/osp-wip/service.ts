@@ -35,6 +35,7 @@ interface WipRawRow {
   accepted_qty: number;
   at_vendor_qty: number;
   not_sent_qty: number;
+  in_qc_qty: number;
 }
 
 export async function listOspWip(
@@ -53,7 +54,7 @@ export async function listOspWip(
         w.jc_op_id, w.job_card_id, w.jc_code, w.op_seq, w.operation, w.outsource_status,
         w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
-        w.accepted_qty, w.at_vendor_qty, w.not_sent_qty
+        w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty
       FROM public.v_osp_wip w
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
@@ -80,6 +81,7 @@ export async function listOspWip(
       acceptedQty: Number(r.accepted_qty),
       atVendorQty: Number(r.at_vendor_qty),
       notSentQty: Number(r.not_sent_qty),
+      inQcQty: Number(r.in_qc_qty),
     }));
 
     // Summary always reflects ALL outsource ops (tiles are whole-register

@@ -38,6 +38,8 @@ export const ospWipRowSchema = z.object({
   atVendorQty: z.number().int(),
   /** order − sent, floored at 0 (not yet even sent out). */
   notSentQty: z.number().int(),
+  /** returned − accepted − rejected, floored at 0 (back but incoming-QC pending). */
+  inQcQty: z.number().int(),
 });
 export type OspWipRow = z.infer<typeof ospWipRowSchema>;
 

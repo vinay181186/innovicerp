@@ -2976,3 +2976,39 @@ Order 34 · Completed 0 · Pending 34 · At Vendor 10 (Pending = At-Vendor + Not
   mid-list/reordered columns (first attempt failed with checkViewColumns). The view must be applied
   to prod BEFORE the API deploys (the API selects the new column). Verified by workspace typecheck +
   web/api lint.
+
+## ADR-073: Outsource op qty is QC-accepted, not received — add "In QC" + "Incoming QC" (received ≠ accepted)
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+An OSP return writes BOTH a physical DC receipt (delivery_challan_receipt_lines.received_qty) AND
+an auto-created GRN with a separate incoming-QC step (goods_receipt_note_lines.qc_accepted_qty);
+stock only credits (grn_qc) at QC-accept. ADR-065/068/069 derived the outsource op's
+"accepted/done" from the DC receipt (received − rejected), i.e. physically returned — NOT
+QC-accepted. So JC 23 (received 10, incoming QC pending) showed "Completed 10", and the
+completion test keyed off received, so a fully-received-but-unQC'd op would auto-complete/close the
+JC before QC ran (same family as SO-517's premature close).
+
+### Decision
+Source outsource quantities from the OSP-return GRN QC columns, joined via
+goods_receipt_note_lines.purchase_order_line_id = jc_ops.outsource_po_line_id:
+- **0070 (v_jc_op_status):** completed_qty = SUM(qc_accepted_qty); available = input − accepted;
+  at_vendor_qty = sent − received; NEW **in_qc_qty** = received − accepted − rejected (appended
+  last); completion requires accepted ≥ input; a returned-but-unQC'd op computes 'received'
+  (relabelled **"Incoming QC"** in the UI), not complete/in_progress. prev_op_output for an
+  outsource op now flows accepted (not received) to the next op.
+- **0071 (v_osp_wip):** accepted_qty = qc_accepted; add in_qc_qty; register reconciles
+  Ordered = Accepted + In-QC + At-Vendor + Not-Sent.
+- Surfaced inQcQty through op-entry + osp-wip shared schemas/services; added an **In QC** column to
+  the JC Status op table and the OSP At-Vendor Register; relabelled the 'received' computed_status
+  badge to "Incoming QC" (jc-status-content, status-badge, job-queue, print-job-card). Raw
+  outsource_status 'Received' labels left as-is (different field).
+
+### Consequences
+- Positive: Completed = truly QC-accepted; received-pending-QC is visible ("In QC") and can no
+  longer be mistaken for done, nor auto-close a JC before QC. Verified: SO-517 (QC done) stays
+  Completed 30 / In-QC 0; JC 23 (QC pending) → Completed 0 / In-QC 10 / "Incoming QC". Both views
+  agree; register reconciles 34 = 0 + 10 + 0 + 24. No JC was found prematurely closed (no backfill
+  needed). Views applied to prod before the code deploy (they select the new column).
+- Negative: two more view recreates to maintain; the outsource rollup now joins GRN lines.

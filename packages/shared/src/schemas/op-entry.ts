@@ -73,6 +73,8 @@ export const jcOpEnrichedSchema = z.object({
   available: z.number().int().nonnegative(),
   /** Outsource pieces physically at the vendor (sent − received); 0 otherwise. */
   atVendorQty: z.number().int().nonnegative(),
+  /** Outsource pieces returned but incoming-QC still pending (received − accepted − rejected); 0 otherwise. */
+  inQcQty: z.number().int().nonnegative(),
   qcPending: z.number().int().nonnegative(),
   computedStatus: computedJcOpStatusSchema,
 });
