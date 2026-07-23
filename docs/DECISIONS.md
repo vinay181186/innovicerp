@@ -3037,3 +3037,31 @@ files changed, every location resolved.
 - Positive: clean minimal navigation list everywhere; SO keeps the rich traceability. No per-page
   edits, no API change. Verified by web typecheck + lint.
 - Negative: none; the full renderer is dead only if SO ever drops variant="full".
+
+## ADR-075: Consolidate redundant QC pages — drop QC Dashboard + QC History from nav
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+A QC page audit found 12 QC pages, all nav-linked, with three redundancy groups reading the same
+data: (A) QC History is a read-only subset of QC Call Register (same /qc-history endpoint; its
+pending rows link into the Call Register, the only page with the accept/reject write form);
+(B) QC Dashboard's three panels are each reproduced by a QC Command Center tab (Command is a strict
+superset with FPY/Rework/assign); (C) Incoming QC's queue duplicates the Call Register (its Inspect
+already links out).
+
+### Decision
+Phase 1 — remove QC Dashboard and QC History from the sidebar (Quality section). Routes stay
+registered (no 404; bookmarks/deep-links keep working). Preserve capability: add a
+"📊 History & Export" link on the QC Call Register header → /qc-history (keeps History's date
+filters + Excel export one click away); QC Dashboard's content is fully covered by QC Command
+Center, so the home-alerts QC deep-link (home-alerts.tsx DEPT_NAV) is repointed
+/qc-dashboard → /qc-command. Incoming QC left as-is for now (unique pipeline metrics; action
+already links to the Call Register). Sidebar reordered: entry/action pages first
+(Call Register, Command Center, Incoming QC, TPI), then SO QC Status, QC Documents, NC, CAPA.
+
+### Consequences
+- Positive: two redundant top-level QC pages removed from nav with zero capability loss; no route
+  deletion, so fully reversible and no broken deep-links. Web typecheck + lint green.
+- Follow-up (not done): optionally demote Incoming QC to a metrics-only view, fold History's
+  export directly into the Call Register, and eventually retire the two unlinked routes.

@@ -13,7 +13,7 @@ const DEPT_NAV: Record<string, string> = {
   store: '/store-inventory',
   design: '/bom-master',
   production: '/production-dashboard',
-  qc: '/qc-dashboard',
+  qc: '/qc-command',
   purchase: '/purchase-requests',
   finance: '/cost-centers',
   tasks: '/task-board',

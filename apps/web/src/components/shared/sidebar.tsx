@@ -210,16 +210,14 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
-          { to: '/qc-dashboard', label: 'QC Dashboard', icon: '🛡️' },
+          { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },
+          { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
+          { to: '/tpi', label: 'TPI Inspection', icon: '🔍' },
+          { to: '/so-qc-status', label: 'SO QC Status', icon: '📋' },
+          { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
           { to: '/capa', label: 'CAPA', icon: '🛡' },
-          { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },
-          { to: '/tpi', label: 'TPI Inspection', icon: '🔍' },
-          { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
-          { to: '/so-qc-status', label: 'SO QC Status', icon: '📋' },
-          { to: '/qc-history', label: 'QC History', icon: '📊' },
-          { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
         ],
       },
       {

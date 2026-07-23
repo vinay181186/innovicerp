@@ -9,7 +9,7 @@
 
 import { SHIFTS, SHIFT_LABELS, type Shift, type SubmitQcLogInput } from '@innovic/shared';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
@@ -182,6 +182,9 @@ function QcCallRegisterPage(): React.JSX.Element {
           </div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>⏳ QC Pending Calls</div>
           <div style={{ flex: 1 }} />
+          <Link to="/qc-history" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}>
+            📊 History &amp; Export
+          </Link>
           <input
             className="innovic-input"
             style={{ fontSize: 12, width: 180 }}
