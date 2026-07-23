@@ -59,11 +59,6 @@ const OUTSOURCE_STATUS_LABEL: Record<OutsourceStatus, string> = {
   received: 'Received',
 };
 
-// Legacy op-status → progress-bar colour (L11033). Legacy tests only
-// 'In Progress' here, so 'Running' falls through to blue — mirrored verbatim.
-const barColor = (status: string): string =>
-  status === 'complete' ? 'var(--green)' : status === 'in_progress' ? 'var(--amber)' : 'var(--blue)';
-
 // Legacy disposition icon/colour ladder (viewJCStatus L11115-11116). Legacy
 // keyed Title-Case strings ('Rework', 'Scrap', …); our nc_disposition enum is
 // snake_case, so the keys are remapped.
@@ -609,11 +604,9 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                   <th>Operation</th>
                   <th>Cycle(h)</th>
                   <th>Prog/Tool</th>
-                  <th>Order</th>
-                  <th>Input</th>
-                  <th>Done</th>
-                  <th style={{ color: 'var(--amber)' }}>Avail</th>
-                  <th>Progress</th>
+                  <th>Order Qty</th>
+                  <th style={{ color: 'var(--green)' }}>Completed Qty</th>
+                  <th style={{ color: 'var(--amber)' }}>Pending Qty</th>
                   <th>Status</th>
                   <th>Recent Logs</th>
                   <th>Action</th>
@@ -622,16 +615,19 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
               <tbody>
                 {sortedOps.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="empty-state">No operations</td>
+                    <td colSpan={11} className="empty-state">No operations</td>
                   </tr>
                 ) : (
                   sortedOps.map((o) => {
                     const st = OP_STATUS[o.computedStatus] ?? { label: o.computedStatus, cls: 'b-grey' };
                     const isQc = o.opType === 'qc';
-                    const bal = isQc ? o.qcPending : o.available;
+                    // Canonical per-op quantities: Completed = this op's done qty
+                    // (QC → accepted; process/outsource → completedQty, which for
+                    // outsource is accepted-back per 0068), Pending = Order − Completed.
+                    const doneQty = isQc ? o.qcAcceptedQty : o.completedQty;
+                    const pendingQty = Math.max(0, jc.orderQty - doneQty);
                     const opLogs = (logsByOp.get(o.id) ?? []).slice(0, 3);
                     const isOut = o.opType === 'outsource';
-                    const pctOp = jc.orderQty > 0 ? Math.min(100, Math.round((o.completedQty / jc.orderQty) * 100)) : 0;
                     return (
                       <tr
                         key={o.id}
@@ -710,7 +706,6 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                           {!o.program && !o.toolNo ? <span className="text3">—</span> : null}
                         </td>
                         <td className="td-ctr">{jc.orderQty}</td>
-                        <td className="td-ctr text2">{o.inputAvail}</td>
                         <td className="td-ctr mono fw-700">
                           {isQc ? (
                             <>
@@ -741,15 +736,9 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                           )}
                         </td>
                         <td className="td-ctr">
-                          <span className="mono fw-700" style={{ fontSize: 15, color: bal > 0 ? 'var(--amber)' : 'var(--text3)' }}>
-                            {bal}
+                          <span className="mono fw-700" style={{ fontSize: 15, color: pendingQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>
+                            {pendingQty}
                           </span>
-                        </td>
-                        <td style={{ minWidth: 90 }}>
-                          <div className="prog-wrap" style={{ marginBottom: 3 }}>
-                            <div className="prog-bar" style={{ width: `${pctOp}%`, background: barColor(o.computedStatus) }} />
-                          </div>
-                          <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--text3)' }}>{pctOp}%</div>
                         </td>
                         <td>
                           <span className={`badge ${st.cls}`}>{st.label}</span>

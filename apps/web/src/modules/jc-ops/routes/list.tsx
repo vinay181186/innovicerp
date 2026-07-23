@@ -108,13 +108,12 @@ function JcOpsPage(): React.JSX.Element {
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
                     QC
                   </th>
-                  <th className="td-ctr">Order</th>
-                  <th className="td-ctr">Input</th>
+                  <th className="td-ctr">Order Qty</th>
                   <th className="td-ctr" style={{ color: 'var(--green)' }}>
-                    Done
+                    Completed Qty
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--amber)' }}>
-                    Available
+                    Pending Qty
                   </th>
                   <th className="td-ctr" style={{ color: 'var(--red)' }}>
                     Pend Hrs
@@ -267,7 +266,6 @@ function Row({
         )}
       </td>
       <td className="td-ctr">{o.jcOrderQty}</td>
-      <td className="td-ctr text2">{o.inputAvail}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
         {o.completed}
         {o.qcRequired && o.qcPending > 0 ? (

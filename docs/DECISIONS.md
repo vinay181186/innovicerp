@@ -2925,3 +2925,30 @@ of 0 — more correct.
   outsource ops (IN-JC-26-00020 → Done 30 / Avail 30).
 - Negative: none functional. Ops note: 0068 is a view change applied via `apply-sql.ts` with
   operator approval, separate from the code push (the auto classifier now gates all prod applies).
+## ADR-071: Canonical Job Card op-quantity columns — Order Qty / Completed Qty / Pending Qty
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+The JC Status op table showed five overlapping quantity-ish columns (Order, In[put], Done, Avail,
+Progress %). "Avail" was mislabelled (it meant remaining balance, not machine-availability) and
+"Input" (qty handed from the previous op) read as jargon and looked redundant on single-op JCs
+(Order 34 / Input 34). User: "we just need order qty, completed qty and pending qty; everything
+else is confusing."
+
+### Decision
+Canonicalise every op-quantity display to three columns: **Order Qty · Completed Qty · Pending Qty**,
+where Completed = the op's done qty (QC → accepted; process/outsource → completed_qty, which for
+outsource is accepted-back per 0068) and **Pending = Order − Completed**. Applied to the JC Status
+op table (`jc-status-content.tsx` — dropped In + Progress, colSpan 13→11, removed the now-unused
+`barColor`), the JC-Ops board (`jc-ops/routes/list.tsx` — dropped In; kept the per-op remaining
+value for Pending to avoid a QC-accepted data gap in that query; kept Pend Hrs), and the op-entry
+compact table (`jc-ops-table.tsx`). Display-only — no API/view/gate changes.
+
+### Consequences
+- Positive: op tables read Order → Completed → Pending, consistent with the JC summary cards and the
+  OSP At-Vendor register. IN-JC-26-00023 → 34 / 0 / 34; IN-JC-26-00020 → 60 / 30 / 30.
+- Negative: none functional. Regression-checked: op-entry gates, the Create-PR modal default
+  (`row.available`) and costing all read API fields, not the removed columns; typecheck + lint green.
+- Follow-up option: the JC-Ops board's Pending for QC ops is input-based (no qcAccepted in that
+  query) — add qc_accepted_qty there if full order-based canon is wanted on the board too.

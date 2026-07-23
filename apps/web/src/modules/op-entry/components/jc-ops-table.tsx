@@ -28,8 +28,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
             <th>Operation</th>
             <th>Machine</th>
             <th>Type</th>
-            <th>Done</th>
-            <th style={{ color: 'var(--amber)' }}>Available★</th>
+            <th style={{ color: 'var(--green)' }}>Completed</th>
+            <th style={{ color: 'var(--amber)' }}>Pending</th>
             <th>Status</th>
           </tr>
         </thead>
