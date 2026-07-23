@@ -2952,3 +2952,27 @@ compact table (`jc-ops-table.tsx`). Display-only — no API/view/gate changes.
   (`row.available`) and costing all read API fields, not the removed columns; typecheck + lint green.
 - Follow-up option: the JC-Ops board's Pending for QC ops is input-based (no qcAccepted in that
   query) — add qc_accepted_qty there if full order-based canon is wanted on the board too.
+
+## ADR-072: Show "At Vendor" qty on the Job Card op table
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+After ADR-071 the outsource op showed Order/Completed/Pending only, so an outsource op's Pending
+(34 for IN-JC-26-00023) hid that 10 were physically at the vendor in process and 24 not yet sent.
+User wanted the at-vendor portion visible on the JC.
+
+### Decision
+Add `at_vendor_qty` (= outsource_sent_qty − received, floored at 0; 0 for non-outsource) to
+`v_jc_op_status` (migration 0069) — mirrors v_osp_wip. Surface it through op-entry `listJcOps`
+(`atVendorQty`) + the shared `jcOpEnrichedSchema`, and add an "At Vendor" column to the JC Status op
+table (outsource ops show the number, others "—"). So an outsource row reads
+Order 34 · Completed 0 · Pending 34 · At Vendor 10 (Pending = At-Vendor + Not-Sent).
+
+### Consequences
+- Positive: the in-process-at-vendor qty is visible per op on the JC. Verified: IN-JC-26-00023 → 10;
+  process ops → 0.
+- Note: 0069 appends the column at the END of the view — CREATE OR REPLACE VIEW rejects
+  mid-list/reordered columns (first attempt failed with checkViewColumns). The view must be applied
+  to prod BEFORE the API deploys (the API selects the new column). Verified by workspace typecheck +
+  web/api lint.

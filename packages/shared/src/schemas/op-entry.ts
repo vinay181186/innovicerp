@@ -71,6 +71,8 @@ export const jcOpEnrichedSchema = z.object({
   qcRejectedQty: z.number().int().nonnegative(),
   inputAvail: z.number().int().nonnegative(),
   available: z.number().int().nonnegative(),
+  /** Outsource pieces physically at the vendor (sent − received); 0 otherwise. */
+  atVendorQty: z.number().int().nonnegative(),
   qcPending: z.number().int().nonnegative(),
   computedStatus: computedJcOpStatusSchema,
 });

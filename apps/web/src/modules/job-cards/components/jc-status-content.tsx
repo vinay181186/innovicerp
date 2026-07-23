@@ -607,6 +607,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                   <th>Order Qty</th>
                   <th style={{ color: 'var(--green)' }}>Completed Qty</th>
                   <th style={{ color: 'var(--amber)' }}>Pending Qty</th>
+                  <th style={{ color: 'var(--blue)' }}>At Vendor</th>
                   <th>Status</th>
                   <th>Recent Logs</th>
                   <th>Action</th>
@@ -615,7 +616,7 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
               <tbody>
                 {sortedOps.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty-state">No operations</td>
+                    <td colSpan={12} className="empty-state">No operations</td>
                   </tr>
                 ) : (
                   sortedOps.map((o) => {
@@ -739,6 +740,15 @@ export function JcStatusContent({ id }: { id: string }): React.JSX.Element {
                           <span className="mono fw-700" style={{ fontSize: 15, color: pendingQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>
                             {pendingQty}
                           </span>
+                        </td>
+                        <td className="td-ctr">
+                          {isOut ? (
+                            <span className="mono fw-700" style={{ fontSize: 14, color: o.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)' }}>
+                              {o.atVendorQty}
+                            </span>
+                          ) : (
+                            <span className="text3">—</span>
+                          )}
                         </td>
                         <td>
                           <span className={`badge ${st.cls}`}>{st.label}</span>
