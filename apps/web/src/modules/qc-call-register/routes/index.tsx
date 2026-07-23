@@ -49,19 +49,6 @@ function dayDiff(fromIso: string, toIso: string): number {
   return Math.round((b - a) / 864e5);
 }
 
-// Legacy L4150: red ≥3, amber ≥2, else green.
-function waitColor(days: number): string {
-  return days >= 3 ? 'var(--red)' : days >= 2 ? 'var(--amber)' : 'var(--green)';
-}
-
-function waitBg(days: number): string {
-  return days >= 3
-    ? 'rgba(239,68,68,0.1)'
-    : days >= 2
-      ? 'rgba(245,158,11,0.1)'
-      : 'rgba(34,197,94,0.1)';
-}
-
 function QcCallRegisterPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useQcHistory();
   // Incoming-material QC (GRN lines) shown on the same approval screen. Optional
@@ -297,14 +284,14 @@ function PendingCall(props: {
 }): React.JSX.Element {
   const { o, open, operatorNames, onToggle, onDone } = props;
   const submitQc = useSubmitQcLog();
-  const companyId = useSession().data?.companyId ?? null;
+  const session = useSession().data;
+  const companyId = session?.companyId ?? null;
   const inspectorListId = `qc-inspectors-${o.jcOpId}`;
-  const waitingDays = o.qcCallDate ? dayDiff(o.qcCallDate, todayIso()) : 0;
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
-  const [inspector, setInspector] = useState('');
+  const [inspector, setInspector] = useState(session?.email ?? '');
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
@@ -326,13 +313,17 @@ function PendingCall(props: {
       setErr(`Total ${acc + rej} exceeds pending ${o.qcPending}.`);
       return;
     }
+    if (!inspector.trim()) {
+      setErr('Enter who did the QC (QC By).');
+      return;
+    }
     const input: SubmitQcLogInput = {
       jcOpId: o.jcOpId,
       qty: acc,
       rejectQty: rej,
       logDate,
       shift,
-      ...(inspector.trim() ? { operatorName: inspector.trim() } : {}),
+      operatorName: inspector.trim(),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
       ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
@@ -364,6 +355,19 @@ function PendingCall(props: {
       >
         <div style={{ minWidth: 0 }}>
           <div>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                color: 'var(--cyan)',
+                border: '1px solid var(--cyan)',
+                borderRadius: 3,
+                padding: '0 5px',
+                marginRight: 6,
+              }}
+            >
+              IN-PROCESS
+            </span>
             <b className="cyan" style={{ fontSize: 13 }}>
               {o.jcCode}
             </b>{' '}
@@ -382,35 +386,8 @@ function PendingCall(props: {
             {o.itemCode ?? '—'} — {o.operation}
           </div>
           <div className="text3" style={{ fontSize: 10 }}>
-            {o.soCode ?? '—'} | Produced: {o.completed} | Order: {o.orderQty}
+            🏭 In-house · SO <b className="mono">{o.soCode ?? '—'}</b>
           </div>
-          {o.qcCallDate ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 10 }}>
-              <span className="text3">
-                📅 Called: <b style={{ color: 'var(--amber)' }}>{fmtDate(o.qcCallDate)}</b>
-              </span>
-              <span
-                style={{
-                  fontWeight: 800,
-                  color: waitColor(waitingDays),
-                  padding: '1px 6px',
-                  background: waitBg(waitingDays),
-                  borderRadius: 3,
-                  border: `1px solid ${waitColor(waitingDays)}`,
-                }}
-              >
-                ⏳ {waitingDays} day{waitingDays !== 1 ? 's' : ''} waiting
-              </span>
-            </div>
-          ) : o.pendSince ? (
-            <div style={{ fontSize: 10, marginTop: 2 }}>
-              <span className="text3">📅 Since: </span>
-              <span style={{ fontWeight: 700, color: o.overdue ? 'var(--red)' : 'var(--amber)' }}>
-                {fmtDate(o.pendSince)}
-                {o.overdue ? ' ⚠' : ''}
-              </span>
-            </div>
-          ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>{o.qcPending}</div>
@@ -507,7 +484,7 @@ function PendingCall(props: {
             </div>
             <div className="form-grp form-full">
               <label className="form-label" style={{ fontSize: 10 }}>
-                Inspector / Operator
+                👤 QC By ★
               </label>
               <datalist id={inspectorListId}>
                 {operatorNames.map((name) => (

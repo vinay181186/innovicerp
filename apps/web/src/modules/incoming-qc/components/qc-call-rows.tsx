@@ -15,16 +15,6 @@ import { useSubmitIncomingQc } from '../api';
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
-function waitColor(days: number): string {
-  return days >= 3 ? 'var(--red)' : days >= 2 ? 'var(--amber)' : 'var(--green)';
-}
-function waitBg(days: number): string {
-  return days >= 3
-    ? 'rgba(239,68,68,0.1)'
-    : days >= 2
-      ? 'rgba(245,158,11,0.1)'
-      : 'rgba(34,197,94,0.1)';
-}
 
 export function IncomingPendingRow(props: {
   o: IncomingQcPendingRow;
@@ -34,10 +24,12 @@ export function IncomingPendingRow(props: {
 }): React.JSX.Element {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitIncomingQc();
-  const companyId = useSession().data?.companyId ?? null;
+  const session = useSession().data;
+  const companyId = session?.companyId ?? null;
   const [qcDate, setQcDate] = useState(todayIso());
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
+  const [qcBy, setQcBy] = useState(session?.email ?? '');
   const [remarks, setRemarks] = useState('');
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
@@ -59,12 +51,17 @@ export function IncomingPendingRow(props: {
       setErr(`Total ${acc + rej} exceeds pending ${o.pendingQty}.`);
       return;
     }
+    if (!qcBy.trim()) {
+      setErr('Enter who did the QC (QC By).');
+      return;
+    }
     try {
       await submit.mutateAsync({
         grnLineId: o.grnLineId,
         input: {
           acceptedQty: acc,
           rejectedQty: rej,
+          qcInspectedByName: qcBy.trim(),
           qcDate,
           ...(remarks.trim() ? { qcRemarks: remarks.trim() } : {}),
           ...(qcReportPath ? { qcReportPath, ...(qcReportName ? { qcReportName } : {}) } : {}),
@@ -123,25 +120,8 @@ export function IncomingPendingRow(props: {
             </span>
           </div>
           <div className="text3" style={{ fontSize: 10 }}>
-            GRN <b className="mono">{o.grnNo}</b> · {o.vendorName ?? '—'}
-            {o.poCode ? ` · PO ${o.poCode}` : ''}
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 10 }}>
-            <span className="text3">
-              📅 Received: <b style={{ color: 'var(--amber)' }}>{fmtDate(o.grnDate)}</b>
-            </span>
-            <span
-              style={{
-                fontWeight: 800,
-                color: waitColor(o.waitDays),
-                padding: '1px 6px',
-                background: waitBg(o.waitDays),
-                borderRadius: 3,
-                border: `1px solid ${waitColor(o.waitDays)}`,
-              }}
-            >
-              ⏳ {o.waitDays} day{o.waitDays !== 1 ? 's' : ''} waiting
-            </span>
+            🏭 {o.vendorName ?? '—'} · SO <b className="mono">{o.soCode ?? '—'}</b>
+            <span style={{ marginLeft: 6, opacity: 0.6 }}>· GRN {o.grnNo}</span>
           </div>
         </div>
         <div style={{ textAlign: 'center' }}>
@@ -176,6 +156,17 @@ export function IncomingPendingRow(props: {
                 className="innovic-input"
                 value={qcDate}
                 onChange={(e) => setQcDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" style={{ fontSize: 10 }}>
+                👤 QC By ★
+              </label>
+              <input
+                className="innovic-input"
+                value={qcBy}
+                onChange={(e) => setQcBy(e.target.value)}
+                placeholder="Inspector name"
               />
             </div>
             <div className="form-grp">

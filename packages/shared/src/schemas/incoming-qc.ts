@@ -16,6 +16,8 @@ export const incomingQcPendingRowSchema = z.object({
   grnDate: z.string(),
   poCode: z.string().nullable(),
   vendorName: z.string().nullable(),
+  /** Sales Order this OSP return traces back to (via PO line → jc_op → JC → SO); null for raw-material GRNs. */
+  soCode: z.string().nullable(),
   itemCode: z.string().nullable(),
   itemName: z.string().nullable(),
   receivedQty: z.number().int(),
@@ -79,6 +81,8 @@ export const submitIncomingQcInputSchema = z
   .object({
     acceptedQty: z.number().int().nonnegative(),
     rejectedQty: z.number().int().nonnegative(),
+    /** Mandatory — who did the QC (typed name, may differ from the login). */
+    qcInspectedByName: z.string().trim().min(1, 'QC inspector name is required').max(120),
     qcDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')

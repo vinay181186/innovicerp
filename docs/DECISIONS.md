@@ -3065,3 +3065,33 @@ already links to the Call Register). Sidebar reordered: entry/action pages first
   deletion, so fully reversible and no broken deep-links. Web typecheck + lint green.
 - Follow-up (not done): optionally demote Incoming QC to a metrics-only view, fold History's
   export directly into the Call Register, and eventually retire the two unlinked routes.
+
+## ADR-076: QC Call Register — two tagged QC types, uniform display, mandatory "QC By"
+**Date:** 2026-07-23
+**Status:** Accepted
+
+### Context
+The QC Call Register mixes two QC types (incoming material QC + in-process JC-op QC) with
+inconsistent presentation: only incoming rows were tagged, both showed a "days waiting" pill, MFG
+rows showed a produced/order qty bifurcation, incoming led with GRN, and the inspector was optional
+(process) or implicit-login (incoming).
+
+### Decision
+Make both QC types uniform and canonical:
+- **Tags:** every row carries a type badge — "INCOMING" (existing) and new "IN-PROCESS" (cyan).
+- **Drop:** the waiting-days pill (both), and the produced/order bifurcation on MFG rows
+  (removed the now-dead waitColor/waitBg helpers).
+- **Show:** Vendor + SO on both. Incoming leads with 🏭 vendor · SO, keeping GRN as a small muted
+  reference. In-process shows 🏭 In-house · SO. Added `soCode` to the incoming pending payload,
+  resolved via PO line → jc_op → JC → SO (null for raw-material GRNs).
+- **Mandatory "QC By":** a required typed inspector field on both forms, prefilled with the logged-in
+  user (session email), editable. Process → op_log.operator_name (now required); incoming → new
+  `goods_receipt_note_lines.qc_inspected_by_text` (migration 0072; `qc_inspected_by` stays as the
+  user FK for audit). New shared field `submitIncomingQcInput.qcInspectedByName` (min 1).
+
+### Consequences
+- Positive: consistent, minimal QC rows keyed on Vendor/SO/tag; QC attribution is captured on every
+  entry. Verified SO resolution on GRN-00012 → SO IN-SO-00517. Workspace typecheck + web/api lint
+  green; migration 0072 applied to prod before the code deploy (API writes the new column).
+- Note: completed-log rows don't yet surface the QC-By name (entry-only for now). Raw-material GRNs
+  show vendor + GRN with SO blank.

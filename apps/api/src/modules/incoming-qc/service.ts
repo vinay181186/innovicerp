@@ -97,6 +97,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
         h.po_code_text AS "poCode",
         COALESCE(v.name, h.vendor_code_text) AS "vendorName",
+        so.code AS "soCode",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
@@ -106,6 +107,11 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       FROM public.goods_receipt_note_lines l
       JOIN public.goods_receipt_notes h ON h.id = l.goods_receipt_note_id AND h.deleted_at IS NULL
       LEFT JOIN public.purchase_order_lines pol ON pol.id = l.purchase_order_line_id
+      -- SO trace for OSP returns: PO line → jc_op → JC → SO line → SO (null for raw-material GRNs).
+      LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = l.item_id
       WHERE l.company_id = ${companyId}::uuid
@@ -127,6 +133,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       grnDate: String(r['grnDate']).slice(0, 10),
       poCode: (r['poCode'] as string | null) ?? null,
       vendorName: (r['vendorName'] as string | null) ?? null,
+      soCode: (r['soCode'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       receivedQty: Number(r['receivedQty'] ?? 0),
@@ -291,6 +298,7 @@ export async function submitIncomingQc(
         qcRejectedQty: newRejected,
         qcDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
         qcInspectedBy: user.id,
+        qcInspectedByText: input.qcInspectedByName,
         // Keep prior remarks/report when this inspection doesn't supply new ones.
         ...(input.qcRemarks !== undefined ? { qcRemarks: input.qcRemarks } : {}),
         ...(input.qcReportPath !== undefined

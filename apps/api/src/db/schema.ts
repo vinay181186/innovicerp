@@ -1582,6 +1582,9 @@ export const goodsReceiptNoteLines = pgTable(
     qcDate: date('qc_date'),
     qcRemarks: text('qc_remarks'),
     qcInspectedBy: uuid('qc_inspected_by').references(() => users.id),
+    // Named QC inspector typed on the QC Call Register (may differ from the
+    // submitting account qc_inspected_by). Mandatory on the form. Mig 0072.
+    qcInspectedByText: text('qc_inspected_by_text'),
     // Incoming-QC report attachment — Storage path (qc-docs bucket) + file name
     // for the inspection report on this GRN line (legacy _viewQCReport). Mig 0043.
     qcReportPath: text('qc_report_path'),
