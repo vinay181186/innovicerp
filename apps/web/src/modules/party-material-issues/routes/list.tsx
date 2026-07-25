@@ -1,0 +1,437 @@
+// Party Material Issue (ADR-079 — job-work cycle completion) — issues
+// client-supplied ("party") material to a Job Card for in-house machining.
+// Debits the separate party stock; never touches own-stock store_transactions.
+
+import { type CreatePartyMaterialIssueInput } from '@innovic/shared';
+import { createRoute } from '@tanstack/react-router';
+import { Loader2, Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useSession } from '@/lib/session';
+import { authenticatedRoute } from '@/routes/_authenticated';
+import { useJobCardsList } from '../../job-cards/api';
+import { useJobWorkOrdersList } from '../../job-work-orders/api';
+import { usePartyMaterialsList } from '../../party-materials/api';
+import { useCreatePartyMaterialIssue, usePartyMaterialIssuesList } from '../api';
+
+export const partyMaterialIssuesListRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  path: 'party-material-issues',
+  component: PartyMaterialIssuesListPage,
+});
+
+function PartyMaterialIssuesListPage(): React.JSX.Element {
+  const { data: me } = useSession();
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const [search, setSearch] = useState('');
+  const [showModal, setShowModal] = useState(false);
+
+  const { data, isLoading, isError, error } = usePartyMaterialIssuesList();
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const items = data?.items ?? [];
+    if (!q) return items;
+    return items.filter(
+      (it) =>
+        it.code.toLowerCase().includes(q) ||
+        (it.jwCodeText ?? '').toLowerCase().includes(q) ||
+        (it.partyMaterialCodeText ?? '').toLowerCase().includes(q),
+    );
+  }, [data?.items, search]);
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="section-hdr m-0">📤 Party Material Issue</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="🔍 Search Issue No., JWSO, material…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 260, fontSize: 12 }}
+          />
+          {canWrite ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowModal(true)}
+            >
+              <Plus size={14} /> New Issue
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="panel">
+        {isLoading ? (
+          <div className="panel-body">
+            <div className="text3" style={{ fontSize: 12 }}>
+              <Loader2 size={14} className="inline animate-spin" /> Loading…
+            </div>
+          </div>
+        ) : isError ? (
+          <div className="panel-body">
+            <div className="empty-state" style={{ color: 'var(--red)' }}>
+              {error instanceof Error ? error.message : 'Failed to load party material issues'}
+            </div>
+          </div>
+        ) : data ? (
+          <div className="tbl-wrap">
+            <table className="innovic-table">
+              <thead>
+                <tr>
+                  <th>Issue No.</th>
+                  <th>Date</th>
+                  <th>JWSO</th>
+                  <th>Job Card</th>
+                  <th>Material</th>
+                  <th className="td-ctr" style={{ color: 'var(--green)' }}>
+                    Qty
+                  </th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="empty-state">
+                      No party material issues — click + New Issue
+                    </td>
+                  </tr>
+                ) : null}
+                {filtered.map((it) => (
+                  <tr key={it.id}>
+                    <td>
+                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
+                        {it.code}
+                      </span>
+                    </td>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      {it.issueDate}
+                    </td>
+                    <td
+                      className="mono fw-700"
+                      style={{ fontSize: 11, color: 'var(--purple)' }}
+                    >
+                      {it.jwCodeText ?? '—'}
+                    </td>
+                    <td className="mono text2" style={{ fontSize: 11 }}>
+                      {it.jcCodeText ?? '—'}
+                    </td>
+                    <td className="fw-700">
+                      <span style={{ color: 'var(--purple)' }}>
+                        {it.partyMaterialCodeText ?? '—'}
+                      </span>
+                      {it.partyMaterialName ? (
+                        <span className="text3" style={{ fontSize: 11 }}>
+                          {' '}
+                          — {it.partyMaterialName}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td
+                      className="td-ctr mono fw-700"
+                      style={{ fontSize: 14, color: 'var(--green)' }}
+                    >
+                      {it.qty}
+                    </td>
+                    <td
+                      className="text3"
+                      style={{
+                        fontSize: 11,
+                        maxWidth: 140,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={it.remarks ?? ''}
+                    >
+                      {it.remarks ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
+        💡 Party Material Issue debits client-supplied (party) stock when it is issued to a Job
+        Card for in-house machining. Linked to JWSO No. / Job Card.
+      </div>
+
+      {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
+    </div>
+  );
+}
+
+// ─── New Party Material Issue modal ─────────────────────────────────────────
+
+function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [jwSearch, setJwSearch] = useState('');
+  const [jobWorkOrderId, setJobWorkOrderId] = useState<string | null>(null);
+  const [jcSearch, setJcSearch] = useState('');
+  const [jobCardId, setJobCardId] = useState<string | null>(null);
+  const [pmSearch, setPmSearch] = useState('');
+  const [partyMaterialId, setPartyMaterialId] = useState<string | null>(null);
+  const [qty, setQty] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const jwQuery = useJobWorkOrdersList({
+    search: jwSearch.trim() || undefined,
+    status: 'open',
+    limit: 50,
+    offset: 0,
+  });
+  const jwHeaders = jwQuery.data?.items ?? [];
+
+  const jcQuery = useJobCardsList({
+    search: jcSearch.trim() || undefined,
+    limit: 50,
+    offset: 0,
+  });
+  const jcItems = jcQuery.data?.items ?? [];
+
+  const { data: pmData, isFetching: pmFetching } = usePartyMaterialsList({
+    search: pmSearch.trim() || undefined,
+    limit: 200,
+    offset: 0,
+  });
+  const pmAll = pmData?.items ?? [];
+  const selectedPm = useMemo(
+    () => pmAll.find((p) => p.id === partyMaterialId) ?? null,
+    [pmAll, partyMaterialId],
+  );
+
+  const createMut = useCreatePartyMaterialIssue();
+
+  const onSave = (): void => {
+    setErr(null);
+    if (!jobWorkOrderId) {
+      setErr('Select a JWSO');
+      return;
+    }
+    if (!partyMaterialId) {
+      setErr('Select a party material');
+      return;
+    }
+    const q = Number(qty);
+    if (!Number.isFinite(q) || q <= 0) {
+      setErr('Qty must be ≥ 1');
+      return;
+    }
+    const input: CreatePartyMaterialIssueInput = {
+      issueDate,
+      jobWorkOrderId,
+      partyMaterialId,
+      qty: q,
+    };
+    if (jobCardId) input.jobCardId = jobCardId;
+    if (remarks.trim()) input.remarks = remarks.trim();
+
+    createMut.mutate(input, {
+      onSuccess: () => onClose(),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to create'),
+    });
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(680px, 96vw)',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 14 }}>
+          📤 New Party Material Issue
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Issue Date">
+            <input
+              type="date"
+              className="innovic-input"
+              value={issueDate}
+              onChange={(e) => setIssueDate(e.target.value)}
+            />
+          </Field>
+          <Field label="Qty ★">
+            <input
+              type="number"
+              min={1}
+              className="innovic-input"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              placeholder="0"
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                border: '2px solid var(--green)',
+                borderRadius: 4,
+              }}
+            />
+          </Field>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <Field label="JWSO No. ★">
+              <SearchableSelect
+                id="pmi-jwso"
+                value={jobWorkOrderId}
+                onChange={setJobWorkOrderId}
+                onSearch={setJwSearch}
+                loading={jwQuery.isFetching}
+                placeholder="🔍 Select JWSO — type number or customer…"
+                options={jwHeaders.map((j) => ({
+                  id: j.jwId,
+                  code: j.code,
+                  name: j.customerName ?? '',
+                }))}
+              />
+            </Field>
+          </div>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <Field label="Job Card (optional)">
+              <SearchableSelect
+                id="pmi-jc"
+                value={jobCardId}
+                onChange={setJobCardId}
+                onSearch={setJcSearch}
+                loading={jcQuery.isFetching}
+                placeholder="🔍 Select Job Card — type number…"
+                options={jcItems.map((jc) => ({
+                  id: jc.id,
+                  code: jc.code,
+                  name: jc.itemName,
+                }))}
+              />
+            </Field>
+          </div>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <Field label="Party Material ★">
+              <SearchableSelect
+                id="pmi-material"
+                value={partyMaterialId}
+                onChange={setPartyMaterialId}
+                onSearch={setPmSearch}
+                loading={pmFetching}
+                placeholder="🔍 Select party material — type code or name…"
+                options={pmAll.map((p) => ({
+                  id: p.id,
+                  code: p.code,
+                  name: `${p.name} · stock ${p.stockQty}`,
+                }))}
+              />
+            </Field>
+            {selectedPm ? (
+              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                Available party stock:{' '}
+                <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                  {selectedPm.stockQty}
+                </span>{' '}
+                {selectedPm.uom}
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ gridColumn: 'span 2' }}>
+            <Field label="Remarks">
+              <input
+                type="text"
+                className="innovic-input"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Lot info, purpose, etc."
+              />
+            </Field>
+          </div>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={createMut.isPending}
+            onClick={onSave}
+          >
+            {createMut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save Issue'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div>
+      <div
+        className="text3"
+        style={{
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
