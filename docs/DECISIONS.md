@@ -3122,3 +3122,36 @@ ADR-069). A **text-only plan (no itemId)** keeps the prior PR-only path.
 - Negative: none for existing already-executed plans (unchanged). The full_outsource unit test was
   updated to the new contract (jc_created + jcId + jcCode); it can't run locally (prod-only DB), so
   verified by api typecheck + lint + diff review.
+
+## ADR-078: Availability guard on OSP send (cannot outsource more than the previous stage cleared)
+**Date:** 2026-07-25
+**Status:** Accepted
+
+### Context
+The in-house progress paths enforce "you can't work quantity you don't have": `submitOpLog` and
+`submitQcLog` reject `qty > available`. The OSP-send path had no equivalent check —
+`applyOutwardToJcOp` (delivery-challan outward cascade) blindly did `outsource_sent_qty += qty`.
+Audit of IN-SO-00537 / IN-JC-26-00034 found op S2 (outsource, op_seq 4) with `input_avail = 0`
+(upstream MIR/MCR/S1 never cleared) yet `outsource_sent_qty = 10` — 10 pieces issued to a vendor
+with zero upstream progress. Company-wide audit found this was the only offending record.
+
+### Decision
+`applyOutwardToJcOp` now caps the send at the op's **upstream cleared input minus what's already
+sent**: `sendable = v_jc_op_status.input_avail − outsource_sent_qty`; `qty > sendable` throws a
+`ValidationError` and the whole DC transaction rolls back (the cascade runs inside the DC-create tx).
+`input_avail` is the previous op's cleared output (or the JC order qty for op_seq 1), so a
+first-op / whole-op outsource still sends freely — only sending *ahead of* un-cleared upstream work
+is blocked. Chosen the cascade (single choke point for `outsource_sent_qty`) over per-caller checks.
+
+### Alternatives Considered
+- Guard in the DC-create service before the cascade — rejected: duplicates logic and misses any
+  future caller; the cascade is the one authoritative writer of `outsource_sent_qty`.
+- Cap by the op's `available` (input − accepted) instead of `input − sent` — rejected: `available`
+  reflects remaining-to-accept, not remaining-to-send; multi-batch sends need the sent-based cap.
+
+### Consequences
+- Positive: OSP send now obeys the same availability rule as in-house op/QC logging; the SO-537 class
+  of error is impossible. Existing tests unaffected (their outsource ops are op_seq 1, input = order).
+- Negative: none for valid flows. Integration test added (guard rejects send with 0 upstream); the
+  write-test suite runs against the dev DB in CI (not run locally — DB safety), verified by api
+  typecheck + lint + diff review.

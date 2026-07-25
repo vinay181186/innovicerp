@@ -445,6 +445,81 @@ describe('delivery-challans service — outward writes (T-059a)', () => {
     expect(dcs).toHaveLength(0);
   });
 
+  it('createDeliveryChallan rejects OSP send exceeding upstream cleared qty (ADR-078)', async () => {
+    // JC with an un-started upstream process op (seq 1) → the outsource op
+    // (seq 2) has input_avail 0, so sending any qty to the vendor must be
+    // rejected (mirrors submitOpLog's qty>available guard). Reproduces
+    // SO-537 / IN-JC-26-00034 where 10 were sent with 0 upstream progress.
+    const po = await freshJwPo('CR5B', 10);
+    const jcCode = `${TEST_PREFIX}JC-CR5B-${Date.now()}`;
+    const jcRows = await db
+      .insert(jobCards)
+      .values({
+        companyId: admin.companyId!,
+        code: jcCode,
+        jcDate: '2026-05-18',
+        itemId: testItemId,
+        orderQty: 10,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const jcId = jcRows[0]!.id;
+    await db.insert(jcOps).values([
+      {
+        companyId: admin.companyId!,
+        jobCardId: jcId,
+        opSeq: 1,
+        operation: 'TURNING',
+        opType: 'process',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+      {
+        companyId: admin.companyId!,
+        jobCardId: jcId,
+        opSeq: 2,
+        operation: 'COATING',
+        opType: 'outsource',
+        outsourceVendorId: firstVendorId,
+        outsourcePoLineId: po.lineId,
+        outsourceStatus: 'po_created',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+    ]);
+    await expect(
+      service.createDeliveryChallan(
+        {
+          header: {
+            code: `${TEST_PREFIX}CR5B`,
+            dcDate: '2026-05-18',
+            purchaseOrderId: po.id,
+            poCodeText: 'JW-PO',
+            vendorId: firstVendorId,
+            vendorCodeText: 'TEST-VENDOR',
+          },
+          lines: [
+            {
+              itemId: testItemId,
+              itemCodeText: `${TEST_PREFIX}ITEM`,
+              qty: 10,
+              uom: 'NOS',
+              purchaseOrderLineId: po.lineId,
+            },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    // The whole DC tx must have rolled back — nothing persisted, nothing sent.
+    const dcs = await db
+      .select({ id: deliveryChallans.id })
+      .from(deliveryChallans)
+      .where(eq(deliveryChallans.code, `${TEST_PREFIX}CR5B`));
+    expect(dcs).toHaveLength(0);
+  });
+
   it('createDeliveryChallan rejects duplicate code', async () => {
     const po = await freshJwPo('CR6', 10);
     const code = `${TEST_PREFIX}CR6`;

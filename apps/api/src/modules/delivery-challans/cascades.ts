@@ -30,9 +30,10 @@
 // the return. This eliminated the send(−)/receive(+) pair that netted to zero
 // and let a later dispatch drive on-hand negative (SO-517 trace).
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOps, jobCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+import { ValidationError } from '../../lib/errors';
 
 export interface OutwardCascadeArgs {
   tx: DbTransaction;
@@ -82,6 +83,27 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
     .limit(1);
   const op = rows[0];
   if (!op) return { fired: false };
+
+  // Availability guard (ADR-078): you cannot outsource more than the previous
+  // stage has actually cleared into this op. The in-house progress paths already
+  // enforce this (submitOpLog / submitQcLog reject qty > available), but the
+  // OSP-send path did not — letting the full qty be issued to a vendor with zero
+  // upstream progress (SO-537 / IN-JC-26-00034: S2 sent 10 with input_avail 0).
+  // Cap = the op's upstream input (v_jc_op_status.input_avail) minus what has
+  // already been sent. input_avail is the previous op's cleared output (or the
+  // JC order qty for op_seq 1), so a first/whole-op outsource still sends freely.
+  const availRows = (await tx.execute(
+    sql`SELECT input_avail FROM public.v_jc_op_status WHERE jc_op_id = ${op.id}`,
+  )) as unknown as Array<{ input_avail: number | string }>;
+  const inputAvail = Number(availRows[0]?.input_avail ?? 0);
+  const sendable = inputAvail - op.outsourceSentQty;
+  if (qty > sendable) {
+    throw new ValidationError(
+      `Cannot outsource ${qty} pcs — only ${Math.max(0, sendable)} available from the previous stage ` +
+        `(upstream cleared ${inputAvail}, already sent ${op.outsourceSentQty}). ` +
+        `Complete the prior operation(s) before sending this quantity to the vendor.`,
+    );
+  }
 
   const jcRows = await tx
     .select({ code: jobCards.code })
