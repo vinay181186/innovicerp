@@ -9,7 +9,7 @@ import {
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -417,6 +417,18 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
             </option>
           ))}
         </datalist>
+        {/* Party materials for the line pickers. A native datalist (not a custom
+            absolute dropdown) so it is never clipped by the modal / table
+            overflow — the earlier custom dropdown was invisible for exactly that
+            reason, leaving the material box unselectable. */}
+        <datalist id="dlPGrnMaterial">
+          {pmAll.map((p) => (
+            <option key={p.id} value={p.code}>
+              {p.name}
+              {p.material ? ` · ${p.material}` : ''}
+            </option>
+          ))}
+        </datalist>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="GRN No.">
@@ -627,25 +639,6 @@ function LineRow({
     () => pmAll.find((p) => p.id === line.partyMaterialId) ?? null,
     [pmAll, line.partyMaterialId],
   );
-  const filtered = useMemo(() => {
-    const q = line.materialSearch.trim().toLowerCase();
-    if (!q) return pmAll;
-    return pmAll.filter(
-      (p) =>
-        p.code.toLowerCase().includes(q) ||
-        p.name.toLowerCase().includes(q) ||
-        (p.material ?? '').toLowerCase().includes(q),
-    );
-  }, [pmAll, line.materialSearch]);
-
-  // Auto-clear search once selection is made
-  const selectedId = selected?.id ?? null;
-  useEffect(() => {
-    if (selectedId && line.materialSearch !== '') {
-      onChange({ materialSearch: '' });
-    }
-  }, [selectedId, line.materialSearch, onChange]);
-
   const bg = idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)';
 
   return (
@@ -667,57 +660,20 @@ function LineRow({
           style={{ width: '100%', fontSize: 11 }}
         />
       </td>
-      <td style={{ padding: 6, position: 'relative' }}>
+      <td style={{ padding: 6 }}>
         <input
           type="text"
           className="innovic-input"
-          placeholder="🔍 Type material code or name…"
-          value={
-            selected
-              ? `${selected.code} — ${selected.name}`
-              : line.materialSearch
-          }
+          list="dlPGrnMaterial"
+          placeholder="🔍 Pick material code…"
+          value={selected ? selected.code : line.materialSearch}
           onChange={(e) => {
-            onChange({ partyMaterialId: null, materialSearch: e.target.value });
+            const v = e.target.value;
+            const match = pmAll.find((p) => p.code.toLowerCase() === v.trim().toLowerCase());
+            onChange({ partyMaterialId: match ? match.id : null, materialSearch: v });
           }}
           style={{ width: '100%', fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}
         />
-        {!selected && line.materialSearch.trim() && filtered.length > 0 ? (
-          <div
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: 6,
-              right: 6,
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              background: 'var(--bg2)',
-              marginTop: 2,
-              maxHeight: 180,
-              overflowY: 'auto',
-              zIndex: 10,
-            }}
-          >
-            {filtered.slice(0, 20).map((pm) => (
-              <div
-                key={pm.id}
-                onClick={() => onChange({ partyMaterialId: pm.id, materialSearch: '' })}
-                style={{
-                  padding: '6px 10px',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  borderBottom: '1px solid var(--border)',
-                }}
-              >
-                <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{pm.code}</span> —{' '}
-                {pm.name}
-                {pm.material ? (
-                  <span style={{ color: 'var(--text3)' }}> · {pm.material}</span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
       </td>
       <td style={{ padding: 6, fontSize: 11, color: 'var(--text2)' }}>{selected?.name ?? ''}</td>
       <td style={{ padding: 6 }}>
