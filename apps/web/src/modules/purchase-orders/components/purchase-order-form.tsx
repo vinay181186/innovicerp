@@ -218,13 +218,29 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           <label className="form-label" htmlFor="status">
             Status
           </label>
-          <select id="status" className="innovic-select" {...register('header.status')}>
-            {PO_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
+          {/* Status is READ-ONLY once the PO exists. It moves ONLY through the
+              dedicated approve / reject / cancel actions (the state machine),
+              never a raw edit — so on EDIT we show the current status but never
+              let it be re-picked. On CREATE the initial draft/open choice is
+              still fine (it's driven by approval config server-side). */}
+          {isEdit ? (
+            <input
+              id="status"
+              className="innovic-input"
+              readOnly
+              title="Status changes only via Approve / Reject / Cancel, not a plain edit"
+              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+              value={watch('header.status')?.replaceAll('_', ' ') ?? ''}
+            />
+          ) : (
+            <select id="status" className="innovic-select" {...register('header.status')}>
+              {PO_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="form-grp form-full">

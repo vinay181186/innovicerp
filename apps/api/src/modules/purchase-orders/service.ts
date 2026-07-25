@@ -603,7 +603,14 @@ export async function updatePurchaseOrder(
     if (h.poType !== undefined) updates['poType'] = h.poType;
     if (h.vendorId !== undefined) updates['vendorId'] = h.vendorId ?? null;
     if (h.vendorCodeText !== undefined) updates['vendorCodeText'] = h.vendorCodeText ?? null;
-    if (h.status !== undefined) updates['status'] = h.status;
+    // Status is IMMUTABLE on a raw edit: preserve the existing PO status
+    // regardless of what the payload sends (mirror of updateJobCard's source
+    // immutability). PO status moves ONLY through the dedicated state-machine
+    // actions — approvePurchaseOrder / rejectPurchaseOrder / cancel — never a
+    // plain update, which would otherwise let an edit flip draft→open (skipping
+    // the approver + amount ceiling) or →cancelled (skipping the rejection
+    // reason + rejectedBy/rejectedAt stamps). Silently ignore input.status.
+    updates['status'] = existingHdr.status;
     if (h.dueDate !== undefined) updates['dueDate'] = h.dueDate ?? null;
     if (h.taxType !== undefined) updates['taxType'] = h.taxType ?? null;
     if (h.sgstPct !== undefined) updates['sgstPct'] = pctToString(h.sgstPct);
