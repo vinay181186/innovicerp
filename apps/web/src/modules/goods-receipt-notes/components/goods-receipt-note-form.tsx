@@ -10,8 +10,9 @@ import {
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { todayLocal } from '@/lib/date';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { useSession } from '@/lib/session';
@@ -432,31 +433,32 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                 </div>
 
                 <div className="form-grid form-grid-3" style={{ marginBottom: 8 }}>
-                  <div className="form-grp">
-                    <label className="form-label">Item Code</label>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.itemCodeText` as const)}
-                    />
-                  </div>
-                  <div className="form-grp">
-                    <label className="form-label">
-                      Item Name<span className="req">★</span>
-                    </label>
-                    <input
-                      className="innovic-input"
-                      autoComplete="off"
-                      readOnly={locked}
-                      {...register(`lines.${idx}.itemName` as const, {
-                        required: 'Item name is required',
-                      })}
-                    />
-                    {errors.lines?.[idx]?.itemName?.message ? (
-                      <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
-                    ) : null}
-                  </div>
+                  {/* Shared item cell — enforces the system item-code rule (master
+                      match ⇒ read-only auto-filled name; off-master ⇒ editable, itemId
+                      null). Controller keeps the existing required-name validation and
+                      onSubmit error display; code + itemId are mirrored via setValue so
+                      the submit shape (onValid) is unchanged. */}
+                  <Controller
+                    control={control}
+                    name={`lines.${idx}.itemName` as const}
+                    rules={{ required: 'Item name is required' }}
+                    render={({ field, fieldState }) => (
+                      <LineItemPicker
+                        code={watch(`lines.${idx}.itemCodeText`) ?? ''}
+                        itemId={watch(`lines.${idx}.itemId`) ?? null}
+                        itemName={field.value}
+                        readOnly={locked}
+                        nameError={fieldState.error?.message}
+                        onChange={(next) => {
+                          setValue(`lines.${idx}.itemCodeText`, next.code, { shouldDirty: true });
+                          setValue(`lines.${idx}.itemId`, next.itemId ?? undefined, {
+                            shouldDirty: true,
+                          });
+                          field.onChange(next.name);
+                        }}
+                      />
+                    )}
+                  />
                   <div className="form-grp">
                     <label className="form-label">
                       Received<span className="req">★</span>
