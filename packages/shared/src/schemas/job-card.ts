@@ -166,7 +166,6 @@ export type JcOpInput = z.infer<typeof jcOpInputSchema>;
  *  'qc-docs'). The file is uploaded to Storage by the client first. */
 export const jcDocInputSchema = z.object({
   docType: z.string().min(1).max(120),
-  docName: z.string().max(255).nullable().optional(),
   fileName: z.string().min(1).max(255),
   storagePath: z.string().min(1).max(512),
   fileSize: z.number().int().nonnegative().nullable().optional(),

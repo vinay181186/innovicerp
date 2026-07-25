@@ -51,7 +51,6 @@ export const jcOpEnrichedSchema = z.object({
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(), // joined from job_cards.code
   opSeq: z.number().int().positive(),
-  machineId: z.string().uuid().nullable(),
   machineCode: z.string().nullable(), // joined from machines.code; null for OSP / QC
   machineCodeText: z.string().nullable(),
   operation: z.string(),
@@ -60,10 +59,7 @@ export const jcOpEnrichedSchema = z.object({
   program: z.string().nullable(),
   toolNo: z.string().nullable(),
   qcRequired: z.boolean(),
-  qcCallDate: z.string().nullable(),
-  qcAttendedDate: z.string().nullable(),
   reworkQty: z.number().int().nonnegative(),
-  outsourceVendorId: z.string().uuid().nullable(),
   outsourceStatus: outsourceStatusSchema.nullable(),
   // From v_jc_op_status (computed)
   completedQty: z.number().int().nonnegative(),
