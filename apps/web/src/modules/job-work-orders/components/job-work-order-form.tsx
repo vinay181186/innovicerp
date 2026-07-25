@@ -154,7 +154,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   function fillLineFromItem(idx: number, codeValue: string): void {
     const it = itemsByCode.get(codeValue.trim().toUpperCase());
     if (!it) return;
-    if (!getValues(`lines.${idx}.partName`)) setValue(`lines.${idx}.partName`, it.name);
+    // Rule: item code is the unique key — the name ALWAYS follows the selected
+    // code from the master (never a stale manual edit). Other attributes stay
+    // fill-only.
+    setValue(`lines.${idx}.partName`, it.name);
     if (!getValues(`lines.${idx}.material`)) setValue(`lines.${idx}.material`, it.material ?? '');
     if (!getValues(`lines.${idx}.drawingNo`)) setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
     setValue(`lines.${idx}.uom`, it.uom);
@@ -510,6 +513,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {fields.map((field, idx) => {
             const amt = (Number(watchedLines?.[idx]?.orderQty) || 0) * (Number(watchedLines?.[idx]?.rate) || 0);
+            // On-master item → name is derived + read-only; off-master (free
+            // text code with no master match) keeps the name editable.
+            const lineItemCode = (watchedLines?.[idx]?.itemCodeText ?? '').trim().toUpperCase();
+            const lineOnMaster = lineItemCode ? itemsByCode.has(lineItemCode) : false;
             return (
               <div key={field.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -526,7 +533,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   </div>
                   <div className="form-grp">
                     <label className="form-label">Part Name<span className="req">★</span></label>
-                    <input className="innovic-input" autoComplete="off" {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
+                    <input className="innovic-input" autoComplete="off" readOnly={lineOnMaster} title={lineOnMaster ? 'Auto-filled from Item Master (item code is the key)' : undefined} style={lineOnMaster ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined} {...register(`lines.${idx}.partName` as const, { required: 'Part name is required' })} />
                     {errors.lines?.[idx]?.partName?.message ? <div className="form-error">{errors.lines[idx]?.partName?.message}</div> : null}
                   </div>
                   <div className="form-grp">

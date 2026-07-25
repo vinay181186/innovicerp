@@ -51,6 +51,28 @@ Routes ONLY: declare endpoint, validate input via Zod, call service, return resp
 - Local UI state in Zustand or component state.
 - No prop drilling beyond 2 levels — use Zustand.
 
+## Item pickers — code is the key, name auto-fills (system-wide rule)
+
+`itemCode` is the unique, permanent key for an item. **Every place an item is
+chosen, the user selects the _code_; the item _name_ is derived from the master
+and must NOT be a hand-typed field at the point of use.**
+
+- Selecting/typing a code that matches the Item Master **always** overwrites the
+  name field from `master.name` (never a stale "fill-only-if-empty" edit), and
+  the name renders **read-only** (greyed) — it is a snapshot of the code's master
+  name, so it can't drift.
+- Where a form legitimately accepts an **off-master** item (free-text
+  `itemCodeText` with no master match — e.g. PO/PR/GRN/JWO buyer text), keep the
+  name editable **only** while there is no master match; the moment a master code
+  is picked, auto-fill + lock it. Clear `itemId` when the code goes off-master.
+- Compliant forms: sales-orders, job-work-orders, purchase-orders,
+  purchase-requests, plans, goods-receipt-notes, nc-register, job-cards, bom.
+  New forms with an item picker MUST follow this pattern (don't add a raw,
+  always-editable item-name input).
+- Server is the source of truth: create/update services `resolveItem(code)` and
+  snapshot the name from the resolved master row — never trust a client-supplied
+  name for an on-master item.
+
 ## API Client (frontend)
 
 - Single `apiClient` in `apps/web/src/lib/api.ts` (axios or ky).

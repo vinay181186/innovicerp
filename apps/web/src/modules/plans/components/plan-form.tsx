@@ -200,7 +200,9 @@ export function PlanForm({
     setValues((v) => ({
       ...v,
       itemCodeText: code,
-      ...(match ? { itemId: match.id, itemNameText: match.name } : {}),
+      // Rule: item code is the unique key — a master match derives the name;
+      // an off-master code clears itemId so the name stays user-editable.
+      ...(match ? { itemId: match.id, itemNameText: match.name } : { itemId: null }),
     }));
   };
 
@@ -354,9 +356,18 @@ export function PlanForm({
             </datalist>
           </Field>
           <Field label="Item name">
+            {/* Rule: item code is the unique key — on-master name is derived +
+                read-only; off-master code keeps it editable. */}
             <input
               className="innovic-input"
               value={values.itemNameText}
+              readOnly={Boolean(values.itemId)}
+              title={
+                values.itemId ? 'Auto-filled from Item Master (item code is the key)' : undefined
+              }
+              style={
+                values.itemId ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined
+              }
               onChange={(e) => update('itemNameText', e.target.value)}
             />
           </Field>

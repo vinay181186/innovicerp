@@ -389,14 +389,25 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                               }}
                             />
                           </td>
-                          {/* Legacy renders Name as a read-only span auto-filled from Item
-                              Master (it hard-requires on-master items). Ours stays an input:
-                              `itemName` is min(1) in our schema and PO accepts off-master
-                              free text, so the value must remain user-editable. */}
+                          {/* Rule: item code is the unique key. When the code is on
+                              the Item Master the name is derived + read-only; PO still
+                              accepts off-master free text, so the name stays editable
+                              only when there is no master match. */}
                           <td style={{ minWidth: 90 }}>
                             <input
                               className="innovic-input"
                               autoComplete="off"
+                              readOnly={Boolean(matchedItem)}
+                              title={
+                                matchedItem
+                                  ? 'Auto-filled from Item Master (item code is the key)'
+                                  : undefined
+                              }
+                              style={
+                                matchedItem
+                                  ? { background: 'var(--bg4)', color: 'var(--text3)' }
+                                  : undefined
+                              }
                               {...register(`lines.${idx}.itemName` as const, {
                                 required: 'Item name is required',
                               })}

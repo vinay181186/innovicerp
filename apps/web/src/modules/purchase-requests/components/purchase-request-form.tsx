@@ -61,7 +61,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, handleSubmit, formState, setValue } = form;
+  const { register, handleSubmit, formState, setValue, watch } = form;
   const errors = formState.errors;
 
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
@@ -231,10 +231,17 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           <label className="form-label" htmlFor="itemName">
             Item Name (snapshot)
           </label>
+          {/* Rule: item code is the unique key — on-master name is derived +
+              read-only; off-master free text stays editable. */}
           <input
             id="itemName"
             className="innovic-input"
             autoComplete="off"
+            readOnly={Boolean(watch('itemId'))}
+            title={
+              watch('itemId') ? 'Auto-filled from Item Master (item code is the key)' : undefined
+            }
+            style={watch('itemId') ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
             {...register('itemName')}
           />
         </div>
