@@ -154,7 +154,6 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
       machineCodeText: op.machineCodeText ?? '',
       outsourceVendorText: op.outsourceVendorText ?? '',
       outsourceCost: Number(op.outsourceCost),
-      outsourceLeadDays: op.outsourceLeadDays,
     })),
   };
 }

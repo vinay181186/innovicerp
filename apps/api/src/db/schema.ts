@@ -1395,6 +1395,10 @@ export const purchaseOrders = pgTable(
     cgstPct: numeric('cgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     igstPct: numeric('igst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     prCodeText: text('pr_code_text'),
+    // Forward FK to the source Purchase Request (migration 0075, ADR-080). Was
+    // previously modelled only as the reverse purchase_requests.po_id + the
+    // free-text pr_code_text snapshot; this makes PR->PO navigable both ways.
+    prId: uuid('pr_id').references(() => purchaseRequests.id, { onDelete: 'set null' }),
     approvedBy: uuid('approved_by').references(() => users.id),
     approvedAt: timestamp('approved_at', { withTimezone: true }),
     approvalRemarks: text('approval_remarks'),
@@ -1523,6 +1527,12 @@ export const goodsReceiptNotes = pgTable(
     vendorId: uuid('vendor_id').references(() => vendors.id),
     vendorCodeText: text('vendor_code_text'),
     dcNo: text('dc_no'),
+    // Forward FK to the source Delivery Challan for OSP-return GRNs (migration
+    // 0075, ADR-080). The auto-GRN path holds the DC id but previously stored
+    // only dc_no text, leaving GRN->DC unnavigable.
+    deliveryChallanId: uuid('delivery_challan_id').references(() => deliveryChallans.id, {
+      onDelete: 'set null',
+    }),
     invoiceNo: text('invoice_no'),
     remarks: text('remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

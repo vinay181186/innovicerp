@@ -134,7 +134,7 @@ export const createDeliveryChallanLineInputSchema = z.object({
   itemId: z.string().uuid().nullable().optional(),
   itemCodeText: z.string().min(1),
   itemNameText: z.string().nullable().optional(),
-  qty: z.number().positive(),
+  qty: z.number().int().positive(),
   uom: uomSchema,
   materialText: z.string().nullable().optional(),
   dcRemarks: z.string().nullable().optional(),
@@ -206,8 +206,8 @@ export type DeliveryChallanReceipt = z.infer<typeof deliveryChallanReceiptSchema
 export const createDeliveryChallanReceiptLineInputSchema = z
   .object({
     deliveryChallanLineId: z.string().uuid(),
-    receivedQty: z.number().nonnegative(),
-    rejectedQty: z.number().nonnegative().default(0),
+    receivedQty: z.number().int().nonnegative(),
+    rejectedQty: z.number().int().nonnegative().default(0),
     rejectReason: z.string().nullable().optional(),
     remarks: z.string().nullable().optional(),
   })

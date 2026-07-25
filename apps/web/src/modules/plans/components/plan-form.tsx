@@ -48,7 +48,6 @@ export interface PlanFormValues {
     machineCodeText: string;
     outsourceVendorText: string;
     outsourceCost: number;
-    outsourceLeadDays: number | null;
   }>;
 }
 
@@ -137,7 +136,6 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
             machineCodeText: op.machineCodeText || null,
             outsourceVendorText: op.outsourceVendorText || null,
             outsourceCost: op.outsourceCost,
-            outsourceLeadDays: op.outsourceLeadDays,
           }))
         : [],
   };
@@ -219,7 +217,6 @@ export function PlanForm({
         machineCodeText: op.machineCodeText ?? '',
         outsourceVendorText: op.outsourceVendorText ?? '',
         outsourceCost: op.outsourceCost ?? 0,
-        outsourceLeadDays: op.outsourceLeadDays ?? null,
       })),
     }));
   };
@@ -238,7 +235,6 @@ export function PlanForm({
           machineCodeText: '',
           outsourceVendorText: '',
           outsourceCost: 0,
-          outsourceLeadDays: null,
         },
       ],
     }));

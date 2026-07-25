@@ -827,6 +827,7 @@ export async function createPurchaseOrderFromPr(
         sgstPct: pctToString(input.header.sgstPct ?? 0),
         cgstPct: pctToString(input.header.cgstPct ?? 0),
         igstPct: pctToString(input.header.igstPct ?? 0),
+        prId: pr.id,
         prCodeText: pr.code,
         remarks:
           input.header.remarks ??
@@ -1273,6 +1274,9 @@ export async function createPurchaseOrderFromPrBatch(
         sgstPct: String(input.header.sgstPct ?? 0),
         cgstPct: String(input.header.cgstPct ?? 0),
         igstPct: String(input.header.igstPct ?? 0),
+        // Batch may span multiple PRs joined into prCodeText; only stamp the FK
+        // when there is a single source PR — otherwise leave it null.
+        prId: sortedPrs.length === 1 ? sortedPrs[0]!.id : null,
         prCodeText: sortedPrs.map((p) => p.code).join(', ').slice(0, 200),
         remarks: input.header.remarks ?? `Batch from ${sortedPrs.length} OSP PR(s)`,
         createdBy: user.id,

@@ -525,7 +525,6 @@ export async function getDefaultRouteOpsForItem(
       outsourceVendorId: op.ospVendorId,
       outsourceVendorText: op.ospVendorCodeText,
       outsourceCost: 0,
-      outsourceLeadDays: op.ospLeadDays,
     }));
   });
 }
@@ -1195,7 +1194,6 @@ async function insertOps(
     outsourceVendorId: op.outsourceVendorId ?? null,
     outsourceVendorText: op.outsourceVendorText ?? null,
     outsourceCost: (op.outsourceCost ?? 0).toFixed(2),
-    outsourceLeadDays: op.outsourceLeadDays ?? null,
     createdBy: user.id,
     updatedBy: user.id,
   }));
@@ -1303,7 +1301,6 @@ function toPlanOp(row: typeof planOps.$inferSelect): PlanOp {
     outsourceVendorText: row.outsourceVendorText,
     outsourceCost: row.outsourceCost,
     outsourcePrId: row.outsourcePrId,
-    outsourceLeadDays: row.outsourceLeadDays,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),

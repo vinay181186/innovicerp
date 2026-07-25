@@ -48,7 +48,7 @@ function uid(): string {
   return Math.random().toString(36).slice(2);
 }
 
-function planOpToRow(op: { opSeq: number; operation: string; opType: string; machineCodeText: string | null; cycleTimeMin: string; outsourceVendorText: string | null; outsourceCost: string; outsourceLeadDays: number | null; qcRequired: boolean }): OpRow {
+function planOpToRow(op: { opSeq: number; operation: string; opType: string; machineCodeText: string | null; cycleTimeMin: string; outsourceVendorText: string | null; outsourceCost: string; qcRequired: boolean }): OpRow {
   return {
     uid: uid(),
     opSeq: op.opSeq,
@@ -59,7 +59,6 @@ function planOpToRow(op: { opSeq: number; operation: string; opType: string; mac
     qcRequired: op.qcRequired,
     outsourceVendorText: op.outsourceVendorText ?? '',
     outsourceCost: Number(op.outsourceCost),
-    outsourceLeadDays: op.outsourceLeadDays,
   };
 }
 
@@ -148,7 +147,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           cycleTimeMin: op.cycleTimeMin ?? 0,
           opType: op.opType ?? 'process',
           qcRequired: op.qcRequired ?? false,
-          outsourceLeadDays: op.outsourceLeadDays ?? null,
           operation: op.operation,
           opSeq: op.opSeq,
         })),
@@ -184,7 +182,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             qcRequired: o.qcRequired,
             outsourceVendorText: o.outsourceVendorText || null,
             outsourceCost: o.outsourceCost,
-            outsourceLeadDays: o.outsourceLeadDays,
           }))
         : [],
   });
@@ -241,7 +238,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         qcRequired: kind === 'qc',
         outsourceVendorText: '',
         outsourceCost: 0,
-        outsourceLeadDays: kind === 'outsource' ? 5 : null,
       },
     ]);
   };
@@ -718,7 +714,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                   e.target.checked
                                     ? {
                                         opType: 'outsource',
-                                        outsourceLeadDays: op.outsourceLeadDays ?? 5,
                                         cycleTimeMin: 0,
                                       }
                                     : { opType: 'process' },

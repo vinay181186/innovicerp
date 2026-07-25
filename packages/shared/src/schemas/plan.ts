@@ -35,7 +35,6 @@ export const planOpSchema = z.object({
   outsourceVendorText: z.string().nullable(),
   outsourceCost: z.string(),
   outsourcePrId: z.string().uuid().nullable(),
-  outsourceLeadDays: z.number().int().nonnegative().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -153,7 +152,6 @@ const planOpInputSchema = z.object({
   outsourceVendorId: z.string().uuid().nullable().optional(),
   outsourceVendorText: z.string().trim().max(120).nullable().optional(),
   outsourceCost: z.number().nonnegative().optional(),
-  outsourceLeadDays: z.number().int().nonnegative().nullable().optional(),
 });
 export type PlanOpInput = z.infer<typeof planOpInputSchema>;
 

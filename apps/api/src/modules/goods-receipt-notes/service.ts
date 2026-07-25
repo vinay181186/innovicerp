@@ -655,6 +655,7 @@ export async function insertGrnForOspReceipt(
     vendorId: string | null;
     vendorCodeText: string | null;
     dcNo: string | null;
+    deliveryChallanId?: string;
     invoiceNo?: string | null;
     remarks: string | null;
     lines: Array<{
@@ -678,6 +679,7 @@ export async function insertGrnForOspReceipt(
       vendorId: args.vendorId,
       vendorCodeText: args.vendorCodeText,
       dcNo: args.dcNo,
+      deliveryChallanId: args.deliveryChallanId ?? null,
       invoiceNo: args.invoiceNo ?? null,
       remarks: args.remarks,
       createdBy: user.id,
