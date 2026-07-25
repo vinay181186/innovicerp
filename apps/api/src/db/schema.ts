@@ -2581,7 +2581,6 @@ export const planOps = pgTable(
     outsourcePrId: uuid('outsource_pr_id').references(() => purchaseRequests.id, {
       onDelete: 'set null',
     }),
-    outsourceLeadDays: integer('outsource_lead_days'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
