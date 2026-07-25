@@ -1,4 +1,23 @@
 import { defineConfig, devices } from '@playwright/test';
+import { STORAGE_STATE } from './e2e/constants';
+
+// Load e2e credentials (E2E_EMAIL / E2E_PASSWORD) from a gitignored file if
+// present. process.loadEnvFile is built into Node 24 — no dependency needed.
+try {
+  process.loadEnvFile(new URL('.env.e2e', import.meta.url));
+} catch {
+  // No .env.e2e — creds may still come from the shell env. auth.setup.ts
+  // throws a clear message if they end up missing.
+}
+
+// The web app validates VITE_* at boot. vite.config.ts sets envDir to the repo
+// root, whose .env.local lacks these — the real values live in apps/web/.env.local.
+// Load them here so we can forward them to the dev server webServer spawns below.
+try {
+  process.loadEnvFile(new URL('.env.local', import.meta.url));
+} catch {
+  // No apps/web/.env.local — the webServer will fail loudly if VITE_* are unset.
+}
 
 /**
  * Playwright e2e configuration for the Innovic ERP web app.
@@ -28,9 +47,23 @@ export default defineConfig({
   },
 
   projects: [
+    // Credential-free boot check — runs without logging in.
+    {
+      name: 'smoke',
+      testMatch: /smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Logs in once and writes the session to STORAGE_STATE.
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    // Authenticated tests reuse that session.
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
+      dependencies: ['setup'],
     },
   ],
 
@@ -39,5 +72,12 @@ export default defineConfig({
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // Forward the app's runtime config (loaded from apps/web/.env.local above)
+    // so Vite exposes valid VITE_* and the app boots instead of crashing.
+    env: {
+      VITE_API_URL: process.env.VITE_API_URL ?? '',
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? '',
+      VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? '',
+    },
   },
 });
