@@ -204,13 +204,27 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           <label className="form-label" htmlFor="status">
             Status
           </label>
-          <select id="status" className="innovic-select" {...register('status')}>
+          {/* Status is immutable on edit — it only advances via the Approve /
+              Reject / Create-PO actions, never a free dropdown. Editable on
+              create (initial state) only. */}
+          <select
+            id="status"
+            className="innovic-select"
+            disabled={isEdit}
+            style={isEdit ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
+            {...register('status')}
+          >
             {PR_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s.replaceAll('_', ' ')}
               </option>
             ))}
           </select>
+          {isEdit ? (
+            <div className="form-help">
+              Status changes via Approve / Reject / Create PO — not here.
+            </div>
+          ) : null}
         </div>
 
         <div className="form-grp">

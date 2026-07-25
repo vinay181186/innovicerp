@@ -76,6 +76,33 @@ export function useUpdatePurchaseRequest(id: string) {
   });
 }
 
+export function useApprovePr() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseRequest, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<PurchaseRequest>(`/purchase-requests/${id}/approve`, { method: 'POST' }),
+    onSuccess: (pr) => {
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
+    },
+  });
+}
+
+export function useRejectPr() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseRequest, Error, { id: string; reason: string }>({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<PurchaseRequest>(`/purchase-requests/${id}/reject`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: (pr) => {
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
+    },
+  });
+}
+
 export function useSoftDeletePurchaseRequest() {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({

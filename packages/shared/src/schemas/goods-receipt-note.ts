@@ -178,9 +178,16 @@ const _grnHeaderInputBase = z.object({
   remarks: z.string().max(2000).optional(),
 });
 
-/** CREATE — `{header, lines}`. ≥ 1 line; service runs both in tx. */
+/** CREATE — `{header, lines}`. ≥ 1 line; service runs both in tx. Header
+ *  requires `vendorId` OR `vendorCodeText` (mirrors purchase-order.ts +
+ *  migration 0080 goods_receipt_notes_vendor_one_of CHECK). The OSP auto-GRN
+ *  (insertGrnForOspReceipt) copies the vendor from the DC and does not pass
+ *  through this schema, so it is unaffected. */
 export const createGoodsReceiptNoteInputSchema = z.object({
-  header: _grnHeaderInputBase,
+  header: _grnHeaderInputBase.refine(
+    (h) => Boolean(h.vendorId) || Boolean(h.vendorCodeText?.trim()),
+    { message: 'A vendor (id or code) is required' },
+  ),
   lines: z.array(goodsReceiptNoteLineInputSchema).min(1, 'At least one line is required'),
 });
 export type CreateGoodsReceiptNoteInput = z.infer<typeof createGoodsReceiptNoteInputSchema>;

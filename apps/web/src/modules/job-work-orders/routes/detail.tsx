@@ -68,9 +68,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Client material is header-level (migration 0053).
   const clientMatTotal = Number(detail.clientMaterialQty ?? 0);
-  const matRecvTotal = Number(detail.materialReceivedQty ?? 0);
   // Actual client-material received = Σ Party GRN receipts (source of truth for
-  // the badge), not the manually-typed header materialReceivedQty.
+  // the badge and the client-material summary).
   const partyReceivedTotal = detail.partyReceivedQty;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
@@ -182,7 +181,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 {' '}
                 · client material{' '}
                 <b style={{ color: 'var(--text)' }}>
-                  {matRecvTotal}/{clientMatTotal}
+                  {partyReceivedTotal}/{clientMatTotal}
                 </b>
               </>
             ) : null}
@@ -369,11 +368,7 @@ function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
       <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
       <Pair label="Status" value={<SoStatusBadge status={detail.status} />} />
       <Pair label="🟢 Client Material" value={detail.clientMaterial ?? '—'} />
-      <Pair
-        label="Material Qty / Received"
-        value={`${Number(detail.clientMaterialQty ?? 0)} / ${Number(detail.materialReceivedQty ?? 0)}`}
-      />
-      <Pair label="Material Received Date" value={detail.materialReceivedDate ?? '—'} />
+      <Pair label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>

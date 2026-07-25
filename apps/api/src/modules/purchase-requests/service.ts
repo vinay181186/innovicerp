@@ -538,7 +538,10 @@ export async function updatePurchaseRequest(
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
     if (input.prDate !== undefined) updates['prDate'] = input.prDate;
-    if (input.status !== undefined) updates['status'] = input.status;
+    // Status is IMMUTABLE on a raw edit — it only advances through the
+    // approve / reject / create-PO service actions (mirrors updateJobCard /
+    // updatePurchaseOrder). Any `status` in the payload is ignored so the edit
+    // form can never skip the approvedBy/approvedAt stamp (ISSUE-025).
     if (input.vendorId !== undefined) updates['vendorId'] = input.vendorId ?? null;
     if (input.vendorCodeText !== undefined)
       updates['vendorCodeText'] = input.vendorCodeText ?? null;
@@ -568,6 +571,147 @@ export async function updatePurchaseRequest(
         action: 'EDIT',
         entity: 'PurchaseRequest',
         detail: prDetail(row.code, row.itemName, row.itemCodeText, row.qty),
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toPurchaseRequest(row);
+  });
+}
+
+// ─── Approval actions (mirror approvePurchaseOrder / rejectPurchaseOrder) ────
+//
+// The ONLY path that advances a PR out of its pre-approval state. Stamps the
+// approvedBy/approvedAt columns the generic update path deliberately never
+// writes (status is immutable there). Legacy `approvePR` (HTML) set
+// op.approvedBy/approvedDate on the same click.
+
+export async function approvePurchaseRequest(
+  id: string,
+  user: AuthContext,
+): Promise<PurchaseRequest> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(
+        and(
+          eq(purchaseRequests.id, id),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
+      .limit(1);
+    const pr = existing[0];
+    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    // Only a pre-approval PR ('open') can be approved.
+    if (pr.status !== 'open') {
+      throw new ValidationError(
+        `PR ${pr.code} is ${pr.status}; only open purchase requests can be approved`,
+      );
+    }
+
+    const now = new Date();
+    await tx
+      .update(purchaseRequests)
+      .set({
+        status: 'approved',
+        approvedBy: user.id,
+        approvedAt: now,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseRequests.id, id));
+
+    const reread = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(eq(purchaseRequests.id, id))
+      .limit(1);
+    const row = reread[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'APPROVE',
+        entity: 'PurchaseRequest',
+        detail: `${row.code} approved by ${user.email ?? user.id}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toPurchaseRequest(row);
+  });
+}
+
+export async function rejectPurchaseRequest(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<PurchaseRequest> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  if (!reason || !reason.trim()) {
+    throw new ValidationError('Rejection reason is required');
+  }
+  const trimmedReason = reason.trim();
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(
+        and(
+          eq(purchaseRequests.id, id),
+          eq(purchaseRequests.companyId, companyId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
+      .limit(1);
+    const pr = existing[0];
+    if (!pr) throw new NotFoundError(`Purchase request ${id} not found`);
+    // A PR already converted to a PO carries the procurement obligation on the
+    // PO; a rejected/cancelled PR is terminal. Only pre-PO PRs can be rejected.
+    if (pr.poId !== null || pr.status === 'po_created' || pr.status === 'cancelled') {
+      throw new ValidationError(
+        `PR ${pr.code} is ${pr.status}; only open or approved purchase requests can be rejected`,
+      );
+    }
+
+    // PR has no dedicated rejection columns (unlike PO) — record the reason in
+    // remarks so it survives on the cancelled row.
+    const stampedRemarks = pr.remarks
+      ? `${pr.remarks}\n[Rejected] ${trimmedReason}`
+      : `[Rejected] ${trimmedReason}`;
+
+    const now = new Date();
+    await tx
+      .update(purchaseRequests)
+      .set({
+        status: 'cancelled',
+        remarks: stampedRemarks,
+        updatedBy: user.id,
+        updatedAt: now,
+      })
+      .where(eq(purchaseRequests.id, id));
+
+    const reread = await tx
+      .select()
+      .from(purchaseRequests)
+      .where(eq(purchaseRequests.id, id))
+      .limit(1);
+    const row = reread[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'REJECT',
+        entity: 'PurchaseRequest',
+        detail: `${row.code} rejected: ${trimmedReason}`,
         refId: row.code,
       },
       companyId,

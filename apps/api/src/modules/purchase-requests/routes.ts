@@ -1,3 +1,4 @@
+import { rejectPurchaseRequestInputSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -42,6 +43,19 @@ export async function purchaseRequestsRoutes(app: FastifyInstance): Promise<void
     const { id } = idParamSchema.parse(req.params);
     const body = updatePurchaseRequestInputSchema.parse(req.body);
     return service.updatePurchaseRequest(id, body, req.user);
+  });
+
+  app.post('/purchase-requests/:id/approve', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.approvePurchaseRequest(id, req.user);
+  });
+
+  app.post('/purchase-requests/:id/reject', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const { reason } = rejectPurchaseRequestInputSchema.parse(req.body);
+    return service.rejectPurchaseRequest(id, reason, req.user);
   });
 
   app.delete('/purchase-requests/:id', async (req, reply) => {

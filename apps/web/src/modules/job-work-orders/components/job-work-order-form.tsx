@@ -12,7 +12,6 @@
 import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
-  SO_STATUSES,
   type SoStatus,
   type UpdateJobWorkOrderInput,
   type Uom,
@@ -60,8 +59,6 @@ interface FormValues {
     dueDate?: string;
     clientMaterial?: string;
     clientMaterialQty?: number;
-    materialReceivedDate?: string;
-    materialReceivedQty?: number;
   };
   lines: LineFormValue[];
 }
@@ -268,11 +265,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         h.clientMaterialQty !== undefined && !Number.isNaN(Number(h.clientMaterialQty))
           ? Number(h.clientMaterialQty)
           : undefined,
-      materialReceivedDate: h.materialReceivedDate || undefined,
-      materialReceivedQty:
-        h.materialReceivedQty !== undefined && !Number.isNaN(Number(h.materialReceivedQty))
-          ? Number(h.materialReceivedQty)
-          : undefined,
     };
 
     const linesOut = values.lines.map((l) => {
@@ -351,9 +343,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         {isEdit ? (
           <div className="form-grp">
             <label className="form-label" htmlFor="status">Status</label>
-            <select id="status" className="innovic-select" {...register('header.status')}>
-              {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            {/* Status is read-only on edit: it is driven by the JC-completion
+                cascade (open→closed), the JW-Return cascade (→dispatched) and
+                soft-delete for cancel — a manual edit only causes drift, and the
+                server ignores any status in the update payload. */}
+            <input id="status" className="innovic-input" readOnly {...register('header.status')} />
           </div>
         ) : null}
 
@@ -484,14 +478,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <div className="form-grp">
             <label className="form-label">Material Qty (Client Supplied)</label>
             <input type="number" min={0} step="0.01" className="innovic-input" placeholder="0" {...register('header.clientMaterialQty', { valueAsNumber: true })} />
-          </div>
-          <div className="form-grp">
-            <label className="form-label">Material Received Date</label>
-            <input type="date" className="innovic-input" {...register('header.materialReceivedDate')} />
-          </div>
-          <div className="form-grp">
-            <label className="form-label">Material Received Qty</label>
-            <input type="number" min={0} step="0.01" className="innovic-input" placeholder="0" {...register('header.materialReceivedQty', { valueAsNumber: true })} />
           </div>
         </div>
       </div>
@@ -703,8 +689,6 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
       })(),
       ...(detail.clientMaterial ? { clientMaterial: detail.clientMaterial } : {}),
       ...(detail.clientMaterialQty !== null ? { clientMaterialQty: Number(detail.clientMaterialQty) } : {}),
-      ...(detail.materialReceivedDate ? { materialReceivedDate: detail.materialReceivedDate } : {}),
-      ...(detail.materialReceivedQty !== null ? { materialReceivedQty: Number(detail.materialReceivedQty) } : {}),
     },
     lines:
       detail.lines.length > 0

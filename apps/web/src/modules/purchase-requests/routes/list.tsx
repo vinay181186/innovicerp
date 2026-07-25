@@ -9,9 +9,10 @@
 //    club-PO flow is ported on /outsource-jobs (from-pr-batch) and the list API
 //    has no SO/JC filter param. The legacy tip line that advertises both is
 //    therefore not shipped either.
-//  - No Approve / Cancel row buttons: there is no approve endpoint, and PATCH
-//    status alone would skip legacy's approvedBy/approvedDate stamp and
-//    cancelPR's upstream JC-op/plan reset (ISSUE-025).
+//  - Approve / Reject row buttons (admin/manager, open PRs) call the dedicated
+//    /approve + /reject endpoints, which stamp approvedBy/approvedAt (approve)
+//    or record a reason + cancel (reject). A raw PATCH can no longer change
+//    status — that path is immutable now, closing ISSUE-025.
 //  - Card headings say "Open" where legacy says "Pending" — `open` is this
 //    port's status name, shown by the badge and the status filter on this same
 //    page.
@@ -32,13 +33,13 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { usePurchaseRequestsList } from '../api';
+import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrStatusBadge } from '../components/pr-status-badge';
 
 // Legacy puts its cell classes on the <td> itself (e.g. `<td class="td-ctr mono
@@ -100,6 +101,41 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+
+  // Approve / Reject are the only paths that advance an open PR — they stamp
+  // approvedBy/approvedAt (approve) or record a reason + cancel (reject),
+  // which a raw status edit deliberately no longer can (ISSUE-025).
+  const approveMut = useApprovePr();
+  const rejectMut = useRejectPr();
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleApprove = useCallback(
+    (pr: PurchaseRequestListItem): void => {
+      setActionError(null);
+      if (!window.confirm(`Approve ${pr.code}?`)) return;
+      approveMut.mutate(pr.id, {
+        onError: (e) => setActionError(e instanceof Error ? e.message : 'Approve failed'),
+      });
+    },
+    [approveMut],
+  );
+
+  const handleReject = useCallback(
+    (pr: PurchaseRequestListItem): void => {
+      setActionError(null);
+      const reason = window.prompt(`Reject ${pr.code} — reason:`);
+      if (reason === null) return; // cancelled prompt
+      if (!reason.trim()) {
+        setActionError('Rejection reason is required');
+        return;
+      }
+      rejectMut.mutate(
+        { id: pr.id, reason: reason.trim() },
+        { onError: (e) => setActionError(e instanceof Error ? e.message : 'Reject failed') },
+      );
+    },
+    [rejectMut],
+  );
 
   // Legacy status cards (L6229-6242) count the whole PR set, not the filtered
   // page — the list endpoint returns a `total` per filter, so one count query
@@ -255,6 +291,28 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           const pr = row.original;
           return (
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              {canWrite && pr.status === 'open' ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-success"
+                    style={{ fontSize: 10 }}
+                    disabled={approveMut.isPending}
+                    onClick={() => handleApprove(pr)}
+                  >
+                    ✓ Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    style={{ fontSize: 10 }}
+                    disabled={rejectMut.isPending}
+                    onClick={() => handleReject(pr)}
+                  >
+                    ✕ Reject
+                  </button>
+                </>
+              ) : null}
               {canWrite && (pr.status === 'open' || pr.status === 'approved') ? (
                 <Link
                   to="/purchase-orders/from-pr"
@@ -296,7 +354,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         },
       },
     ],
-    [canWrite],
+    [canWrite, approveMut.isPending, rejectMut.isPending, handleApprove, handleReject],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -397,6 +455,22 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           </span>
         ) : null}
       </div>
+
+      {actionError ? (
+        <div
+          style={{
+            color: 'var(--red)',
+            background: 'var(--red3)',
+            border: '1px solid #fca5a5',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {actionError}
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="tbl-wrap">

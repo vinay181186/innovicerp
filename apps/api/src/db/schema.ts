@@ -1195,8 +1195,6 @@ export const jobWorkOrders = pgTable(
     // Client material details (header-level, migration 0053).
     clientMaterial: text('client_material'),
     clientMaterialQty: numeric('client_material_qty', { precision: 12, scale: 2 }),
-    materialReceivedDate: date('material_received_date'),
-    materialReceivedQty: numeric('material_received_qty', { precision: 12, scale: 2 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

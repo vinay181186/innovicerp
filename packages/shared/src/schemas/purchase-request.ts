@@ -137,10 +137,21 @@ export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInp
  *  re-applied here because the partial form may legitimately update only
  *  qty or remarks; the DB CHECK constraints will reject any update that
  *  would leave both halves null. */
+// `status` is omitted alongside `code`/`prType`: status is immutable on a raw
+// edit and only advances through the approve / reject / create-PO service
+// actions (mirrors updateJobCard / updatePurchaseOrder). This keeps the edit
+// form from ever skipping the approvedBy/approvedAt stamp.
 export const updatePurchaseRequestInputSchema = _prInputBase
   .partial()
-  .omit({ code: true, prType: true });
+  .omit({ code: true, prType: true, status: true });
 export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInputSchema>;
+
+/** REJECT — a non-empty reason is required (stored in remarks on the PR since
+ *  it has no dedicated rejection column). Mirrors the PO reject input. */
+export const rejectPurchaseRequestInputSchema = z.object({
+  reason: z.string().min(1, 'Rejection reason is required').max(2000),
+});
+export type RejectPurchaseRequestInput = z.infer<typeof rejectPurchaseRequestInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
 

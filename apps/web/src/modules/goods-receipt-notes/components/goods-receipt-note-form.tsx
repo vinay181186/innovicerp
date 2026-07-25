@@ -105,7 +105,8 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
       };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, setValue, getValues, watch } = form;
+  const { register, control, handleSubmit, formState, setValue, setError, clearErrors, getValues, watch } =
+    form;
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
   const errors = formState.errors;
@@ -152,6 +153,23 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   }, [isEdit, selectedPoDetail, getValues, setValue, replace]);
 
   const onValid = async (values: FormValues): Promise<void> => {
+    // A vendor is required on create (server enforces via the create schema
+    // refine + migration 0080 CHECK). Either the vendor dropdown or the
+    // free-text fallback satisfies it. Guard here so the user gets a friendly
+    // message before submit instead of a 400 from the API.
+    if (isCreate) {
+      const hasVendor =
+        Boolean(values.header.vendorId) || Boolean(values.header.vendorCodeText?.trim());
+      if (!hasVendor) {
+        setError('header.vendorId', {
+          type: 'required',
+          message: 'Select a vendor or enter a vendor code.',
+        });
+        return;
+      }
+      clearErrors('header.vendorId');
+    }
+
     const headerOut = {
       ...values.header,
       purchaseOrderId: values.header.purchaseOrderId || undefined,
@@ -312,7 +330,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="vendorId">
-            Vendor
+            Vendor<span className="req">★</span>
           </label>
           <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
             <option value="">— Free-text vendor below —</option>
@@ -322,6 +340,9 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               </option>
             ))}
           </select>
+          {errors.header?.vendorId?.message ? (
+            <div className="form-error">{errors.header.vendorId.message}</div>
+          ) : null}
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="vendorCodeText">

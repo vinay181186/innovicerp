@@ -76,8 +76,6 @@ describe('job-work-orders service', () => {
           // Client material is header-level (migration 0053).
           clientMaterial: 'EN8 Round Bar 50mm',
           clientMaterialQty: 12.5,
-          materialReceivedDate: '2026-05-01',
-          materialReceivedQty: 10,
         },
         lines: [
           {
@@ -109,8 +107,6 @@ describe('job-work-orders service', () => {
     // line rate + header material numeric formatting
     expect(detail.lines[0]?.rate).toBe('35.50');
     expect(detail.clientMaterialQty).toBe('12.50');
-    expect(detail.materialReceivedQty).toBe('10.00');
-    expect(detail.materialReceivedDate).toBe('2026-05-01');
     // GST % defaults to 18 on the header (migration 0061, parity with SO).
     expect(detail.gstPercent).toBe('18.00');
     // ADR-012 #10 fallback
@@ -224,7 +220,6 @@ describe('job-work-orders service', () => {
           status: 'open',
           // Client material is header-level (migration 0053).
           clientMaterialQty: 12,
-          materialReceivedQty: 4,
         },
         lines: [
           { partName: 'A', itemId: firstItemId, uom: 'NOS', orderQty: 4, rate: 10 },
@@ -244,7 +239,6 @@ describe('job-work-orders service', () => {
     expect(row?.lineCount).toBe(2);
     expect(row?.totalQty).toBe(10); // 4 + 6
     expect(Number(row?.clientMaterialQty)).toBe(12);
-    expect(Number(row?.materialReceivedQty)).toBe(4);
     expect(row?.jcQty).toBe(0);
   });
 

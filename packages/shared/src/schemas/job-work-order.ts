@@ -9,9 +9,11 @@
 //   - Header: no `type`, no `costCenter`, no BOM fields. Carries `gstPercent`
 //     (migration 0061) for SO-parity totals on the JWSO form.
 //     Status uses the same `so_status` enum (ADR-012 #5 — semantics identical).
-//     Carries the 4 HEADER-level client-material fields (migration 0053,
+//     Carries the HEADER-level client-material intent fields (migration 0053,
 //     matching legacy CLIENT MATERIAL DETAILS L12839): `clientMaterial`,
-//     `clientMaterialQty`, `materialReceivedDate`, `materialReceivedQty`.
+//     `clientMaterialQty`. (The old `materialReceivedDate` /
+//     `materialReceivedQty` header fields were dropped in migration 0079 —
+//     actual receipts come from Party GRN via `partyReceivedQty`.)
 //   - Lines: `rate` (processing charge per unit, migration 0053) + no
 //     `clientPoLineNo`. Material fields moved off the line to the header.
 //
@@ -72,8 +74,6 @@ export const jobWorkOrderSchema = z.object({
   // L12839). Client supplies raw material → we process → deliver finished parts.
   clientMaterial: z.string().nullable(),
   clientMaterialQty: z.string().nullable(), // numeric stored as string
-  materialReceivedDate: z.string().nullable(),
-  materialReceivedQty: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -85,7 +85,7 @@ export type JobWorkOrder = z.infer<typeof jobWorkOrderSchema>;
 export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
   /** Actual client-material received = Σ party_grn_lines.received_qty across this
    *  JWSO's non-deleted Party GRNs. Source of truth for the material-received
-   *  badge (the header materialReceivedQty is a manual entry that can lie). */
+   *  badge. */
   partyReceivedQty: z.number().int().nonnegative(),
   lines: z.array(jobWorkOrderLineSchema),
 });
@@ -117,9 +117,6 @@ export const jobWorkOrderListItemSchema = z.object({
   /** Header-level client material (expected/order intent — drives the MATERIAL
    *  column's "expected" number). */
   clientMaterialQty: z.string().nullable(),
-  /** Manually-typed header field; kept for the form but NO LONGER drives the
-   *  material-received badge (it could be typed without any receipts). */
-  materialReceivedQty: z.string().nullable(),
   /** Actual client-material received = Σ party_grn_lines.received_qty across this
    *  JWSO's non-deleted Party GRNs. The truthful "received" number for the badge. */
   partyReceivedQty: z.number().int().nonnegative(),
@@ -171,11 +168,6 @@ const _jwHeaderInputBase = z.object({
   // Client material details (header-level).
   clientMaterial: z.string().max(255).optional(),
   clientMaterialQty: z.coerce.number().nonnegative().optional(),
-  materialReceivedDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'materialReceivedDate must be YYYY-MM-DD')
-    .optional(),
-  materialReceivedQty: z.coerce.number().nonnegative().optional(),
 });
 
 /** CREATE — `{header, lines}`. Header + ≥ 1 line (no Equipment exception

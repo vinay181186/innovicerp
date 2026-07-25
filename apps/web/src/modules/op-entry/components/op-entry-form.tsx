@@ -17,6 +17,7 @@ import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
+import { useOperatorsList } from '@/modules/operators/api';
 import {
   useGenerateOspPr,
   useStartOp,
@@ -66,6 +67,10 @@ export function OpEntryForm({
   const [qty, setQty] = useState<string>('');
   const [rejectQty, setRejectQty] = useState<string>('0');
   const [operatorName, setOperatorName] = useState<string>('');
+  // Master operators FK — resolved only when the typed operator/inspector name
+  // (or code) exactly matches a master operator. Left undefined for free text so
+  // logging is never blocked by an operator missing from the master.
+  const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
   const [remarks, setRemarks] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // QC report attachment (migration 0043) — only used on the QC sub-form.
@@ -84,6 +89,24 @@ export function OpEntryForm({
     setQcReportName(null);
     setOspMsg(null);
   }, [op.id]);
+
+  // Operators master for the datalist-backed operator/inspector picker. Active
+  // operators only; free text still works when there's no match.
+  const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
+  const operators = operatorsQuery.data?.operators ?? [];
+
+  // On operator/inspector input change, keep the free-text name and resolve the
+  // master FK only on an exact name-or-code match (else leave it undefined).
+  function handleOperatorNameChange(value: string): void {
+    setOperatorName(value);
+    const needle = value.trim().toLowerCase();
+    const match = needle
+      ? operators.find(
+          (o) => o.name.trim().toLowerCase() === needle || o.code.trim().toLowerCase() === needle,
+        )
+      : undefined;
+    setOperatorId(match ? match.id : undefined);
+  }
 
   const isOutsource = op.opType === 'outsource';
   // T-040d: QC-bearing op = dedicated QC op OR process op with qc_required.
@@ -117,6 +140,7 @@ export function OpEntryForm({
       rejectQty: Number.isFinite(rejNum) && rejNum >= 0 ? rejNum : 0,
       logDate,
       shift,
+      ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
     };
@@ -155,6 +179,7 @@ export function OpEntryForm({
       rejectQty: rejNum,
       logDate,
       shift,
+      ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
       ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
@@ -178,6 +203,7 @@ export function OpEntryForm({
       startDate: logDate,
       startTime: nowHHMM(),
       shift,
+      ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
     };
@@ -265,10 +291,20 @@ export function OpEntryForm({
         <input
           id="opf-op"
           className="innovic-input"
+          list="opf-op-list"
           value={operatorName}
-          onChange={(e) => setOperatorName(e.target.value)}
+          onChange={(e) => handleOperatorNameChange(e.target.value)}
           placeholder={isQcBearing ? 'QC inspector name' : 'Operator name'}
+          autoComplete="off"
         />
+        <datalist id="opf-op-list">
+          {operators.map((o) => (
+            <option key={o.id} value={o.name}>
+              {o.code}
+              {o.department ? ` · ${o.department}` : ''}
+            </option>
+          ))}
+        </datalist>
       </div>
       <div className="form-grp form-full">
         <label className="form-label" htmlFor="opf-rem">

@@ -186,9 +186,8 @@ function numToStringOrNull(v: number | undefined): string | null {
 }
 
 /** Actual client-material receipts for one JWSO = Σ party_grn_lines.received_qty
- *  across its non-deleted Party GRNs. This is the real source of truth for the
- *  "material received" badge (the header material_received_qty field is a manual
- *  entry and can lie). Returns 0 when no Party GRNs exist. */
+ *  across its non-deleted Party GRNs. This is the source of truth for the
+ *  "material received" badge. Returns 0 when no Party GRNs exist. */
 async function sumPartyReceivedQty(tx: DbTransaction, jobWorkOrderId: string): Promise<number> {
   const rows = await tx.execute(sql`
     SELECT COALESCE(SUM(gl.received_qty), 0)::int AS qty
@@ -243,7 +242,6 @@ export async function listJobWorkOrders(
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.remarks,
         jw.client_material_qty::text AS "clientMaterialQty",
-        jw.material_received_qty::text AS "materialReceivedQty",
         COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty"
       FROM public.job_work_orders jw
       LEFT JOIN (
@@ -301,7 +299,6 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     status: r['status'] as JobWorkOrder['status'],
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
-    materialReceivedQty: (r['materialReceivedQty'] as string | null) ?? null,
     partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
   };
 }
@@ -583,8 +580,6 @@ function toJobWorkOrder(row: typeof jobWorkOrders.$inferSelect): JobWorkOrder {
     remarks: row.remarks,
     clientMaterial: row.clientMaterial,
     clientMaterialQty: row.clientMaterialQty,
-    materialReceivedDate: row.materialReceivedDate,
-    materialReceivedQty: row.materialReceivedQty,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -699,8 +694,6 @@ export async function createJobWorkOrder(
           remarks: input.header.remarks ?? null,
           clientMaterial: input.header.clientMaterial ?? null,
           clientMaterialQty: numToStringOrNull(input.header.clientMaterialQty),
-          materialReceivedDate: input.header.materialReceivedDate ?? null,
-          materialReceivedQty: numToStringOrNull(input.header.materialReceivedQty),
           createdBy: user.id,
           updatedBy: user.id,
         })
@@ -792,16 +785,18 @@ export async function updateJobWorkOrder(
     if (snapshotClientName !== null) updates['customerName'] = snapshotClientName;
     else if (h.customerName !== undefined) updates['customerName'] = h.customerName ?? null;
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
-    if (h.status !== undefined) updates['status'] = h.status;
+    // Status is IMMUTABLE on a raw edit: preserve the existing JWSO status
+    // regardless of what the payload sends (mirror of updateJobCard /
+    // updatePurchaseOrder source-immutability). JWSO status moves ONLY through
+    // its cascades — JC-completion (open→closed), JW-Return (→dispatched) — and
+    // soft-delete for cancel; a plain update flipping status would only cause
+    // drift. Silently ignore input.status.
+    updates['status'] = existingHdr.status;
     if (h.gstPercent !== undefined) updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
     if (h.clientMaterial !== undefined) updates['clientMaterial'] = h.clientMaterial ?? null;
     if (h.clientMaterialQty !== undefined)
       updates['clientMaterialQty'] = numToStringOrNull(h.clientMaterialQty);
-    if (h.materialReceivedDate !== undefined)
-      updates['materialReceivedDate'] = h.materialReceivedDate ?? null;
-    if (h.materialReceivedQty !== undefined)
-      updates['materialReceivedQty'] = numToStringOrNull(h.materialReceivedQty);
 
     await tx.update(jobWorkOrders).set(updates).where(eq(jobWorkOrders.id, id));
 
