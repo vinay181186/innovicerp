@@ -75,6 +75,13 @@ export const purchaseOrderSchema = z.object({
   sgstPct: z.string(),
   cgstPct: z.string(),
   igstPct: z.string(),
+  // Stored computed totals (migration 0078), mirror of the invoice header.
+  // subtotal = Σ(qty×rate); taxAmount = subtotal×(sgst+cgst+igst)/100;
+  // totalAmount = subtotal + taxAmount. Numbers (service converts the numeric
+  // strings) — same shape as invoiceSchema.subtotal/gstAmount/grandTotal.
+  subtotal: z.number().nonnegative(),
+  taxAmount: z.number().nonnegative(),
+  totalAmount: z.number().nonnegative(),
   prCodeText: z.string().nullable(),
   approvedBy: z.string().uuid().nullable(),
   approvedAt: z.string().nullable(),

@@ -10,6 +10,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
+import { todayLocal } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
@@ -31,7 +32,7 @@ interface FormValues {
 
 const DEFAULTS: FormValues = {
   code: '',
-  prDate: new Date().toISOString().slice(0, 10),
+  prDate: todayLocal(),
   status: 'open',
   qty: 1,
   estCost: 0,

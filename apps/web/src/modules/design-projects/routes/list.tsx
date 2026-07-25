@@ -8,6 +8,7 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -323,7 +324,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
   const [lead, setLead] = useState('');
   const [status, setStatus] = useState<CreateDesignProjectInput['status']>('Design Active');
   const [engineersStr, setEngineersStr] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(todayLocal());
   const [targetDate, setTargetDate] = useState('');
   const [description, setDescription] = useState('');
   const [err, setErr] = useState<string | null>(null);

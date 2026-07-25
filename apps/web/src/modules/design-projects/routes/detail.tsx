@@ -25,6 +25,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -1712,7 +1713,7 @@ function DcrFormModal({
   const [status, setStatus] = useState(dcr?.status ?? 'Submitted');
   const [requestedBy, setRequestedBy] = useState(dcr?.requestedByText ?? '');
   const [requestDate, setRequestDate] = useState(
-    dcr?.requestDate ?? new Date().toISOString().slice(0, 10),
+    dcr?.requestDate ?? todayLocal(),
   );
   const [description, setDescription] = useState(dcr?.description ?? '');
   const [err, setErr] = useState<string | null>(null);

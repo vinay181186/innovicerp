@@ -11,6 +11,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -270,7 +271,7 @@ interface UiLine {
 }
 
 function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
   const [jwId, setJwId] = useState<string | null>(null);
   const [dcNo, setDcNo] = useState('');

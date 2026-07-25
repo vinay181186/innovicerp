@@ -6,6 +6,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
@@ -207,7 +208,7 @@ function JwReturnsListPage(): React.JSX.Element {
 // ─── New JW Return modal ────────────────────────────────────────────────────
 
 function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
   const [jwId, setJwId] = useState<string | null>(null);
   const [jobWorkOrderLineId, setJobWorkOrderLineId] = useState('');

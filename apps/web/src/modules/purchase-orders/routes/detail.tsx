@@ -9,11 +9,11 @@
 //   L26400-26404  ▸ PO LINE ITEMS (n) + table
 //
 // Legacy deltas kept deliberately (see report / ISSUE-153..156):
-//  - No Grand Total tile (L26394-26398) and no Subtotal/SGST/CGST/Grand totals
-//    box (L26405-26429): the API returns no totals, and legacy derives them in
-//    the browser (`totalVal*sgstPct/100`). Computing tax on a legal document in
-//    React is frontend business logic (CLAUDE.md rule 1) — not faked here.
-//    Subtotal/Total Qty/Received tiles reuse the reduces this page already had.
+//  - Tax + Total tiles (L26394-26398) now read the STORED header roll-up
+//    (subtotal / tax_amount / total_amount, migration 0078) the API persists —
+//    no tax math in React (CLAUDE.md rule 1). The full Subtotal/SGST/CGST/Grand
+//    totals box (L26405-26429) with the legal per-tax split is still out of
+//    scope. Subtotal/Total Qty/Received tiles reuse the reduces this page had.
 //  - No GRN RECEIPTS table + Print QC Report (L26430-26437): the PO detail
 //    payload carries no GRNs, and fetching them is a new API call.
 //  - No per-line Status column (L26347 `badge(p.status)`):
@@ -310,6 +310,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             totalQty={totalQty}
             receivedQty={receivedQty}
             totalValue={totalValue}
+            taxAmount={detail.taxAmount}
+            totalAmount={detail.totalAmount}
           />
           <DetailGrid detail={detail} />
         </div>
@@ -707,19 +709,23 @@ function VendorAndPoDetails(props: {
 // Legacy L26377-26399 — summary tiles. Legacy hand-rolls these boxes inline
 // with `.mono .fw-700` values; it does NOT use the `.stat-card` KPI tiles
 // (those are the list's filter row, L25332). Mirrored as legacy has them.
-// Legacy's 5th tile (Grand Total, L26394) needs tax math the API does not
-// return — see the header note.
+// Legacy's 5th/6th tiles (Tax + Grand Total, L26394) are now backed by the
+// stored header roll-up (subtotal / tax_amount / total_amount, migration
+// 0078) — the API persists them, so this is a read of a server-owned figure,
+// not tax math computed in React.
 function SummaryTiles(props: {
   lineCount: number;
   totalQty: number;
   receivedQty: number;
   totalValue: number;
+  taxAmount: number;
+  totalAmount: number;
 }): React.JSX.Element {
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: 'repeat(6, 1fr)',
         gap: 10,
         marginBottom: 16,
       }}
@@ -728,6 +734,8 @@ function SummaryTiles(props: {
       <Tile label="Total Qty" value={String(props.totalQty)} />
       <Tile label="Received" value={String(props.receivedQty)} color="var(--green)" />
       <Tile label="Subtotal" value={`₹${props.totalValue.toFixed(2)}`} />
+      <Tile label="Tax" value={`₹${props.taxAmount.toFixed(2)}`} />
+      <Tile label="Total" value={`₹${props.totalAmount.toFixed(2)}`} color="var(--green)" />
     </div>
   );
 }

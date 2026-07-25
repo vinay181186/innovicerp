@@ -9,6 +9,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
@@ -449,7 +450,7 @@ function Row({
 // ─── Add modal ────────────────────────────────────────────────────────────
 
 function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date] = useState(new Date().toISOString().slice(0, 10));
+  const [date] = useState(todayLocal());
   const [soSearch, setSoSearch] = useState('');
   const [soId, setSoId] = useState<string | null>(null);
   const [designer, setDesigner] = useState('');
@@ -715,7 +716,7 @@ function LogTimeModal({
   row: DesignTrackerListItem;
   onClose: () => void;
 }): React.JSX.Element {
-  const [logDate, setLogDate] = useState(new Date().toISOString().slice(0, 10));
+  const [logDate, setLogDate] = useState(todayLocal());
   const [hours, setHours] = useState('');
   const [worker, setWorker] = useState(row.designer);
   const [description, setDescription] = useState('');

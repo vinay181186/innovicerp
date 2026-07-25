@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { todayLocal } from '@/lib/date';
 import { usePurchaseOrder } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDeliveryChallan } from '../api';
@@ -42,7 +43,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
-  const [dcDate, setDcDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dcDate, setDcDate] = useState(todayLocal());
   const [transport, setTransport] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);

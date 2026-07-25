@@ -15,6 +15,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -279,7 +280,7 @@ function PendingTpi(props: {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
   const companyId = useSession().data?.companyId ?? null;
-  const [logDate, setLogDate] = useState(todayIso());
+  const [logDate, setLogDate] = useState(todayLocal());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');

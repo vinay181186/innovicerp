@@ -9,6 +9,7 @@ import type {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useCreatePlan } from '@/modules/plans/api';
 import { Modal } from './modal';
 
@@ -38,7 +39,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     setErr(null);
     const input: CreatePlanInput = {
       // code omitted → server assigns the next sequential PLN-NNNN.
-      planDate: new Date().toISOString().slice(0, 10),
+      planDate: todayLocal(),
       planType: 'manufacture',
       // A JW plan links via jwLineId; an SO plan via soLineId. line.soLineId
       // holds whichever line id the detail endpoint returned.

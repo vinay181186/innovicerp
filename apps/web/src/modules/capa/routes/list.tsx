@@ -14,6 +14,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
@@ -346,7 +347,7 @@ function NewCapaModal({
   );
 
   const [type, setType] = useState<(typeof CAPA_TYPES)[number]>('Corrective');
-  const [capaDate, setCapaDate] = useState(new Date().toISOString().slice(0, 10));
+  const [capaDate, setCapaDate] = useState(todayLocal());
   const [ncRef, setNcRef] = useState('');
   const [jcNo, setJcNo] = useState('');
   const [soNo, setSoNo] = useState('');

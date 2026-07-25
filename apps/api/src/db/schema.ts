@@ -1394,6 +1394,15 @@ export const purchaseOrders = pgTable(
     sgstPct: numeric('sgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     cgstPct: numeric('cgst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     igstPct: numeric('igst_pct', { precision: 5, scale: 2 }).notNull().default('0'),
+    // Stored computed totals (migration 0078) — mirror of the invoices header
+    // (subtotal / gst_amount / grand_total). The PO form's Grand Total preview
+    // (`_poUpdateTotal()` L25502) was never persisted; these make it durable.
+    // subtotal = Σ(qty×rate); tax_amount = subtotal×(sgst+cgst+igst)/100;
+    // total_amount = subtotal + tax_amount. NOT the legal CGST/SGST/IGST split
+    // (out of scope) — an internal roll-up only.
+    subtotal: numeric('subtotal', { precision: 14, scale: 2 }).notNull().default('0'),
+    taxAmount: numeric('tax_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull().default('0'),
     prCodeText: text('pr_code_text'),
     // Forward FK to the source Purchase Request (migration 0075, ADR-080). Was
     // previously modelled only as the reverse purchase_requests.po_id + the

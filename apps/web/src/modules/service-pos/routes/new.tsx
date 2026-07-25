@@ -8,6 +8,7 @@ import { SERVICE_PO_EXPENSE_HEADS } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -48,7 +49,7 @@ function ServicePosNewPage(): React.JSX.Element {
   );
 
   const [spoNo, setSpoNo] = useState('');
-  const [spoDate, setSpoDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [spoDate, setSpoDate] = useState(() => todayLocal());
   const [vendorId, setVendorId] = useState('');
   const [expenseHead, setExpenseHead] = useState<string>('Other');
   const [costCenter, setCostCenter] = useState<'so' | 'general'>('so');

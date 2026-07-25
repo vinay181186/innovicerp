@@ -46,6 +46,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { todayLocal } from '@/lib/date';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { inrFormat } from '@/lib/print/doc-print';
@@ -100,7 +101,7 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
-  soDate: new Date().toISOString().slice(0, 10),
+  soDate: todayLocal(),
   type: 'component_manufacturing',
   status: 'open',
   gstPercent: 18,

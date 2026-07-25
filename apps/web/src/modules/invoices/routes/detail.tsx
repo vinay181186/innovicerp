@@ -30,6 +30,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
 import { useAddPayment, useInvoice } from '../api';
 import { invoiceDocHtml, printInvoice } from '../lib/print';
@@ -45,11 +46,9 @@ export const invoiceDetailRoute = createRoute({
 // shared inrFormat() is 2dp and is what the print doc uses — a different
 // format for a different surface, matching legacy's own split.
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
-// BUG (reported): toISOString() is UTC, so before 05:30 IST this defaults the
-// payment date to YESTERDAY. Legacy today() (L1486-87) uses local components
-// and is correct. Left as-is on purpose — the fix is the one shared IST helper
-// (date-fns-tz), not a second local implementation here.
-const todayStr = (): string => new Date().toISOString().slice(0, 10);
+// Uses the shared todayLocal() helper (local calendar date) so the payment-date
+// default is today in IST, not the UTC "yesterday" before ~05:30 IST.
+const todayStr = (): string => todayLocal();
 
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();

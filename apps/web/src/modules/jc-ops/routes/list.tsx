@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 // Reuse the existing PR create hook — do not build a parallel one.
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
@@ -556,7 +557,7 @@ function CreatePrModal({
     }
     const input: CreatePurchaseRequestInput = {
       code: code.trim(),
-      prDate: new Date().toISOString().slice(0, 10), // legacy today()
+      prDate: todayLocal(), // legacy today()
       status: 'open',
       qty,
       estCost: cost ? Number(cost) : 0,

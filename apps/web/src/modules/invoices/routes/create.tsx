@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
+import { todayLocal } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { useCreateInvoice, useFinanceSoOptions, useInvoiceableSo, useNextInvoiceCode } from '../api';
 
@@ -23,7 +24,7 @@ export const invoiceNewRoute = createRoute({
   component: InvoiceNewPage,
 });
 
-const todayStr = (): string => new Date().toISOString().slice(0, 10);
+const todayStr = (): string => todayLocal();
 
 interface LineCard {
   id: number;

@@ -9,6 +9,7 @@ import {
 import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
@@ -217,7 +218,7 @@ function StoreIssuesListPage(): React.JSX.Element {
 }
 
 function NewIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [itemId, setItemId] = useState<string | null>(null);
   const [qty, setQty] = useState('');
   const [issuedTo, setIssuedTo] = useState('');

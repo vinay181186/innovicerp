@@ -12,6 +12,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
@@ -409,7 +410,7 @@ function KpiStrip({
 }
 
 function NewToolIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [expRet, setExpRet] = useState('');
   const [itemId, setItemId] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
@@ -627,7 +628,7 @@ function ReturnModal({
     issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty;
   const remaining = issue.qty - alreadyTotal;
 
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(todayLocal());
   const [returnedBy, setReturnedBy] = useState(issue.issuedTo);
   const [good, setGood] = useState('0');
   const [damaged, setDamaged] = useState('0');

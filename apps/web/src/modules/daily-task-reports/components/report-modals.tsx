@@ -11,10 +11,11 @@ import {
   type Shift,
 } from '@innovic/shared';
 import { useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useCreateDailyReport, useDailyReportDetail, useUpdateDailyReport } from '../api';
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 export function Overlay(props: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }): React.JSX.Element {

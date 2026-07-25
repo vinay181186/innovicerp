@@ -8,12 +8,12 @@ import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useCreateJwDcInward, useJwDcOutwardDetail, useJwDcOutwardList } from '@/modules/jw-dc/api';
+import { todayLocal } from '@/lib/date';
 
-// ISSUE-065 mech.1 (named helper, NOT fixed here — reported): UTC-derived, so
-// before 05:30 IST this yields YESTERDAY. Legacy today() L1485-87 is correct —
-// it reads LOCAL getFullYear/getMonth/getDate. Reuse this helper, do not add a
-// second copy; fix all copies together.
-const today = (): string => new Date().toISOString().slice(0, 10);
+// ISSUE-065 mech.1 fixed: uses the shared todayLocal() helper (local calendar
+// date) so the inward-date default is today in IST, not the UTC "yesterday"
+// before ~05:30 IST.
+const today = (): string => todayLocal();
 
 interface LineDraft {
   outwardLineId: string;

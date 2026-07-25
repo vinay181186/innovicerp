@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/print/doc-print';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
@@ -37,7 +38,7 @@ export const qcCallRegisterRoute = createRoute({
 });
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 // Whole-day diff between two YYYY-MM-DD dates (legacy /864e5 round). Parsed at

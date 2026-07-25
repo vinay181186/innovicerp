@@ -18,6 +18,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
@@ -71,7 +72,7 @@ function OutsourceJobsPage(): React.JSX.Element {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [vendorId, setVendorId] = useState('');
-  const [poDate, setPoDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [poDate, setPoDate] = useState<string>(() => todayLocal());
   const [poCode, setPoCode] = useState('');
   const [rateOverrides, setRateOverrides] = useState<Record<string, number>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);

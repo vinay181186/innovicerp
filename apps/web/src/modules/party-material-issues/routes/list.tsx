@@ -7,6 +7,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../../job-cards/api';
@@ -172,7 +173,7 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
 // ─── New Party Material Issue modal ─────────────────────────────────────────
 
 function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
   const [jobWorkOrderId, setJobWorkOrderId] = useState<string | null>(null);
   const [jcSearch, setJcSearch] = useState('');

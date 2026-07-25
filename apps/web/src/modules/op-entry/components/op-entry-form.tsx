@@ -15,6 +15,7 @@ import { Loader2, Play, PackagePlus, ShieldCheck, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import {
   useGenerateOspPr,
@@ -37,8 +38,7 @@ interface Props {
 }
 
 function todayIso(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 function nowHHMM(): string {

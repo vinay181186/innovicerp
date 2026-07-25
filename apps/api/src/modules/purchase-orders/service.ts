@@ -162,6 +162,32 @@ function pctToString(p: number): string {
   return p.toFixed(2);
 }
 
+/** Header money roll-up — mirror of the PO form's `_poUpdateTotal()` preview
+ *  (purchase-order-form.tsx L118-135) and the invoices header. Returns 2dp
+ *  numeric strings ready for the DB:
+ *    subtotal   = Σ(qty × rate)
+ *    taxAmount  = subtotal × (sgstPct + cgstPct + igstPct) / 100
+ *    totalAmount = subtotal + taxAmount
+ *  Internal roll-up only — NOT the legal CGST/SGST/IGST split (out of scope).
+ *  Rounds subtotal and taxAmount to 2dp first, matching migration 0078's
+ *  backfill so create/update and the backfill agree to the paisa. */
+function computePoTotals(
+  lines: Array<{ qty: number; rate: string | number }>,
+  sgstPct: number,
+  cgstPct: number,
+  igstPct: number,
+): { subtotal: string; taxAmount: string; totalAmount: string } {
+  const rawSubtotal = lines.reduce((s, l) => s + Number(l.qty) * Number(l.rate), 0);
+  const subtotal = Number(rawSubtotal.toFixed(2));
+  const taxAmount = Number(((subtotal * (sgstPct + cgstPct + igstPct)) / 100).toFixed(2));
+  const totalAmount = subtotal + taxAmount;
+  return {
+    subtotal: subtotal.toFixed(2),
+    taxAmount: taxAmount.toFixed(2),
+    totalAmount: totalAmount.toFixed(2),
+  };
+}
+
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
@@ -210,6 +236,9 @@ export async function listPurchaseOrders(
         po.sgst_pct::text AS "sgstPct",
         po.cgst_pct::text AS "cgstPct",
         po.igst_pct::text AS "igstPct",
+        po.subtotal::text AS "subtotal",
+        po.tax_amount::text AS "taxAmount",
+        po.total_amount::text AS "totalAmount",
         po.pr_code_text AS "prCodeText",
         po.approved_by AS "approvedBy", po.approved_at AS "approvedAt",
         po.approval_remarks AS "approvalRemarks",
@@ -275,6 +304,9 @@ function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
     sgstPct: r['sgstPct'] as string,
     cgstPct: r['cgstPct'] as string,
     igstPct: r['igstPct'] as string,
+    subtotal: Number(r['subtotal'] ?? 0),
+    taxAmount: Number(r['taxAmount'] ?? 0),
+    totalAmount: Number(r['totalAmount'] ?? 0),
     prCodeText: (r['prCodeText'] as string | null) ?? null,
     approvedBy: (r['approvedBy'] as string | null) ?? null,
     approvedAt: maybeTsLike(r['approvedAt']),
@@ -346,6 +378,9 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
     sgstPct: row.sgstPct,
     cgstPct: row.cgstPct,
     igstPct: row.igstPct,
+    subtotal: Number(row.subtotal),
+    taxAmount: Number(row.taxAmount),
+    totalAmount: Number(row.totalAmount),
     prCodeText: row.prCodeText,
     approvedBy: row.approvedBy,
     approvedAt: maybeTsLike(row.approvedAt),
@@ -460,6 +495,12 @@ export async function createPurchaseOrder(
     }
     const headerStatus = input.header.status ?? initialStatus;
     const headerType = input.header.poType ?? 'standard';
+    const totals = computePoTotals(
+      input.lines,
+      input.header.sgstPct ?? 0,
+      input.header.cgstPct ?? 0,
+      input.header.igstPct ?? 0,
+    );
     const inserted = await tx
       .insert(purchaseOrders)
       .values({
@@ -475,6 +516,9 @@ export async function createPurchaseOrder(
         sgstPct: pctToString(input.header.sgstPct ?? 0),
         cgstPct: pctToString(input.header.cgstPct ?? 0),
         igstPct: pctToString(input.header.igstPct ?? 0),
+        subtotal: totals.subtotal,
+        taxAmount: totals.taxAmount,
+        totalAmount: totals.totalAmount,
         prCodeText: input.header.prCodeText ?? null,
         approvalRemarks: input.header.approvalRemarks ?? null,
         remarks: input.header.remarks ?? null,
@@ -575,18 +619,38 @@ export async function updatePurchaseOrder(
       await mergeLines(tx, id, companyId, input.lines, user);
     }
 
-    const updatedHdrRows = await tx
-      .select()
-      .from(purchaseOrders)
-      .where(eq(purchaseOrders.id, id))
-      .limit(1);
+    let updatedHdr = (
+      await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1)
+    )[0]!;
     const lineRows = await tx
       .select()
       .from(purchaseOrderLines)
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
-    const updatedHdr = updatedHdrRows[0]!;
+    // Recompute stored totals from the FINAL state (post header-pct update +
+    // line merge), regardless of whether pcts or lines changed. Persist and
+    // reflect the same figures on the returned header.
+    const totals = computePoTotals(
+      lineRows,
+      Number(updatedHdr.sgstPct),
+      Number(updatedHdr.cgstPct),
+      Number(updatedHdr.igstPct),
+    );
+    await tx
+      .update(purchaseOrders)
+      .set({
+        subtotal: totals.subtotal,
+        taxAmount: totals.taxAmount,
+        totalAmount: totals.totalAmount,
+      })
+      .where(eq(purchaseOrders.id, id));
+    updatedHdr = {
+      ...updatedHdr,
+      subtotal: totals.subtotal,
+      taxAmount: totals.taxAmount,
+      totalAmount: totals.totalAmount,
+    };
     await emitActivityLog(
       tx,
       {
@@ -811,6 +875,13 @@ export async function createPurchaseOrderFromPr(
       throw new ConflictError(`Purchase order code "${code}" already exists`);
     }
 
+    // Stored totals from the single PR-derived line (qty × est cost) + header tax.
+    const fromPrTotals = computePoTotals(
+      [{ qty: pr.qty, rate: pr.estCost }],
+      Number(input.header.sgstPct ?? 0),
+      Number(input.header.cgstPct ?? 0),
+      Number(input.header.igstPct ?? 0),
+    );
     // Insert PO header (vendor + audit-snapshot of PR code).
     const insertedPos = await tx
       .insert(purchaseOrders)
@@ -827,6 +898,9 @@ export async function createPurchaseOrderFromPr(
         sgstPct: pctToString(input.header.sgstPct ?? 0),
         cgstPct: pctToString(input.header.cgstPct ?? 0),
         igstPct: pctToString(input.header.igstPct ?? 0),
+        subtotal: fromPrTotals.subtotal,
+        taxAmount: fromPrTotals.taxAmount,
+        totalAmount: fromPrTotals.totalAmount,
         prId: pr.id,
         prCodeText: pr.code,
         remarks:

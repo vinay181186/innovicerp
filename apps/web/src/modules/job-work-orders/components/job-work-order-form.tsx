@@ -24,6 +24,7 @@ import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
@@ -67,7 +68,7 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
-  jwDate: new Date().toISOString().slice(0, 10),
+  jwDate: todayLocal(),
   status: 'open',
   gstPercent: 18,
 };

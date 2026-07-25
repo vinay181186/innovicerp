@@ -9,6 +9,7 @@ import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { todayLocal } from '@/lib/date';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
 
 export const customerDispatchNewRoute = createRoute({
@@ -18,7 +19,7 @@ export const customerDispatchNewRoute = createRoute({
 });
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocal();
 }
 
 interface LineCard {

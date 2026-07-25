@@ -7,6 +7,7 @@ import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 
@@ -35,7 +36,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
   const receive = useReceiveDeliveryChallan();
 
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10));
+  const [receiptDate, setReceiptDate] = useState(todayLocal());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
   const [remarks, setRemarks] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);

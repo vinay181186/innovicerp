@@ -12,6 +12,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
@@ -491,7 +492,7 @@ interface OutwardLineUi {
 }
 
 function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [poId, setPoId] = useState<string | null>(null);
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -780,7 +781,7 @@ interface InwardLineUi {
 }
 
 function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [dcId, setDcId] = useState<string | null>(null);
   const [vendorChallan, setVendorChallan] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');

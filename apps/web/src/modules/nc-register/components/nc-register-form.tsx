@@ -9,6 +9,7 @@ import {
   type NcRegister,
   type UpdateNcRegisterInput,
 } from '@innovic/shared';
+import { todayLocal } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -41,7 +42,7 @@ interface FormValues {
 
 const DEFAULTS: FormValues = {
   code: '',
-  ncDate: new Date().toISOString().slice(0, 10),
+  ncDate: todayLocal(),
   jobCardId: '',
   itemId: '',
   rejectedQty: 1,

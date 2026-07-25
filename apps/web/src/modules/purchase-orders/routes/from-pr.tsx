@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { todayLocal } from '@/lib/date';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPr } from '../api';
@@ -43,7 +44,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
 
   const defaults: FormValues = {
     code: '',
-    poDate: new Date().toISOString().slice(0, 10),
+    poDate: todayLocal(),
     poType: 'job_work',
     sgstPct: 0,
     cgstPct: 0,

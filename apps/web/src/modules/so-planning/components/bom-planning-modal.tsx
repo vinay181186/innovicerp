@@ -15,6 +15,7 @@ import type {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useCreatePlan } from '@/modules/plans/api';
 import { usePlanningBom } from '../api';
 import { Modal } from './modal';
@@ -101,7 +102,7 @@ export function BomPlanningModal({
           c.bomType === 'purchase' ? 'direct_purchase' : 'manufacture';
         const input: CreatePlanInput = {
           // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: new Date().toISOString().slice(0, 10),
+          planDate: todayLocal(),
           planType,
           soLineId,
           soCodeText: soCode,
@@ -120,7 +121,7 @@ export function BomPlanningModal({
       if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
         const input: CreatePlanInput = {
           // code omitted → server assigns the next sequential PLN-NNNN.
-          planDate: new Date().toISOString().slice(0, 10),
+          planDate: todayLocal(),
           planType: 'assembly',
           soLineId,
           soCodeText: soCode,

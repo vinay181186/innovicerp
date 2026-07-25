@@ -12,6 +12,7 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { todayLocal } from '@/lib/date';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { useSession } from '@/lib/session';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
@@ -57,7 +58,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   // UTC-derived, so between 00:00 and 05:30 IST it defaults Date to YESTERDAY.
   // Legacy today() L1485-87 is correct because it reads LOCAL getFullYear/
   // getMonth/getDate. Also module-level, so it is frozen at first import.
-  grnDate: new Date().toISOString().slice(0, 10),
+  grnDate: todayLocal(),
 };
 
 const NEW_LINE: LineFormValue = {

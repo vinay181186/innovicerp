@@ -23,6 +23,7 @@ import type {
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
@@ -63,7 +64,7 @@ interface FormDoc {
   fileSize: number | null;
 }
 
-const today = (): string => new Date().toISOString().slice(0, 10);
+const today = (): string => todayLocal();
 
 function sourceLabel(o: JobCardSourceOption): string {
   const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';

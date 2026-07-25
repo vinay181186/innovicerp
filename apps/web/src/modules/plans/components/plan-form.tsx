@@ -6,6 +6,7 @@
 import type { CreatePlanInput, PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { todayLocal } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
@@ -61,7 +62,7 @@ export const PLAN_TYPE_OPTIONS: Array<{ value: PlanType; label: string; icon: st
 export function emptyValues(): PlanFormValues {
   return {
     code: '',
-    planDate: new Date().toISOString().slice(0, 10),
+    planDate: todayLocal(),
     planType: 'manufacture',
     soLineId: null,
     soCodeText: '',
