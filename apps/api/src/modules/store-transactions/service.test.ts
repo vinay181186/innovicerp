@@ -4,6 +4,7 @@ import { db } from '../../db/client';
 import { items, itemStockBalances, storeTransactions, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import type { ListStoreTransactionsQuery } from './schema';
 import * as service from './service';
 
 const TEST_PREFIX = 'T036D-';
@@ -273,5 +274,47 @@ describe('store-transactions: item_stock_balances trigger', () => {
     const viaTable = await readBalance(testItemId);
     const viaView = await service.getItemBalance(testItemId, admin);
     expect(viaView.onHand).toBe(viaTable);
+  });
+});
+
+// ─── buildStoreTxnWhere — pure filter builder (no DB) ───────────────────────
+// The rows query, the pagination count query, and the KPI summary all consume
+// this single array of SQL fragments, so proving it emits a fragment per active
+// filter (and omits it otherwise) is what guarantees count === rows filters.
+
+describe('buildStoreTxnWhere', () => {
+  const companyId = '00000000-0000-0000-0000-000000000001';
+  const base: ListStoreTransactionsQuery = { limit: 50, offset: 0 };
+
+  it('returns only the company scope when no filters are set', () => {
+    expect(service.buildStoreTxnWhere(companyId, base)).toHaveLength(1);
+  });
+
+  it('adds a condition when search is set, omits it when not', () => {
+    expect(service.buildStoreTxnWhere(companyId, { ...base, search: 'bolt' })).toHaveLength(2);
+    expect(service.buildStoreTxnWhere(companyId, base)).toHaveLength(1);
+  });
+
+  it('adds a condition per date bound', () => {
+    expect(service.buildStoreTxnWhere(companyId, { ...base, fromDate: '2026-01-01' })).toHaveLength(
+      2,
+    );
+    expect(
+      service.buildStoreTxnWhere(companyId, { ...base, fromDate: '2026-01-01', toDate: '2026-01-31' }),
+    ).toHaveLength(3);
+  });
+
+  it('adds one condition for every active filter', () => {
+    const conditions = service.buildStoreTxnWhere(companyId, {
+      ...base,
+      search: 'x',
+      itemId: '00000000-0000-0000-0000-0000000000aa',
+      txnType: 'in',
+      sourceType: 'grn_qc',
+      fromDate: '2026-01-01',
+      toDate: '2026-01-31',
+    });
+    // company + search + item + txnType + sourceType + fromDate + toDate
+    expect(conditions).toHaveLength(7);
   });
 });

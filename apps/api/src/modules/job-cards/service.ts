@@ -1109,7 +1109,11 @@ export async function updateJobCard(
 
   await withUserContext(user, async (tx) => {
     const headRows = await tx
-      .select({ code: jobCards.code })
+      .select({
+        code: jobCards.code,
+        sourceSoLineId: jobCards.sourceSoLineId,
+        sourceJwLineId: jobCards.sourceJwLineId,
+      })
       .from(jobCards)
       .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
       .limit(1);
@@ -1226,8 +1230,11 @@ export async function updateJobCard(
         dueDate: input.dueDate ?? null,
         drawingFilePath: input.drawingFilePath ?? null,
         remarks: input.remarks ?? null,
-        sourceSoLineId: input.sourceSoLineId ?? null,
-        sourceJwLineId: input.sourceJwLineId ?? null,
+        // Source is IMMUTABLE on update: preserve the existing SO/JW line link
+        // regardless of what the payload sends (an omitted source must NOT null
+        // the link, and an edit must NOT re-point the JC at a different line).
+        sourceSoLineId: head.sourceSoLineId,
+        sourceJwLineId: head.sourceJwLineId,
         updatedBy: user.id,
         updatedAt: now,
       })

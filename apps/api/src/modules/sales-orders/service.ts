@@ -1348,6 +1348,8 @@ async function mergeLines(
     if (u.data.clientPoLineNo !== undefined)
       lineUpdate['clientPoLineNo'] = u.data.clientPoLineNo ?? null;
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
+    if (u.data.sourceBomMasterId !== undefined)
+      lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId ?? null;
 
     await tx.update(salesOrderLines).set(lineUpdate).where(eq(salesOrderLines.id, u.id));
   }
@@ -1376,6 +1378,7 @@ async function mergeLines(
         dueDate: l.dueDate ?? null,
         clientPoLineNo: l.clientPoLineNo ?? null,
         status: l.status ?? 'open',
+        sourceBomMasterId: l.sourceBomMasterId ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       };

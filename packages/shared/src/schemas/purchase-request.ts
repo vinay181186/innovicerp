@@ -137,7 +137,9 @@ export type CreatePurchaseRequestInput = z.infer<typeof createPurchaseRequestInp
  *  re-applied here because the partial form may legitimately update only
  *  qty or remarks; the DB CHECK constraints will reject any update that
  *  would leave both halves null. */
-export const updatePurchaseRequestInputSchema = _prInputBase.partial().omit({ code: true });
+export const updatePurchaseRequestInputSchema = _prInputBase
+  .partial()
+  .omit({ code: true, prType: true });
 export type UpdatePurchaseRequestInput = z.infer<typeof updatePurchaseRequestInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────

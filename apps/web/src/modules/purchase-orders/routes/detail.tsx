@@ -770,6 +770,9 @@ function DetailGrid(props: { detail: PurchaseOrderDetail }): React.JSX.Element {
         value={`SGST ${detail.sgstPct}% · CGST ${detail.cgstPct}% · IGST ${detail.igstPct}%`}
       />
       <Pair label="Approved at" value={detail.approvedAt ?? '—'} />
+      <Pair label="Rejected by" value={detail.rejectedBy ?? '—'} />
+      <Pair label="Rejected at" value={detail.rejectedAt ?? '—'} />
+      <Pair label="Rejection reason" value={detail.rejectionReason ?? '—'} />
     </div>
   );
 }

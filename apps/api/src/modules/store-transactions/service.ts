@@ -5,8 +5,7 @@
 // T-036c; future: dispatch, JW out/in, manual adjusts). No create/update/
 // delete here.
 
-import { and, count, eq, sql } from 'drizzle-orm';
-import { storeTransactions } from '../../db/schema';
+import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import type {
@@ -32,30 +31,50 @@ function tsLike(v: unknown): string {
   return String(v);
 }
 
+/**
+ * Single source of truth for the stock-ledger WHERE conditions. Pure — builds
+ * SQL fragments only, touches no DB. Used by the rows query, the pagination
+ * count query, and the KPI summary so all three agree on the active filter set
+ * (company scope, free-text search, item/txn/source, date range). Conditions
+ * reference `st` (store_transactions) and the search fragment references `i`
+ * (items) — both queries that consume this LEFT JOIN public.items i.
+ */
+export function buildStoreTxnWhere(companyId: string, query: ListStoreTransactionsQuery): SQL[] {
+  const conditions: SQL[] = [sql`st.company_id = ${companyId}::uuid`];
+
+  if (query.search) {
+    // Search matches the item too: i.code/i.name cover id-resolved rows
+    // (grn_qc, dispatch, … which leave item_code_text null), st.item_code_text
+    // covers free-text rows.
+    const term = `%${query.search}%`;
+    conditions.push(
+      sql`(st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term}
+           OR i.code ILIKE ${term} OR i.name ILIKE ${term}
+           OR st.item_code_text ILIKE ${term})`,
+    );
+  }
+  if (query.itemId) conditions.push(sql`st.item_id = ${query.itemId}::uuid`);
+  if (query.txnType) conditions.push(sql`st.txn_type = ${query.txnType}::store_txn_type`);
+  if (query.sourceType) {
+    conditions.push(sql`st.source_type = ${query.sourceType}::store_txn_source_type`);
+  }
+  if (query.fromDate) conditions.push(sql`st.txn_date >= ${query.fromDate}::date`);
+  if (query.toDate) conditions.push(sql`st.txn_date <= ${query.toDate}::date`);
+
+  return conditions;
+}
+
 export async function listStoreTransactions(
   input: ListStoreTransactionsQuery,
   user: AuthContext,
 ): Promise<ListStoreTransactionsResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${input.search}%` : null;
-    // Search matches the item too: i.code/i.name cover id-resolved rows (grn_qc,
-    // dispatch, … which leave item_code_text null), st.item_code_text covers
-    // free-text rows. Both queries below already LEFT JOIN items i.
-    const searchFrag = term
-      ? sql`AND (st.source_ref ILIKE ${term} OR st.remarks ILIKE ${term}
-                 OR i.code ILIKE ${term} OR i.name ILIKE ${term}
-                 OR st.item_code_text ILIKE ${term})`
-      : sql``;
-    const itemFrag = input.itemId ? sql`AND st.item_id = ${input.itemId}::uuid` : sql``;
-    const txnTypeFrag = input.txnType
-      ? sql`AND st.txn_type = ${input.txnType}::store_txn_type`
-      : sql``;
-    const sourceTypeFrag = input.sourceType
-      ? sql`AND st.source_type = ${input.sourceType}::store_txn_source_type`
-      : sql``;
-    const fromFrag = input.fromDate ? sql`AND st.txn_date >= ${input.fromDate}::date` : sql``;
-    const toFrag = input.toDate ? sql`AND st.txn_date <= ${input.toDate}::date` : sql``;
+    // Single filter set shared by rows, count, and KPI summary so page count
+    // and totals always agree with the visible rows (search + date range
+    // included). Both consuming queries LEFT JOIN public.items i, which the
+    // search fragment references.
+    const whereClause = sql.join(buildStoreTxnWhere(companyId, input), sql` AND `);
 
     const result = await tx.execute(sql`
       SELECT
@@ -74,27 +93,19 @@ export async function listStoreTransactions(
         i.name AS "itemName"
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
-      WHERE st.company_id = ${companyId}::uuid
-        ${searchFrag}
-        ${itemFrag}
-        ${txnTypeFrag}
-        ${sourceTypeFrag}
-        ${fromFrag}
-        ${toFrag}
+      WHERE ${whereClause}
       ORDER BY st.txn_date DESC, st.created_at DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
-    // Total count uses Drizzle ORM with the same filter set.
-    const conditions = [eq(storeTransactions.companyId, companyId)];
-    if (input.itemId) conditions.push(eq(storeTransactions.itemId, input.itemId));
-    if (input.txnType) conditions.push(eq(storeTransactions.txnType, input.txnType));
-    if (input.sourceType) conditions.push(eq(storeTransactions.sourceType, input.sourceType));
-    const totalRows = await tx
-      .select({ value: count() })
-      .from(storeTransactions)
-      .where(and(...conditions));
-    const total = totalRows[0]?.value ?? 0;
+    // Total count over the SAME filter set (search + date range included).
+    const countRows = (await tx.execute(sql`
+      SELECT COUNT(*)::int AS value
+      FROM public.store_transactions st
+      LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
+      WHERE ${whereClause}
+    `)) as unknown as Array<{ value: number }>;
+    const total = Number(countRows[0]?.value ?? 0);
 
     // PL-SL-1b — KPI summary across the SAME filter set (no LIMIT).
     // Mirrors legacy renderStockLedger L25081–25084.
@@ -106,13 +117,7 @@ export async function listStoreTransactions(
         COUNT(DISTINCT st.item_id)::int                                  AS item_count
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
-      WHERE st.company_id = ${companyId}::uuid
-        ${searchFrag}
-        ${itemFrag}
-        ${txnTypeFrag}
-        ${sourceTypeFrag}
-        ${fromFrag}
-        ${toFrag}
+      WHERE ${whereClause}
     `);
     const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
     const totalIn = Number(sumRow['total_in'] ?? 0);

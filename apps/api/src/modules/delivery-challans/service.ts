@@ -1088,7 +1088,8 @@ export async function receiveAgainstDeliveryChallan(
         vendorId: dcHeader.vendorId,
         vendorCodeText: dcHeader.vendorCodeText,
         dcNo: dcHeader.code,
-        remarks: `Auto GRN from OSP receipt ${receiptCode}`,
+        invoiceNo: receiptHeader.vendorInvoiceText,
+        remarks: receiptHeader.remarks ?? `Auto GRN from OSP receipt ${receiptCode}`,
         lines: grnLines,
       });
       autoGrnCode = grn.code;

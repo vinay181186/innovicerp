@@ -330,6 +330,95 @@ describe('job-cards service — writes (ADR-051)', () => {
     expect(updated.totalOps).toBe(2);
   });
 
+  it('updateJobCard keeps the JC source immutable — a different or omitted source is ignored', async () => {
+    if (!itemCode || !machineCode || !jwLineId || !jwOrderId) return;
+    const jc = await service.createJobCard(
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 3,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [
+          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    createdIds.push(jc.id);
+    // Sanity: the new JC is linked to our JW line.
+    expect(jc.sourceLink?.type).toBe('jw');
+    if (jc.sourceLink?.type === 'jw') expect(jc.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
+
+    // A second JW line on the same order — a plausible "re-link" target. Cleaned
+    // up by afterAll (deletes all lines for jwOrderId).
+    const itemRow = (
+      await db
+        .select({ id: items.id })
+        .from(items)
+        .where(and(eq(items.code, itemCode), eq(items.companyId, admin.companyId!), isNull(items.deletedAt)))
+        .limit(1)
+    )[0]!;
+    const otherLine = (
+      await db
+        .insert(jobWorkOrderLines)
+        .values({
+          companyId: admin.companyId!,
+          jobWorkOrderId: jwOrderId,
+          lineNo: 2,
+          itemId: itemRow.id,
+          partName: 'JC write-test JW line 2',
+          uom: 'NOS',
+          orderQty: 100,
+          status: 'open',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+
+    // 1) Edit that re-points at a DIFFERENT JW line — header edits apply, but the
+    //    source must NOT move off the original line.
+    const relinked = await service.updateJobCard(
+      jc.id,
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 4,
+        priority: 'high',
+        sourceJwLineId: otherLine.id,
+        ops: [
+          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    expect(relinked.orderQty).toBe(4);
+    expect(relinked.sourceLink?.type).toBe('jw');
+    if (relinked.sourceLink?.type === 'jw') expect(relinked.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
+
+    // 2) Edit that OMITS the source entirely — the link must NOT be nulled.
+    const omitted = await service.updateJobCard(
+      jc.id,
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 2,
+        priority: 'normal',
+        ops: [
+          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+        ],
+        qcDocs: [],
+      },
+      admin,
+    );
+    expect(omitted.sourceLink).not.toBeNull();
+    expect(omitted.sourceLink?.type).toBe('jw');
+    if (omitted.sourceLink?.type === 'jw') expect(omitted.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
+  });
+
   it('createJobCard rejects a direct (non-JW) Job Card (governance)', async () => {
     await expect(
       service.createJobCard(
