@@ -3155,3 +3155,34 @@ is blocked. Chosen the cascade (single choke point for `outsource_sent_qty`) ove
 - Negative: none for valid flows. Integration test added (guard rejects send with 0 upstream); the
   write-test suite runs against the dev DB in CI (not run locally — DB safety), verified by api
   typecheck + lint + diff review.
+
+## ADR-079: Job-Work cycle completion — issue party material, return goods, bill labour
+**Date:** 2026-07-25
+**Status:** Accepted
+
+### Context
+The customer-material job-work (JWSO) flow was half-built: Party GRN received client material
+into a separate party-stock ledger (party_materials), and a JW-sourced Job Card machined it, but
+three steps were missing — consuming (issuing) party material to the JC (`issued_qty` was never
+mutated), returning processed goods to the customer, and billing labour (no JW branch in invoices).
+
+### Decision
+Three lean single-line documents + two reconciliation counters (migration 0074):
+- **Party Material Issue** (`IN-PMI-#####`) — issues client material to a JC; debits
+  `party_materials.stock_qty`, credits `issued_qty`. Guard: `qty <= stock_qty`. Never writes
+  own-stock `store_transactions` (party material stays isolated).
+- **JW Return Challan** (`IN-JWRC-#####`) — returns machined goods to the customer against a JW
+  line. Guard: `qty <= produced − already_returned`, where produced = terminal QC-accepted qty over
+  the line's Job Cards (read from `v_jc_op_status`, mirroring customer-dispatch readiness). Bumps
+  `job_work_order_lines.returned_qty`; flips the JWSO to `dispatched` when every line is fully returned.
+- **JW Invoice** (`IN-JWINV-#####`) — bills labour only: `qty x rate (+ GST% from JWSO header)`, no
+  material value. Guard: `qty <= returned − already_invoiced`. Bumps `invoiced_qty`.
+
+Every guard follows the upstream/downstream availability rule (ADR-078 lineage): you can't issue more
+than received, return more than produced, or bill more than returned.
+
+### Consequences
+- Positive: the JWSO loop now reconciles received → issued → produced → returned → invoiced, with
+  party stock tracked separately from own inventory. Additive migration (new tables + default-0
+  columns), no existing behaviour changed.
+- Negative: no web create screens yet (API + list views only); flagged for a follow-up.

@@ -1250,6 +1250,11 @@ export const jobWorkOrderLines = pgTable(
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    // Job-work reconciliation counters (migration 0074): processed goods
+    // returned to the customer, and quantity billed on the labour invoice.
+    // Guards read these to cap returns (<= produced) and invoices (<= returned).
+    returnedQty: integer('returned_qty').notNull().default(0),
+    invoicedQty: integer('invoiced_qty').notNull().default(0),
     dueDate: date('due_date'),
     status: soStatusEnum('status').notNull().default('open'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -3051,6 +3056,181 @@ export const partyGrnLines = pgTable(
       using: sql`company_id = current_company_id()`,
     }),
     pgPolicy('party_grn_lines_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ─── Job-Work cycle completion (migration 0074) — 3 tables ─────────────────
+// Closes the customer-material job-work loop (ADR-079):
+//   party_material_issues — issue client material to a JC (debits party stock)
+//   jw_return_challans     — return processed goods to the customer
+//   jw_invoices            — bill the labour/processing charge (rate x qty + GST)
+// All flat single-line docs mirroring party_grn's shape. Party (customer-owned)
+// material stays OUT of store_transactions — issues move party_materials only.
+
+export const partyMaterialIssues = pgTable(
+  'party_material_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    issueDate: date('issue_date').notNull(),
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'set null',
+    }),
+    jwCodeText: text('jw_code_text'),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
+    jcCodeText: text('jc_code_text'),
+    partyMaterialId: uuid('party_material_id')
+      .notNull()
+      .references(() => partyMaterials.id),
+    partyMaterialCodeText: text('party_material_code_text'),
+    partyMaterialName: text('party_material_name'),
+    qty: integer('qty').notNull(),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('party_material_issues_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_material_issues_company_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('party_material_issues_company_pm_idx')
+      .on(t.companyId, t.partyMaterialId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('party_material_issues_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('party_material_issues_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jwReturnChallans = pgTable(
+  'jw_return_challans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    returnDate: date('return_date').notNull(),
+    jobWorkOrderId: uuid('job_work_order_id')
+      .notNull()
+      .references(() => jobWorkOrders.id),
+    jobWorkOrderLineId: uuid('job_work_order_line_id')
+      .notNull()
+      .references(() => jobWorkOrderLines.id),
+    jwCodeText: text('jw_code_text'),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    qty: integer('qty').notNull(),
+    transport: text('transport'),
+    vehicleNo: text('vehicle_no'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('jw_return_challans_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_return_challans_company_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_return_challans_company_line_idx')
+      .on(t.companyId, t.jobWorkOrderLineId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_return_challans_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_return_challans_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const jwInvoices = pgTable(
+  'jw_invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    invoiceDate: date('invoice_date').notNull(),
+    jobWorkOrderId: uuid('job_work_order_id')
+      .notNull()
+      .references(() => jobWorkOrders.id),
+    jobWorkOrderLineId: uuid('job_work_order_line_id')
+      .notNull()
+      .references(() => jobWorkOrderLines.id),
+    jwCodeText: text('jw_code_text'),
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
+    qty: integer('qty').notNull(),
+    rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
+    taxableAmount: numeric('taxable_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    gstPercent: numeric('gst_percent', { precision: 5, scale: 2 }).notNull().default('18'),
+    gstAmount: numeric('gst_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull().default('0'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('jw_invoices_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_invoices_company_jw_idx')
+      .on(t.companyId, t.jobWorkOrderId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('jw_invoices_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('jw_invoices_manager_write', {
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
