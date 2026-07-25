@@ -3,8 +3,8 @@
 // grouped SO Master L11863):
 // JWSO NO. · LINES · DATE · CLIENT · CLIENT PO · TOTAL QTY · JC QTY · MATERIAL ·
 // DUE · STATUS · REMARKS · (Edit Del). Material is colored text (✓ Full / ◑
-// Partial / ✕ Not Received) keyed on header materialReceivedQty vs the header
-// clientMaterialQty (expected client-supplied material).
+// Partial / ✕ Not Received) keyed on partyReceivedQty (actual Σ Party GRN
+// receipts) vs the header clientMaterialQty (expected client-supplied material).
 //
 // NOT ported from legacy L12656 — the Client PO 📎 attachment link: JW carries no
 // clientPoFilePath (SO does; packages/shared/src/schemas/sales-order.ts:136), so
@@ -179,11 +179,13 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {
         header: 'Material',
         id: 'material',
-        accessorFn: (r) => Number(r.materialReceivedQty ?? 0),
+        // Received number = actual Party GRN receipts, not the manually-typed
+        // header materialReceivedQty (which could be typed without any GRNs).
+        accessorFn: (r) => r.partyReceivedQty,
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => (
           <span style={{ fontSize: 11 }}>
-            <MaterialCell received={Number(row.original.materialReceivedQty ?? 0)} expected={Number(row.original.clientMaterialQty ?? 0)} />
+            <MaterialCell received={row.original.partyReceivedQty} expected={Number(row.original.clientMaterialQty ?? 0)} />
           </span>
         ),
       },

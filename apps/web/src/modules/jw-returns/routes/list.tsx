@@ -9,7 +9,7 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreateJwReturnChallan, useJwReturnsList } from '../api';
+import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
 export const jwReturnsListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -24,6 +24,14 @@ function JwReturnsListPage(): React.JSX.Element {
   const [showModal, setShowModal] = useState(false);
 
   const { data, isLoading, isError, error } = useJwReturnsList();
+  const cancelMut = useCancelJwReturn();
+
+  const onCancel = (id: string, code: string): void => {
+    if (!confirm(`Cancel JW Return ${code}? This reverses the returned-qty cascade.`)) {
+      return;
+    }
+    cancelMut.mutate(id);
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -89,12 +97,14 @@ function JwReturnsListPage(): React.JSX.Element {
                   </th>
                   <th>Transport</th>
                   <th>Vehicle</th>
+                  <th>Status</th>
+                  {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
+                    <td colSpan={canWrite ? 10 : 9} className="empty-state">
                       No JW returns — click + New Return
                     </td>
                   </tr>
@@ -129,6 +139,52 @@ function JwReturnsListPage(): React.JSX.Element {
                     <td className="mono text3" style={{ fontSize: 11 }}>
                       {r.vehicleNo ?? '—'}
                     </td>
+                    <td>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          color:
+                            r.status === 'cancelled' ? 'var(--red)' : 'var(--green)',
+                          background:
+                            r.status === 'cancelled'
+                              ? 'rgba(239,68,68,0.10)'
+                              : 'rgba(34,197,94,0.10)',
+                        }}
+                      >
+                        {r.status}
+                      </span>
+                    </td>
+                    {canWrite ? (
+                      <td className="td-ctr">
+                        {r.status === 'cancelled' ? (
+                          <span className="text3" style={{ fontSize: 11 }}>
+                            —
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ color: 'var(--red)' }}
+                            disabled={cancelMut.isPending}
+                            onClick={() => onCancel(r.id, r.code)}
+                          >
+                            {cancelMut.isPending && cancelMut.variables === r.id ? (
+                              <>
+                                <Loader2 size={12} className="inline animate-spin" />{' '}
+                                Cancelling…
+                              </>
+                            ) : (
+                              'Cancel'
+                            )}
+                          </button>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

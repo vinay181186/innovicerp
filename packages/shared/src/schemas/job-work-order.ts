@@ -83,6 +83,10 @@ export const jobWorkOrderSchema = z.object({
 export type JobWorkOrder = z.infer<typeof jobWorkOrderSchema>;
 
 export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
+  /** Actual client-material received = Σ party_grn_lines.received_qty across this
+   *  JWSO's non-deleted Party GRNs. Source of truth for the material-received
+   *  badge (the header materialReceivedQty is a manual entry that can lie). */
+  partyReceivedQty: z.number().int().nonnegative(),
   lines: z.array(jobWorkOrderLineSchema),
 });
 export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
@@ -90,8 +94,9 @@ export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
 /** List ROW = ONE JWSO header with line aggregates (#6 — matches the SO Master
  *  list, which is one row per order, not per line). Columns, in order:
  *  JWSO NO. · DATE · CLIENT · CLIENT PO · LINES · TOTAL QTY · JC QTY ·
- *  MATERIAL · DUE · STATUS · REMARKS. Material status reads the header
- *  materialReceivedQty vs clientMaterialQty; earliestDueDate = MIN(line.due). */
+ *  MATERIAL · DUE · STATUS · REMARKS. Material status reads the actual
+ *  partyReceivedQty (Σ Party GRN receipts) vs clientMaterialQty;
+ *  earliestDueDate = MIN(line.due). */
 export const jobWorkOrderListItemSchema = z.object({
   jwId: z.string().uuid(),
   code: z.string(),
@@ -109,9 +114,15 @@ export const jobWorkOrderListItemSchema = z.object({
   earliestDueDate: z.string().nullable(),
   status: jwStatusSchema,
   remarks: z.string().nullable(),
-  /** Header-level client material (drives the MATERIAL column). */
+  /** Header-level client material (expected/order intent — drives the MATERIAL
+   *  column's "expected" number). */
   clientMaterialQty: z.string().nullable(),
+  /** Manually-typed header field; kept for the form but NO LONGER drives the
+   *  material-received badge (it could be typed without any receipts). */
   materialReceivedQty: z.string().nullable(),
+  /** Actual client-material received = Σ party_grn_lines.received_qty across this
+   *  JWSO's non-deleted Party GRNs. The truthful "received" number for the badge. */
+  partyReceivedQty: z.number().int().nonnegative(),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 

@@ -1,13 +1,12 @@
-// Legacy renderJWMaster (line 12648-12650) "Material" column rendering:
-//   ✓ Full       — material_received_qty >= order_qty (green)
-//   ◑ Partial    — 0 < material_received_qty < order_qty (amber)
-//   ✕ Not Received — material_received_qty == 0 or null (red)
+// "Material received" badge rendering (legacy renderJWMaster L12648-12650):
+//   ✓ Full        — receivedQty >= expectedQty (green)
+//   ◑ Partial     — 0 < receivedQty < expectedQty (amber)
+//   ✕ Not received — receivedQty == 0 (red)
 //
-// Inputs are numeric strings from the API (clientMaterialQtyTotal /
-// materialReceivedQtyTotal on the list shape; clientMaterialQty /
-// materialReceivedQty on the line shape). Per-JW rendering on the list
-// page sums across lines; per-line rendering on the detail page uses the
-// line's own qty + orderQty.
+// receivedQty is the ACTUAL client-material received = Σ Party GRN receipts
+// (partyReceivedQty from the API), NOT the manually-typed header
+// materialReceivedQty (which can be typed without any GRNs posted).
+// expectedQty is the header clientMaterialQty (order/expected intent).
 
 interface Props {
   receivedQty: number;

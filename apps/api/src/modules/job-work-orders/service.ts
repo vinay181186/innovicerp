@@ -185,6 +185,21 @@ function numToStringOrNull(v: number | undefined): string | null {
   return v === undefined ? null : v.toFixed(2);
 }
 
+/** Actual client-material receipts for one JWSO = Σ party_grn_lines.received_qty
+ *  across its non-deleted Party GRNs. This is the real source of truth for the
+ *  "material received" badge (the header material_received_qty field is a manual
+ *  entry and can lie). Returns 0 when no Party GRNs exist. */
+async function sumPartyReceivedQty(tx: DbTransaction, jobWorkOrderId: string): Promise<number> {
+  const rows = await tx.execute(sql`
+    SELECT COALESCE(SUM(gl.received_qty), 0)::int AS qty
+    FROM public.party_grn g
+    JOIN public.party_grn_lines gl
+      ON gl.party_grn_id = g.id AND gl.deleted_at IS NULL
+    WHERE g.job_work_order_id = ${jobWorkOrderId}::uuid AND g.deleted_at IS NULL
+  `);
+  return Number((rows as unknown as Array<{ qty: number }>)[0]?.qty ?? 0);
+}
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listJobWorkOrders(
@@ -228,7 +243,8 @@ export async function listJobWorkOrders(
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.remarks,
         jw.client_material_qty::text AS "clientMaterialQty",
-        jw.material_received_qty::text AS "materialReceivedQty"
+        jw.material_received_qty::text AS "materialReceivedQty",
+        COALESCE(pg.party_received_qty, 0)::int AS "partyReceivedQty"
       FROM public.job_work_orders jw
       LEFT JOIN (
         SELECT job_work_order_id,
@@ -245,6 +261,17 @@ export async function listJobWorkOrders(
         WHERE jc.deleted_at IS NULL AND jc.source_jw_line_id IS NOT NULL
         GROUP BY l.job_work_order_id
       ) jca ON jca.job_work_order_id = jw.id
+      -- Actual client-material receipts = Σ party_grn_lines.received_qty across
+      -- this JWSO's non-deleted Party GRNs (the real source of truth for the
+      -- material-received badge, replacing the manually-typed header field).
+      LEFT JOIN (
+        SELECT g.job_work_order_id, SUM(gl.received_qty) AS party_received_qty
+        FROM public.party_grn g
+        JOIN public.party_grn_lines gl
+          ON gl.party_grn_id = g.id AND gl.deleted_at IS NULL
+        WHERE g.deleted_at IS NULL AND g.job_work_order_id IS NOT NULL
+        GROUP BY g.job_work_order_id
+      ) pg ON pg.job_work_order_id = jw.id
       WHERE jw.company_id = ${companyId}::uuid AND jw.deleted_at IS NULL
         ${searchFrag} ${statusFrag} ${clientFrag} ${fromFrag} ${toFrag}
       ORDER BY jw.code DESC
@@ -275,6 +302,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     clientMaterialQty: (r['clientMaterialQty'] as string | null) ?? null,
     materialReceivedQty: (r['materialReceivedQty'] as string | null) ?? null,
+    partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
   };
 }
 
@@ -311,8 +339,10 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       lineRows.map((l) => l.itemId),
       companyId,
     );
+    const partyReceivedQty = await sumPartyReceivedQty(tx, id);
     return {
       ...toJobWorkOrder(header),
+      partyReceivedQty,
       lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });
@@ -718,6 +748,8 @@ export async function createJobWorkOrder(
 
       return {
         ...toJobWorkOrder(header),
+        // A freshly created JWSO cannot have any Party GRNs yet.
+        partyReceivedQty: 0,
         lines: insertedLines.map((l) => toJobWorkOrderLine(l, codeMap)),
       };
     }),
@@ -806,8 +838,10 @@ export async function updateJobWorkOrder(
       user,
     );
 
+    const partyReceivedQty = await sumPartyReceivedQty(tx, id);
     return {
       ...toJobWorkOrder(updatedHdr),
+      partyReceivedQty,
       lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
     };
   });

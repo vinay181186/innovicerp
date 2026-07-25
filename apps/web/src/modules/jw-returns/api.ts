@@ -33,3 +33,16 @@ export function useCreateJwReturnChallan() {
     },
   });
 }
+
+export function useCancelJwReturn() {
+  const qc = useQueryClient();
+  return useMutation<JwReturnChallan, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<JwReturnChallan>(`/jw-returns/${id}/cancel`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jwReturnsKeys.all });
+      // Reversing the returned-qty cascade may revert the JWSO status.
+      void qc.invalidateQueries({ queryKey: ['job-work-orders'] });
+    },
+  });
+}

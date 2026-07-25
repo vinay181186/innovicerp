@@ -69,6 +69,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Client material is header-level (migration 0053).
   const clientMatTotal = Number(detail.clientMaterialQty ?? 0);
   const matRecvTotal = Number(detail.materialReceivedQty ?? 0);
+  // Actual client-material received = Σ Party GRN receipts (source of truth for
+  // the badge), not the manually-typed header materialReceivedQty.
+  const partyReceivedTotal = detail.partyReceivedQty;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (
@@ -89,7 +92,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             >
               {detail.customerName ?? 'Untitled customer'}
               <SoStatusBadge status={detail.status} />
-              <JwMaterialStatusBadge receivedQty={matRecvTotal} expectedQty={clientMatTotal} />
+              <JwMaterialStatusBadge receivedQty={partyReceivedTotal} expectedQty={clientMatTotal} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
