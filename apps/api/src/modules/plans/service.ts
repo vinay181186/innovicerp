@@ -341,14 +341,40 @@ export async function updatePlan(
 
     await tx.update(plans).set(updates).where(eq(plans.id, id));
 
-    // Ops replace-all when provided.
+    // Ops replace-all when provided. The edit form payload does NOT carry the
+    // route-card–derived fields (program / toolDetails / machineId), so a naive
+    // soft-delete + reinsert would wipe them on every edit. Load the existing
+    // ops first, key them by opSeq, and restore those fields onto any new op
+    // whose opSeq matches — but only where the payload itself does not supply a
+    // value (`?? prior`). New ops with no matching opSeq keep null, as before.
     if (input.ops !== undefined) {
+      const priorOps = await tx
+        .select({
+          opSeq: planOps.opSeq,
+          program: planOps.program,
+          toolDetails: planOps.toolDetails,
+          machineId: planOps.machineId,
+        })
+        .from(planOps)
+        .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
+      const priorBySeq = new Map(priorOps.map((op) => [op.opSeq, op]));
+
       await tx
         .update(planOps)
         .set({ deletedAt: new Date(), updatedBy: user.id })
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
       if (input.ops.length > 0) {
-        await insertOps(tx, companyId, id, input.ops, user);
+        const preservedOps = input.ops.map((op) => {
+          const prior = priorBySeq.get(op.opSeq);
+          if (!prior) return op;
+          return {
+            ...op,
+            program: op.program ?? prior.program,
+            toolDetails: op.toolDetails ?? prior.toolDetails,
+            machineId: op.machineId ?? prior.machineId,
+          };
+        });
+        await insertOps(tx, companyId, id, preservedOps, user);
       }
     }
 

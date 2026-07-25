@@ -10,6 +10,7 @@ export const jwReturnChallanSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string(),
+  status: z.string(), // 'issued' | 'cancelled'
   returnDate: z.string(),
   jobWorkOrderId: z.string().uuid(),
   jobWorkOrderLineId: z.string().uuid(),

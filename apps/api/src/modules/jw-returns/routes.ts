@@ -16,4 +16,10 @@ export async function jwReturnsRoutes(app: FastifyInstance): Promise<void> {
     reply.code(201);
     return result;
   });
+
+  app.post('/jw-returns/:id/cancel', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = req.params as { id: string };
+    return service.cancelJwReturnChallan(id, req.user);
+  });
 }

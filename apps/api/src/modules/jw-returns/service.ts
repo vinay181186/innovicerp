@@ -75,6 +75,7 @@ function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan
     id: row.id,
     companyId: row.companyId,
     code: row.code,
+    status: row.status,
     returnDate: dateLike(row.returnDate),
     jobWorkOrderId: row.jobWorkOrderId,
     jobWorkOrderLineId: row.jobWorkOrderLineId,
@@ -227,6 +228,121 @@ export async function createJwReturnChallan(
         entity: 'JwReturnChallan',
         detail: `${code} — returned ${input.qty} to customer (${jw.code})`,
         refId: row.id,
+      },
+      companyId,
+      user,
+    );
+
+    return rowToReturn(row);
+  });
+}
+
+export async function cancelJwReturnChallan(
+  id: string,
+  user: AuthContext,
+): Promise<JwReturnChallan> {
+  // Reverses a JW Return Challan (mirrors delivery-challans.cancelDeliveryChallan).
+  // Creating a return bumped job_work_order_lines.returned_qty and may have
+  // flipped the JWSO to 'dispatched' once every line was fully returned — this
+  // unwinds both.
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+  const userId = user.id;
+
+  return withUserContext(user, async (tx) => {
+    const retRows = await tx
+      .select()
+      .from(jwReturnChallans)
+      .where(
+        and(
+          eq(jwReturnChallans.id, id),
+          eq(jwReturnChallans.companyId, companyId),
+          isNull(jwReturnChallans.deletedAt),
+        ),
+      )
+      .limit(1);
+    const ret = retRows[0];
+    if (!ret) throw new NotFoundError(`JW return challan ${id} not found`);
+    if (ret.status === 'cancelled') {
+      throw new ConflictError(`JW return challan ${ret.code} is already cancelled`);
+    }
+
+    // Lock the JW line before unwinding its returned_qty
+    await tx.execute(
+      sql`SELECT 1 FROM public.job_work_order_lines WHERE id = ${ret.jobWorkOrderLineId}::uuid FOR UPDATE`,
+    );
+    const lineRows = await tx
+      .select({
+        id: jobWorkOrderLines.id,
+        returnedQty: jobWorkOrderLines.returnedQty,
+        jwId: jobWorkOrderLines.jobWorkOrderId,
+      })
+      .from(jobWorkOrderLines)
+      .where(
+        and(
+          eq(jobWorkOrderLines.id, ret.jobWorkOrderLineId),
+          eq(jobWorkOrderLines.companyId, companyId),
+          isNull(jobWorkOrderLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    const line = lineRows[0];
+    if (!line) throw new NotFoundError(`Job Work Order line ${ret.jobWorkOrderLineId} not found`);
+
+    // 1) Mark the return cancelled
+    const updated = await tx
+      .update(jwReturnChallans)
+      .set({ status: 'cancelled', updatedAt: new Date(), updatedBy: userId })
+      .where(eq(jwReturnChallans.id, ret.id))
+      .returning();
+    const row = updated[0];
+    if (!row) throw new ConflictError(`Failed to cancel JW return challan ${ret.code}`);
+
+    // 2) DECREMENT the line's returned_qty by the return's qty (clamp at 0)
+    const newReturned = Math.max(0, line.returnedQty - ret.qty);
+    await tx
+      .update(jobWorkOrderLines)
+      .set({ returnedQty: newReturned, updatedAt: new Date(), updatedBy: userId })
+      .where(eq(jobWorkOrderLines.id, line.id));
+
+    // 3) Revert the JWSO header 'dispatched' → 'open' if it is no longer the
+    // case that EVERY line is fully returned (reverse of the create flip).
+    const jwRows = await tx
+      .select({ id: jobWorkOrders.id, status: jobWorkOrders.status, code: jobWorkOrders.code })
+      .from(jobWorkOrders)
+      .where(and(eq(jobWorkOrders.id, line.jwId), isNull(jobWorkOrders.deletedAt)))
+      .limit(1);
+    const jw = jwRows[0];
+    if (jw && jw.status === 'dispatched') {
+      const siblings = await tx
+        .select({
+          id: jobWorkOrderLines.id,
+          orderQty: jobWorkOrderLines.orderQty,
+          returnedQty: jobWorkOrderLines.returnedQty,
+        })
+        .from(jobWorkOrderLines)
+        .where(
+          and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
+        );
+      const allReturned = siblings.every((s) => {
+        const eff = s.id === line.id ? newReturned : s.returnedQty;
+        return eff >= s.orderQty;
+      });
+      if (!allReturned) {
+        await tx
+          .update(jobWorkOrders)
+          .set({ status: 'open', updatedAt: new Date(), updatedBy: userId })
+          .where(and(eq(jobWorkOrders.id, jw.id), isNull(jobWorkOrders.deletedAt)));
+      }
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'JW_RETURN_CANCEL',
+        entity: 'JwReturnChallan',
+        detail: `${ret.code} — cancelled, reversed ${ret.qty} on ${ret.jwCodeText ?? jw?.code ?? ''}`,
+        refId: ret.id,
       },
       companyId,
       user,

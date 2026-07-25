@@ -11,7 +11,13 @@ import type {
   ListPartyMaterialIssuesResponse,
   PartyMaterialIssue,
 } from '@innovic/shared';
-import { jobCards, jobWorkOrders, partyMaterialIssues, partyMaterials } from '../../db/schema';
+import {
+  jobCards,
+  jobWorkOrderLines,
+  jobWorkOrders,
+  partyMaterialIssues,
+  partyMaterials,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -87,12 +93,21 @@ export async function createPartyMaterialIssue(
     const jw = jwRows[0];
     if (!jw) throw new NotFoundError(`Job Work Order ${input.jobWorkOrderId} not found`);
 
-    // 2) Optional JC (for traceability)
+    // 2) Optional JC (for traceability) — and cross-check its owning JWSO.
+    // A Job Card sourced from a JW line already belongs to a specific JWSO
+    // (job_cards.source_jw_line_id -> job_work_order_lines.job_work_order_id).
+    // Resolve that owner in the same load and reject issuing the JC against a
+    // DIFFERENT JWSO. JCs with no JW source (e.g. SO-sourced) are left alone.
     let jcCodeText: string | null = null;
     if (input.jobCardId) {
       const jcRows = await tx
-        .select({ code: jobCards.code })
+        .select({
+          code: jobCards.code,
+          sourceJwLineId: jobCards.sourceJwLineId,
+          jcJobWorkOrderId: jobWorkOrderLines.jobWorkOrderId,
+        })
         .from(jobCards)
+        .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
         .where(
           and(
             eq(jobCards.id, input.jobCardId),
@@ -101,8 +116,14 @@ export async function createPartyMaterialIssue(
           ),
         )
         .limit(1);
-      if (!jcRows[0]) throw new NotFoundError(`Job Card ${input.jobCardId} not found`);
-      jcCodeText = jcRows[0].code;
+      const jc = jcRows[0];
+      if (!jc) throw new NotFoundError(`Job Card ${input.jobCardId} not found`);
+      jcCodeText = jc.code;
+      if (jc.sourceJwLineId && jc.jcJobWorkOrderId && jc.jcJobWorkOrderId !== jw.id) {
+        throw new ValidationError(
+          `Job Card ${jc.code} belongs to a different Job Work Order — it cannot be issued against ${jw.code}.`,
+        );
+      }
     }
 
     // 3) Party material — lock + availability GUARD (cannot issue > received on hand)

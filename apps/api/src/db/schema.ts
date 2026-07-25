@@ -3145,6 +3145,9 @@ export const jwReturnChallans = pgTable(
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
+    // 'issued' | 'cancelled' — cancelling reverses the returned_qty bump and the
+    // JWSO dispatched-flip (see jw-returns service.cancelJwReturnChallan).
+    status: text('status').notNull().default('issued'),
     returnDate: date('return_date').notNull(),
     jobWorkOrderId: uuid('job_work_order_id')
       .notNull()
@@ -3178,6 +3181,9 @@ export const jwReturnChallans = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('jw_return_challans_company_line_idx')
       .on(t.companyId, t.jobWorkOrderLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('jw_return_challans_company_status_idx')
+      .on(t.companyId, t.status)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('jw_return_challans_company_read', {
       for: 'select',
