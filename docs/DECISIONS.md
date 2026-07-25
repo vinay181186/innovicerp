@@ -3095,3 +3095,30 @@ Make both QC types uniform and canonical:
   green; migration 0072 applied to prod before the code deploy (API writes the new column).
 - Note: completed-log rows don't yet surface the QC-By name (entry-only for now). Raw-material GRNs
   show vendor + GRN with SO blank.
+
+## ADR-077: Full-outsource plan execution seeds a Job Card with a default OSP op
+**Date:** 2026-07-25
+**Status:** Accepted
+
+### Context
+Executing a `full_outsource` plan previously created only a JW PR (status `pr_created`), so the
+outsourced work never landed as a trackable Job Card op — the user had to build the JC/op manually,
+and the OSP At-Vendor/QC chain (ADR-066..073) had no jc_op to trace back to.
+
+### Decision
+`executeFullOutsource` now, when the plan has a resolved `itemId` (job_cards.item_id is NOT NULL),
+seeds a Job Card with **one outsource jc_op** as the default OSP route: `op_type='outsource'`,
+`operation = plan.foProcess`, `outsourceVendorId/Text` + `outsourceCost` prefilled from the plan's
+`fo*` fields (all editable on the JC). The auto-raised JW PR is linked to that op
+(`prType='jw_osp'`, `source_jc_op_id`, and `jc_op.outsourcePrId` / `outsourceStatus='pr_raised'`) —
+no duplicate PR — so the PO→DC→GRN→incoming-QC chain traces back to the op and OSP stock/QC stay
+correct. Plan status becomes `jc_created` with `plan.jcId` set. **No QC op is added** — OSP returns
+are QC'd via incoming QC (`grn_qc`), consistent with Rule B (`needsDefaultQcOp` skips outsource JCs,
+ADR-069). A **text-only plan (no itemId)** keeps the prior PR-only path.
+
+### Consequences
+- Positive: a full-outsource plan lands as an editable JC op that flows through the OSP register /
+  qty-driven status / QC pipeline built in ADR-066..073; the material-PR branch is unchanged.
+- Negative: none for existing already-executed plans (unchanged). The full_outsource unit test was
+  updated to the new contract (jc_created + jcId + jcCode); it can't run locally (prod-only DB), so
+  verified by api typecheck + lint + diff review.

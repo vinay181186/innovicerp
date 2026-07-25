@@ -857,7 +857,58 @@ async function executeFullOutsource(
   }
   const today = new Date().toISOString().slice(0, 10);
 
-  // 1. Primary JW PR.
+  // Seed a Job Card with ONE default outsource op (the default OSP route), so a
+  // full-outsource plan lands as an editable JC op — vendor/cost prefilled from
+  // the plan, adjustable on the JC — instead of only a PR. Requires a resolved
+  // itemId (job_cards.item_id is NOT NULL); a text-only plan keeps the PR-only
+  // path. No QC op is added: OSP returns are QC'd via incoming QC (grn_qc),
+  // consistent with Rule B (needsDefaultQcOp) which skips outsource JCs.
+  let jc: { id: string; code: string } | null = null;
+  let ospOpId: string | null = null;
+  if (plan.itemId) {
+    const seedJcCode = await nextJcCode(tx, plan.companyId);
+    const seededJc = await tx
+      .insert(jobCards)
+      .values({
+        companyId: plan.companyId,
+        code: seedJcCode,
+        jcDate: today,
+        itemId: plan.itemId,
+        orderQty: plan.planQty,
+        priority: 'normal',
+        sourceSoLineId: plan.soLineId ?? null,
+        sourceJwLineId: plan.jwLineId ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: jobCards.id, code: jobCards.code });
+    jc = seededJc[0]!;
+    const seededOp = await tx
+      .insert(jcOps)
+      .values({
+        companyId: plan.companyId,
+        jobCardId: jc.id,
+        opSeq: 1,
+        machineId: null,
+        machineCodeText: null,
+        operation: plan.foProcess ?? 'Outsource',
+        opType: 'outsource',
+        cycleTimeMin: '0',
+        program: null,
+        toolDetails: null,
+        qcRequired: false,
+        outsourceVendorId: plan.foVendorId ?? null,
+        outsourceVendorText: plan.foVendorId ? null : plan.foVendorCodeText ?? null,
+        outsourceCost: plan.foRate ?? '0',
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: jcOps.id });
+    ospOpId = seededOp[0]!.id;
+  }
+
+  // 1. Primary JW PR. When a JC op was seeded, link the PR to it (jw_osp +
+  //    source_jc_op_id) so the PO→DC→GRN→QC chain traces back to the op.
   const jwCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
   const jwRows = await tx
     .insert(purchaseRequests)
@@ -866,6 +917,7 @@ async function executeFullOutsource(
       code: jwCode,
       prDate: today,
       status: 'open',
+      ...(ospOpId ? { prType: 'jw_osp' as const, sourceJcOpId: ospOpId } : {}),
       vendorId: plan.foVendorId ?? null,
       vendorCodeText: plan.foVendorCodeText ?? null,
       itemId: plan.itemId ?? null,
@@ -875,13 +927,20 @@ async function executeFullOutsource(
       estCost: plan.foRate ?? '0',
       requiredDate: plan.foDeliveryDate ?? null,
       sourceSoLineId: plan.soLineId ?? null,
-      operation: 'OUTSOURCE',
+      operation: plan.foProcess ?? 'OUTSOURCE',
       remarks: `Auto from plan ${plan.code} (full_outsource: ${plan.foProcess})`,
       createdBy: user.id,
       updatedBy: user.id,
     })
     .returning();
   const jwPr = jwRows[0]!;
+
+  if (ospOpId) {
+    await tx
+      .update(jcOps)
+      .set({ outsourcePrId: jwPr.id, outsourceStatus: 'pr_raised', updatedBy: user.id })
+      .where(eq(jcOps.id, ospOpId));
+  }
 
   // 2. Optional material PR when foMaterialSrc is set + isn't 'self'/'inhouse'.
   let materialPr: { id: string; code: string } | null = null;
@@ -912,7 +971,8 @@ async function executeFullOutsource(
   await tx
     .update(plans)
     .set({
-      planStatus: 'pr_created',
+      planStatus: jc ? 'jc_created' : 'pr_created',
+      ...(jc ? { jcId: jc.id } : {}),
       foPrId: jwPr.id,
       foMatPrId: materialPr?.id ?? null,
       updatedBy: user.id,
@@ -924,9 +984,9 @@ async function executeFullOutsource(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: materialPr
-        ? `${plan.code} → PR ${jwPr.code} + material PR ${materialPr.code} (full_outsource)`
-        : `${plan.code} → PR ${jwPr.code} (full_outsource)`,
+      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code}${
+        materialPr ? ` + material PR ${materialPr.code}` : ''
+      } (full_outsource)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -937,6 +997,7 @@ async function executeFullOutsource(
     plan: await getPlanInTx(tx, plan.id, plan.companyId),
     primaryPrCode: jwPr.code,
   };
+  if (jc) out.jcCode = jc.code;
   if (materialPr) out.materialPrCode = materialPr.code;
   return out;
 }

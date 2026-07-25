@@ -564,7 +564,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     expect(result.materialPrCode).toBeUndefined();
   });
 
-  it('executePlan(full_outsource): creates JW PR + material PR when material_src set', async () => {
+  it('executePlan(full_outsource): seeds JC + OSP op, JW PR + material PR when material_src set', async () => {
     const created = await service.createPlan(
       {
         code: `${TEST_PREFIX}P-EXEC-FO`,
@@ -584,7 +584,11 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     const result = await service.executePlan(created.id, admin);
     expect(result.primaryPrCode).toMatch(/^PR-FO-/);
     expect(result.materialPrCode).toMatch(/^PR-FOMAT-/);
-    expect(result.plan.planStatus).toBe('pr_created');
+    // A full-outsource plan with a resolved item now seeds a JC with one OSP op
+    // (default OSP route) and links the JW PR to it, so status is jc_created.
+    expect(result.plan.planStatus).toBe('jc_created');
+    expect(result.jcCode).toMatch(/^IN-JC-/);
+    expect(result.plan.jcId).not.toBeNull();
     expect(result.plan.foPrId).not.toBeNull();
     expect(result.plan.foMatPrId).not.toBeNull();
   });
