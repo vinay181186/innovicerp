@@ -269,7 +269,7 @@ function StoreTransactionsListPage() {
           <input
             className="innovic-input"
             style={{ fontSize: 12, width: 220 }}
-            placeholder="🔍 Search source ref or remarks..."
+            placeholder="🔍 Search item, source ref, remarks..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
