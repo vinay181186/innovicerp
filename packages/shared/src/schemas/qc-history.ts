@@ -37,6 +37,8 @@ export const qcHistoryLogRowSchema = z.object({
   accepted: z.number().int().nonnegative(),
   rejected: z.number().int().nonnegative(),
   logDate: z.string(),
+  /** ISO timestamp the QC log was recorded (for time-ordering the completed feed). */
+  loggedAt: z.string(),
   shift: z.string().nullable(),
   inspector: z.string().nullable(),
   remarks: z.string().nullable(),

@@ -81,7 +81,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
         so.code AS "soCode", i.code AS "itemCode", jo.operation,
         ol.qty AS "accepted", ol.reject_qty AS "rejected",
-        ol.log_date AS "logDate", ol.shift, ol.operator_name AS "inspector", ol.remarks,
+        ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift, ol.operator_name AS "inspector", ol.remarks,
         ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
         ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"
       FROM public.op_log ol
@@ -108,6 +108,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
         accepted: Number(r['accepted'] ?? 0),
         rejected: Number(r['rejected'] ?? 0),
         logDate: dateLike(r['logDate']),
+        loggedAt: r['loggedAt'] != null ? String(r['loggedAt']) : dateLike(r['logDate']),
         shift: (r['shift'] as string | null) ?? null,
         inspector: (r['inspector'] as string | null) ?? null,
         remarks: (r['remarks'] as string | null) ?? null,

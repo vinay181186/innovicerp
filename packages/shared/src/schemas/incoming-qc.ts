@@ -43,6 +43,8 @@ export const incomingQcCompletedRowSchema = z.object({
   acceptedQty: z.number().int(),
   rejectedQty: z.number().int(),
   disposition: incomingQcDispositionSchema,
+  /** ISO timestamp the QC was recorded (for time-ordering the completed feed). */
+  qcAt: z.string().nullable(),
   /** Who did the QC — typed name, else the resolved user's name/email. */
   qcInspectedBy: z.string().nullable(),
   qcRemarks: z.string().nullable(),

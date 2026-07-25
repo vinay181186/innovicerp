@@ -153,6 +153,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         l.received_qty AS "receivedQty",
         l.qc_accepted_qty AS "acceptedQty", l.qc_rejected_qty AS "rejectedQty",
         l.qc_remarks AS "qcRemarks",
+        l.updated_at AS "qcAt",
         COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
         l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"
       FROM public.goods_receipt_note_lines l
@@ -188,6 +189,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
         acceptedQty,
         rejectedQty,
         disposition: dispositionOf(acceptedQty, rejectedQty, Number(r['receivedQty'] ?? 0)),
+        qcAt: r['qcAt'] != null ? String(r['qcAt']) : null,
         qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
         qcRemarks: (r['qcRemarks'] as string | null) ?? null,
         qcReportPath: (r['qcReportPath'] as string | null) ?? null,

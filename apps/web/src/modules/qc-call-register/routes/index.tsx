@@ -106,6 +106,22 @@ function QcCallRegisterPage(): React.JSX.Element {
       ),
   );
 
+  // Unified completed feed — incoming + process QC interleaved newest-first by
+  // the actual QC timestamp, so a fresh entry isn't buried (previously ALL
+  // incoming rows rendered above ALL process logs regardless of when done).
+  const completedFeed = [
+    ...incCompletedF.map((l) => ({
+      key: `inc:${l.grnLineId}`,
+      at: l.qcAt ?? l.qcDate ?? l.grnDate ?? '',
+      node: <IncomingCompletedRow key={`inc:${l.grnLineId}`} l={l} />,
+    })),
+    ...logs.map((l) => ({
+      key: `proc:${l.logId}`,
+      at: l.loggedAt ?? l.logDate ?? '',
+      node: <CompletedLog key={l.logId} l={l} />,
+    })),
+  ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
   if (isLoading) {
     return (
       <div className="panel">
@@ -261,12 +277,7 @@ function QcCallRegisterPage(): React.JSX.Element {
             <div className="empty-state">No QC entries yet</div>
           ) : (
             <>
-              {incCompletedF.map((l) => (
-                <IncomingCompletedRow key={`inc:${l.grnLineId}`} l={l} />
-              ))}
-              {logs.map((l) => (
-                <CompletedLog key={l.logId} l={l} />
-              ))}
+              {completedFeed.map((it) => it.node)}
             </>
           )}
         </div>
