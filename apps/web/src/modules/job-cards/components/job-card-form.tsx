@@ -455,10 +455,13 @@ export function JobCardForm({
               ) : null}
               <input
                 className="innovic-input"
-                list="dlJcSource"
+                list={isEdit ? undefined : 'dlJcSource'}
                 value={sourceText}
-                placeholder={isEdit ? '🔍 Search SO/WO/JWSO number…' : '🔍 Search JWSO number…'}
+                readOnly={isEdit}
+                placeholder={isEdit ? 'Source is fixed after creation' : '🔍 Search JWSO number…'}
                 onChange={(e) => onSourceChange(e.target.value)}
+                style={isEdit ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
+                title={isEdit ? 'A Job Card’s source order cannot be changed after creation.' : undefined}
               />
               {/* Line display (legacy #fSoLineDisplay, _jcCascadeFromOrder L1883-87). */}
               {selectedSource ? (
