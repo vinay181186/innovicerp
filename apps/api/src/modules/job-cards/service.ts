@@ -479,7 +479,13 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         ) AS "hasStarted",
         -- Qty cleared but not yet consumed downstream (drives the JC form's
         -- "Outsource balance" action). 0 when the op has no status-view row.
-        COALESCE(vos.available, 0)::int AS "available"
+        COALESCE(vos.available, 0)::int AS "available",
+        -- Read-only per-op live progress for the JC edit form's op summary
+        -- (mirrors the JC Status page). 0 / 'waiting' when no status-view row.
+        COALESCE(vos.input_avail, 0)::int AS "inputAvail",
+        COALESCE(vos.completed_qty, 0)::int AS "completedQty",
+        COALESCE(vos.qc_accepted_qty, 0)::int AS "qcAcceptedQty",
+        COALESCE(vos.computed_status, 'waiting') AS "computedStatus"
       FROM public.jc_ops o
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.vendors v ON v.id = o.outsource_vendor_id
@@ -533,6 +539,10 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         outsourceCost: Number(o['outsourceCost'] ?? 0),
         hasStarted: Boolean(o['hasStarted']),
         available: Number(o['available'] ?? 0),
+        inputAvail: Number(o['inputAvail'] ?? 0),
+        completedQty: Number(o['completedQty'] ?? 0),
+        qcAcceptedQty: Number(o['qcAcceptedQty'] ?? 0),
+        computedStatus: (o['computedStatus'] as string | null) ?? 'waiting',
       })),
       qcDocs: docRows.map((d) => ({
         id: d['id'] as string,

@@ -49,6 +49,27 @@ const QC_DOC_TYPES = [
   'Other',
 ];
 
+// Per-op computed_status → badge label/class. Local copy of the JC Status
+// page's OP_STATUS map (jc-status-content.tsx L29-42) so the edit form's
+// read-only Status cell renders the same wording/colour as the Status page.
+// Not imported cross-file — that map is not exported. Unmapped values fall
+// back to the raw status (underscores → spaces) with a muted class so a
+// status the map doesn't cover never renders blank.
+const OP_STATUS: Record<string, { label: string; cls: string }> = {
+  waiting: { label: 'Waiting', cls: 'b-red' },
+  available: { label: 'Available', cls: 'b-blue' },
+  in_progress: { label: 'In Progress', cls: 'b-amber' },
+  running: { label: 'Running', cls: 'b-amber' },
+  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
+  complete: { label: 'Complete', cls: 'b-green' },
+  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
+  po_created: { label: 'PO Created', cls: 'b-blue' },
+  at_vendor: { label: 'Processing', cls: 'b-amber' },
+  received: { label: 'Incoming QC', cls: 'b-cyan' },
+  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
+  outsource: { label: 'Outsource', cls: 'b-amber' },
+};
+
 interface FormOp {
   id?: string;
   machineCode: string;
@@ -65,6 +86,12 @@ interface FormOp {
   /** Remaining qty cleared for this op (from the edit model). Drives the
    *  "Outsource balance" action for a STARTED in-house process op. */
   available: number;
+  /** Read-only per-op live progress (from the edit model / v_jc_op_status),
+   *  mirroring the JC Status page. Display-only — never sent on save. */
+  inputAvail: number;
+  completedQty: number;
+  qcAcceptedQty: number;
+  computedStatus: string;
 }
 
 interface FormDoc {
@@ -174,6 +201,10 @@ export function JobCardForm({
       outsourceCost: o.outsourceCost,
       hasStarted: o.hasStarted,
       available: o.available ?? 0,
+      inputAvail: o.inputAvail ?? 0,
+      completedQty: o.completedQty ?? 0,
+      qcAcceptedQty: o.qcAcceptedQty ?? 0,
+      computedStatus: o.computedStatus ?? 'waiting',
     })),
   );
   const [docs, setDocs] = useState<FormDoc[]>(
@@ -286,6 +317,10 @@ export function JobCardForm({
         outsourceCost: 0,
         hasStarted: false,
         available: 0,
+        inputAvail: 0,
+        completedQty: 0,
+        qcAcceptedQty: 0,
+        computedStatus: 'waiting',
       },
     ]);
   };
@@ -685,6 +720,20 @@ export function JobCardForm({
                 <th style={{ width: 110, color: 'var(--blue)' }}>Program</th>
                 <th>Tool Details</th>
                 <th style={{ width: 60 }}>QC</th>
+                {/* Read-only per-op live progress (mirrors the JC Status page). */}
+                <th style={{ width: 40, color: 'var(--text3)' }} title="Input available (upstream cleared)">
+                  In
+                </th>
+                <th style={{ width: 40, color: 'var(--green)' }} title="Done — completed (QC-accepted for QC ops)">
+                  Done
+                </th>
+                <th style={{ width: 40, color: 'var(--cyan)' }} title="QC accepted qty">
+                  QC✓
+                </th>
+                <th style={{ width: 44, color: 'var(--amber)' }} title="Available — remaining to work / send">
+                  Avail
+                </th>
+                <th style={{ width: 74 }}>Status</th>
                 <th style={{ minWidth: 180, color: 'var(--amber)' }}>Outsource</th>
                 <th style={{ width: 90 }} />
               </tr>
@@ -692,7 +741,7 @@ export function JobCardForm({
             <tbody>
               {ops.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty-state">
+                  <td colSpan={14} className="empty-state">
                     No operations yet — click “+ Add Op” for machining steps or “+ Add QC Op” for QC
                     inspection steps.
                   </td>
@@ -703,6 +752,14 @@ export function JobCardForm({
                   const isOut = o.opType === 'outsource';
                   const machineName =
                     machines.find((m) => m.code === o.machineCode)?.name ?? '';
+                  // Read-only per-op summary (mirrors the JC Status page). A
+                  // brand-new op has no id / no status-view row → show em-dashes.
+                  const isNewOp = !o.id;
+                  const doneQty = isQc ? o.qcAcceptedQty : o.completedQty;
+                  const statusMeta = OP_STATUS[o.computedStatus] ?? {
+                    label: o.computedStatus.replace(/_/g, ' '),
+                    cls: 'b-grey',
+                  };
                   return (
                     <tr
                       key={i}
@@ -816,6 +873,30 @@ export function JobCardForm({
                               {o.qcRequired ? 'YES' : 'NO'}
                             </span>
                           </label>
+                        )}
+                      </td>
+                      {/* Read-only per-op live progress (mirrors JC Status). */}
+                      <td className="td-ctr mono text3" style={{ fontSize: 11 }}>
+                        {isNewOp ? '—' : o.inputAvail}
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--green)' }}>
+                        {isNewOp ? '—' : doneQty}
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                        {isNewOp ? '—' : o.qcAcceptedQty}
+                      </td>
+                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
+                        {isNewOp ? '—' : o.available}
+                      </td>
+                      <td className="td-ctr">
+                        {isNewOp ? (
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            —
+                          </span>
+                        ) : (
+                          <span className={'badge ' + (statusMeta.cls ?? '')}>
+                            {statusMeta.label ?? o.computedStatus}
+                          </span>
                         )}
                       </td>
                       <td>

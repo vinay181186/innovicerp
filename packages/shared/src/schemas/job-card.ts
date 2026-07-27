@@ -248,6 +248,13 @@ export const jobCardOpEditSchema = z.object({
    *  "Outsource balance" action for a STARTED in-house process op. 0 when the
    *  op has no status-view row. */
   available: z.number().int().nonnegative(),
+  /** Read-only per-op live progress (public.v_jc_op_status), mirroring the JC
+   *  Status page columns so the edit form can show each op's progress. Not
+   *  written on save. */
+  inputAvail: z.number().int().nonnegative(),
+  completedQty: z.number().int().nonnegative(),
+  qcAcceptedQty: z.number().int().nonnegative(),
+  computedStatus: z.string(),
 });
 export type JobCardOpEdit = z.infer<typeof jobCardOpEditSchema>;
 
