@@ -149,32 +149,3 @@ export const updateBomMasterInputSchema = z
     'Duplicate items in BOM',
   );
 export type UpdateBomMasterInput = z.infer<typeof updateBomMasterInputSchema>;
-
-// Excel import — one row per item. Mirrors the template the web UI will
-// generate via the template download endpoint. itemCode is the human-
-// readable code that the server resolves to items.id; on miss the row
-// is flagged in the error report rather than failing the whole import.
-export const importBomLinesInputRowSchema = z.object({
-  itemCode: z.string().min(1).max(64),
-  qtyPerSet: z.number().positive(),
-  bomType: bomLineTypeSchema,
-});
-export type ImportBomLinesInputRow = z.infer<typeof importBomLinesInputRowSchema>;
-
-export const importBomLinesInputSchema = z.object({
-  rows: z.array(importBomLinesInputRowSchema).min(1),
-});
-export type ImportBomLinesInput = z.infer<typeof importBomLinesInputSchema>;
-
-export interface ImportBomLinesRowError {
-  rowIndex: number; // 0-based index in the input.rows array
-  itemCode: string;
-  reason: string;
-}
-
-export interface ImportBomLinesResponse {
-  inserted: number;
-  skipped: number;
-  errors: ImportBomLinesRowError[];
-  bom: BomMasterDetail;
-}

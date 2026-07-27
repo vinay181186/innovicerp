@@ -12,6 +12,7 @@
 import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
+  type ListItemsResponse,
   type SoStatus,
   type UpdateJobWorkOrderInput,
   type Uom,
@@ -23,6 +24,7 @@ import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
@@ -105,7 +107,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
   const errors = formState.errors;
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
   // ── Searchable client picker (server-searched; scales past the 200 cap) ──
   const [clientSearch, setClientSearch] = useState('');
@@ -228,8 +230,80 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   async function onImportLines(file: File): Promise<void> {
     try {
       const { rows, errors: errs } = await parseJwLineFile(file);
-      for (const r of rows) append({ ...NEW_LINE, ...r });
-      setImportMsg(`Added ${rows.length} line(s)${errs.length ? ` · ${errs.length} skipped` : ''}.`);
+      // Every Item Code in the sheet must exist in Item Master (parity with the
+      // SO form). The in-memory `items` list is only the current 200-row page,
+      // so resolve each unique code against the server (search + exact-code
+      // match) rather than silently accepting unknown codes as item_id=null.
+      const uniqueCodes = Array.from(
+        new Set(
+          rows
+            .map((r) => r.itemCodeText.trim())
+            .filter(Boolean)
+            .map((c) => c.toUpperCase()),
+        ),
+      );
+      const masterByCode = new Map<string, ListItemsResponse['items'][number]>();
+      await Promise.all(
+        uniqueCodes.map(async (code) => {
+          try {
+            const res = await apiFetch<ListItemsResponse>(
+              `/items?search=${encodeURIComponent(code)}&limit=50&offset=0`,
+            );
+            const hit = res.items.find((it) => it.code.trim().toUpperCase() === code);
+            if (hit) masterByCode.set(code, hit);
+          } catch {
+            /* leave unresolved → reported as missing below */
+          }
+        }),
+      );
+
+      const missing: string[] = [];
+      const newLines: LineFormValue[] = [];
+      for (const r of rows) {
+        const code = r.itemCodeText.trim();
+        const master = code ? masterByCode.get(code.toUpperCase()) : undefined;
+        if (!master) {
+          if (code) missing.push(code);
+          continue;
+        }
+        // Item Code drives the row: link the master item + auto-fill Part Name
+        // and UOM from master; material / drawing fall back to master when the
+        // sheet cell is blank. Unresolved rows are dropped, never appended.
+        newLines.push({
+          ...NEW_LINE,
+          ...r,
+          itemId: master.id,
+          itemCodeText: master.code,
+          partName: master.name,
+          material: r.material ?? master.material ?? '',
+          drawingNo: r.drawingNo ?? master.drawingNo ?? '',
+          uom: master.uom,
+        });
+      }
+
+      const added = newLines.length;
+      if (added) {
+        // If the grid still holds only untouched blank starter row(s), replace
+        // them so imports fill from Line 1 instead of after an empty row.
+        const current = getValues('lines') ?? [];
+        const allBlank = current.every(
+          (l) => !l.itemId && !l.itemCodeText?.trim() && !l.partName?.trim(),
+        );
+        if (allBlank) replace(newLines);
+        else for (const l of newLines) append(l);
+      }
+
+      const parts: string[] = [];
+      if (added) parts.push(`Added ${added} line(s).`);
+      if (missing.length) {
+        const uniq = Array.from(new Set(missing));
+        parts.push(
+          `${uniq.length} item code(s) not found in Item Master: ${uniq.join(', ')}. ` +
+            `Please add ${uniq.length > 1 ? 'each' : 'it'} (item code + item name) in Item Master first, then re-import.`,
+        );
+      }
+      if (errs.length) parts.push(`${errs.length} row(s) skipped.`);
+      setImportMsg(parts.join(' ') || 'No rows found in the sheet.');
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');
     } finally {
@@ -269,10 +343,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
     const linesOut = values.lines.map((l) => {
       const trimmedCode = l.itemCodeText.trim();
-      const refs: { itemId?: string; itemCodeText?: string } = trimmedCode
-        ? { itemCodeText: trimmedCode }
-        : l.itemId
-          ? { itemId: l.itemId }
+      // Prefer a resolved master itemId (mirrors the SO form) so a picked/
+      // imported item is never discarded in favour of stale text; fall back to
+      // the raw code only when the row has no master link.
+      const refs: { itemId?: string; itemCodeText?: string } = l.itemId
+        ? { itemId: l.itemId }
+        : trimmedCode
+          ? { itemCodeText: trimmedCode }
           : {};
       return {
         ...(l.id ? { id: l.id } : {}),
@@ -492,7 +569,32 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
         </div>
       </div>
-      {importMsg ? <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>{importMsg} <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button></div> : null}
+      {importMsg ? (() => {
+        // Warn styling (amber) when the sheet carried codes missing from Item
+        // Master — mirrors the SO form's "missing codes" banner.
+        const isWarn = importMsg.includes('not found in Item Master');
+        return (
+          <div
+            className={isWarn ? undefined : 'text3'}
+            style={{
+              fontSize: 11,
+              marginBottom: 8,
+              ...(isWarn
+                ? {
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    background: 'rgba(245,158,11,0.10)',
+                    border: '1px solid rgba(245,158,11,0.35)',
+                    color: 'var(--amber)',
+                  }
+                : {}),
+            }}
+          >
+            {isWarn ? '⚠ ' : ''}{importMsg}{' '}
+            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
+          </div>
+        );
+      })() : null}
 
       {fields.length === 0 ? (
         <div className="empty-state" style={{ padding: 24, border: '1px dashed var(--border)' }}>No lines yet — click <strong>+ Add Line</strong>. At least one is required.</div>

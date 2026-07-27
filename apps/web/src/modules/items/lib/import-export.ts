@@ -7,8 +7,10 @@
 // here because Item Master defines items only; stock lives in Store. UOM and
 // Item Type are validated against the shared enums (invalid → safe default).
 
-import { ITEM_TYPES, type CreateItemInput, type ItemType, UOMS, type Uom } from '@innovic/shared';
+import { ITEM_TYPES, type CreateItemInput, UOMS } from '@innovic/shared';
 import * as XLSX from 'xlsx';
+
+import { coerceEnum, getCol, readSheetRows } from '@/lib/xlsx-import';
 
 // Template header row (the "*" marks required columns, legacy convention).
 const COLUMNS = [
@@ -21,26 +23,6 @@ const COLUMNS = [
   'UOM',
   'Item Type',
 ] as const;
-
-function getCol(row: Record<string, unknown>, keys: string[]): string {
-  for (const k of keys) {
-    if (row[k] !== undefined && row[k] !== null) {
-      const s = String(row[k]).trim();
-      if (s !== '') return s;
-    }
-  }
-  return '';
-}
-
-function normalizeUom(raw: string): Uom {
-  const u = raw.trim().toUpperCase();
-  return (UOMS as readonly string[]).includes(u) ? (u as Uom) : 'NOS';
-}
-
-function normalizeItemType(raw: string): ItemType {
-  const t = raw.trim().toLowerCase();
-  return (ITEM_TYPES as readonly string[]).includes(t) ? (t as ItemType) : 'component';
-}
 
 export function downloadItemTemplate(): void {
   const sample = ['ITM-001', 'Shaft 50mm', 'Main drive shaft', 'DRW-001', 'A', 'EN8 Steel', 'NOS', 'component'];
@@ -57,11 +39,8 @@ export interface ItemImportResult {
 }
 
 export async function parseItemImportFile(file: File): Promise<ItemImportResult> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: false });
-  const ws = wb.Sheets[wb.SheetNames[0]!];
-  if (!ws) return { payloads: [], errors: ['Workbook has no sheets'] };
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const { rows, sheetError } = await readSheetRows(file);
+  if (sheetError) return { payloads: [], errors: [sheetError] };
 
   const errors: string[] = [];
   const payloads: CreateItemInput[] = [];
@@ -85,6 +64,18 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       return;
     }
     seen.add(code);
+    const uom = coerceEnum(getCol(r, ['UOM', 'uom']), UOMS, {
+      fallback: 'NOS',
+      label: 'UOM',
+      transform: (s) => s.toUpperCase(),
+    });
+    if (uom.warning) errors.push(`Row ${rowNum}: ${uom.warning}`);
+    const itemType = coerceEnum(getCol(r, ['Item Type', 'ItemType', 'item_type', 'Type', 'type']), ITEM_TYPES, {
+      fallback: 'component',
+      label: 'Item Type',
+      transform: (s) => s.toLowerCase(),
+    });
+    if (itemType.warning) errors.push(`Row ${rowNum}: ${itemType.warning}`);
     payloads.push({
       code,
       name,
@@ -92,8 +83,8 @@ export async function parseItemImportFile(file: File): Promise<ItemImportResult>
       drawingNo: getCol(r, ['Drawing No.', 'Drawing No', 'Drawing', 'drawing']) || undefined,
       revision: getCol(r, ['Revision', 'Rev', 'rev']) || 'A',
       material: getCol(r, ['Material', 'material']) || undefined,
-      uom: normalizeUom(getCol(r, ['UOM', 'uom'])),
-      itemType: normalizeItemType(getCol(r, ['Item Type', 'ItemType', 'item_type', 'Type', 'type'])),
+      uom: uom.value,
+      itemType: itemType.value,
     });
   });
 

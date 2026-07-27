@@ -28,6 +28,14 @@ import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import
 
 const PAGE_SIZE = 25;
 
+// Join a list of import warnings/failures for the status line, capping at 50 so
+// a huge sheet can't produce an unbounded banner, but still showing far more
+// than the old 3-item cap that hid most problems.
+function fmtList(items: string[]): string {
+  const shown = items.slice(0, 50).join('; ');
+  return items.length > 50 ? `${shown} … (+${items.length - 50} more)` : shown;
+}
+
 const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
@@ -90,9 +98,22 @@ function OperatorsListPage(): React.JSX.Element {
     setImportMsg(null);
     try {
       const { payloads, errors } = await parseOperatorImportFile(file);
+      // Re-import guard: the template has no Code column, so the same file would
+      // otherwise create duplicate operators on every import. Skip any name that
+      // already exists (case-insensitive) in the loaded list.
+      const existingNames = new Set((data?.operators ?? []).map((o) => o.name.trim().toLowerCase()));
+      const warnings = [...errors];
       let ok = 0;
+      let skipped = 0;
       const fails: string[] = [];
       for (const p of payloads) {
+        const key = p.name.trim().toLowerCase();
+        if (existingNames.has(key)) {
+          skipped += 1;
+          warnings.push(`"${p.name}" already exists — skipped`);
+          continue;
+        }
+        existingNames.add(key);
         try {
           await createOperator.mutateAsync(p);
           ok += 1;
@@ -102,8 +123,9 @@ function OperatorsListPage(): React.JSX.Element {
       }
       setImportMsg(
         `Imported ${ok}/${payloads.length} operator(s).` +
-          (errors.length ? ` ${errors.length} row warning(s): ${errors.slice(0, 3).join('; ')}` : '') +
-          (fails.length ? ` Failures: ${fails.slice(0, 3).join('; ')}` : ''),
+          (skipped ? ` ${skipped} duplicate(s) skipped.` : '') +
+          (warnings.length ? ` ${warnings.length} row warning(s): ${fmtList(warnings)}` : '') +
+          (fails.length ? ` Failures: ${fmtList(fails)}` : ''),
       );
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');
@@ -369,7 +391,7 @@ function OperatorsListPage(): React.JSX.Element {
           <input
             ref={fileRef}
             type="file"
-            accept=".xlsx,.xls"
+            accept=".xlsx,.xls,.csv"
             style={{ display: 'none' }}
             onChange={(e) => {
               const f = e.target.files?.[0];

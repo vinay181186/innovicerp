@@ -159,7 +159,7 @@ function ItemsListPage(): React.JSX.Element {
           // The API rejects an existing code with `… already exists`; split those
           // out as duplicates so the user gets a clean list of what to remove.
           if (/already exists/i.test(reason)) duplicates.push(label);
-          else failures.push(label);
+          else failures.push(`${label}: ${reason}`);
         }
       }
       setImportResult({ total: payloads.length, imported, duplicates, failures, warnings: errors });
@@ -375,7 +375,7 @@ function ItemsListPage(): React.JSX.Element {
               <input
                 ref={fileRef}
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx,.xls,.csv"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
@@ -623,7 +623,7 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
                   ✕ Failed rows ({failures.length})
                 </div>
                 <div style={{ color: 'var(--text3)', marginBottom: 6 }}>
-                  ⚠ These break the item-code format rule — a code may contain only letters, digits, dot (.), underscore (_) and hyphen (-). No spaces or brackets. Fix the code in your sheet and re-import.
+                  ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix the row in your sheet and re-import.
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
                   {failures.map(chip)}

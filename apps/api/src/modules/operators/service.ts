@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -84,13 +84,16 @@ async function nextOperatorCode(tx: DbTransaction, companyId: string): Promise<s
   const rows = await tx
     .select({ code: operators.code })
     .from(operators)
-    .where(eq(operators.companyId, companyId));
-  let max = 0;
-  for (const r of rows) {
-    const m = (r.code || '').match(/OP-(\d+)\s*$/i);
-    if (m) max = Math.max(max, Number(m[1]));
+    .where(and(eq(operators.companyId, companyId), like(operators.code, 'OP-%')))
+    .orderBy(sql`length(${operators.code}) desc`, sql`${operators.code} desc`)
+    .limit(1);
+  const last = rows[0]?.code ?? null;
+  let next = 1;
+  if (last) {
+    const m = last.match(/^OP-(\d+)$/i);
+    if (m) next = Number(m[1]) + 1;
   }
-  return `OP-${String(max + 1).padStart(3, '0')}`;
+  return `OP-${String(next).padStart(3, '0')}`;
 }
 
 /** Preview the next OP-### for the create form (visible before save). Reuses
@@ -113,17 +116,17 @@ export async function createOperator(
     withUserContext(user, async (tx) => {
       const code = input.code?.trim() || (await nextOperatorCode(tx, companyId));
       const existing = await tx
-        .select({ id: operators.id })
+        .select({ id: operators.id, deletedAt: operators.deletedAt })
         .from(operators)
-        .where(
-          and(
-            eq(operators.companyId, companyId),
-            eq(operators.code, code),
-            isNull(operators.deletedAt),
-          ),
-        )
+        .where(and(eq(operators.companyId, companyId), eq(operators.code, code)))
         .limit(1);
-      if (existing.length > 0) {
+      const dup = existing[0];
+      if (dup) {
+        if (dup.deletedAt) {
+          throw new ConflictError(
+            `Operator code "${code}" belongs to a deleted operator — restore it instead of re-creating`,
+          );
+        }
         throw new ConflictError(`Operator code "${code}" already exists`);
       }
 

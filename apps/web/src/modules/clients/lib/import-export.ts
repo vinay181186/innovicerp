@@ -9,6 +9,8 @@
 import type { CreateClientInput } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
+import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
+
 // No Code column — the server auto-generates the next CLI-### on import.
 const COLUMNS = [
   'Name*',
@@ -22,16 +24,6 @@ const COLUMNS = [
   'PIN',
   'Status (Active/Inactive)',
 ] as const;
-
-function getCol(row: Record<string, unknown>, keys: string[]): string {
-  for (const k of keys) {
-    if (row[k] !== undefined && row[k] !== null) {
-      const s = String(row[k]).trim();
-      if (s !== '') return s;
-    }
-  }
-  return '';
-}
 
 export function downloadClientTemplate(): void {
   const sample = [
@@ -51,11 +43,8 @@ export interface ClientImportResult {
 }
 
 export async function parseClientImportFile(file: File): Promise<ClientImportResult> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: false });
-  const ws = wb.Sheets[wb.SheetNames[0]!];
-  if (!ws) return { payloads: [], errors: ['Workbook has no sheets'] };
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const { rows, sheetError } = await readSheetRows(file);
+  if (sheetError) return { payloads: [], errors: [sheetError] };
 
   const errors: string[] = [];
   const payloads: CreateClientInput[] = [];
@@ -78,6 +67,8 @@ export async function parseClientImportFile(file: File): Promise<ClientImportRes
     }
     if (code) seen.add(code);
     const statusRaw = getCol(r, ['Status (Active/Inactive)', 'Status', 'status']);
+    const status = parseActiveStatus(statusRaw);
+    if (status.warning) errors.push(`Row ${rowNum}: ${status.warning}`);
     payloads.push({
       code: code || undefined,
       name,
@@ -89,7 +80,7 @@ export async function parseClientImportFile(file: File): Promise<ClientImportRes
       city: getCol(r, ['City', 'city']) || undefined,
       state: getCol(r, ['State', 'state']) || undefined,
       pincode: getCol(r, ['PIN', 'Pincode', 'pincode', 'PinCode']) || undefined,
-      isActive: !(statusRaw && statusRaw.toLowerCase().includes('inact')),
+      isActive: status.value,
     });
   });
 

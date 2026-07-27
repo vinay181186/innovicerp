@@ -10,6 +10,8 @@
 import type { CreateVendorInput } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
+import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
+
 // No Code column — the server auto-generates the next VND-### on import.
 const COLUMNS = [
   'Name*',
@@ -25,16 +27,6 @@ const COLUMNS = [
   'Rating (A/B/C)',
   'Status (Active/Inactive)',
 ] as const;
-
-function getCol(row: Record<string, unknown>, keys: string[]): string {
-  for (const k of keys) {
-    if (row[k] !== undefined && row[k] !== null) {
-      const s = String(row[k]).trim();
-      if (s !== '') return s;
-    }
-  }
-  return '';
-}
 
 export function downloadVendorTemplate(): void {
   const sample = [
@@ -54,11 +46,8 @@ export interface VendorImportResult {
 }
 
 export async function parseVendorImportFile(file: File): Promise<VendorImportResult> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: false });
-  const ws = wb.Sheets[wb.SheetNames[0]!];
-  if (!ws) return { payloads: [], errors: ['Workbook has no sheets'] };
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const { rows, sheetError } = await readSheetRows(file);
+  if (sheetError) return { payloads: [], errors: [sheetError] };
 
   const errors: string[] = [];
   const payloads: CreateVendorInput[] = [];
@@ -83,6 +72,14 @@ export async function parseVendorImportFile(file: File): Promise<VendorImportRes
     const ratingRaw = getCol(r, ['Rating (A/B/C)', 'Rating', 'rating']);
     const statusRaw = getCol(r, ['Status (Active/Inactive)', 'Status', 'status']);
     const email = getCol(r, ['Email', 'email']);
+    // Keep the legacy first-char-upper behaviour, but a multi-char value is being
+    // truncated — surface that as a warning instead of silently dropping the rest.
+    const rating = ratingRaw ? ratingRaw.toUpperCase().charAt(0) : undefined;
+    if (rating && ratingRaw.length > 1) {
+      errors.push(`Row ${rowNum}: rating "${ratingRaw}" stored as "${rating}"`);
+    }
+    const status = parseActiveStatus(statusRaw);
+    if (status.warning) errors.push(`Row ${rowNum}: ${status.warning}`);
     payloads.push({
       code: code || undefined,
       name,
@@ -95,8 +92,8 @@ export async function parseVendorImportFile(file: File): Promise<VendorImportRes
       state: getCol(r, ['State', 'state']) || undefined,
       pincode: getCol(r, ['PIN', 'Pincode', 'pincode', 'PinCode']) || undefined,
       materialsSupplied: getCol(r, ['Materials/Services', 'Materials', 'materials']) || undefined,
-      rating: ratingRaw ? ratingRaw.toUpperCase().charAt(0) : undefined,
-      isActive: !(statusRaw && statusRaw.toLowerCase().includes('inact')),
+      rating,
+      isActive: status.value,
     });
   });
 

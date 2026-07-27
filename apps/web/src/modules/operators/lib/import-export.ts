@@ -10,19 +10,11 @@
 import type { CreateOperatorInput } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
+import { getCol, parseActiveStatus, readSheetRows } from '@/lib/xlsx-import';
+
 // No Code column — the server auto-generates the next OP-### on import.
 // No userId column — it links to a login and is not user-fillable.
 const COLUMNS = ['Name*', 'Department', 'Skills', 'Status (Active/Inactive)'] as const;
-
-function getCol(row: Record<string, unknown>, keys: string[]): string {
-  for (const k of keys) {
-    if (row[k] !== undefined && row[k] !== null) {
-      const s = String(row[k]).trim();
-      if (s !== '') return s;
-    }
-  }
-  return '';
-}
 
 export function downloadOperatorTemplate(): void {
   const sample = ['Ramesh Kumar', 'CNC', 'Turning, Milling', 'Active'];
@@ -39,11 +31,8 @@ export interface OperatorImportResult {
 }
 
 export async function parseOperatorImportFile(file: File): Promise<OperatorImportResult> {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: false });
-  const ws = wb.Sheets[wb.SheetNames[0]!];
-  if (!ws) return { payloads: [], errors: ['Workbook has no sheets'] };
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+  const { rows, sheetError } = await readSheetRows(file);
+  if (sheetError) return { payloads: [], errors: [sheetError] };
 
   const errors: string[] = [];
   const payloads: CreateOperatorInput[] = [];
@@ -66,12 +55,14 @@ export async function parseOperatorImportFile(file: File): Promise<OperatorImpor
     }
     if (code) seen.add(code);
     const statusRaw = getCol(r, ['Status (Active/Inactive)', 'Status', 'status']);
+    const status = parseActiveStatus(statusRaw);
+    if (status.warning) errors.push(`Row ${rowNum}: ${status.warning}`);
     payloads.push({
       code: code || undefined,
       name,
       department: getCol(r, ['Department', 'department']) || undefined,
       skills: getCol(r, ['Skills', 'skills']) || undefined,
-      isActive: !(statusRaw && statusRaw.toLowerCase().includes('inact')),
+      isActive: status.value,
     });
   });
 

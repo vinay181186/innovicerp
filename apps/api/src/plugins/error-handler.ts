@@ -1,6 +1,7 @@
 import type { FastifyError } from 'fastify';
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
+import { isUniqueViolation } from '../lib/db-retry';
 import { AppError } from '../lib/errors';
 import { captureUnhandledError } from '../lib/sentry';
 
@@ -36,6 +37,16 @@ export const errorHandlerPlugin = fp(async (app) => {
       reply.code(err.statusCode ?? 400).send({
         error: err.code ?? 'request_error',
         message: err.message,
+      });
+      return;
+    }
+
+    // A raw Postgres unique_violation (SQLSTATE 23505) reaches here when
+    // withUniqueRetry exhausts its attempts. Map it to 409 rather than 500.
+    if (isUniqueViolation(err)) {
+      reply.code(409).send({
+        error: 'conflict',
+        message: 'A record with this value already exists',
       });
       return;
     }

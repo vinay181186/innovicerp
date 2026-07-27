@@ -7,6 +7,7 @@
 import type { BomLineType, BomMaster, CreateBomMasterLineInput, Item } from '@innovic/shared';
 import { Plus, Trash2, Upload, Download } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getCol, readSheetRows } from '@/lib/xlsx-import';
 import { useItemsList } from '@/modules/items/api';
 import { useNextBomNo } from '../api';
 
@@ -90,9 +91,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   }, [mode, nextBomNo]);
 
   // Items list — drives the code autocomplete + Excel-import resolution.
-  // Limit 1000 should cover any company's item master at our scale; revisit
-  // if the item master grows past that.
-  const { data: itemsList } = useItemsList({ limit: 1000, offset: 0 });
+  // Cap deliberately high (10000) so an item master beyond a few thousand rows
+  // does not make valid import codes falsely fail to resolve. Revisit only if a
+  // company's item master realistically exceeds this.
+  const { data: itemsList } = useItemsList({ limit: 10000, offset: 0 });
 
   const itemsByCode = useMemo(() => {
     const m = new Map<string, Item>();
@@ -147,20 +149,19 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     setImportErrors([]);
     setImportSummary(null);
     try {
-      const { read: xlsxRead, utils: xlsxUtils } = await loadXlsx();
-      const buf = await file.arrayBuffer();
-      const wb = xlsxRead(buf, { type: 'array' });
-      const sheetName = wb.SheetNames[0];
-      if (!sheetName) throw new Error('Workbook has no sheets');
-      const sheet = wb.Sheets[sheetName]!;
-      const rows = xlsxUtils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      // Shared reader parses .xlsx/.xls AND real .csv via SheetJS, and matches
+      // headers normalized (case/spacing/`*` tolerant) — so `item_code` and
+      // `Item Code`, `qty_per_set` and `Qty Per Set`, `bom_type`/`Type`/`BOM
+      // Type` all resolve instead of demanding exact lowercase-snake headers.
+      const { rows, sheetError } = await readSheetRows(file);
+      if (sheetError) throw new Error(sheetError);
 
       const added: BomFormLineDraft[] = [];
       const errors: ExcelRowError[] = [];
       rows.forEach((row, idx) => {
-        const itemCode = String(row['item_code'] ?? '').trim();
-        const qtyRaw = row['qty_per_set'];
-        const bomType = String(row['bom_type'] ?? '')
+        const itemCode = getCol(row, ['item_code', 'Item Code', 'code']).trim();
+        const qtyRaw = getCol(row, ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set']);
+        const bomType = getCol(row, ['bom_type', 'BOM Type', 'Type'])
           .trim()
           .toLowerCase() as BomLineType;
         if (!itemCode) {

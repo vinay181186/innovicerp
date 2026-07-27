@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -87,13 +87,16 @@ async function nextClientCode(tx: DbTransaction, companyId: string): Promise<str
   const rows = await tx
     .select({ code: clients.code })
     .from(clients)
-    .where(eq(clients.companyId, companyId));
-  let max = 0;
-  for (const r of rows) {
-    const m = (r.code || '').match(/CLI-(\d+)\s*$/i);
-    if (m) max = Math.max(max, Number(m[1]));
+    .where(and(eq(clients.companyId, companyId), like(clients.code, 'CLI-%')))
+    .orderBy(sql`length(${clients.code}) desc`, sql`${clients.code} desc`)
+    .limit(1);
+  const last = rows[0]?.code ?? null;
+  let next = 1;
+  if (last) {
+    const m = last.match(/^CLI-(\d+)$/i);
+    if (m) next = Number(m[1]) + 1;
   }
-  return `CLI-${String(max + 1).padStart(3, '0')}`;
+  return `CLI-${String(next).padStart(3, '0')}`;
 }
 
 /** Preview the next CLI-### for the create form, so the auto-generated code is
@@ -114,13 +117,17 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
     withUserContext(user, async (tx) => {
       const code = input.code?.trim() || (await nextClientCode(tx, companyId));
       const existing = await tx
-        .select({ id: clients.id })
+        .select({ id: clients.id, deletedAt: clients.deletedAt })
         .from(clients)
-        .where(
-          and(eq(clients.companyId, companyId), eq(clients.code, code), isNull(clients.deletedAt)),
-        )
+        .where(and(eq(clients.companyId, companyId), eq(clients.code, code)))
         .limit(1);
-      if (existing.length > 0) {
+      const dup = existing[0];
+      if (dup) {
+        if (dup.deletedAt) {
+          throw new ConflictError(
+            `Client code "${code}" belongs to a deleted client — restore it instead of re-creating`,
+          );
+        }
         throw new ConflictError(`Client code "${code}" already exists`);
       }
 

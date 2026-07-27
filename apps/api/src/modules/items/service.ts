@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, isNull, like, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -79,13 +79,16 @@ async function nextItemCode(tx: DbTransaction, companyId: string): Promise<strin
   const rows = await tx
     .select({ code: items.code })
     .from(items)
-    .where(and(eq(items.companyId, companyId), like(items.code, 'ITM-%')));
-  let max = 0;
-  for (const r of rows) {
-    const m = /^ITM-(\d+)$/i.exec(r.code ?? '');
-    if (m) max = Math.max(max, Number(m[1]));
+    .where(and(eq(items.companyId, companyId), like(items.code, 'ITM-%')))
+    .orderBy(sql`length(${items.code}) desc`, sql`${items.code} desc`)
+    .limit(1);
+  const last = rows[0]?.code ?? null;
+  let next = 1;
+  if (last) {
+    const m = /^ITM-(\d+)$/i.exec(last);
+    if (m) next = Number(m[1]) + 1;
   }
-  return `ITM-${String(max + 1).padStart(4, '0')}`;
+  return `ITM-${String(next).padStart(4, '0')}`;
 }
 
 /** Preview the next ITM-#### for the create form (prefilled, editable). Reuses
@@ -105,11 +108,17 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
     withUserContext(user, async (tx) => {
       const code = input.code?.trim() || (await nextItemCode(tx, companyId));
       const existing = await tx
-        .select({ id: items.id })
+        .select({ id: items.id, deletedAt: items.deletedAt })
         .from(items)
-        .where(and(eq(items.companyId, companyId), eq(items.code, code), isNull(items.deletedAt)))
+        .where(and(eq(items.companyId, companyId), eq(items.code, code)))
         .limit(1);
-      if (existing.length > 0) {
+      const dup = existing[0];
+      if (dup) {
+        if (dup.deletedAt) {
+          throw new ConflictError(
+            `Item code "${code}" belongs to a deleted item — restore it instead of re-creating`,
+          );
+        }
         throw new ConflictError(`Item code "${code}" already exists`);
       }
 

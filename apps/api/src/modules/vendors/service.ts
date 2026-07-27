@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -86,13 +86,16 @@ async function nextVendorCode(tx: DbTransaction, companyId: string): Promise<str
   const rows = await tx
     .select({ code: vendors.code })
     .from(vendors)
-    .where(eq(vendors.companyId, companyId));
-  let max = 0;
-  for (const r of rows) {
-    const m = (r.code || '').match(/VND-(\d+)\s*$/i);
-    if (m) max = Math.max(max, Number(m[1]));
+    .where(and(eq(vendors.companyId, companyId), like(vendors.code, 'VND-%')))
+    .orderBy(sql`length(${vendors.code}) desc`, sql`${vendors.code} desc`)
+    .limit(1);
+  const last = rows[0]?.code ?? null;
+  let next = 1;
+  if (last) {
+    const m = last.match(/^VND-(\d+)$/i);
+    if (m) next = Number(m[1]) + 1;
   }
-  return `VND-${String(max + 1).padStart(3, '0')}`;
+  return `VND-${String(next).padStart(3, '0')}`;
 }
 
 /** Preview the next VND-### for the create form (visible before save). Reuses
@@ -111,13 +114,17 @@ export async function createVendor(input: CreateVendorInput, user: AuthContext):
     withUserContext(user, async (tx) => {
       const code = input.code?.trim() || (await nextVendorCode(tx, companyId));
       const existing = await tx
-        .select({ id: vendors.id })
+        .select({ id: vendors.id, deletedAt: vendors.deletedAt })
         .from(vendors)
-        .where(
-          and(eq(vendors.companyId, companyId), eq(vendors.code, code), isNull(vendors.deletedAt)),
-        )
+        .where(and(eq(vendors.companyId, companyId), eq(vendors.code, code)))
         .limit(1);
-      if (existing.length > 0) {
+      const dup = existing[0];
+      if (dup) {
+        if (dup.deletedAt) {
+          throw new ConflictError(
+            `Vendor code "${code}" belongs to a deleted vendor — restore it instead of re-creating`,
+          );
+        }
         throw new ConflictError(`Vendor code "${code}" already exists`);
       }
 
