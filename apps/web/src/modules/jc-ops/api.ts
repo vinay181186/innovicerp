@@ -2,6 +2,7 @@ import type {
   ChangeJcOpMachineInput,
   ListJcOpsBoardQuery,
   ListJcOpsBoardResponse,
+  OutsourceOpBalanceInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -43,6 +44,25 @@ export function useChangeJcOpMachine() {
   return useMutation<{ ok: true }, Error, { id: string; input: ChangeJcOpMachineInput }>({
     mutationFn: ({ id, input }) =>
       apiFetch<{ ok: true }>(`/jc-ops/${id}/machine`, { method: 'PATCH', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
+    },
+  });
+}
+
+// ADR-081 dual-lane — outsource the remaining qty of an in-house process op.
+export function useOutsourceOpBalance() {
+  const qc = useQueryClient();
+  return useMutation<
+    { prId: string; prCode: string },
+    Error,
+    { id: string; input: OutsourceOpBalanceInput }
+  >({
+    mutationFn: ({ id, input }) =>
+      apiFetch<{ prId: string; prCode: string }>(`/jc-ops/${id}/outsource-balance`, {
+        method: 'POST',
+        json: input,
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jcOpsBoardKeys.all });
     },

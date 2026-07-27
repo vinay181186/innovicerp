@@ -66,3 +66,12 @@ export const changeJcOpMachineInputSchema = z.object({
   machineId: z.string().uuid(),
 });
 export type ChangeJcOpMachineInput = z.infer<typeof changeJcOpMachineInputSchema>;
+
+// Outsource-balance action (ADR-081 dual-lane): outsource the remaining qty of
+// an in-progress in-house PROCESS op. `qty` must be ≤ the op's `available`;
+// `vendorCode` is resolved against the vendors master and stamped on the op.
+export const outsourceOpBalanceInputSchema = z.object({
+  qty: z.number().int().positive(),
+  vendorCode: z.string().trim().min(1),
+});
+export type OutsourceOpBalanceInput = z.infer<typeof outsourceOpBalanceInputSchema>;

@@ -4,6 +4,7 @@ import {
   type ChangeJcOpMachineInput,
   type CreatePurchaseRequestInput,
   type JcOpsBoardRow,
+  type OutsourceOpBalanceInput,
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -13,9 +14,15 @@ import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 // Reuse the existing PR create hook — do not build a parallel one.
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
+import { useVendorsList } from '@/modules/vendors/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../../machines/api';
-import { jcOpsBoardKeys, useChangeJcOpMachine, useJcOpsBoard } from '../api';
+import {
+  jcOpsBoardKeys,
+  useChangeJcOpMachine,
+  useJcOpsBoard,
+  useOutsourceOpBalance,
+} from '../api';
 
 export const jcOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -29,6 +36,7 @@ function JcOpsPage(): React.JSX.Element {
   const [jcCode, setJcCode] = useState('');
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
+  const [outsourceRow, setOutsourceRow] = useState<JcOpsBoardRow | null>(null);
 
   const { data, isLoading, isError, error } = useJcOpsBoard({
     jcCode: jcCode || undefined,
@@ -131,6 +139,7 @@ function JcOpsPage(): React.JSX.Element {
                     canWrite={canWrite}
                     onEdit={() => setEditRow(o)}
                     onCreatePr={() => setPrRow(o)}
+                    onOutsource={() => setOutsourceRow(o)}
                   />
                 ))}
               </tbody>
@@ -144,6 +153,10 @@ function JcOpsPage(): React.JSX.Element {
       ) : null}
 
       {prRow ? <CreatePrModal row={prRow} onClose={() => setPrRow(null)} /> : null}
+
+      {outsourceRow ? (
+        <OutsourceBalanceModal row={outsourceRow} onClose={() => setOutsourceRow(null)} />
+      ) : null}
     </div>
   );
 }
@@ -163,11 +176,13 @@ function Row({
   canWrite,
   onEdit,
   onCreatePr,
+  onOutsource,
 }: {
   o: JcOpsBoardRow;
   canWrite: boolean;
   onEdit: () => void;
   onCreatePr: () => void;
+  onOutsource: () => void;
 }): React.JSX.Element {
   const isOutsource = o.opType === 'outsource';
   const outsourceStatus = o.outsourceStatus || 'pending';
@@ -334,19 +349,41 @@ function Row({
               📦 At Vendor ({o.sentQty} pcs)
             </span>
           ) : null
-        ) : canWrite && (o.status === 'waiting' || o.status === 'available') ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
-            onClick={onEdit}
-          >
-            Change Machine
-          </button>
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>
-            {o.status === 'complete' ? '✓ Locked' : '🔒 Running'}
-          </span>
+          // In-house process op — the existing machine/status action, plus the
+          // ADR-081 "Outsource balance" action when there's remaining qty to
+          // send out (op_type='process', available > 0, not yet complete).
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {canWrite && (o.status === 'waiting' || o.status === 'available') ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 11 }}
+                onClick={onEdit}
+              >
+                Change Machine
+              </button>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>
+                {o.status === 'complete' ? '✓ Locked' : '🔒 Running'}
+              </span>
+            )}
+            {canWrite && o.opType === 'process' && o.available > 0 && o.status !== 'complete' ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(124,58,237,0.15)',
+                  color: '#7c3aed',
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+                onClick={onOutsource}
+              >
+                🏭 Outsource balance
+              </button>
+            ) : null}
+          </div>
         )}
       </td>
     </tr>
@@ -724,6 +761,175 @@ function CreatePrModal({
               </>
             ) : (
               'Create PR'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Outsource the remaining qty of an in-house PROCESS op (ADR-081 dual-lane).
+// Prefills qty to the op's `available` (also the max) and resolves the vendor
+// against the vendors master. Submitting POSTs to /jc-ops/:id/outsource-balance
+// which validates qty ≤ available, stamps the op's outsource vendor, and raises
+// a jw_osp PR; the existing OSP PR→PO→DC→GRN→QC flow reconciles the balance.
+function OutsourceBalanceModal({
+  row,
+  onClose,
+}: {
+  row: JcOpsBoardRow;
+  onClose: () => void;
+}): React.JSX.Element {
+  const outsource = useOutsourceOpBalance();
+  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
+  const [qty, setQty] = useState<number>(row.available);
+  const [vendorCode, setVendorCode] = useState<string>(row.outsourceVendorCode ?? '');
+  const [err, setErr] = useState<string | null>(null);
+
+  const onSave = (): void => {
+    setErr(null);
+    if (qty <= 0 || qty > row.available) {
+      setErr(`Qty must be between 1 and ${row.available}`);
+      return;
+    }
+    if (!vendorCode.trim()) {
+      setErr('Vendor is required');
+      return;
+    }
+    const input: OutsourceOpBalanceInput = { qty, vendorCode: vendorCode.trim() };
+    outsource.mutate(
+      { id: row.jcOpId, input },
+      {
+        onSuccess: () => onClose(),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to outsource balance'),
+      },
+    );
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(480px, 96vw)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 14 }}>
+          Outsource Balance — {row.jcCode} Op{row.opSeq}
+        </div>
+        <div
+          style={{
+            background: 'var(--bg3)',
+            padding: '10px 14px',
+            borderRadius: 8,
+            marginBottom: 14,
+            border: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            Operation: <b>{row.operation}</b>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            Item: {row.jcItemCode ?? '—'} · Available:{' '}
+            <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs. Sends the balance to a
+            vendor as a JW OSP purchase request.
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 120px' }}>
+            <div
+              className="text3"
+              style={{
+                fontSize: 10,
+                textTransform: 'uppercase',
+                marginBottom: 4,
+                color: 'var(--amber)',
+              }}
+            >
+              Qty to outsource ★
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={row.available}
+              className="innovic-select"
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              style={{ width: '100%', fontSize: 12 }}
+            />
+          </div>
+          <div style={{ flex: '1 1 200px' }}>
+            <div
+              className="text3"
+              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            >
+              Vendor ★
+            </div>
+            <input
+              className="innovic-select"
+              list="outsource-balance-vendors"
+              value={vendorCode}
+              onChange={(e) => setVendorCode(e.target.value)}
+              placeholder="Vendor code"
+              style={{ width: '100%', fontSize: 12 }}
+            />
+            <datalist id="outsource-balance-vendors">
+              {(vendorsData?.vendors ?? []).map((v) => (
+                <option key={v.id} value={v.code}>
+                  {v.code} — {v.name}
+                </option>
+              ))}
+            </datalist>
+          </div>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={outsource.isPending}
+          >
+            {outsource.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Outsourcing…
+              </>
+            ) : (
+              'Outsource balance'
             )}
           </button>
         </div>
