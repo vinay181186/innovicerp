@@ -243,6 +243,11 @@ export const jobCardOpEditSchema = z.object({
   outsourceVendorCode: z.string().nullable(),
   outsourceCost: z.number().nonnegative(),
   hasStarted: z.boolean(),
+  /** Qty cleared for this op that has not yet been consumed downstream
+   *  (op-entry / QC / an earlier OSP) — from public.v_jc_op_status. Drives the
+   *  "Outsource balance" action for a STARTED in-house process op. 0 when the
+   *  op has no status-view row. */
+  available: z.number().int().nonnegative(),
 });
 export type JobCardOpEdit = z.infer<typeof jobCardOpEditSchema>;
 

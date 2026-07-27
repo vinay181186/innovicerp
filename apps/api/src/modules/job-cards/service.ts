@@ -476,10 +476,14 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         (
           EXISTS (SELECT 1 FROM public.op_log ol WHERE ol.jc_op_id = o.id)
           OR EXISTS (SELECT 1 FROM public.running_ops ro WHERE ro.jc_op_id = o.id AND ro.status = 'running')
-        ) AS "hasStarted"
+        ) AS "hasStarted",
+        -- Qty cleared but not yet consumed downstream (drives the JC form's
+        -- "Outsource balance" action). 0 when the op has no status-view row.
+        COALESCE(vos.available, 0)::int AS "available"
       FROM public.jc_ops o
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.vendors v ON v.id = o.outsource_vendor_id
+      LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = o.id
       WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
       ORDER BY o.op_seq
     `)) as unknown as Array<Record<string, unknown>>;
@@ -528,6 +532,7 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         outsourceVendorCode: (o['outsourceVendorCode'] as string | null) ?? null,
         outsourceCost: Number(o['outsourceCost'] ?? 0),
         hasStarted: Boolean(o['hasStarted']),
+        available: Number(o['available'] ?? 0),
       })),
       qcDocs: docRows.map((d) => ({
         id: d['id'] as string,

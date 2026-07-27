@@ -20,6 +20,7 @@ import type {
   JobCardWriteInput,
   JcOpInput,
 } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -27,9 +28,16 @@ import { todayLocal } from '@/lib/date';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
+import { useOutsourceOpBalance } from '@/modules/jc-ops/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
-import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode, useUpdateJobCard } from '../api';
+import {
+  jobCardsKeys,
+  useCreateJobCard,
+  useJobCardSourceOptions,
+  useNextJcCode,
+  useUpdateJobCard,
+} from '../api';
 
 const QC_DOC_TYPES = [
   'MIR',
@@ -54,6 +62,9 @@ interface FormOp {
   outsourceVendorCode: string;
   outsourceCost: number;
   hasStarted: boolean;
+  /** Remaining qty cleared for this op (from the edit model). Drives the
+   *  "Outsource balance" action for a STARTED in-house process op. */
+  available: number;
 }
 
 interface FormDoc {
@@ -162,6 +173,7 @@ export function JobCardForm({
       outsourceVendorCode: o.outsourceVendorCode ?? '',
       outsourceCost: o.outsourceCost,
       hasStarted: o.hasStarted,
+      available: o.available ?? 0,
     })),
   );
   const [docs, setDocs] = useState<FormDoc[]>(
@@ -175,6 +187,11 @@ export function JobCardForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  // ADR-081 dual-lane: index of the started process op whose remaining qty is
+  // being outsourced from this form (null = modal closed), plus a transient
+  // success note shown after a balance is sent out.
+  const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
+  const [balanceNote, setBalanceNote] = useState<string | null>(null);
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
@@ -268,6 +285,7 @@ export function JobCardForm({
         outsourceVendorCode: '',
         outsourceCost: 0,
         hasStarted: false,
+        available: 0,
       },
     ]);
   };
@@ -807,33 +825,57 @@ export function JobCardForm({
                           </span>
                         ) : (
                           <div>
-                            <label
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 3,
-                                cursor: o.hasStarted ? 'not-allowed' : 'pointer',
-                              }}
-                              title={o.hasStarted ? 'Operation already started — locked' : 'Outsource this op'}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isOut}
-                                disabled={o.hasStarted}
-                                onChange={(e) =>
-                                  setOp(i, { opType: e.target.checked ? 'outsource' : 'process' })
-                                }
-                              />
-                              <span
+                            {o.hasStarted && !isOut && (o.available ?? 0) > 0 && o.id ? (
+                              // Started in-house process op with remaining qty:
+                              // outsource the balance (ADR-081 dual-lane) rather
+                              // than the dead "OUTSRC 🔒" lock.
+                              <button
+                                type="button"
+                                className="btn btn-sm"
                                 style={{
                                   fontSize: 9,
                                   fontWeight: 700,
-                                  color: isOut ? 'var(--amber)' : 'var(--text3)',
+                                  color: 'var(--amber)',
+                                  border: '1px solid rgba(245,158,11,0.4)',
+                                  padding: '2px 6px',
+                                }}
+                                title={`Outsource the remaining ${o.available} pc(s) of this started operation`}
+                                onClick={() => {
+                                  setBalanceNote(null);
+                                  setBalanceOpIdx(i);
                                 }}
                               >
-                                {o.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
-                              </span>
-                            </label>
+                                🏭 Outsource balance
+                              </button>
+                            ) : (
+                              <label
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  cursor: o.hasStarted ? 'not-allowed' : 'pointer',
+                                }}
+                                title={o.hasStarted ? 'Operation already started — locked' : 'Outsource this op'}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isOut}
+                                  disabled={o.hasStarted}
+                                  onChange={(e) =>
+                                    setOp(i, { opType: e.target.checked ? 'outsource' : 'process' })
+                                  }
+                                />
+                                <span
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    color: isOut ? 'var(--amber)' : 'var(--text3)',
+                                  }}
+                                >
+                                  {o.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
+                                </span>
+                              </label>
+                            )}
                             {isOut ? (
                               <div style={{ marginTop: 3 }}>
                                 <input
@@ -1005,6 +1047,44 @@ export function JobCardForm({
         </div>
       ) : null}
 
+      {balanceNote ? (
+        <div
+          style={{
+            color: 'var(--green)',
+            background: 'rgba(34,197,94,0.08)',
+            border: '1px solid rgba(34,197,94,0.3)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {balanceNote}
+        </div>
+      ) : null}
+
+      {balanceOpIdx !== null && ops[balanceOpIdx]?.id ? (
+        <OutsourceBalanceModal
+          jcId={model?.id ?? ''}
+          jcCode={model?.code ?? ''}
+          opId={ops[balanceOpIdx]!.id!}
+          opSeq={balanceOpIdx + 1}
+          operation={ops[balanceOpIdx]!.operation}
+          itemCode={itemCode}
+          available={ops[balanceOpIdx]!.available}
+          defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
+          vendors={vendors}
+          onClose={() => setBalanceOpIdx(null)}
+          onDone={(qtyDone) => {
+            const idx = balanceOpIdx;
+            const op = ops[idx];
+            if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
+            setBalanceNote(`Outsourced ${qtyDone} pc(s) from Op${idx + 1} — JW OSP purchase request raised.`);
+            setBalanceOpIdx(null);
+          }}
+        />
+      ) : null}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         <button
           type="button"
@@ -1025,6 +1105,196 @@ export function JobCardForm({
         >
           {submitting ? <Loader2 size={13} className="animate-spin" /> : null} ✓ Save Job Card
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ADR-081 dual-lane — outsource the REMAINING qty of a STARTED in-house process
+// op straight from the JC edit form. Prefills qty to the op's `available` (also
+// the max) and resolves the vendor against the vendors master. Submitting POSTs
+// to /jc-ops/:id/outsource-balance which validates qty ≤ available, stamps the
+// op's outsource vendor, and raises a jw_osp PR; the existing OSP
+// PR→PO→DC→GRN→QC flow reconciles the balance. Mirrors the jc-ops board modal.
+function OutsourceBalanceModal({
+  jcId,
+  jcCode,
+  opId,
+  opSeq,
+  operation,
+  itemCode,
+  available,
+  defaultVendorCode,
+  vendors,
+  onClose,
+  onDone,
+}: {
+  jcId: string;
+  jcCode: string;
+  opId: string;
+  opSeq: number;
+  operation: string;
+  itemCode: string;
+  available: number;
+  defaultVendorCode: string;
+  vendors: { id: string; code: string; name: string }[];
+  onClose: () => void;
+  onDone: (qtyDone: number) => void;
+}): React.JSX.Element {
+  const qc = useQueryClient();
+  const outsource = useOutsourceOpBalance();
+  const [qty, setQty] = useState<number>(available);
+  const [vendorCode, setVendorCode] = useState<string>(defaultVendorCode);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onSave = (): void => {
+    setErr(null);
+    if (qty <= 0 || qty > available) {
+      setErr(`Qty must be between 1 and ${available}`);
+      return;
+    }
+    if (!vendorCode.trim()) {
+      setErr('Vendor is required');
+      return;
+    }
+    outsource.mutate(
+      { id: opId, input: { qty, vendorCode: vendorCode.trim() } },
+      {
+        onSuccess: () => {
+          if (jcId) void qc.invalidateQueries({ queryKey: jobCardsKeys.detail(jcId) });
+          onDone(qty);
+        },
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to outsource balance'),
+      },
+    );
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(480px, 96vw)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 14 }}>
+          Outsource Balance — {jcCode} Op{opSeq}
+        </div>
+        <div
+          style={{
+            background: 'var(--bg3)',
+            padding: '10px 14px',
+            borderRadius: 8,
+            marginBottom: 14,
+            border: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            Operation: <b>{operation}</b>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            Item: {itemCode || '—'} · Available:{' '}
+            <b style={{ color: 'var(--amber)' }}>{available}</b> pcs. Sends the balance to a vendor
+            as a JW OSP purchase request.
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 120px' }}>
+            <div
+              className="text3"
+              style={{
+                fontSize: 10,
+                textTransform: 'uppercase',
+                marginBottom: 4,
+                color: 'var(--amber)',
+              }}
+            >
+              Qty to outsource ★
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={available}
+              className="innovic-select"
+              value={qty}
+              onChange={(e) => setQty(Number(e.target.value))}
+              style={{ width: '100%', fontSize: 12 }}
+            />
+          </div>
+          <div style={{ flex: '1 1 200px' }}>
+            <div
+              className="text3"
+              style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 4 }}
+            >
+              Vendor ★
+            </div>
+            <input
+              className="innovic-select"
+              list="dlJcOutsourceBalanceVendor"
+              value={vendorCode}
+              onChange={(e) => setVendorCode(e.target.value)}
+              placeholder="Vendor code"
+              style={{ width: '100%', fontSize: 12 }}
+            />
+            <datalist id="dlJcOutsourceBalanceVendor">
+              {vendors.map((v) => (
+                <option key={v.id} value={v.code}>
+                  {v.code} — {v.name}
+                </option>
+              ))}
+            </datalist>
+          </div>
+        </div>
+
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={outsource.isPending}
+          >
+            {outsource.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Outsourcing…
+              </>
+            ) : (
+              'Outsource balance'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

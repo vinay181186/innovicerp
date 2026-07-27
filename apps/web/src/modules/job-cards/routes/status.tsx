@@ -2,8 +2,9 @@
 // (also used by the in-list modal). Legacy viewJCStatus is a modal; this route
 // keeps the status screen deep-linkable / shareable as a page too.
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Pencil } from 'lucide-react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
@@ -18,11 +19,25 @@ function JobCardStatusPage(): React.JSX.Element {
   const { id } = jobCardStatusRoute.useParams();
   // Shares the JcStatusContent query cache (same key) — no extra request.
   const { data: jc } = useJobCard(id);
+  const { data: me } = useSession();
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
   return (
     <div>
-      <Link to="/job-cards" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Job Cards
-      </Link>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Link to="/job-cards" className="btn btn-ghost btn-sm">
+          <ArrowLeft size={14} /> Back to Job Cards
+        </Link>
+        {canWrite ? (
+          <Link
+            to="/job-cards/$id/edit"
+            params={{ id }}
+            className="btn btn-primary btn-sm"
+            title="Edit this Job Card — add/route ops, or outsource an operation's balance"
+          >
+            <Pencil size={14} /> Edit Job Card
+          </Link>
+        ) : null}
+      </div>
       <div className="section-hdr" style={{ marginBottom: 12 }}>
         JC Status{jc?.code ? ` - ${jc.code}` : ''}
       </div>
