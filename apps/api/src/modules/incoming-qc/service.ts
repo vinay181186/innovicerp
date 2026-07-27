@@ -73,7 +73,10 @@ async function creditOutsourceReturn(
     .where(and(eq(jcOps.id, jcOpId), isNull(jcOps.deletedAt)))
     .limit(1);
   const op = opRows[0];
-  if (!op || op.opType !== 'outsource') return;
+  // Dual-lane (ADR-081): also credit the return onto a PROCESS op that carries an
+  // OSP balance (it has a sent qty), not only whole op_type='outsource' ops.
+  if (!op) return;
+  if (op.opType !== 'outsource' && (op.sentQty ?? 0) <= 0) return;
   const newReturned = (op.returnedQty ?? 0) + acceptedDelta;
   const fullyReturned = op.sentQty > 0 && newReturned >= op.sentQty;
   await tx

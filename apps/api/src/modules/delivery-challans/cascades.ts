@@ -76,7 +76,9 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
       and(
         eq(jcOps.outsourcePoLineId, purchaseOrderLineId),
         eq(jcOps.companyId, companyId),
-        eq(jcOps.opType, 'outsource'),
+        // Dual-lane (ADR-081): match by the OSP PO line regardless of op_type, so
+        // a PROCESS op carrying an OSP balance also gets its sent-qty tracked
+        // (not only whole op_type='outsource' ops).
         isNull(jcOps.deletedAt),
       ),
     )
@@ -96,12 +98,20 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
     sql`SELECT input_avail FROM public.v_jc_op_status WHERE jc_op_id = ${op.id}`,
   )) as unknown as Array<{ input_avail: number | string }>;
   const inputAvail = Number(availRows[0]?.input_avail ?? 0);
-  const sendable = inputAvail - op.outsourceSentQty;
+  // Dual-lane (ADR-081): also subtract what has already been finished IN-HOUSE on
+  // this op, so you can only outsource the genuine un-done balance. For a whole
+  // outsource op there are no in-house completions, so this is 0 (unchanged
+  // ADR-078 behaviour: sendable = input − sent).
+  const doneRows = (await tx.execute(
+    sql`SELECT COALESCE(SUM(qty), 0) AS c FROM public.op_log WHERE jc_op_id = ${op.id} AND log_type = 'complete'`,
+  )) as unknown as Array<{ c: number | string }>;
+  const inHouseCompleted = Number(doneRows[0]?.c ?? 0);
+  const sendable = inputAvail - inHouseCompleted - op.outsourceSentQty;
   if (qty > sendable) {
     throw new ValidationError(
-      `Cannot outsource ${qty} pcs — only ${Math.max(0, sendable)} available from the previous stage ` +
-        `(upstream cleared ${inputAvail}, already sent ${op.outsourceSentQty}). ` +
-        `Complete the prior operation(s) before sending this quantity to the vendor.`,
+      `Cannot outsource ${qty} pcs — only ${Math.max(0, sendable)} available on this operation ` +
+        `(upstream cleared ${inputAvail}, done in-house ${inHouseCompleted}, already sent ${op.outsourceSentQty}). ` +
+        `Complete or free up the quantity before sending it to the vendor.`,
     );
   }
 
@@ -162,7 +172,9 @@ export async function reverseOutwardFromJcOp(
       and(
         eq(jcOps.outsourcePoLineId, purchaseOrderLineId),
         eq(jcOps.companyId, companyId),
-        eq(jcOps.opType, 'outsource'),
+        // Dual-lane (ADR-081): match by the OSP PO line regardless of op_type, so
+        // a PROCESS op carrying an OSP balance also gets its sent-qty tracked
+        // (not only whole op_type='outsource' ops).
         isNull(jcOps.deletedAt),
       ),
     )
