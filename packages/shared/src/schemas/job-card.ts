@@ -86,6 +86,12 @@ export const jobCardListItemSchema = z.object({
    *  `customer_name`; falls back to the linked client's name when the source
    *  uses `client_id`. Null when no source link or no customer info at all. */
   customerName: z.string().nullable(),
+  /** The item's active route card (code + current revision), resolved by item_id
+   *  — the routing this item is built from. Null if the item has no route card.
+   *  Note: jc_ops are a snapshot taken at plan-execute; this is the item's
+   *  current route card, shown as a reference on the Job Card. */
+  routeCardCode: z.string().nullable(),
+  routeCardRevision: z.number().int().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),

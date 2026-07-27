@@ -126,6 +126,7 @@ export async function listJobCards(
         jwl.part_name AS "jwPartName",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
+        rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -140,6 +141,10 @@ export async function listJobCards(
         )::int AS "runningCount"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
+      -- The item's single active route card (route_cards is unique per item) —
+      -- surfaces the route-card reference (code + current revision) on the JC.
+      LEFT JOIN public.route_cards rc
+        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
@@ -171,6 +176,10 @@ export async function listJobCards(
       SELECT COUNT(*)::int AS count
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
+      -- The item's single active route card (route_cards is unique per item) —
+      -- surfaces the route-card reference (code + current revision) on the JC.
+      LEFT JOIN public.route_cards rc
+        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
@@ -236,6 +245,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jwl.part_name AS "jwPartName",
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
+        rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -250,6 +260,10 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         )::int AS "runningCount"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
+      -- The item's single active route card (route_cards is unique per item) —
+      -- surfaces the route-card reference (code + current revision) on the JC.
+      LEFT JOIN public.route_cards rc
+        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
@@ -329,6 +343,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     sourceLink: buildSourceLink(r),
     customerName: (r['customerName'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+    routeCardCode: (r['routeCardCode'] as string | null) ?? null,
+    routeCardRevision: r['routeCardRevision'] != null ? Number(r['routeCardRevision']) : null,
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),

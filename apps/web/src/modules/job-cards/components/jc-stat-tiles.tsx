@@ -37,6 +37,20 @@ export function JcStatTiles({
         <div style={lblStyle}>Item</div>
         <div className="fw-700">{jc.itemName || jc.itemCode}</div>
         <div style={{ fontSize: 11, color: 'var(--text2)' }}>{jc.itemCode}</div>
+        {/* Route Card reference (the item's active route card + current revision). */}
+        <div style={{ fontSize: 11, marginTop: 3 }}>
+          {jc.routeCardCode ? (
+            <>
+              <span style={{ color: 'var(--text3)' }}>Route Card: </span>
+              <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>{jc.routeCardCode}</span>
+              {jc.routeCardRevision != null ? (
+                <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>Rev {jc.routeCardRevision}</span>
+              ) : null}
+            </>
+          ) : (
+            <span style={{ color: 'var(--text3)' }}>Route Card: <span style={{ color: 'var(--amber)' }}>none</span></span>
+          )}
+        </div>
       </div>
       <div style={cardStyle('var(--bg3)', 'var(--border)')}>
         <div style={lblStyle}>SO / WO</div>
