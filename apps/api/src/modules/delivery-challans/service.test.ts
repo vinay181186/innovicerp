@@ -902,7 +902,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5 }],
       },
       admin,
     );
@@ -919,7 +919,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 4, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 4 }],
       },
       admin,
     );
@@ -934,7 +934,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3 }],
       },
       admin,
     );
@@ -942,7 +942,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5 }],
       },
       admin,
     );
@@ -961,7 +961,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
         ctx.dcId,
         {
           receiptDate: '2026-05-19',
-          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6, rejectedQty: 0 }],
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6 }],
         },
         admin,
       ),
@@ -973,49 +973,36 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
     expect(headers).toHaveLength(0);
   });
 
-  it('reject-qty creates auto-NC, stock IN counts only received-good qty', async () => {
+  it('received-only receipt raises NO defect at the gate (reject moved to Incoming QC)', async () => {
+    // There is no reject-at-receive anymore: everything received lands on the
+    // auto-GRN as pending QC, and any defect record (NC) is raised later at
+    // Incoming QC — never here.
     const ctx = await setupIssuedDc('RC5', { sentQty: 10 });
     await service.receiveAgainstDeliveryChallan(
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [
-          {
-            deliveryChallanLineId: ctx.dcLineId,
-            receivedQty: 7,
-            rejectedQty: 3,
-            rejectReason: 'Coating thickness out of tol',
-          },
-        ],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 10 }],
       },
       admin,
     );
     const ncs = await db
-      .select({ code: ncRegister.code, rejectedQty: ncRegister.rejectedQty })
+      .select({ code: ncRegister.code })
       .from(ncRegister)
       .where(eq(ncRegister.jcOpId, ctx.opId));
-    expect(ncs).toHaveLength(1);
-    expect(ncs[0]?.code).toMatch(/^NC-AUTO-T059B-JC-RC5-/);
-    expect(Number(ncs[0]?.rejectedQty)).toBe(3);
-    const txns = await db
-      .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })
-      .from(storeTransactions)
-      .where(like(storeTransactions.sourceRef, `RCPT-${RB_PREFIX}DC-RC5%`));
-    expect(txns).toHaveLength(1);
-    expect(txns[0]?.qty).toBe(7);
-    expect(txns[0]?.txnType).toBe('in');
+    expect(ncs).toHaveLength(0);
     const op = await readJcOpRb(ctx.opId);
-    expect(op.outsourceStatus).toBe('received'); // 7+3=10 reconciled
+    expect(op.outsourceStatus).toBe('received');
   });
 
-  it('reject without reason is rejected at the input schema layer', async () => {
+  it('zero received qty is rejected at the input schema layer', async () => {
     const ctx = await setupIssuedDc('RC6', { sentQty: 4 });
     await expect(
       service.receiveAgainstDeliveryChallan(
         ctx.dcId,
         {
           receiptDate: '2026-05-19',
-          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 0, rejectedQty: 4 }],
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 0 }],
         },
         admin,
       ),
@@ -1028,7 +1015,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 6 }],
       },
       admin,
     );
@@ -1050,7 +1037,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5 }],
       },
       admin,
     );
@@ -1113,7 +1100,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 5 }],
       },
       admin,
     );
@@ -1140,7 +1127,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
         ctx.dcId,
         {
           receiptDate: '2026-05-19',
-          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3 }],
         },
         viewer,
       ),
@@ -1157,7 +1144,6 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
             {
               deliveryChallanLineId: '00000000-0000-0000-0000-000000000001',
               receivedQty: 1,
-              rejectedQty: 0,
             },
           ],
         },
@@ -1174,7 +1160,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
         ctx.dcId,
         {
           receiptDate: '2026-05-19',
-          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3, rejectedQty: 0 }],
+          lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 3 }],
         },
         admin,
       ),
@@ -1189,7 +1175,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
         ctxA.dcId,
         {
           receiptDate: '2026-05-19',
-          lines: [{ deliveryChallanLineId: ctxB.dcLineId, receivedQty: 1, rejectedQty: 0 }],
+          lines: [{ deliveryChallanLineId: ctxB.dcLineId, receivedQty: 1 }],
         },
         admin,
       ),
@@ -1202,7 +1188,7 @@ describe('delivery-challans service — receive-back (T-059b)', () => {
       ctx.dcId,
       {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 2, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: ctx.dcLineId, receivedQty: 2 }],
       },
       admin,
     );

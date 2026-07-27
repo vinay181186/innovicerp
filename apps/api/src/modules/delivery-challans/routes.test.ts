@@ -332,7 +332,7 @@ describe('delivery-challans routes', () => {
       url: `/delivery-challans/${dc.id}/receive`,
       payload: {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 4, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 4 }],
       },
     });
     expect(res.statusCode).toBe(201);
@@ -352,20 +352,20 @@ describe('delivery-challans routes', () => {
       url: `/delivery-challans/${dc.id}/receive`,
       payload: {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 1, rejectedQty: 0 }],
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 1 }],
       },
     });
     expect(res.statusCode).toBe(403);
   });
 
-  it('POST /delivery-challans/:id/receive returns 400 when reject without reason', async () => {
+  it('POST /delivery-challans/:id/receive returns 400 when received qty is 0', async () => {
     const dc = await createIssuedDcViaRoute('RCV3');
     const res = await app.inject({
       method: 'POST',
       url: `/delivery-challans/${dc.id}/receive`,
       payload: {
         receiptDate: '2026-05-19',
-        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 0, rejectedQty: 2 }],
+        lines: [{ deliveryChallanLineId: dc.lineId, receivedQty: 0 }],
       },
     });
     expect(res.statusCode).toBe(400);

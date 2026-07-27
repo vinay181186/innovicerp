@@ -32,7 +32,6 @@ import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import { applyOutwardToJcOp, reverseOutwardFromJcOp } from './cascades';
 import {
   applyReceiveToJcOp,
-  autoCreateNcFromOutsourceReject,
   dcHasActiveReceipts,
   isDcFullyReconciled,
 } from './receipt-cascades';
@@ -968,9 +967,10 @@ export async function receiveAgainstDeliveryChallan(
       }
     }
 
-    // Per-line over-receive check: cumulative received+rejected across all
-    // prior receipts + this receipt's quantities must not exceed the
-    // outward line's qty.
+    // Per-line over-receive check: cumulative received across all prior
+    // receipts + this receipt's received qty must not exceed the outward
+    // line's qty. (Legacy rows may carry a rejected_qty; include it so the
+    // cumulative total stays consistent with pre-change history.)
     const priorRows = await tx
       .select({
         dcLineId: deliveryChallanReceiptLines.deliveryChallanLineId,
@@ -988,18 +988,16 @@ export async function receiveAgainstDeliveryChallan(
     const priorByLine = new Map<string, number>();
     for (const r of priorRows) priorByLine.set(r.dcLineId, Number(r.sumQty));
 
-    const incomingByLine = new Map<string, { received: number; rejected: number }>();
+    const incomingByLine = new Map<string, number>();
     for (const il of input.lines) {
-      const prev = incomingByLine.get(il.deliveryChallanLineId) ?? { received: 0, rejected: 0 };
-      prev.received += il.receivedQty;
-      prev.rejected += il.rejectedQty;
-      incomingByLine.set(il.deliveryChallanLineId, prev);
+      const prev = incomingByLine.get(il.deliveryChallanLineId) ?? 0;
+      incomingByLine.set(il.deliveryChallanLineId, prev + il.receivedQty);
     }
-    for (const [dcLineId, inc] of incomingByLine) {
+    for (const [dcLineId, incReceived] of incomingByLine) {
       const dcLine = dcLineById.get(dcLineId)!;
       const sentQty = Number(dcLine.qty);
       const prior = priorByLine.get(dcLineId) ?? 0;
-      const totalAfter = prior + inc.received + inc.rejected;
+      const totalAfter = prior + incReceived;
       if (totalAfter > sentQty) {
         throw new ConflictError(
           `DC line ${dcLine.lineNo} sent ${sentQty} pcs; cumulative receive ${totalAfter} would exceed it`,
@@ -1030,8 +1028,8 @@ export async function receiveAgainstDeliveryChallan(
       receiptId: receiptHeader.id,
       deliveryChallanLineId: il.deliveryChallanLineId,
       receivedQty: il.receivedQty.toFixed(2),
-      rejectedQty: il.rejectedQty.toFixed(2),
-      rejectReason: il.rejectReason ?? null,
+      // No reject at receive — rejected_qty defaults to 0, reject_reason null.
+      // Quality accept/reject is decided at Incoming QC on the auto-GRN below.
       remarks: il.remarks ?? null,
       createdBy: user.id,
       updatedBy: user.id,
@@ -1041,12 +1039,13 @@ export async function receiveAgainstDeliveryChallan(
       .values(receiptLineValues)
       .returning();
 
-    // Cascades per receipt line: auto-GRN (pending QC) for good qty, jc_op flip,
-    // auto-NC on reject. Track per-po-line aggregates so we only invoke
+    // Cascades per receipt line: auto-GRN (pending QC) for the received qty +
+    // jc_op flip. Track per-po-line aggregates so we only invoke
     // applyReceiveToJcOp once per po_line even when multiple receipt lines target it.
-    // NOTE: the good received qty no longer credits stock here — it goes onto an
-    // auto-created GRN (below) and credits at Incoming-QC accept, mirroring the
-    // regular GRN path. Rejected qty still opens an NC (further down), unchanged.
+    // NOTE: received qty does NOT credit stock here — it goes onto an auto-created
+    // GRN (below) and credits at Incoming-QC accept, mirroring the regular GRN
+    // path. There is no reject at receive: the accept/reject decision and any
+    // defect record (NC) are made at Incoming QC.
     const poLineQtyAdded = new Map<string, number>();
     const grnLines: Array<{
       purchaseOrderLineId: string | null;
@@ -1058,7 +1057,6 @@ export async function receiveAgainstDeliveryChallan(
     for (const rl of insertedLines) {
       const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
       const receivedInt = Math.round(Number(rl.receivedQty));
-      const rejectedInt = Math.round(Number(rl.rejectedQty));
 
       if (receivedInt > 0) {
         grnLines.push({
@@ -1072,7 +1070,7 @@ export async function receiveAgainstDeliveryChallan(
 
       if (dcLine.purchaseOrderLineId) {
         const prev = poLineQtyAdded.get(dcLine.purchaseOrderLineId) ?? 0;
-        poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt + rejectedInt);
+        poLineQtyAdded.set(dcLine.purchaseOrderLineId, prev + receivedInt);
       }
     }
 
@@ -1097,7 +1095,6 @@ export async function receiveAgainstDeliveryChallan(
     }
 
     // jc_op flip per po_line.
-    const ncCascades: Array<{ jcCode: string; opSeq: number; ncCode: string }> = [];
     const opCascades: Array<{
       jcCode: string;
       opSeq: number;
@@ -1124,50 +1121,9 @@ export async function receiveAgainstDeliveryChallan(
       }
     }
 
-    // Auto-NC per rejected line. One NC per receipt line with rejected_qty>0.
-    for (const rl of insertedLines) {
-      const rejectedInt = Math.round(Number(rl.rejectedQty));
-      if (rejectedInt <= 0) continue;
-      const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
-      if (!dcLine.purchaseOrderLineId) continue;
-
-      const jcOpRows = (await tx.execute(sql`
-        SELECT o.id, o.op_seq, o.job_card_id, o.operation, jc.code AS jc_code
-        FROM public.jc_ops o
-        INNER JOIN public.job_cards jc ON jc.id = o.job_card_id
-        WHERE o.outsource_po_line_id = ${dcLine.purchaseOrderLineId}::uuid
-          AND o.company_id = ${companyId}::uuid
-          AND o.op_type = 'outsource'
-          AND o.deleted_at IS NULL
-        LIMIT 1
-      `)) as unknown as Array<{
-        id: string;
-        op_seq: number;
-        job_card_id: string;
-        operation: string | null;
-        jc_code: string;
-      }>;
-      const jcOp = jcOpRows[0];
-      if (!jcOp) continue;
-
-      const nc = await autoCreateNcFromOutsourceReject(
-        tx,
-        {
-          companyId,
-          jobCardId: jcOp.job_card_id,
-          jcCode: jcOp.jc_code,
-          jcOpId: jcOp.id,
-          opSeq: jcOp.op_seq,
-          operationText: jcOp.operation,
-          rejectedQty: rejectedInt,
-          ncDate: input.receiptDate,
-          reportedByText: dcHeader.vendorCodeText,
-          rejectReason: rl.rejectReason ?? 'Outsource reject',
-        },
-        user,
-      );
-      ncCascades.push({ jcCode: jcOp.jc_code, opSeq: jcOp.op_seq, ncCode: nc.ncCode });
-    }
+    // No reject at receive: the rejected-goods NC is no longer raised here.
+    // Everything received is now sitting on the auto-GRN as pending QC, and
+    // Incoming QC is the single place a reject raises a defect record (NC).
 
     // DC status flip when ALL outward lines fully reconciled.
     let dcMarkedReceived = false;
@@ -1219,8 +1175,6 @@ export async function receiveAgainstDeliveryChallan(
         user,
       );
     }
-    void ncCascades; // Audit rows emitted inside autoCreateNcFromOutsourceReject.
-
     // Sales-cascade: a fully-received outsource op may make the JC complete.
     // Run only for jobs whose outsource op just flipped to fully-received.
     for (const op of opCascades) {

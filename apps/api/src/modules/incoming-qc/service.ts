@@ -14,7 +14,7 @@ import type {
   IncomingQcResponse,
   SubmitIncomingQcInput,
 } from '@innovic/shared';
-import { goodsReceiptNoteLines, jcOps, purchaseOrderLines } from '../../db/schema';
+import { goodsReceiptNoteLines, jcOps, jobCards, purchaseOrderLines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import {
@@ -29,6 +29,7 @@ import {
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
 } from '../goods-receipt-notes/cascades';
+import { autoCreateNcFromQcReject } from '../nc-register/cascades';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -342,6 +343,53 @@ export async function submitIncomingQc(
         // Step 6: record the accepted qty on the source outsource op so partial
         // returns become visible to the JC (and dispatchable — see Change 2).
         await creditOutsourceReturn(tx, poRows[0].sourceJcOpId, input.acceptedQty, user.id);
+      }
+    }
+
+    // A reject at Incoming QC raises a defect record (NC), mirroring production
+    // QC (op-entry submitQcLog, T-040e). This is the SINGLE place vendor-return
+    // rejects are captured now that the receive step no longer takes a reject
+    // qty — so the reject decision and its NC both live at QC.
+    //
+    // Phase 1 covers JOB-WORK returns only: the GRN line must trace back through
+    // its PO line to a jc_op with a job card. Raw-material rejects (no source
+    // jc_op / no job card) currently raise no NC — a job-card-less NC needs a
+    // schema change (planned as a separate phase).
+    if (input.rejectedQty > 0 && line.poLineId) {
+      const jcOpRows = await tx
+        .select({
+          jcOpId: jcOps.id,
+          jobCardId: jcOps.jobCardId,
+          opSeq: jcOps.opSeq,
+          operation: jcOps.operation,
+          jcCode: jobCards.code,
+        })
+        .from(purchaseOrderLines)
+        .innerJoin(
+          jcOps,
+          and(eq(jcOps.id, purchaseOrderLines.sourceJcOpId), isNull(jcOps.deletedAt)),
+        )
+        .innerJoin(jobCards, and(eq(jobCards.id, jcOps.jobCardId), isNull(jobCards.deletedAt)))
+        .where(eq(purchaseOrderLines.id, line.poLineId))
+        .limit(1);
+      const src = jcOpRows[0];
+      if (src) {
+        await autoCreateNcFromQcReject(
+          tx,
+          {
+            companyId,
+            jobCardId: src.jobCardId,
+            jcOpId: src.jcOpId,
+            jcCode: src.jcCode,
+            opSeq: src.opSeq,
+            operationText: src.operation,
+            rejectedQty: input.rejectedQty,
+            ncDate: input.qcDate ?? new Date().toISOString().slice(0, 10),
+            reportedByText: input.qcInspectedByName ?? null,
+            remarks: input.qcRemarks ?? null,
+          },
+          user,
+        );
       }
     }
 

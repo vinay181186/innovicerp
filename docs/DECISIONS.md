@@ -3186,3 +3186,45 @@ than received, return more than produced, or bill more than returned.
   party stock tracked separately from own inventory. Additive migration (new tables + default-0
   columns), no existing behaviour changed.
 - Negative: no web create screens yet (API + list views only); flagged for a follow-up.
+
+## ADR-082: Reject decision belongs at Incoming QC, not at any receive step
+**Date:** 2026-07-27
+**Status:** Accepted (partially implemented — see Status of implementation)
+
+### Context
+Vendor-return rejects were captured at the OSP Delivery Challan RECEIVE gate,
+which (a) raised a defect (NC) only for whole `op_type='outsource'` ops — so an
+ADR-081 dual-lane PROCESS op that carried an OSP balance had its reject silently
+dropped (no NC), and (b) meant rejects lived in two inconsistent places. Incoming
+QC — the natural, GRN-line-driven, dual-lane-aware inspection surface — did
+NOT raise an NC on reject at all, unlike production QC (`op-entry` submitQcLog,
+which calls `autoCreateNcFromQcReject`).
+
+### Decision
+Reject is decided ONLY at Incoming QC. At any receive step the user enters
+**received qty only**; everything received lands on a GRN as `qc_status='pending'`.
+Incoming QC decides **Accept / Reject**, and a Reject raises a defect record (NC),
+mirroring production QC. Terminology: the good qty is **"Accept"**, never "OK".
+
+### Alternatives Considered
+- Broaden the two `op_type='outsource'` filters on the DC-receive path (fix the
+  dual-lane NC only) — rejected as the whole answer: leaves the two-surface
+  inconsistency and the Incoming-QC no-NC gap.
+- Keep reject at both receive and QC — rejected: double capture, double NC risk.
+
+### Consequences
+- Positive: one reject surface; dual-lane split-job reject bug eliminated by
+  construction (no gate reject to miss); received qty always flows through
+  Incoming QC before crediting stock.
+- Negative: raw-material (non-job-work) rejects still raise no NC until the
+  Phase-2 schema change (nc_register.job_card_id is NOT NULL today) — tracked in
+  docs/PENDING-qc-reject-refactor.md.
+- Risks: a second QC write surface (GRN-detail update) may need the same NC
+  treatment; flagged for verification.
+
+### Status of implementation
+- DONE: Incoming QC raises NC on reject for job-work returns; OSP DC receive is
+  received-only (gate-reject field + dead gate-NC code removed). Typecheck + lint
+  clean; integration tests updated but not executed (no test DB in env).
+- PENDING: manual/PO GRN create → pending-only; legacy JW-DC inward; raw-material
+  NC (schema change); disposition whitelist. See docs/PENDING-qc-reject-refactor.md.

@@ -1,7 +1,9 @@
 // Receive-back route (T-059b). Loads the parent DC → renders per-line input
-// for received + rejected qty + reject reason → submits a receipt. On full
-// reconcile the DC status flips to received, auto-NCs are emitted for any
-// rejected qty, and any outsource-op-driven JC cascade fires server-side.
+// for received qty only → submits a receipt. Received qty lands on an auto-GRN
+// as pending QC; the accept/reject (OK/not-OK) decision is made later at
+// Incoming QC, which is the single place a reject raises a defect record. On
+// full reconcile the DC status flips to received and any outsource-op-driven
+// JC cascade fires server-side.
 
 import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -26,8 +28,6 @@ interface LineDraft {
   alreadyReceived: number;
   remaining: number;
   receivedQty: string;
-  rejectedQty: string;
-  rejectReason: string;
 }
 
 function DeliveryChallanReceivePage(): React.JSX.Element {
@@ -59,8 +59,6 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           alreadyReceived: already,
           remaining: Math.max(0, sent - already),
           receivedQty: '',
-          rejectedQty: '',
-          rejectReason: '',
         };
       }),
     );
@@ -75,11 +73,9 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     let anyQty = false;
     for (const d of lineDrafts) {
       const recv = Number(d.receivedQty || '0');
-      const rej = Number(d.rejectedQty || '0');
-      if (recv < 0 || rej < 0) return false;
-      if (recv + rej > d.remaining) return false;
-      if (recv > 0 || rej > 0) anyQty = true;
-      if (rej > 0 && d.rejectReason.trim() === '') return false;
+      if (recv < 0) return false;
+      if (recv > d.remaining) return false;
+      if (recv > 0) anyQty = true;
     }
     return anyQty && !submitting;
   }, [lineDrafts, receiptDate, submitting]);
@@ -94,10 +90,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         .map((d) => ({
           deliveryChallanLineId: d.dcLineId,
           receivedQty: Number(d.receivedQty || '0'),
-          rejectedQty: Number(d.rejectedQty || '0'),
-          rejectReason: d.rejectReason.trim() === '' ? null : d.rejectReason.trim(),
         }))
-        .filter((l) => l.receivedQty > 0 || l.rejectedQty > 0);
+        .filter((l) => l.receivedQty > 0);
 
       const input: CreateDeliveryChallanReceiptInput = {
         receiptDate,
@@ -159,8 +153,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               Receive against {detail.vendorName ?? detail.vendorCodeText}
             </div>
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-              Record qty received + rejected per line. Rejected qty auto-creates an NC; only the
-              received qty goes back to stock.
+              Record the qty received per line. Everything received goes to Incoming QC as pending —
+              the accept/reject decision (and any defect record) is made there.
             </div>
           </div>
         </div>
@@ -222,7 +216,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <div className="panel-title">Lines</div>
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
                 Each row shows what was sent and what's still outstanding. Enter the qty just
-                received. Reject reason is required when rejected qty &gt; 0.
+                received — quality is checked later at Incoming QC.
               </div>
             </div>
           </div>
@@ -237,8 +231,6 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                     <th className="td-right">Already recv</th>
                     <th className="td-right">Remaining</th>
                     <th>Receive now</th>
-                    <th>Reject now</th>
-                    <th>Reject reason</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -267,32 +259,6 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
                           onChange={(e) => updateDraft(idx, { receivedQty: e.target.value })}
                           disabled={d.remaining === 0}
                           style={{ width: 90, textAlign: 'right' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={d.remaining}
-                          className="innovic-input"
-                          value={d.rejectedQty}
-                          onChange={(e) => updateDraft(idx, { rejectedQty: e.target.value })}
-                          disabled={d.remaining === 0}
-                          style={{ width: 90, textAlign: 'right' }}
-                        />
-                      </td>
-                      <td>
-                        <textarea
-                          rows={2}
-                          className="innovic-textarea"
-                          value={d.rejectReason}
-                          onChange={(e) => updateDraft(idx, { rejectReason: e.target.value })}
-                          placeholder={
-                            Number(d.rejectedQty || '0') > 0 ? 'Required' : 'Only if rejecting'
-                          }
-                          disabled={Number(d.rejectedQty || '0') === 0}
-                          style={{ minWidth: 180 }}
                         />
                       </td>
                     </tr>
@@ -342,7 +308,13 @@ function computeReceivedByLine(detail: DeliveryChallanWithLines): Map<string, nu
   for (const r of detail.receipts) {
     for (const rl of r.lines) {
       const prev = out.get(rl.deliveryChallanLineId) ?? 0;
-      out.set(rl.deliveryChallanLineId, prev + Number(rl.receivedQty) + Number(rl.rejectedQty));
+      // Historical receipts may carry a legacy rejected_qty; count it toward
+      // "already received" so remaining-qty math stays consistent with rows
+      // created before reject-at-receive was removed.
+      out.set(
+        rl.deliveryChallanLineId,
+        prev + Number(rl.receivedQty) + Number(rl.rejectedQty ?? 0),
+      );
     }
   }
   return out;

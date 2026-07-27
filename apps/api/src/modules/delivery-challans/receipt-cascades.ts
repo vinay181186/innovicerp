@@ -17,26 +17,20 @@
 //        FOR UPDATE, read v_item_stock, write a store_transactions row.
 //        txn_type='in', source_type='jw_in'.
 //
-//   3. autoCreateNcFromOutsourceReject(tx, ctx, user)
-//        Mirrors `autoCreateNcFromQcReject` from nc-register/cascades.ts.
-//        Generates `NC-AUTO-<jcCode>-Op<N>-OS-<HHMMSSmmm>` code, inserts the
-//        NC row, emits a CREATE NonConformance audit row. Always uses
-//        reason_category='other' (NC enum has no outsource bucket; the
-//        detail string and reportedByText='vendor' carry the source).
+// NOTE: reject-at-receive was removed — vendor rejects are now raised as NCs at
+// Incoming QC (the single reject surface), so the former
+// autoCreateNcFromOutsourceReject helper here was deleted along with the
+// receive-time reject field.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallanReceiptLines,
-  items,
   jcOps,
   jobCards,
-  ncRegister,
   storeTransactions,
 } from '../../db/schema';
-import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { NotFoundError, ValidationError } from '../../lib/errors';
-import { emitActivityLog } from '../activity-log/service';
+import type { DbTransaction } from '../../db/with-user-context';
 
 export interface ReceiveCascadeArgs {
   tx: DbTransaction;
@@ -45,7 +39,7 @@ export interface ReceiveCascadeArgs {
   receiptCode: string;
   receiptDate: string; // YYYY-MM-DD
   purchaseOrderLineId: string;
-  /** Net qty that just landed in this receipt for this po_line (received + rejected). */
+  /** Received qty that just landed in this receipt for this po_line. */
   qtyAdded: number;
 }
 
@@ -183,124 +177,6 @@ export async function writeStoreTxnOnDcReceive(
     .returning({ id: storeTransactions.id });
 
   return inserted[0]?.id ?? null;
-}
-
-export interface AutoCreateNcFromOutsourceContext {
-  companyId: string;
-  jobCardId: string;
-  jcCode: string;
-  jcOpId: string;
-  opSeq: number;
-  operationText: string | null;
-  rejectedQty: number;
-  ncDate: string;
-  reportedByText: string | null;
-  rejectReason: string;
-}
-
-export interface AutoCreateNcResult {
-  ncId: string;
-  ncCode: string;
-}
-
-function generateAutoNcCode(jcCode: string, opSeq: number): string {
-  const now = new Date();
-  const stamp =
-    String(now.getHours()).padStart(2, '0') +
-    String(now.getMinutes()).padStart(2, '0') +
-    String(now.getSeconds()).padStart(2, '0') +
-    String(now.getMilliseconds()).padStart(3, '0');
-  const safeJcCode = jcCode.replace(/[^A-Za-z0-9._-]/g, '_');
-  return `NC-AUTO-${safeJcCode}-Op${opSeq}-OS-${stamp}`;
-}
-
-export async function autoCreateNcFromOutsourceReject(
-  tx: DbTransaction,
-  ctx: AutoCreateNcFromOutsourceContext,
-  user: AuthContext,
-): Promise<AutoCreateNcResult> {
-  if (ctx.rejectedQty <= 0) {
-    throw new ValidationError('autoCreateNcFromOutsourceReject called with rejectedQty <= 0');
-  }
-
-  const jcRows = await tx
-    .select({ itemId: jobCards.itemId })
-    .from(jobCards)
-    .where(and(eq(jobCards.id, ctx.jobCardId), eq(jobCards.companyId, ctx.companyId)))
-    .limit(1);
-  const jc = jcRows[0];
-  if (!jc) throw new NotFoundError(`JC ${ctx.jobCardId} not found for auto-NC`);
-
-  const itemRows = await tx
-    .select({ code: items.code })
-    .from(items)
-    .where(
-      and(eq(items.id, jc.itemId), eq(items.companyId, ctx.companyId), isNull(items.deletedAt)),
-    )
-    .limit(1);
-  const itemCode = itemRows[0]?.code ?? '';
-
-  let code = generateAutoNcCode(ctx.jcCode, ctx.opSeq);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const dup = await tx
-      .select({ id: ncRegister.id })
-      .from(ncRegister)
-      .where(
-        and(
-          eq(ncRegister.companyId, ctx.companyId),
-          eq(ncRegister.code, code),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (dup.length === 0) break;
-    const nonce = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-    code = `${generateAutoNcCode(ctx.jcCode, ctx.opSeq)}-${nonce}`;
-  }
-
-  const reason = `Auto-created from outsource receive on ${ctx.jcCode} Op #${ctx.opSeq}: ${ctx.rejectReason}`;
-
-  const inserted = await tx
-    .insert(ncRegister)
-    .values({
-      companyId: ctx.companyId,
-      code,
-      ncDate: ctx.ncDate,
-      jobCardId: ctx.jobCardId,
-      jcOpId: ctx.jcOpId,
-      opSeq: ctx.opSeq,
-      operationText: ctx.operationText,
-      qcOperationText: null,
-      itemId: jc.itemId,
-      itemCodeText: itemCode,
-      itemNameText: null,
-      soCodeText: null,
-      machineCodeText: null,
-      rejectedQty: ctx.rejectedQty.toFixed(2),
-      reasonCategory: 'other',
-      reason,
-      status: 'pending',
-      reportedByText: ctx.reportedByText,
-      timeLogged: new Date(),
-      createdBy: user.id,
-      updatedBy: user.id,
-    })
-    .returning();
-  const row = inserted[0]!;
-
-  await emitActivityLog(
-    tx,
-    {
-      action: 'CREATE',
-      entity: 'NonConformance',
-      detail: `${row.code} — ${itemCode || '—'} qty=${row.rejectedQty} (auto from outsource reject)`,
-      refId: row.code,
-    },
-    ctx.companyId,
-    user,
-  );
-
-  return { ncId: row.id, ncCode: row.code };
 }
 
 // Helper for the service: check whether ALL outward lines of a DC are now
