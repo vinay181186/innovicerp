@@ -354,6 +354,41 @@ function RecentPlansTable({
     });
   }, [rows, filter, search]);
 
+  // T28: client-side column sorting (rows are fully loaded).
+  const [sort, setSort] = useState<{ key: keyof RecentPlanRow; dir: 'asc' | 'desc' }>({
+    key: 'planDate',
+    dir: 'desc',
+  });
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const av = a[sort.key] as string | number | null;
+      const bv = b[sort.key] as string | number | null;
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp =
+        typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [filtered, sort]);
+  const sortTh = (label: string, key: keyof RecentPlanRow, className = ''): React.JSX.Element => (
+    <th
+      className={className}
+      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+      onClick={() =>
+        setSort((s) =>
+          s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' },
+        )
+      }
+    >
+      {label} {sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+    </th>
+  );
+
   return (
     <div className="panel">
       <div className="panel-hdr">
@@ -386,22 +421,22 @@ function RecentPlansTable({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Plan No.</th>
-                <th>Date</th>
-                <th>Type</th>
-                <th>SO/JW</th>
+                {sortTh('Plan No.', 'code')}
+                {sortTh('Date', 'planDate')}
+                {sortTh('Type', 'planType')}
+                {sortTh('SO/JW', 'soCodeText')}
                 <th className="td-ctr">Line</th>
                 <th>Item</th>
-                <th className="td-ctr">Qty</th>
-                <th className="td-ctr">Ops</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Status</th>
+                {sortTh('Qty', 'planQty', 'td-ctr')}
+                {sortTh('Ops', 'opsCount', 'td-ctr')}
+                {sortTh('Start', 'plannedStartDate')}
+                {sortTh('End', 'plannedEndDate')}
+                {sortTh('Status', 'planStatus')}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
+              {sorted.map((row) => (
                 <PlanRow key={row.id} row={row} />
               ))}
             </tbody>
