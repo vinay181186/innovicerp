@@ -75,6 +75,7 @@ export async function listJcOpsEnriched(
         o.id,
         o.job_card_id          AS "jobCardId",
         jc.code                AS "jobCardCode",
+        COALESCE(so.code, jw.code) AS "soCode",
         o.op_seq               AS "opSeq",
         m.code                 AS "machineCode",
         o.machine_code_text    AS "machineCodeText",
@@ -97,6 +98,10 @@ export async function listJcOpsEnriched(
         s.computed_status      AS "computedStatus"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
       WHERE o.company_id = ${companyId}::uuid

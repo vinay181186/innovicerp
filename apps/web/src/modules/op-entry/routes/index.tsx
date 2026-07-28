@@ -133,6 +133,12 @@ function OpEntryPage() {
             <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
               {search.jc}
             </span>
+            {ops.data?.[0]?.soCode ? (
+              /* T27: surface the source SO/JW order on Op Entry too. */
+              <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
+                SO: {ops.data[0].soCode}
+              </span>
+            ) : null}
             {ops.isFetching && !ops.isLoading ? (
               <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
                 <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…

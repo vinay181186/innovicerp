@@ -50,6 +50,7 @@ export const jcOpEnrichedSchema = z.object({
   id: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(), // joined from job_cards.code
+  soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   opSeq: z.number().int().positive(),
   machineCode: z.string().nullable(), // joined from machines.code; null for OSP / QC
   machineCodeText: z.string().nullable(),
