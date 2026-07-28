@@ -16,7 +16,7 @@
 
 import type { OutsourceOpBalanceInput } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { items, jcOps, jobCards, vendors } from '../../db/schema';
+import { items, jcOps, jobCards, runningOps, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -62,6 +62,30 @@ export async function outsourceOpBalance(
       .limit(1);
     const op = opRows[0];
     if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
+
+    // Guard: an in-house machine session actively RUNNING on this op means those
+    // pieces are being produced in-house right now — outsourcing them would
+    // double-book the work (machine + vendor both making the same qty). Since a
+    // running session carries no committed qty, `available` still counts those
+    // pieces as outsourceable. Require the operator to stop the session first
+    // (which records what was actually completed); then the true remaining
+    // balance can be outsourced. isOsp=false = the in-house lane (not a vendor lane).
+    const running = await tx
+      .select({ id: runningOps.id })
+      .from(runningOps)
+      .where(
+        and(
+          eq(runningOps.jcOpId, jcOpId),
+          eq(runningOps.status, 'running'),
+          eq(runningOps.isOsp, false),
+        ),
+      )
+      .limit(1);
+    if (running.length > 0) {
+      throw new ValidationError(
+        'Stop the running machine session before outsourcing this operation — finish or stop the in-house run, then outsource the remaining balance.',
+      );
+    }
 
     // `available` from the calc-engine view — the qty cleared for this op that
     // has not yet been consumed downstream (op-entry, QC, or an earlier OSP).

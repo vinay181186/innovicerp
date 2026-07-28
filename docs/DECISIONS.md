@@ -3271,3 +3271,37 @@ plus UI: grey the ▲/▼ move buttons for started ops in both edit surfaces.
 - Note: the UI only greys move buttons for *started* ops (edit model lacks the
   OSP-committed flag); the server enforces the OSP-committed + freeze cases with
   clear messages. Threading a committed flag into the edit model is a follow-up.
+
+## ADR-084: Block outsource-balance while an in-house machine session is running
+**Date:** 2026-07-28
+**Status:** Accepted
+
+### Context
+The ADR-081 "Outsource balance" action guards only on `v_jc_op_status.available`
+(= order − completed − already-outsourced). An **open in-house running session**
+carries no committed qty, so it does NOT reduce `available`. Result: an op that a
+machine has just started (0 completed) shows `available = full qty`, and a user
+can outsource 100% of it — double-booking the same pieces to the machine AND a
+vendor. After that, `available` is 0, so the still-running operator can't even log
+output — the machine is tied up on a fully-outsourced job.
+
+### Decision
+`outsourceOpBalance` (jc-ops/outsource-balance.ts) now rejects when the op has an
+active in-house running session (`running_ops.status='running' AND is_osp=false`):
+> "Stop the running machine session before outsourcing this operation — finish or
+>  stop the in-house run, then outsource the remaining balance."
+Correct workflow: stop the session (records what was actually completed) → the
+true remaining balance is now outsourceable.
+
+### Alternatives Considered
+- Subtract the "in-session" qty from `available` — rejected: a running session has
+  no committed quantity to subtract.
+- Require completed > 0 before outsourcing — rejected: doesn't close it (complete
+  1, keep a live session on the rest, outsource the rest).
+
+### Consequences
+- Positive: can't outsource pieces a machine is actively producing; no double-book.
+- Negative: one extra step (stop the session first) when a machine is mid-run.
+- Note: server-enforced. UI still shows the "🏭 Outsource balance" button during a
+  running session (the edit model doesn't carry a running flag) — the server
+  rejects with the message above. Disabling the button while running is a follow-up.
