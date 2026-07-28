@@ -1179,6 +1179,7 @@ export async function updateJobCard(
         id: jcOps.id,
         opType: jcOps.opType,
         opSeq: jcOps.opSeq,
+        machineCodeText: jcOps.machineCodeText,
         outsourceStatus: jcOps.outsourceStatus,
         outsourcePrId: jcOps.outsourcePrId,
         outsourcePoLineId: jcOps.outsourcePoLineId,
@@ -1249,6 +1250,18 @@ export async function updateJobCard(
       const newSeq = newSeqById.get(ex.id);
       if (newSeq !== undefined && newSeq !== ex.opSeq) {
         throw new ValidationError(`Cannot re-sequence ${subject}.`);
+      }
+      // A started op's machine is locked — the op board (changeJcOpMachine)
+      // already forbids a machine change once work is logged; the edit form
+      // must match, or the op's recorded machine drifts from where the logged
+      // production was actually done. Only process ops carry a machine.
+      if (
+        isStarted &&
+        inPayload &&
+        inPayload.opType === 'process' &&
+        (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
+      ) {
+        throw new ValidationError(`Cannot change the machine of ${subject}.`);
       }
     }
 

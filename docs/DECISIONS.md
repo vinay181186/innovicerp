@@ -3252,6 +3252,11 @@ plus UI: grey the ▲/▼ move buttons for started ops in both edit surfaces.
   op. Error directs the user to cancel the PR/PO first.
 - **Freeze:** when the JC is complete/closed (`closed_at` set or `v_jc_status`
   computed_status in complete/closed), any structural op change is rejected.
+- **Machine lock:** a started op's machine can't be changed via the edit form —
+  the op board (`changeJcOpMachine`) already forbids it (waiting/available only),
+  but `updateJobCard` did not, letting the recorded machine drift from where the
+  logged production was actually done. Error: "Cannot change the machine of an
+  operation that already has logged work."
 
 ### Alternatives Considered
 - Cascade-cancel the PR/PO when an OSP op is removed — rejected: implicit

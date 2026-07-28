@@ -444,6 +444,44 @@ describe('job-cards service — writes (ADR-051)', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  it('updateJobCard blocks changing the machine of an op that has logged work', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    // Need a second real machine to change to (resolveCodeMap validates it
+    // exists before the guard runs, so a bogus code would throw the wrong error).
+    const machs = await db
+      .select({ code: machines.code })
+      .from(machines)
+      .where(and(eq(machines.companyId, admin.companyId!), isNull(machines.deletedAt)))
+      .limit(5);
+    const machine2 = machs.map((m) => m.code).find((c) => c !== machineCode);
+    if (!machine2) return; // only one machine on this DB — can't exercise the guard
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode)], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const ops = await opsOf(jc.id);
+    const opA = ops.find((o) => o.operation === 'Op A')!;
+    await db.insert(opLog).values({
+      companyId: admin.companyId!,
+      jcOpId: opA.id,
+      logNo: 'L1',
+      logType: 'complete',
+      logDate: '2026-06-13',
+      shift: 'day',
+      qty: 1,
+      createdBy: admin.id,
+    });
+    // Change Op A's machine after it has logged work → blocked.
+    await expect(
+      service.updateJobCard(
+        jc.id,
+        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }], qcDocs: [] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
   it('updateJobCard keeps the JC source immutable — a different or omitted source is ignored', async () => {
     if (!itemCode || !machineCode || !jwLineId || !jwOrderId) return;
     const jc = await service.createJobCard(
