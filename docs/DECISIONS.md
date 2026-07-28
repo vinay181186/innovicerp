@@ -3228,3 +3228,41 @@ mirroring production QC. Terminology: the good qty is **"Accept"**, never "OK".
   clean; integration tests updated but not executed (no test DB in env).
 - PENDING: manual/PO GRN create → pending-only; legacy JW-DC inward; raw-material
   NC (schema change); disposition whitelist. See docs/PENDING-qc-reject-refactor.md.
+
+## ADR-083: Job-Card operation-edit guards (lock started / OSP-committed / finished)
+**Date:** 2026-07-28
+**Status:** Accepted
+
+### Context
+`updateJobCard` let you reorder/add/remove/retype ops on an existing JC. The only
+guard was "op has an op_log" (blocks remove + retype). Three gaps let an operator
+silently corrupt the routing math (each op's input = the previous op's output):
+(A) a started op could still be **re-sequenced**; (B) an outsource op already
+committed to a PR/PO/DC (but with no op_log) could be removed/retyped/moved,
+orphaning that paperwork; (C) a **complete/closed** JC could still be edited.
+
+### Decision
+Three server guards in `updateJobCard` (apps/api/src/modules/job-cards/service.ts),
+plus UI: grey the ▲/▼ move buttons for started ops in both edit surfaces.
+- **Reorder lock:** a started op's new op_seq must equal its old op_seq (append
+  downstream is still allowed). Error: "Cannot re-sequence an operation that
+  already has logged work."
+- **OSP-committed lock:** an op with `outsource_status`/`outsource_pr_id`/
+  `outsource_po_line_id` set is locked from remove/retype/reorder like a started
+  op. Error directs the user to cancel the PR/PO first.
+- **Freeze:** when the JC is complete/closed (`closed_at` set or `v_jc_status`
+  computed_status in complete/closed), any structural op change is rejected.
+
+### Alternatives Considered
+- Cascade-cancel the PR/PO when an OSP op is removed — rejected: implicit
+  document cancellation is surprising; require the explicit existing cancel flow.
+- Block ALL edits on a complete JC (incl. header) — rejected: only structural op
+  changes are frozen; header edits still allowed.
+
+### Consequences
+- Positive: routing math can no longer be silently scrambled on a live JC; no
+  orphaned OSP paperwork; finished JCs are immutable (mirrors PO/JWSO pattern).
+- Negative: to remove a committed OSP op you must first cancel its DC/PO/PR.
+- Note: the UI only greys move buttons for *started* ops (edit model lacks the
+  OSP-committed flag); the server enforces the OSP-committed + freeze cases with
+  clear messages. Threading a committed flag into the edit model is a follow-up.

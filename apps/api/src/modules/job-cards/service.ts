@@ -1144,6 +1144,7 @@ export async function updateJobCard(
         code: jobCards.code,
         sourceSoLineId: jobCards.sourceSoLineId,
         sourceJwLineId: jobCards.sourceJwLineId,
+        closedAt: jobCards.closedAt,
       })
       .from(jobCards)
       .where(and(eq(jobCards.id, id), eq(jobCards.companyId, companyId), isNull(jobCards.deletedAt)))
@@ -1170,28 +1171,84 @@ export async function updateJobCard(
       'Vendor',
     );
 
-    // Existing ops + which have started.
+    // Existing ops + which are locked. An op is locked when it has started (any
+    // op_log/running session) OR — for an outsource op — it is already committed
+    // to a PR/PO/DC. A locked op can't be removed, retyped, or re-sequenced.
     const existing = await tx
-      .select({ id: jcOps.id, opType: jcOps.opType })
+      .select({
+        id: jcOps.id,
+        opType: jcOps.opType,
+        opSeq: jcOps.opSeq,
+        outsourceStatus: jcOps.outsourceStatus,
+        outsourcePrId: jcOps.outsourcePrId,
+        outsourcePoLineId: jcOps.outsourcePoLineId,
+      })
       .from(jcOps)
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
     const existingById = new Map(existing.map((o) => [o.id, o]));
     const started = await startedOpIds(tx, id);
+    // Committed = outsource op whose PR/PO/DC paperwork already points at it;
+    // removing/retyping/moving it would orphan that paperwork.
+    const committed = new Set(
+      existing
+        .filter(
+          (o) =>
+            o.outsourceStatus != null || o.outsourcePrId != null || o.outsourcePoLineId != null,
+        )
+        .map((o) => o.id),
+    );
     // `ops` may carry an appended DIR QC op (no id) — harmless for payloadIds
     // (id-filtered) but the upsert loop below must iterate `ops` so it lands.
     const payloadIds = new Set(ops.map((o) => o.id).filter((x): x is string => Boolean(x)));
+    // Each kept op's NEW op_seq = its 1-based position in the payload.
+    const newSeqById = new Map<string, number>();
+    ops.forEach((o, i) => {
+      if (o.id) newSeqById.set(o.id, i + 1);
+    });
 
-    // Guard: a started op may not be removed or have its type changed (legacy
-    // blocks the outsource toggle once an op has started; we extend it to
-    // removal + any type change, since op_log is FK-bound to the op row).
+    // Freeze guard: once the JC is complete/closed, its routing is frozen — no
+    // add / remove / reorder / retype (mirrors the PO/JWSO status-immutable rule).
+    const statusRows = (await tx.execute(sql`
+      SELECT COALESCE(computed_status, 'no_ops') AS s
+      FROM public.v_jc_status WHERE job_card_id = ${id}::uuid
+    `)) as unknown as Array<{ s: string }>;
+    const computedStatus = statusRows[0]?.s ?? 'no_ops';
+    const finished =
+      head.closedAt != null || computedStatus === 'complete' || computedStatus === 'closed';
+    if (finished) {
+      const structurallyChanged =
+        existing.some((ex) => !payloadIds.has(ex.id)) ||
+        ops.some((o, i) => {
+          if (!o.id || !existingById.has(o.id)) return true; // added op
+          const ex = existingById.get(o.id)!;
+          return ex.opSeq !== i + 1 || o.opType !== ex.opType; // moved or retyped
+        });
+      if (structurallyChanged) {
+        throw new ValidationError(
+          'This job card is complete — its operations are frozen. Reopen it to change operations.',
+        );
+      }
+    }
+
+    // Guard: a locked op may not be removed, retyped, or re-sequenced. `started`
+    // wins over `committed` so its (logged-work) message shows when both apply.
     for (const ex of existing) {
-      if (!started.has(ex.id)) continue;
+      const isStarted = started.has(ex.id);
+      const isCommitted = committed.has(ex.id);
+      if (!isStarted && !isCommitted) continue;
+      const subject = isStarted
+        ? 'an operation that already has logged work'
+        : 'an outsourced operation that already has a PR/PO — cancel the PR/PO first';
       if (!payloadIds.has(ex.id)) {
-        throw new ValidationError('Cannot remove an operation that already has logged work.');
+        throw new ValidationError(`Cannot remove ${subject}.`);
       }
       const inPayload = ops.find((o) => o.id === ex.id);
       if (inPayload && inPayload.opType !== ex.opType) {
-        throw new ValidationError('Cannot change the type of an operation that already has logged work.');
+        throw new ValidationError(`Cannot change the type of ${subject}.`);
+      }
+      const newSeq = newSeqById.get(ex.id);
+      if (newSeq !== undefined && newSeq !== ex.opSeq) {
+        throw new ValidationError(`Cannot re-sequence ${subject}.`);
       }
     }
 

@@ -936,18 +936,18 @@ export function JobCardForm({
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm btn-icon"
-                          disabled={i === 0}
+                          disabled={i === 0 || o.hasStarted}
                           onClick={() => moveOp(i, -1)}
-                          title="Move up"
+                          title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move up'}
                         >
                           ▲
                         </button>
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm btn-icon"
-                          disabled={i === ops.length - 1}
+                          disabled={i === ops.length - 1 || o.hasStarted}
                           onClick={() => moveOp(i, 1)}
-                          title="Move down"
+                          title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move down'}
                         >
                           ▼
                         </button>

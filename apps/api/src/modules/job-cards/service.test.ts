@@ -13,6 +13,7 @@ import {
   jobWorkOrderLines,
   jobWorkOrders,
   machines,
+  opLog,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -251,6 +252,10 @@ describe('job-cards service — writes (ADR-051)', () => {
     // Hard-cleanup the test JCs (none have op_log) so we don't leave
     // soft-deleted rows polluting the IN-JC series on the dev DB.
     if (createdIds.length > 0) {
+      const opIds = (
+        await db.select({ id: jcOps.id }).from(jcOps).where(inArray(jcOps.jobCardId, createdIds))
+      ).map((o) => o.id);
+      if (opIds.length > 0) await db.delete(opLog).where(inArray(opLog.jcOpId, opIds));
       await db.delete(jcOps).where(inArray(jcOps.jobCardId, createdIds));
       await db.delete(jobCards).where(inArray(jobCards.id, createdIds));
     }
@@ -328,6 +333,115 @@ describe('job-cards service — writes (ADR-051)', () => {
     // Rule B (ADR-069): a pure-process routing with no QC gate gets a default
     // DIR QC op appended, so the single submitted op becomes 2 (process + DIR).
     expect(updated.totalOps).toBe(2);
+  });
+
+  // Helper: current (non-deleted) ops of a JC, ordered by op_seq.
+  async function opsOf(jcId: string) {
+    return db
+      .select({ id: jcOps.id, opSeq: jcOps.opSeq, operation: jcOps.operation, opType: jcOps.opType })
+      .from(jcOps)
+      .where(and(eq(jcOps.jobCardId, jcId), isNull(jcOps.deletedAt)))
+      .orderBy(jcOps.opSeq);
+  }
+
+  const proc = (operation: string, machine: string) => ({
+    operation,
+    opType: 'process' as const,
+    machineCode: machine,
+    cycleTimeMin: 1,
+    qcRequired: false,
+    outsourceCost: 0,
+  });
+
+  it('updateJobCard blocks re-sequencing an op that has logged work', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const ops = await opsOf(jc.id);
+    const opA = ops.find((o) => o.operation === 'Op A')!;
+    const opB = ops.find((o) => o.operation === 'Op B')!;
+    // Log work on Op A → it becomes "started".
+    await db.insert(opLog).values({
+      companyId: admin.companyId!,
+      jcOpId: opA.id,
+      logNo: 'L1',
+      logType: 'complete',
+      logDate: '2026-06-13',
+      shift: 'day',
+      qty: 1,
+      createdBy: admin.id,
+    });
+    // Swap Op A (started) below Op B → re-sequence of a started op → blocked.
+    await expect(
+      service.updateJobCard(
+        jc.id,
+        {
+          jcDate: '2026-06-13',
+          itemCode,
+          orderQty: 5,
+          priority: 'normal',
+          ops: [
+            { id: opB.id, ...proc('Op B', machineCode) },
+            { id: opA.id, ...proc('Op A', machineCode) },
+          ],
+          qcDocs: [],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('updateJobCard blocks removing an outsource op that already has a PR/PO', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const ops = await opsOf(jc.id);
+    const opA = ops.find((o) => o.operation === 'Op A')!;
+    const opB = ops.find((o) => o.operation === 'Op B')!;
+    // Simulate an OSP commitment on Op A (PR raised) without any op_log.
+    await db.update(jcOps).set({ outsourceStatus: 'pr_raised' }).where(eq(jcOps.id, opA.id));
+    // Drop Op A from the payload → remove of a committed op → blocked.
+    await expect(
+      service.updateJobCard(
+        jc.id,
+        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opB.id, ...proc('Op B', machineCode) }], qcDocs: [] },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('updateJobCard freezes operations once the JC is closed', async () => {
+    if (!itemCode || !machineCode || !jwLineId) return;
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode)], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const ops = await opsOf(jc.id);
+    const opA = ops.find((o) => o.operation === 'Op A')!;
+    // Mark the JC closed.
+    await db.update(jobCards).set({ closedAt: new Date() }).where(eq(jobCards.id, jc.id));
+    // Any structural change (here: add an op) is frozen.
+    await expect(
+      service.updateJobCard(
+        jc.id,
+        {
+          jcDate: '2026-06-13',
+          itemCode,
+          orderQty: 5,
+          priority: 'normal',
+          ops: [{ id: opA.id, ...proc('Op A', machineCode) }, proc('Op C', machineCode)],
+          qcDocs: [],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('updateJobCard keeps the JC source immutable — a different or omitted source is ignored', async () => {
