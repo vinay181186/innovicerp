@@ -791,7 +791,13 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                             ) : (
                               <span style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</span>
                             )
-                          ) : o.computedStatus !== 'complete' ? (
+                          ) : o.computedStatus === 'complete' ? (
+                            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
+                          ) : o.computedStatus === 'in_progress' ||
+                            o.computedStatus === 'running' ||
+                            o.completedQty > 0 ? (
+                            /* T33: Log only once the op is started; otherwise the
+                               Start button below is the only action shown. */
                             <button
                               type="button"
                               className="btn btn-sm btn-primary"
@@ -799,9 +805,7 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                             >
                               ✚ Log
                             </button>
-                          ) : (
-                            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
-                          )}
+                          ) : null}
                           {!isQc && !isOut && (o.computedStatus === 'available' || o.computedStatus === 'waiting') ? (
                             <button
                               type="button"

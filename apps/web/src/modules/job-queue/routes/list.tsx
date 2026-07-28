@@ -356,20 +356,33 @@ function JobQueuePage(): React.JSX.Element {
                           </td>
                           <td>
                             {isNext && canWrite ? (
-                              <Link
-                                to="/op-entry"
-                                search={{ jc: r.jcCode, op: r.jcOpId }}
-                                className="btn btn-sm"
-                                style={{
-                                  background: 'var(--green3)',
-                                  border: '1px solid var(--green2)',
-                                  color: 'var(--green)',
-                                  fontSize: 11,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                ✚ Log Op
-                              </Link>
+                              // T33: only offer "Log Op" once the op is started
+                              // (some completed); otherwise show "Start".
+                              r.completed > 0 ? (
+                                <Link
+                                  to="/op-entry"
+                                  search={{ jc: r.jcCode, op: r.jcOpId, mode: 'complete' }}
+                                  className="btn btn-sm"
+                                  style={{
+                                    background: 'var(--green3)',
+                                    border: '1px solid var(--green2)',
+                                    color: 'var(--green)',
+                                    fontSize: 11,
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  ✚ Log Op
+                                </Link>
+                              ) : (
+                                <Link
+                                  to="/op-entry"
+                                  search={{ jc: r.jcCode, op: r.jcOpId, mode: 'start' }}
+                                  className="btn btn-sm"
+                                  style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                                >
+                                  ▶ Start
+                                </Link>
+                              )
                             ) : null}
                           </td>
                         </tr>
