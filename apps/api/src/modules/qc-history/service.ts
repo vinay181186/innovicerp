@@ -48,7 +48,7 @@ export async function getQcHistory(user: AuthContext): Promise<QcHistoryResponse
       WHERE vos.company_id = ${companyId}::uuid
         AND (vos.qc_required OR vos.op_type = 'qc')
         AND vos.qc_pending > 0
-      ORDER BY jc.code, vos.op_seq
+      ORDER BY jo.qc_call_date DESC NULLS LAST, jc.code, vos.op_seq
     `);
     const today = new Date().toISOString().slice(0, 10);
     const pending: QcHistoryPendingRow[] = (

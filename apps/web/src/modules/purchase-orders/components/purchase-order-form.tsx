@@ -143,6 +143,9 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   const onValid = async (values: FormValues): Promise<void> => {
     const headerOut = {
       ...values.header,
+      // Blank → undefined so the server auto-generates IN-PO-#####; '' fails
+      // the schema's code.min(1) → "request validation failed" (T22/T20).
+      code: values.header.code?.trim() || undefined,
       vendorId: values.header.vendorId || undefined,
       vendorCodeText: values.header.vendorCodeText?.trim() || undefined,
       taxType: values.header.taxType?.trim() || undefined,

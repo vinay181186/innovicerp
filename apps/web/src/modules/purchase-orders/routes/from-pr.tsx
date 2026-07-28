@@ -61,7 +61,9 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
     const payload: CreatePurchaseOrderFromPrInput = {
       prId: pr.id,
       header: {
-        code: values.code.trim(),
+        // Blank → undefined so the server auto-generates IN-PO-#####; sending
+        // '' fails the schema's code.min(1) → "request validation failed" (T20).
+        code: values.code.trim() || undefined,
         poDate: values.poDate,
         poType: values.poType,
         dueDate: values.dueDate || undefined,
