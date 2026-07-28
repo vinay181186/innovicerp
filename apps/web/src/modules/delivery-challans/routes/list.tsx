@@ -167,13 +167,6 @@ function DeliveryChallansListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Lines',
-        accessorKey: 'lineCount',
-        // ISSUE-020: td-ctr is text-align:center and was inert on the <span>.
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => row.original.lineCount,
-      },
-      {
         // Legacy L27440 calls this "Sent": <td class="td-ctr mono fw-700">.
         header: 'Sent',
         id: 'totalQty',
@@ -185,6 +178,34 @@ function DeliveryChallansListPage(): React.JSX.Element {
         header: 'Status',
         accessorKey: 'status',
         cell: ({ row }) => <DcStatusBadge status={row.original.status} />,
+      },
+      {
+        // T26: Receive action — enabled only while the DC is still 'issued'
+        // (a partially-received DC stays 'issued'); greyed for received/cancelled.
+        header: 'Action',
+        id: 'action',
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.status === 'issued' ? (
+            <Link
+              to="/delivery-challans/$id/receive"
+              params={{ id: row.original.id }}
+              className="btn btn-sm"
+              style={{ fontSize: 11, padding: '2px 8px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              + Receive
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled
+              style={{ fontSize: 11, padding: '2px 8px' }}
+            >
+              + Receive
+            </button>
+          ),
       },
     ],
     [],

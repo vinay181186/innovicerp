@@ -1342,6 +1342,19 @@ function JcStatusEditForm({
                         <td>
                           {isQc ? (
                             <span className="badge b-green">🔬 QC</span>
+                          ) : isOut ? (
+                            /* T32b: an OSP op has no machine — show an inactive
+                               badge like QC, not a greyed empty machine input. */
+                            <span
+                              className="badge"
+                              style={{
+                                background: 'rgba(245,158,11,0.12)',
+                                color: 'var(--amber)',
+                                border: '1px solid rgba(245,158,11,0.35)',
+                              }}
+                            >
+                              🏭 OSP
+                            </span>
                           ) : (
                             <>
                               <input
@@ -1349,7 +1362,6 @@ function JcStatusEditForm({
                                 list="dlJcEditMachine"
                                 value={o.machineCode}
                                 placeholder="🔍 Machine ★"
-                                disabled={isOut}
                                 onChange={(e) => setOp(i, { machineCode: e.target.value })}
                                 style={{ fontSize: 11 }}
                               />

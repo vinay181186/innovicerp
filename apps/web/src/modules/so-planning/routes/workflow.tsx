@@ -303,6 +303,15 @@ function RightPane({
       >
         <div className="section-hdr" style={{ marginBottom: 0 }}>
           Planning: {so.soCode} {so.customerName ? <small>({so.customerName})</small> : null}
+          {/* T15: surface the item(s) at the top of the right pane so it's visible
+              after searching by item (not only inside the per-line cards). */}
+          {so.lines.length > 0 ? (
+            <div className="text3" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+              {so.lines[0]!.itemCode ? `${so.lines[0]!.itemCode} — ` : ''}
+              {so.lines[0]!.itemName ?? ''}
+              {so.lines.length > 1 ? ` +${so.lines.length - 1} more` : ''}
+            </div>
+          ) : null}
         </div>
       </div>
       {so.lines.length === 0 ? (

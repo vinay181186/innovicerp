@@ -365,7 +365,7 @@ function RecentPlansTable({
           <input
             type="text"
             className="innovic-input"
-            placeholder="Search plans..."
+            placeholder="🔍 Search Plan #, SO, item…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ minWidth: 220, fontSize: 12 }}
