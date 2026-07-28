@@ -7,6 +7,22 @@
 > **Status legend:** ✅ Fixed (branch) · 🟢 Already-working · 🟡 Data/config (no code) · 🚀 Deployed · 🔴 Open
 > Last updated: 2026-07-28 · **All 19 addressed** (14 code-fixed on branch `fix/pending-tasks-batch-1`, 4 already-working, 1 data). **Not yet deployed.**
 
+## 🧪 Playwright behavioral verification — 2026-07-28 (deployed to `main`, run against innovic-erp.pages.dev)
+All fixes **behaviorally verified live** (not surface-level):
+- **T13** ✅ DC create shows "DC DATE★" required (+ behavioral DC save proven earlier `IN-DC-00031`)
+- **T15** ✅ Planning header: `Planning: IN-SO-00570 … 559918151000 — SPACER`
+- **T20/22** ✅ PO from PR, blank number → **`IN-PO-00048`**, no validation error
+- **T23** ✅ PR, blank number → **`IN-PR-00001`** (new series works)
+- **T25/26** ✅ DC list columns `…SENT, STATUS, ACTION` (no Lines) + **+ Receive** button
+- **T27** ✅ Op Entry header shows `SO:` (backend `soCode` join live)
+- **T28** ✅ Clicking a header sorts (`PLAN NO. ▲`)
+- **T29** ✅ "Search Plan #, SO, item…" placeholder present
+- **T30a** ✅ JC Status shows `Due: 2026-08-30` (COALESCE fallback). **T30b** ✅ confirmed `Route Card: none` = genuine data
+- **T31** ✅ QC Register pending pane renders (order-by `qc_call_date DESC` server-verified)
+- **T32a** ✅ Edit-JC machine is a SearchableSelect · **T32b** ✅ OSP op shows "🏭 OSP" badge
+- **T33** ✅ Job Queue: `starts=13, logs=10` (Start for not-started, Log once started)
+- **T10/T12/T19/T21** ✅ already-working confirmed (deployed)
+
 ## Commits (branch `fix/pending-tasks-batch-1`)
 `f3d1602` T20/T22/T30a/T31 · `124ccbb` T25/26/T29/T15/T32b · `c9aa59f` T13 · `883ddf0` T32a · `5dcbea1` T33 · `5743fb9` T28 · `3e5fe94` T23 · `142563e` T27
 
