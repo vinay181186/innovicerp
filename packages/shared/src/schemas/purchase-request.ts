@@ -95,11 +95,13 @@ export type PurchaseRequestListItem = z.infer<typeof purchaseRequestListItemSche
 // ─── Write inputs ──────────────────────────────────────────────────────────
 
 const _prInputBase = z.object({
+  // Optional — blank means the server auto-generates the next IN-PR-##### (T23).
   code: z
     .string()
     .min(1)
     .max(64)
-    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen'),
+    .regex(codeRegex, 'code may contain only letters, digits, dot, slash, underscore, hyphen')
+    .optional(),
   prDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'prDate must be YYYY-MM-DD'),
   status: prStatusSchema.default('open'),
   /** Defaults to 'standard'; service overrides to 'jw_osp' when sourceJcOpId is set. */

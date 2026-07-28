@@ -118,7 +118,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
     if (isEdit) {
       await props.onSubmit(payload);
     } else {
-      await props.onSubmit({ code: values.code.trim(), ...payload } as CreatePurchaseRequestInput);
+      // T23: blank → undefined so the server auto-generates IN-PR-#####.
+      await props.onSubmit({
+        code: values.code.trim() || undefined,
+        ...payload,
+      } as CreatePurchaseRequestInput);
     }
   };
 
@@ -128,7 +132,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
             PR No.
-            {isEdit ? null : <span className="req">★</span>}
           </label>
           <input
             id="code"
@@ -136,9 +139,14 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             autoFocus={!isEdit}
             autoComplete="off"
             readOnly={isEdit}
-            {...register('code', { required: !isEdit ? 'PR No. is required' : false })}
+            placeholder={isEdit ? undefined : 'Leave blank to auto-generate'}
+            {...register('code')}
           />
-          {isEdit ? <div className="form-help">Code cannot be changed after creation.</div> : null}
+          {isEdit ? (
+            <div className="form-help">Code cannot be changed after creation.</div>
+          ) : (
+            <div className="form-help">Leave blank to auto-generate the next IN-PR-#####.</div>
+          )}
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
         <div className="form-grp">

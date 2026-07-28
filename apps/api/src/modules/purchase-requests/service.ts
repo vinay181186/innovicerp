@@ -31,6 +31,7 @@ import {
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { nextSeriesCode } from '../op-entry/osp-cascade';
 import type {
   CreatePurchaseRequestInput,
   ListPurchaseRequestsQuery,
@@ -406,6 +407,10 @@ export async function createPurchaseRequest(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // T23: blank code → auto-generate the next IN-PR-#####. OSP callers pass an
+    // explicit IN-JWPR- code, which is honoured; only the standalone PR form
+    // leaves it blank. nextSeriesCode is prefix-scoped so the series don't mix.
+    const code = input.code?.trim() || (await nextSeriesCode(tx, 'pr', companyId, 'IN-PR-'));
     // Code uniqueness within company
     const dup = await tx
       .select({ id: purchaseRequests.id })
@@ -413,13 +418,13 @@ export async function createPurchaseRequest(
       .where(
         and(
           eq(purchaseRequests.companyId, companyId),
-          eq(purchaseRequests.code, input.code),
+          eq(purchaseRequests.code, code),
           isNull(purchaseRequests.deletedAt),
         ),
       )
       .limit(1);
     if (dup.length > 0) {
-      throw new ConflictError(`Purchase request code "${input.code}" already exists`);
+      throw new ConflictError(`Purchase request code "${code}" already exists`);
     }
 
     if (input.vendorId) await assertVendorExists(tx, input.vendorId, companyId);
@@ -431,7 +436,7 @@ export async function createPurchaseRequest(
       .insert(purchaseRequests)
       .values({
         companyId,
-        code: input.code,
+        code,
         prDate: input.prDate,
         status: input.status ?? 'open',
         prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
