@@ -55,7 +55,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       po.lines.map((l) => ({
         purchaseOrderLineId: l.id,
         itemId: l.itemId ?? '',
-        itemCodeText: l.itemCodeText ?? l.itemCode ?? '',
+        // T13: fall back to the item name so a PO line missing a code doesn't
+        // send an empty itemCodeText (the schema requires min length 1).
+        itemCodeText: l.itemCodeText ?? l.itemCode ?? l.itemName ?? '',
         itemNameText: l.itemName ?? null,
         uom: 'NOS',
         poLineQty: Number(l.qty ?? 0),
@@ -69,6 +71,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   const canSubmit = useMemo(
     () =>
       Boolean(po) &&
+      // T13: a blank DC date sends dcDate:'' which fails the server's YYYY-MM-DD
+      // regex → opaque "Request validation failed". Require it up front.
+      Boolean(dcDate) &&
       codeValid &&
       lineDrafts.some((l) => Number(l.shipQty) > 0) &&
       lineDrafts.every((l) => {
@@ -78,7 +83,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       }),
     // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
     // a dependency or the Save button's enabled state lags the real validity.
-    [po, codeValid, lineDrafts],
+    [po, dcDate, codeValid, lineDrafts],
   );
 
   if (!poId) {
@@ -239,7 +244,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           />
           <div className="form-grp">
             <label className="form-label" htmlFor="dc-date">
-              DC Date
+              DC Date<span className="req">★</span>
             </label>
             <input
               id="dc-date"
@@ -247,6 +252,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
               className="innovic-input"
               value={dcDate}
               onChange={(e) => setDcDate(e.target.value)}
+              required
             />
           </div>
           <div className="form-grp">
