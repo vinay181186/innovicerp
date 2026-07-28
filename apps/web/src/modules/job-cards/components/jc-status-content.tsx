@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { signedUrl } from '@/lib/storage';
 import { useItemsList } from '@/modules/items/api';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
@@ -1002,6 +1003,17 @@ function JcStatusEditForm({
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
+  // T32a: the edit machine picker now uses the shared SearchableSelect (like
+  // create/plan) instead of a datalist, which collapsed on a pre-filled value.
+  // Only one row's dropdown is open at a time, so a shared search term is fine.
+  const [machineSearch, setMachineSearch] = useState('');
+  const machineOptions = machines
+    .filter(
+      (m) =>
+        !machineSearch.trim() ||
+        `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
+    )
+    .map((m) => ({ id: m.id, code: m.code, name: m.name }));
 
   // ── Editable header (item code, order qty, due date, priority, remarks).
   //    Source, date, drawing and existing QC docs are preserved unchanged from
@@ -1142,13 +1154,6 @@ function JcStatusEditForm({
         {items.map((i) => (
           <option key={i.id} value={i.code}>
             {i.code} — {i.name}
-          </option>
-        ))}
-      </datalist>
-      <datalist id="dlJcEditMachine">
-        {machines.map((m) => (
-          <option key={m.id} value={m.code}>
-            {m.code} — {m.name}
           </option>
         ))}
       </datalist>
@@ -1357,13 +1362,21 @@ function JcStatusEditForm({
                             </span>
                           ) : (
                             <>
-                              <input
-                                className="innovic-input"
-                                list="dlJcEditMachine"
-                                value={o.machineCode}
+                              <SearchableSelect
+                                id={`jc-edit-mach-${o.id ?? i}`}
+                                value={machines.find((m) => m.code === o.machineCode)?.id ?? null}
+                                onChange={(id) =>
+                                  setOp(i, {
+                                    machineCode: id
+                                      ? (machines.find((m) => m.id === id)?.code ?? '')
+                                      : '',
+                                  })
+                                }
+                                onSearch={setMachineSearch}
+                                options={machineOptions}
                                 placeholder="🔍 Machine ★"
-                                onChange={(e) => setOp(i, { machineCode: e.target.value })}
-                                style={{ fontSize: 11 }}
+                                valueLabel={o.machineCode || undefined}
+                                selectedLabel={(m) => m.code ?? m.name ?? ''}
                               />
                               <div className="cyan" style={{ fontSize: 10, marginTop: 2, minHeight: 13 }}>
                                 {machineName}
