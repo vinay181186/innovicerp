@@ -3419,3 +3419,57 @@ carried `status`).
   `useUpdateServicePo` hook exist but no route); Service PO spend still excluded
   from vendor/procurement reports; ₹0 SPOs allowed; free-text `spo_no` (no series);
   `service_po_lines` has no `deleted_at` (hard-deleted on line replace).
+
+## ADR-088: JC Operations Detail — table → card layout (design-only)
+**Date:** 2026-07-30
+**Status:** Accepted
+
+### Context
+The Job Card Operations Detail read as a 13–15 column table on all three surfaces
+(create `job-card-form.tsx`, view + edit `jc-status-content.tsx`). The user supplied
+a card mock-up and asked for it on all three, explicitly scoped as **design-only**:
+no logic, calculation, API or save-payload change.
+
+Three near-duplicate op editors also meant three copies of the same markup, two
+copies of the `OP_STATUS` map, and two files well past the 400-line rule
+(`jc-status-content.tsx` 1709 L, `job-card-form.tsx` 1127 L).
+
+### Decision
+Extract the row into two shared components and re-lay-out the columns as card
+slots, copying every value, badge, button, condition and destination verbatim:
+- `lib/jc-op-labels.ts` — `OP_STATUS`, `OUTSOURCE_STATUS_LABEL` (moved, byte-identical)
+  + `opAccentColor(cls)`, which derives the card's left bar from the SAME class the
+  status badge uses, so bar and badge cannot disagree.
+- `components/jc-op-card.tsx` — read-only card (view). The table's Action cell
+  becomes a footer strip; ▶ Start / ✚ Log / 🔬 QC(n) / ✓ Done / PR:/PO: keep their
+  exact conditions and destinations.
+- `components/jc-op-edit-card.tsx` — editable card (edit + create), exporting
+  `JcOpEditValues` (the old local `EditOp` / `FormOp` shape).
+- `components/jc-op-card-parts.tsx` — `QtyTile` / `SetupChip` / `SetupField` / `secLabel`,
+  shared so view and edit cannot drift visually.
+
+Per-screen wording is preserved via props rather than normalised: `cycleLabel`
+(create keeps its accurate "Cycle (min)"; view/edit keep legacy's "Cycle(h)"),
+`toolDetailsPlaceholder`, and an optional `logs` (omitted on create, whose table
+had no logs column).
+
+### Alternatives Considered
+- One card component with a `mode` prop — rejected: the read-only and editable
+  bodies share almost no markup, and the branchy result would be harder to review
+  than two focused files.
+- Normalising "Cycle(h)" → "Cycle (min)" everywhere — correct (the column is
+  `jc_ops.cycle_time_min`) but out of scope for a design-only change; logged as a
+  follow-up instead.
+
+### Consequences
+- Positive: one card definition per mode; `jc-status-content.tsx` 1709 → ~1065 L and
+  `job-card-form.tsx` 1127 → ~849 L; the duplicate `OP_STATUS` copy in
+  `job-card-form.tsx` is gone.
+- Change beyond pure layout (deliberate, flagged to the user): the create form's
+  machine `<datalist>` is now the shared `SearchableSelect` the edit screen already
+  used (T32a — the datalist collapsed on a pre-filled value).
+- Deferred, NOT fixed here (all pre-existing, all reported to the user): op numbering
+  is stale after a re-sequence in edit (`en.opSeq`, so a moved op reads 3,2,1);
+  `pendingQty` is `orderQty − done` and ignores `inputAvail`; the per-op log strip is
+  capped at 3 out of a JC-wide 300-row fetch; `{opCount} op{ops.length !== 1 …}`
+  renders "1 ops"; `toolNo` is written but has no input on any screen.

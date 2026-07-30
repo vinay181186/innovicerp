@@ -4,14 +4,12 @@
 // page (routes/status).
 import type {
   JcOpEnriched,
-  JcOpsBoardRow,
   JobCardCompletionEvent,
   JobCardEditModel,
   JobCardListItem,
   JobCardStatusExtras,
   JobCardStatusOpExtra,
   OpLog,
-  OutsourceStatus,
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
@@ -19,8 +17,6 @@ import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { signedUrl } from '@/lib/storage';
 import { useItemsList } from '@/modules/items/api';
-import { useJcOpsBoard } from '@/modules/jc-ops/api';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useMachinesList } from '@/modules/machines/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
@@ -33,48 +29,13 @@ import {
   useUpdateJobCard,
 } from '../api';
 import { JcStatTiles } from './jc-stat-tiles';
+import { JcOpCard } from './jc-op-card';
+import { JcOpEditCard, type JcOpEditValues } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
+import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
-
-// Mirrors legacy badge() (L1959-1970) for the op status strings it maps.
-// Two legacy entries are inert: badge('In Progress') → `b-yellow` and
-// badge('Running') → `b-running`, neither of which legacy's <style> defines —
-// so they render unstyled in legacy too. We keep our `b-amber` for both rather
-// than port a no-op class (same call the SO Status port made for `b-blue`).
-const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  waiting: { label: 'Waiting', cls: 'b-red' },
-  available: { label: 'Available', cls: 'b-blue' },
-  in_progress: { label: 'In Progress', cls: 'b-amber' },
-  running: { label: 'Running', cls: 'b-amber' },
-  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-  complete: { label: 'Complete', cls: 'b-green' },
-  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
-  po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'Processing', cls: 'b-amber' },
-  received: { label: 'Incoming QC', cls: 'b-cyan' },
-  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
-  outsource: { label: 'Outsource', cls: 'b-amber' },
-};
-
-// Legacy stores outsourceStatus as Title Case strings ('Pending', 'PR Raised',
-// 'PO Created', …) and renders them raw (L11043, L11075). Ours is the pg enum
-// `outsource_status`, so rendering it raw shows `pr_raised` where legacy shows
-// `PR Raised`. This maps our enum back to legacy's exact wording.
-//
-// Kept separate from OP_STATUS above: that map is keyed for a different field
-// (jc_ops computed status, read only at the Status column) and has no entry for
-// `pending` or `sent` — two of the five outsource values — so reusing it would
-// leave those rendering raw. `Record<OutsourceStatus, string>` makes the
-// compiler enforce all five.
-const OUTSOURCE_STATUS_LABEL: Record<OutsourceStatus, string> = {
-  pending: 'Pending',
-  pr_raised: 'PR Raised',
-  po_created: 'PO Created',
-  sent: 'Sent',
-  received: 'Received',
-};
 
 // Legacy disposition icon/colour ladder (viewJCStatus L11115-11116). Legacy
 // keyed Title-Case strings ('Rework', 'Scrap', …); our nc_disposition enum is
@@ -229,69 +190,6 @@ const lblStyle: React.CSSProperties = {
   letterSpacing: '.08em',
   marginBottom: 4,
 };
-
-// Outsource vendor/PR/PO details for a JC op. Wired from the existing jc-ops
-// board endpoint (useJcOpsBoard, jc-ops/api.ts:31), whose row already carries
-// outsourceVendorName / outsourcePrCode / outsourcePoCode (jc-ops.ts:39-41,
-// populated in jc-ops/service.ts:70-72) — fields the op-entry enriched op shape
-// (sortedOps) omits. Legacy renders these at L11043 (vendor name in the Machine
-// cell) and L11070-74 (PR/PO refs in the Action cell).
-//
-// Rendered ONLY inside outsource rows, so the board is fetched only when a JC
-// actually has outsource ops, and always with a resolved jcCode (these mount
-// after the JC has loaded) — no unfiltered fetch-all. Multiple outsource rows on
-// one JC share a single request (identical query key → TanStack Query dedupes).
-function useOutsourceRow(jcCode: string, jcOpId: string): JcOpsBoardRow | undefined {
-  const { data } = useJcOpsBoard({ jcCode, limit: 500, offset: 0 });
-  return data?.items.find((r) => r.jcOpId === jcOpId);
-}
-
-// Machine-column cell for an outsource op (legacy L11043): label + resolved
-// vendor name + status.
-function OutsourceMachineCell({
-  jcCode,
-  jcOpId,
-  status,
-}: {
-  jcCode: string;
-  jcOpId: string;
-  status: OutsourceStatus;
-}): React.JSX.Element {
-  const row = useOutsourceRow(jcCode, jcOpId);
-  return (
-    <>
-      <div style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>🏭 Outsource</div>
-      {row?.outsourceVendorName ? (
-        <div style={{ fontSize: 9, color: 'var(--text3)' }}>{row.outsourceVendorName}</div>
-      ) : null}
-      <div style={{ fontSize: 9, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
-    </>
-  );
-}
-
-// Action-column cell for an outsource op (legacy L11070-74): PR ref when a PR is
-// raised, PO ref when a PO is created, otherwise the raw status. Legacy's
-// "Create PR" branch (L11070) is an OSP action that lives in Op Entry
-// (useGenerateOspPr), not on this read-oriented status page — so only the
-// resulting references are surfaced here.
-function OutsourceActionRefs({
-  jcCode,
-  jcOpId,
-  status,
-}: {
-  jcCode: string;
-  jcOpId: string;
-  status: OutsourceStatus;
-}): React.JSX.Element {
-  const row = useOutsourceRow(jcCode, jcOpId);
-  if (status === 'pr_raised' && row?.outsourcePrCode) {
-    return <span style={{ fontSize: 10, color: 'var(--blue)' }}>PR: {row.outsourcePrCode}</span>;
-  }
-  if (status === 'po_created' && row?.outsourcePoCode) {
-    return <span style={{ fontSize: 10, color: 'var(--cyan)' }}>PO: {row.outsourcePoCode}</span>;
-  }
-  return <span style={{ fontSize: 10, color: 'var(--purple)' }}>{OUTSOURCE_STATUS_LABEL[status]}</span>;
-}
 
 // Operation Flow stepper (legacy L11210-11240). Extracted from the view body so
 // the JC edit branch (mode='edit') renders the identical read-only strip — same
@@ -582,248 +480,30 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         {detailOpen ? '▾' : '▸'} Operations Detail
       </button>
       {detailOpen ? (
-        <div className="panel" style={{ marginBottom: 16 }}>
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Op</th>
-                  <th>Machine</th>
-                  <th>Operation</th>
-                  <th>Cycle(h)</th>
-                  <th>Prog/Tool</th>
-                  <th>Order Qty</th>
-                  <th style={{ color: 'var(--green)' }}>Completed Qty</th>
-                  <th style={{ color: 'var(--amber)' }}>Pending Qty</th>
-                  <th style={{ color: 'var(--blue)' }}>At Vendor</th>
-                  <th style={{ color: 'var(--cyan)' }}>In QC</th>
-                  <th>Status</th>
-                  <th>Recent Logs</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedOps.length === 0 ? (
-                  <tr>
-                    <td colSpan={13} className="empty-state">No operations</td>
-                  </tr>
-                ) : (
-                  sortedOps.map((o) => {
-                    const st = OP_STATUS[o.computedStatus] ?? { label: o.computedStatus, cls: 'b-grey' };
-                    const isQc = o.opType === 'qc';
-                    // Canonical per-op quantities: Completed = this op's done qty
-                    // (QC → accepted; process/outsource → completedQty, which for
-                    // outsource is accepted-back per 0068), Pending = Order − Completed.
-                    const doneQty = isQc ? o.qcAcceptedQty : o.completedQty;
-                    const pendingQty = Math.max(0, jc.orderQty - doneQty);
-                    const opLogs = (logsByOp.get(o.id) ?? []).slice(0, 3);
-                    const isOut = o.opType === 'outsource';
-                    return (
-                      <tr
-                        key={o.id}
-                        style={
-                          isQc
-                            ? { background: 'rgba(34,197,94,0.04)' }
-                            : o.opType === 'outsource'
-                              ? { background: 'rgba(255,176,32,0.04)' }
-                              : undefined
-                        }
-                      >
-                        <td className="td-ctr mono fw-700" style={{ fontSize: 15 }}>
-                          {o.opSeq}
-                          {isQc ? (
-                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--green)' }}>🔬 QC</div>
-                          ) : o.qcRequired ? (
-                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--green)' }}>QC</div>
-                          ) : null}
-                          {isOut ? <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--amber)' }}>🏭 OUT</div> : null}
-                        </td>
-                        <td>
-                          {isQc ? (
-                            <div
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '4px 8px',
-                                background: 'rgba(34,197,94,0.12)',
-                                border: '1px solid rgba(34,197,94,0.3)',
-                                borderRadius: 4,
-                              }}
-                            >
-                              <span style={{ fontSize: 11 }}>🔬</span>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>QC</span>
-                            </div>
-                          ) : isOut ? (
-                            <OutsourceMachineCell
-                              jcCode={jc.code}
-                              jcOpId={o.id}
-                              status={o.outsourceStatus ?? 'pending'}
-                            />
-                          ) : (
-                            <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--cyan)', display: 'inline-block', lineHeight: 1.25, verticalAlign: 'top' }}>
-                              <span style={{ fontWeight: 700, display: 'block' }}>{o.machineCode ?? o.machineCodeText ?? '—'}</span>
-                              {/* Resolved machine name (legacy machTag L1982). */}
-                              {opExtraById.get(o.id)?.machineName ? (
-                                <span style={{ fontSize: 9, color: 'var(--text3)', fontWeight: 400, display: 'block' }}>
-                                  {opExtraById.get(o.id)?.machineName}
-                                </span>
-                              ) : null}
-                            </span>
-                          )}
-                        </td>
-                        <td>{o.operation}</td>
-                        <td className="td-ctr mono">{Number(o.cycleTimeMin) || '—'}</td>
-                        <td style={{ fontSize: 11 }}>
-                          {o.program ? (
-                            <span className="mono" style={{ color: 'var(--blue)' }}>{o.program}</span>
-                          ) : null}
-                          {o.toolNo ? (
-                            <>
-                              {o.program ? <br /> : null}
-                              <span style={{ color: 'var(--cyan)', fontSize: 10 }}>{o.toolNo}</span>
-                            </>
-                          ) : null}
-                          {/* tool_details (legacy L11049) — server-resolved (opExtras). */}
-                          {opExtraById.get(o.id)?.toolDetails ? (
-                            <>
-                              {o.program || o.toolNo ? <br /> : null}
-                              <span style={{ color: 'var(--text3)', fontSize: 10 }}>
-                                {opExtraById.get(o.id)?.toolDetails}
-                              </span>
-                            </>
-                          ) : null}
-                          {!o.program && !o.toolNo ? <span className="text3">—</span> : null}
-                        </td>
-                        <td className="td-ctr">{jc.orderQty}</td>
-                        <td className="td-ctr mono fw-700">
-                          {isQc ? (
-                            <>
-                              <div style={{ fontSize: 13, color: 'var(--green)' }}>{o.qcAcceptedQty}</div>
-                              <div style={{ fontSize: 9, color: 'var(--green)' }}>✓ accepted</div>
-                              {o.qcRejectedQty > 0 ? (
-                                <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{o.qcRejectedQty} rej</div>
-                              ) : null}
-                              {o.qcPending > 0 ? (
-                                <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} pending</div>
-                              ) : null}
-                            </>
-                          ) : (
-                            <>
-                              <span style={{ color: 'var(--green)' }}>{o.completedQty}</span>
-                              {o.qcRequired ? (
-                                <>
-                                  <div style={{ fontSize: 9, color: 'var(--green)' }}>✓{o.qcAcceptedQty} acc</div>
-                                  {o.qcRejectedQty > 0 ? (
-                                    <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{o.qcRejectedQty} rej</div>
-                                  ) : null}
-                                  {o.qcPending > 0 ? (
-                                    <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} pend</div>
-                                  ) : null}
-                                </>
-                              ) : null}
-                            </>
-                          )}
-                        </td>
-                        <td className="td-ctr">
-                          <span className="mono fw-700" style={{ fontSize: 15, color: pendingQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>
-                            {pendingQty}
-                          </span>
-                        </td>
-                        <td className="td-ctr">
-                          {isOut ? (
-                            <span className="mono fw-700" style={{ fontSize: 14, color: o.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)' }}>
-                              {o.atVendorQty}
-                            </span>
-                          ) : (
-                            <span className="text3">—</span>
-                          )}
-                        </td>
-                        <td className="td-ctr">
-                          {isOut ? (
-                            <span className="mono fw-700" style={{ fontSize: 14, color: o.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
-                              {o.inQcQty}
-                            </span>
-                          ) : (
-                            <span className="text3">—</span>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`badge ${st.cls}`}>{st.label}</span>
-                        </td>
-                        <td style={{ fontSize: 11, lineHeight: 1.7 }}>
-                          {opLogs.length === 0 ? (
-                            <span style={{ color: 'var(--text3)', fontSize: 11 }}>No entries</span>
-                          ) : (
-                            opLogs.map((l, li) => (
-                              <span key={l.id} style={{ fontSize: 11, color: 'var(--text2)' }}>
-                                {li > 0 ? <br /> : null}
-                                {l.logDate} · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
-                                {l.operatorName ?? ''}
-                              </span>
-                            ))
-                          )}
-                        </td>
-                        {/* Legacy L11067-11085. Legacy branches on outsource FIRST
-                            (L11068), then QC, then normal ops. The outsource PR-No
-                            (L11072) / PO-No (L11074) refs are wired from the jc-ops
-                            board via OutsourceActionRefs; legacy's Create PR button
-                            (L11070) is an Op Entry action, not surfaced here. */}
-                        <td>
-                          {isOut ? (
-                            <OutsourceActionRefs
-                              jcCode={jc.code}
-                              jcOpId={o.id}
-                              status={o.outsourceStatus ?? 'pending'}
-                            />
-                          ) : isQc ? (
-                            o.qcPending > 0 ? (
-                              <button
-                                type="button"
-                                className="btn btn-sm"
-                                style={{ color: 'var(--green)' }}
-                                onClick={() => void navigate({ to: '/qc-call-register' })}
-                              >
-                                🔬 QC ({o.qcPending})
-                              </button>
-                            ) : o.computedStatus === 'complete' ? (
-                              <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ QC Done</span>
-                            ) : (
-                              <span style={{ fontSize: 10, color: 'var(--text3)' }}>Waiting</span>
-                            )
-                          ) : o.computedStatus === 'complete' ? (
-                            <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ Done</span>
-                          ) : o.computedStatus === 'in_progress' ||
-                            o.computedStatus === 'running' ||
-                            o.completedQty > 0 ? (
-                            /* T33: Log only once the op is started; otherwise the
-                               Start button below is the only action shown. */
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-primary"
-                              onClick={() => void navigate({ to: '/op-entry', search: { jc: jc.code, op: o.id, mode: 'complete' } })}
-                            >
-                              ✚ Log
-                            </button>
-                          ) : null}
-                          {!isQc && !isOut && (o.computedStatus === 'available' || o.computedStatus === 'waiting') ? (
-                            <button
-                              type="button"
-                              className="btn btn-sm"
-                              style={{ marginTop: 3 }}
-                              onClick={() => void navigate({ to: '/op-entry', search: { jc: jc.code, op: o.id, mode: 'start' } })}
-                            >
-                              ▶ Start
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          {sortedOps.length === 0 ? (
+            <div className="panel">
+              <div className="empty-state">No operations</div>
+            </div>
+          ) : (
+            sortedOps.map((o) => (
+              <JcOpCard
+                key={o.id}
+                jc={jc}
+                op={o}
+                machineName={opExtraById.get(o.id)?.machineName ?? null}
+                toolDetails={opExtraById.get(o.id)?.toolDetails ?? null}
+                logs={(logsByOp.get(o.id) ?? []).slice(0, 3)}
+                onStart={(opId) =>
+                  void navigate({ to: '/op-entry', search: { jc: jc.code, op: opId, mode: 'start' } })
+                }
+                onLog={(opId) =>
+                  void navigate({ to: '/op-entry', search: { jc: jc.code, op: opId, mode: 'complete' } })
+                }
+                onQc={() => void navigate({ to: '/qc-call-register' })}
+              />
+            ))
+          )}
         </div>
       ) : null}
 
@@ -928,23 +608,10 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 // (buildJcWriteInput + useUpdateJobCard), the shared OutsourceBalanceModal +
 // useOutsourceOpBalance, and the OP_STATUS map — no reinvented logic.
 
-/** Editable op row shape (mirrors job-card-form's FormOp). `hasStarted` locks
- *  removal/retype; `available` drives the outsource-balance action. */
-interface EditOp {
-  id?: string;
-  machineCode: string;
-  operation: string;
-  opType: 'process' | 'qc' | 'outsource';
-  cycleTimeMin: number;
-  program: string;
-  toolNo: string;
-  toolDetails: string;
-  qcRequired: boolean;
-  outsourceVendorCode: string;
-  outsourceCost: number;
-  hasStarted: boolean;
-  available: number;
-}
+/** Editable op row shape — now shared with the editable op card
+ *  (`JcOpEditValues`, jc-op-edit-card.tsx). Same fields as before; only the
+ *  declaration moved so the card and this screen cannot drift. */
+type EditOp = JcOpEditValues;
 
 // Loader: fetches the editable model + the read-only enriched ops/logs/extras,
 // then renders the form once everything resolves (so the form seeds its state
@@ -1286,354 +953,43 @@ function JcStatusEditForm({
         </div>
       </div>
       {detailOpen ? (
-        <div className="panel" style={{ marginBottom: 16 }}>
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Op</th>
-                  <th>Machine</th>
-                  <th>Operation</th>
-                  <th>Cycle(h)</th>
-                  <th>Prog/Tool</th>
-                  <th>QC</th>
-                  <th>Order Qty</th>
-                  <th style={{ color: 'var(--green)' }}>Completed Qty</th>
-                  <th style={{ color: 'var(--amber)' }}>Pending Qty</th>
-                  <th style={{ color: 'var(--blue)' }}>At Vendor</th>
-                  <th style={{ color: 'var(--cyan)' }}>In QC</th>
-                  <th>Status</th>
-                  <th>Recent Logs</th>
-                  <th style={{ color: 'var(--amber)' }}>Outsource</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {ops.length === 0 ? (
-                  <tr>
-                    <td colSpan={15} className="empty-state">
-                      No operations — click “+ Add Op” or “+ Add QC Op”.
-                    </td>
-                  </tr>
-                ) : (
-                  ops.map((o, i) => {
-                    const isQc = o.opType === 'qc';
-                    const isOut = o.opType === 'outsource';
-                    const en = o.id ? enrichedById.get(o.id) : undefined;
-                    const machineName = machines.find((m) => m.code === o.machineCode)?.name ?? '';
-                    const st = en
-                      ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' })
-                      : null;
-                    const doneQty = en ? (isQc ? en.qcAcceptedQty : en.completedQty) : 0;
-                    const pendingQty = en ? Math.max(0, jc.orderQty - doneQty) : 0;
-                    const opLogs = o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : [];
-                    return (
-                      <tr
-                        key={o.id ?? `new-${i}`}
-                        style={
-                          isQc
-                            ? { background: 'rgba(34,197,94,0.04)' }
-                            : isOut
-                              ? { background: 'rgba(255,176,32,0.04)' }
-                              : undefined
-                        }
-                      >
-                        <td className="td-ctr mono fw-700" style={{ fontSize: 15 }}>
-                          {en ? en.opSeq : i + 1}
-                          {isQc ? (
-                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--green)' }}>🔬 QC</div>
-                          ) : null}
-                          {isOut ? (
-                            <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--amber)' }}>🏭 OUT</div>
-                          ) : null}
-                        </td>
-                        {/* Machine — editable input for process ops. */}
-                        <td>
-                          {isQc ? (
-                            <span className="badge b-green">🔬 QC</span>
-                          ) : isOut ? (
-                            /* T32b: an OSP op has no machine — show an inactive
-                               badge like QC, not a greyed empty machine input. */
-                            <span
-                              className="badge"
-                              style={{
-                                background: 'rgba(245,158,11,0.12)',
-                                color: 'var(--amber)',
-                                border: '1px solid rgba(245,158,11,0.35)',
-                              }}
-                            >
-                              🏭 OSP
-                            </span>
-                          ) : (
-                            <>
-                              <SearchableSelect
-                                id={`jc-edit-mach-${o.id ?? i}`}
-                                value={machines.find((m) => m.code === o.machineCode)?.id ?? null}
-                                onChange={(id) =>
-                                  setOp(i, {
-                                    machineCode: id
-                                      ? (machines.find((m) => m.id === id)?.code ?? '')
-                                      : '',
-                                  })
-                                }
-                                onSearch={setMachineSearch}
-                                options={machineOptions}
-                                placeholder="🔍 Machine ★"
-                                valueLabel={o.machineCode || undefined}
-                                selectedLabel={(m) => m.code ?? m.name ?? ''}
-                              />
-                              <div className="cyan" style={{ fontSize: 10, marginTop: 2, minHeight: 13 }}>
-                                {machineName}
-                              </div>
-                            </>
-                          )}
-                        </td>
-                        {/* Operation — editable. */}
-                        <td>
-                          <input
-                            className="innovic-input"
-                            value={o.operation}
-                            placeholder={isQc ? 'QC process name ★' : 'Operation name ★'}
-                            onChange={(e) => setOp(i, { operation: e.target.value })}
-                            style={{ fontSize: 12 }}
-                          />
-                        </td>
-                        {/* Cycle — editable. */}
-                        <td>
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            className="innovic-input"
-                            value={o.cycleTimeMin || ''}
-                            onChange={(e) => setOp(i, { cycleTimeMin: Number(e.target.value) })}
-                            style={{ fontSize: 12, width: 70 }}
-                          />
-                        </td>
-                        {/* Prog/Tool — editable (program + tool details). */}
-                        <td>
-                          {isQc ? (
-                            <span className="text3" style={{ fontSize: 10 }}>—</span>
-                          ) : (
-                            <>
-                              <input
-                                className="innovic-input"
-                                value={o.program}
-                                placeholder="CNC program"
-                                onChange={(e) => setOp(i, { program: e.target.value })}
-                                style={{ fontSize: 11, marginBottom: 3, minWidth: 120 }}
-                              />
-                              <input
-                                className="innovic-input"
-                                value={o.toolDetails}
-                                placeholder="Tool details"
-                                onChange={(e) => setOp(i, { toolDetails: e.target.value })}
-                                style={{ fontSize: 11, minWidth: 120 }}
-                              />
-                            </>
-                          )}
-                        </td>
-                        {/* QC column — read-only. A dedicated QC op shows YES; a
-                           process/outsource op no longer carries a per-op "QC
-                           required" toggle — QC is added as its own operation via
-                           "+ Add QC Op". Existing qcRequired data is preserved
-                           unchanged (o.qcRequired still flows through the write). */}
-                        <td className="td-ctr">
-                          {isQc ? (
-                            <span className="badge b-green">YES</span>
-                          ) : (
-                            <span className="text3" style={{ fontSize: 10 }}>—</span>
-                          )}
-                        </td>
-                        {/* Order Qty — read-only (JC order qty). */}
-                        <td className="td-ctr">{jc.orderQty}</td>
-                        {/* Completed — read-only from enriched. */}
-                        <td className="td-ctr mono fw-700">
-                          {!en ? (
-                            <span className="text3">—</span>
-                          ) : isQc ? (
-                            <>
-                              <div style={{ fontSize: 13, color: 'var(--green)' }}>{en.qcAcceptedQty}</div>
-                              <div style={{ fontSize: 9, color: 'var(--green)' }}>✓ accepted</div>
-                              {en.qcRejectedQty > 0 ? (
-                                <div style={{ fontSize: 9, color: 'var(--red)' }}>✗{en.qcRejectedQty} rej</div>
-                              ) : null}
-                            </>
-                          ) : (
-                            <>
-                              <span style={{ color: 'var(--green)' }}>{en.completedQty}</span>
-                              {en.qcRequired && en.qcAcceptedQty > 0 ? (
-                                <div style={{ fontSize: 9, color: 'var(--green)' }}>✓{en.qcAcceptedQty} acc</div>
-                              ) : null}
-                            </>
-                          )}
-                        </td>
-                        {/* Pending — read-only. */}
-                        <td className="td-ctr">
-                          {!en ? (
-                            <span className="text3">—</span>
-                          ) : (
-                            <span className="mono fw-700" style={{ fontSize: 15, color: pendingQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>
-                              {pendingQty}
-                            </span>
-                          )}
-                        </td>
-                        {/* At Vendor — read-only. */}
-                        <td className="td-ctr">
-                          {en && isOut ? (
-                            <span className="mono fw-700" style={{ fontSize: 14, color: en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)' }}>
-                              {en.atVendorQty}
-                            </span>
-                          ) : (
-                            <span className="text3">—</span>
-                          )}
-                        </td>
-                        {/* In QC — read-only. */}
-                        <td className="td-ctr">
-                          {en && isOut ? (
-                            <span className="mono fw-700" style={{ fontSize: 14, color: en.inQcQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}>
-                              {en.inQcQty}
-                            </span>
-                          ) : (
-                            <span className="text3">—</span>
-                          )}
-                        </td>
-                        {/* Status — read-only badge. */}
-                        <td>
-                          {st ? (
-                            <span className={`badge ${st.cls}`}>{st.label}</span>
-                          ) : (
-                            <span className="text3" style={{ fontSize: 10 }}>—</span>
-                          )}
-                        </td>
-                        {/* Recent Logs — read-only. */}
-                        <td style={{ fontSize: 11, lineHeight: 1.7 }}>
-                          {opLogs.length === 0 ? (
-                            <span style={{ color: 'var(--text3)', fontSize: 11 }}>No entries</span>
-                          ) : (
-                            opLogs.map((l, li) => (
-                              <span key={l.id} style={{ fontSize: 11, color: 'var(--text2)' }}>
-                                {li > 0 ? <br /> : null}
-                                {l.logDate} · {l.shift} · <b style={{ color: 'var(--green)' }}>+{l.qty}</b> ·{' '}
-                                {l.operatorName ?? ''}
-                              </span>
-                            ))
-                          )}
-                        </td>
-                        {/* Outsource — editable. Started process op with a
-                            remaining balance → the 🏭 Outsource balance modal;
-                            un-started process op → the OUTSOURCE checkbox +
-                            vendor/cost inputs (mirrors job-card-form). */}
-                        <td>
-                          {isQc ? (
-                            <span className="text3" style={{ fontSize: 10 }}>—</span>
-                          ) : (
-                            <div>
-                              {o.hasStarted && !isOut && o.available > 0 && o.id ? (
-                                <button
-                                  type="button"
-                                  className="btn btn-sm"
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    color: 'var(--amber)',
-                                    border: '1px solid rgba(245,158,11,0.4)',
-                                    padding: '2px 6px',
-                                  }}
-                                  title={`Outsource the remaining ${o.available} pc(s) of this started operation`}
-                                  onClick={() => {
-                                    setBalanceNote(null);
-                                    setBalanceOpIdx(i);
-                                  }}
-                                >
-                                  🏭 Outsource balance
-                                </button>
-                              ) : (
-                                <label
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 3,
-                                    cursor: o.hasStarted ? 'not-allowed' : 'pointer',
-                                  }}
-                                  title={o.hasStarted ? 'Operation already started — locked' : 'Outsource this op'}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isOut}
-                                    disabled={o.hasStarted}
-                                    onChange={(e) =>
-                                      setOp(i, { opType: e.target.checked ? 'outsource' : 'process' })
-                                    }
-                                  />
-                                  <span style={{ fontSize: 9, fontWeight: 700, color: isOut ? 'var(--amber)' : 'var(--text3)' }}>
-                                    {o.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
-                                  </span>
-                                </label>
-                              )}
-                              {isOut ? (
-                                <div style={{ marginTop: 3 }}>
-                                  <input
-                                    className="innovic-input"
-                                    list="dlJcEditVendor"
-                                    value={o.outsourceVendorCode}
-                                    placeholder="🔍 Vendor"
-                                    onChange={(e) => setOp(i, { outsourceVendorCode: e.target.value })}
-                                    style={{ fontSize: 10, marginBottom: 3 }}
-                                  />
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step="0.01"
-                                    className="innovic-input"
-                                    value={o.outsourceCost || ''}
-                                    placeholder="₹ Cost/pc"
-                                    onChange={(e) => setOp(i, { outsourceCost: Number(e.target.value) })}
-                                    style={{ fontSize: 10 }}
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-                        </td>
-                        {/* Move / remove — started ops locked from re-sequence
-                            and removal (server also blocks OSP-committed ops). */}
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm btn-icon"
-                            disabled={i === 0 || o.hasStarted}
-                            onClick={() => moveOp(i, -1)}
-                            title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move up'}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm btn-icon"
-                            disabled={i === ops.length - 1 || o.hasStarted}
-                            onClick={() => moveOp(i, 1)}
-                            title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move down'}
-                          >
-                            ▼
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm btn-icon"
-                            disabled={o.hasStarted}
-                            onClick={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
-                            title={o.hasStarted ? 'Started op — cannot remove' : 'Remove'}
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div style={{ marginBottom: 16 }}>
+          {ops.length === 0 ? (
+            <div className="panel">
+              <div className="empty-state">
+                No operations — click “+ Add Op” or “+ Add QC Op”.
+              </div>
+            </div>
+          ) : (
+            ops.map((o, i) => {
+              const en = o.id ? enrichedById.get(o.id) : undefined;
+              return (
+                <JcOpEditCard
+                  key={o.id ?? `new-${i}`}
+                  jc={jc}
+                  op={o}
+                  index={i}
+                  seqLabel={en ? en.opSeq : i + 1}
+                  enriched={en}
+                  machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
+                  machines={machines}
+                  machineOptions={machineOptions}
+                  onMachineSearch={setMachineSearch}
+                  vendorListId="dlJcEditVendor"
+                  logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
+                  isFirst={i === 0}
+                  isLast={i === ops.length - 1}
+                  onChange={(patch) => setOp(i, patch)}
+                  onMove={(dir) => moveOp(i, dir)}
+                  onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+                  onOutsourceBalance={() => {
+                    setBalanceNote(null);
+                    setBalanceOpIdx(i);
+                  }}
+                />
+              );
+            })
+          )}
         </div>
       ) : null}
 

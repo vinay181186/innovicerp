@@ -31,6 +31,7 @@ import {
   useUpdateJobCard,
 } from '../api';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
+import { JcOpEditCard } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 
 const QC_DOC_TYPES = [
@@ -43,26 +44,8 @@ const QC_DOC_TYPES = [
   'Other',
 ];
 
-// Per-op computed_status → badge label/class. Local copy of the JC Status
-// page's OP_STATUS map (jc-status-content.tsx L29-42) so the edit form's
-// read-only Status cell renders the same wording/colour as the Status page.
-// Not imported cross-file — that map is not exported. Unmapped values fall
-// back to the raw status (underscores → spaces) with a muted class so a
-// status the map doesn't cover never renders blank.
-const OP_STATUS: Record<string, { label: string; cls: string }> = {
-  waiting: { label: 'Waiting', cls: 'b-red' },
-  available: { label: 'Available', cls: 'b-blue' },
-  in_progress: { label: 'In Progress', cls: 'b-amber' },
-  running: { label: 'Running', cls: 'b-amber' },
-  qc_pending: { label: 'QC Pending', cls: 'b-amber' },
-  complete: { label: 'Complete', cls: 'b-green' },
-  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
-  po_created: { label: 'PO Created', cls: 'b-blue' },
-  at_vendor: { label: 'Processing', cls: 'b-amber' },
-  received: { label: 'Incoming QC', cls: 'b-cyan' },
-  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
-  outsource: { label: 'Outsource', cls: 'b-amber' },
-};
+// The local OP_STATUS copy that used to live here is gone: the op card reads
+// the shared map (lib/jc-op-labels.ts), so there is no second copy to drift.
 
 interface FormOp {
   id?: string;
@@ -217,6 +200,19 @@ export function JobCardForm({
   // success note shown after a balance is sent out.
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
+
+  // Machine picker: the op card uses the shared SearchableSelect (same control
+  // the JC edit screen already uses), replacing this form's <datalist>, which
+  // collapsed on a pre-filled value (T32a). Only one row's dropdown is open at
+  // a time, so a shared search term is fine.
+  const [machineSearch, setMachineSearch] = useState('');
+  const machineOptions = machines
+    .filter(
+      (m) =>
+        !machineSearch.trim() ||
+        `${m.code} ${m.name}`.toLowerCase().includes(machineSearch.trim().toLowerCase()),
+    )
+    .map((m) => ({ id: m.id, code: m.code, name: m.name }));
 
   const sourceByLabel = useMemo(() => {
     const m = new Map<string, JobCardSourceOption>();
@@ -396,13 +392,6 @@ export function JobCardForm({
       <datalist id="dlJcSource">
         {availableSources.map((o) => (
           <option key={o.lineId} value={sourceLabel(o)} />
-        ))}
-      </datalist>
-      <datalist id="dlJcMachine">
-        {machines.map((m) => (
-          <option key={m.id} value={m.code}>
-            {m.code} — {m.name}
-          </option>
         ))}
       </datalist>
       <datalist id="dlJcVendor">
@@ -649,309 +638,42 @@ export function JobCardForm({
             </button>
           </div>
         </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              {/* Column order mirrors legacy tHead L5932. Two deliberate
-                  deviations, both documented in the report:
-                  - "Cycle (min)": legacy's header reads "Cycle(h)" but our
-                    column is jc_ops.cycle_time_min (minutes) — porting the
-                    "(h)" label would mislabel the unit users type into.
-                  - "QC": legacy BUILDS a qcCell (L5898) but never inserts it
-                    into the row (L5923) — dead code, so legacy renders no QC
-                    column. Ours binds jc_ops.qc_required, a real field. Kept. */}
-              <tr>
-                <th style={{ width: 32 }}>#</th>
-                <th style={{ width: 150 }}>Machine</th>
-                <th>Operation</th>
-                <th style={{ width: 80 }} className="text3">
-                  Cycle (min)
-                </th>
-                <th style={{ width: 110, color: 'var(--blue)' }}>Program</th>
-                <th>Tool Details</th>
-                <th style={{ width: 60 }}>QC</th>
-                {/* Read-only per-op live progress (mirrors the JC Status page). */}
-                <th style={{ width: 40, color: 'var(--text3)' }} title="Input available (upstream cleared)">
-                  In
-                </th>
-                <th style={{ width: 40, color: 'var(--green)' }} title="Done — completed (QC-accepted for QC ops)">
-                  Done
-                </th>
-                <th style={{ width: 40, color: 'var(--cyan)' }} title="QC accepted qty">
-                  QC✓
-                </th>
-                <th style={{ width: 44, color: 'var(--amber)' }} title="Available — remaining to work / send">
-                  Avail
-                </th>
-                <th style={{ width: 74 }}>Status</th>
-                <th style={{ minWidth: 180, color: 'var(--amber)' }}>Outsource</th>
-                <th style={{ width: 90 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {ops.length === 0 ? (
-                <tr>
-                  <td colSpan={14} className="empty-state">
-                    No operations yet — click “+ Add Op” for machining steps or “+ Add QC Op” for QC
-                    inspection steps.
-                  </td>
-                </tr>
-              ) : (
-                ops.map((o, i) => {
-                  const isQc = o.opType === 'qc';
-                  const isOut = o.opType === 'outsource';
-                  const machineName =
-                    machines.find((m) => m.code === o.machineCode)?.name ?? '';
-                  // Read-only per-op summary (mirrors the JC Status page). A
-                  // brand-new op has no id / no status-view row → show em-dashes.
-                  const isNewOp = !o.id;
-                  const doneQty = isQc ? o.qcAcceptedQty : o.completedQty;
-                  const statusMeta = OP_STATUS[o.computedStatus] ?? {
-                    label: o.computedStatus.replace(/_/g, ' '),
-                    cls: 'b-grey',
-                  };
-                  return (
-                    <tr
-                      key={i}
-                      style={
-                        isQc
-                          ? {
-                              background: 'rgba(34,197,94,0.06)',
-                              borderLeft: '3px solid var(--green)',
-                            }
-                          : undefined
-                      }
-                    >
-                      <td className={`td-ctr mono fw-700 ${isQc ? 'green' : 'text3'}`}>{i + 1}</td>
-                      <td>
-                        {isQc ? (
-                          <span className="badge b-green">🔬 QC INSPECTION</span>
-                        ) : (
-                          <>
-                            <input
-                              className="innovic-input"
-                              list="dlJcMachine"
-                              value={o.machineCode}
-                              placeholder="🔍 Machine ★"
-                              disabled={isOut}
-                              onChange={(e) => setOp(i, { machineCode: e.target.value })}
-                              style={{ fontSize: 11 }}
-                            />
-                            {/* Resolved machine name (legacy #mn_i, L5892). */}
-                            <div className="cyan" style={{ fontSize: 10, marginTop: 2, minHeight: 13 }}>
-                              {machineName}
-                            </div>
-                          </>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          className="innovic-input"
-                          value={o.operation}
-                          placeholder={isQc ? 'QC process name ★' : 'Operation name ★'}
-                          onChange={(e) => setOp(i, { operation: e.target.value })}
-                          style={{ fontSize: 12 }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          className="innovic-input"
-                          value={o.cycleTimeMin || ''}
-                          onChange={(e) => setOp(i, { cycleTimeMin: Number(e.target.value) })}
-                          style={{ fontSize: 12 }}
-                        />
-                      </td>
-                      {/* QC rows render literal em-dashes for Program / Tool
-                          Details (legacy `emptyCells` L5879), not disabled
-                          inputs. */}
-                      <td>
-                        {isQc ? (
-                          <span className="text3" style={{ fontSize: 10 }}>
-                            —
-                          </span>
-                        ) : (
-                          <input
-                            className="innovic-input"
-                            value={o.program}
-                            placeholder="CNC program"
-                            onChange={(e) => setOp(i, { program: e.target.value })}
-                            style={{ fontSize: 12 }}
-                          />
-                        )}
-                      </td>
-                      <td>
-                        {isQc ? (
-                          <span className="text3" style={{ fontSize: 10 }}>
-                            —
-                          </span>
-                        ) : (
-                          <input
-                            className="innovic-input"
-                            value={o.toolDetails}
-                            placeholder="Insert, fixtures, setup notes"
-                            onChange={(e) => setOp(i, { toolDetails: e.target.value })}
-                            style={{ fontSize: 12 }}
-                          />
-                        )}
-                      </td>
-                      {/* QC column — read-only. A dedicated QC op shows YES; a
-                          process/outsource op no longer carries a per-op "QC
-                          required" toggle — QC is added as its own operation via
-                          "+ Add QC Op". */}
-                      <td className="td-ctr">
-                        {isQc ? (
-                          <span className="badge b-green">YES</span>
-                        ) : (
-                          <span className="text3" style={{ fontSize: 10 }}>
-                            —
-                          </span>
-                        )}
-                      </td>
-                      {/* Read-only per-op live progress (mirrors JC Status). */}
-                      <td className="td-ctr mono text3" style={{ fontSize: 11 }}>
-                        {isNewOp ? '—' : o.inputAvail}
-                      </td>
-                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--green)' }}>
-                        {isNewOp ? '—' : doneQty}
-                      </td>
-                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                        {isNewOp ? '—' : o.qcAcceptedQty}
-                      </td>
-                      <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
-                        {isNewOp ? '—' : o.available}
-                      </td>
-                      <td className="td-ctr">
-                        {isNewOp ? (
-                          <span className="text3" style={{ fontSize: 10 }}>
-                            —
-                          </span>
-                        ) : (
-                          <span className={'badge ' + (statusMeta.cls ?? '')}>
-                            {statusMeta.label ?? o.computedStatus}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {isQc ? (
-                          <span className="text3" style={{ fontSize: 10 }}>
-                            —
-                          </span>
-                        ) : (
-                          <div>
-                            {o.hasStarted && !isOut && (o.available ?? 0) > 0 && o.id ? (
-                              // Started in-house process op with remaining qty:
-                              // outsource the balance (ADR-081 dual-lane) rather
-                              // than the dead "OUTSRC 🔒" lock.
-                              <button
-                                type="button"
-                                className="btn btn-sm"
-                                style={{
-                                  fontSize: 9,
-                                  fontWeight: 700,
-                                  color: 'var(--amber)',
-                                  border: '1px solid rgba(245,158,11,0.4)',
-                                  padding: '2px 6px',
-                                }}
-                                title={`Outsource the remaining ${o.available} pc(s) of this started operation`}
-                                onClick={() => {
-                                  setBalanceNote(null);
-                                  setBalanceOpIdx(i);
-                                }}
-                              >
-                                🏭 Outsource balance
-                              </button>
-                            ) : (
-                              <label
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 3,
-                                  cursor: o.hasStarted ? 'not-allowed' : 'pointer',
-                                }}
-                                title={o.hasStarted ? 'Operation already started — locked' : 'Outsource this op'}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isOut}
-                                  disabled={o.hasStarted}
-                                  onChange={(e) =>
-                                    setOp(i, { opType: e.target.checked ? 'outsource' : 'process' })
-                                  }
-                                />
-                                <span
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    color: isOut ? 'var(--amber)' : 'var(--text3)',
-                                  }}
-                                >
-                                  {o.hasStarted ? 'OUTSRC 🔒' : 'OUTSOURCE'}
-                                </span>
-                              </label>
-                            )}
-                            {isOut ? (
-                              <div style={{ marginTop: 3 }}>
-                                <input
-                                  className="innovic-input"
-                                  list="dlJcVendor"
-                                  value={o.outsourceVendorCode}
-                                  placeholder="🔍 Vendor"
-                                  onChange={(e) => setOp(i, { outsourceVendorCode: e.target.value })}
-                                  style={{ fontSize: 10, marginBottom: 3 }}
-                                />
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  className="innovic-input"
-                                  value={o.outsourceCost || ''}
-                                  placeholder="₹ Cost/pc"
-                                  onChange={(e) => setOp(i, { outsourceCost: Number(e.target.value) })}
-                                  style={{ fontSize: 10 }}
-                                />
-                              </div>
-                            ) : null}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm btn-icon"
-                          disabled={i === 0 || o.hasStarted}
-                          onClick={() => moveOp(i, -1)}
-                          title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move up'}
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm btn-icon"
-                          disabled={i === ops.length - 1 || o.hasStarted}
-                          onClick={() => moveOp(i, 1)}
-                          title={o.hasStarted ? 'Started op — cannot re-sequence' : 'Move down'}
-                        >
-                          ▼
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          disabled={o.hasStarted}
-                          onClick={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
-                          title={o.hasStarted ? 'Started op — cannot remove' : 'Remove'}
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div className="panel-body">
+          {ops.length === 0 ? (
+            <div className="empty-state">
+              No operations yet — click “+ Add Op” for machining steps or “+ Add QC Op” for QC
+              inspection steps.
+            </div>
+          ) : (
+            ops.map((o, i) => (
+              <JcOpEditCard
+                key={i}
+                // Order Qty is typed on this screen; the other tiles have no
+                // source until the JC is saved, so they render “—”.
+                jc={{ orderQty: Number(orderQty) || 0 }}
+                op={o}
+                index={i}
+                seqLabel={i + 1}
+                enriched={undefined}
+                machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
+                machines={machines}
+                machineOptions={machineOptions}
+                onMachineSearch={setMachineSearch}
+                vendorListId="dlJcVendor"
+                cycleLabel="Cycle (min)"
+                toolDetailsPlaceholder="Insert, fixtures, setup notes"
+                isFirst={i === 0}
+                isLast={i === ops.length - 1}
+                onChange={(patch) => setOp(i, patch)}
+                onMove={(dir) => moveOp(i, dir)}
+                onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+                onOutsourceBalance={() => {
+                  setBalanceNote(null);
+                  setBalanceOpIdx(i);
+                }}
+              />
+            ))
+          )}
         </div>
       </div>
 
