@@ -91,7 +91,9 @@ type DispatchableRow = {
 
 // Per-SO-line readiness: final-op effective output (QC-accepted for QC/qc-required
 // ops, received for completed outsource, else completed qty) summed across the
-// line's JCs, minus already-dispatched.
+// line's JCs, PLUS direct-purchase received-and-QC-accepted qty (a direct_purchase
+// plan buys the finished item — no JC — so its GRN feeds readiness directly),
+// minus already-dispatched.
 async function loadDispatchable(
   tx: DbTransaction,
   companyId: string,
@@ -104,7 +106,7 @@ async function loadDispatchable(
       SELECT sol.id AS so_line_id, sol.line_no,
         COALESCE(i.code, sol.item_code_text) AS item_code,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
-        COALESCE(rdy.ready, 0) AS ready_qty
+        COALESCE(rdy.ready, 0) + COALESCE(dp.ready, 0) AS ready_qty
       FROM sales_order_lines sol
       LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
       LEFT JOIN LATERAL (
@@ -133,6 +135,31 @@ async function loadDispatchable(
           ORDER BY jc.id, vs.op_seq DESC
         ) x
       ) rdy ON TRUE
+      -- Direct-purchase readiness: a direct_purchase plan buys the finished item
+      -- outright (PR -> PO -> GRN, no Job Card). Sum the QC-accepted GRN qty on
+      -- that plan's PO line(s) for this SO line — the same qc_accepted_qty that
+      -- credits store stock, so ready == what actually passed Incoming QC. Scoped
+      -- via plans.dp_pr_id -> pr.po_id so ONLY direct-purchase POs count (never
+      -- raw-material or outsource POs); source_jc_op_id IS NULL is a belt-and-
+      -- suspenders guard against ever picking up an outsource line (those are
+      -- already counted by the JC branch above, so no double count).
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(grl.qc_accepted_qty), 0) AS ready
+        FROM purchase_order_lines pol
+        JOIN goods_receipt_note_lines grl
+          ON grl.purchase_order_line_id = pol.id AND grl.deleted_at IS NULL
+        WHERE pol.source_so_line_id = sol.id
+          AND pol.source_jc_op_id IS NULL
+          AND pol.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM plans p
+            JOIN purchase_requests pr ON pr.id = p.dp_pr_id AND pr.deleted_at IS NULL
+            WHERE p.plan_type = 'direct_purchase'
+              AND p.so_line_id = sol.id
+              AND p.deleted_at IS NULL
+              AND pr.po_id = pol.purchase_order_id
+          )
+      ) dp ON TRUE
       WHERE sol.sales_order_id = ${sid} AND sol.company_id = ${cid} AND sol.deleted_at IS NULL
       ORDER BY sol.line_no
     `),
