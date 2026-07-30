@@ -797,32 +797,17 @@ export function JobCardForm({
                           />
                         )}
                       </td>
+                      {/* QC column — read-only. A dedicated QC op shows YES; a
+                          process/outsource op no longer carries a per-op "QC
+                          required" toggle — QC is added as its own operation via
+                          "+ Add QC Op". */}
                       <td className="td-ctr">
                         {isQc ? (
                           <span className="badge b-green">YES</span>
                         ) : (
-                          <label
-                            style={{
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 3,
-                            }}
-                            title="QC Required after this operation"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={o.qcRequired}
-                              onChange={(e) => setOp(i, { qcRequired: e.target.checked })}
-                            />
-                            <span
-                              className={o.qcRequired ? 'green' : 'text3'}
-                              style={{ fontSize: 9, fontWeight: 700 }}
-                            >
-                              {o.qcRequired ? 'YES' : 'NO'}
-                            </span>
-                          </label>
+                          <span className="text3" style={{ fontSize: 10 }}>
+                            —
+                          </span>
                         )}
                       </td>
                       {/* Read-only per-op live progress (mirrors JC Status). */}

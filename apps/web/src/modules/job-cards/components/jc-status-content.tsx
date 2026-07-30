@@ -1421,36 +1421,28 @@ function JcStatusEditForm({
                                 value={o.program}
                                 placeholder="CNC program"
                                 onChange={(e) => setOp(i, { program: e.target.value })}
-                                style={{ fontSize: 11, marginBottom: 3 }}
+                                style={{ fontSize: 11, marginBottom: 3, minWidth: 120 }}
                               />
                               <input
                                 className="innovic-input"
                                 value={o.toolDetails}
                                 placeholder="Tool details"
                                 onChange={(e) => setOp(i, { toolDetails: e.target.value })}
-                                style={{ fontSize: 11 }}
+                                style={{ fontSize: 11, minWidth: 120 }}
                               />
                             </>
                           )}
                         </td>
-                        {/* QC required — editable checkbox. */}
+                        {/* QC column — read-only. A dedicated QC op shows YES; a
+                           process/outsource op no longer carries a per-op "QC
+                           required" toggle — QC is added as its own operation via
+                           "+ Add QC Op". Existing qcRequired data is preserved
+                           unchanged (o.qcRequired still flows through the write). */}
                         <td className="td-ctr">
                           {isQc ? (
                             <span className="badge b-green">YES</span>
                           ) : (
-                            <label
-                              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}
-                              title="QC Required after this operation"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={o.qcRequired}
-                                onChange={(e) => setOp(i, { qcRequired: e.target.checked })}
-                              />
-                              <span className={o.qcRequired ? 'green' : 'text3'} style={{ fontSize: 9, fontWeight: 700 }}>
-                                {o.qcRequired ? 'YES' : 'NO'}
-                              </span>
-                            </label>
+                            <span className="text3" style={{ fontSize: 10 }}>—</span>
                           )}
                         </td>
                         {/* Order Qty — read-only (JC order qty). */}

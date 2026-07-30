@@ -75,10 +75,16 @@ export function SearchableSelect({
   const baseId = id ?? 'searchable-select';
   const listboxId = `${baseId}-listbox`;
 
-  // Show a pre-selected value's label when the field is not being edited.
+  // Show a pre-selected value's label when the field is not being edited — even
+  // when its id isn't in the current options page yet (edit forms: the saved row
+  // may sit beyond the first page, be inactive, or still be loading, so the id
+  // lookup returns null while `valueLabel` still holds the real code/name). The
+  // caller only passes `valueLabel` when something is selected, and typing clears
+  // it via handleInput, so we don't gate on the resolved `value` id here — that
+  // gate was the "picker renders blank in edit mode" bug.
   useEffect(() => {
-    if (!open && value && valueLabel && query === '') setQuery(valueLabel);
-  }, [open, value, valueLabel, query]);
+    if (!open && valueLabel && query === '') setQuery(valueLabel);
+  }, [open, valueLabel, query]);
 
   // Close on outside mousedown. Use the CAPTURE phase so this still fires when the
   // component sits inside a container that stops mousedown propagation (e.g. the
