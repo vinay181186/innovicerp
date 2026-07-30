@@ -72,24 +72,57 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
+  // Live per-line validation (no silent clamp): a qty over the available amount
+  // is a hard block — the card shows a friendly message and Save is disabled
+  // until every line is within its available qty.
+  const lineErrors = new Map<number, string>();
+  let anyPositiveQty = false;
+  for (const c of cards) {
+    const line = resolveLine(c.soLineId);
+    if (!line) continue;
+    const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
+    if (Number.isNaN(raw) || raw < 0) {
+      lineErrors.set(c.id, 'Enter a valid quantity.');
+      continue;
+    }
+    if (raw > line.availableQty) {
+      lineErrors.set(
+        c.id,
+        `Only ${line.availableQty} available to dispatch — reduce the qty to ${line.availableQty} or less.`,
+      );
+      continue;
+    }
+    if (raw > 0) anyPositiveQty = true;
+  }
+  const canSave =
+    Boolean(soId) && cards.length > 0 && lineErrors.size === 0 && anyPositiveQty && !create.isPending;
+
   async function submit(): Promise<void> {
     setErr(null);
     if (!soId) return setErr('Select an SO');
     if (cards.length === 0) return setErr('Add at least one line');
 
-    // Resolve each card → SO line, clamp qty to available, merge duplicates.
+    // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
+    // a hard block so the user sees why, instead of us quietly reducing it.
     const byLine = new Map<string, number>();
     for (const c of cards) {
       const line = resolveLine(c.soLineId);
       if (!line) return setErr('Pick an item on every line (or remove the empty line).');
-      const raw = Number(c.qty) || 0;
-      const qty = Math.max(0, Math.min(line.availableQty, raw));
-      if (qty <= 0) continue;
-      byLine.set(line.salesOrderLineId, (byLine.get(line.salesOrderLineId) ?? 0) + qty);
+      const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
+      if (Number.isNaN(raw) || raw < 0) {
+        return setErr(`${line.itemName}: enter a valid dispatch quantity.`);
+      }
+      if (raw > line.availableQty) {
+        return setErr(
+          `${line.itemName}: only ${line.availableQty} available to dispatch (you entered ${raw}). Reduce the qty to ${line.availableQty} or less.`,
+        );
+      }
+      if (raw <= 0) continue;
+      byLine.set(line.salesOrderLineId, (byLine.get(line.salesOrderLineId) ?? 0) + raw);
     }
     const payloadLines = [...byLine.entries()].map(([salesOrderLineId, qty]) => ({
       salesOrderLineId,
-      qty: Math.min(qty, lines.find((l) => l.salesOrderLineId === salesOrderLineId)?.availableQty ?? qty),
+      qty,
     }));
     if (payloadLines.length === 0) return setErr('Enter a dispatch qty on at least one line');
 
@@ -202,19 +235,19 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 const opts = lines
                   .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
                   .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
+                const hasErr = lineErrors.has(card.id);
                 return (
+                  <div key={card.id} style={{ marginBottom: 8 }}>
                   <div
-                    key={card.id}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: GRID,
                       gap: 8,
                       alignItems: 'center',
                       background: 'var(--bg)',
-                      border: '1px solid var(--border)',
+                      border: `1px solid ${hasErr ? 'var(--red)' : 'var(--border)'}`,
                       borderRadius: 8,
                       padding: 10,
-                      marginBottom: 8,
                     }}
                   >
                     <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
@@ -258,12 +291,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                       value={card.qty}
                       disabled={!line || line.availableQty <= 0}
                       onChange={(e) => patchLine(card.id, { qty: e.target.value })}
-                      onBlur={(e) => {
-                        if (!line) return;
-                        const clamped = Math.max(0, Math.min(line.availableQty, Number(e.target.value) || 0));
-                        patchLine(card.id, { qty: e.target.value.trim() === '' ? '' : String(clamped) });
+                      style={{
+                        textAlign: 'center',
+                        ...(hasErr ? { borderColor: 'var(--red)', color: 'var(--red)' } : {}),
                       }}
-                      style={{ textAlign: 'center' }}
                     />
                     <button
                       type="button"
@@ -274,6 +305,12 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                     >
                       <X size={14} />
                     </button>
+                  </div>
+                  {hasErr ? (
+                    <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 4, paddingLeft: 44 }}>
+                      ⚠ {lineErrors.get(card.id)}
+                    </div>
+                  ) : null}
                   </div>
                 );
               })}
@@ -290,7 +327,17 @@ function CustomerDispatchNewPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/customer-dispatches' })}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" disabled={create.isPending} onClick={() => void submit()}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!canSave}
+              title={
+                lineErrors.size > 0
+                  ? 'Fix the highlighted lines — dispatch qty cannot exceed the available qty.'
+                  : undefined
+              }
+              onClick={() => void submit()}
+            >
               {create.isPending ? 'Saving…' : 'Create Dispatch'}
             </button>
           </div>
