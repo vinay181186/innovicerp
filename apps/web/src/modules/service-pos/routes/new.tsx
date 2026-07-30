@@ -85,7 +85,7 @@ function ServicePosNewPage(): React.JSX.Element {
   const taxAmount = (subtotal * gstPct) / 100;
   const total = subtotal + taxAmount;
 
-  async function save(status: 'draft' | 'pending'): Promise<void> {
+  async function save(): Promise<void> {
     setSubmitError(null);
     const validLines = lines.filter((l) => l.description.trim());
     if (!spoNo.trim()) {
@@ -109,7 +109,9 @@ function ServicePosNewPage(): React.JSX.Element {
       taxType,
       gstPct,
       paymentTerms,
-      status,
+      // Server forces 'pending' (the active "Open" state) — sent only to satisfy
+      // the input type; there is no submit/approval step.
+      status: 'pending',
       lines: validLines.map<ServicePoLineInput>((l) => ({
         description: l.description.trim(),
         qty: l.qty,
@@ -429,26 +431,17 @@ function ServicePosNewPage(): React.JSX.Element {
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
           <button
             type="button"
-            className="btn btn-ghost"
-            style={{ border: '1px solid var(--amber)', color: 'var(--amber)' }}
-            disabled={createMut.isPending}
-            onClick={() => void save('draft')}
-          >
-            💾 Save Draft
-          </button>
-          <button
-            type="button"
             className="btn btn-success"
             style={{ flex: 1, fontSize: 14, padding: 10 }}
             disabled={createMut.isPending}
-            onClick={() => void save('pending')}
+            onClick={() => void save()}
           >
             {createMut.isPending ? (
               <>
                 <Loader2 className="inline h-4 w-4 animate-spin" /> Saving…
               </>
             ) : (
-              '✔ Save & Submit for Approval'
+              '✔ Save Service PO'
             )}
           </button>
         </div>

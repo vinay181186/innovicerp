@@ -253,7 +253,11 @@ export async function createServicePo(
         total: String(total),
         paymentTerms: input.paymentTerms,
         remarks: input.remarks ?? null,
-        status: input.status,
+        // A new Service PO is born OPEN (no submit/approval step). The client's
+        // status is ignored so an SPO can never be created already-approved/
+        // completed/cancelled. Stored as 'pending' — the single active state,
+        // surfaced in the UI as "Open". Moves only via complete / cancel.
+        status: 'pending',
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -440,8 +444,9 @@ export async function approveServicePo(id: string, user: AuthContext): Promise<S
   });
 }
 
-// Mark an approved Service PO as completed (work done / billed). Forward-only:
-// approved → completed. Manager/admin (requireWriteRole).
+// Mark an OPEN Service PO as completed (work done / billed). Allowed from any
+// live (non-terminal) state; a completed or cancelled SPO can't be completed.
+// Manager/admin (requireWriteRole).
 export async function completeServicePo(id: string, user: AuthContext): Promise<ServicePoDetail> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
@@ -456,10 +461,8 @@ export async function completeServicePo(id: string, user: AuthContext): Promise<
       .limit(1);
     if (existing.length === 0) throw new NotFoundError(`Service PO ${id} not found`);
     const cur = existing[0]!;
-    if (cur.status !== 'approved') {
-      throw new ValidationError(
-        `Service PO ${cur.spoNo} is ${cur.status}; only an approved SPO can be marked completed`,
-      );
+    if (cur.status === 'completed' || cur.status === 'cancelled') {
+      throw new ValidationError(`Service PO ${cur.spoNo} is ${cur.status} — cannot mark completed`);
     }
     await tx
       .update(servicePos)

@@ -30,20 +30,18 @@ function inr(n: number): string {
   return Math.round(n).toLocaleString('en-IN');
 }
 
+// Simplified lifecycle: active SPOs (draft/pending/approved) all show as "Open";
+// only Completed and Cancelled are distinct.
 function statusColor(s: string): string {
-  if (s === 'approved') return 'var(--green)';
-  if (s === 'pending') return 'var(--amber)';
   if (s === 'completed') return 'var(--cyan)';
   if (s === 'cancelled') return 'var(--red)';
-  return 'var(--text3)';
+  return 'var(--amber)'; // Open
 }
 
-// Legacy stores the status title-cased and prints it verbatim (_spoRegister
-// L27651). Our enum is lower-case, so map back to legacy's own strings.
 const STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft',
-  pending: 'Pending',
-  approved: 'Approved',
+  draft: 'Open',
+  pending: 'Open',
+  approved: 'Open',
   completed: 'Completed',
   cancelled: 'Cancelled',
 };
@@ -70,8 +68,10 @@ function ServicePosListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const totalValue = items.reduce((s, p) => s + p.total, 0);
-  const pending = items.filter((p) => p.status === 'pending').length;
-  const draft = items.filter((p) => p.status === 'draft').length;
+  const openCount = items.filter(
+    (p) => p.status === 'draft' || p.status === 'pending' || p.status === 'approved',
+  ).length;
+  const completedCount = items.filter((p) => p.status === 'completed').length;
 
   return (
     <div>
@@ -110,12 +110,12 @@ function ServicePosListPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>Pending Approval</div>
-          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>{pending}</div>
+          <div className="text3" style={{ fontSize: 10 }}>Open</div>
+          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>{openCount}</div>
         </div>
         <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>Draft</div>
-          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--text3)' }}>{draft}</div>
+          <div className="text3" style={{ fontSize: 10 }}>Completed</div>
+          <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--cyan)' }}>{completedCount}</div>
         </div>
       </div>
 
@@ -150,9 +150,9 @@ function ServicePosListPage(): React.JSX.Element {
           style={{ width: 160, fontSize: 12 }}
         >
           <option value="">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
+          {/* New SPOs are all "Open" (stored as pending); Completed/Cancelled
+              are the terminal states. */}
+          <option value="pending">Open</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>

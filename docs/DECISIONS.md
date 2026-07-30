@@ -3420,6 +3420,37 @@ carried `status`).
   from vendor/procurement reports; ₹0 SPOs allowed; free-text `spo_no` (no series);
   `service_po_lines` has no `deleted_at` (hard-deleted on line replace).
 
+## ADR-088: Service PO simplified to Open → Completed (no submit/approval step)
+**Date:** 2026-07-30
+**Status:** Accepted (supersedes the approval flow of ADR-087)
+
+### Context
+Per user direction, the Service PO approval workflow (draft → submit → admin
+approve) was unnecessary friction for a simple non-inventory expense doc. Desired
+model: **Save → "Open" → Mark Completed** (with Cancel), no approval.
+
+### Decision
+Reuse the existing `service_po_status` enum — **no DB migration** (migrations are
+not auto-applied on deploy: the Railway Dockerfile just runs the server; `db:migrate`
+is manual, and prod writes are classifier-gated). The single active state is stored
+as `pending` and surfaced everywhere in the Service PO UI as **"Open"**; the legacy
+`draft`/`approved` values also render as "Open" (so existing rows read sensibly).
+- Create: one **"Save Service PO"** button; the server forces `status='pending'`
+  and ignores any client status (closes the create-side back-door too).
+- `completeServicePo`: now completes from any non-terminal state (was approved-only).
+- Approval removed from the UI (the `approveServicePo` service/route/hook remain but
+  are unused/dead — left in place, harmless, removable later).
+- List: "Open"/"Completed" stat cards; status filter = All / Open (=pending) /
+  Completed / Cancelled. Status label + colour maps show draft/pending/approved → Open.
+
+### Consequences
+- Positive: exactly the requested UX, deployed with zero DB/schema change and no
+  manual migration step.
+- Trade-off: internal DB value `pending` ≠ its UI label "Open" — documented here to
+  avoid future confusion. A later migration could add a real `open` enum value and
+  retire the dead approve path if desired.
+- The ADR-087 back-door fix still holds: status never moves via a raw edit.
+
 ## ADR-088: JC Operations Detail — table → card layout (design-only)
 **Date:** 2026-07-30
 **Status:** Accepted

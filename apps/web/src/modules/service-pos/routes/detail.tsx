@@ -1,7 +1,7 @@
 // Service PO detail. Read + Approve action for admin.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Check, CheckCircle2, Loader2, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, CheckCircle2, Loader2, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
@@ -10,7 +10,6 @@ import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
 import {
-  useApproveServicePo,
   useCancelServicePo,
   useCompleteServicePo,
   useServicePo,
@@ -24,20 +23,19 @@ export const servicePosDetailRoute = createRoute({
   component: ServicePosDetailPage,
 });
 
+// Simplified lifecycle: an active Service PO is "Open" (there is no submit /
+// approval step). The active DB states (draft/pending/approved) all surface as
+// "Open"; only Completed and Cancelled are distinct.
 function statusColor(s: string): string {
-  if (s === 'approved') return 'var(--green)';
-  if (s === 'pending') return 'var(--amber)';
   if (s === 'completed') return 'var(--cyan)';
   if (s === 'cancelled') return 'var(--red)';
-  return 'var(--text3)';
+  return 'var(--amber)'; // draft / pending / approved → Open
 }
 
-// Legacy stores the status title-cased and prints it verbatim (_spoRegister
-// L27651 / _spoPrint L27712). Our enum is lower-case, so map back.
 const STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft',
-  pending: 'Pending',
-  approved: 'Approved',
+  draft: 'Open',
+  pending: 'Open',
+  approved: 'Open',
   completed: 'Completed',
   cancelled: 'Cancelled',
 };
@@ -49,7 +47,6 @@ function ServicePosDetailPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const approveMut = useApproveServicePo();
   const completeMut = useCompleteServicePo();
   const cancelMut = useCancelServicePo();
   const softDelete = useSoftDeleteServicePo();
@@ -94,15 +91,6 @@ function ServicePosDetailPage(): React.JSX.Element {
         </div>
       </div>
     );
-  }
-
-  async function onApprove(): Promise<void> {
-    setActionError(null);
-    try {
-      await approveMut.mutateAsync(id);
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Approve failed');
-    }
   }
 
   async function onComplete(): Promise<void> {
@@ -163,23 +151,7 @@ function ServicePosDetailPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
               <Printer size={13} /> Print
             </button>
-            {po.status === 'pending' && isAdmin ? (
-              <button
-                type="button"
-                className="btn btn-sm"
-                style={{ background: 'var(--green)', color: '#fff', fontWeight: 700 }}
-                disabled={approveMut.isPending}
-                onClick={() => void onApprove()}
-              >
-                {approveMut.isPending ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <Check size={13} />
-                )}{' '}
-                Approve
-              </button>
-            ) : null}
-            {po.status === 'approved' && canWrite ? (
+            {canWrite && po.status !== 'completed' && po.status !== 'cancelled' ? (
               <button
                 type="button"
                 className="btn btn-sm"
