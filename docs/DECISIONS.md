@@ -3347,3 +3347,44 @@ PR codes are appended to the JC EDIT activity-log line.
   (writes are admin/manager-only via `requireWriteRole` + RLS, so scope is limited).
 - PR qty = the JC `order_qty` (full-op outsource); partial/remaining outsourcing
   still goes through the ADR-081 "Outsource balance" lane, unchanged.
+
+## ADR-086: PO type is derived from the source PR, not the convert form
+**Date:** 2026-07-30
+**Status:** Accepted
+
+### Context
+`poType` distinguishes a plain buy (`standard`, received via GRN) from outward
+job-work / OSP (`job_work`, shipped out on a DC). The PR→PO convert paths
+(`createPurchaseOrderFromPr` service.ts, and the bulk batch) copied the form's
+`poType` verbatim, defaulting to `job_work` (from-pr.tsx + purchase-order schema
+defaults). A `direct_purchase` plan's PR is a plain buy (`pr_type='standard'`, no
+`source_jc_op_id`), so converting it produced a `job_work` PO — which wrongly
+exposed the outward "Create DC" action (jw-dc guards only on `poType='job_work'`)
+AND hid the Receive/GRN button (gated `!== 'job_work'`). Live case: IN-PO-00004 ←
+PLN-0006 / IN-JWPR-00010. The discriminator (`pr_type`, `source_jc_op_id`) was
+already on the loaded PR and simply ignored. Separately, the PO_TYPES enum carried
+two junk values: `outsource` (never set by any code, no gate reads it — behaves
+like `standard`) and `service` (real Service POs use the separate `service_pos`
+table, so picking it mis-files an orphan into `purchase_orders`).
+
+### Decision
+Both convert paths now derive `poType` from the PR, ignoring the form value:
+`pr_type='jw_osp' OR source_jc_op_id IS NOT NULL → 'job_work', else 'standard'`
+(bulk: `job_work` only if EVERY PR in the batch is OSP). The manual PO create form
+and the from-pr convert form dropdowns are filtered to only `standard` + `job_work`
+(hiding `outsource`/`service`) to prevent mis-filing.
+
+### Alternatives Considered
+- Guard the DC action on OSP linkage (PO line `source_jc_op_id`) instead of type —
+  kept as a possible defense-in-depth follow-up, but fixing the type at the source
+  is the root cause and also restores the correct Receive button for buys.
+- Remove `outsource`/`service` from PO_TYPES entirely — rejected for now: existing
+  rows carry those values, so the enum stays; only the dropdowns are filtered.
+
+### Consequences
+- Positive: a direct-purchase buy now converts to a `standard` PO — no bogus DC,
+  Receive/GRN restored; OSP PRs still correctly become `job_work` (unchanged).
+- Data: pre-existing mislabeled POs (e.g. IN-PO-00004) need a one-off backfill to
+  `standard` where the linked PR is `standard`/no-jc-op and no DC was issued.
+- The two junk dropdown options are hidden; the dead `service` PO orphan path is
+  closed at the UI (the Service PO module remains the canonical service path).

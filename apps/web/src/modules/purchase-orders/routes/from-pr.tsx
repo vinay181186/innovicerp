@@ -230,7 +230,10 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                     PO Type
                   </label>
                   <select id="poType" className="innovic-select" {...register('poType')}>
-                    {PO_TYPES.map((t) => (
+                    {/* Only standard/job_work are offered; the server anyway
+                        derives the final type from the source PR (OSP → job work,
+                        plain buy → standard), so a wrong pick here is corrected. */}
+                    {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work').map((t) => (
                       <option key={t} value={t}>
                         {t.replaceAll('_', ' ')}
                       </option>

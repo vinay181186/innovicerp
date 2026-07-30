@@ -896,7 +896,12 @@ export async function createPurchaseOrderFromPr(
         companyId,
         code,
         poDate: input.header.poDate,
-        poType: input.header.poType ?? 'job_work',
+        // Derive the PO type from the SOURCE PR, not the form: an OSP/job-work PR
+        // (jw_osp, or linked to a JC op) → job_work; a plain buy (e.g. a
+        // direct_purchase plan's standard PR with no JC op) → standard. Prevents a
+        // buy being mistyped job_work — which wrongly exposed the outward-DC flow
+        // and hid the Receive/GRN action (IN-PO-00004 / PLN-0006 case).
+        poType: pr.prType === 'jw_osp' || pr.sourceJcOpId ? 'job_work' : 'standard',
         vendorId: pr.vendorId,
         vendorCodeText: pr.vendorCodeText,
         status: 'open', // PRs only convert to open POs (skip draft state)
@@ -1346,7 +1351,11 @@ export async function createPurchaseOrderFromPrBatch(
         companyId,
         code: input.header.code,
         poDate: input.header.poDate,
-        poType: input.header.poType ?? 'job_work',
+        // Same rule as the single convert: job_work only when EVERY PR in the
+        // batch is OSP/job-work (jw_osp or JC-op linked); otherwise standard.
+        poType: sortedPrs.every((p) => p.prType === 'jw_osp' || p.sourceJcOpId)
+          ? 'job_work'
+          : 'standard',
         vendorId: input.vendorId,
         vendorCodeText,
         status: 'open',
