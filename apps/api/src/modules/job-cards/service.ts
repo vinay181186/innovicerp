@@ -36,6 +36,7 @@ import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/er
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { nextSeriesCode } from '../op-entry/osp-cascade';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
@@ -56,6 +57,10 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+// Placeholder vendor on an auto-raised OSP PR when the op carries no vendor yet
+// (the buyer picks the real vendor at PR→PO time). Mirrors plans/service.ts.
+const OSP_VENDOR_TBD = '(vendor TBD)';
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
@@ -1320,6 +1325,67 @@ export async function updateJobCard(
       }
     }
 
+    // 3b. Auto-raise a JW_OSP purchase request for every op that is now
+    //     outsource but not yet linked to a PR — so editing an op to OSP behaves
+    //     exactly like creating one via Plan execute (executeManufacture raises
+    //     the same PR). Covers both newly-added outsource ops and ops flipped
+    //     process/qc → outsource. Re-query post-upsert to read the persisted op
+    //     ids. The `outsource_pr_id IS NULL AND outsource_status IS NULL` filter
+    //     is the duplicate guard: a committed op already carries these, so it is
+    //     never re-raised (the lock guard above also blocks retyping one).
+    const raisedPrCodes: string[] = [];
+    const opsNeedingPr = await tx
+      .select({
+        id: jcOps.id,
+        operation: jcOps.operation,
+        outsourceVendorId: jcOps.outsourceVendorId,
+        outsourceVendorText: jcOps.outsourceVendorText,
+        outsourceCost: jcOps.outsourceCost,
+      })
+      .from(jcOps)
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          eq(jcOps.opType, 'outsource'),
+          isNull(jcOps.deletedAt),
+          isNull(jcOps.outsourcePrId),
+          isNull(jcOps.outsourceStatus),
+        ),
+      );
+    for (const op of opsNeedingPr) {
+      if (input.orderQty <= 0) continue; // PR qty must be > 0 (DB check constraint)
+      const prCode = await nextSeriesCode(tx, 'pr', companyId, 'IN-JWPR-');
+      const prRows = await tx
+        .insert(purchaseRequests)
+        .values({
+          companyId,
+          code: prCode,
+          prDate: input.jcDate,
+          status: 'open',
+          prType: 'jw_osp',
+          vendorId: op.outsourceVendorId ?? null,
+          // PR needs a vendor id OR text; flag "decide at PO time" when neither.
+          vendorCodeText: op.outsourceVendorId ? null : (op.outsourceVendorText ?? OSP_VENDOR_TBD),
+          itemId: item.id,
+          itemCodeText: item.code,
+          qty: input.orderQty,
+          estCost: op.outsourceCost ?? '0',
+          sourceJcOpId: op.id,
+          sourceSoLineId: head.sourceSoLineId,
+          operation: op.operation,
+          remarks: `Auto OSP PR on JC edit — op "${op.operation}" (${head.code})`,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: purchaseRequests.id });
+      const prId = prRows[0]!.id;
+      raisedPrCodes.push(prCode);
+      await tx
+        .update(jcOps)
+        .set({ outsourcePrId: prId, outsourceStatus: 'pr_raised', updatedBy: user.id })
+        .where(eq(jcOps.id, op.id));
+    }
+
     // 4. Header.
     await tx
       .update(jobCards)
@@ -1363,7 +1429,9 @@ export async function updateJobCard(
       {
         action: 'EDIT',
         entity: 'Job Card',
-        detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}`,
+        detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
+          raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
+        }`,
         refId: head.code,
       },
       companyId,

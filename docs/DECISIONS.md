@@ -3305,3 +3305,45 @@ true remaining balance is now outsourceable.
 - Note: server-enforced. UI still shows the "🏭 Outsource balance" button during a
   running session (the edit model doesn't carry a running flag) — the server
   rejects with the message above. Disabling the button while running is a follow-up.
+
+## ADR-085: JC edit → OSP op auto-raises the JW_OSP PR (matches plan-execute)
+**Date:** 2026-07-30
+**Status:** Accepted (partially supersedes the manual-OSP-PR stance for the edit path)
+
+### Context
+Executing a Plan (`executeManufacture` / `executeFullOutsource`, plans/service.ts)
+auto-raises one `jw_osp` IN-JWPR per outsource op and stamps the op `pr_raised`.
+But `updateJobCard` (job-cards/service.ts) had **no PR logic**: editing a JC and
+flipping an op from in-house → OSP only wrote `op_type='outsource'` with
+`outsource_status=NULL`, which the UI renders as "awaiting PR" — yet no PR ever
+appeared. Users reasonably expected edit to behave like create ("same function"),
+but they were two separate functions and only plan-execute carried the PR loop.
+An earlier stance made OSP-PR a manual, manager-triggered action (`POST
+/op-entry/osp-pr`) to avoid accidental PRs; the user explicitly chose to have the
+edit path auto-raise instead, for parity with plan-execute.
+
+### Decision
+`updateJobCard` now, after the op-upsert, re-queries ops that are `op_type=
+'outsource'` with `outsource_pr_id IS NULL AND outsource_status IS NULL` and
+raises one `jw_osp` PR each — same insert as `executeManufacture` (vendor id/text
+with `(vendor TBD)` fallback, item + `order_qty`, `source_jc_op_id` +
+`source_so_line_id`), then stamps the op `outsource_pr_id` + `pr_raised`. The
+NULL-pr/NULL-status filter is the duplicate guard (a committed op is never
+re-raised; the ADR-083 lock guard already blocks retyping a committed op). Raised
+PR codes are appended to the JC EDIT activity-log line.
+
+### Alternatives Considered
+- One-click "Raise PR" button on the edit UI (keeps PRs explicit) — rejected by
+  the user in favour of automatic parity with plan-execute.
+- Reuse `generateOspPrForOp` (op-entry/osp-cascade) — rejected: it requires the op
+  name to match a configured OSP process and would throw for arbitrary ops;
+  plan-execute does not require that, so mirroring plan-execute's raw insert keeps
+  create and edit behaviour identical.
+
+### Consequences
+- Positive: edit-to-OSP now produces the PR exactly like creating via a Plan;
+  "awaiting PR with no PR" is gone; back-fills any pre-existing OSP op that had no PR.
+- Negative: a mis-ticked OSP checkbox that is then saved will spawn a real PR
+  (writes are admin/manager-only via `requireWriteRole` + RLS, so scope is limited).
+- PR qty = the JC `order_qty` (full-op outsource); partial/remaining outsourcing
+  still goes through the ADR-081 "Outsource balance" lane, unchanged.
