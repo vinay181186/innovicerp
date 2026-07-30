@@ -1,7 +1,7 @@
 // Service PO detail. Read + Approve action for admin.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Loader2, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Check, CheckCircle2, Loader2, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
@@ -9,7 +9,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
-import { useApproveServicePo, useServicePo, useSoftDeleteServicePo } from '../api';
+import {
+  useApproveServicePo,
+  useCancelServicePo,
+  useCompleteServicePo,
+  useServicePo,
+  useSoftDeleteServicePo,
+} from '../api';
 import { printServicePo } from '../lib/print-spo';
 
 export const servicePosDetailRoute = createRoute({
@@ -42,12 +48,16 @@ function ServicePosDetailPage(): React.JSX.Element {
   const { data: po, isLoading, isError, error } = useServicePo(id);
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
+  const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const approveMut = useApproveServicePo();
+  const completeMut = useCompleteServicePo();
+  const cancelMut = useCancelServicePo();
   const softDelete = useSoftDeleteServicePo();
   const { data: vendor } = useVendor(po?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   function onPrint(): void {
@@ -92,6 +102,25 @@ function ServicePosDetailPage(): React.JSX.Element {
       await approveMut.mutateAsync(id);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Approve failed');
+    }
+  }
+
+  async function onComplete(): Promise<void> {
+    setActionError(null);
+    try {
+      await completeMut.mutateAsync(id);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Complete failed');
+    }
+  }
+
+  async function onCancel(): Promise<void> {
+    setActionError(null);
+    try {
+      await cancelMut.mutateAsync(id);
+      setConfirmCancel(false);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Cancel failed');
     }
   }
 
@@ -149,6 +178,61 @@ function ServicePosDetailPage(): React.JSX.Element {
                 )}{' '}
                 Approve
               </button>
+            ) : null}
+            {po.status === 'approved' && canWrite ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                style={{ background: 'var(--blue)', color: '#fff', fontWeight: 700 }}
+                disabled={completeMut.isPending}
+                onClick={() => void onComplete()}
+              >
+                {completeMut.isPending ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <CheckCircle2 size={13} />
+                )}{' '}
+                Mark Completed
+              </button>
+            ) : null}
+            {canWrite && po.status !== 'completed' && po.status !== 'cancelled' ? (
+              confirmCancel ? (
+                <>
+                  <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+                    Cancel this PO?
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{ background: 'var(--amber)', color: '#111', fontWeight: 700 }}
+                    onClick={() => void onCancel()}
+                    disabled={cancelMut.isPending}
+                  >
+                    {cancelMut.isPending ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Ban size={13} />
+                    )}{' '}
+                    Confirm cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setConfirmCancel(false)}
+                    disabled={cancelMut.isPending}
+                  >
+                    Keep
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setConfirmCancel(true)}
+                >
+                  <Ban size={13} /> Cancel PO
+                </button>
+              )
             ) : null}
             {isAdmin ? (
               confirmDelete ? (

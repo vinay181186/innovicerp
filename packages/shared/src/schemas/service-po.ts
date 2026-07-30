@@ -129,5 +129,11 @@ export const createServicePoInputSchema = z.object({
 });
 export type CreateServicePoInput = z.infer<typeof createServicePoInputSchema>;
 
-export const updateServicePoInputSchema = createServicePoInputSchema.partial().omit({ spoNo: true });
+// `status` is omitted: a raw edit must NOT move the state machine. Status changes
+// go ONLY through the dedicated approve / complete / cancel actions (which carry
+// their own role + transition guards), so a manager can't PATCH a draft straight
+// to 'approved' and skip the admin approval + approver stamp.
+export const updateServicePoInputSchema = createServicePoInputSchema
+  .partial()
+  .omit({ spoNo: true, status: true });
 export type UpdateServicePoInput = z.infer<typeof updateServicePoInputSchema>;

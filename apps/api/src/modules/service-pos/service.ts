@@ -346,7 +346,8 @@ export async function updateServicePo(
     if (input.gstPct !== undefined) updates.gstPct = String(gstPct);
     if (input.paymentTerms !== undefined) updates.paymentTerms = input.paymentTerms;
     if (input.remarks !== undefined) updates.remarks = input.remarks ?? null;
-    if (input.status !== undefined) updates.status = input.status;
+    // NOTE: status is intentionally NOT settable here (omitted from the update
+    // schema). State moves only via approve / complete / cancel.
     if (input.lines !== undefined) {
       updates.subtotal = String(totals.subtotal);
       updates.taxAmount = String(totals.taxAmount);
@@ -435,6 +436,75 @@ export async function approveServicePo(id: string, user: AuthContext): Promise<S
       user,
     );
 
+    return getServicePoInternal(tx, id, companyId);
+  });
+}
+
+// Mark an approved Service PO as completed (work done / billed). Forward-only:
+// approved → completed. Manager/admin (requireWriteRole).
+export async function completeServicePo(id: string, user: AuthContext): Promise<ServicePoDetail> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(servicePos)
+      .where(
+        and(eq(servicePos.id, id), eq(servicePos.companyId, companyId), isNull(servicePos.deletedAt)),
+      )
+      .limit(1);
+    if (existing.length === 0) throw new NotFoundError(`Service PO ${id} not found`);
+    const cur = existing[0]!;
+    if (cur.status !== 'approved') {
+      throw new ValidationError(
+        `Service PO ${cur.spoNo} is ${cur.status}; only an approved SPO can be marked completed`,
+      );
+    }
+    await tx
+      .update(servicePos)
+      .set({ status: 'completed', updatedBy: user.id, updatedAt: new Date() })
+      .where(eq(servicePos.id, id));
+    await emitActivityLog(
+      tx,
+      { action: 'COMPLETE', entity: 'Service PO', detail: `${cur.spoNo} marked completed`, refId: cur.spoNo },
+      companyId,
+      user,
+    );
+    return getServicePoInternal(tx, id, companyId);
+  });
+}
+
+// Cancel a Service PO. Allowed from any live pre-terminal state
+// (draft / pending / approved); a completed or already-cancelled SPO can't be
+// cancelled. Manager/admin (requireWriteRole).
+export async function cancelServicePo(id: string, user: AuthContext): Promise<ServicePoDetail> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(servicePos)
+      .where(
+        and(eq(servicePos.id, id), eq(servicePos.companyId, companyId), isNull(servicePos.deletedAt)),
+      )
+      .limit(1);
+    if (existing.length === 0) throw new NotFoundError(`Service PO ${id} not found`);
+    const cur = existing[0]!;
+    if (cur.status === 'completed' || cur.status === 'cancelled') {
+      throw new ValidationError(`Service PO ${cur.spoNo} is ${cur.status} — cannot cancel`);
+    }
+    await tx
+      .update(servicePos)
+      .set({ status: 'cancelled', updatedBy: user.id, updatedAt: new Date() })
+      .where(eq(servicePos.id, id));
+    await emitActivityLog(
+      tx,
+      { action: 'CANCEL', entity: 'Service PO', detail: `${cur.spoNo} cancelled`, refId: cur.spoNo },
+      companyId,
+      user,
+    );
     return getServicePoInternal(tx, id, companyId);
   });
 }

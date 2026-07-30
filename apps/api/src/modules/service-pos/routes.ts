@@ -50,6 +50,18 @@ export async function servicePosRoutes(app: FastifyInstance): Promise<void> {
     return service.approveServicePo(id, req.user);
   });
 
+  app.post('/service-pos/:id/complete', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.completeServicePo(id, req.user);
+  });
+
+  app.post('/service-pos/:id/cancel', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.cancelServicePo(id, req.user);
+  });
+
   app.delete('/service-pos/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

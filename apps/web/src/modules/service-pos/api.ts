@@ -82,6 +82,28 @@ export function useApproveServicePo() {
   });
 }
 
+export function useCompleteServicePo() {
+  const qc = useQueryClient();
+  return useMutation<ServicePoDetail, Error, string>({
+    mutationFn: (id) => apiFetch<ServicePoDetail>(`/service-pos/${id}/complete`, { method: 'POST' }),
+    onSuccess: (saved) => {
+      void qc.invalidateQueries({ queryKey: servicePosKeys.lists() });
+      qc.setQueryData(servicePosKeys.detail(saved.id), saved);
+    },
+  });
+}
+
+export function useCancelServicePo() {
+  const qc = useQueryClient();
+  return useMutation<ServicePoDetail, Error, string>({
+    mutationFn: (id) => apiFetch<ServicePoDetail>(`/service-pos/${id}/cancel`, { method: 'POST' }),
+    onSuccess: (saved) => {
+      void qc.invalidateQueries({ queryKey: servicePosKeys.lists() });
+      qc.setQueryData(servicePosKeys.detail(saved.id), saved);
+    },
+  });
+}
+
 export function useSoftDeleteServicePo() {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({

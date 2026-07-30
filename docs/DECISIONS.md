@@ -3388,3 +3388,34 @@ and the from-pr convert form dropdowns are filtered to only `standard` + `job_wo
   `standard` where the linked PR is `standard`/no-jc-op and no DC was issued.
 - The two junk dropdown options are hidden; the dead `service` PO orphan path is
   closed at the UI (the Service PO module remains the canonical service path).
+
+## ADR-087: Service PO state machine — dedicated complete/cancel + no status-via-edit
+**Date:** 2026-07-30
+**Status:** Accepted
+
+### Context
+`service_pos.status` is `draft|pending|approved|completed|cancelled`, but the app
+only ever reached `approved` (via the admin-only `approveServicePo`). `completed`
+and `cancelled` were dead labels — no action produced them. Worse, `updateServicePo`
+applied `input.status` verbatim under `requireWriteRole`, so a **manager** could
+PATCH a draft straight to `approved`, bypassing the admin approval + `approved_by/at`
+stamp (`updateServicePoInputSchema` was `create.partial().omit(spoNo)`, which still
+carried `status`).
+
+### Decision
+- Omit `status` from `updateServicePoInputSchema` (now `.omit({ spoNo, status })`),
+  and drop the `updates.status` line in `updateServicePo`. State changes go ONLY
+  through dedicated actions with role + transition guards.
+- Add `completeServicePo` (requireWriteRole; `approved → completed`) and
+  `cancelServicePo` (requireWriteRole; `draft|pending|approved → cancelled`, blocks
+  completed/cancelled), with `POST /service-pos/:id/complete` and `/cancel` routes.
+- Web: `useCompleteServicePo` / `useCancelServicePo` hooks + "Mark Completed" and
+  "Cancel PO" (with confirm) buttons on the SPO detail, gated on manager/admin.
+
+### Consequences
+- Positive: full lifecycle create → approve → complete / cancel; the approval
+  back-door is closed (approve stays admin-only via the dedicated action).
+- Still open (separate follow-ups, not lifecycle): no SPO edit screen (the PATCH +
+  `useUpdateServicePo` hook exist but no route); Service PO spend still excluded
+  from vendor/procurement reports; ₹0 SPOs allowed; free-text `spo_no` (no series);
+  `service_po_lines` has no `deleted_at` (hard-deleted on line replace).
