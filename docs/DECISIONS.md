@@ -3655,3 +3655,174 @@ dropdown — the two entry points disagreed on what values the column holds.
 - Does NOT touch stock: "From Stock" still consumes nothing from the store ledger
   (no reservation/deduction). Stock double-commit remains a separate, deferred
   feature — see the audit notes on reservation risks.
+
+## ADR-092: Mid-route OSP returns credit WIP, not store — store is credited once at JC close
+**Date:** 2026-08-03
+**Status:** Accepted
+
+### Context
+Innovic runs **no BOM**: the raw bar and the finished part carry the same item code
+end-to-end (e.g. 554117146000 LEVER CATCH RAMMER on the SO line, plan, PR, PO, DC,
+GRN). A job-work return is therefore byte-identical to a purchase receipt at the
+GRN, and `creditGrnQcStock` (goods-receipt-notes/cascades.ts) credited stock for
+**any** GRN line with a resolved item — no check on where the outsource op sits in
+the routing.
+
+The business rule (confirmed with the user, 2026-08-03):
+1. No BOM → track material in/out on the actual item code.
+2. Full outsource starts with zero stock; nothing is issued from store, so the
+   outward DC must not debit (already true — ADR-067).
+3. A **mid-route** OSP return feeds the **next operation's input qty**, not store.
+4. Store stock is credited **once**, at JC close, via final QC — internal QC when
+   the last op is in-house, incoming QC when the last op is the vendor return.
+
+Rule 4 was already satisfied for the common case: 9 of the 10 outsource ops in prod
+are `op_seq 1 of 1` on `full_outsource` JCs, so the OSP op *is* the last op and the
+grn_qc credit is correct. Audit confirmed IN-GRN-00016 (+10, PLN-0009) and
+IN-GRN-00002/00004 (+45/+4, PLN-0003) are all legitimate last-op credits — an earlier
+reading of these as "phantom stock" was wrong and is retracted.
+
+Rule 3 was violated. The one mid-route op in prod is IN-JC-26-00003 (PLUNGER, 50):
+op1 machining (process) → op2 machinning (process) → **op3 machining (outsource)** →
+op4 DIR (qc). When op3's parts return, the GRN would credit store +50 even though the
+parts still owe op4; op4's internal QC then credits +50 again via
+op-entry/qc-stock-cascade → **+100 booked for 50 physical pieces**. Latent only
+because op3 has `outsource_status = NULL` (never sent).
+
+### Decision
+Guard inside `creditGrnQcStock` — the single choke point for grn_qc credits (the
+three `writeStoreTxnOnQcAccept` call sites in goods-receipt-notes/service.ts delegate
+to it, and incoming-qc/service.ts:322 calls it directly, so one guard covers all four
+paths). Skip the ledger write when the GRN line is the return of an outsource op whose
+`op_seq < MAX(op_seq)` for its Job Card.
+
+The GRN line resolves to its jc_op by two paths, because
+`jc_ops.outsource_po_line_id` is only stamped once the outward DC is issued (populated
+on 2 of 10 prod ops):
+1. `jc_ops.outsource_po_line_id = grn_line.purchase_order_line_id`
+2. GRN → PO → `purchase_orders.pr_id` → `purchase_requests.source_jc_op_id`
+An ordinary purchase GRN resolves to no op and is never blocked.
+
+Mirrors the `MAX(op_seq)` last-op test that op-entry/qc-stock-cascade.ts already
+applies before crediting on internal QC — same rule, now enforced on both paths.
+
+### Alternatives Considered
+- Blanket "never credit on `po_type='job_work'` GRNs" — rejected: correct for the
+  mid-route case but breaks the 9 last-op full_outsource JCs, which would then never
+  credit finished goods at all (a full_outsource JC has no final QC op to fall back on
+  — executeFullOutsource seeds exactly one outsource op).
+- Restore a `jw_out` debit on OSP send and keep both legs — rejected: this is what
+  ADR-067 removed after SO-517 drove on-hand to −30. Reintroduces negative-stock
+  exposure on mid-route ops, where nothing was ever in store to debit.
+
+### Consequences
+- Positive: the double-credit is closed before it ever fires; last-op behaviour is
+  untouched, so no existing ledger row changes meaning and no data repair is needed.
+- Positive: the "credit once, at JC close" rule is now enforced identically whether
+  the last op is in-house (qc_accept) or outsourced (grn_qc).
+- Negative: adds one SQL round-trip per credited GRN line. Bounded (per line, per QC
+  accept) and indexed on PK/FK columns.
+- Open: `plans.fo_material_src = 'From Stock'` on a full-outsource plan raises no
+  material PR and issues nothing from store. Given rule 2 (full outsource starts with
+  zero stock), the label's intended meaning is unresolved — see TASKS.md.
+
+## ADR-093: Store/Inventory gains an "At Vendor" column
+**Date:** 2026-08-03
+**Status:** Accepted
+
+### Context
+ADR-067 made OSP send stock-neutral and put "material at the vendor" in
+`v_osp_wip`, not the ledger. That is correct accounting, but the Store screen
+(`store-inventory/service.ts`) only ever selected in_stock / min_qty / on_po_qty /
+mfg_pending_qty — three of the four terms in ADR-067's own identity
+(Ordered = In-store + At-vendor + On-PO + Dispatched).
+
+With no BOM the pieces at the vendor carry the same item code as the pieces on the
+shelf, so the omission is invisible: LEVER CATCH RAMMER read `in stock 5 · on PO 15`
+while 5 more sat at VND-004 on IN-DC-00004. That row is what prompted the
+"why does stock still show 5?" investigation — the number was right, the screen just
+could not say where the material was.
+
+Compounding it, `on_po_qty` blends two different meanings: genuinely inbound
+purchases (IN-PO-00004, 10 pcs from VND-005) and the shop's own pieces returning on
+a job-work PO (IN-PO-00008, 5 pcs). Left as-is for now; the At-Vendor column gives
+the missing signal without changing an existing number's definition.
+
+### Decision
+Add `atVendorQty` to `storeInventoryRowSchema` and a matching `at_vendor` CTE
+(`SUM(v_osp_wip.at_vendor_qty)` grouped by item, company-scoped) to the Store
+rollup query, surfaced as an "At Vendor" column between On PO and Mfg Pending,
+coloured `--orange` with a hover title. Read-only and additive — no ledger,
+filter, summary-tile or write path changes.
+
+Verified against live data: the one item with material out now reads
+`in stock 5 · at vendor 5 · on PO 15`.
+
+### Alternatives Considered
+- Net at-vendor *into* in_stock — rejected: in_stock must stay the shelf count and
+  the ledger's balance; conflating them re-creates the ambiguity ADR-067 removed.
+- Split `on_po_qty` into purchase vs job-work in the same change — deferred: it
+  redefines an existing displayed number, so it wants its own decision.
+
+### Consequences
+- Positive: the storekeeper can see that 5 pcs are out at a vendor and will return.
+- Negative: one more CTE per Store list query; `v_osp_wip` is document-derived, so
+  the cost scales with jc_ops rather than items.
+- Note: `atVendorQty` is NOT part of in_stock and must not be summed into the
+  totalStockPieces tile (left untouched deliberately).
+
+## ADR-094: "From Stock" removed — full-outsource material is always purchased
+**Date:** 2026-08-03
+**Status:** Accepted (supersedes the choice introduced in ADR-091)
+
+### Context
+The Material Source picker on a full-outsource plan offered "From Stock" and
+"Purchase New". ADR-091 fixed the backend so only "Purchase New" raised a
+material PR — correct as far as it went, but it left "From Stock" meaning
+nothing coherent: it raised no material PR AND issued nothing from the store
+ledger, so selecting it sent the vendor no material at all.
+
+The user's rule (2026-08-03): **a full-outsource plan is created at the initial
+stage, before any stock exists** — "so there is no question to send material from
+stock". With no BOM the raw and finished part share one item code, and the store
+holds nothing for that code at plan time. "From Stock" therefore described a
+situation that cannot occur.
+
+Live data agreed: all 8 full_outsource plans carried 'From Stock', and not one of
+them ever produced a store issue — because there was never anything to issue.
+
+### Decision
+Remove the option. Material source is fixed at `FO_MATERIAL_SRC = 'Purchase New'`,
+exported from `packages/shared/src/schemas/plan.ts` so both UIs and any future
+caller share one literal.
+
+- `plans/components/plan-form.tsx` and `so-planning/components/edit-plan-modal.tsx`:
+  the `<select>` becomes a read-only display of the constant with a caption
+  ("Material PR is raised on execute"). The field is kept visible rather than
+  deleted so the planner can still see what will happen on execute.
+- Both payload builders send `FO_MATERIAL_SRC` for `full_outsource` and `null`
+  otherwise, so a legacy row is normalised off 'From Stock' when re-saved.
+- `plans/service.ts` keeps its `matSrc === 'purchase new'` test rather than
+  raising unconditionally. This is deliberate: an un-executed legacy plan still
+  holding 'From Stock' keeps its original no-PR behaviour instead of silently
+  buying material the planner never asked for. New plans can only be 'Purchase New',
+  so the guard is a legacy shim, not a live branch.
+
+### Alternatives Considered
+- Leave a one-option `<select>` — rejected: a dropdown with a single choice reads
+  as broken and invites re-adding the retired value.
+- Delete `fo_material_src` from the schema — rejected: 8 prod rows carry it and the
+  plan detail screen displays it; dropping the column loses history for no gain.
+- Raise the material PR unconditionally on execute — rejected for now, see above:
+  it would change behaviour for un-executed legacy 'From Stock' rows.
+
+### Consequences
+- Positive: the option that could leave a vendor with no material is gone; every
+  new full-outsource plan raises a material PR on execute.
+- Positive: one shared constant replaces two hand-typed string literals across
+  two modules, so the value can't drift.
+- Negative: if a shop ever genuinely does have shelf stock to send a vendor, this
+  needs revisiting — that flow would also need a real store issue on the outward
+  DC, which does not exist today (ADR-067 made the send stock-neutral).
+- Open: whether "the vendor supplies his own material" deserves its own explicit
+  option. Not modelled; today it is indistinguishable from 'Purchase New'.
