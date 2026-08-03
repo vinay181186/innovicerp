@@ -967,39 +967,19 @@ async function executeFullOutsource(
       .where(eq(jcOps.id, ospOpId));
   }
 
-  // 2. Material PR. As of ADR-094 the Material Source picker is gone — a
-  // full-outsource plan starts with zero stock, so material is ALWAYS bought
-  // and both UIs now send FO_MATERIAL_SRC ('Purchase New'). The check stays a
-  // value test rather than an unconditional raise so legacy rows still holding
-  // the retired 'From Stock' (or self/inhouse/in-house) keep their original
-  // no-PR behaviour on a late execute instead of silently buying material the
-  // planner never asked for.
-  // The vendor is unknown at plan time, so the PR is raised with a TBD vendor
-  // (mirrors the OSP flow), not the source label.
-  let materialPr: { id: string; code: string } | null = null;
-  const matSrc = plan.foMaterialSrc?.trim().toLowerCase();
-  if (matSrc === 'purchase new') {
-    const matCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
-    const matRows = await tx
-      .insert(purchaseRequests)
-      .values({
-        companyId: plan.companyId,
-        code: matCode,
-        prDate: today,
-        status: 'open',
-        vendorCodeText: '(vendor TBD)',
-        itemId: plan.itemId ?? null,
-        itemCodeText: plan.itemCodeText ?? null,
-        itemName: plan.itemNameText ?? null,
-        qty: plan.planQty,
-        sourceSoLineId: plan.soLineId ?? null,
-        remarks: `Auto from plan ${plan.code} (full_outsource material)`,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    materialPr = { id: matRows[0]!.id, code: matRows[0]!.code };
-  }
+  // 2. NO material PR (ADR-095). A full-outsource job buys the finished part
+  // from the vendor — the vendor supplies his own material. One JW PR is the
+  // whole procurement for this plan.
+  //
+  // This also keeps the stock ledger honest. With no BOM the raw and finished
+  // part share one item code, so buying material AND receiving the vendor's
+  // return would credit the same pieces twice (+qty on the material GRN, +qty
+  // again on the return, which is the JC's last op) — 2× booked for 1× physical.
+  // Raising nothing here leaves exactly one credit, on the return.
+  //
+  // fo_mat_pr_id is left NULL going forward; legacy rows that already carry one
+  // keep it, and the read paths (plan detail, SO-planning workflow) still show
+  // theirs.
 
   await tx
     .update(plans)
@@ -1007,7 +987,7 @@ async function executeFullOutsource(
       planStatus: jc ? 'jc_created' : 'pr_created',
       ...(jc ? { jcId: jc.id } : {}),
       foPrId: jwPr.id,
-      foMatPrId: materialPr?.id ?? null,
+      foMatPrId: null,
       updatedBy: user.id,
     })
     .where(eq(plans.id, plan.id));
@@ -1017,9 +997,7 @@ async function executeFullOutsource(
     {
       action: 'PLAN_EXECUTED',
       entity: 'Plan',
-      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code}${
-        materialPr ? ` + material PR ${materialPr.code}` : ''
-      } (full_outsource)`,
+      detail: `${plan.code} → ${jc ? `JC ${jc.code} + ` : ''}PR ${jwPr.code} (full_outsource)`,
       refId: plan.code,
     },
     plan.companyId,
@@ -1031,7 +1009,6 @@ async function executeFullOutsource(
     primaryPrCode: jwPr.code,
   };
   if (jc) out.jcCode = jc.code;
-  if (materialPr) out.materialPrCode = materialPr.code;
   return out;
 }
 

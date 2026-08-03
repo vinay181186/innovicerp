@@ -6,19 +6,6 @@ import { PLAN_STATUSES, type PlanStatus } from '../enums/plan-status';
 import { PLAN_TYPES, type PlanType } from '../enums/plan-type';
 import { OP_TYPES, type OpType } from '../enums/op-type';
 
-/**
- * The only material source a full-outsource plan can carry (ADR-094).
- *
- * A full-outsource plan is raised before anything exists in store, so there is
- * never shelf material to send the vendor — material is always bought. The old
- * "From Stock" option was removed; it raised no material PR and issued nothing,
- * so choosing it left the vendor with no material at all.
- *
- * Legacy rows may still hold 'From Stock'; they are read as-is and normalised
- * to this value if re-saved through the plan form.
- */
-export const FO_MATERIAL_SRC = 'Purchase New';
-
 export const planStatusSchema: z.ZodType<PlanStatus> = z.enum(PLAN_STATUSES);
 export const planTypeSchema: z.ZodType<PlanType> = z.enum(PLAN_TYPES);
 const planOpTypeSchema: z.ZodType<OpType> = z.enum(OP_TYPES);

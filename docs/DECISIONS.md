@@ -3826,3 +3826,67 @@ caller share one literal.
   DC, which does not exist today (ADR-067 made the send stock-neutral).
 - Open: whether "the vendor supplies his own material" deserves its own explicit
   option. Not modelled; today it is indistinguishable from 'Purchase New'.
+
+## ADR-095: Full outsource raises ONE PR — no material PR at all
+**Date:** 2026-08-03
+**Status:** Accepted (supersedes ADR-091 and ADR-094)
+
+### Context
+ADR-094 removed the "From Stock" option and made every full-outsource plan
+'Purchase New', so every plan raised a material PR alongside the JW PR. Testing
+PLN-0019 (LOCKING LEVER, 30) exposed why that is wrong.
+
+With no BOM the raw bar and the finished part share one item code, and a
+full-outsource JC has exactly one op — the outsource op, which is therefore the
+JC's LAST op. So the ADR-092 guard does not fire and the vendor's return credits
+stock. Buying material as well would credit the same 30 pieces twice:
+
+  material GRN  +30  →  30
+  DC to vendor    0  →  30   (stock-neutral, ADR-067)
+  vendor return +30  →  60   ← 60 booked for 30 physical pieces
+
+The missing leg is a debit when the material ships out, which ADR-067 removed
+after SO-517. Rather than reintroduce a conditional debit, the user's answer was
+simpler and matches how the shop actually buys: **"we do not want to generate
+material pr. single jwpr we are ok with it."** On a full-outsource job the vendor
+supplies his own material; Innovic buys the finished part, not the raw stock.
+
+### Decision
+`executeFullOutsource` raises exactly one PR — the JW PR for the vendor's work.
+The material-PR block is deleted outright, not gated behind a value test, so no
+legacy `fo_material_src` value can resurrect it. `fo_mat_pr_id` is written NULL
+going forward.
+
+- `plans/service.ts`: material PR insert removed; `materialPrCode` no longer set
+  on `ExecutePlanResult`; activity-log detail drops the "+ material PR" clause.
+- Material Source field removed from `plans/components/plan-form.tsx` and
+  `so-planning/components/edit-plan-modal.tsx`; `foMaterialSrc` dropped from
+  `PlanFormValues` and always written null. `FO_MATERIAL_SRC` (added in ADR-094,
+  live for one afternoon) deleted from `packages/shared`.
+- `fo_material_src` and `fo_mat_pr_id` columns are KEPT — 9 prod rows carry a
+  material source and PLN-0003 / PLN-0009 / PLN-0019 carry a material PR id. The
+  read paths (plan detail "Mat PR", SO-planning workflow PrLink) still render
+  theirs; new plans simply show "—".
+
+Net stock effect is now correct with no further change: nothing is bought, the
+vendor's return is the single credit, +30 for 30 pieces.
+
+### Alternatives Considered
+- Debit stock on the outward DC when material was purchased for that JC
+  ("Option 1", offered to the user) — rejected: reintroduces the debit ADR-067
+  removed after SO-517, needs a plan → material PR → PO → GRN trace to stay safe,
+  and models a material purchase the shop does not actually make.
+- Suppress the credit on every job_work return instead — rejected: a
+  full-outsource JC has no final QC op to credit later, so the finished parts
+  would never reach store at all.
+
+### Consequences
+- Positive: one PR, one PO, one DC, one GRN. The double-credit cannot occur
+  because there is no second receipt.
+- Positive: ADR-092's mid-route guard is untouched and still needed — it covers
+  manufacture JCs with an outsource op in the middle, a different case.
+- Negative: if a job ever genuinely needs Innovic to supply material to the
+  vendor, there is now no way to express it. That would need both a material PR
+  and the outward-DC debit from "Option 1" above.
+- Housekeeping: IN-JWPR-00020 (PLN-0019's material PR, status open) was raised
+  under ADR-094 before this change and should be cancelled by hand.

@@ -3,7 +3,7 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
-import { FO_MATERIAL_SRC, type CreatePlanInput, type PlanType } from '@innovic/shared';
+import type { CreatePlanInput, PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
@@ -35,7 +35,6 @@ export interface PlanFormValues {
   foVendorCodeText: string;
   foProcess: string;
   foRate: number | null;
-  foMaterialSrc: string;
   foDeliveryDate: string;
   foCostCenter: string;
   foRemarks: string;
@@ -85,7 +84,6 @@ export function emptyValues(): PlanFormValues {
     foVendorCodeText: '',
     foProcess: '',
     foRate: null,
-    foMaterialSrc: FO_MATERIAL_SRC,
     foDeliveryDate: '',
     foCostCenter: '',
     foRemarks: '',
@@ -121,10 +119,10 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     foVendorCodeText: v.foVendorCodeText || null,
     foProcess: v.foProcess || null,
     foRate: v.foRate,
-    // ADR-094: always 'Purchase New' for full outsource — the option to send
-    // store material was removed. Legacy rows editing through this form are
-    // normalised on save rather than left on the retired value.
-    foMaterialSrc: v.planType === 'full_outsource' ? FO_MATERIAL_SRC : null,
+    // ADR-095: no longer collected — the field is gone from the form and the
+    // backend raises no material PR. Always null on write; legacy rows keep
+    // whatever they already hold until they are re-saved.
+    foMaterialSrc: null,
     foDeliveryDate: v.foDeliveryDate || null,
     foCostCenter: v.foCostCenter || null,
     foRemarks: v.foRemarks || null,
@@ -536,15 +534,9 @@ export function PlanForm({
                 }
               />
             </Field>
-            {/* ADR-094: a full-outsource plan starts with zero stock, so there
-                is never store material to send — material is always bought.
-                Fixed display, not a choice. */}
-            <Field label="Material source">
-              <input className="innovic-input" value={FO_MATERIAL_SRC} readOnly disabled />
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Full outsource always buys material — a material PR is raised on execute.
-              </div>
-            </Field>
+            {/* ADR-095: Material Source removed. A full-outsource job buys the
+                finished part; the vendor supplies his own material, so there is
+                nothing for the planner to choose and no material PR is raised. */}
             <Field label="Delivery date">
               <input
                 type="date"

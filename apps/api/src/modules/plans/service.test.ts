@@ -564,7 +564,13 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     expect(result.materialPrCode).toBeUndefined();
   });
 
-  it('executePlan(full_outsource): seeds JC + OSP op, JW PR + material PR when material_src=Purchase New', async () => {
+  // ADR-095: a full-outsource plan raises exactly ONE PR — the JW PR for the
+  // vendor's work. The vendor supplies his own material, so no material PR is
+  // raised regardless of what fo_material_src holds. Buying material as well
+  // would credit the same pieces twice (material GRN + the vendor's return,
+  // which is the JC's last op) since with no BOM both carry one item code.
+
+  it('executePlan(full_outsource): seeds JC + OSP op and exactly one JW PR, no material PR', async () => {
     const created = await service.createPlan(
       {
         code: `${TEST_PREFIX}P-EXEC-FO`,
@@ -575,7 +581,6 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
         planQty: 8,
         foVendorCodeText: 'JW-VEN',
         foProcess: 'heat treat',
-        foMaterialSrc: 'Purchase New',
         foRate: 50,
       },
       admin,
@@ -583,17 +588,17 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     await service.finalizePlan(created.id, admin);
     const result = await service.executePlan(created.id, admin);
     expect(result.primaryPrCode).toMatch(/^PR-FO-/);
-    expect(result.materialPrCode).toMatch(/^PR-FOMAT-/);
+    expect(result.materialPrCode).toBeUndefined();
     // A full-outsource plan with a resolved item now seeds a JC with one OSP op
     // (default OSP route) and links the JW PR to it, so status is jc_created.
     expect(result.plan.planStatus).toBe('jc_created');
     expect(result.jcCode).toMatch(/^IN-JC-/);
     expect(result.plan.jcId).not.toBeNull();
     expect(result.plan.foPrId).not.toBeNull();
-    expect(result.plan.foMatPrId).not.toBeNull();
+    expect(result.plan.foMatPrId).toBeNull();
   });
 
-  it('executePlan(full_outsource): material_src=From Stock → no material PR', async () => {
+  it('executePlan(full_outsource): a legacy fo_material_src value raises no material PR', async () => {
     const created = await service.createPlan(
       {
         code: `${TEST_PREFIX}P-EXEC-FO-IH`,
@@ -604,7 +609,9 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
         planQty: 8,
         foVendorCodeText: 'JW-VEN',
         foProcess: 'heat treat',
-        foMaterialSrc: 'From Stock',
+        // The retired value a legacy row may still carry — must not resurrect
+        // the material PR now that the branch is gone.
+        foMaterialSrc: 'Purchase New',
       },
       admin,
     );

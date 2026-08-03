@@ -140,7 +140,6 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
     foVendorCodeText: plan.foVendorCodeText ?? '',
     foProcess: plan.foProcess ?? '',
     foRate: plan.foRate === null ? null : Number(plan.foRate),
-    foMaterialSrc: plan.foMaterialSrc ?? '',
     foDeliveryDate: plan.foDeliveryDate ?? '',
     foCostCenter: plan.foCostCenter ?? '',
     foRemarks: plan.foRemarks ?? '',
