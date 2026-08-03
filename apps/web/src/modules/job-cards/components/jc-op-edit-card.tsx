@@ -105,7 +105,10 @@ export function JcOpEditCard({
   const st = en ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' }) : null;
   const doneQty = en ? (isQc ? en.qcAcceptedQty : en.completedQty) : 0;
   const orderQty = jc?.orderQty ?? 0;
-  const pendingQty = en ? Math.max(0, orderQty - doneQty) : 0;
+  // Pending = reached-this-op − done, not order − done. See the same note in
+  // jc-op-card.tsx: `inputAvail` is what upstream cleared, so a blocked op no
+  // longer claims the whole batch is waiting on it.
+  const pendingQty = en ? Math.max(0, en.inputAvail - doneQty) : 0;
 
   return (
     <div
@@ -306,6 +309,20 @@ export function JcOpEditCard({
                       value={op.program}
                       placeholder="CNC program"
                       onChange={(e) => onChange({ program: e.target.value })}
+                      style={{ fontSize: 11, width: '100%' }}
+                    />
+                  </SetupField>
+                  {/* `jc_ops.tool_no` was save-wired, shown on the view card and
+                      printed/exported, but had no input on any screen — so it
+                      could never hold anything a user typed. Added here; the
+                      write path (build-jc-write-input) already carries it. */}
+                  <SetupField label="Tool No." width={110}>
+                    <input
+                      className="innovic-input"
+                      value={op.toolNo}
+                      placeholder="Tool no."
+                      maxLength={120}
+                      onChange={(e) => onChange({ toolNo: e.target.value })}
                       style={{ fontSize: 11, width: '100%' }}
                     />
                   </SetupField>

@@ -115,12 +115,20 @@ export function JcOpCard({
   const st = OP_STATUS[op.computedStatus] ?? { label: op.computedStatus, cls: 'b-grey' };
   const isQc = op.opType === 'qc';
   const isOut = op.opType === 'outsource';
-  // Canonical per-op quantities — copied verbatim from the table:
-  // Completed = this op's done qty (QC → accepted; process/outsource →
-  // completedQty, which for outsource is accepted-back per 0068),
-  // Pending = Order − Completed.
+  // Canonical per-op quantities. Completed = this op's done qty (QC →
+  // accepted; process/outsource → completedQty, which for outsource is
+  // accepted-back per 0068).
+  //
+  // Pending = what has REACHED this op minus what it finished — NOT
+  // `jc.orderQty − done`, which the legacy table used. `inputAvail`
+  // (v_jc_op_status) is the qty upstream has actually cleared: order qty on
+  // op 1, and whatever the previous op released after that. The old formula
+  // printed the full order against an op nothing had reached yet, so a
+  // `waiting` op with zero parts on the floor advertised the whole batch as
+  // pending work. Every jc_op has a status-view row, so inputAvail is always
+  // populated.
   const doneQty = isQc ? op.qcAcceptedQty : op.completedQty;
-  const pendingQty = Math.max(0, jc.orderQty - doneQty);
+  const pendingQty = Math.max(0, op.inputAvail - doneQty);
 
   // Footer action ladder — the table's Action cell, condition-for-condition.
   const showLog =

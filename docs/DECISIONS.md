@@ -3552,3 +3552,66 @@ and every button condition are unchanged.
   log strip is still capped at 3. **Edit-screen op numbering after a re-sequence is
   explicitly to be left as-is** — the user reviewed it and chose to keep the current
   behaviour; the save order is correct, only the printed label lags.
+
+## ADR-090: Op-card PENDING counts what reached the op; Tool No. gets an input
+**Date:** 2026-08-03
+**Status:** Accepted
+
+### Context
+Two defects deferred by ADR-088b/089, both confirmed against the live DB before
+any code changed.
+
+**1. PENDING advertised work that did not exist.** The tile was
+`jc.orderQty − done`, inherited from the legacy table. It never consulted how much
+the upstream op had released, so a blocked op claimed the whole batch. Real rows,
+`IN-JC-26-00003`, order 50:
+
+```
+seq  operation    upstream_cleared  done  status         PENDING now   PENDING fixed
+1    machining    50                50    complete       0             0
+2    machinning   50                50    complete       0             0
+3    machining    50                0     ready_for_pr   50            50
+4    DIR          0                 0     waiting        50            0   <-- differs
+```
+
+Op 4 has received nothing — zero parts are at that operation — yet the card told
+the operator 50 were pending.
+
+**2. `tool_no` could not be filled.** The column was save-wired
+(`build-jc-write-input.ts`, and both the create and update branches of
+`job-cards/service.ts`), rendered on the view card, and carried by the print
+template and the Excel export — but no screen had an input bound to it. Create
+initialised it to `''`; edit round-tripped the DB value untouched. Live DB: **14
+`jc_ops` rows, 0 with `tool_no`, 0 with `program`.** The chip and both export
+columns were structurally always blank.
+
+### Decision
+1. `pendingQty = max(0, inputAvail − done)` on both the view card and the edit
+   card. `input_avail` (from `v_jc_op_status`) is the qty upstream has cleared.
+2. Add a `Tool No.` input to the edit card's SETUP row, next to Program,
+   `maxLength={120}` to match `z.string().max(120)` in the shared schema.
+
+### Alternatives Considered
+- Keep `order − done` and add a second "READY" tile — rejected: two qty tiles
+  answering nearly the same question, and PENDING would still be the misleading
+  one an operator reads first.
+- Keep `order − done` — rejected: the number is wrong for its position on a
+  per-op card. Order-level remaining is already legible from the ORDER tile.
+- Leave `tool_no` write-only, or drop the column and its display/export sites —
+  rejected: the user confirmed tool numbers are wanted; adding the input is
+  smaller than removing four call sites.
+
+### Consequences
+- Positive: PENDING now means "what I can work on", matching what `available`
+  and `computed_status` already say; a `waiting` op reads 0 instead of the full
+  order. Tool No. becomes capturable, so the view chip, print column and Excel
+  column can hold real data.
+- Safe by inspection of live data: op 1 always has `input_avail = order_qty`
+  (verified across all 14 rows), and **every `jc_op` has a status-view row**
+  (0 missing), so `inputAvail` is never an absent-row 0. Only downstream-blocked
+  ops change; every op in the sample except `IN-JC-26-00003` seq 4 is unaffected.
+- This is a **display** change only — no query, no write path, no save payload,
+  and no button condition was touched. `available`, `computedStatus` and the
+  action ladder are untouched.
+- Negative: any user who read PENDING as "order-level remaining for this op"
+  loses that reading; the ORDER and COMPLETED tiles still give it.
