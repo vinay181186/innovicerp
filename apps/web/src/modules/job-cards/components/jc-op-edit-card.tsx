@@ -117,11 +117,21 @@ export function JcOpEditCard({
         background: 'var(--bg2)',
         border: '1px solid var(--border)',
         borderRadius: 10,
-        overflow: 'hidden',
+        // NOT overflow:hidden — that clipped the Machine picker's absolute
+        // dropdown to the card box, so it opened invisibly (e.g. OSP→in-house
+        // edit). The accent bar rounds its own left corners to keep the look.
         marginBottom: 10,
       }}
     >
-      <div style={{ width: 4, flexShrink: 0, background: opAccentColor(st?.cls ?? '') }} />
+      <div
+        style={{
+          width: 4,
+          flexShrink: 0,
+          background: opAccentColor(st?.cls ?? ''),
+          borderTopLeftRadius: 9,
+          borderBottomLeftRadius: 9,
+        }}
+      />
       <div style={{ flex: 1, minWidth: 0, padding: '10px 14px' }}>
         {/* ── HEADER: seq · machine · operation · tags — status · move/remove ── */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
