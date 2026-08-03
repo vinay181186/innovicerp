@@ -10,12 +10,13 @@
 // Once status is jc_created / pr_created / etc., the parent doesn't open
 // this modal (uses view-only navigation instead).
 
-import type {
-  PlanDetail,
-  PlanOpInput,
-  PlanRequiredDoc,
-  PlanType,
-  UpdatePlanInput,
+import {
+  FO_MATERIAL_SRC,
+  type PlanDetail,
+  type PlanOpInput,
+  type PlanRequiredDoc,
+  type PlanType,
+  type UpdatePlanInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -76,7 +77,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const [foVendor, setFoVendor] = useState<string>(plan.foVendorCodeText ?? '');
   const [foRate, setFoRate] = useState<number | null>(plan.foRate ? Number(plan.foRate) : null);
   const [foProcess, setFoProcess] = useState<string>(plan.foProcess ?? '');
-  const [foMaterialSrc, setFoMaterialSrc] = useState<string>(plan.foMaterialSrc ?? 'From Stock');
+  // ADR-094: fixed, not editable. Legacy rows holding the retired 'From Stock'
+  // are normalised to FO_MATERIAL_SRC when re-saved through this modal.
   const [foDeliveryDate, setFoDeliveryDate] = useState<string>(plan.foDeliveryDate ?? '');
   const [foCostCenter, setFoCostCenter] = useState<string>(plan.foCostCenter ?? '');
   const [foRemarks, setFoRemarks] = useState<string>(plan.foRemarks ?? '');
@@ -166,7 +168,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     foVendorCodeText: planType === 'full_outsource' ? foVendor || null : null,
     foProcess: planType === 'full_outsource' ? foProcess || null : null,
     foRate: planType === 'full_outsource' ? foRate : null,
-    foMaterialSrc: planType === 'full_outsource' ? foMaterialSrc || null : null,
+    foMaterialSrc: planType === 'full_outsource' ? FO_MATERIAL_SRC : null,
     foDeliveryDate: planType === 'full_outsource' ? foDeliveryDate || null : null,
     foCostCenter: planType === 'full_outsource' ? foCostCenter || null : null,
     foRemarks: planType === 'full_outsource' ? foRemarks || null : null,
@@ -846,15 +848,14 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 placeholder="e.g. Complete machining as per drawing, Heat Treatment + Grinding"
               />
             </div>
+            {/* ADR-094: full outsource starts with zero stock, so material is
+                always bought — no longer a choice. */}
             <div className="form-grp">
               <label className="form-label">Material Source</label>
-              <select
-                value={foMaterialSrc}
-                onChange={(e) => setFoMaterialSrc(e.target.value)}
-              >
-                <option>From Stock</option>
-                <option>Purchase New</option>
-              </select>
+              <input value={FO_MATERIAL_SRC} readOnly disabled />
+              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                Material PR is raised on execute.
+              </div>
             </div>
             <div className="form-grp">
               <label className="form-label">Expected Delivery Date</label>

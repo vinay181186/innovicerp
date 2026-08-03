@@ -3,7 +3,7 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
-import type { CreatePlanInput, PlanType } from '@innovic/shared';
+import { FO_MATERIAL_SRC, type CreatePlanInput, type PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
@@ -85,7 +85,7 @@ export function emptyValues(): PlanFormValues {
     foVendorCodeText: '',
     foProcess: '',
     foRate: null,
-    foMaterialSrc: '',
+    foMaterialSrc: FO_MATERIAL_SRC,
     foDeliveryDate: '',
     foCostCenter: '',
     foRemarks: '',
@@ -121,7 +121,10 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     foVendorCodeText: v.foVendorCodeText || null,
     foProcess: v.foProcess || null,
     foRate: v.foRate,
-    foMaterialSrc: v.foMaterialSrc || null,
+    // ADR-094: always 'Purchase New' for full outsource — the option to send
+    // store material was removed. Legacy rows editing through this form are
+    // normalised on save rather than left on the retired value.
+    foMaterialSrc: v.planType === 'full_outsource' ? FO_MATERIAL_SRC : null,
     foDeliveryDate: v.foDeliveryDate || null,
     foCostCenter: v.foCostCenter || null,
     foRemarks: v.foRemarks || null,
@@ -533,17 +536,13 @@ export function PlanForm({
                 }
               />
             </Field>
+            {/* ADR-094: a full-outsource plan starts with zero stock, so there
+                is never store material to send — material is always bought.
+                Fixed display, not a choice. */}
             <Field label="Material source">
-              <select
-                className="innovic-select"
-                value={values.foMaterialSrc === 'Purchase New' ? 'Purchase New' : 'From Stock'}
-                onChange={(e) => update('foMaterialSrc', e.target.value)}
-              >
-                <option>From Stock</option>
-                <option>Purchase New</option>
-              </select>
+              <input className="innovic-input" value={FO_MATERIAL_SRC} readOnly disabled />
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                From Stock = use store material (no PR). Purchase New = raise a material PR.
+                Full outsource always buys material — a material PR is raised on execute.
               </div>
             </Field>
             <Field label="Delivery date">

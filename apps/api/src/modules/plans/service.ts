@@ -967,13 +967,15 @@ async function executeFullOutsource(
       .where(eq(jcOps.id, ospOpId));
   }
 
-  // 2. Material PR is raised ONLY when the planner chose "Purchase New" (we don't
-  // have the raw material and must buy it). "From Stock" (and legacy
-  // self/inhouse/in-house) means use existing store stock → raise nothing.
-  // NB: the Material Source dropdown emits exactly "From Stock" | "Purchase New";
-  // the old check compared against self/inhouse and so wrongly bought for BOTH
-  // options — including "From Stock". The vendor is unknown at plan time, so the
-  // PR is raised with a TBD vendor (mirrors the OSP flow), not the source label.
+  // 2. Material PR. As of ADR-094 the Material Source picker is gone — a
+  // full-outsource plan starts with zero stock, so material is ALWAYS bought
+  // and both UIs now send FO_MATERIAL_SRC ('Purchase New'). The check stays a
+  // value test rather than an unconditional raise so legacy rows still holding
+  // the retired 'From Stock' (or self/inhouse/in-house) keep their original
+  // no-PR behaviour on a late execute instead of silently buying material the
+  // planner never asked for.
+  // The vendor is unknown at plan time, so the PR is raised with a TBD vendor
+  // (mirrors the OSP flow), not the source label.
   let materialPr: { id: string; code: string } | null = null;
   const matSrc = plan.foMaterialSrc?.trim().toLowerCase();
   if (matSrc === 'purchase new') {
