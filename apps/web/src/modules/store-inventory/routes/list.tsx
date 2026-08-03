@@ -117,6 +117,7 @@ function StoreInventoryPage(): React.JSX.Element {
                     <th style={{ color: 'var(--green)' }}>In Stock</th>
                     <th>Min Qty</th>
                     <th style={{ color: 'var(--blue)' }}>On PO</th>
+                    <th style={{ color: 'var(--orange)' }}>At Vendor</th>
                     <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
                     {canWrite ? <th>Actions</th> : null}
                   </tr>
@@ -124,7 +125,7 @@ function StoreInventoryPage(): React.JSX.Element {
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={canWrite ? 9 : 8} className="empty-state">
+                      <td colSpan={canWrite ? 10 : 9} className="empty-state">
                         No items in master
                       </td>
                     </tr>
@@ -179,6 +180,19 @@ function StoreInventoryPage(): React.JSX.Element {
                             style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
                           >
                             {row.onPoQty || '—'}
+                          </span>
+                        </td>
+                        <td className="td-ctr">
+                          <span
+                            className="mono"
+                            style={{ color: row.atVendorQty > 0 ? 'var(--orange)' : 'var(--text3)' }}
+                            title={
+                              row.atVendorQty > 0
+                                ? `${row.atVendorQty} pcs out at an OSP vendor — not on the shelf`
+                                : undefined
+                            }
+                          >
+                            {row.atVendorQty || '—'}
                           </span>
                         </td>
                         <td className="td-ctr">

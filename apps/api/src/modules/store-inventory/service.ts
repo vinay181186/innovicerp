@@ -79,6 +79,17 @@ export async function listStoreInventory(
           AND po.status <> 'closed'
           AND pol.item_id IS NOT NULL
         GROUP BY pol.item_id
+      ),
+      -- Pieces physically at an OSP vendor: sent on an outward DC, not yet
+      -- returned. Document-derived via v_osp_wip (ADR-066); deliberately NOT
+      -- in the stock ledger (ADR-067), so it must be surfaced as its own
+      -- column or the row silently understates where the material is.
+      at_vendor AS (
+        SELECT w.item_id, SUM(w.at_vendor_qty)::int AS qty
+        FROM public.v_osp_wip w
+        WHERE w.company_id = ${companyId}::uuid
+          AND w.item_id IS NOT NULL
+        GROUP BY w.item_id
       )
       SELECT
         i.id                                       AS item_id,
@@ -89,12 +100,14 @@ export async function listStoreInventory(
         COALESCE(s.on_hand_qty, 0)::int            AS in_stock,
         i.min_stock_qty                            AS min_qty,
         COALESCE(po_pending.qty, 0)::int           AS on_po_qty,
+        COALESCE(at_vendor.qty, 0)::int            AS at_vendor_qty,
         COALESCE(jc_open.qty, 0)::int              AS mfg_pending_qty
       FROM public.items i
       LEFT JOIN public.v_item_stock s
         ON s.item_id = i.id AND s.company_id = i.company_id
       LEFT JOIN jc_open ON jc_open.item_id = i.id
       LEFT JOIN po_pending ON po_pending.item_id = i.id
+      LEFT JOIN at_vendor ON at_vendor.item_id = i.id
       WHERE i.company_id = ${companyId}::uuid
         AND i.deleted_at IS NULL
         ${searchFrag}
@@ -110,6 +123,7 @@ export async function listStoreInventory(
       in_stock: number;
       min_qty: number;
       on_po_qty: number;
+      at_vendor_qty: number;
       mfg_pending_qty: number;
     };
     const typed = result as unknown as R[];
@@ -126,6 +140,7 @@ export async function listStoreInventory(
         inStock,
         minQty,
         onPoQty: Number(r.on_po_qty),
+        atVendorQty: Number(r.at_vendor_qty),
         mfgPendingQty: Number(r.mfg_pending_qty),
         lowStock: minQty > 0 && inStock <= minQty,
       };

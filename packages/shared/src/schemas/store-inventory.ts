@@ -16,6 +16,13 @@ export const storeInventoryRowSchema = z.object({
   minQty: z.number().int().nonnegative(),
   /** Σ pending qty on open POs (qty − received). */
   onPoQty: z.number().int().nonnegative(),
+  /**
+   * Σ qty physically out at an OSP vendor (v_osp_wip.at_vendor_qty), i.e. sent
+   * on an outward DC and not yet returned. NOT part of inStock — with no BOM
+   * these pieces carry the same item code, so without this column a row reads
+   * "in stock 5" with no hint that another 5 are sitting at a vendor.
+   */
+  atVendorQty: z.number().int().nonnegative(),
   /** Σ pending qty on open JCs (order_qty − completed). */
   mfgPendingQty: z.number().int().nonnegative(),
   /** true when minQty > 0 AND inStock <= minQty. */
