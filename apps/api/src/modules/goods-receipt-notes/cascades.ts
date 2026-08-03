@@ -24,6 +24,9 @@
 //        of type='in', source_type='grn_qc'. stock_before/after computed
 //        from v_item_stock under an items-row FOR UPDATE lock to serialize
 //        concurrent QC accepts on the same item.
+//        Skipped for mid-route OSP returns (ADR-092) — those pieces are WIP
+//        owed to a downstream op, and store is credited once by the JC's
+//        final QC op instead. See isMidRouteOutsourceReturn below.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
@@ -155,12 +158,69 @@ export async function writeStoreTxnOnQcAccept(args: QcAcceptCascadeArgs): Promis
 }
 
 /**
+ * True when this GRN line is the return of an OSP op that is NOT the last op
+ * of its Job Card — i.e. the pieces are mid-route WIP, still owed to a
+ * downstream op, not finished goods (ADR-092).
+ *
+ * With no BOM the raw and finished part share one item code, so a job-work
+ * return looks identical to a purchase receipt. The only thing that tells them
+ * apart is where the outsource op sits in the routing:
+ *   - OSP op IS the last op  → the return finishes the JC → credit store.
+ *   - OSP op is mid-route    → parts feed the next op → credit nothing here;
+ *                              store is credited once, later, by the final QC
+ *                              op via qc-stock-cascade.
+ * Crediting mid-route returns would double-count (once here, once at final QC).
+ *
+ * The GRN line is resolved to its jc_op by two paths because
+ * `jc_ops.outsource_po_line_id` is only stamped once the outward DC is issued:
+ *   1. jc_ops.outsource_po_line_id = the GRN line's purchase_order_line_id
+ *   2. GRN → PO → PO.pr_id → purchase_requests.source_jc_op_id
+ * A non-OSP GRN (ordinary purchase) resolves to no op and is never blocked.
+ */
+async function isMidRouteOutsourceReturn(
+  tx: DbTransaction,
+  grnLineId: string,
+): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    WITH ln AS (
+      SELECT l.purchase_order_line_id, l.goods_receipt_note_id
+      FROM public.goods_receipt_note_lines l
+      WHERE l.id = ${grnLineId}::uuid
+    ),
+    op AS (
+      SELECT o.job_card_id, o.op_seq
+      FROM ln
+      JOIN public.jc_ops o
+        ON o.outsource_po_line_id = ln.purchase_order_line_id
+      WHERE o.deleted_at IS NULL
+      UNION
+      SELECT o.job_card_id, o.op_seq
+      FROM ln
+      JOIN public.goods_receipt_notes g ON g.id = ln.goods_receipt_note_id
+      JOIN public.purchase_orders po ON po.id = g.purchase_order_id
+      JOIN public.purchase_requests pr ON pr.id = po.pr_id
+      JOIN public.jc_ops o ON o.id = pr.source_jc_op_id
+      WHERE o.deleted_at IS NULL
+    )
+    SELECT EXISTS (
+      SELECT 1 FROM op
+      WHERE op.op_seq < (
+        SELECT MAX(x.op_seq) FROM public.jc_ops x
+        WHERE x.job_card_id = op.job_card_id AND x.deleted_at IS NULL
+      )
+    ) AS mid_route
+  `)) as unknown as Array<{ mid_route: boolean }>;
+  return rows[0]?.mid_route === true;
+}
+
+/**
  * Credit `qty` accepted pcs to stock via the grn_qc ledger — the single source
  * of truth for QC-accept stock movement. Locks the item row, reads current
  * on-hand, inserts one 'in' store_transaction. No-op when qty ≤ 0 (rejecting
- * everything writes nothing) or the line has no resolved item (free-text-only
- * items aren't stock-tracked by design). Callable per-inspect for incremental
- * QC, so multiple partial accepts on one line produce one ledger row each.
+ * everything writes nothing), the line has no resolved item (free-text-only
+ * items aren't stock-tracked by design), or the line is a mid-route OSP return
+ * (see isMidRouteOutsourceReturn). Callable per-inspect for incremental QC, so
+ * multiple partial accepts on one line produce one ledger row each.
  */
 export async function creditGrnQcStock(args: {
   tx: DbTransaction;
@@ -174,6 +234,9 @@ export async function creditGrnQcStock(args: {
   const { tx, companyId, adminUserId, grnId, grnLineId, itemId, qty } = args;
   if (qty <= 0) return;
   if (!itemId) return;
+  // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
+  // credited once, by the JC's final QC op — not here.
+  if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
 
   // Lock the items row to serialize concurrent QC accepts on the same item.
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);

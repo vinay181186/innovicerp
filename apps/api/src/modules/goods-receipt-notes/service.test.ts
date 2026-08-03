@@ -6,6 +6,8 @@ import {
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
+  jcOps,
+  jobCards,
   purchaseOrderLines,
   purchaseOrders,
   storeTransactions,
@@ -46,6 +48,60 @@ async function freshPo(
     admin,
   );
   return { id: detail.id, lineId: detail.lines[0]!.id, itemId: firstItemId };
+}
+
+/**
+ * Build a Job Card whose op 1 is an OSP op stamped with `poLineId`, so a GRN
+ * against that PO line resolves back to the op via
+ * jc_ops.outsource_po_line_id (path 1 of the ADR-092 guard).
+ *
+ * `midRoute: true` appends a trailing QC op, making the OSP op op 1 of 2 —
+ * its return is WIP owed to op 2, so store must NOT be credited.
+ * `midRoute: false` leaves the OSP op as op 1 of 1 (the full_outsource shape),
+ * where the return finishes the JC and store SHOULD be credited.
+ */
+async function freshJcWithOspOp(
+  suffix: string,
+  poLineId: string,
+  opts: { midRoute: boolean },
+): Promise<void> {
+  const jcRows = await db
+    .insert(jobCards)
+    .values({
+      companyId: admin.companyId!,
+      code: `${TEST_PREFIX}JC-${suffix}-${Date.now()}`,
+      jcDate: '2026-05-03',
+      itemId: firstItemId,
+      orderQty: 10,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning({ id: jobCards.id });
+  const jobCardId = jcRows[0]!.id;
+
+  await db.insert(jcOps).values({
+    companyId: admin.companyId!,
+    jobCardId,
+    opSeq: 1,
+    operation: 'OSP STEP',
+    opType: 'outsource',
+    outsourcePoLineId: poLineId,
+    createdBy: admin.id,
+    updatedBy: admin.id,
+  });
+
+  if (opts.midRoute) {
+    await db.insert(jcOps).values({
+      companyId: admin.companyId!,
+      jobCardId,
+      opSeq: 2,
+      operation: 'FINAL QC',
+      opType: 'qc',
+      qcRequired: true,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+  }
 }
 
 async function readPoStatus(id: string): Promise<string> {
@@ -133,6 +189,17 @@ afterAll(async () => {
   await db.delete(goodsReceiptNotes).where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
 
   await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `${TEST_PREFIX}%`));
+
+  // JC ops before job cards before PO lines — jc_ops.outsource_po_line_id is
+  // ON DELETE SET NULL, but the JC rows themselves must go before the item.
+  const jcHeaders = await db
+    .select({ id: jobCards.id })
+    .from(jobCards)
+    .where(like(jobCards.code, `${TEST_PREFIX}%`));
+  for (const h of jcHeaders) {
+    await db.delete(jcOps).where(eq(jcOps.jobCardId, h.id));
+  }
+  await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
 
   const poHeaders = await db
     .select({ id: purchaseOrders.id })
@@ -328,6 +395,83 @@ describe('goods-receipt-notes service', () => {
     expect(txn).toHaveLength(0);
     // PO still flips to closed (rejection counts as QC complete from header POV).
     expect(await readPoStatus(po.id)).toBe('closed');
+  });
+
+  // ─── ADR-092: mid-route OSP returns are WIP, not finished goods ──────────
+  // With no BOM the raw and finished part share one item code, so a job-work
+  // return is indistinguishable from a purchase receipt at the GRN. The op's
+  // position in the routing is the discriminator.
+
+  it('writes NO store_transactions row when the OSP op is MID-ROUTE (more ops follow)', async () => {
+    const po = await freshPo('OSP-MID', 5);
+    await freshJcWithOspOp('MID', po.lineId, { midRoute: true });
+    const grnCode = `${TEST_PREFIX}OSPMID`;
+    await service.createGoodsReceiptNote(
+      {
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
+        lines: [
+          {
+            purchaseOrderLineId: po.lineId,
+            itemId: firstItemId,
+            itemName: 'X',
+            receivedQty: 5,
+            qcStatus: 'completed',
+            qcAcceptedQty: 5,
+            qcRejectedQty: 0,
+            qcDate: '2026-05-03',
+          },
+        ],
+      },
+      admin,
+    );
+    // Parts are owed to op 2 — store is credited later, by that final QC op.
+    const txn = await db
+      .select()
+      .from(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `${grnCode}%`));
+    expect(txn).toHaveLength(0);
+  });
+
+  it('DOES credit stock when the OSP op is the LAST op (full_outsource shape)', async () => {
+    const po = await freshPo('OSP-LAST', 5);
+    await freshJcWithOspOp('LAST', po.lineId, { midRoute: false });
+    const grnCode = `${TEST_PREFIX}OSPLAST`;
+    await service.createGoodsReceiptNote(
+      {
+        header: {
+          code: grnCode,
+          grnDate: '2026-05-03',
+          purchaseOrderId: po.id,
+          vendorId: firstVendorId,
+        },
+        lines: [
+          {
+            purchaseOrderLineId: po.lineId,
+            itemId: firstItemId,
+            itemName: 'X',
+            receivedQty: 5,
+            qcStatus: 'completed',
+            qcAcceptedQty: 5,
+            qcRejectedQty: 0,
+            qcDate: '2026-05-03',
+          },
+        ],
+      },
+      admin,
+    );
+    // The return finishes the JC — this is the one and only credit.
+    const txn = await db
+      .select()
+      .from(storeTransactions)
+      .where(like(storeTransactions.sourceRef, `${grnCode}%`));
+    expect(txn).toHaveLength(1);
+    expect(txn[0]?.sourceType).toBe('grn_qc');
+    expect(txn[0]?.qty).toBe(5);
   });
 
   it('rejects QC field changes on a line that is already QC-completed (ConflictError)', async () => {
