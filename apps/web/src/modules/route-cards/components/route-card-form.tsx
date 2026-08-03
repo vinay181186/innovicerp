@@ -117,8 +117,10 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const [revisionNote, setRevisionNote] = useState('');
 
   const { data: itemsList } = useItemsList({ limit: 1000, offset: 0 });
-  const { data: machinesList } = useMachinesList({ limit: 500, offset: 0 });
-  const { data: vendorsList } = useVendorsList({ limit: 500, offset: 0 });
+  // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
+  // route 400, leaving the pickers empty. Stay ≤ 200.
+  const { data: machinesList } = useMachinesList({ limit: 200, offset: 0 });
+  const { data: vendorsList } = useVendorsList({ limit: 200, offset: 0 });
 
   // Create-mode only: prefill the RC No with the previewed next code once,
   // while the field is still blank. Keeps the field editable (user may

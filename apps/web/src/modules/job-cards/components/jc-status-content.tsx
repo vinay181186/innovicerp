@@ -669,8 +669,11 @@ function JcStatusEditForm({
   const update = useUpdateJobCard(id);
 
   const { data: itemsData } = useItemsList({ limit: 500, offset: 0 });
-  const { data: machinesData } = useMachinesList({ limit: 500, offset: 0 });
-  const { data: vendorsData } = useVendorsList({ limit: 500, offset: 0 });
+  // machines & vendors list-query schemas cap `limit` at 200 — asking for 500
+  // makes the route's zod .parse() 400, so the picker got ZERO options and the
+  // machine dropdown showed "No matches". Stay within the cap.
+  const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
+  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);

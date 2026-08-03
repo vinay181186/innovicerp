@@ -105,8 +105,10 @@ export function JobCardForm({
 
   const { data: sourceOptions = [] } = useJobCardSourceOptions();
   const { data: itemsData } = useItemsList({ limit: 500, offset: 0 });
-  const { data: machinesData } = useMachinesList({ limit: 500, offset: 0 });
-  const { data: vendorsData } = useVendorsList({ limit: 500, offset: 0 });
+  // machines & vendors list-query schemas cap `limit` at 200 — 500 makes the
+  // route 400, leaving the machine picker empty ("No matches"). Stay ≤ 200.
+  const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
+  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const machines = machinesData?.machines ?? [];
   const vendors = (vendorsData?.vendors ?? []).filter((v) => v.isActive);
