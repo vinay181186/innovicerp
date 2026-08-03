@@ -3504,3 +3504,51 @@ had no logs column).
   `pendingQty` is `orderQty − done` and ignores `inputAvail`; the per-op log strip is
   capped at 3 out of a JC-wide 300-row fetch; `{opCount} op{ops.length !== 1 …}`
   renders "1 ops"; `toolNo` is written but has no input on any screen.
+
+## ADR-089: JC op cards — unit label, log caption and plural corrected (labels only)
+**Date:** 2026-08-03
+**Status:** Accepted
+
+> Numbering note: the previous entry ("JC Operations Detail — table → card layout")
+> was written as a second **ADR-088**, colliding with the Service PO entry authored
+> in a concurrent session. Both are kept verbatim (this log is append-only); read the
+> JC one as **ADR-088b**. This entry takes 089 so the sequence continues cleanly.
+
+### Context
+Three cosmetic defects survived ADR-088b because that port was scoped to layout only
+and reproduced the old table's wording byte-for-byte, including its mistakes:
+
+1. `jc_ops.cycle_time_min` is **minutes**, but the view and edit cards inherited the
+   legacy table header `Cycle(h)`. The create form and the Excel export already said
+   `Cycle (min)` — so the same column was labelled two different units in one module.
+2. The per-op log strip caption read `latest 3 logs` regardless of how many entries
+   were actually rendered, so an op with one log claimed three.
+3. The ops counter pluralised off the **total** row count while printing the
+   **non-QC** count, so `1 process op + 1 QC op` rendered "1 ops".
+
+### Decision
+Fix the labels, touch no logic. The rendered numbers, the queries, the save payload
+and every button condition are unchanged.
+
+- `Cycle(h)` → `Cycle (min)` on the view card, the edit-card default prop, and the
+  print template — all four surfaces (create / view / edit / print) now agree with the
+  Excel export and with the column's actual unit.
+- Log caption derives from the array it renders: `latest ${logs.length} log entr(y|ies)`.
+- Plural follows the number actually shown: `{opCount} op{opCount !== 1 ? 's' : ''}`.
+
+### Alternatives Considered
+- Convert `cycle_time_min` to hours for display — rejected: a data-presentation change
+  in a labels-only pass, and shop-floor cycle times are quoted in minutes.
+- Rename the DB column to remove the ambiguity — rejected: a migration for a typo in
+  one header, with every reader and the API contract to follow.
+
+### Consequences
+- Positive: one unit for one column across the whole module; captions can no longer
+  contradict what is on screen.
+- Neutral: `job-card-form.tsx` drops its now-redundant `cycleLabel` override — the
+  shared default already carries the correct text.
+- Still deferred (unchanged from ADR-088b): `pendingQty = orderQty − done` ignores
+  `inputAvail` (awaiting the user's call); `toolNo` has no input on any screen; the
+  log strip is still capped at 3. **Edit-screen op numbering after a re-sequence is
+  explicitly to be left as-is** — the user reviewed it and chose to keep the current
+  behaviour; the save order is correct, only the printed label lags.

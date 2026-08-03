@@ -231,8 +231,10 @@ export function JobCardForm({
     setSourceTextSynced(true);
   }, [isEdit, sourceTextSynced, selectedSource]);
 
-  // Ops counter (legacy jcModalOpsHtml L5927 — note legacy pluralises "op(s)"
-  // off the TOTAL row count, not the non-QC count; mirrored).
+  // Ops counter (legacy jcModalOpsHtml L5927). Legacy pluralised "op(s)" off the
+  // TOTAL row count while PRINTING the non-QC count, so 1 process op + 1 QC op
+  // read "1 ops". That deviation is no longer mirrored — the plural now follows
+  // the number actually shown.
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
@@ -622,7 +624,7 @@ export function JobCardForm({
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span className="text3" style={{ fontSize: 11 }}>
-              {opCount} op{ops.length !== 1 ? 's' : ''}
+              {opCount} op{opCount !== 1 ? 's' : ''}
               {qcCount > 0 ? ` + ${qcCount} QC` : ''}
             </span>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp(false)}>
@@ -660,7 +662,6 @@ export function JobCardForm({
                 machineOptions={machineOptions}
                 onMachineSearch={setMachineSearch}
                 vendorListId="dlJcVendor"
-                cycleLabel="Cycle (min)"
                 toolDetailsPlaceholder="Insert, fixtures, setup notes"
                 isFirst={i === 0}
                 isLast={i === ops.length - 1}

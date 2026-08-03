@@ -11,7 +11,7 @@
 //   Status                   → header-right badge (+ left accent bar)
 //   (move / remove)          → header-right ▲ ▼ ✕
 //   Order/Completed/Pending/At Vendor/In QC → QUANTITIES tile row (read-only)
-//   Cycle(h) / Prog / Tool   → SETUP field row (editable)
+//   Cycle / Prog / Tool      → SETUP field row (editable)
 //   QC                       → QC YES tag in the header
 //   Outsource                → OUTSOURCE block (checkbox / balance button / vendor / cost)
 //   Recent Logs              → collapsible RECENT LOGS strip (read-only)
@@ -57,7 +57,7 @@ export function JcOpEditCard({
   onMachineSearch,
   vendorListId,
   logs,
-  cycleLabel = 'Cycle(h)',
+  cycleLabel = 'Cycle (min)',
   toolDetailsPlaceholder = 'Tool details',
   isFirst,
   isLast,
@@ -84,8 +84,9 @@ export function JcOpEditCard({
    *  Omit entirely (create screen) to hide the RECENT LOGS strip — the create
    *  form's table has no such column. */
   logs?: OpLog[];
-  /** The cycle field's caption. Defaults to the JC Status wording; the create
-   *  form passes its own "Cycle (min)" so neither screen's label changes. */
+  /** The cycle field's caption. Defaults to "Cycle (min)" — the column is
+   *  `jc_ops.cycle_time_min`, so legacy's inherited "Cycle(h)" was the wrong
+   *  unit on every screen that showed it. */
   cycleLabel?: string;
   /** Tool-details placeholder — differs between the two screens today. */
   toolDetailsPlaceholder?: string;
@@ -420,7 +421,7 @@ export function JcOpEditCard({
                   fontWeight: 600,
                 }}
               >
-                {logs.length === 3 ? 'latest 3 log entries' : `${logs.length} log entries`}
+                {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
               </button>
               <span style={{ flex: 1 }} />
               <button

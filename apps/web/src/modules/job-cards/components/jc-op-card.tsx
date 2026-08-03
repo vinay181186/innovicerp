@@ -10,7 +10,7 @@
 //   Op / Machine / Operation → header line (seq chip, machine, operation, tags)
 //   Status                   → header-right badge (+ left accent bar)
 //   Order/Completed/Pending/At Vendor/In QC → QUANTITIES tile row
-//   Cycle(h) / Prog+Tool     → SETUP chip row
+//   Cycle / Prog+Tool        → SETUP chip row
 //   (outsource machine cell) → OUTSOURCE block
 //   Recent Logs              → collapsible RECENT LOGS strip
 //   Action                   → footer strip
@@ -256,8 +256,12 @@ export function JcOpCard({
           <div style={{ minWidth: 140 }}>
             <div style={secLabel}>Setup</div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', rowGap: 3 }}>
+              {/* The column is `jc_ops.cycle_time_min` — MINUTES. Legacy's
+                  "Cycle(h)" header (and the port that inherited it) mislabelled
+                  the unit; the create form and the Excel export already say
+                  "Cycle (min)". Corrected here so all four agree. */}
               <SetupChip
-                label="Cycle(h)"
+                label="Cycle (min)"
                 value={Number(op.cycleTimeMin) || '—'}
                 color="var(--text2)"
               />
@@ -313,7 +317,7 @@ export function JcOpCard({
                   fontWeight: 600,
                 }}
               >
-                {logs.length === 3 ? 'latest 3 log entries' : `${logs.length} log entries`}
+                {`latest ${logs.length} log ${logs.length === 1 ? 'entry' : 'entries'}`}
               </button>
               <span style={{ flex: 1 }} />
               <button

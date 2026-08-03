@@ -936,7 +936,7 @@ function JcStatusEditForm({
         </button>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span className="text3" style={{ fontSize: 11 }}>
-            {opCount} op{ops.length !== 1 ? 's' : ''}
+            {opCount} op{opCount !== 1 ? 's' : ''}
             {qcCount > 0 ? ` + ${qcCount} QC` : ''}
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp(false)}>

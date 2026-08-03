@@ -114,7 +114,7 @@ export function printJobCard(args: {
       <div class="info-box"><div class="info-lbl">Status</div><div class="info-val"><span class="badge ${jcStatusBadge}">${esc(jcStatusLabel)}</span></div></div>
     </div>
     <h2>Operation Routing</h2>
-    <table><thead><tr><th>#</th><th>Machine</th><th>Operation</th><th>Cycle(h)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>#</th><th>Machine</th><th>Operation</th><th>Cycle (min)</th><th>Program</th><th>Tool No.</th><th>Order</th><th>Done</th><th>Avail</th><th>Status</th></tr></thead>
     <tbody>${opRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No operations</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Prepared By</div>
