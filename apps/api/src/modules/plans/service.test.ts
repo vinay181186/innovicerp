@@ -564,7 +564,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     expect(result.materialPrCode).toBeUndefined();
   });
 
-  it('executePlan(full_outsource): seeds JC + OSP op, JW PR + material PR when material_src set', async () => {
+  it('executePlan(full_outsource): seeds JC + OSP op, JW PR + material PR when material_src=Purchase New', async () => {
     const created = await service.createPlan(
       {
         code: `${TEST_PREFIX}P-EXEC-FO`,
@@ -575,7 +575,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
         planQty: 8,
         foVendorCodeText: 'JW-VEN',
         foProcess: 'heat treat',
-        foMaterialSrc: 'SUPPLIER-X',
+        foMaterialSrc: 'Purchase New',
         foRate: 50,
       },
       admin,
@@ -593,7 +593,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
     expect(result.plan.foMatPrId).not.toBeNull();
   });
 
-  it('executePlan(full_outsource): material_src=inhouse → no material PR', async () => {
+  it('executePlan(full_outsource): material_src=From Stock → no material PR', async () => {
     const created = await service.createPlan(
       {
         code: `${TEST_PREFIX}P-EXEC-FO-IH`,
@@ -604,7 +604,7 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
         planQty: 8,
         foVendorCodeText: 'JW-VEN',
         foProcess: 'heat treat',
-        foMaterialSrc: 'inhouse',
+        foMaterialSrc: 'From Stock',
       },
       admin,
     );

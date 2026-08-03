@@ -967,10 +967,16 @@ async function executeFullOutsource(
       .where(eq(jcOps.id, ospOpId));
   }
 
-  // 2. Optional material PR when foMaterialSrc is set + isn't 'self'/'inhouse'.
+  // 2. Material PR is raised ONLY when the planner chose "Purchase New" (we don't
+  // have the raw material and must buy it). "From Stock" (and legacy
+  // self/inhouse/in-house) means use existing store stock → raise nothing.
+  // NB: the Material Source dropdown emits exactly "From Stock" | "Purchase New";
+  // the old check compared against self/inhouse and so wrongly bought for BOTH
+  // options — including "From Stock". The vendor is unknown at plan time, so the
+  // PR is raised with a TBD vendor (mirrors the OSP flow), not the source label.
   let materialPr: { id: string; code: string } | null = null;
   const matSrc = plan.foMaterialSrc?.trim().toLowerCase();
-  if (matSrc && matSrc !== 'self' && matSrc !== 'inhouse' && matSrc !== 'in-house') {
+  if (matSrc === 'purchase new') {
     const matCode = await nextSeriesCode(tx, 'pr', plan.companyId, 'IN-JWPR-');
     const matRows = await tx
       .insert(purchaseRequests)
@@ -979,7 +985,7 @@ async function executeFullOutsource(
         code: matCode,
         prDate: today,
         status: 'open',
-        vendorCodeText: plan.foMaterialSrc!,
+        vendorCodeText: '(vendor TBD)',
         itemId: plan.itemId ?? null,
         itemCodeText: plan.itemCodeText ?? null,
         itemName: plan.itemNameText ?? null,

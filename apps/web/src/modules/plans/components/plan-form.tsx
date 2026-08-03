@@ -534,14 +534,16 @@ export function PlanForm({
               />
             </Field>
             <Field label="Material source">
-              <input
-                className="innovic-input"
-                placeholder="'inhouse' or supplier code"
-                value={values.foMaterialSrc}
+              <select
+                className="innovic-select"
+                value={values.foMaterialSrc === 'Purchase New' ? 'Purchase New' : 'From Stock'}
                 onChange={(e) => update('foMaterialSrc', e.target.value)}
-              />
+              >
+                <option>From Stock</option>
+                <option>Purchase New</option>
+              </select>
               <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                Type 'inhouse' / 'self' to skip the material PR.
+                From Stock = use store material (no PR). Purchase New = raise a material PR.
               </div>
             </Field>
             <Field label="Delivery date">

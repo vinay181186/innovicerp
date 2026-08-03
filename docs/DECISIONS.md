@@ -3615,3 +3615,43 @@ columns were structurally always blank.
   action ladder are untouched.
 - Negative: any user who read PENDING as "order-level remaining for this op"
   loses that reading; the ORDER and COMPLETED tiles still give it.
+
+## ADR-091: Full-Outsource Material Source — buy only on "Purchase New"
+**Date:** 2026-08-03
+**Status:** Accepted
+
+### Context
+A full_outsource plan has a Material Source of "From Stock" (raw material already
+in our store → use it, buy nothing) or "Purchase New" (we don't have it → raise a
+material PR). The plan-execute code (`plans/service.ts`) raised a material PR
+whenever `foMaterialSrc` was anything except the words `self`/`inhouse`/`in-house`.
+The dropdown only ever emits "From Stock" | "Purchase New" — neither word is in
+that exclude-list, so BOTH options raised a PR. The option that means *don't buy*
+("From Stock") wrongly triggered a purchase. Second defect: the PR's
+`vendorCodeText` was set to the source label itself (`plan.foMaterialSrc`), a
+leftover from when this column was free-text vendor name (ISSUE-253). Compounding
+it, `plan-form.tsx` (new/edit routes) rendered Material Source as a FREE-TEXT box
+("'inhouse' or supplier code") while `edit-plan-modal.tsx` used the 2-option
+dropdown — the two entry points disagreed on what values the column holds.
+
+### Decision
+- Raise a material PR **only** when `foMaterialSrc?.trim().toLowerCase() === 'purchase new'`.
+  "From Stock" (and any legacy/empty value) raises nothing. Matches legacy intent.
+- Stop writing the source label into the vendor field; raise the material PR with
+  `vendorCodeText: '(vendor TBD)'` (vendor unknown at plan time — mirrors the OSP flow).
+- Unify the entry forms: `plan-form.tsx` Material Source is now the same 2-option
+  dropdown (From Stock / Purchase New) as the modal, coercing any legacy value to
+  the safe "From Stock". Closes the ISSUE-253 free-text/select mismatch.
+- Backend-only + a UI field swap. **No DB migration.** Tests updated to use the
+  real dropdown values (Purchase New = buys, From Stock = does not).
+
+### Consequences
+- Positive: "From Stock" no longer double-buys material already in store; material
+  PRs no longer carry a bogus "From Stock"/"Purchase New" vendor name.
+- Negative: a legacy full_outsource plan that stored a supplier code in
+  `foMaterialSrc` (meaning "buy") now reads as "From Stock" and would NOT raise a
+  PR if re-executed. Plans execute once, so already-executed plans are unaffected;
+  risk is limited to un-executed legacy rows with a free-text supplier value.
+- Does NOT touch stock: "From Stock" still consumes nothing from the store ledger
+  (no reservation/deduction). Stock double-commit remains a separate, deferred
+  feature — see the audit notes on reservation risks.
