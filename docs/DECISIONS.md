@@ -4047,3 +4047,122 @@ ordered, closing the line only once the whole qty is produced.
   make 95 of 100 and stop) now leaves the line open — a manual "close short"
   action is still needed. Pairs with the JWSO close-out / dispatch-reconcile work.
 - Verified: `pnpm --filter api typecheck` + `lint` clean.
+
+## ADR-100: Cancelling a PR must release its JC op — dead paperwork commits nothing
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Reported against SO-002 → PLN-0022 → IN-JWPR-00024 → IN-JC-26-00022. The user
+raised a full-outsource plan, decided the operation should be done in-house
+instead, **cancelled the PR**, then opened the JC to retype op 1 from
+`outsource` to `process`. The save was refused with:
+
+> Cannot change the type of an outsourced operation that already has a PR/PO —
+> cancel the PR/PO first.
+
+They had already done exactly that. The instruction was unsatisfiable.
+
+Root cause, confirmed against the live DB:
+
+* `rejectPurchaseRequest` (`purchase-requests/service.ts`) set
+  `purchase_requests.status = 'cancelled'` and appended the reason to remarks.
+  That is **all** it did.
+* The stamp the PR had written onto its source operation —
+  `jc_ops.outsource_pr_id` + `jc_ops.outsource_status = 'pr_raised'` — was left
+  in place. A grep of the whole API found **no code path anywhere** that ever
+  sets either column back to NULL (only a test fixture). The stamp was a
+  one-way latch.
+* The JC-edit lock guard (`job-cards/service.ts`) computed `committed` from
+  those three columns alone:
+  `outsourceStatus != null || outsourcePrId != null || outsourcePoLineId != null`.
+  It never checked whether the PR behind the stamp was still alive.
+
+Live state of the reported op: `outsource_status = 'pr_raised'`,
+`outsource_pr_id → IN-JWPR-00024 (cancelled)`, `outsource_po_line_id = NULL`,
+`outsource_dc_no = NULL`, `outsource_sent_qty = 0`, zero `op_log` rows. Nothing
+was committed to anything, and the op was frozen permanently.
+
+Not a one-off — four prod ops were in this state:
+IN-JC-26-00005/00013/00014/00022, all op 1, all against a cancelled PR.
+
+A second, related gap: `POST /jc-ops/:id/outsource-balance` (ADR-081) goes
+in-house → OSP. There is no reverse action, so the JC-edit retype is the only
+OSP → in-house route — and it was the blocked one.
+
+### Decision
+Dead paperwork commits nothing. Fixed on both sides:
+
+1. **Release on cancel** (`purchase-requests/service.ts`). A new
+   `releaseSourceJcOps(tx, prId, user)` helper clears `outsource_pr_id` and
+   `outsource_status` on any op stamped by that PR. Called from
+   `rejectPurchaseRequest` and from `softDeletePurchaseRequest`. Scoped to ops
+   with **no** `outsource_po_line_id` and a pre-PO status
+   (`'pending' | 'pr_raised'`) — a real commitment is never unwound. The
+   activity-log line records that the op was released.
+2. **The lock guard reads the PR's real state** (`job-cards/service.ts`). The
+   `existing` op select now LEFT JOINs `purchase_requests`, and `committed`
+   requires one of: a PO line pointing at the op, an outsource status in
+   `OSP_MOVED_STATUSES = {po_created, sent, received}` (material has moved), or
+   a PR that is still alive (not `cancelled`, not soft-deleted). A bare
+   `pr_raised` stamp behind a dead PR no longer latches.
+3. **Migration `0082_release_jc_ops_from_dead_prs.sql`** — data-only,
+   idempotent, clears the stale stamp on rows written before this fix, using the
+   same PO-line / status safety filter.
+
+Clearing the stamp also makes the op eligible for the auto-raise in step 3b of
+`updateJobCard` again (its filter is `outsource_pr_id IS NULL AND
+outsource_status IS NULL`). That is the intended next state: an op that is still
+`op_type = 'outsource'` with no live PR does need one.
+
+### Alternatives Considered
+- **Guard fix only** — rejected: the four legacy rows would keep a stamp
+  pointing at a cancelled PR, so the DB would keep lying about op state and the
+  OSP register could show phantom rows.
+- **Clear the stamp in `updateJobCard`'s upsert whenever an op is not
+  `outsource`** — rejected, and it would have been a regression: ADR-081
+  dual-lane deliberately puts `outsource_pr_id` + `pr_raised` on a
+  **`process`** op, so a plain no-change JC save would have wiped a live
+  dual-lane link.
+- **Auto-cancel the PR from the JC edit screen** — rejected: silently killing
+  procurement paperwork as a side-effect of an ops edit. Cancelling a PR should
+  stay an explicit, logged act on the PR.
+
+### Consequences
+- Positive: the error message is now satisfiable — cancel the PR, then retype
+  or remove the op. This is the OSP → in-house route that was missing.
+- Positive: `jc_ops` outsource columns now mean what they say. An op carrying
+  `pr_raised` has a live PR behind it.
+- Positive: fixes the four stuck prod ops without hand-editing rows.
+- Negative: after cancelling a PR, re-saving the JC with the op still typed
+  `outsource` auto-raises a fresh PR. Correct, but it will surprise anyone who
+  expected the op to stay bare.
+- Risk: an op whose real commitment lives *only* in a status past PO issue and
+  nowhere else stays locked. Deliberate — `sent`/`received` means material is
+  physically at a vendor.
+- **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
+  prod DB, so the suite was not executed. Verified by typecheck + lint only;
+  treat the first CI run as their real verification.
+
+## ADR-100: Party GRN over-receipt block — cannot receive more than the line's order qty
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Party Material GRN had no ceiling: cumulative received for a JW line could exceed
+the order qty (e.g. IN-JW-00002 line 1 ordered 100, received 60 then 100 = 160).
+Nothing stopped it.
+
+### Decision
+`party-grn/service.ts createPartyGrn`: before inserting each line, sum existing
+received for that JW line (matched by `jw_line_no_text` = line_no, across all
+non-deleted GRNs for the order) plus earlier lines in the same receipt; reject
+when it would exceed the line's `order_qty`. Friendly message names the part and
+the remaining receivable qty. Lines with no line number are not attributable to
+a part and are not capped (data-quality gap, flagged).
+
+### Consequences
+- Positive: hard stop on receiving more material than ordered, per part.
+- Existing over-received rows are NOT retroactively corrected (Party GRN has no
+  edit/delete path); the block applies to new receipts only.
+- Verified: `pnpm --filter api typecheck` + `lint` clean.

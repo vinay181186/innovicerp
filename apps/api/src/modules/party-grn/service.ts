@@ -15,6 +15,7 @@ import type {
   PartyGrnListItem,
 } from '@innovic/shared';
 import {
+  jobWorkOrderLines,
   jobWorkOrders,
   partyGrn,
   partyGrnLines,
@@ -357,12 +358,62 @@ export async function createPartyGrn(
     const header = headerInserted[0];
     if (!header) throw new ValidationError('Failed to insert party GRN header');
 
+    // 4b) Over-receipt guard: cumulative received per JW line (matched by the
+    // line number) must not exceed that line's order qty. Lines with no line
+    // number are not attributable to a part, so they are not capped here.
+    const jwLines = await tx
+      .select({
+        lineNo: jobWorkOrderLines.lineNo,
+        orderQty: jobWorkOrderLines.orderQty,
+        partName: jobWorkOrderLines.partName,
+      })
+      .from(jobWorkOrderLines)
+      .where(
+        and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
+      );
+    const lineByNo = new Map(
+      jwLines.map((l) => [String(l.lineNo), { orderQty: Number(l.orderQty), partName: l.partName }]),
+    );
+    const existingRows = (await tx.execute(sql`
+      SELECT pgl.jw_line_no_text AS "lineNoText",
+             COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
+      FROM public.party_grn pg
+      JOIN public.party_grn_lines pgl ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
+      WHERE pg.job_work_order_id = ${jw.id}::uuid AND pg.deleted_at IS NULL
+      GROUP BY pgl.jw_line_no_text
+    `)) as unknown as Array<{ lineNoText: string | null; received: number }>;
+    const receivedByLineNo = new Map<string, number>();
+    for (const r of existingRows) {
+      if (r.lineNoText != null) receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
+    }
+
     // 5) Insert lines + update per-material totals
     for (const [idx, ln] of input.lines.entries()) {
       const pm = pmById.get(ln.partyMaterialId);
       if (!pm) {
         throw new NotFoundError(`Party material ${ln.partyMaterialId} not found`);
       }
+
+      // Block receiving more than the line's order qty (cumulative across all
+      // GRNs for this JW, including earlier lines in this same receipt).
+      const lnKey = ln.jwLineNoText != null ? String(ln.jwLineNoText).trim() : '';
+      if (lnKey && lineByNo.has(lnKey)) {
+        const { orderQty, partName } = lineByNo.get(lnKey)!;
+        const already = receivedByLineNo.get(lnKey) ?? 0;
+        const remaining = Math.max(0, orderQty - already);
+        if (ln.receivedQty > remaining) {
+          const part = partName ? `${partName} (line ${lnKey})` : `Line ${lnKey}`;
+          const note =
+            already > 0
+              ? `Ordered ${orderQty}, already received ${already}, so only ${remaining} more can be received.`
+              : `Ordered ${orderQty}, so at most ${orderQty} can be received.`;
+          throw new ValidationError(
+            `${part}: you entered ${ln.receivedQty}, but ${note} Please reduce the quantity.`,
+          );
+        }
+        receivedByLineNo.set(lnKey, already + ln.receivedQty);
+      }
+
       await tx.insert(partyGrnLines).values({
         companyId,
         partyGrnId: header.id,
