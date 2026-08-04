@@ -4166,3 +4166,22 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
 - **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
   prod DB, so the suite was not executed. Verified by typecheck + lint only;
   treat the first CI run as their real verification.
+
+## ADR-101: Direct Purchase disabled for JWSO plans (UI + server)
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Direct Purchase = buy the finished item outright; meaningless for job-work,
+where the client owns the job and supplies material. The plan-edit modal still
+offered it for JWSO plans and there was no server guard.
+
+### Decision
+- Web `edit-plan-modal.tsx`: hide the Direct Purchase tab when `plan.jwLineId`
+  is set (`isJw`).
+- API `plans/service.ts`: `createPlan` + `updatePlan` reject
+  `planType='direct_purchase'` when a `jwLineId` is present.
+
+### Consequences
+- JWSO plans can only be Manufacture / Full Outsource (+ Assembly). SO plans
+  keep all types. Verified: api+web typecheck + lint clean.

@@ -286,6 +286,12 @@ export async function createPlan(
       throw new ConflictError(`Plan code "${code}" already exists`);
     }
 
+    // Direct Purchase (buy finished item outright) is not valid for job-work —
+    // the client owns the job and supplies the material.
+    if (input.planType === 'direct_purchase' && input.jwLineId) {
+      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
+    }
+
     await assertPlanQtyWithinRemaining(tx, companyId, {
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
@@ -375,6 +381,12 @@ export async function updatePlan(
       throw new ValidationError(
         `Plan in status '${row.planStatus}' cannot be edited (only in_planning / planned)`,
       );
+    }
+
+    // Direct Purchase is not valid for a job-work (JWSO) plan.
+    const resultingType = input.planType ?? row.planType;
+    if (resultingType === 'direct_purchase' && row.jwLineId) {
+      throw new ValidationError('Direct Purchase is not allowed for a job-work (JWSO) order');
     }
 
     // Over-plan guard on qty change: cap at the line's remaining qty, excluding

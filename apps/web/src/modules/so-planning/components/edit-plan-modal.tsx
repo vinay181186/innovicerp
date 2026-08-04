@@ -65,6 +65,11 @@ function planOpToRow(op: { opSeq: number; operation: string; opType: string; mac
 export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const [planQty, setPlanQty] = useState<number>(plan.planQty);
   const [planType, setPlanType] = useState<PlanType>(plan.planType);
+  // Direct Purchase means "buy the finished item outright" — meaningless for a
+  // job-work order (the client owns the job + supplies the material), so the
+  // option is hidden for JWSO-sourced plans. Server also rejects it (createPlan
+  // /updatePlan) so a direct API call can't set it either.
+  const isJw = plan.jwLineId != null;
   const [plannedStartDate, setPlannedStartDate] = useState<string>(plan.plannedStartDate ?? '');
   const [plannedEndDate, setPlannedEndDate] = useState<string>(plan.plannedEndDate ?? '');
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
@@ -421,15 +426,16 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             'rgba(124,58,237,0.08)',
             planType === 'full_outsource',
           )}
-          {typeBtn(
-            'direct_purchase',
-            '🛒',
-            'Direct Purchase',
-            'Buy finished item (with material)',
-            'var(--green)',
-            'rgba(34,197,94,0.08)',
-            planType === 'direct_purchase',
-          )}
+          {!isJw &&
+            typeBtn(
+              'direct_purchase',
+              '🛒',
+              'Direct Purchase',
+              'Buy finished item (with material)',
+              'var(--green)',
+              'rgba(34,197,94,0.08)',
+              planType === 'direct_purchase',
+            )}
         </div>
       </div>
 
