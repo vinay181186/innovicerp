@@ -42,10 +42,47 @@ export interface CascadeResult {
     | 'jc_not_complete'
     | 'jc_has_no_source_link'
     | 'so_line_already_terminal'
-    | 'jw_line_already_terminal';
+    | 'jw_line_already_terminal'
+    | 'so_line_qty_incomplete'
+    | 'jw_line_qty_incomplete';
 }
 
 const TERMINAL_STATUSES = new Set(['closed', 'cancelled']);
+
+// Total finished output produced across ALL non-deleted Job Cards for a
+// SO/JW line = SUM of each JC's FINAL-op effective output (QC-accepted for
+// QC/qc-required final ops, Incoming-QC-accepted GRN qty for outsource final
+// ops, else completed qty). Mirrors the dispatch-readiness calc so "line fully
+// produced" and "line fully dispatchable" agree. Used to stop a small JC from
+// closing a bigger order line (leftover balance would otherwise be stranded).
+async function producedForLine(
+  tx: DbTransaction,
+  lineCol: 'source_so_line_id' | 'source_jw_line_id',
+  lineId: string,
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(x.eff), 0)::int AS produced FROM (
+      SELECT DISTINCT ON (jc.id)
+        CASE
+          WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
+          WHEN vs.op_type = 'outsource' THEN COALESCE((
+            SELECT SUM(grl.qc_accepted_qty)
+            FROM public.goods_receipt_note_lines grl
+            WHERE grl.purchase_order_line_id = jo.outsource_po_line_id
+              AND grl.deleted_at IS NULL
+          ), 0)
+          ELSE vs.completed_qty
+        END AS eff
+      FROM public.job_cards jc
+      JOIN public.v_jc_op_status vs ON vs.job_card_id = jc.id
+      LEFT JOIN public.jc_ops jo
+        ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
+      WHERE jc.${sql.raw(lineCol)} = ${lineId}::uuid AND jc.deleted_at IS NULL
+      ORDER BY jc.id, vs.op_seq DESC
+    ) x
+  `)) as unknown as Array<{ produced: number }>;
+  return Number(rows[0]?.produced ?? 0);
+}
 
 /** If the JC is now `complete`, close its source SO/JW line + cascade to
  *  header. Caller must already be inside withUserContext. */
@@ -129,6 +166,7 @@ async function cascadeSo(
       id: salesOrderLines.id,
       salesOrderId: salesOrderLines.salesOrderId,
       status: salesOrderLines.status,
+      orderQty: salesOrderLines.orderQty,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.id, soLineId), isNull(salesOrderLines.deletedAt)))
@@ -137,6 +175,13 @@ async function cascadeSo(
   if (!line) return { skipped: 'so_line_already_terminal' };
   if (TERMINAL_STATUSES.has(line.status)) {
     return { skipped: 'so_line_already_terminal' };
+  }
+
+  // Only close when the WHOLE order-line qty is produced across its JCs — a
+  // partial JC must not close a bigger line and strand the balance.
+  const produced = await producedForLine(tx, 'source_so_line_id', soLineId);
+  if (produced < Number(line.orderQty)) {
+    return { skipped: 'so_line_qty_incomplete' };
   }
 
   // Close the line.
@@ -218,6 +263,7 @@ async function cascadeJw(
       id: jobWorkOrderLines.id,
       jobWorkOrderId: jobWorkOrderLines.jobWorkOrderId,
       status: jobWorkOrderLines.status,
+      orderQty: jobWorkOrderLines.orderQty,
     })
     .from(jobWorkOrderLines)
     .where(and(eq(jobWorkOrderLines.id, jwLineId), isNull(jobWorkOrderLines.deletedAt)))
@@ -226,6 +272,12 @@ async function cascadeJw(
   if (!line) return { skipped: 'jw_line_already_terminal' };
   if (TERMINAL_STATUSES.has(line.status)) {
     return { skipped: 'jw_line_already_terminal' };
+  }
+
+  // Only close when the WHOLE order-line qty is produced across its JCs.
+  const produced = await producedForLine(tx, 'source_jw_line_id', jwLineId);
+  if (produced < Number(line.orderQty)) {
+    return { skipped: 'jw_line_qty_incomplete' };
   }
 
   await tx

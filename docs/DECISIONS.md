@@ -4016,3 +4016,34 @@ Pure-code guards (no schema change):
   test suite (hits prod DB, per standing constraint).
 - Note: over-plan cap now rejects direct API attempts to plan/dispatch beyond
   order qty — a behavior change for any caller that relied on the old freedom.
+
+## ADR-099: Qty-aware SO/JW line close — don't close until fully produced (Phase B #1a/#9)
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+`tryCascadeJcComplete` closed a SO/JW line the instant ANY of its Job Cards
+reached `complete`, with no comparison to the line's order qty. A line of
+orderQty 100 served by a JC of 40 closed on that JC's completion, stranding the
+60 balance — and because planning lists only `open` lines, the balance vanished
+from planning (could never be planned).
+
+### Decision
+`op-entry/sales-cascade.ts`: new `producedForLine(tx, lineCol, lineId)` sums the
+FINAL-op effective output across all non-deleted JCs for the line (QC-accepted /
+Incoming-QC-accepted GRN qty for outsource / completed qty) — the SAME calc the
+dispatch-readiness query uses, so "fully produced" and "fully dispatchable"
+agree. `cascadeSo` / `cascadeJw` now load the line's `order_qty` and return a new
+skip (`so_line_qty_incomplete` / `jw_line_qty_incomplete`) when produced <
+ordered, closing the line only once the whole qty is produced.
+
+### Consequences
+- Positive: partial JCs no longer close a bigger line; the balance stays `open`
+  and visible in planning. Fixes the stranded-balance bug.
+- Nuance: a complete JC on a not-yet-fully-produced multi-JC line no longer sets
+  the JC's `closed_at` (only the JC that finishes the line does). Informational
+  only.
+- Follow-up (not in this change): a legitimate short-close (order reduced, e.g.
+  make 95 of 100 and stop) now leaves the line open — a manual "close short"
+  action is still needed. Pairs with the JWSO close-out / dispatch-reconcile work.
+- Verified: `pnpm --filter api typecheck` + `lint` clean.
