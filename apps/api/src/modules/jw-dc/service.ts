@@ -795,13 +795,23 @@ export async function createJwDcOutward(
       let storeTxnId: string | null = null;
 
       if (pol.itemId) {
+        await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${pol.itemId}::uuid FOR UPDATE`);
         const balRows = (await tx.execute(sql`
           SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
           FROM public.v_item_stock
           WHERE company_id = ${companyId}::uuid AND item_id = ${pol.itemId}::uuid
         `)) as unknown as Array<{ on_hand: number }>;
         const stockBefore = Number(balRows[0]?.on_hand ?? 0);
-        const stockAfter = Math.max(0, stockBefore - ln.sentQty);
+        // On-hand floor: don't send more material to the vendor than physically
+        // in stock (previously clamped stockAfter to 0 while the trigger drove
+        // the real balance negative).
+        if (ln.sentQty > stockBefore) {
+          throw new ValidationError(
+            `Insufficient stock to send: on-hand ${stockBefore}, sending ${ln.sentQty} ` +
+              `for ${pol.itemCodeText ?? pol.itemName}. Receive material into store first.`,
+          );
+        }
+        const stockAfter = stockBefore - ln.sentQty;
         const stRows = await tx
           .insert(storeTransactions)
           .values({

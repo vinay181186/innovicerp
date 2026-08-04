@@ -62,6 +62,15 @@ async function moveDispatchStock(
     WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
   `)) as unknown as Array<{ on_hand: number }>;
   const before = Number(bal[0]?.on_hand ?? 0);
+  // On-hand floor: never dispatch more finished goods than physically in stock
+  // (readiness math is decoupled from the ledger, so without this guard a
+  // dispatch could drive on_hand negative — SO-517 class of bug).
+  if (dir === 'out' && qty > before) {
+    throw new ConflictError(
+      `Insufficient stock to dispatch: on-hand ${before}, requested ${qty}. ` +
+        `Cannot dispatch more than physical stock.`,
+    );
+  }
   const after = dir === 'out' ? before - qty : before + qty;
   await tx.insert(storeTransactions).values({
     companyId,
@@ -167,15 +176,18 @@ async function loadDispatchable(
   return (res as unknown as DispatchableRow[]).map((r) => {
     const ready = Math.max(0, Math.round(n(r.ready_qty)));
     const dispatched = Math.round(n(r.dispatched_qty));
+    const orderQty = Math.round(n(r.order_qty));
     return {
       salesOrderLineId: r.so_line_id,
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
       itemName: r.item_name,
-      orderQty: Math.round(n(r.order_qty)),
+      orderQty,
       readyQty: ready,
       dispatchedQty: dispatched,
-      availableQty: Math.max(0, ready - dispatched),
+      // Cap dispatchable at the ORDER qty — never let over-production make it
+      // possible to ship more than the customer ordered.
+      availableQty: Math.max(0, Math.min(ready, orderQty) - dispatched),
       rate: n(r.rate),
     };
   });
@@ -455,6 +467,17 @@ export async function createDispatch(
 
   return withUserContext(user, async (tx) => {
     const so = await loadSo(tx, companyId, input.salesOrderId);
+    // Lock the SO lines being dispatched BEFORE reading availability, so two
+    // concurrent dispatches on the same line serialize instead of both passing
+    // the qty check and over-dispatching.
+    const lineIds = input.lines.map((l) => l.salesOrderLineId);
+    if (lineIds.length > 0) {
+      await tx
+        .select({ id: salesOrderLines.id })
+        .from(salesOrderLines)
+        .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)))
+        .for('update');
+    }
     const dispatchable = await loadDispatchable(tx, companyId, input.salesOrderId);
     const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
 

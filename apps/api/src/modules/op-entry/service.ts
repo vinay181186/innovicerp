@@ -369,6 +369,11 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       );
     }
 
+    // Serialize concurrent production logs on the SAME op: lock the jc_ops row
+    // so two operators can't both read the same `available` and both insert,
+    // over-producing past the planned qty.
+    await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
+
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.computedStatus === 'qc_pending') {
       throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
@@ -544,6 +549,9 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         'This operation does not require QC; use POST /op-entry/op-log for production logs',
       );
     }
+
+    // Serialize concurrent QC logs on the SAME op (over-inspection race).
+    await tx.execute(sql`SELECT 1 FROM public.jc_ops WHERE id = ${input.jcOpId}::uuid FOR UPDATE`);
 
     // qc_pending lives in v_jc_op_status — same view that drives the UI.
     const pendingRows = await tx.execute(sql`

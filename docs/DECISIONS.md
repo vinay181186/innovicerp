@@ -3975,3 +3975,44 @@ zero received → fully locked, limit rises automatically on each new GRN.
   audit) is consolidated onto the canonical `delivery-challans` path. Flagged.
 - Verified: `pnpm --filter api typecheck` + `lint` both clean; no import cycle
   (op-entry deps do not import delivery-challans).
+
+## ADR-098: Phase-A guard rails — over-plan/over-ship caps, on-hand floors, concurrency locks
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Verification audit confirmed several qty-conservation holes were still live:
+over-planning and over-dispatch had no server cap; customer-dispatch and the
+jw-dc outward path could drive on-hand negative; concurrent op logs / dispatches
+could both pass a read-then-write check and over-commit. These are the quick,
+no-migration "Phase A" guard rails.
+
+### Decision
+Pure-code guards (no schema change):
+- **Over-plan cap** (`plans/service.ts`): new `assertPlanQtyWithinRemaining`,
+  called in `createPlan` + `updatePlan`. Reads authoritative `order_qty` from
+  the SO/JW line and sums non-cancelled sibling plans; rejects planQty beyond
+  remaining. Also confirms the line exists in-company.
+- **Over-ship cap** (`customer-dispatches/service.ts`): `availableQty` capped at
+  `min(ready, orderQty) - dispatched` so over-production can't ship past order.
+- **Dispatch on-hand floor** (`customer-dispatches/service.ts moveDispatchStock`):
+  reject when `qty > on_hand` (was silently going negative).
+- **JW-DC outward on-hand floor** (`jw-dc/service.ts`): lock the items row +
+  reject when `sentQty > on_hand` (was clamping the snapshot while the trigger
+  drove the real balance negative).
+- **Concurrency locks**: `SELECT ... FOR UPDATE` on the jc_ops row in
+  `submitOpLog` + `submitQcLog` (over-production race); `FOR UPDATE` on the SO
+  lines in `createDispatch` before the availability read (double-dispatch race).
+
+### Deferred (not in Phase A)
+- The store_transactions insert RLS-role fix (#6 second half) needs a DB
+  migration and the audit found the policy may not be enforced at runtime
+  (pooled connection role). Moved to Phase D with the other migrations.
+
+### Consequences
+- Positive: closes over-plan, over-ship, negative-stock (dispatch + jw_out), and
+  the two read-then-write races — all without a migration.
+- Verified: `pnpm --filter api typecheck` + `lint` clean. Not run against the
+  test suite (hits prod DB, per standing constraint).
+- Note: over-plan cap now rejects direct API attempts to plan/dispatch beyond
+  order qty — a behavior change for any caller that relied on the old freedom.

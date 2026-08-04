@@ -208,6 +208,60 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+// Over-plan guard: a line can only be planned up to its ORDER qty, summed
+// across all its non-cancelled plans. Reads the authoritative order_qty from
+// the linked SO/JW line (not the client-supplied snapshot) and also confirms
+// the line exists in this company. No-op for ad-hoc plans not tied to a line.
+async function assertPlanQtyWithinRemaining(
+  tx: DbTransaction,
+  companyId: string,
+  opts: { soLineId: string | null; jwLineId: string | null; planQty: number; excludePlanId?: string },
+): Promise<void> {
+  const { soLineId, jwLineId, planQty, excludePlanId } = opts;
+  if (!soLineId && !jwLineId) return;
+
+  let orderQty: number;
+  if (soLineId) {
+    const r = (await tx.execute(sql`
+      SELECT order_qty AS "orderQty" FROM public.sales_order_lines
+      WHERE id = ${soLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<{ orderQty: number }>;
+    if (!r[0]) return;
+    orderQty = Number(r[0].orderQty);
+  } else {
+    const r = (await tx.execute(sql`
+      SELECT order_qty AS "orderQty" FROM public.job_work_order_lines
+      WHERE id = ${jwLineId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<{ orderQty: number }>;
+    if (!r[0]) return;
+    orderQty = Number(r[0].orderQty);
+  }
+
+  const lineCond = soLineId
+    ? sql`p.so_line_id = ${soLineId}::uuid`
+    : sql`p.jw_line_id = ${jwLineId}::uuid`;
+  const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(p.plan_qty), 0)::int AS "planned"
+    FROM public.plans p
+    WHERE p.company_id = ${companyId}::uuid
+      AND p.deleted_at IS NULL
+      AND p.plan_status <> 'cancelled'
+      AND ${lineCond}
+      ${excl}
+  `)) as unknown as Array<{ planned: number }>;
+  const alreadyPlanned = Number(rows[0]?.planned ?? 0);
+  const remaining = orderQty - alreadyPlanned;
+  if (planQty > remaining) {
+    throw new ValidationError(
+      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for this line ` +
+        `(ordered ${orderQty}, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+    );
+  }
+}
+
 export async function createPlan(
   input: CreatePlanInput,
   user: AuthContext,
@@ -231,6 +285,12 @@ export async function createPlan(
     if (dup.length > 0) {
       throw new ConflictError(`Plan code "${code}" already exists`);
     }
+
+    await assertPlanQtyWithinRemaining(tx, companyId, {
+      soLineId: input.soLineId ?? null,
+      jwLineId: input.jwLineId ?? null,
+      planQty: input.planQty,
+    });
 
     const inserted = await tx
       .insert(plans)
@@ -315,6 +375,17 @@ export async function updatePlan(
       throw new ValidationError(
         `Plan in status '${row.planStatus}' cannot be edited (only in_planning / planned)`,
       );
+    }
+
+    // Over-plan guard on qty change: cap at the line's remaining qty, excluding
+    // this plan's own current qty from the "already planned" sum.
+    if (input.planQty !== undefined && input.planQty !== row.planQty) {
+      await assertPlanQtyWithinRemaining(tx, companyId, {
+        soLineId: row.soLineId,
+        jwLineId: row.jwLineId,
+        planQty: input.planQty,
+        excludePlanId: id,
+      });
     }
 
     const updates: Record<string, unknown> = { updatedBy: user.id };
