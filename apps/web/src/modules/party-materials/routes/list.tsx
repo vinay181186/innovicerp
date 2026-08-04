@@ -13,10 +13,14 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClientsList } from '../../clients/api';
-import { useItemsList } from '../../items/api';
+import { useItem } from '../../items/api';
+import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
+import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
+import { usePlanningSoDetail } from '../../so-planning/api';
 import {
   useCreatePartyMaterial,
   useDeletePartyMaterial,
@@ -256,84 +260,161 @@ function PartyMaterialsListPage(): React.JSX.Element {
 // ─── Add modal ─────────────────────────────────────────────────────────────
 
 function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+  // Material code — auto, read-only (PM-NNNN from the server).
   const [code, setCode] = useState('');
-  const [itemSearch, setItemSearch] = useState('');
-  const [itemId, setItemId] = useState<string | null>(null);
-  // Snapshot of the picked item, captured at pick time. Do NOT derive this from
-  // itemsData: picking clears the search which refetches a different page that
-  // usually no longer contains the picked row, so a derived lookup goes null and
-  // the display + auto-fill both break.
-  const [selectedItem, setSelectedItem] = useState<{
-    id: string;
-    code: string;
-    name: string;
-    description: string | null;
-    material: string | null;
-  } | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [material, setMaterial] = useState('');
   const [uom, setUom] = useState<PartyMaterialUom>('NOS');
-  const [clientSearch, setClientSearch] = useState('');
-  const [clientId, setClientId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // Open the pickers on focus (not only after typing) so they read as
-  // dropdowns, not free-text boxes (bugs 3.1 item, 3.2 client).
-  const [itemFocused, setItemFocused] = useState(false);
-  const [clientFocused, setClientFocused] = useState(false);
+
+  // Cascade: Client → SO/JWSO → Item(line). Picking a parent resets its children.
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [clientSearch, setClientSearch] = useState('');
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [orderSource, setOrderSource] = useState<'so' | 'jw' | null>(null);
+  const [orderSearch, setOrderSearch] = useState('');
+  const [lineId, setLineId] = useState<string | null>(null); // picked SO/JW line id
+  const [description, setDescription] = useState(''); // auto-filled from item, editable
+
+  const createMut = useCreatePartyMaterial();
 
   const nextCodeQ = useNextPartyMaterialCode();
   useEffect(() => {
     if (nextCodeQ.data?.code && !code) setCode(nextCodeQ.data.code);
   }, [nextCodeQ.data, code]);
 
-  const { data: itemsData } = useItemsList({
-    search: itemSearch.trim() || undefined,
+  // 1) Clients — server ?search=.
+  const { data: clientsData, isFetching: clientsFetching } = useClientsList({
+    ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
     limit: 50,
     offset: 0,
   });
-  const { data: clientsData } = useClientsList({
-    search: clientSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
+  const clientOptions = (clientsData?.clients ?? []).map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+  }));
 
-  const selectedClient = useMemo(
-    () => clientsData?.clients.find((c) => c.id === clientId) ?? null,
-    [clientsData, clientId],
+  // 2) SO + JWSO for the picked client — server ?search= + clientId.
+  const { data: soData, isFetching: soFetching } = useSalesOrdersList(
+    {
+      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
+      clientId: clientId ?? undefined,
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: !!clientId },
+  );
+  const { data: jwData, isFetching: jwFetching } = useJobWorkOrdersList(
+    {
+      ...(orderSearch.trim() ? { search: orderSearch.trim() } : {}),
+      clientId: clientId ?? undefined,
+      limit: 50,
+      offset: 0,
+    },
+    { enabled: !!clientId },
+  );
+  const orderSourceById = useMemo(() => {
+    const m = new Map<string, 'so' | 'jw'>();
+    (soData?.items ?? []).forEach((o) => m.set(o.id, 'so'));
+    (jwData?.items ?? []).forEach((o) => m.set(o.jwId, 'jw'));
+    return m;
+  }, [soData, jwData]);
+  const orderOptions = useMemo(
+    () => [
+      ...(soData?.items ?? []).map((o) => ({ id: o.id, code: o.code, name: o.customerName ?? 'SO' })),
+      ...(jwData?.items ?? []).map((o) => ({
+        id: o.jwId,
+        code: o.code,
+        name: o.customerName ?? 'JWSO',
+      })),
+    ],
+    [soData, jwData],
   );
 
-  const createMut = useCreatePartyMaterial();
+  // 3) Line items of the picked order (client-side filtered by the picker).
+  const soDetail = useSalesOrder(orderSource === 'so' ? orderId ?? undefined : undefined);
+  const jwDetail = useJobWorkOrder(orderSource === 'jw' ? orderId ?? undefined : undefined);
+  const orderLines = useMemo(() => {
+    if (orderSource === 'so') return soDetail.data?.lines ?? [];
+    if (orderSource === 'jw') return jwDetail.data?.lines ?? [];
+    return [];
+  }, [orderSource, soDetail.data, jwDetail.data]);
+  const itemOptions = useMemo(
+    () =>
+      orderLines.map((l) => ({
+        id: l.id,
+        code: (l as { itemCode?: string | null }).itemCode ?? l.itemCodeText ?? null,
+        name: l.partName,
+      })),
+    [orderLines],
+  );
+  const selectedLine = useMemo(
+    () => orderLines.find((l) => l.id === lineId) ?? null,
+    [orderLines, lineId],
+  );
+  const itemId = selectedLine?.itemId ?? null;
 
-  // Fill name/description/material from the picked Item Master entry. Done at
-  // pick time (see onPick below), only into blank fields so manual edits stick.
-  // UOM not auto-filled — items master vocabulary ('KGS') differs from
-  // party material vocabulary ('KG' per legacy L24185).
+  // 4) Item-master detail → auto-fetched Material Name + Material/Grade.
+  const itemDetail = useItem(itemId ?? undefined);
+  const autoName = itemDetail.data?.name ?? selectedLine?.partName ?? '';
+  const autoMaterial = itemDetail.data?.material ?? selectedLine?.material ?? '';
+
+  // Description auto-fills from the item on pick, then stays editable.
+  useEffect(() => {
+    if (!lineId) {
+      setDescription('');
+      return;
+    }
+    setDescription(itemDetail.data?.description ?? '');
+  }, [lineId, itemDetail.data?.description]);
+
+  // 5) JC No linked to the selected SO/JW line (via planning detail).
+  const planningDetail = usePlanningSoDetail(orderId);
+  const jcNo = useMemo(() => {
+    if (!lineId || !planningDetail.data) return '';
+    const ln = planningDetail.data.lines.find((l) => l.soLineId === lineId);
+    if (!ln) return '';
+    const codes = [
+      ...ln.plans.map((p) => p.jcCode).filter((v): v is string => !!v),
+      ...ln.directJcCodes,
+    ];
+    return codes.join(', ');
+  }, [lineId, planningDetail.data]);
+
+  // Cascade resets: picking a parent clears its children + auto-fetched fields.
+  const onClientChange = (id: string | null): void => {
+    setClientId(id);
+    setOrderId(null);
+    setOrderSource(null);
+    setOrderSearch('');
+    setLineId(null);
+    setDescription('');
+  };
+  const onOrderChange = (id: string | null): void => {
+    setOrderId(id);
+    setOrderSource(id ? (orderSourceById.get(id) ?? null) : null);
+    setLineId(null);
+    setDescription('');
+  };
 
   const onSave = (): void => {
     setErr(null);
     const c = code.trim();
-    const nm = name.trim();
+    const nm = autoName.trim();
     if (!c) {
-      setErr('Code is required');
-      return;
-    }
-    if (!nm) {
-      setErr('Name is required');
+      setErr('Material code is missing');
       return;
     }
     if (!clientId) {
       setErr('Client is required');
       return;
     }
-    const input: CreatePartyMaterialInput = {
-      code: c,
-      name: nm,
-      uom,
-      clientId,
-    };
+    if (!nm) {
+      setErr('Pick an item so the material name is filled');
+      return;
+    }
+    const input: CreatePartyMaterialInput = { code: c, name: nm, uom, clientId };
     if (description.trim()) input.description = description.trim();
-    if (material.trim()) input.material = material.trim();
+    if (autoMaterial.trim()) input.material = autoMaterial.trim();
     if (itemId) input.itemId = itemId;
     createMut.mutate(input, {
       onSuccess: () => onClose(),
@@ -344,14 +425,9 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   return (
     <ModalShell onClose={onClose} title="🏭 Add Party Material">
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Material Code ★">
-          <input
-            type="text"
-            className="innovic-input"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="PM-0001"
-          />
+        {/* 1. Material Code (auto, read-only) + UOM */}
+        <Field label="Material Code (auto)">
+          <input type="text" className="innovic-input" value={code} readOnly disabled />
         </Field>
         <Field label="UOM">
           <select
@@ -367,124 +443,107 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
           </select>
         </Field>
 
+        {/* 2. Client — who supplies the material */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Select from Item Master (optional — click to pick)">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="🔍 Click to browse or type item code / name…"
-              value={selectedItem ? `${selectedItem.code} — ${selectedItem.name}` : itemSearch}
-              onFocus={() => setItemFocused(true)}
-              onBlur={() => setTimeout(() => setItemFocused(false), 150)}
-              onChange={(e) => {
-                setItemId(null);
-                setSelectedItem(null);
-                setItemSearch(e.target.value);
-              }}
-            />
-            {!itemId && (itemSearch || itemFocused) && itemsData ? (
-              <Picklist
-                items={itemsData.items.slice(0, 20).map((it) => ({
-                  id: it.id,
-                  label: `${it.code} — ${it.name}`,
-                  sub: it.material ?? null,
-                }))}
-                onPick={(id) => {
-                  const it = itemsData.items.find((i) => i.id === id);
-                  setItemId(id);
-                  setItemSearch('');
-                  if (it) {
-                    setSelectedItem({
-                      id: it.id,
-                      code: it.code,
-                      name: it.name,
-                      description: it.description ?? null,
-                      material: it.material ?? null,
-                    });
-                    // Fill blanks only, so any manual edits are preserved.
-                    setName((n) => (n.trim() ? n : it.name));
-                    if (it.description) setDescription((d) => (d.trim() ? d : it.description ?? ''));
-                    if (it.material) setMaterial((m) => (m.trim() ? m : it.material ?? ''));
-                  }
-                }}
-              />
-            ) : null}
-            {selectedItem ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 3 }}>
-                ✅{' '}
-                <span style={{ color: 'var(--green)' }}>
-                  {selectedItem.code} — {selectedItem.name}
-                </span>
-              </div>
-            ) : null}
-          </Field>
-        </div>
-
-        <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material Name ★">
-            <input
-              type="text"
-              className="innovic-input"
-              placeholder="e.g. EN8 Round Bar 55mm"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+          <Field label="Client ★ (who supplies this material)">
+            <SearchableSelect
+              id="pmClient"
+              value={clientId}
+              onChange={onClientChange}
+              onSearch={setClientSearch}
+              loading={clientsFetching}
+              options={clientOptions}
+              placeholder="🔍 Type client code or name…"
             />
           </Field>
         </div>
 
+        {/* 3. SO / JWSO — filtered to the picked client */}
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="SO / JWSO No">
+            <SearchableSelect
+              id="pmOrder"
+              value={orderId}
+              onChange={onOrderChange}
+              onSearch={setOrderSearch}
+              loading={soFetching || jwFetching}
+              options={orderOptions}
+              disabled={!clientId}
+              placeholder={clientId ? '🔍 Type SO / JWSO no…' : 'Pick a client first'}
+              emptyText="No orders for this client"
+            />
+          </Field>
+        </div>
+
+        {/* 4. Item Code — from the picked order's line items */}
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Item Code">
+            <SearchableSelect
+              id="pmItem"
+              value={lineId}
+              onChange={setLineId}
+              onSearch={() => undefined}
+              loading={soDetail.isFetching || jwDetail.isFetching}
+              options={itemOptions}
+              disabled={!orderId}
+              placeholder={orderId ? '🔍 Pick an item from this order…' : 'Pick an order first'}
+              emptyText="No items on this order"
+            />
+          </Field>
+        </div>
+
+        {/* 5. Material Name — auto-fetched from the item, read-only */}
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Material Name ★ (auto)">
+            <input
+              type="text"
+              className="innovic-input"
+              value={autoName}
+              readOnly
+              disabled
+              placeholder="Fills from the chosen item"
+            />
+          </Field>
+        </div>
+
+        {/* 6. Description — auto-filled from the item, editable */}
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Description">
             <input
               type="text"
               className="innovic-input"
-              placeholder="Detailed description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="Fills from the item — editable"
             />
           </Field>
         </div>
 
+        {/* 7. Material / Grade — auto-fetched from the item, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Material / Grade">
+          <Field label="Material / Grade (auto)">
             <input
               type="text"
               className="innovic-input"
-              placeholder="e.g. EN8, SS 304, MS"
-              value={material}
-              onChange={(e) => setMaterial(e.target.value)}
+              value={autoMaterial}
+              readOnly
+              disabled
+              placeholder="Fills from the chosen item"
             />
           </Field>
         </div>
 
+        {/* 8. JC No — auto-fetched Job Card linked to the SO/JW line, read-only */}
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Client ★ (who supplies this material — click to pick)">
+          <Field label="JC No (auto)">
             <input
               type="text"
               className="innovic-input"
-              placeholder="🔍 Click to browse or type client code / name…"
-              value={
-                selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
-              }
-              onFocus={() => setClientFocused(true)}
-              onBlur={() => setTimeout(() => setClientFocused(false), 150)}
-              onChange={(e) => {
-                setClientId(null);
-                setClientSearch(e.target.value);
-              }}
+              value={lineId ? jcNo || '—' : ''}
+              readOnly
+              disabled
+              placeholder="Job Card linked to this line"
             />
-            {!clientId && (clientSearch || clientFocused) && clientsData ? (
-              <Picklist
-                items={clientsData.clients.slice(0, 20).map((c) => ({
-                  id: c.id,
-                  label: `${c.code} — ${c.name}`,
-                  sub: null,
-                }))}
-                onPick={(id) => {
-                  setClientId(id);
-                  setClientSearch('');
-                }}
-              />
-            ) : null}
           </Field>
         </div>
       </div>
