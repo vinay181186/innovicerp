@@ -602,6 +602,33 @@ export async function cancelDispatch(
         ),
       );
 
+    // Guard: don't cancel a dispatch that has already been invoiced — reversing
+    // dispatched_qty below invoiced_qty leaves a live invoice billing goods no
+    // longer recorded as dispatched. Pre-check ALL lines before mutating.
+    for (const l of lineRows) {
+      if (!l.salesOrderLineId) continue;
+      const chk = (await tx.execute(sql`
+        SELECT sol.dispatched_qty::int AS dispatched,
+          COALESCE((
+            SELECT SUM(il.qty) FROM public.invoice_lines il
+            JOIN public.invoices inv ON inv.id = il.invoice_id
+            WHERE il.sales_order_line_id = sol.id
+              AND inv.deleted_at IS NULL AND il.deleted_at IS NULL
+          ), 0)::int AS invoiced
+        FROM public.sales_order_lines sol
+        WHERE sol.id = ${l.salesOrderLineId}::uuid
+        LIMIT 1
+      `)) as unknown as Array<{ dispatched: number; invoiced: number }>;
+      const dispatched = Number(chk[0]?.dispatched ?? 0);
+      const invoiced = Number(chk[0]?.invoiced ?? 0);
+      if (invoiced > dispatched - l.qty) {
+        throw new ValidationError(
+          `Cannot cancel dispatch ${h.code}: line ${l.lineNo} is already invoiced ` +
+            `(invoiced ${invoiced}, dispatched ${dispatched}). Cancel or credit the invoice first.`,
+        );
+      }
+    }
+
     // Reverse the dispatched-qty bump + add the stock back on each line.
     for (const l of lineRows) {
       if (l.salesOrderLineId) {
