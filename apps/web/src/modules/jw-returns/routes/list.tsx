@@ -28,7 +28,7 @@ function JwReturnsListPage(): React.JSX.Element {
   const cancelMut = useCancelJwReturn();
 
   const onCancel = (id: string, code: string): void => {
-    if (!confirm(`Cancel JW Return ${code}? This reverses the returned-qty cascade.`)) {
+    if (!confirm(`Cancel JW Dispatch ${code}? This reverses the returned-qty cascade.`)) {
       return;
     }
     cancelMut.mutate(id);
@@ -48,7 +48,7 @@ function JwReturnsListPage(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📦 JW Return Challan</div>
+        <div className="section-hdr m-0">📦 JW Dispatch</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
@@ -195,7 +195,7 @@ function JwReturnsListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 JW Return Challan returns machined goods to the customer against a Job Work Order
+        💡 JW Dispatch returns machined goods to the customer against a Job Work Order
         line. Return qty cannot exceed what has been produced (QC-accepted) minus already
         returned.
       </div>
@@ -287,7 +287,7 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         onClick={(e) => e.stopPropagation()}
       >
         <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📦 New JW Return Challan
+          📦 New JW Dispatch
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

@@ -19,7 +19,7 @@
 
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, machines, opLog, runningOps } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireOpEntryRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -254,6 +254,90 @@ async function loadAvailability(
   };
 }
 
+// ─── Client-material gate (JWSO job-work) ───────────────────────────────────
+//
+// In job-work, the CLIENT supplies the raw material, received via a Party
+// Material GRN. The shop must only be able to work the quantity of material
+// that has actually arrived for that part — e.g. order 50, material 30 → only
+// 30 can be started/logged; when the remaining 20 arrives the limit lifts on
+// its own (it is recomputed on every start/log).
+//
+// Scope: applies ONLY to the FIRST operation of a JWSO-sourced Job Card. Later
+// operations need no material check — they are already capped by the previous
+// op's output (v_jc_op_status input_avail = prior op output). SO-sourced /
+// direct-production Job Cards (source_jw_line_id IS NULL) are never capped.
+// Returns null when no cap applies.
+interface MaterialCap {
+  received: number;
+  orderQty: number;
+  shortfall: number;
+  jwCode: string;
+}
+
+export async function loadMaterialCap(
+  tx: DbTransaction,
+  op: { jobCardId: string; opSeq: number },
+  companyId: string,
+): Promise<MaterialCap | null> {
+  // Only the first (lowest op_seq) non-deleted op of the JC carries the cap.
+  const firstRows = (await tx.execute(sql`
+    SELECT MIN(op_seq) AS "minSeq"
+    FROM public.jc_ops
+    WHERE job_card_id = ${op.jobCardId}::uuid AND deleted_at IS NULL
+  `)) as unknown as Array<{ minSeq: number | null }>;
+  const minSeq = firstRows[0]?.minSeq;
+  if (minSeq == null || op.opSeq !== Number(minSeq)) return null;
+
+  // The JC must be JWSO-sourced; resolve its JW line + order qty + line count.
+  const jcRows = (await tx.execute(sql`
+    SELECT jc.order_qty        AS "orderQty",
+           jwl.line_no         AS "lineNo",
+           jwl.job_work_order_id AS "jwoId",
+           jwo.code            AS "jwCode",
+           (SELECT COUNT(*) FROM public.job_work_order_lines l
+              WHERE l.job_work_order_id = jwl.job_work_order_id
+                AND l.deleted_at IS NULL) AS "lineCount"
+    FROM public.job_cards jc
+    JOIN public.job_work_order_lines jwl
+      ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+    JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
+    WHERE jc.id = ${op.jobCardId}::uuid
+      AND jc.company_id = ${companyId}::uuid
+      AND jc.deleted_at IS NULL
+    LIMIT 1
+  `)) as unknown as Array<{
+    orderQty: number;
+    lineNo: number;
+    jwoId: string;
+    jwCode: string;
+    lineCount: number;
+  }>;
+  const jc = jcRows[0];
+  if (!jc) return null; // SO-sourced / no JW line → no client material to gate on.
+
+  const orderQty = Number(jc.orderQty);
+  const lineCount = Number(jc.lineCount);
+  // Material received for THIS part. Single-line JWSO → every receipt for the
+  // order belongs to the one line (robust even if the line-no text is blank).
+  // Multi-line JWSO → match on the recorded JW line number so one part's
+  // material never covers another part.
+  const lineFilter =
+    lineCount > 1 ? sql`AND pgl.jw_line_no_text = ${String(jc.lineNo)}` : sql``;
+  const recRows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(pgl.received_qty), 0)::int AS "received"
+    FROM public.party_grn pg
+    JOIN public.party_grn_lines pgl
+      ON pgl.party_grn_id = pg.id AND pgl.deleted_at IS NULL
+    WHERE pg.company_id = ${companyId}::uuid
+      AND pg.deleted_at IS NULL
+      AND pg.job_work_order_id = ${jc.jwoId}::uuid
+      ${lineFilter}
+  `)) as unknown as Array<{ received: number }>;
+  const received = Number(recRows[0]?.received ?? 0);
+  const shortfall = Math.max(0, orderQty - received);
+  return { received, orderQty, shortfall, jwCode: jc.jwCode };
+}
+
 function nextLogNo(): string {
   // Simple monotonic-ish marker; not unique by spec (ADR-011 #4 acknowledges
   // legacy log_no duplicates). UUID PK is the addressable id.
@@ -289,7 +373,20 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
     if (snapshot.computedStatus === 'qc_pending') {
       throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
     }
-    if (input.qty > snapshot.available) {
+    // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
+    // qty at the client material received for this part (Party Material GRN).
+    const cap = await loadMaterialCap(tx, op, companyId);
+    const effectiveAvailable = cap
+      ? Math.max(0, snapshot.available - cap.shortfall)
+      : snapshot.available;
+    if (input.qty > effectiveAvailable) {
+      if (cap && effectiveAvailable < snapshot.available) {
+        throw new ValidationError(
+          `Qty ${input.qty} exceeds client material received. Only ${effectiveAvailable} can be worked now ` +
+            `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+            `Record a Party Material GRN for the balance to continue.`,
+        );
+      }
       throw new ValidationError(
         `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
       );
@@ -459,7 +556,25 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     if (qcPending <= 0) {
       throw new ValidationError('No QC pending on this operation');
     }
-    if (total > qcPending) {
+    // Client-material gate: when a QC op is the FIRST op of a JWSO Job Card
+    // (e.g. incoming inspection), it can only be inspected up to the client
+    // material received for this part (Party Material GRN).
+    const cap = await loadMaterialCap(tx, op, companyId);
+    const effectivePending = cap ? Math.max(0, qcPending - cap.shortfall) : qcPending;
+    if (cap && effectivePending <= 0) {
+      throw new ValidationError(
+        `No client material available to inspect. Received ${cap.received} of ${cap.orderQty} ` +
+          `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+      );
+    }
+    if (total > effectivePending) {
+      if (cap && effectivePending < qcPending) {
+        throw new ValidationError(
+          `Total qty ${total} exceeds client material received. Only ${effectivePending} can be inspected now ` +
+            `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+            `Record a Party Material GRN for the balance.`,
+        );
+      }
       throw new ValidationError(
         `Total qty ${total} exceeds QC pending ${qcPending} — cannot inspect more than what's pending`,
       );
@@ -633,6 +748,16 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
       throw new ValidationError('No qty available to start for this operation');
+    }
+    // Client-material gate: the first op of a JWSO Job Card can only start once
+    // client material has arrived for this part (Party Material GRN). The limit
+    // rises automatically as more material is received.
+    const cap = await loadMaterialCap(tx, op, companyId);
+    if (cap && Math.max(0, snapshot.available - cap.shortfall) <= 0) {
+      throw new ValidationError(
+        `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
+          `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+      );
     }
 
     let machineCode: string | null = null;

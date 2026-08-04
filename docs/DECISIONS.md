@@ -3890,3 +3890,88 @@ vendor's return is the single credit, +30 for 30 pieces.
   and the outward-DC debit from "Option 1" above.
 - Housekeeping: IN-JWPR-00020 (PLN-0019's material PR, status open) was raised
   under ADR-094 before this change and should be cancelled by hand.
+
+## ADR-096: Client-material gate — first op of a JWSO Job Card is capped at Party-GRN received qty
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+In job-work (JWSO), the client supplies the raw material, recorded via a Party
+Material GRN. Audit found NO gate: `startOp`/`submitOpLog` only checked
+`v_jc_op_status.available` (derived from `jc.order_qty`), never material
+received. A JWSO Job Card could be started and fully completed with zero client
+material recorded — the only signal was a display-only "Not received" badge.
+Requirement from the operator: work must be limited to the quantity of material
+actually received for that part, rising automatically as more material arrives
+(order 50, received 30 → only 30 workable; +20 received → remaining 20 unlock).
+
+### Decision
+Enforce a client-material cap in the op-entry service guards:
+- New helper `loadMaterialCap(tx, op, companyId)` in `op-entry/service.ts`.
+- Applies ONLY to the FIRST op (lowest non-deleted `op_seq`) of a JWSO-sourced
+  Job Card (`job_cards.source_jw_line_id IS NOT NULL`). Later ops need no check
+  — they are already bounded by the previous op's output. SO-sourced / direct
+  Job Cards are never capped.
+- Received-for-part = SUM(`party_grn_lines.received_qty`) for the JC's JWSO.
+  Single-line JWSO → all receipts count (robust even if line-no text is blank);
+  multi-line JWSO → matched on `jw_line_no_text = line_no` so one part's
+  material never covers another.
+- `startOp`: block when `available - shortfall <= 0`
+  (`shortfall = max(0, orderQty - received)`).
+- `submitOpLog`: cap loggable qty at `available - shortfall`.
+- Recomputed on every start/log, so posting a new Party GRN lifts the limit
+  automatically. No DB migration, no schema change — pure code, computed from
+  existing Party-GRN data.
+
+### Alternatives Considered
+- Add a real FK `party_grn_lines.jw_line_id` + per-line expected qty + a
+  "client supplies material" flag — rejected FOR NOW: needs a migration,
+  backfill, and a Party-GRN form change; higher risk, can't be applied/tested
+  from this environment. Left as future hardening (see Consequences/Risks).
+- Enforce in the `v_jc_op_status` view — rejected: the view is shared and
+  critical; a surgical guard-layer change is lower blast-radius.
+- All-or-nothing hard block until fully received — rejected: the operator
+  explicitly wants partial progress up to the received qty.
+
+### Consequences
+- Positive: closes the biggest control gap — no JWSO production without recorded
+  client material; partial-material flow works; limit self-updates on each GRN.
+- Negative / behavior change: any in-flight JWSO Job Card with no recorded Party
+  GRN will now be blocked at op 1. Must be validated in staging before prod;
+  do NOT flip on a live floor without checking GRN-recording habits first.
+- Risks: multi-line JWSOs with a BLANK `jw_line_no_text` compute received=0 for
+  that part and block — intended safety direction, but surfaces sloppy GRN data.
+  Not covered: QC-first-op (uses qc-log, not guarded here), and OSP first ops
+  (separate procurement path). Future: add the `jw_line_id` FK for exact
+  per-line matching independent of the free-text line number.
+
+## ADR-097: Client-material gate extended to ALL first-op doors (QC + outsource)
+**Date:** 2026-08-04
+**Status:** Accepted (extends ADR-096)
+
+### Context
+ADR-096 gated only the machining doors (`startOp` + `submitOpLog`). Operator
+requirement clarified: the restriction must apply to the FIRST op of a JWSO Job
+Card WHATEVER its type — no client material → no action at all.
+
+### Decision
+`loadMaterialCap` is now exported and reused across the three first-op doors:
+- **Machining** (`op-entry/service.ts` `startOp`, `submitOpLog`) — ADR-096.
+- **QC / inspection** (`op-entry/service.ts` `submitQcLog`) — cap the inspected
+  qty (`qty + rejectQty`) at material received when the QC op is the first op.
+- **Outsource / send-to-vendor** (`delivery-challans/cascades.ts`
+  `applyOutwardToJcOp`) — cap the sendable qty at material received, so client
+  material cannot be dispatched to a vendor before it has arrived. Reduces the
+  existing ADR-078 `sendable` by the material shortfall.
+
+Rule everywhere: first op of a JWSO Job Card, capped at Party-GRN received qty,
+zero received → fully locked, limit rises automatically on each new GRN.
+
+### Consequences
+- Positive: the gate now holds regardless of routing shape (machining-first,
+  QC-first incoming inspection, or full-outsource send-first).
+- Not covered: the alternate `jw-dc` outward path is op-unaware (does not touch
+  `jc_ops`) — it stays ungated until the duplicate OSP-outward system (Stage-4
+  audit) is consolidated onto the canonical `delivery-challans` path. Flagged.
+- Verified: `pnpm --filter api typecheck` + `lint` both clean; no import cycle
+  (op-entry deps do not import delivery-challans).

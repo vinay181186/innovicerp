@@ -34,6 +34,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOps, jobCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
+import { loadMaterialCap } from '../op-entry/service';
 
 export interface OutwardCascadeArgs {
   tx: DbTransaction;
@@ -107,7 +108,22 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   )) as unknown as Array<{ c: number | string }>;
   const inHouseCompleted = Number(doneRows[0]?.c ?? 0);
   const sendable = inputAvail - inHouseCompleted - op.outsourceSentQty;
-  if (qty > sendable) {
+
+  // Client-material gate: when this is the FIRST op of a JWSO Job Card, the
+  // client's material must have arrived (Party Material GRN) before it can be
+  // sent to the vendor. Cap the sendable qty at material received for the part;
+  // the limit lifts automatically as more material is received. No-op for
+  // SO-sourced JCs and for non-first ops (already bounded by upstream output).
+  const cap = await loadMaterialCap(tx, op, companyId);
+  const effectiveSendable = cap ? Math.max(0, sendable - cap.shortfall) : sendable;
+  if (qty > effectiveSendable) {
+    if (cap && effectiveSendable < sendable) {
+      throw new ValidationError(
+        `Cannot send ${qty} pcs to the vendor — only ${effectiveSendable} has client material ` +
+          `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+          `Record a Party Material GRN before sending the balance out.`,
+      );
+    }
     throw new ValidationError(
       `Cannot outsource ${qty} pcs — only ${Math.max(0, sendable)} available on this operation ` +
         `(upstream cleared ${inputAvail}, done in-house ${inHouseCompleted}, already sent ${op.outsourceSentQty}). ` +
