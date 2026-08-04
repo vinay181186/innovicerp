@@ -190,6 +190,55 @@ describe('purchase-requests service', () => {
     expect(op.outsourceStatus).toBe('pr_raised');
   });
 
+  // ADR-101 — cancelling a jw_osp PR must UN-stamp its source op. Leaving the
+  // stamp behind froze the op in the JC-edit lock guard forever: the error said
+  // "cancel the PR/PO first", which the user had already done.
+  it('rejectPurchaseRequest releases the source JC op (ADR-101)', async () => {
+    const op = (
+      await db
+        .insert(jcOps)
+        .values({
+          companyId: admin.companyId!,
+          jobCardId: cascadeJcId,
+          opSeq: 3,
+          operation: `${TEST_PREFIX}ANODIZING`,
+          opType: 'outsource',
+          cycleTimeMin: '0.00',
+          qcRequired: false,
+          reworkQty: 0,
+          outsourceCost: '0.00',
+          outsourceSentQty: 0,
+          outsourceReturnedQty: 0,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning()
+    )[0]!;
+
+    const pr = await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}OSPCANCEL`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 4,
+        estCost: 0,
+        status: 'open',
+        sourceJcOpId: op.id,
+      },
+      admin,
+    );
+    const stamped = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)))[0]!;
+    expect(stamped.outsourcePrId).toBe(pr.id);
+    expect(stamped.outsourceStatus).toBe('pr_raised');
+
+    await service.rejectPurchaseRequest(pr.id, 'raised by mistake', admin);
+
+    const released = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)))[0]!;
+    expect(released.outsourcePrId).toBeNull();
+    expect(released.outsourceStatus).toBeNull();
+  });
+
   it('createPurchaseRequest NOT from an op leaves ops untouched', async () => {
     const before = (await db.select().from(jcOps).where(eq(jcOps.id, cascadeUntouchedOpId)))[0]!;
     expect(before.outsourcePrId).toBeNull();

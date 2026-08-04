@@ -62,6 +62,12 @@ const requireCompany = (user: AuthContext): string => {
 // (the buyer picks the real vendor at PR→PO time). Mirrors plans/service.ts.
 const OSP_VENDOR_TBD = '(vendor TBD)';
 
+// Outsource statuses that mean the op is committed on its own, independent of
+// the PR row: a PO has been issued, or material has physically moved to the
+// vendor. 'pending' / 'pr_raised' are pre-PO intent only — they commit the op
+// solely while the PR behind them is still alive (ADR-101).
+const OSP_MOVED_STATUSES: ReadonlySet<string> = new Set(['po_created', 'sent', 'received']);
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
 export async function listJobCards(
@@ -1188,18 +1194,29 @@ export async function updateJobCard(
         outsourceStatus: jcOps.outsourceStatus,
         outsourcePrId: jcOps.outsourcePrId,
         outsourcePoLineId: jcOps.outsourcePoLineId,
+        prStatus: purchaseRequests.status,
+        prDeletedAt: purchaseRequests.deletedAt,
       })
       .from(jcOps)
+      .leftJoin(purchaseRequests, eq(purchaseRequests.id, jcOps.outsourcePrId))
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
     const existingById = new Map(existing.map((o) => [o.id, o]));
     const started = await startedOpIds(tx, id);
     // Committed = outsource op whose PR/PO/DC paperwork already points at it;
     // removing/retyping/moving it would orphan that paperwork.
+    //
+    // ADR-101: only LIVE paperwork commits an op. Cancelling the PR is exactly
+    // how a user frees a mistaken outsource op, so a `pr_raised` stamp whose PR
+    // was later cancelled (or soft-deleted) is stale and must not keep the op
+    // frozen. Real commitments still latch: a PO line pointing at the op, or a
+    // status past PO issue (material has physically moved to the vendor).
     const committed = new Set(
       existing
         .filter(
           (o) =>
-            o.outsourceStatus != null || o.outsourcePrId != null || o.outsourcePoLineId != null,
+            o.outsourcePoLineId != null ||
+            OSP_MOVED_STATUSES.has(o.outsourceStatus ?? '') ||
+            (o.outsourcePrId != null && o.prDeletedAt == null && o.prStatus !== 'cancelled'),
         )
         .map((o) => o.id),
     );

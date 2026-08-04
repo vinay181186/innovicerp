@@ -14,6 +14,7 @@ import {
   jobWorkOrders,
   machines,
   opLog,
+  purchaseRequests,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -186,7 +187,10 @@ describe('job-cards service', () => {
 
 describe('job-cards service — writes (ADR-051)', () => {
   const createdIds: string[] = [];
+  // PRs inserted by the ADR-101 lock-guard tests; hard-cleaned in afterAll.
+  const createdPrIds: string[] = [];
   let itemCode: string | null = null;
+  let itemId: string | null = null;
   let machineCode: string | null = null;
   // Manual JC creation is now JW-only (governance), so the write tests need a
   // Job Work line to attach to. Created + torn down here (prefix TJC-).
@@ -202,6 +206,7 @@ describe('job-cards service — writes (ADR-051)', () => {
         .limit(1)
     )[0];
     itemCode = it?.code ?? null;
+    itemId = it?.id ?? null;
     const m = (
       await db
         .select({ code: machines.code })
@@ -258,6 +263,9 @@ describe('job-cards service — writes (ADR-051)', () => {
       if (opIds.length > 0) await db.delete(opLog).where(inArray(opLog.jcOpId, opIds));
       await db.delete(jcOps).where(inArray(jcOps.jobCardId, createdIds));
       await db.delete(jobCards).where(inArray(jobCards.id, createdIds));
+    }
+    if (createdPrIds.length > 0) {
+      await db.delete(purchaseRequests).where(inArray(purchaseRequests.id, createdPrIds));
     }
     if (jwOrderId) {
       await db.delete(jobWorkOrderLines).where(eq(jobWorkOrderLines.jobWorkOrderId, jwOrderId));
@@ -394,8 +402,42 @@ describe('job-cards service — writes (ADR-051)', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
+  /** Stamp an existing op as a committed OSP op backed by a real PR row, the
+   *  shape plan-execute / JC-edit actually produce. `prStatus` drives whether
+   *  that PR is live ('open') or dead ('cancelled') — the ADR-101 distinction. */
+  async function stampOspPr(
+    opId: string,
+    prStatus: 'open' | 'cancelled',
+  ): Promise<string> {
+    const pr = (
+      await db
+        .insert(purchaseRequests)
+        .values({
+          companyId: admin.companyId!,
+          code: `TJC-PR-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          prDate: '2026-06-13',
+          status: prStatus,
+          prType: 'jw_osp',
+          vendorCodeText: '(vendor TBD)',
+          itemId: itemId!,
+          itemCodeText: itemCode!,
+          qty: 5,
+          sourceJcOpId: opId,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        })
+        .returning({ id: purchaseRequests.id })
+    )[0]!;
+    createdPrIds.push(pr.id);
+    await db
+      .update(jcOps)
+      .set({ opType: 'outsource', outsourceStatus: 'pr_raised', outsourcePrId: pr.id })
+      .where(eq(jcOps.id, opId));
+    return pr.id;
+  }
+
   it('updateJobCard blocks removing an outsource op that already has a PR/PO', async () => {
-    if (!itemCode || !machineCode || !jwLineId) return;
+    if (!itemCode || !itemId || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
       { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
       admin,
@@ -404,8 +446,8 @@ describe('job-cards service — writes (ADR-051)', () => {
     const ops = await opsOf(jc.id);
     const opA = ops.find((o) => o.operation === 'Op A')!;
     const opB = ops.find((o) => o.operation === 'Op B')!;
-    // Simulate an OSP commitment on Op A (PR raised) without any op_log.
-    await db.update(jcOps).set({ outsourceStatus: 'pr_raised' }).where(eq(jcOps.id, opA.id));
+    // OSP commitment on Op A, backed by a LIVE PR, and no op_log.
+    await stampOspPr(opA.id, 'open');
     // Drop Op A from the payload → remove of a committed op → blocked.
     await expect(
       service.updateJobCard(
@@ -414,6 +456,39 @@ describe('job-cards service — writes (ADR-051)', () => {
         admin,
       ),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  // ADR-101 — the bug this fixes: cancelling the PR left the op frozen, so the
+  // error ("cancel the PR/PO first") could never be satisfied.
+  it('updateJobCard allows retyping an outsource op to in-house once its PR is cancelled', async () => {
+    if (!itemCode || !itemId || !machineCode || !jwLineId) return;
+    const jc = await service.createJobCard(
+      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      admin,
+    );
+    createdIds.push(jc.id);
+    const ops = await opsOf(jc.id);
+    const opA = ops.find((o) => o.operation === 'Op A')!;
+    const opB = ops.find((o) => o.operation === 'Op B')!;
+    // Op A is outsource with a CANCELLED PR — the stale stamp is still on the
+    // row (pre-fix rows look exactly like this), but it commits nothing.
+    await stampOspPr(opA.id, 'cancelled');
+
+    await service.updateJobCard(
+      jc.id,
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        ops: [{ id: opA.id, ...proc('Op A', machineCode) }, { id: opB.id, ...proc('Op B', machineCode) }],
+        qcDocs: [],
+      },
+      admin,
+    );
+
+    const after = await opsOf(jc.id);
+    expect(after.find((o) => o.operation === 'Op A')!.opType).toBe('process');
   });
 
   it('updateJobCard freezes operations once the JC is closed', async () => {

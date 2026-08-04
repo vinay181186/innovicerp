@@ -6,7 +6,7 @@
 // cancelled). Only the basic field updates land here in T-036a; the approve
 // + create-PO actions ship in T-036b alongside the PO module.
 
-import { and, count, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import {
@@ -705,6 +705,8 @@ export async function rejectPurchaseRequest(
       })
       .where(eq(purchaseRequests.id, id));
 
+    const released = await releaseSourceJcOps(tx, id, user);
+
     const reread = await tx
       .select()
       .from(purchaseRequests)
@@ -716,7 +718,9 @@ export async function rejectPurchaseRequest(
       {
         action: 'REJECT',
         entity: 'PurchaseRequest',
-        detail: `${row.code} rejected: ${trimmedReason}`,
+        detail:
+          `${row.code} rejected: ${trimmedReason}` +
+          (released > 0 ? ` — JC operation released (retype/remove now allowed)` : ''),
         refId: row.code,
       },
       companyId,
@@ -724,6 +728,38 @@ export async function rejectPurchaseRequest(
     );
     return toPurchaseRequest(row);
   });
+}
+
+// ADR-101 — un-stamp the JC op(s) a dead PR was raised against.
+//
+// `jc_ops.outsource_pr_id` + `outsource_status` are what the JC-edit lock guard
+// (job-cards/service.ts) reads to decide "this op is committed to procurement".
+// Cancelling or deleting the PR used to leave that stamp behind, so the op was
+// frozen forever — no retype to in-house, no removal — even though the user had
+// done exactly what the error message told them to do. Clearing it here also
+// makes the op eligible for a fresh PR again, which is the correct next state
+// for an outsource op with no live paperwork.
+//
+// Ops that carry a PO line, or whose status is past PO issue, are left alone:
+// those are real commitments and are not reachable from a pre-PO PR anyway.
+async function releaseSourceJcOps(
+  tx: DbTransaction,
+  prId: string,
+  user: AuthContext,
+): Promise<number> {
+  const rows = await tx
+    .update(jcOps)
+    .set({ outsourcePrId: null, outsourceStatus: null, updatedBy: user.id, updatedAt: new Date() })
+    .where(
+      and(
+        eq(jcOps.outsourcePrId, prId),
+        isNull(jcOps.outsourcePoLineId),
+        isNull(jcOps.deletedAt),
+        inArray(jcOps.outsourceStatus, ['pending', 'pr_raised']),
+      ),
+    )
+    .returning({ id: jcOps.id });
+  return rows.length;
 }
 
 export async function softDeletePurchaseRequest(
@@ -769,6 +805,8 @@ export async function softDeletePurchaseRequest(
       .update(purchaseRequests)
       .set({ deletedAt: new Date(), updatedBy: user.id })
       .where(eq(purchaseRequests.id, id));
+    // ADR-101 — a deleted PR commits nothing; free its source op too.
+    await releaseSourceJcOps(tx, id, user);
     await emitActivityLog(
       tx,
       {

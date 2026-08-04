@@ -4048,7 +4048,30 @@ ordered, closing the line only once the whole qty is produced.
   action is still needed. Pairs with the JWSO close-out / dispatch-reconcile work.
 - Verified: `pnpm --filter api typecheck` + `lint` clean.
 
-## ADR-100: Cancelling a PR must release its JC op — dead paperwork commits nothing
+## ADR-100: Party GRN over-receipt block — cannot receive more than the line's order qty
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Party Material GRN had no ceiling: cumulative received for a JW line could exceed
+the order qty (e.g. IN-JW-00002 line 1 ordered 100, received 60 then 100 = 160).
+Nothing stopped it.
+
+### Decision
+`party-grn/service.ts createPartyGrn`: before inserting each line, sum existing
+received for that JW line (matched by `jw_line_no_text` = line_no, across all
+non-deleted GRNs for the order) plus earlier lines in the same receipt; reject
+when it would exceed the line's `order_qty`. Friendly message names the part and
+the remaining receivable qty. Lines with no line number are not attributable to
+a part and are not capped (data-quality gap, flagged).
+
+### Consequences
+- Positive: hard stop on receiving more material than ordered, per part.
+- Existing over-received rows are NOT retroactively corrected (Party GRN has no
+  edit/delete path); the block applies to new receipts only.
+- Verified: `pnpm --filter api typecheck` + `lint` clean.
+
+## ADR-101: Cancelling a PR must release its JC op — dead paperwork commits nothing
 **Date:** 2026-08-04
 **Status:** Accepted
 
@@ -4143,26 +4166,3 @@ outsource_status IS NULL`). That is the intended next state: an op that is still
 - **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
   prod DB, so the suite was not executed. Verified by typecheck + lint only;
   treat the first CI run as their real verification.
-
-## ADR-100: Party GRN over-receipt block — cannot receive more than the line's order qty
-**Date:** 2026-08-04
-**Status:** Accepted
-
-### Context
-Party Material GRN had no ceiling: cumulative received for a JW line could exceed
-the order qty (e.g. IN-JW-00002 line 1 ordered 100, received 60 then 100 = 160).
-Nothing stopped it.
-
-### Decision
-`party-grn/service.ts createPartyGrn`: before inserting each line, sum existing
-received for that JW line (matched by `jw_line_no_text` = line_no, across all
-non-deleted GRNs for the order) plus earlier lines in the same receipt; reject
-when it would exceed the line's `order_qty`. Friendly message names the part and
-the remaining receivable qty. Lines with no line number are not attributable to
-a part and are not capped (data-quality gap, flagged).
-
-### Consequences
-- Positive: hard stop on receiving more material than ordered, per part.
-- Existing over-received rows are NOT retroactively corrected (Party GRN has no
-  edit/delete path); the block applies to new receipts only.
-- Verified: `pnpm --filter api typecheck` + `lint` clean.
