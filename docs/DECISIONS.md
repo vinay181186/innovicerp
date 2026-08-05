@@ -4374,3 +4374,61 @@ JWSO, and existing job cards left alone.
   corrected here.
 - **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
   prod DB. Verified by typecheck + lint only.
+
+## ADR-104: Return + Invoice must offer CLOSED JWSOs — a finished job is exactly when they are due
+**Date:** 2026-08-05
+**Status:** Accepted
+
+### Context
+Found by the end-to-end chain run (`flow-jwso-chain.spec.ts`). IN-JW-00004 was
+driven the whole way — material received, issued, machined, QC passed — and then
+stalled:
+
+```
+IN-JW-00004  status: closed      line 1 status: closed
+jw_return_challans for it: 0
+jw_invoices for it:        0
+```
+
+The Playwright run confirmed it through the UI: the JWSO is not offered by the
+picker on either screen.
+
+Cause: a JWSO closes automatically when its Job Card's final QC passes
+(ADR-099, qty-aware close). Both `jw-returns` and `jw-invoices` asked for
+`status: 'open'` JWSOs only. So the order disappeared from the two screens that
+finish it, at the precise moment it became ready for them — the goods cannot be
+sent back and the work cannot be billed.
+
+Neither service checked JWSO status. `createJwReturnChallan` bounds a return by
+`produced − already returned` and by the ordered qty; the invoice path has no
+status check at all. The block was purely the picker.
+
+### Decision
+Drop the `status: 'open'` filter from the JWSO picker on **jw-returns** and
+**jw-invoices**. Both pickers are search-driven (the user types the JWSO number
+or customer), and the real limits already live in the service.
+
+**Party GRN keeps its `status: 'open'` filter** (ADR-102). Receiving raw material
+against a finished order is a genuine mistake worth blocking; returning and
+billing a finished order is the whole point of finishing it.
+
+### Alternatives Considered
+- **Show only closed JWSOs with unreturned/unbilled qty** — better filtering,
+  but it needs a rollup the list endpoint does not expose today, and it would
+  still hide a legitimately re-opened order. The qty guards already refuse an
+  over-return, so the extra filtering buys correctness we already have.
+- **Stop auto-closing the JWSO at final QC** — rejected: ADR-099 close
+  behaviour is correct and other screens depend on it.
+- **Server-side allowance with the UI unchanged** — pointless; the user could
+  never reach the form.
+
+### Consequences
+- Positive: a finished JWSO can be returned and invoiced. IN-JW-00004 is
+  reachable again.
+- Negative: the picker now lists closed JWSOs too, so an old fully-returned
+  order can be selected. Selecting one is harmless — the service refuses the
+  return (`only 0 produced & available`) and the qty ceiling holds.
+- Not changed: the auto-close itself, and the Party GRN filter.
+- Verified by typecheck + lint on all 4 packages. The end-to-end evidence for
+  the bug is in `flow-jwso-chain.spec.ts` steps 08/09, which record the
+  blockage explicitly rather than failing silently.

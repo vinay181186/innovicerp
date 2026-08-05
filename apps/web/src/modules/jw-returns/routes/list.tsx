@@ -218,9 +218,14 @@ function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
+  // ADR-104: NO status filter. A JWSO closes automatically the moment its Job
+  // Card's final QC passes (ADR-099) — which is exactly when the goods are
+  // ready to go back. Filtering to `open` made the finished order vanish from
+  // this screen, so it could never be returned. The server never checked JWSO
+  // status here; the qty guards (produced − already returned, and the ordered
+  // qty ceiling) are what actually bound a return.
   const jwQuery = useJobWorkOrdersList({
     search: jwSearch.trim() || undefined,
-    status: 'open',
     limit: 50,
     offset: 0,
   });

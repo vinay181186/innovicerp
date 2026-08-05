@@ -179,9 +179,11 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
+  // ADR-104: NO status filter — see jw-returns. A JWSO closes at final QC, so
+  // filtering to `open` hid every finished job from the one screen that bills
+  // it. IN-JW-00004 sat complete with 0 invoices because of this.
   const jwQuery = useJobWorkOrdersList({
     search: jwSearch.trim() || undefined,
-    status: 'open',
     limit: 50,
     offset: 0,
   });
