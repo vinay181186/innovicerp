@@ -5,10 +5,12 @@
 import {
   type CreatePartyGrnInput,
   type CreatePartyGrnLineInput,
+  type JobWorkOrderLine,
+  type PartyGrnListItem,
   type PartyMaterialListItem,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
@@ -16,7 +18,12 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
-import { useCreatePartyGrn, useNextPartyGrnCode, usePartyGrnList } from '../api';
+import {
+  useCancelPartyGrn,
+  useCreatePartyGrn,
+  useNextPartyGrnCode,
+  usePartyGrnList,
+} from '../api';
 
 const PAGE_SIZE = 50;
 
@@ -32,6 +39,7 @@ function PartyGrnListPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
 
   const { data, isLoading, isError, error } = usePartyGrnList({
     search: search.trim() || undefined,
@@ -148,12 +156,13 @@ function PartyGrnListPage(): React.JSX.Element {
                   </th>
                   <th>Remarks</th>
                   <th>Received By</th>
+                  {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-state">
+                    <td colSpan={canWrite ? 11 : 10} className="empty-state">
                       No party material GRNs — click + New Party GRN
                     </td>
                   </tr>
@@ -202,6 +211,24 @@ function PartyGrnListPage(): React.JSX.Element {
                       {g.remarks ?? '—'}
                     </td>
                     <td>{g.receivedByText ?? '—'}</td>
+                    {canWrite ? (
+                      <td className="td-ctr">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            background: 'rgba(239,68,68,0.08)',
+                            color: 'var(--red)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            padding: '2px 8px',
+                          }}
+                          onClick={() => setCancelRow(g)}
+                          title="Cancel this GRN and take the qty back off party stock"
+                        >
+                          <XCircle size={12} /> Cancel
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -255,6 +282,119 @@ function PartyGrnListPage(): React.JSX.Element {
       </div>
 
       {showModal ? <NewPartyGrnModal onClose={() => setShowModal(false)} /> : null}
+      {cancelRow ? (
+        <CancelPartyGrnModal row={cancelRow} onClose={() => setCancelRow(null)} />
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Cancel Party GRN modal (ADR-102) ──────────────────────────────────────
+
+function CancelPartyGrnModal({
+  row,
+  onClose,
+}: {
+  row: PartyGrnListItem;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [reason, setReason] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const cancelMut = useCancelPartyGrn();
+
+  const onConfirm = (): void => {
+    setErr(null);
+    if (!reason.trim()) {
+      setErr('Give a reason — it is stored on the cancelled GRN.');
+      return;
+    }
+    cancelMut.mutate(
+      { id: row.id, reason: reason.trim() },
+      {
+        onSuccess: () => onClose(),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to cancel'),
+      },
+    );
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(520px, 94vw)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 12 }}>
+          ⚠ Cancel {row.code}
+        </div>
+        <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+          This takes <b style={{ color: 'var(--green)' }}>{row.totalReceivedQty}</b> back off party
+          material stock for <b>{row.jwCodeText ?? 'this JWSO'}</b>, and lowers how much production
+          that JWSO line is allowed to start. It cannot be undone.
+          <br />
+          If some of this material has already been issued to a Job Card, the cancel will be
+          refused — reverse the issue first.
+        </div>
+        <Field label="Reason ★">
+          <input
+            type="text"
+            className="innovic-input"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. entered twice by mistake"
+            autoFocus
+          />
+        </Field>
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Keep it
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={cancelMut.isPending}
+            onClick={onConfirm}
+          >
+            {cancelMut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Cancelling…
+              </>
+            ) : (
+              'Cancel GRN'
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -301,11 +441,20 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
   const jwLinesForSelected = jwDetailQ.data?.lines ?? [];
 
-  const { data: pmData } = usePartyMaterialsList({
-    search: undefined,
-    limit: 200,
-    offset: 0,
-  });
+  // ADR-102: only the selected JWSO's client's materials. Party material is
+  // customer-owned — showing every client's codes invited receiving one
+  // client's material against another's order (the API refuses it now, but the
+  // picker should not offer it in the first place). Disabled until a JWSO is
+  // picked, so the client is always known.
+  const { data: pmData } = usePartyMaterialsList(
+    {
+      search: undefined,
+      clientId: selectedJw?.clientId ?? undefined,
+      limit: 200,
+      offset: 0,
+    },
+    { enabled: Boolean(selectedJw?.clientId) },
+  );
   const pmAll = pmData?.items ?? [];
 
   const createMut = useCreatePartyGrn();
@@ -355,11 +504,27 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         setErr(`Line ${i + 1}: qty must be ≥ 1`);
         return;
       }
+      // ADR-102: the JWSO line is mandatory — the order-qty cap and the
+      // first-op material gate both key off it.
+      const lnNo = l.jwLineNoText.trim();
+      if (!lnNo) {
+        setErr(`Line ${i + 1}: pick which JWSO line this material is for.`);
+        return;
+      }
+      const jwLine = jwLinesForSelected.find((j) => String(j.lineNo) === lnNo);
+      // ADR-102: refuse a material that is not that line's part.
+      const pm = pmAll.find((p) => p.id === pmId);
+      if (jwLine && pm && pm.itemId != null && jwLine.itemId != null && pm.itemId !== jwLine.itemId) {
+        setErr(
+          `Line ${i + 1}: ${pm.code} is "${pm.name}", but JWSO line ${lnNo} is "${jwLine.partName}". Pick the material for this part, or pick the line this material belongs to.`,
+        );
+        return;
+      }
       const ln: CreatePartyGrnLineInput = {
         partyMaterialId: pmId,
         receivedQty: q,
+        jwLineNoText: lnNo,
       };
-      if (l.jwLineNoText.trim()) ln.jwLineNoText = l.jwLineNoText.trim();
       if (l.remarks.trim()) ln.remarks = l.remarks.trim();
       validLines.push(ln);
     }
@@ -410,14 +575,8 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
           📥 New Party Material GRN
         </div>
 
-        {/* JW line codes for the selected JWSO (bug 3.3) — feeds the JW Line box. */}
-        <datalist id="dlPGrnJwLine">
-          {jwLinesForSelected.map((j) => (
-            <option key={j.id} value={String(j.lineNo)}>
-              L{j.lineNo} · {j.itemCodeText ?? ''} · {j.partName}
-            </option>
-          ))}
-        </datalist>
+        {/* ADR-102: the JWSO-line datalist is gone — the line box is a real
+            <select> of jwLinesForSelected now, so free text is impossible. */}
         {/* Party materials for the line pickers. A native datalist (not a custom
             absolute dropdown) so it is never clipped by the modal / table
             overflow — the earlier custom dropdown was invisible for exactly that
@@ -565,6 +724,7 @@ function NewPartyGrnModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
                     idx={i}
                     line={l}
                     pmAll={pmAll}
+                    jwLines={jwLinesForSelected}
                     onChange={(patch) => setLine(i, patch)}
                     onRemove={() => removeLine(i)}
                   />
@@ -627,12 +787,14 @@ function LineRow({
   idx,
   line,
   pmAll,
+  jwLines,
   onChange,
   onRemove,
 }: {
   idx: number;
   line: UiLine;
   pmAll: PartyMaterialListItem[];
+  jwLines: JobWorkOrderLine[];
   onChange: (patch: Partial<UiLine>) => void;
   onRemove: () => void;
 }): React.JSX.Element {
@@ -640,6 +802,18 @@ function LineRow({
     () => pmAll.find((p) => p.id === line.partyMaterialId) ?? null,
     [pmAll, line.partyMaterialId],
   );
+  const pickedLine = useMemo(
+    () => jwLines.find((j) => String(j.lineNo) === line.jwLineNoText) ?? null,
+    [jwLines, line.jwLineNoText],
+  );
+  // ADR-102: the material must BE the picked line's part. Mirrors the API
+  // guard so the user sees it while typing, not after Save.
+  const mismatch =
+    selected != null &&
+    pickedLine != null &&
+    selected.itemId != null &&
+    pickedLine.itemId != null &&
+    selected.itemId !== pickedLine.itemId;
   const bg = idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)';
 
   return (
@@ -650,33 +824,70 @@ function LineRow({
       >
         {idx + 1}
       </td>
+      {/* ADR-102: a real <select> of THIS JWSO's lines, not free text. Every
+          downstream check keys off this value; a typed line number that did not
+          exist silently disabled the order-qty cap. */}
       <td style={{ padding: 6 }}>
-        <input
-          type="text"
-          className="innovic-input"
-          list="dlPGrnJwLine"
-          placeholder="Line"
+        <select
+          className="innovic-select"
           value={line.jwLineNoText}
           onChange={(e) => onChange({ jwLineNoText: e.target.value })}
-          style={{ width: '100%', fontSize: 11 }}
-        />
+          style={{
+            width: '100%',
+            fontSize: 11,
+            ...(line.jwLineNoText ? {} : { border: '2px solid var(--amber)' }),
+          }}
+        >
+          <option value="">{jwLines.length ? 'Select…' : 'Pick a JWSO first'}</option>
+          {jwLines.map((j) => (
+            <option key={j.id} value={String(j.lineNo)}>
+              L{j.lineNo} · {j.itemCodeText ?? ''} · {j.partName}
+            </option>
+          ))}
+        </select>
       </td>
       <td style={{ padding: 6 }}>
         <input
           type="text"
           className="innovic-input"
           list="dlPGrnMaterial"
-          placeholder="🔍 Pick material code…"
+          placeholder={pmAll.length ? '🔍 Pick material code…' : 'Pick a JWSO first'}
+          disabled={pmAll.length === 0}
           value={selected ? selected.code : line.materialSearch}
           onChange={(e) => {
             const v = e.target.value;
             const match = pmAll.find((p) => p.code.toLowerCase() === v.trim().toLowerCase());
             onChange({ partyMaterialId: match ? match.id : null, materialSearch: v });
           }}
-          style={{ width: '100%', fontSize: 12, color: 'var(--purple)', fontWeight: 600 }}
+          style={{
+            width: '100%',
+            fontSize: 12,
+            fontWeight: 600,
+            color: mismatch ? 'var(--red)' : 'var(--purple)',
+          }}
         />
       </td>
-      <td style={{ padding: 6, fontSize: 11, color: 'var(--text2)' }}>{selected?.name ?? ''}</td>
+      {/* ADR-102: show the material's linked item code next to its name, and
+          flag a part mismatch before the user hits Save. */}
+      <td style={{ padding: 6, fontSize: 11, color: mismatch ? 'var(--red)' : 'var(--text2)' }}>
+        {selected ? (
+          <>
+            {selected.name}
+            {selected.itemCode ?? selected.itemCodeText ? (
+              <span className="mono text3" style={{ fontSize: 10, marginLeft: 4 }}>
+                ({selected.itemCode ?? selected.itemCodeText})
+              </span>
+            ) : null}
+            {mismatch ? (
+              <div style={{ fontSize: 10, fontWeight: 700 }}>
+                ⚠ not L{line.jwLineNoText} — that line is {pickedLine?.partName}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          ''
+        )}
+      </td>
       <td style={{ padding: 6 }}>
         <input
           type="number"

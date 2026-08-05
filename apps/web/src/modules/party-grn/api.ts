@@ -76,3 +76,23 @@ export function useCreatePartyGrn() {
     },
   });
 }
+
+/** ADR-102 — reverse a wrong receipt. Credits the qty back off party stock. */
+export function useCancelPartyGrn() {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: true; code: string; reversedQty: number },
+    Error,
+    { id: string; reason: string }
+  >({
+    mutationFn: ({ id, reason }) =>
+      apiFetch<{ ok: true; code: string; reversedQty: number }>(`/party-grn/${id}/cancel`, {
+        method: 'POST',
+        json: { reason },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
+      void qc.invalidateQueries({ queryKey: ['party-materials'] });
+    },
+  });
+}

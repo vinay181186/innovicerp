@@ -4185,3 +4185,95 @@ offered it for JWSO plans and there was no server guard.
 ### Consequences
 - JWSO plans can only be Manufacture / Full Outsource (+ Assembly). SO plans
   keep all types. Verified: api+web typecheck + lint clean.
+
+## ADR-102: Party GRN must name a real JWSO line, and the material must be that line's part
+**Date:** 2026-08-04
+**Status:** Accepted
+
+### Context
+Audit of the live Party GRN data for IN-JW-00002 (client Arindam, CLI-009):
+
+```
+JWSO lines:  1 LEVER (559918174000) 100 | 2 SINGLE FIRE CHECK LEVER (554117165000) 100 | 3 SPACER 100
+PGRN-00001 14:19  PM-0001 (LEVER) -> line 1 -> 60
+PGRN-00002 14:37  PM-0001 (LEVER) -> line 1 -> 100      line 1 total = 160 vs order 100
+PGRN-00003 15:12  PM-0001 (LEVER) -> line 2 -> 1        WRONG PART
+```
+
+Three separate defects, one screen:
+
+1. **`jwLineNoText` was optional free text.** The ADR-100 over-receipt cap only
+   ran `if (lnKey && lineByNo.has(lnKey))` — so a blank line number, or one that
+   did not exist on the JWSO, silently disabled the cap entirely. The UI made
+   this easy: an `<input list="dlPGrnJwLine">`, and a datalist is a suggestion,
+   not a constraint.
+2. **Nothing checked that the material was that line's part.** PM-0001 is pinned
+   to item `559918174000` by the party-material master (which has a proper
+   Client → order → item cascade). JW line 2 is item `554117165000`. The two
+   were never compared. PGRN-00003 is the result.
+3. **No way to undo.** The module had three read routes and one create route.
+   A wrong receipt was permanent.
+
+Consequence beyond the party stock number: `op-entry/service.ts` caps a JWSO
+Job Card's first operation at the party-GRN received qty for that line
+(ADR-096/097), matching on the *same* `jw_line_no_text`. So line 1 could start
+160 pieces on a 100-piece order, while line 2 believed it had 1 piece of client
+material that does not exist — and the real LEVER was not counted where it
+belonged.
+
+The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
+14:19 and 14:37, the cap was written at 14:45.
+
+### Decision
+1. **`jwLineNoText` is REQUIRED** (`packages/shared/src/schemas/party-grn.ts`,
+   `.min(1)`), and `createPartyGrn` additionally verifies the number is a real
+   line on *that* JWSO — unknown line numbers are rejected by name, listing the
+   valid ones. This restores ADR-100's cap unconditionally rather than leaving
+   it opt-in.
+2. **Part identity is enforced.** `party_materials.item_id` must equal
+   `job_work_order_lines.item_id`. Skipped only when either side has no item
+   link (legacy rows) — those cannot be checked, and refusing them would block
+   otherwise-valid receipts.
+3. **Client identity is enforced.** Party material is customer-owned; it cannot
+   be received against another customer's JWSO.
+4. **`cancelPartyGrn(id, reason, user)`** + `POST /party-grn/:id/cancel`.
+   Soft-deletes header and lines, subtracts the qty from
+   `party_materials.stock_qty` / `received_qty`, writes an activity log.
+   Refused when the reversal would drive stock negative — those pieces are
+   already issued to a Job Card, and that issue must be reversed first.
+5. **UI matches the server.** The JWSO Line box is now a real `<select>` of that
+   JWSO's lines; the material picker is filtered to the JWSO's client and
+   disabled until a JWSO is chosen; the material's linked item code is shown
+   beside its name and a part mismatch is flagged in red *before* Save.
+
+### Alternatives Considered
+- **UI-only fix (dropdown, no server guard)** — rejected: the API is reachable
+  directly, and the existing bad rows prove free text is not survivable.
+- **Warn instead of refuse on a part mismatch** — rejected: the mismatch
+  silently corrupts two production gates at once, and there is no legitimate
+  reason to receive part A's material against part B's line.
+- **Hard-delete on cancel** — rejected, violates rule 8 (soft delete only) and
+  destroys the audit trail of a receipt that physically happened.
+- **Renumbering the duplicate ADR-101** — not done; see Consequences.
+
+### Consequences
+- Positive: the order-qty cap can no longer be bypassed by leaving a box blank.
+- Positive: wrong-part receipts are impossible, and existing mistakes are now
+  reversible.
+- Negative: a Party GRN line without a JWSO line number is now rejected. No
+  legitimate caller sends one — the only UI always had the box — but a stale
+  browser tab will get a validation error until it reloads.
+- Negative: the material picker is empty until a JWSO is selected. Intentional,
+  since the client is unknown before that.
+- **Existing bad data is NOT repaired by this change.** Line 1 still reads 160
+  against an order of 100, and PGRN-00003's misfiled LEVER still sits on line 2.
+  Both are now cancellable through the UI, but which way to correct them is a
+  business call (did the client ship 160 or 100?), so nothing was touched.
+- **Numbering note:** `ADR-101` appears twice in this log. "Cancelling a PR must
+  release its JC op" (commit `740a0b7`) landed first; "Direct Purchase disabled
+  for JWSO plans" (commit `0015007`) reused the number afterwards. Both are
+  referenced by that number in their own code comments, so neither was
+  renumbered — this entry takes 102.
+- **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
+  prod DB. Verified by typecheck + lint only; the first CI run is their real
+  verification. `party-grn` had no test file at all before this change.

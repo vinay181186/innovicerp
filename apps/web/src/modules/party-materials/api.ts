@@ -31,7 +31,10 @@ function buildSearch(q: ListPartyMaterialsQuery): string {
   return params.toString();
 }
 
-export function usePartyMaterialsList(query: ListPartyMaterialsQuery) {
+export function usePartyMaterialsList(
+  query: ListPartyMaterialsQuery,
+  options?: { enabled?: boolean },
+) {
   return useQuery<ListPartyMaterialsResponse>({
     queryKey: partyMaterialsKeys.list(query),
     queryFn: () =>
@@ -39,6 +42,7 @@ export function usePartyMaterialsList(query: ListPartyMaterialsQuery) {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
+    ...(options?.enabled === undefined ? {} : { enabled: options.enabled }),
   });
 }
 

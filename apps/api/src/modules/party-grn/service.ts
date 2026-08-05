@@ -23,6 +23,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -313,6 +314,11 @@ export async function createPartyGrn(
         name: partyMaterials.name,
         stockQty: partyMaterials.stockQty,
         receivedQty: partyMaterials.receivedQty,
+        // ADR-102: the master ties each party material to ONE client + ONE item.
+        // Both are checked against the JW line below.
+        clientId: partyMaterials.clientId,
+        itemId: partyMaterials.itemId,
+        itemCodeText: partyMaterials.itemCodeText,
       })
       .from(partyMaterials)
       .where(
@@ -366,13 +372,23 @@ export async function createPartyGrn(
         lineNo: jobWorkOrderLines.lineNo,
         orderQty: jobWorkOrderLines.orderQty,
         partName: jobWorkOrderLines.partName,
+        itemId: jobWorkOrderLines.itemId,
+        itemCodeText: jobWorkOrderLines.itemCodeText,
       })
       .from(jobWorkOrderLines)
       .where(
         and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
       );
     const lineByNo = new Map(
-      jwLines.map((l) => [String(l.lineNo), { orderQty: Number(l.orderQty), partName: l.partName }]),
+      jwLines.map((l) => [
+        String(l.lineNo),
+        {
+          orderQty: Number(l.orderQty),
+          partName: l.partName,
+          itemId: l.itemId,
+          itemCodeText: l.itemCodeText,
+        },
+      ]),
     );
     const existingRows = (await tx.execute(sql`
       SELECT pgl.jw_line_no_text AS "lineNoText",
@@ -394,11 +410,52 @@ export async function createPartyGrn(
         throw new NotFoundError(`Party material ${ln.partyMaterialId} not found`);
       }
 
+      // ADR-102: the JWSO line is mandatory and must be a real line on THIS
+      // JWSO. Previously it was optional free text, and every check below only
+      // ran when it happened to be filled with a matching number — so a blank
+      // or mistyped line silently bypassed the order-qty cap entirely.
+      const lnKey = String(ln.jwLineNoText ?? '').trim();
+      if (!lnKey) {
+        throw new ValidationError(
+          `Line ${idx + 1}: pick which JWSO line this material is for. ` +
+            `${jw.code} has line(s) ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+        );
+      }
+      const jwLine = lineByNo.get(lnKey);
+      if (!jwLine) {
+        throw new ValidationError(
+          `Line ${idx + 1}: ${jw.code} has no line ${lnKey}. ` +
+            `Available line(s): ${jwLines.map((l) => l.lineNo).join(', ')}.`,
+        );
+      }
+      const { orderQty, partName, itemId: lineItemId, itemCodeText: lineItemCode } = jwLine;
+
+      // ADR-102: the material must BE that line's part. The party-material
+      // master already pins each code to one item (Client → order → item
+      // cascade); without this check a LEVER could be received against the
+      // SINGLE FIRE CHECK LEVER line, inflating one part's material gate while
+      // the real part shows none received.
+      if (pm.itemId != null && lineItemId != null && pm.itemId !== lineItemId) {
+        throw new ValidationError(
+          `Line ${idx + 1}: ${pm.code} is "${pm.name}"` +
+            `${pm.itemCodeText ? ` (item ${pm.itemCodeText})` : ''}, but ${jw.code} line ${lnKey} is ` +
+            `"${partName}"${lineItemCode ? ` (item ${lineItemCode})` : ''}. ` +
+            `Pick the material for this part, or pick the line this material belongs to.`,
+        );
+      }
+
+      // ADR-102: party material is customer-owned — it cannot be received
+      // against a different customer's order.
+      if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
+        throw new ValidationError(
+          `Line ${idx + 1}: ${pm.code} belongs to a different client than ${jw.code}. ` +
+            `Party material can only be received against its own client's order.`,
+        );
+      }
+
       // Block receiving more than the line's order qty (cumulative across all
       // GRNs for this JW, including earlier lines in this same receipt).
-      const lnKey = ln.jwLineNoText != null ? String(ln.jwLineNoText).trim() : '';
-      if (lnKey && lineByNo.has(lnKey)) {
-        const { orderQty, partName } = lineByNo.get(lnKey)!;
+      {
         const already = receivedByLineNo.get(lnKey) ?? 0;
         const remaining = Math.max(0, orderQty - already);
         if (ln.receivedQty > remaining) {
@@ -443,6 +500,131 @@ export async function createPartyGrn(
     }
 
     return rowToPartyGrn(header);
+  });
+}
+
+// ADR-102 — cancel (reverse) a Party GRN.
+//
+// Party GRN had create + read only, so a wrong receipt was permanent: the qty
+// stayed on the party material's stock AND kept inflating the JWSO line's
+// production gate (op-entry caps the first op at party-GRN received qty).
+// Cancel soft-deletes the header + lines and takes the qty back off the
+// material, which is the same arithmetic createPartyGrn did, reversed.
+//
+// Refused when the material has already moved on: if reversing would push
+// stock below zero, those pieces have been issued to a Job Card and the issue
+// must be reversed first. Nothing is partially applied — one transaction.
+export async function cancelPartyGrn(
+  id: string,
+  reason: string,
+  user: AuthContext,
+): Promise<{ ok: true; code: string; reversedQty: number }> {
+  const companyId = requireCompany(user);
+  const trimmed = (reason ?? '').trim();
+  if (!trimmed) throw new ValidationError('A reason is required to cancel a Party GRN');
+
+  return withUserContext(user, async (tx) => {
+    const headRows = await tx
+      .select({ id: partyGrn.id, code: partyGrn.code, remarks: partyGrn.remarks })
+      .from(partyGrn)
+      .where(
+        and(
+          eq(partyGrn.id, id),
+          eq(partyGrn.companyId, companyId),
+          isNull(partyGrn.deletedAt),
+        ),
+      )
+      .limit(1);
+    const head = headRows[0];
+    if (!head) throw new NotFoundError(`Party GRN ${id} not found`);
+
+    const lines = await tx
+      .select({
+        id: partyGrnLines.id,
+        partyMaterialId: partyGrnLines.partyMaterialId,
+        partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
+        receivedQty: partyGrnLines.receivedQty,
+      })
+      .from(partyGrnLines)
+      .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
+
+    // Net qty to reverse per material (a receipt may repeat the same code).
+    const byMaterial = new Map<string, { code: string; qty: number }>();
+    let reversedQty = 0;
+    for (const l of lines) {
+      reversedQty += l.receivedQty;
+      if (l.partyMaterialId == null) continue; // master row deleted — nothing to credit back
+      const prev = byMaterial.get(l.partyMaterialId);
+      byMaterial.set(l.partyMaterialId, {
+        code: l.partyMaterialCodeText,
+        qty: (prev?.qty ?? 0) + l.receivedQty,
+      });
+    }
+
+    // Lock, then check every material can absorb the reversal before writing.
+    for (const materialId of byMaterial.keys()) {
+      await tx.execute(
+        sql`SELECT 1 FROM public.party_materials WHERE id = ${materialId}::uuid FOR UPDATE`,
+      );
+    }
+    for (const [materialId, { code, qty }] of byMaterial) {
+      const pmRows = await tx
+        .select({ stockQty: partyMaterials.stockQty, receivedQty: partyMaterials.receivedQty })
+        .from(partyMaterials)
+        .where(eq(partyMaterials.id, materialId))
+        .limit(1);
+      const pm = pmRows[0];
+      if (!pm) continue;
+      if (pm.stockQty - qty < 0) {
+        throw new ValidationError(
+          `Cannot cancel ${head.code}: it received ${qty} of ${code}, but only ${pm.stockQty} ` +
+            `are still on hand — the rest has been issued to production. Reverse the material ` +
+            `issue first, then cancel this GRN.`,
+        );
+      }
+    }
+
+    const now = new Date();
+    for (const [materialId, { qty }] of byMaterial) {
+      await tx
+        .update(partyMaterials)
+        .set({
+          stockQty: sql`${partyMaterials.stockQty} - ${qty}`,
+          receivedQty: sql`GREATEST(${partyMaterials.receivedQty} - ${qty}, 0)`,
+          updatedAt: now,
+          updatedBy: user.id,
+        })
+        .where(eq(partyMaterials.id, materialId));
+    }
+
+    await tx
+      .update(partyGrnLines)
+      .set({ deletedAt: now, updatedAt: now, updatedBy: user.id })
+      .where(and(eq(partyGrnLines.partyGrnId, id), isNull(partyGrnLines.deletedAt)));
+
+    await tx
+      .update(partyGrn)
+      .set({
+        deletedAt: now,
+        remarks: head.remarks ? `${head.remarks}\n[Cancelled] ${trimmed}` : `[Cancelled] ${trimmed}`,
+        updatedAt: now,
+        updatedBy: user.id,
+      })
+      .where(eq(partyGrn.id, id));
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CANCEL',
+        entity: 'PartyGrn',
+        detail: `${head.code} cancelled: ${trimmed} — reversed ${reversedQty} from party stock`,
+        refId: head.code,
+      },
+      companyId,
+      user,
+    );
+
+    return { ok: true as const, code: head.code, reversedQty };
   });
 }
 

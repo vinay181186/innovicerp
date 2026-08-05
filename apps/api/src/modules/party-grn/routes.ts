@@ -1,4 +1,5 @@
 import {
+  cancelPartyGrnInputSchema,
   createPartyGrnInputSchema,
   listPartyGrnQuerySchema,
 } from '@innovic/shared';
@@ -33,5 +34,13 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
     const result = await service.createPartyGrn(input, req.user);
     reply.code(201);
     return result;
+  });
+
+  // ADR-102 — reverse a wrong receipt (soft-delete + credit party stock back).
+  app.post('/party-grn/:id/cancel', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    const { reason } = cancelPartyGrnInputSchema.parse(req.body);
+    return service.cancelPartyGrn(id, reason, req.user);
   });
 }

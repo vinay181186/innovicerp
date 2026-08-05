@@ -69,10 +69,19 @@ export type PartyGrnDetail = z.infer<typeof partyGrnDetailSchema>;
 export const createPartyGrnLineInputSchema = z.object({
   partyMaterialId: z.string().uuid(),
   receivedQty: z.number().int().positive(),
-  jwLineNoText: z.string().trim().max(64).optional(),
+  /** ADR-102: REQUIRED. Which JWSO line this material is for. Every downstream
+   *  check keys off it — the order-qty cap here, and the first-op material gate
+   *  in op-entry. While it was optional, leaving it blank silently disabled
+   *  both. The service additionally verifies the line exists on that JWSO. */
+  jwLineNoText: z.string().trim().min(1).max(64),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreatePartyGrnLineInput = z.infer<typeof createPartyGrnLineInputSchema>;
+
+export const cancelPartyGrnInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelPartyGrnInput = z.infer<typeof cancelPartyGrnInputSchema>;
 
 export const createPartyGrnInputSchema = z.object({
   grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
