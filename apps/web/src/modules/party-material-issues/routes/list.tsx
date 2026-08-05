@@ -2,9 +2,12 @@
 // client-supplied ("party") material to a Job Card for in-house machining.
 // Debits the separate party stock; never touches own-stock store_transactions.
 
-import { type CreatePartyMaterialIssueInput } from '@innovic/shared';
+import {
+  type CreatePartyMaterialIssueInput,
+  type PartyMaterialIssueListItem,
+} from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
@@ -13,7 +16,11 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../../job-cards/api';
 import { useJobWorkOrdersList } from '../../job-work-orders/api';
 import { usePartyMaterialsList } from '../../party-materials/api';
-import { useCreatePartyMaterialIssue, usePartyMaterialIssuesList } from '../api';
+import {
+  useCancelPartyMaterialIssue,
+  useCreatePartyMaterialIssue,
+  usePartyMaterialIssuesList,
+} from '../api';
 
 export const partyMaterialIssuesListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -26,6 +33,7 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
 
   const { data, isLoading, isError, error } = usePartyMaterialIssuesList();
 
@@ -93,12 +101,13 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
                     Qty
                   </th>
                   <th>Remarks</th>
+                  {canWrite ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">
+                    <td colSpan={canWrite ? 8 : 7} className="empty-state">
                       No party material issues — click + New Issue
                     </td>
                   </tr>
@@ -152,6 +161,24 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
                     >
                       {it.remarks ?? '—'}
                     </td>
+                    {canWrite ? (
+                      <td className="td-ctr">
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            background: 'rgba(239,68,68,0.08)',
+                            color: 'var(--red)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            padding: '2px 8px',
+                          }}
+                          onClick={() => setCancelRow(it)}
+                          title="Cancel this issue and put the qty back on party stock"
+                        >
+                          <XCircle size={12} /> Cancel
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -166,11 +193,124 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
       </div>
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
+      {cancelRow ? (
+        <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} />
+      ) : null}
     </div>
   );
 }
 
 // ─── New Party Material Issue modal ─────────────────────────────────────────
+
+// ─── Cancel issue modal (ADR-103) ──────────────────────────────────────────
+
+function CancelIssueModal({
+  row,
+  onClose,
+}: {
+  row: PartyMaterialIssueListItem;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [reason, setReason] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const cancelMut = useCancelPartyMaterialIssue();
+
+  const onConfirm = (): void => {
+    setErr(null);
+    if (!reason.trim()) {
+      setErr('Give a reason — it is stored on the cancelled issue.');
+      return;
+    }
+    cancelMut.mutate(
+      { id: row.id, reason: reason.trim() },
+      {
+        onSuccess: () => onClose(),
+        onError: (e) => setErr(e instanceof Error ? e.message : 'Failed to cancel'),
+      },
+    );
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          padding: 20,
+          width: 'min(520px, 94vw)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="section-hdr" style={{ marginBottom: 12 }}>
+          ⚠ Cancel {row.code}
+        </div>
+        <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+          This returns <b style={{ color: 'var(--green)' }}>{row.qty}</b> of{' '}
+          <b>{row.partyMaterialCodeText ?? 'the material'}</b> to party stock and lowers what{' '}
+          <b>{row.jcCodeText ?? 'the job card'}</b> is allowed to produce.
+          <br />
+          If those pieces have already been machined the cancel will be refused — that material is
+          used, so record a scrap/adjustment instead.
+        </div>
+        <Field label="Reason ★">
+          <input
+            type="text"
+            className="innovic-input"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. wrong qty entered"
+            autoFocus
+          />
+        </Field>
+        {err ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 8,
+              background: 'rgba(239,68,68,0.08)',
+              color: 'var(--red)',
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Keep it
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={cancelMut.isPending}
+            onClick={onConfirm}
+          >
+            {cancelMut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Cancelling…
+              </>
+            ) : (
+              'Cancel Issue'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [issueDate, setIssueDate] = useState(todayLocal());
@@ -218,6 +358,13 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
       setErr('Select a JWSO');
       return;
     }
+    // ADR-103: the job card is what tells the system WHICH part the material
+    // went to, and the production gate reads exactly this. Without it the
+    // material is invisible to the gate and the operator stays blocked.
+    if (!jobCardId) {
+      setErr('Select the Job Card this material is for — work cannot start without it.');
+      return;
+    }
     if (!partyMaterialId) {
       setErr('Select a party material');
       return;
@@ -230,10 +377,10 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
     const input: CreatePartyMaterialIssueInput = {
       issueDate,
       jobWorkOrderId,
+      jobCardId,
       partyMaterialId,
       qty: q,
     };
-    if (jobCardId) input.jobCardId = jobCardId;
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
@@ -316,7 +463,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           </div>
 
           <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Job Card (optional)">
+            <Field label="Job Card ★">
               <SearchableSelect
                 id="pmi-jc"
                 value={jobCardId}

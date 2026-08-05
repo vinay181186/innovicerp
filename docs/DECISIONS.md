@@ -4277,3 +4277,100 @@ The over-receipt on line 1 predates ADR-100: PGRN-00001/00002 were entered at
 - **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
   prod DB. Verified by typecheck + lint only; the first CI run is their real
   verification. `party-grn` had no test file at all before this change.
+
+## ADR-103: JWSO production is gated on material ISSUED, not merely RECEIVED
+**Date:** 2026-08-05
+**Status:** Accepted
+
+### Context
+ADR-096/097 capped the first op of a JWSO Job Card at the Party-GRN **received**
+qty for the part. Receiving was therefore sufficient to start work, which made
+the Party Material Issue document optional in practice. The live database held
+exactly **one** issue — and my own e2e run created it.
+
+The consequence, from live rows:
+
+```
+IN-JW-00002  received 161 · issued 0 · returned to customer 50
+PM-0001      received 161 · issued 0 · on hand 161      ← 111 is the truth
+PM-0003      received 100 · issued 10 · on hand 90      ← 20 machined, so 80
+```
+
+Party stock never came down, because nothing forced the document that draws it
+down. A Party Material Register built on those numbers would publish stock the
+company does not hold.
+
+User's rule (2026-08-05): *"user can only start log after issuing qty — party
+material issued. in case of qty 0 no start log"*, with 1 piece received = 1
+piece issued = 1 piece machinable, the customer always supplying material on a
+JWSO, and existing job cards left alone.
+
+### Decision
+1. **The gate measures ISSUED to the job card.** `loadMaterialCap` returns the
+   qty issued to THIS Job Card; `shortfall = orderQty − issued`. Zero issued
+   blocks `startOp` outright, not just `submitOpLog` — an operator cannot even
+   open a session.
+2. **Cutover flag, not a hidden date.** `job_cards.client_material_gate`
+   (migration 0083). All 26 job cards existing at cutover were set `false` and
+   keep the ADR-096/097 received-based behaviour; new ones default `true`.
+   Switching them would have frozen five live jobs with zero issued
+   (IN-JC-26-00005/00021/00024/00025/00028) and IN-JC-26-00027, which has
+   already machined 20 against 10 issued.
+3. **No material gate on QC.** Client-supplied material never goes through
+   inspection — Incoming QC has no reference to `party_grn` at all, and the
+   flow is GRN → Issue directly. The cap was removed from `submitQcLog`:
+   QC only ever sees what production already made, and production is capped, so
+   capping again double-counted the same restriction.
+4. **The issue document is tightened** (the ADR-102 treatment, applied here):
+   - **Job Card is mandatory.** It is the ONLY link from an issue to a JWSO
+     *line* — the table has no `job_work_order_line_id` — and the gate is
+     per-line. While it was optional, a blank job card made the issue invisible
+     to the gate: material issued, operator still blocked, no explanation.
+   - **Client identity** — the material must belong to the JWSO's customer.
+   - **Part identity** — `party_materials.item_id` must equal the JW line's
+     `item_id`.
+   - **Per-line ceiling** — issued for a line may not exceed received for that
+     line. The old per-material check let all 100 pieces received for
+     IN-JW-00005 line 1 (COVER) be issued to line 2's job card instead.
+   - **Job-card ceiling** — never issue more than the job card is making, with
+     a plain message naming what is already issued and what remains.
+5. **`cancelPartyMaterialIssue`** + `POST /party-material-issues/:id/cancel`.
+   Required, not optional: once issued qty controls whether anyone may work, a
+   typo would unlock production for the wrong quantity permanently, and the
+   ADR-102 Party GRN cancel already refuses while material is issued — a
+   deadlock. **Guarded**: material already machined cannot be un-issued, since
+   that would drive the job card's remaining material negative and freeze it.
+6. **RM AVAIL tile** on the JC status page beside ORDER, first op only, showing
+   `issued − produced on the first op` with the issued figure beneath. Null (and
+   hidden) for SO-sourced and pre-cutover job cards, so a Job Card the rule does
+   not govern never shows a misleading zero.
+
+### Alternatives Considered
+- **Auto-issue on op log** (my recommendation at the time) — the system writes
+  the issue itself when work is logged. Rejected by the user in favour of an
+  explicit document. Auto-issue assumes 1:1 silently and leaves no human record
+  of who released the customer's material.
+- **Switch every job card at once** — rejected: five live jobs would have
+  stopped dead on deploy.
+- **Derive consumption from production output instead of an issue document** —
+  rejected: least typing, but the register would disagree with the paperwork.
+
+### Consequences
+- Positive: party stock now moves when material actually leaves the store, so a
+  client-wise Party Material Register can be built on numbers that mean
+  something.
+- Positive: wrong-client, wrong-part and wrong-line issues are all refused.
+- Positive: the Party GRN cancel deadlock is resolved — cancel the issue first.
+- Negative: one more compulsory document before production can start on a JWSO
+  job. That is the user's explicit trade.
+- Negative: the RM AVAIL tile reads `issued − produced`, so a job card that
+  over-produced under the old rule shows 0. Correct, but it will look odd on
+  IN-JC-26-00027 (20 made, 10 issued) — which is exempt anyway.
+- **Not addressed, and still open:** scrap has nowhere to go (make 20, reject 2,
+  and the 2 pieces of customer material are unaccounted for); there is no
+  document for returning UNUSED raw material to a customer; and a part needing
+  two different party materials is not modelled.
+- **PM-0003 still reads 90 on hand against a true 80** — pre-existing data, not
+  corrected here.
+- **The new tests are UNRUN.** `pnpm --filter api test` seeds and deletes on the
+  prod DB. Verified by typecheck + lint only.

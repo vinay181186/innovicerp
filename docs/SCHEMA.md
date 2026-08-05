@@ -522,6 +522,7 @@ Production batch on the shop floor for a specific item and quantity. Header tabl
 | `source_jw_id`       | `uuid`          | nullable. FK → `job_work_orders(id)` **deferred to Phase 4**                                                                       |
 | `source_legacy_ref`  | `text`          | nullable. Captures legacy `(soNo, soRefId, soLineNo, soPartName, clientPoLineNo)` as JSON-encoded text until Phase 4 backfills FKs |
 | `closed_at`          | `timestamptz`   | nullable. Set when JC manually closed (legacy `'Closed'` status path)                                                              |
+| `client_material_gate` | `boolean`     | not null, default `true` (migration 0083, ADR-103). `true` → the first op is capped at party material **issued** to this JC; `false` → legacy ADR-096/097 cap on material **received** for the part. All 26 JCs existing at cutover were set `false` so live work was not frozen. Read only for JWSO-sourced JCs |
 | audit + `deleted_at` | (audit pattern) |                                                                                                                                    |
 
 Indexes:

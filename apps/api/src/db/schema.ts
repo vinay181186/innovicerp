@@ -732,6 +732,12 @@ export const jobCards = pgTable(
       onDelete: 'set null',
     }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    // ADR-103 (migration 0083). TRUE → the first op is capped at party material
+    // ISSUED to this JC. FALSE → legacy ADR-096/097 cap on material RECEIVED for
+    // the part. Every JC that existed at cutover was set FALSE so live work was
+    // not frozen retroactively; all new ones default TRUE. Read only for
+    // JWSO-sourced JCs — SO-sourced ones are never capped.
+    clientMaterialGate: boolean('client_material_gate').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

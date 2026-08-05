@@ -268,10 +268,15 @@ async function loadAvailability(
 // direct-production Job Cards (source_jw_line_id IS NULL) are never capped.
 // Returns null when no cap applies.
 interface MaterialCap {
+  /** Qty the cap is measured against: ISSUED for gated JCs (ADR-103), RECEIVED
+   *  for pre-cutover ones that keep the old ADR-096/097 behaviour. */
   received: number;
   orderQty: number;
   shortfall: number;
   jwCode: string;
+  /** True when the figure above is issued-to-this-JC (ADR-103), so the error
+   *  message can name the right document to go and create. */
+  issuedBased: boolean;
 }
 
 export async function loadMaterialCap(
@@ -294,6 +299,7 @@ export async function loadMaterialCap(
            jwl.line_no         AS "lineNo",
            jwl.job_work_order_id AS "jwoId",
            jwo.code            AS "jwCode",
+           jc.client_material_gate AS "gated",
            (SELECT COUNT(*) FROM public.job_work_order_lines l
               WHERE l.job_work_order_id = jwl.job_work_order_id
                 AND l.deleted_at IS NULL) AS "lineCount"
@@ -310,6 +316,7 @@ export async function loadMaterialCap(
     lineNo: number;
     jwoId: string;
     jwCode: string;
+    gated: boolean;
     lineCount: number;
   }>;
   const jc = jcRows[0];
@@ -317,6 +324,26 @@ export async function loadMaterialCap(
 
   const orderQty = Number(jc.orderQty);
   const lineCount = Number(jc.lineCount);
+
+  // ADR-103: gated Job Cards measure against material ISSUED to THIS job card.
+  // Receiving material is no longer enough — it must be handed to the job.
+  // Job Cards created before the cutover keep the ADR-096/097 received-based
+  // behaviour so live work is never frozen retroactively.
+  if (jc.gated) {
+    const issRows = (await tx.execute(sql`
+      SELECT COALESCE(SUM(qty), 0)::int AS "issued"
+      FROM public.party_material_issues
+      WHERE job_card_id = ${op.jobCardId}::uuid AND deleted_at IS NULL
+    `)) as unknown as Array<{ issued: number }>;
+    const issued = Number(issRows[0]?.issued ?? 0);
+    return {
+      received: issued,
+      orderQty,
+      shortfall: Math.max(0, orderQty - issued),
+      jwCode: jc.jwCode,
+      issuedBased: true,
+    };
+  }
   // Material received for THIS part. Single-line JWSO → every receipt for the
   // order belongs to the one line (robust even if the line-no text is blank).
   // Multi-line JWSO → match on the recorded JW line number so one part's
@@ -335,7 +362,30 @@ export async function loadMaterialCap(
   `)) as unknown as Array<{ received: number }>;
   const received = Number(recRows[0]?.received ?? 0);
   const shortfall = Math.max(0, orderQty - received);
-  return { received, orderQty, shortfall, jwCode: jc.jwCode };
+  return { received, orderQty, shortfall, jwCode: jc.jwCode, issuedBased: false };
+}
+
+/** Plain-language refusal naming the document the user must go and create. */
+function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
+  if (!cap.issuedBased) {
+    return (
+      `Qty ${asked} exceeds client material received. Only ${allowed} can be worked now ` +
+      `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
+      `Record a Party Material GRN for the balance to continue.`
+    );
+  }
+  if (allowed <= 0) {
+    return cap.received === 0
+      ? `No client material has been issued to this job card yet, so work cannot start. ` +
+          `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
+      : `All ${cap.received} issued piece(s) are already accounted for on this job card. ` +
+          `Issue more client material to continue (JWSO ${cap.jwCode}).`;
+  }
+  return (
+    `Qty ${asked} is more than the client material issued to this job card. ` +
+    `Only ${allowed} can be worked now (${cap.received} of ${cap.orderQty} issued, ` +
+    `JWSO ${cap.jwCode}). Issue more material from Party Material Issue to continue.`
+  );
 }
 
 function nextLogNo(): string {
@@ -379,18 +429,16 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       throw new ValidationError('Operation is waiting for QC clearance — go to QC dashboard');
     }
     // Client-material gate: on the first op of a JWSO Job Card, cap the loggable
-    // qty at the client material received for this part (Party Material GRN).
+    // qty at the client material available for this part — ISSUED to this job
+    // card (ADR-103), or RECEIVED for the part on pre-cutover job cards
+    // (ADR-096/097).
     const cap = await loadMaterialCap(tx, op, companyId);
     const effectiveAvailable = cap
       ? Math.max(0, snapshot.available - cap.shortfall)
       : snapshot.available;
     if (input.qty > effectiveAvailable) {
       if (cap && effectiveAvailable < snapshot.available) {
-        throw new ValidationError(
-          `Qty ${input.qty} exceeds client material received. Only ${effectiveAvailable} can be worked now ` +
-            `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-            `Record a Party Material GRN for the balance to continue.`,
-        );
+        throw new ValidationError(materialCapMessage(cap, effectiveAvailable, input.qty));
       }
       throw new ValidationError(
         `Qty ${input.qty} exceeds available ${snapshot.available} — cannot exceed planned qty`,
@@ -564,25 +612,13 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     if (qcPending <= 0) {
       throw new ValidationError('No QC pending on this operation');
     }
-    // Client-material gate: when a QC op is the FIRST op of a JWSO Job Card
-    // (e.g. incoming inspection), it can only be inspected up to the client
-    // material received for this part (Party Material GRN).
-    const cap = await loadMaterialCap(tx, op, companyId);
-    const effectivePending = cap ? Math.max(0, qcPending - cap.shortfall) : qcPending;
-    if (cap && effectivePending <= 0) {
-      throw new ValidationError(
-        `No client material available to inspect. Received ${cap.received} of ${cap.orderQty} ` +
-          `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
-      );
-    }
-    if (total > effectivePending) {
-      if (cap && effectivePending < qcPending) {
-        throw new ValidationError(
-          `Total qty ${total} exceeds client material received. Only ${effectivePending} can be inspected now ` +
-            `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-            `Record a Party Material GRN for the balance.`,
-        );
-      }
+    // ADR-103: NO client-material gate on QC. Client-supplied material never
+    // goes through inspection — a Party GRN is followed straight by an issue,
+    // and Incoming QC has no connection to party_grn at all. The gate belongs
+    // on production (submitOpLog / startOp), which is already capped at the
+    // issued qty; QC here only ever sees what production already produced, so
+    // capping it again would double-count the same restriction.
+    if (total > qcPending) {
       throw new ValidationError(
         `Total qty ${total} exceeds QC pending ${qcPending} — cannot inspect more than what's pending`,
       );
@@ -758,14 +794,24 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       throw new ValidationError('No qty available to start for this operation');
     }
     // Client-material gate: the first op of a JWSO Job Card can only start once
-    // client material has arrived for this part (Party Material GRN). The limit
-    // rises automatically as more material is received.
+    // client material has been ISSUED to it (ADR-103) — zero issued means the
+    // operator cannot even start a session, not just cannot log a qty. Older
+    // job cards keep the received-based rule (ADR-096/097).
     const cap = await loadMaterialCap(tx, op, companyId);
-    if (cap && Math.max(0, snapshot.available - cap.shortfall) <= 0) {
-      throw new ValidationError(
-        `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
-          `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
-      );
+    if (cap) {
+      const allowed = Math.max(0, snapshot.available - cap.shortfall);
+      if (allowed <= 0) {
+        throw new ValidationError(
+          cap.issuedBased
+            ? cap.received === 0
+              ? `Cannot start — no client material has been issued to this job card. ` +
+                `Issue material from Party Material Issue first (JWSO ${cap.jwCode}).`
+              : `Cannot start — all ${cap.received} issued piece(s) are already accounted for. ` +
+                `Issue more client material to continue (JWSO ${cap.jwCode}).`
+            : `No client material available to start. Received ${cap.received} of ${cap.orderQty} ` +
+              `for this part (JWSO ${cap.jwCode}). Record a Party Material GRN first.`,
+        );
+      }
     }
 
     let machineCode: string | null = null;

@@ -61,7 +61,12 @@ export default defineConfig({
     // Authenticated tests reuse that session.
     {
       name: 'chromium',
-      testIgnore: /smoke\.spec\.ts/,
+      // flow-*.spec.ts are the end-to-end chain runs. They WRITE TO PRODUCTION
+      // and are built for playwright.pages.config.ts, which drives the deployed
+      // Pages build (the prod API blocks localhost by CORS). This project runs
+      // everything it is not told to ignore, so without the second pattern a
+      // plain `playwright test` would fire real documents into prod.
+      testIgnore: [/smoke\.spec\.ts/, /flow-.*\.spec\.ts/],
       use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
       dependencies: ['setup'],
     },

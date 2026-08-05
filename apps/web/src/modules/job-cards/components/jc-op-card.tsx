@@ -23,6 +23,7 @@ import type {
   JcOpEnriched,
   JcOpsBoardRow,
   JobCardListItem,
+  JobCardRmAvailable,
   OpLog,
   OutsourceStatus,
 } from '@innovic/shared';
@@ -93,6 +94,7 @@ export function JcOpCard({
   op,
   machineName,
   toolDetails,
+  rmAvailable,
   logs,
   onStart,
   onLog,
@@ -104,6 +106,11 @@ export function JcOpCard({
   machineName: string | null;
   /** Server-resolved tool details (extras.opExtras). */
   toolDetails: string | null;
+  /** ADR-103 — client material still workable on this JWSO Job Card
+   *  (issued − already produced). The caller passes it ONLY for the first op —
+   *  the operation client material actually feeds and the only one the gate
+   *  applies to — and null everywhere else. */
+  rmAvailable: JobCardRmAvailable | null;
   /** Already sliced to the latest 3 by the caller, exactly as the table did. */
   logs: OpLog[];
   onStart: (opId: string) => void;
@@ -214,6 +221,32 @@ export function JcOpCard({
             <div style={secLabel}>Quantities</div>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               <QtyTile label="ORDER" value={jc.orderQty} color="var(--text)" />
+              {/* ADR-103 — only on the FIRST op: that is the operation client
+                  material feeds, and the only one the gate applies to. */}
+              {rmAvailable ? (
+                <QtyTile
+                  label="RM AVAIL"
+                  value={rmAvailable.availableQty}
+                  color={rmAvailable.availableQty > 0 ? 'var(--cyan)' : 'var(--red)'}
+                  sub={
+                    <div
+                      style={{ fontSize: 8, color: 'var(--text3)' }}
+                      title={
+                        `Client material issued to this job card: ${rmAvailable.issuedQty}. ` +
+                        `Already produced on this operation: ${rmAvailable.consumedQty}. ` +
+                        (rmAvailable.availableQty > 0
+                          ? `${rmAvailable.availableQty} can still be worked.`
+                          : 'Issue more client material from Party Material Issue to continue.')
+                      }
+                    >
+                      {rmAvailable.issuedQty} issued
+                      {rmAvailable.availableQty === 0 ? (
+                        <div style={{ color: 'var(--red)' }}>issue material</div>
+                      ) : null}
+                    </div>
+                  }
+                />
+              ) : null}
               <QtyTile
                 label="DONE"
                 value={doneQty}

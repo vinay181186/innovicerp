@@ -365,9 +365,24 @@ export const jobCardCompletionEventSchema = z.object({
 });
 export type JobCardCompletionEvent = z.infer<typeof jobCardCompletionEventSchema>;
 
+/** ADR-103 — client material still available to work on this Job Card:
+ *  issued to it MINUS what its first operation has already produced.
+ *  `null` on Job Cards the rule does not apply to (SO-sourced, or JWSO Job
+ *  Cards created before the cutover), so the UI can hide the tile entirely
+ *  rather than show a misleading zero. */
+export const jobCardRmAvailableSchema = z.object({
+  issuedQty: z.number().int().nonnegative(),
+  consumedQty: z.number().int().nonnegative(),
+  availableQty: z.number().int().nonnegative(),
+  jwCode: z.string().nullable(),
+});
+export type JobCardRmAvailable = z.infer<typeof jobCardRmAvailableSchema>;
+
 export const jobCardStatusExtrasSchema = z.object({
   qcDocs: z.array(jobCardStatusQcDocSchema),
   opExtras: z.array(jobCardStatusOpExtraSchema),
+  /** ADR-103: JWSO client-material availability, or null when not applicable. */
+  rmAvailable: jobCardRmAvailableSchema.nullable(),
   completionLog: z.object({
     /** Latest-first; op_log capped server-side, NC/OSP fully included. */
     events: z.array(jobCardCompletionEventSchema),

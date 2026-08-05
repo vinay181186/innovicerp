@@ -376,6 +376,8 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     () => new Map((extras?.opExtras ?? []).map((e) => [e.jcOpId, e])),
     [extras?.opExtras],
   );
+  /** ADR-103 — lowest-sequence op; the one client material feeds. */
+  const firstOpId = useMemo(() => sortedOps[0]?.id ?? null, [sortedOps]);
 
   // Completion feed (legacy _allEvents L11091-11134). The server owns the MERGE
   // (op_log ∪ NC ∪ NC-disposition ∪ OSP activity), the ORDER (latest-first) and
@@ -493,6 +495,9 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                 op={o}
                 machineName={opExtraById.get(o.id)?.machineName ?? null}
                 toolDetails={opExtraById.get(o.id)?.toolDetails ?? null}
+                // ADR-103: the client-material tile belongs to the FIRST op —
+                // the one the material feeds and the only one the gate caps.
+                rmAvailable={o.id === firstOpId ? (extras?.rmAvailable ?? null) : null}
                 logs={(logsByOp.get(o.id) ?? []).slice(0, 3)}
                 onStart={(opId) =>
                   void navigate({ to: '/op-entry', search: { jc: jc.code, op: opId, mode: 'start' } })

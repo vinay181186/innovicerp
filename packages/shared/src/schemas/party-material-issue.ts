@@ -39,12 +39,22 @@ export const createPartyMaterialIssueInputSchema = z.object({
   code: z.string().trim().max(40).optional(),
   issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   jobWorkOrderId: z.string().uuid(),
-  jobCardId: z.string().uuid().optional(),
+  /** ADR-103: REQUIRED. The issue carries no JWSO-line column, so the job card
+   *  is the only thing that says WHICH part the material went to — and the
+   *  first-op material gate reads exactly this. While it was optional, a blank
+   *  job card made the issue invisible to the gate: material was issued, yet
+   *  the operator stayed blocked with no explanation. */
+  jobCardId: z.string().uuid(),
   partyMaterialId: z.string().uuid(),
   qty: z.number().int().positive(),
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreatePartyMaterialIssueInput = z.infer<typeof createPartyMaterialIssueInputSchema>;
+
+export const cancelPartyMaterialIssueInputSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+export type CancelPartyMaterialIssueInput = z.infer<typeof cancelPartyMaterialIssueInputSchema>;
 
 export const listPartyMaterialIssuesResponseSchema = z.object({
   items: z.array(partyMaterialIssueListItemSchema),

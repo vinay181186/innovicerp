@@ -840,9 +840,45 @@ export async function getJobCardStatusExtras(
     // Latest first (legacy L11134).
     events.sort((x, y) => y.sortKey.localeCompare(x.sortKey));
 
+    // ADR-103 — client material still workable on this JC. Only for gated,
+    // JWSO-sourced Job Cards; null everywhere else so the UI hides the tile.
+    const rmRows = (await tx.execute(sql`
+      WITH jc AS (
+        SELECT j.id, j.client_material_gate AS gated, jwo.code AS jw_code
+        FROM public.job_cards j
+        JOIN public.job_work_order_lines jwl
+          ON jwl.id = j.source_jw_line_id AND jwl.deleted_at IS NULL
+        JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
+        WHERE j.id = ${id}::uuid AND j.company_id = ${companyId}::uuid
+      ),
+      first_op AS (
+        SELECT o.id FROM public.jc_ops o
+        WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
+        ORDER BY o.op_seq LIMIT 1
+      )
+      SELECT
+        jc.jw_code AS "jwCode",
+        COALESCE((SELECT SUM(mi.qty) FROM public.party_material_issues mi
+                  WHERE mi.job_card_id = jc.id AND mi.deleted_at IS NULL), 0)::int AS "issued",
+        COALESCE((SELECT SUM(l.qty) FROM public.op_log l
+                  WHERE l.jc_op_id = (SELECT id FROM first_op)), 0)::int AS "consumed"
+      FROM jc
+      WHERE jc.gated = true
+    `)) as unknown as Array<{ jwCode: string | null; issued: number; consumed: number }>;
+    const rm = rmRows[0];
+    const rmAvailable = rm
+      ? {
+          issuedQty: Number(rm.issued),
+          consumedQty: Number(rm.consumed),
+          availableQty: Math.max(0, Number(rm.issued) - Number(rm.consumed)),
+          jwCode: rm.jwCode ?? null,
+        }
+      : null;
+
     return {
       qcDocs,
       opExtras,
+      rmAvailable,
       completionLog: { events, total, truncated: total > events.length },
     };
   });
