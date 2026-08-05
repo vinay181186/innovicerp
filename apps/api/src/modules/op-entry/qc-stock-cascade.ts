@@ -60,12 +60,22 @@ export async function tryApplyQcStockCascade(
 
   // Resolve the JC's itemId — required for the ledger + the v_item_stock lookup.
   const jcRows = await tx
-    .select({ itemId: jobCards.itemId })
+    .select({ itemId: jobCards.itemId, sourceJwLineId: jobCards.sourceJwLineId })
     .from(jobCards)
     .where(eq(jobCards.id, ctx.jobCardId))
     .limit(1);
   const itemId = jcRows[0]?.itemId;
   if (!itemId) return { fired: false };
+
+  // ADR-105: a JWSO job card makes the CUSTOMER's goods from the CUSTOMER's
+  // material. They leave on a JW Return Challan; they were never ours to book.
+  // Crediting own stock here counted the customer's pieces as inventory and
+  // nothing ever removed them — the return challan writes no ledger row, and
+  // the party material issue deliberately writes none either. Live proof:
+  // item 554117146000 went 35 → 45 on `qc_accept · IN-JC-26-00026 Op #2`.
+  if (jcRows[0]?.sourceJwLineId != null) {
+    return { fired: false };
+  }
 
   // Lock the items row to serialise concurrent stock writes on the same item.
   // Same pattern as GRN cascade (goods-receipt-notes/cascades.ts:170).

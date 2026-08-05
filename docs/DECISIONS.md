@@ -4432,3 +4432,73 @@ billing a finished order is the whole point of finishing it.
 - Verified by typecheck + lint on all 4 packages. The end-to-end evidence for
   the bug is in `flow-jwso-chain.spec.ts` steps 08/09, which record the
   blockage explicitly rather than failing silently.
+
+## ADR-105: A JWSO Job Card's final QC must NOT credit own stock
+**Date:** 2026-08-05
+**Status:** Accepted
+
+### Context
+Found by the end-to-end chain run. Driving IN-JW-00004 through to QC produced
+this ledger row:
+
+```
+in | qty 10 | qc_accept | IN-JC-26-00026 Op #2 | 35 → 45   (item 554117146000)
+```
+
+Those ten pieces are **the customer's**. Arindam supplied the material
+(PGRN-00004, 10 pcs), it was issued to the job card (IN-PMI-00001, party stock
+10 → 0), and the finished parts go back to them on a JW Return Challan.
+
+The full picture, confirmed in code:
+
+* `party-material-issues/service.ts` correctly writes **no** own-stock ledger
+  row — its own header comment says so.
+* `jw-returns/service.ts` writes **no** ledger row when the goods ship back.
+* `op-entry/qc-stock-cascade.ts` credited own stock on the last QC op with **no
+  exclusion for JWSO-sourced Job Cards**.
+
+So the credit went in and nothing ever took it out. Every customer-material job
+overstated inventory by its full quantity, permanently. This is the same
+no-BOM failure mode as ADR-067 and ADR-092: raw and finished share one item
+code, so the customer's part is indistinguishable from ours.
+
+User's instruction, 2026-08-05: *"customer goods credited to your own stock —
+do not do that."*
+
+### Decision
+`tryApplyQcStockCascade` returns `{ fired: false }` when the Job Card has a
+`source_jw_line_id`. The JC's source link is already loaded for `itemId`, so
+this is one extra column and one guard — no new query.
+
+The test asserts the distinction with two Job Cards identical in every respect
+**except** their source link, so the JWSO link is the only thing that can
+explain the different outcome.
+
+### Alternatives Considered
+- **Credit at QC, then debit on the return challan** — rejected: it would book
+  the customer's goods as ours for the window between machining and dispatch,
+  where they would appear available to sell or issue. They are never ours.
+- **Gate on "was party material issued to this JC"** rather than the JWSO link
+  — rejected as more fragile: an operator who skips the issue document would
+  silently get the wrong behaviour, and ADR-103 already makes the issue
+  mandatory for new job cards anyway.
+- **A compensating ledger entry on return** — rejected for the same reason as
+  the first option, plus it leaves two wrong numbers instead of none.
+
+### Consequences
+- Positive: own-stock figures stop drifting upward on every job-work order.
+- Positive: the party-material side is now the single place customer material
+  is tracked, which is what it was designed for.
+- Negative: a JWSO job card now writes nothing to the stock ledger at all, so
+  there is no own-stock trace of it. That is correct — the trace lives on the
+  party material, the return challan and the invoice.
+- **Existing wrong rows are NOT repaired by this change.** Two exist, totalling
+  **60 pieces**, both still inflating on-hand:
+  | Ledger row | Item | Qty |
+  |---|---|---|
+  | `IN-JC-26-00024 Op #3` | 559918174000 LEVER | +50 (0 → 50) |
+  | `IN-JC-26-00026 Op #2` | 554117146000 LEVER CATCH RAMMER | +10 (35 → 45) |
+  Correcting them needs a compensating `out` entry per item, which is a data
+  decision for the user — deliberately not taken here.
+- **The new test is UNRUN.** `pnpm --filter api test` seeds and deletes on the
+  prod DB. Verified by typecheck + lint only.
