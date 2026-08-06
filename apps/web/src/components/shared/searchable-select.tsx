@@ -211,7 +211,19 @@ export function SearchableSelect({
                 {o.code ? (
                   <>
                     <span className="font-semibold">{o.code}</span>
-                    <span className="text-muted-foreground"> — {o.name}</span>
+                    {/* The muted colour is tuned for the normal background; on
+                        the highlighted row (bg-accent) it washed out to nearly
+                        invisible, so the part NAME — the thing you are reading
+                        to confirm the pick — disappeared. Inherit the row's own
+                        foreground there and just soften it. */}
+                    <span
+                      className={
+                        i === highlight ? 'opacity-80' : 'text-muted-foreground'
+                      }
+                    >
+                      {' '}
+                      — {o.name}
+                    </span>
                   </>
                 ) : (
                   o.name

@@ -20,6 +20,10 @@ async function loadXlsx(): Promise<XlsxModule> {
   return import('xlsx');
 }
 
+// Part-list row layout. Mirrors the invoice line editor: a narrow index, the
+// code picker, a wider read-only name, then qty / type / remove.
+const BOM_GRID = '30px 1.3fr 1.8fr 110px 140px 36px';
+
 export interface BomFormLineDraft {
   childItemId: string;
   childItemCodeText: string;
@@ -387,113 +391,129 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             ) : null}
           </div>
         ) : null}
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <thead>
-              <tr>
-                <th style={{ width: 30 }}>#</th>
-                <th>Item Code ★</th>
-                <th>Name</th>
-                <th style={{ width: 90 }}>Qty / Set ★</th>
-                <th style={{ width: 120 }}>Type</th>
-                <th style={{ width: 40 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="empty-state">
-                    No items yet. Click <strong>+ Add Item</strong>.
-                  </td>
-                </tr>
-              ) : (
-                lines.map((line, idx) => {
-                  // Name follows the PICKED item. Resolve from the full master
-                  // first (covers a line loaded into the edit form), then from
-                  // the current search page (covers a pick just made).
-                  const item = line.childItemId
-                    ? (itemById.get(line.childItemId) ??
-                      (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
-                    : null;
-                  return (
-                    <tr key={idx}>
-                      <td className="td-ctr mono fw-700">{idx + 1}</td>
-                      <td>
-                        {/* Shared type-to-search dropdown — substring match
-                            anywhere, server-side search, keyboard nav. Replaces
-                            a hand-rolled <datalist>, which only prefix-matched
-                            and needed the whole item master in the browser. */}
-                        <SearchableSelect
-                          id={`bom-item-${idx}`}
-                          value={line.childItemId || null}
-                          onChange={(id) => onItemPicked(idx, id)}
-                          onSearch={setItemSearch}
-                          loading={itemsFetching}
-                          options={itemOptions}
-                          placeholder="🔍 Search item code or name…"
-                          emptyText="No matching item"
-                          {...(item
-                            ? { valueLabel: `${item.code} — ${item.name}` }
-                            : line.childItemCodeText
-                              ? { valueLabel: line.childItemCodeText }
-                              : {})}
-                        />
-                      </td>
-                      <td style={{ fontSize: 11, color: 'var(--text2)' }}>
-                        {item ? (
-                          <>
-                            <span className="fw-700">{item.name}</span>
-                            {item.material ? (
-                              <span className="text3"> · {item.material}</span>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span className="text3">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          className="innovic-input"
-                          value={line.qtyPerSet}
-                          onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
-                          style={{ textAlign: 'center', fontWeight: 700 }}
-                        />
-                      </td>
-                      <td>
-                        <select
-                          className="innovic-select"
-                          value={line.bomType}
-                          onChange={(e) =>
-                            updateLine(idx, { bomType: e.target.value as BomLineType })
-                          }
-                          style={{ fontSize: 11 }}
-                        >
-                          {BOM_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>
-                              {t.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn btn-danger btn-sm btn-icon"
-                          onClick={() => removeLine(idx)}
-                          title="Remove line"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        <div className="panel-body">
+          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+            Add a line, then pick an item code — name auto-fills from the Item Master.
+          </div>
+
+          {lines.length > 0 ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: BOM_GRID,
+                gap: 8,
+                padding: '0 10px 4px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: 0.4,
+                color: 'var(--text3)',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span>#</span>
+              <span>Item Code ★</span>
+              <span>Item Name</span>
+              <span style={{ textAlign: 'center' }}>Qty / Set ★</span>
+              <span>Type</span>
+              <span />
+            </div>
+          ) : null}
+
+          {lines.length === 0 ? (
+            <div className="empty-state" style={{ padding: 20 }}>
+              No items yet. Click <strong>+ Add Item</strong>.
+            </div>
+          ) : null}
+
+          {lines.map((line, idx) => {
+            // Name follows the PICKED item. Resolve from the full master first
+            // (covers a line loaded into the edit form), then from the current
+            // search page (covers a pick just made).
+            const item = line.childItemId
+              ? (itemById.get(line.childItemId) ??
+                (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
+              : null;
+            return (
+              <div
+                key={idx}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: BOM_GRID,
+                  gap: 8,
+                  alignItems: 'center',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  className="mono fw-700"
+                  style={{ textAlign: 'center', color: 'var(--text3)' }}
+                >
+                  {idx + 1}
+                </span>
+                {/* Shared type-to-search dropdown — substring match anywhere,
+                    server-side search, keyboard nav. The field shows the CODE
+                    only once picked; the adjacent read-only box carries the
+                    name, mirroring the invoice line editor. */}
+                <SearchableSelect
+                  id={`bom-item-${idx}`}
+                  value={line.childItemId || null}
+                  onChange={(id) => onItemPicked(idx, id)}
+                  onSearch={setItemSearch}
+                  loading={itemsFetching}
+                  options={itemOptions}
+                  placeholder="🔍 Search item code or name…"
+                  emptyText="No matching item"
+                  selectedLabel={(o) => o.code ?? o.name}
+                  {...(item
+                    ? { valueLabel: item.code }
+                    : line.childItemCodeText
+                      ? { valueLabel: line.childItemCodeText }
+                      : {})}
+                />
+                <input
+                  className="innovic-input"
+                  readOnly
+                  placeholder="auto-filled"
+                  value={item ? (item.material ? `${item.name} [${item.material}]` : item.name) : ''}
+                  style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+                />
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className="innovic-input fw-700"
+                  value={line.qtyPerSet}
+                  onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
+                  style={{ textAlign: 'center' }}
+                />
+                <select
+                  className="innovic-select"
+                  value={line.bomType}
+                  onChange={(e) => updateLine(idx, { bomType: e.target.value as BomLineType })}
+                  style={{ fontSize: 11 }}
+                >
+                  {BOM_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm btn-icon"
+                  onClick={() => removeLine(idx)}
+                  title="Remove line"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            );
+          })}
+
         </div>
       </div>
 
