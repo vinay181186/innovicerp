@@ -13,6 +13,7 @@
 // is only a refinement over whatever rows the server already returned for the term.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -70,7 +71,12 @@ export function SearchableSelect({
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Where to draw the list. The dropdown is rendered into document.body via a
+  // portal, so it must be positioned in VIEWPORT coordinates against the input.
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
 
   const baseId = id ?? 'searchable-select';
   const listboxId = `${baseId}-listbox`;
@@ -93,13 +99,46 @@ export function SearchableSelect({
   // stuck open. Clicking outside just closes it — it never forces a selection.
   useEffect(() => {
     function onDocMouseDown(e: MouseEvent): void {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const t = e.target as Node;
+      // The list lives in a portal on <body>, so it is NOT inside containerRef.
+      // Without checking it too, clicking an option would count as "outside",
+      // close the dropdown, and swallow the pick.
+      if (containerRef.current?.contains(t)) return;
+      if (listRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', onDocMouseDown, true);
     return () => document.removeEventListener('mousedown', onDocMouseDown, true);
   }, []);
+
+  // Track the input's viewport position while the list is open.
+  //
+  // The list used to be absolutely positioned inside the component. That works
+  // until an ancestor clips: `.panel` sets `overflow: hidden`, which slices the
+  // dropdown at the panel edge — z-index cannot escape clipping. Rendering into
+  // <body> sidesteps every such container, at the cost of positioning by hand.
+  //
+  // Listeners are capture-phase so a scroll inside ANY nested scroller (a modal
+  // body, a .tbl-wrap) repositions the list, not just a window scroll.
+  useEffect(() => {
+    if (!open) {
+      setRect(null);
+      return;
+    }
+    const measure = (): void => {
+      const el = containerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRect({ left: r.left, top: r.bottom + 4, width: r.width });
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open]);
 
   useEffect(() => {
     return () => {
@@ -181,12 +220,15 @@ export function SearchableSelect({
         onClick={() => setOpen(true)}
         onKeyDown={handleKeyDown}
       />
-      {open ? (
-        <ul
-          id={listboxId}
-          role="listbox"
-          className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
-        >
+      {open && rect
+        ? createPortal(
+            <ul
+              ref={listRef}
+              id={listboxId}
+              role="listbox"
+              style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width }}
+              className="z-50 max-h-64 overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
+            >
           {loading ? (
             <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
           ) : filtered.length === 0 ? (
@@ -228,11 +270,13 @@ export function SearchableSelect({
                 ) : (
                   o.name
                 )}
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
+                  </li>
+                ))
+              )}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
