@@ -36,9 +36,11 @@ function BomMasterNewPage(): React.JSX.Element {
   };
 
   return (
+    // A new BOM is usable straight away, so it opens as 'active' — nobody has
+    // to remember to promote it out of Draft.
     <BomForm
       mode="create"
-      initialHeader={{ bomNo: '', bomName: '', status: 'draft' }}
+      initialHeader={{ bomNo: '', bomName: '', status: 'active' }}
       initialLines={[
         { childItemId: '', childItemCodeText: '', qtyPerSet: '1', bomType: 'manufacture' },
       ]}

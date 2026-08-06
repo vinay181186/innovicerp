@@ -1,12 +1,13 @@
 // Shared BOM Master form used by create + edit routes.
 //
 // Header: BOM No (auto on create) + Name + Status + Revision indicator.
-// Line editor: item-code datalist autocomplete + qty/set + bom_type
+// Line editor: item picker (the shared SearchableSelect) + qty/set + bom_type
 // dropdown + remove button. Excel template download + import.
 
 import type { BomLineType, BomMaster, CreateBomMasterLineInput, Item } from '@innovic/shared';
 import { Plus, Trash2, Upload, Download } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { getCol, readSheetRows } from '@/lib/xlsx-import';
 import { useItemsList } from '@/modules/items/api';
 import { useNextBomNo } from '../api';
@@ -101,20 +102,46 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     for (const i of itemsList?.items ?? []) m.set(i.code.toUpperCase(), i);
     return m;
   }, [itemsList]);
+  const itemById = useMemo(() => {
+    const m = new Map<string, Item>();
+    for (const i of itemsList?.items ?? []) m.set(i.id, i);
+    return m;
+  }, [itemsList]);
+
+  // Item picker — server-side search, as the dropdown skill requires. One
+  // shared term is enough: only the open dropdown is visible, so whichever line
+  // the user is typing in owns the current page of options.
+  const [itemSearch, setItemSearch] = useState('');
+  const { data: itemPage, isFetching: itemsFetching } = useItemsList({
+    ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const itemOptions = useMemo(
+    () =>
+      (itemPage?.items ?? []).map((i) => ({
+        id: i.id,
+        code: i.code,
+        name: i.material ? `${i.name} [${i.material}]` : i.name,
+      })),
+    [itemPage],
+  );
 
   const updateLine = (idx: number, patch: Partial<BomFormLineDraft>): void => {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   };
 
-  // On item-code change try to resolve to a known itemId immediately;
-  // the form keeps both the text + id so the user can see what's typed
-  // even when the code doesn't (yet) match a master row.
-  const onItemCodeChange = (idx: number, code: string): void => {
-    const match = itemsByCode.get(code.trim().toUpperCase());
-    updateLine(idx, {
-      childItemCodeText: code,
-      childItemId: match?.id ?? '',
-    });
+  // A pick from the dropdown always yields the item's ID (never typed text), so
+  // the code snapshot and the name display both follow the master row. Typing
+  // after a pick clears the id by design — the user must re-pick, which is what
+  // stops a stale id sitting under new text.
+  const onItemPicked = (idx: number, id: string | null): void => {
+    if (!id) {
+      updateLine(idx, { childItemId: '', childItemCodeText: '' });
+      return;
+    }
+    const picked = itemById.get(id) ?? (itemPage?.items ?? []).find((i) => i.id === id);
+    updateLine(idx, { childItemId: id, childItemCodeText: picked?.code ?? '' });
   };
 
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
@@ -381,24 +408,48 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 </tr>
               ) : (
                 lines.map((line, idx) => {
+                  // Name follows the PICKED item. Resolve from the full master
+                  // first (covers a line loaded into the edit form), then from
+                  // the current search page (covers a pick just made).
                   const item = line.childItemId
-                    ? (itemsList?.items ?? []).find((i) => i.id === line.childItemId)
+                    ? (itemById.get(line.childItemId) ??
+                      (itemPage?.items ?? []).find((i) => i.id === line.childItemId))
                     : null;
                   return (
                     <tr key={idx}>
                       <td className="td-ctr mono fw-700">{idx + 1}</td>
                       <td>
-                        <input
-                          className="innovic-input"
-                          list="bom-items-dl"
-                          value={line.childItemCodeText}
-                          onChange={(e) => onItemCodeChange(idx, e.target.value)}
-                          placeholder="🔍 Search item code or name..."
-                          style={{ fontSize: 12 }}
+                        {/* Shared type-to-search dropdown — substring match
+                            anywhere, server-side search, keyboard nav. Replaces
+                            a hand-rolled <datalist>, which only prefix-matched
+                            and needed the whole item master in the browser. */}
+                        <SearchableSelect
+                          id={`bom-item-${idx}`}
+                          value={line.childItemId || null}
+                          onChange={(id) => onItemPicked(idx, id)}
+                          onSearch={setItemSearch}
+                          loading={itemsFetching}
+                          options={itemOptions}
+                          placeholder="🔍 Search item code or name…"
+                          emptyText="No matching item"
+                          {...(item
+                            ? { valueLabel: `${item.code} — ${item.name}` }
+                            : line.childItemCodeText
+                              ? { valueLabel: line.childItemCodeText }
+                              : {})}
                         />
                       </td>
                       <td style={{ fontSize: 11, color: 'var(--text2)' }}>
-                        {item?.name ?? <span className="text3">—</span>}
+                        {item ? (
+                          <>
+                            <span className="fw-700">{item.name}</span>
+                            {item.material ? (
+                              <span className="text3"> · {item.material}</span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text3">—</span>
+                        )}
                       </td>
                       <td>
                         <input
@@ -445,15 +496,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </table>
         </div>
       </div>
-
-      <datalist id="bom-items-dl">
-        {(itemsList?.items ?? []).map((i) => (
-          <option key={i.id} value={i.code}>
-            {i.code} — {i.name}
-            {i.material ? ` [${i.material}]` : ''}
-          </option>
-        ))}
-      </datalist>
 
       {mode === 'edit' ? (
         <div className="panel">
