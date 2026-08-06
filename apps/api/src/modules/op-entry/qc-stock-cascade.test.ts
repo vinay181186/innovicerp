@@ -1,14 +1,15 @@
-// ADR-105 — the final-QC stock credit must NOT fire for a JWSO Job Card.
+// ADR-106 (supersedes ADR-105) — final QC credits own stock for BOTH a JWSO and
+// an SO Job Card. The machined parts are physically in the store between QC and
+// dispatch, so the ledger should show them.
 //
-// A JWSO job card makes the CUSTOMER's goods from the CUSTOMER's material. They
-// leave on a JW Return Challan, so crediting own stock counted the customer's
-// pieces as inventory — and nothing ever removed them again (the return challan
-// writes no ledger row, and the party material issue deliberately writes none).
-// Live proof before the fix: item 554117146000 went 35 → 45 on
-// `qc_accept · IN-JC-26-00026 Op #2`.
+// ADR-105 briefly suppressed the JWSO credit. That was half a fix: the real
+// defect was the MISSING debit when the goods go back, which jw-returns now
+// posts as a `jw_return` 'out' row. The pair mirrors the sales side —
+//   SO   : qc_accept (in) → dispatch  (out)
+//   JWSO : qc_accept (in) → jw_return (out)
 //
-// Two job cards, identical in every way except their source link, so the ONLY
-// thing that can explain the different outcome is the JWSO link itself.
+// Two job cards, identical in every way except their source link, pin the rule:
+// the JWSO link must make NO difference to this cascade.
 
 import { and, asc, eq, isNull, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -209,21 +210,27 @@ async function fire(jobCardId: string, jcCode: string): Promise<{ fired: boolean
   );
 }
 
-describe('qc stock cascade — ADR-105 JWSO exclusion', () => {
-  it('does NOT credit own stock for a JWSO job card', async () => {
+describe('qc stock cascade — ADR-106: JWSO credits stock like SO', () => {
+  it('credits own stock for a JWSO job card', async () => {
     const res = await fire(jwJcId, `${TAG}-JC-JW`);
-    expect(res.fired, 'the customer’s goods must not be booked as our inventory').toBe(false);
+    expect(res.fired, 'machined goods are in the store until the return challan').toBe(true);
 
     const rows = await db
-      .select({ sourceRef: storeTransactions.sourceRef })
+      .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })
       .from(storeTransactions)
       .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #1`));
-    expect(rows, 'no ledger row written').toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.qty).toBe(QTY);
+    expect(rows[0]!.txnType).toBe('in');
+
+    await db
+      .delete(storeTransactions)
+      .where(eq(storeTransactions.sourceRef, `${TAG}-JC-JW Op #1`));
   });
 
-  it('still credits own stock for an SO-sourced job card', async () => {
+  it('credits own stock for an SO-sourced job card — identical behaviour', async () => {
     const res = await fire(soJcId, `${TAG}-JC-SO`);
-    expect(res.fired, 'our own production is still booked to stock').toBe(true);
+    expect(res.fired, 'our own production is booked to stock').toBe(true);
 
     const rows = await db
       .select({ qty: storeTransactions.qty, txnType: storeTransactions.txnType })

@@ -60,22 +60,20 @@ export async function tryApplyQcStockCascade(
 
   // Resolve the JC's itemId — required for the ledger + the v_item_stock lookup.
   const jcRows = await tx
-    .select({ itemId: jobCards.itemId, sourceJwLineId: jobCards.sourceJwLineId })
+    .select({ itemId: jobCards.itemId })
     .from(jobCards)
     .where(eq(jobCards.id, ctx.jobCardId))
     .limit(1);
   const itemId = jcRows[0]?.itemId;
   if (!itemId) return { fired: false };
 
-  // ADR-105: a JWSO job card makes the CUSTOMER's goods from the CUSTOMER's
-  // material. They leave on a JW Return Challan; they were never ours to book.
-  // Crediting own stock here counted the customer's pieces as inventory and
-  // nothing ever removed them — the return challan writes no ledger row, and
-  // the party material issue deliberately writes none either. Live proof:
-  // item 554117146000 went 35 → 45 on `qc_accept · IN-JC-26-00026 Op #2`.
-  if (jcRows[0]?.sourceJwLineId != null) {
-    return { fired: false };
-  }
+  // ADR-106 (supersedes ADR-105): a JWSO Job Card credits stock here exactly
+  // like an SO one. The finished parts ARE physically in the store between QC
+  // and the return, so the ledger should show them. ADR-105 suppressed this
+  // credit instead, which was only half a fix — the real defect was the
+  // MISSING debit when the goods leave. The JW Return Challan now posts that
+  // 'out' row (jw-returns/service.ts), so the pair balances the same way
+  // qc_accept and dispatch do on the sales side.
 
   // Lock the items row to serialise concurrent stock writes on the same item.
   // Same pattern as GRN cascade (goods-receipt-notes/cascades.ts:170).

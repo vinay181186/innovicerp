@@ -19,6 +19,7 @@ import {
   jobWorkOrderLines,
   jobWorkOrders,
   jwReturnChallans,
+  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -28,6 +29,61 @@ import { emitActivityLog } from '../activity-log/service';
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
+}
+
+// ADR-106 — move finished goods out of own stock when they go back to the
+// customer, and back in if the challan is cancelled.
+//
+// A JWSO Job Card credits stock at final QC exactly like an SO one
+// (qc-stock-cascade.ts): the machined parts really are in the store between QC
+// and dispatch. What was missing is this leg — the return challan wrote nothing,
+// so the credit never came out and own stock climbed by the full qty of every
+// job-work order, permanently.
+//
+// Deliberately mirrors moveDispatchStock in customer-dispatches/service.ts,
+// including the on-hand floor: never ship out more finished goods than the
+// ledger says are physically there (the SO-517 class of bug).
+async function moveReturnStock(
+  tx: DbTransaction,
+  companyId: string,
+  userId: string,
+  dir: 'out' | 'in',
+  code: string,
+  date: string,
+  itemId: string | null,
+  qty: number,
+): Promise<void> {
+  if (!itemId || qty <= 0) return;
+  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
+  const bal = (await tx.execute(sql`
+    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+    FROM public.v_item_stock
+    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+  `)) as unknown as Array<{ on_hand: number }>;
+  const before = Number(bal[0]?.on_hand ?? 0);
+  if (dir === 'out' && qty > before) {
+    throw new ConflictError(
+      `Insufficient stock to return: on-hand ${before}, requested ${qty}. ` +
+        `Complete machining + final QC so the parts are booked in before returning them.`,
+    );
+  }
+  const after = dir === 'out' ? before - qty : before + qty;
+  await tx.insert(storeTransactions).values({
+    companyId,
+    txnDate: date,
+    itemId,
+    txnType: dir,
+    qty,
+    sourceType: 'jw_return',
+    sourceRef: `${code}${dir === 'in' ? ' (cancel)' : ''}`,
+    stockBefore: before,
+    stockAfter: after,
+    remarks:
+      dir === 'out'
+        ? `JW return to customer · ${qty} pcs`
+        : `JW return cancel reversal · ${qty} pcs`,
+    createdBy: userId,
+  });
 }
 
 function dateLike(v: unknown): string {
@@ -113,6 +169,7 @@ export async function createJwReturnChallan(
         orderQty: jobWorkOrderLines.orderQty,
         returnedQty: jobWorkOrderLines.returnedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
+        itemId: jobWorkOrderLines.itemId,
       })
       .from(jobWorkOrderLines)
       .where(
@@ -191,6 +248,19 @@ export async function createJwReturnChallan(
       .returning();
     const row = inserted[0];
     if (!row) throw new ValidationError('Failed to insert JW return challan');
+
+    // 4b) ADR-106 — take the goods out of own stock. They were booked in by the
+    // Job Card's final QC (qc_accept); shipping them back is what removes them.
+    await moveReturnStock(
+      tx,
+      companyId,
+      userId,
+      'out',
+      code,
+      input.returnDate,
+      line.itemId,
+      input.qty,
+    );
 
     // 5) Bump line returned_qty
     const newReturned = line.returnedQty + input.qty;
@@ -276,6 +346,7 @@ export async function cancelJwReturnChallan(
         id: jobWorkOrderLines.id,
         returnedQty: jobWorkOrderLines.returnedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
+        itemId: jobWorkOrderLines.itemId,
       })
       .from(jobWorkOrderLines)
       .where(
@@ -288,6 +359,20 @@ export async function cancelJwReturnChallan(
       .limit(1);
     const line = lineRows[0];
     if (!line) throw new NotFoundError(`Job Work Order line ${ret.jobWorkOrderLineId} not found`);
+
+    // 0) ADR-106 — the goods never left, so put them back in own stock. Written
+    // as a compensating 'in' row rather than deleting the 'out', so the ledger
+    // keeps the full history (same as a cancelled customer dispatch).
+    await moveReturnStock(
+      tx,
+      companyId,
+      userId,
+      'in',
+      ret.code,
+      dateLike(ret.returnDate),
+      line.itemId,
+      ret.qty,
+    );
 
     // 1) Mark the return cancelled
     const updated = await tx

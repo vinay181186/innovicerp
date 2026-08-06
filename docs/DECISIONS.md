@@ -4502,3 +4502,77 @@ explain the different outcome.
   decision for the user — deliberately not taken here.
 - **The new test is UNRUN.** `pnpm --filter api test` seeds and deletes on the
   prod DB. Verified by typecheck + lint only.
+
+## ADR-106: JWSO stock mirrors SO — final QC credits, JW Return Challan debits
+**Date:** 2026-08-06
+**Status:** Accepted — **supersedes ADR-105**
+
+### Context
+ADR-105 (one day old) stopped a JWSO Job Card's final QC from crediting own
+stock, on the reasoning that the finished parts belong to the customer.
+
+The user rejected that framing: *"i want jwso job card. final qc accept qty.
+credits my own stock. as so jc is already doing."*
+
+They are right, and ADR-105 diagnosed the wrong half. The machined parts **are**
+physically in the store between QC passing and the lorry leaving — the ledger
+should say so. The actual defect was never the credit; it was the **missing
+debit**. `jw-returns/service.ts` wrote nothing to `store_transactions` when the
+goods went back, so the credit had no counterpart and own stock climbed by the
+full qty of every job-work order, permanently.
+
+The sales side has always had both legs:
+
+```
+SO   : qc_accept (in)  →  dispatch  (out)     ← both existed
+JWSO : qc_accept (in)  →  (nothing)           ← the hole
+```
+
+### Decision
+Make the job-work side symmetric with the sales side.
+
+1. **Revert the ADR-105 guard.** `tryApplyQcStockCascade` credits stock for a
+   JWSO Job Card exactly as it does for an SO one. The JWSO link makes no
+   difference to that cascade, and the test now pins that explicitly with two
+   Job Cards identical except their source link.
+2. **`moveReturnStock` in `jw-returns/service.ts`** posts the missing leg:
+   `out` on create, compensating `in` on cancel. It deliberately mirrors
+   `moveDispatchStock` in `customer-dispatches/service.ts`, including the
+   **on-hand floor** — a return is refused when the ledger says the parts are
+   not there yet: *"Insufficient stock to return: on-hand 0, requested 10.
+   Complete machining + final QC so the parts are booked in before returning
+   them."* That is the SO-517 class of bug, and job work is just as exposed.
+3. **New source type `jw_return`** (migration 0084, applied). NOT `jw_out` —
+   that is the historical OSP-send debit retired by ADR-067, and reusing it
+   would make the ledger unreadable.
+4. **Cancel writes a compensating `in`** rather than deleting the `out`, so the
+   ledger keeps the whole history. Same as a cancelled customer dispatch.
+
+### Alternatives Considered
+- **Keep ADR-105 (no credit, no debit)** — rejected by the user. It also leaves
+  a real gap: finished goods sitting in the building appear nowhere in stock,
+  so nobody can see them.
+- **Reuse `jw_out`** — rejected, see above.
+- **Debit on the invoice instead of the return challan** — rejected: the goods
+  leave on the challan; the invoice is a money document and may lag or never
+  come.
+
+### Consequences
+- Positive: own stock now reflects reality on both sides. Job-work goods appear
+  when machined and disappear when returned.
+- Positive: the on-hand floor means a return challan can no longer be raised for
+  parts that were never produced.
+- Negative: returning goods now depends on the QC credit having happened. A JWSO
+  Job Card whose final QC was never logged will refuse the return with the
+  message above. That is intended — but it is a new way to be blocked, and it
+  will bite on any job where QC was skipped.
+- **ADR-105's data note still stands and is now WORSE-shaped than described
+  there.** Two `qc_accept` rows on JWSO Job Cards total 60 pieces
+  (`IN-JC-26-00024 Op #3` +50 of 559918174000; `IN-JC-26-00026 Op #2` +10 of
+  554117146000). Under ADR-106 those credits are *correct* — what is missing is
+  the matching `jw_return` debit for anything already sent back. IN-JW-00002's
+  two return challans (10 + 40 = 50 of LEVER) also predate this change and
+  posted no debit. Netting the ledger against physical reality is still a data
+  decision for the user.
+- **Tests UNRUN.** `pnpm --filter api test` seeds and deletes on the prod DB.
+  Verified by typecheck + lint; migration 0084 applied and the enum verified.

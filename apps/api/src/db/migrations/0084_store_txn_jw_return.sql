@@ -1,0 +1,22 @@
+-- 0084 — ADR-106: new store_txn_source_type value 'jw_return'.
+--
+-- A JWSO Job Card credits own stock at final QC exactly like an SO one — the
+-- machined parts really are in the store between QC and dispatch. The missing
+-- leg was the DEBIT when they go back to the customer: the JW Return Challan
+-- wrote nothing to the ledger, so the credit never came out and own stock
+-- climbed by the full qty of every job-work order, permanently.
+--
+-- ADR-105 had suppressed the QC credit instead; that was only half a fix and is
+-- superseded. The pair is now symmetric with the sales side:
+--
+--   SO   : qc_accept (in)  →  dispatch  (out)
+--   JWSO : qc_accept (in)  →  jw_return (out)
+--
+-- NOT reusing 'jw_out': that is the historical OSP-send debit retired by
+-- ADR-067, and mixing the two would make the ledger unreadable.
+--
+-- ALTER TYPE ... ADD VALUE cannot be used in the same transaction that then
+-- writes the value. apply-sql.ts runs each statement standalone, so this is
+-- safe here; the first row using it is written by application code later.
+
+ALTER TYPE public.store_txn_source_type ADD VALUE IF NOT EXISTS 'jw_return';

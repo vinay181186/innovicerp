@@ -10,6 +10,11 @@ export const STORE_TXN_SOURCE_TYPES = [
   // T-040f (2026-05-15): production QC accept on the LAST op of a JC.
   // Distinct from grn_qc which is incoming GRN material acceptance.
   'qc_accept',
+  // ADR-106 (2026-08-06): machined job-work goods going back to the customer
+  // on a JW Return Challan — the debit that balances the qc_accept credit on a
+  // JWSO Job Card, mirroring dispatch on the sales side. NOT 'jw_out', which is
+  // the historical OSP-send debit that ADR-067 retired.
+  'jw_return',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];
