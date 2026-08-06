@@ -455,7 +455,7 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
       {/* 6 stat cards — shared with the JC edit page via JcStatTiles so both
           screens carry the same summary header (same format, only mode differs). */}
-      <JcStatTiles jc={jc} ops={ops} />
+      <JcStatTiles jc={jc} ops={ops} rmAvailable={extras?.rmAvailable ?? null} />
 
       {/* OPERATION FLOW — extracted so the JC edit branch renders the SAME
           read-only stepper (shared component, identical markup). */}
@@ -845,7 +845,7 @@ function JcStatusEditForm({
       </datalist>
 
       {/* Same summary tiles as the view — shared JcStatTiles. */}
-      <JcStatTiles jc={jc} ops={enrichedOps} />
+      <JcStatTiles jc={jc} ops={enrichedOps} rmAvailable={extras?.rmAvailable ?? null} />
 
       {/* Editable header fields */}
       <div className="panel" style={{ marginBottom: 12 }}>
