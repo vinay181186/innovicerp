@@ -226,8 +226,22 @@ export function SearchableSelect({
               ref={listRef}
               id={listboxId}
               role="listbox"
-              style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width }}
-              className="z-50 max-h-64 overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
+              // z-index must beat the modals. They are plain `position: fixed`
+              // overlays at zIndex 100 (party material, party GRN, material
+              // issue, JW return/invoice, the planning modals). While the list
+              // lived inside the modal it inherited that stacking context and
+              // sat above it; portaled to <body> it became a SIBLING of the
+              // overlay, so at z-50 it rendered BEHIND the modal and read as
+              // "the dropdown never opens". Inline so it always beats the
+              // utility class, and well clear of 100 for headroom.
+              style={{
+                position: 'fixed',
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                zIndex: 1000,
+              }}
+              className="max-h-64 overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
             >
           {loading ? (
             <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
