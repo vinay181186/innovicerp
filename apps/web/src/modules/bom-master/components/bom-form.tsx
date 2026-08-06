@@ -141,12 +141,40 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // stops a stale id sitting under new text.
   const onItemPicked = (idx: number, id: string | null): void => {
     if (!id) {
-      updateLine(idx, { childItemId: '', childItemCodeText: '' });
+      // Keep whatever is typed — resolveLine below can still turn an exact
+      // code into an id at save time. Clearing it here is what made a pasted
+      // code fail with "pick a valid item code".
+      updateLine(idx, { childItemId: '' });
       return;
     }
     const picked = itemById.get(id) ?? (itemPage?.items ?? []).find((i) => i.id === id);
     updateLine(idx, { childItemId: id, childItemCodeText: picked?.code ?? '' });
   };
+
+  // Remember what was typed per line. The dropdown reports the debounced term
+  // through onSearch; stash it on the line so a code that was pasted rather
+  // than clicked is still recoverable.
+  const onItemSearch = (idx: number, term: string): void => {
+    setItemSearch(term);
+    const line = lines[idx];
+    if (line && !line.childItemId) updateLine(idx, { childItemCodeText: term });
+  };
+
+  // The old <datalist> accepted a typed exact code and resolved it to an id.
+  // The shared dropdown only emits an id when a row is CLICKED, so paste-and-go
+  // silently produced no id and the save was refused. Resolve an exact code
+  // match here so both routes work; anything that is not an exact code still
+  // fails validation, now with a message that says what to do.
+  const resolveLine = (l: BomFormLineDraft): BomFormLineDraft => {
+    if (l.childItemId) return l;
+    const typed = l.childItemCodeText.trim().toUpperCase();
+    if (!typed) return l;
+    const match =
+      itemsByCode.get(typed) ??
+      (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
+    return match ? { ...l, childItemId: match.id, childItemCodeText: match.code } : l;
+  };
+  const resolvedLines = useMemo(() => lines.map(resolveLine), [lines, itemsByCode, itemPage]);
 
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
@@ -247,12 +275,16 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 
   const validationError = useMemo(() => {
     if (!header.bomName.trim()) return 'BOM Name is required';
-    if (lines.length === 0) return 'Add at least one item to the BOM';
+    if (resolvedLines.length === 0) return 'Add at least one item to the BOM';
     const itemIds = new Set<string>();
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i]!;
+    for (let i = 0; i < resolvedLines.length; i++) {
+      const l = resolvedLines[i]!;
       if (!l.childItemId) {
-        return `Line ${i + 1}: pick a valid item code`;
+        // Say what to DO. The old text implied the code was wrong, when the
+        // usual cause is a code typed but never selected from the list.
+        return l.childItemCodeText.trim()
+          ? `Line ${i + 1}: "${l.childItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
+          : `Line ${i + 1}: pick an item from the dropdown list.`;
       }
       if (itemIds.has(l.childItemId)) {
         return `Line ${i + 1}: duplicate item code`;
@@ -264,14 +296,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       }
     }
     return null;
-  }, [header, lines]);
+  }, [header, resolvedLines]);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (validationError) return;
     await onSubmit(
       header,
-      lines,
+      // Resolved, so a pasted exact code saves with its real item id.
+      resolvedLines,
       mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
     );
   };
@@ -425,7 +458,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </div>
           ) : null}
 
-          {lines.map((line, idx) => {
+          {/* Render the RESOLVED lines so a pasted exact code fills the Name
+              box immediately, instead of staying blank until save. */}
+          {resolvedLines.map((line, idx) => {
             // Name follows the PICKED item. Resolve from the full master first
             // (covers a line loaded into the edit form), then from the current
             // search page (covers a pick just made).
@@ -462,7 +497,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   id={`bom-item-${idx}`}
                   value={line.childItemId || null}
                   onChange={(id) => onItemPicked(idx, id)}
-                  onSearch={setItemSearch}
+                  onSearch={(t) => onItemSearch(idx, t)}
                   loading={itemsFetching}
                   options={itemOptions}
                   placeholder="🔍 Search item code or name…"
