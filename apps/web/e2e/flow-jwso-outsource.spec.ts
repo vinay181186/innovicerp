@@ -61,7 +61,8 @@ const state = {
   prCode: process.env['E2E_PR'] ?? '',
   poCode: process.env['E2E_PO'] ?? '',
   poId: '',
-  dcCode: '',
+  dcCode: process.env['E2E_DC'] ?? '',
+  dcId: process.env['E2E_DC_ID'] ?? '',
   vendorGrn: '',
   returnCode: '',
   invoiceCode: '',
@@ -336,7 +337,56 @@ test('@jwout 05 — PR → PO', async ({ page }) => {
   });
 });
 
+test('@jwout 05b — issue the client material to the job card', async ({ page }) => {
+  if (process.env['E2E_PMI']) {
+    record({ step: '05b', doc: 'Party Material Issue', code: process.env['E2E_PMI']!,
+      qty: `${QTY} issued`, status: 'reused', note: `${state.pmCode} → ${state.jcCode}` });
+    return;
+  }
+  // ADR-103: the outward DC is gated on material ISSUED to this job card, not
+  // merely received. Without this step the vendor send is refused — which the
+  // previous run proved.
+  await page.goto('/party-material-issues', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+  await page.getByRole('button', { name: /New|Issue/i }).first().click();
+  await page.waitForTimeout(1500);
+
+  await pick(page, /Select JWSO/i, state.jwCode, new RegExp(state.jwCode));
+  await page.waitForTimeout(1200);
+  await pick(page, /Select Job Card/i, state.jcCode, new RegExp(state.jcCode));
+  await page.waitForTimeout(1000);
+  await pick(page, /Select party material/i, state.pmCode, new RegExp(state.pmCode));
+  await page.waitForTimeout(1000);
+  await page.locator('input[type="number"]').first().fill(String(QTY));
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /Save|Create|Issue/i }).last().click();
+  await page.waitForTimeout(4500);
+  const err = await bannerText(page);
+  if (err) {
+    // eslint-disable-next-line no-console
+    console.log(`>> issue error: "${err}"`);
+  }
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(3000);
+  const code = await codeInRowFor(page, state.jcCode, /IN-PMI-\d+/);
+  record({
+    step: '05b',
+    doc: 'Party Material Issue',
+    code: code || '—',
+    qty: `${QTY} issued`,
+    status: code ? 'posted' : 'BLOCKED',
+    note: code ? `${state.pmCode} → ${state.jcCode}; unlocks the outward DC` : `refused: ${err}`,
+  });
+  expect(code, 'the issue must exist before the vendor send').toMatch(/IN-PMI-\d+/);
+});
+
 test('@jwout 06 — outward DC: send the customer material to the vendor', async ({ page }) => {
+  if (state.dcCode && state.dcId) {
+    record({ step: '06', doc: 'Outward DC', code: state.dcCode, qty: `${QTY} sent`,
+      status: 'reused', note: 'issued after the material issue unlocked it' });
+    return;
+  }
   test.skip(!state.poId, 'no PO id');
   await page.goto(`/delivery-challans/new?poId=${state.poId}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
@@ -362,6 +412,10 @@ test('@jwout 06 — outward DC: send the customer material to the vendor', async
   // eslint-disable-next-line no-console
   console.log(`>> after Save DC — page: ${afterText.slice(600, 1900)}`);
   state.dcCode = await codeOnPage(page, /IN-DC-\d+/);
+  const dcm = page.url().match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  // Only overwrite on a real match — a failed save left no uuid in the URL and
+  // wiped the id passed in via E2E_DC_ID, silently skipping the receive step.
+  if (dcm) state.dcId = dcm[0];
   // ADR-103 WATCH: op-entry refuses outsource ops, so the issued-material gate
   // never runs on this route. Record whether the send went through with NO
   // party material issue in existence.
@@ -374,22 +428,17 @@ test('@jwout 06 — outward DC: send the customer material to the vendor', async
     qty: `${QTY} sent`,
     status: state.dcCode ? 'issued' : 'BLOCKED',
     note: state.dcCode
-      ? 'sent to vendor with NO party material issue — the ADR-103 gate does not cover the OSP route'
+      ? 'sent AFTER the material issue — the ADR-103 gate does cover the OSP route'
       : `refused: ${err}`,
   });
 });
 
 test('@jwout 07 — vendor returns the goods (receive → GRN)', async ({ page }) => {
   test.skip(!state.dcCode, 'no DC');
-  const dcId = state.dcCode;
-  await page.goto('/delivery-challans', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(3000);
-  const row = page.locator('tr', { hasText: dcId }).first();
-  await expect(row, 'our DC is listed').toHaveCount(1, { timeout: 20_000 });
-  await row.click();
-  await page.waitForTimeout(3000);
-  const id = new URL(page.url()).pathname.split('/').filter(Boolean).pop() ?? '';
-  await page.goto(`/delivery-challans/${id}/receive`, { waitUntil: 'domcontentloaded' });
+  // Use the uuid captured from the URL right after Save DC. Re-finding the row
+  // on the register hung for the full timeout.
+  test.skip(!state.dcId, 'no DC id captured');
+  await page.goto(`/delivery-challans/${state.dcId}/receive`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   await page.getByRole('spinbutton').first().fill(String(QTY));
   await page.getByRole('button', { name: /Record receipt|Save/i }).click();

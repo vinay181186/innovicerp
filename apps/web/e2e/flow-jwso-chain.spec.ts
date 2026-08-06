@@ -561,7 +561,9 @@ test('@chain 06 — issue the client material to the Job Card', async ({ page })
 
   await pick(page, /Select JWSO/i, state.jwCode, new RegExp(state.jwCode));
   await page.waitForTimeout(1500);
-  await pick(page, /Select Job Card/i, state.jcCode, new RegExp(state.jcCode)).catch(() => {});
+  // ADR-103: the Job Card is MANDATORY now — it is the only link from an issue
+  // to a JWSO line, and the production gate reads exactly this. No .catch().
+  await pick(page, /Select Job Card/i, state.jcCode, new RegExp(state.jcCode));
   await page.waitForTimeout(1000);
   await pick(page, /Select party material/i, state.pmCode, new RegExp(state.pmCode));
   await page.waitForTimeout(1000);
@@ -581,6 +583,36 @@ test('@chain 06 — issue the client material to the Job Card', async ({ page })
     status: state.issueCode ? 'posted' : 'NOT CREATED',
     note: `${state.pmCode} → ${state.jcCode}; party stock −${ORDER_QTY}`,
   });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6b. ADR-103 — the RM AVAIL tile on the Job Card
+// ───────────────────────────────────────────────────────────────────────────
+
+test('@chain 06b — RM AVAIL tile shows the issued material', async ({ page }) => {
+  await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2500);
+  await page.getByPlaceholder(/Search/i).first().fill(state.jcCode);
+  await page.waitForTimeout(3000);
+  await page.getByText(state.jcCode).first().click();
+  await page.waitForTimeout(4000);
+
+  const body = await page.locator('body').innerText();
+  const hasTile = /RM AVAIL/i.test(body);
+  // eslint-disable-next-line no-console
+  console.log(`>> RM AVAIL tile present on ${state.jcCode}: ${hasTile}`);
+  const around = (body.match(/RM AVAIL[\s\S]{0,60}/i) ?? [''])[0].replace(/\s+/g, ' ');
+  // eslint-disable-next-line no-console
+  console.log(`>> tile text: "${around}"`);
+  record({
+    step: '06b',
+    doc: 'RM AVAIL tile',
+    code: state.jcCode,
+    qty: hasTile ? `${ORDER_QTY} issued, ${ORDER_QTY} available` : 'not shown',
+    status: hasTile ? 'shown' : 'MISSING',
+    note: around || 'tile not found on the job card page',
+  });
+  expect(hasTile, 'a gated JWSO job card must show RM AVAIL').toBe(true);
 });
 
 // ───────────────────────────────────────────────────────────────────────────
