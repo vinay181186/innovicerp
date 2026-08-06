@@ -33,6 +33,13 @@ export interface SheetReadResult {
   rows: NormalizedRow[];
   /** Set when the workbook has no readable sheet; callers surface it as a fatal error. */
   sheetError?: string;
+  /** Name of the sheet actually read (always the FIRST one). Surfaced so a user
+   *  whose data sits on a later tab is told which sheet was used, instead of
+   *  silently getting whatever sheet 1 happened to hold. */
+  sheetName?: string;
+  /** All sheet names in the workbook, so callers can warn when there are more
+   *  than one and the data might be on the wrong tab. */
+  sheetNames?: string[];
 }
 
 function isoDate(d: Date): string {
@@ -49,8 +56,9 @@ export async function readSheetRows(
 ): Promise<SheetReadResult> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { cellDates: opts?.cellDates ?? false });
-  const ws = wb.Sheets[wb.SheetNames[0]!];
-  if (!ws) return { rows: [], sheetError: 'Workbook has no sheets' };
+  const sheetName = wb.SheetNames[0];
+  const ws = sheetName ? wb.Sheets[sheetName] : undefined;
+  if (!ws || !sheetName) return { rows: [], sheetError: 'Workbook has no sheets' };
   const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
   const rows: NormalizedRow[] = raw.map((r) => {
     const out: NormalizedRow = {};
@@ -63,7 +71,7 @@ export async function readSheetRows(
     }
     return out;
   });
-  return { rows };
+  return { rows, sheetName, sheetNames: wb.SheetNames };
 }
 
 /** First non-empty value among the given header aliases (matched normalized). */

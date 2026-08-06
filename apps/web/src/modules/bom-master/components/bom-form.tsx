@@ -212,8 +212,30 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // headers normalized (case/spacing/`*` tolerant) — so `item_code` and
       // `Item Code`, `qty_per_set` and `Qty Per Set`, `bom_type`/`Type`/`BOM
       // Type` all resolve instead of demanding exact lowercase-snake headers.
-      const { rows, sheetError } = await readSheetRows(file);
+      const { rows, sheetError, sheetName, sheetNames } = await readSheetRows(file);
       if (sheetError) throw new Error(sheetError);
+
+      // Only the FIRST sheet is read. A user who adds their rows on a later tab
+      // gets whatever sheet 1 holds — in practice the untouched template — and
+      // the errors then name EXAMPLE-001/002, which looks like the item master
+      // is wrong when the real problem is the wrong tab. Say both things out
+      // loud instead of importing the samples silently.
+      const onlySampleRows =
+        rows.length > 0 &&
+        rows.every((r) => /^EXAMPLE-\d+$/i.test(getCol(r, ['item_code', 'Item Code', 'code']).trim()));
+      if (onlySampleRows) {
+        throw new Error(
+          `Sheet "${sheetName}" still contains only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
+            `Replace them with your own rows on that sheet` +
+            ((sheetNames?.length ?? 0) > 1
+              ? ` — this workbook has ${sheetNames!.length} sheets (${sheetNames!.join(', ')}) and only the first is read.`
+              : '.'),
+        );
+      }
+      const sheetNote =
+        (sheetNames?.length ?? 0) > 1
+          ? ` (read sheet "${sheetName}" of ${sheetNames!.length}: ${sheetNames!.join(', ')})`
+          : '';
 
       const added: BomFormLineDraft[] = [];
       const errors: ExcelRowError[] = [];
@@ -263,7 +285,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       );
       setImportErrors(errors);
       setImportSummary(
-        `Imported ${novel.length} row(s)${skippedDuplicates > 0 ? `, skipped ${skippedDuplicates} duplicate(s)` : ''}${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.`,
+        `Imported ${novel.length} row(s)${skippedDuplicates > 0 ? `, skipped ${skippedDuplicates} duplicate(s)` : ''}${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
       );
     } catch (err) {
       setImportSummary(err instanceof Error ? err.message : 'Failed to parse Excel file');
