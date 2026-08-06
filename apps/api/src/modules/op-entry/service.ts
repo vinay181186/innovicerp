@@ -267,7 +267,7 @@ async function loadAvailability(
 // op's output (v_jc_op_status input_avail = prior op output). SO-sourced /
 // direct-production Job Cards (source_jw_line_id IS NULL) are never capped.
 // Returns null when no cap applies.
-interface MaterialCap {
+export interface MaterialCap {
   /** Qty the cap is measured against: ISSUED for gated JCs (ADR-103), RECEIVED
    *  for pre-cutover ones that keep the old ADR-096/097 behaviour. */
   received: number;
@@ -365,8 +365,12 @@ export async function loadMaterialCap(
   return { received, orderQty, shortfall, jwCode: jc.jwCode, issuedBased: false };
 }
 
-/** Plain-language refusal naming the document the user must go and create. */
-function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
+/** Plain-language refusal naming the document the user must go and create.
+ *
+ *  Exported because the OSP outward-DC gate (delivery-challans/cascades.ts)
+ *  shares `loadMaterialCap` and must not tell the user to "record a Party
+ *  Material GRN" when the real blocker is the missing ISSUE (ADR-103). */
+export function materialCapMessage(cap: MaterialCap, allowed: number, asked: number): string {
   if (!cap.issuedBased) {
     return (
       `Qty ${asked} exceeds client material received. Only ${allowed} can be worked now ` +

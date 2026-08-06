@@ -34,7 +34,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOps, jobCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
-import { loadMaterialCap } from '../op-entry/service';
+import { loadMaterialCap, materialCapMessage } from '../op-entry/service';
 
 export interface OutwardCascadeArgs {
   tx: DbTransaction;
@@ -118,10 +118,14 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   const effectiveSendable = cap ? Math.max(0, sendable - cap.shortfall) : sendable;
   if (qty > effectiveSendable) {
     if (cap && effectiveSendable < sendable) {
+      // ADR-103 changed what the cap MEASURES for gated job cards (issued to
+      // this JC, not received for the part). This message hard-coded "received
+      // … record a Party Material GRN", which sent the user to the wrong screen
+      // — the real blocker on a gated JC is the missing Party Material ISSUE.
+      // Share op-entry's wording so both gates say the same true thing.
       throw new ValidationError(
-        `Cannot send ${qty} pcs to the vendor — only ${effectiveSendable} has client material ` +
-          `(received ${cap.received} of ${cap.orderQty} for this part, JWSO ${cap.jwCode}). ` +
-          `Record a Party Material GRN before sending the balance out.`,
+        `${materialCapMessage(cap, effectiveSendable, qty)} ` +
+          `(blocking the outward DC to the vendor.)`,
       );
     }
     throw new ValidationError(
