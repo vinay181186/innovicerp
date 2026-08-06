@@ -4576,3 +4576,76 @@ Make the job-work side symmetric with the sales side.
   decision for the user.
 - **Tests UNRUN.** `pnpm --filter api test` seeds and deletes on the prod DB.
   Verified by typecheck + lint; migration 0084 applied and the enum verified.
+
+## ADR-107: A BOM child plan is capped by its own requirement, not the parent line's
+**Date:** 2026-08-06
+**Status:** Accepted
+
+### Context
+Found by the BOM → equipment-SO e2e run. `BOM-0001` (one child, `554117144000`
+COVER, **2 per set**) on `IN-SO-00007` (**3** assemblies). The BOM planning modal
+correctly computed a need of **6** covers, offered it, and the server rejected
+its own figure:
+
+```
+Plan qty 6 exceeds remaining 3 for this line (ordered 3, already planned 0).
+```
+
+`assertPlanQtyWithinRemaining` caps every plan on an SO line at that line's
+`order_qty` and sums `plan_qty` across **all** plans on the line. A BOM child
+plan sits on the parent's line but is measured in **child parts**, while the cap
+is measured in **assemblies**. Two distinct failures follow:
+
+1. **qty per set > 1** — 3 assemblies needing 6 covers reads as "planning 6 of
+   something you ordered 3 of". Refused outright.
+2. **more than one child** — even at 1 per set, the FIRST child's plan consumes
+   the entire line allowance, so every sibling is refused:
+   `COVER 3 → OK (remaining 0)`, then `LEVER 3 → BLOCKED`.
+
+So the only BOM that could be planned was **one child at exactly 1 per set** —
+the single case where assemblies and parts happen to be the same number, which
+is why this survived.
+
+### Decision
+When a plan carries `bom_master_id` **and** `bom_child_code` on an SO line, cap
+it against its own requirement instead:
+
+```
+required  = ceil(bom_master_lines.qty_per_set × sales_order_lines.order_qty)
+counted   = other plans with the SAME so_line_id + bom_master_id + bom_child_code
+```
+
+Both numbers are read from the database inside the transaction — never from the
+caller — so a client cannot inflate its own allowance. Non-BOM plans keep the
+existing parent-line behaviour untouched.
+
+Applied to **both** call sites: `createPlan` and the qty-change branch of
+`updatePlan`. Editing a child plan's qty would otherwise re-impose the
+parent-line limit the create path had just bypassed.
+
+The refusal message now names the part and shows the arithmetic:
+`… for BOM part 554117144000 (needs 6 = 2 per set x 3 ordered, already planned 0)`.
+
+### Alternatives Considered
+- **Skip the guard entirely for BOM plans** — rejected: it would allow planning
+  1000 covers against a 3-assembly order, with nothing to catch it.
+- **Cap at the parent line qty × the largest qty_per_set on the BOM** — rejected:
+  a single ceiling shared by all children lets one child eat another's
+  allowance, which is the sibling bug in a subtler form.
+- **Fix it in the planning modal instead** — rejected: the modal already
+  computes the right number; the server was the one refusing it, and the API is
+  reachable directly.
+
+### Consequences
+- Positive: multi-child BOMs and qty-per-set > 1 are plannable, which is most
+  real BOMs. Only the degenerate 1-child-1-per-set case worked before.
+- Positive: over-planning a child is still refused, now against the correct
+  ceiling and with an explainable message.
+- Neutral: a BOM edited between opening the modal and saving may no longer match
+  the child code; the guard then declines to invent an allowance and falls
+  through, leaving the FK and the execute-time guards to catch it.
+- **The e2e chain beyond planning is still unproven** — this unblocks the BOM
+  explosion, and the job-card → dispatch → invoice tail runs next.
+- **Tests UNRUN.** `pnpm --filter api test` seeds and deletes on the prod DB.
+  Verified by typecheck + lint, plus running the new requirement query against
+  the live rows (BOM-0001 × IN-SO-00007 → required = 6, matching the modal).

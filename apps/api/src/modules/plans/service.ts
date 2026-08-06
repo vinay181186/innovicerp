@@ -212,13 +212,101 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
 // across all its non-cancelled plans. Reads the authoritative order_qty from
 // the linked SO/JW line (not the client-supplied snapshot) and also confirms
 // the line exists in this company. No-op for ad-hoc plans not tied to a line.
+//
+// ADR-107 — a BOM child plan is capped against ITS OWN requirement instead:
+// qty_per_set x the parent line's order qty, counting only other plans for the
+// same child. Both numbers come from the DB (bom_master_lines + the SO line),
+// never from the caller, so a client cannot inflate its own allowance.
+async function assertBomChildQtyWithinRequirement(
+  tx: DbTransaction,
+  companyId: string,
+  opts: {
+    soLineId: string;
+    bomMasterId: string;
+    bomChildCode: string;
+    planQty: number;
+    excludePlanId?: string;
+  },
+): Promise<void> {
+  const { soLineId, bomMasterId, bomChildCode, planQty, excludePlanId } = opts;
+
+  const reqRows = (await tx.execute(sql`
+    SELECT sol.order_qty::int              AS "orderQty",
+           bml.qty_per_set::numeric        AS "qtyPerSet",
+           i.code                          AS "childCode"
+    FROM public.sales_order_lines sol
+    JOIN public.bom_master_lines bml
+      ON bml.bom_master_id = ${bomMasterId}::uuid AND bml.deleted_at IS NULL
+    LEFT JOIN public.items i ON i.id = bml.child_item_id
+    WHERE sol.id = ${soLineId}::uuid
+      AND sol.company_id = ${companyId}::uuid
+      AND sol.deleted_at IS NULL
+      AND i.code = ${bomChildCode}
+    LIMIT 1
+  `)) as unknown as Array<{ orderQty: number; qtyPerSet: string; childCode: string }>;
+  const req = reqRows[0];
+  // No matching BOM line (e.g. the BOM was edited after the modal opened) —
+  // fall through silently rather than inventing an allowance; the FK and the
+  // downstream execute-time guards still apply.
+  if (!req) return;
+
+  const required = Math.ceil(Number(req.qtyPerSet) * Number(req.orderQty));
+  const excl = excludePlanId ? sql`AND p.id <> ${excludePlanId}::uuid` : sql``;
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(SUM(p.plan_qty), 0)::int AS "planned"
+    FROM public.plans p
+    WHERE p.company_id = ${companyId}::uuid
+      AND p.deleted_at IS NULL
+      AND p.plan_status <> 'cancelled'
+      AND p.so_line_id = ${soLineId}::uuid
+      AND p.bom_master_id = ${bomMasterId}::uuid
+      AND p.bom_child_code = ${bomChildCode}
+      ${excl}
+  `)) as unknown as Array<{ planned: number }>;
+  const alreadyPlanned = Number(rows[0]?.planned ?? 0);
+  const remaining = required - alreadyPlanned;
+  if (planQty > remaining) {
+    throw new ValidationError(
+      `Plan qty ${planQty} exceeds remaining ${Math.max(0, remaining)} for BOM part ` +
+        `${bomChildCode} (needs ${required} = ${Number(req.qtyPerSet)} per set x ${req.orderQty} ` +
+        `ordered, already planned ${alreadyPlanned}). Reduce the plan qty.`,
+    );
+  }
+}
+
 async function assertPlanQtyWithinRemaining(
   tx: DbTransaction,
   companyId: string,
-  opts: { soLineId: string | null; jwLineId: string | null; planQty: number; excludePlanId?: string },
+  opts: {
+    soLineId: string | null;
+    jwLineId: string | null;
+    planQty: number;
+    excludePlanId?: string;
+    /** ADR-107: set for a BOM child plan. Its allowance is its OWN requirement
+     *  (qty per set x the line's order qty), not the parent line's. */
+    bomMasterId?: string | null;
+    bomChildCode?: string | null;
+  },
 ): Promise<void> {
-  const { soLineId, jwLineId, planQty, excludePlanId } = opts;
+  const { soLineId, jwLineId, planQty, excludePlanId, bomMasterId, bomChildCode } = opts;
   if (!soLineId && !jwLineId) return;
+
+  // ADR-107 — a BOM child plan is counted in CHILD PARTS; the parent line's
+  // order qty is counted in ASSEMBLIES. Measuring one against the other broke
+  // BOM planning two ways: a child at 2-per-set on a 3-unit order asked for 6
+  // against a cap of 3, and with several children the FIRST plan consumed the
+  // whole line allowance so every sibling was refused. Cap a child against its
+  // own requirement, and count only other plans for that same child.
+  if (bomMasterId && bomChildCode && soLineId) {
+    await assertBomChildQtyWithinRequirement(tx, companyId, {
+      soLineId,
+      bomMasterId,
+      bomChildCode,
+      planQty,
+      ...(excludePlanId ? { excludePlanId } : {}),
+    });
+    return;
+  }
 
   let orderQty: number;
   if (soLineId) {
@@ -296,6 +384,8 @@ export async function createPlan(
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
       planQty: input.planQty,
+      bomMasterId: input.bomMasterId ?? null,
+      bomChildCode: input.bomChildCode ?? null,
     });
 
     const inserted = await tx
@@ -397,6 +487,10 @@ export async function updatePlan(
         jwLineId: row.jwLineId,
         planQty: input.planQty,
         excludePlanId: id,
+        // Editing a BOM child plan's qty must use the same child-level cap the
+        // create path uses, or the edit would re-impose the parent-line limit.
+        bomMasterId: row.bomMasterId,
+        bomChildCode: row.bomChildCode,
       });
     }
 
