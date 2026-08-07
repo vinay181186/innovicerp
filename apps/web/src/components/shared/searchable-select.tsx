@@ -146,6 +146,38 @@ export function SearchableSelect({
     };
   }, []);
 
+  // On OPEN, re-sync the caller's search term to whatever this input holds.
+  //
+  // Callers typically keep ONE search string for a whole form and hand it to
+  // one list hook — the BOM form's parent + every child line share one, the SO
+  // form's line pickers share one. So the options currently in `options` are
+  // whatever the LAST field searched for. Open a second, empty picker and it
+  // inherits that stale term: the BOM child list showed exactly one row, the
+  // parent that had just been picked, which made the item master look empty.
+  //
+  // Syncing to `query` is right in both directions: an empty field asks for ''
+  // and gets the unfiltered first page ("Click to browse", as the placeholder
+  // promises), and a field that already holds text re-asks for that text
+  // instead of silently widening to page 1 under a local filter.
+  const openedRef = useRef(false);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  useEffect(() => {
+    if (!open) {
+      openedRef.current = false;
+      return;
+    }
+    if (openedRef.current) return;
+    openedRef.current = true;
+    // Beat any in-flight debounce from the field the user just left.
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    // `query` is deliberately NOT a dependency: it is read once at the moment
+    // of opening. Re-running on every keystroke would bypass the debounce in
+    // handleInput and fire a request per character. queryRef keeps the read
+    // current without making the effect depend on it.
+    onSearch(queryRef.current.trim());
+  }, [open, onSearch]);
+
   // Substring match, case-insensitive, anywhere in the label — so a row is found
   // by its starting OR ending characters. Refines the server's results.
   const filtered = useMemo(() => {
