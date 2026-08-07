@@ -31,13 +31,22 @@ async function loadXlsx(): Promise<XlsxModule> {
 // code picker, a wider read-only name, then qty / type / remove.
 const BOM_GRID = '30px 1.3fr 1.8fr 110px 140px 36px';
 
-// The parent row reuses the first three track widths so its code picker and
-// name box line up column-for-column with the children below — the parent
-// reads as the head of the list, not as a separate unrelated field. It stops
-// there: no Qty/Set (that is what the children carry), no Type (a parent is
-// always the thing being assembled), no remove button (there is exactly one).
-// The remaining width is one caption cell.
-const PARENT_GRID = '30px 1.3fr 1.8fr 1fr';
+// The parent row uses the SAME tracks as a child row so Item Code / Item Name
+// / Qty sit in one continuous column down the page. Its Type and remove cells
+// stay empty: a parent is always the thing being assembled, and there is
+// exactly one of it.
+const PARENT_GRID = BOM_GRID;
+
+// "PARENT ITEM" / "CHILD ITEMS" — the two captions that make the page readable
+// at a glance instead of one undifferentiated list of pickers.
+const SECTION_LABEL: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: 0.6,
+  textTransform: 'uppercase',
+  color: 'var(--text3)',
+  marginBottom: 6,
+};
 
 export interface BomFormLineDraft {
   childItemId: string;
@@ -599,30 +608,48 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </div>
         ) : null}
         <div className="panel-body">
-          {/* ── Parent item ────────────────────────────────────────────────
-              Same card shape and same grid tracks as a child row, so the eye
-              reads "this assembly is made of these parts" top-to-bottom. One
-              only: it is a single field on the header, not a list. */}
+          {/* ── PARENT ITEM ────────────────────────────────────────────────
+              Its own captioned block above the children, on the SAME grid
+              tracks, so Item Code / Item Name / Qty line up in one column
+              from parent to child and the page reads top-to-bottom:
+              "this assembly ← is built from these parts". */}
+          <div style={SECTION_LABEL}>Parent Item</div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: PARENT_GRID,
+              gap: 8,
+              padding: '0 10px 4px',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: 0.4,
+              color: 'var(--text3)',
+              textTransform: 'uppercase',
+            }}
+          >
+            <span />
+            <span>Item Code ★</span>
+            <span>Item Name</span>
+            <span style={{ textAlign: 'center' }}>Qty</span>
+            <span />
+            <span />
+          </div>
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: PARENT_GRID,
               gap: 8,
               alignItems: 'center',
-              background: parentItem ? 'var(--green3)' : 'var(--amber3)',
-              border: `1px solid ${parentItem ? 'var(--green)' : 'var(--amber)'}`,
+              background: 'var(--bg)',
+              // Amber only while it is missing — that is the gate telling you
+              // what to do. Once picked it is an ordinary row like the rest.
+              border: `1px solid ${parentItem ? 'var(--border)' : 'var(--amber)'}`,
               borderRadius: 8,
               padding: 10,
-              marginBottom: 8,
+              marginBottom: 14,
             }}
           >
-            <span
-              className="fw-700"
-              style={{ textAlign: 'center', fontSize: 14 }}
-              title="Parent item — the assembly this BOM builds"
-            >
-              🔩
-            </span>
+            <span />
             <SearchableSelect
               id="bom-parent-item"
               value={resolvedParentId || null}
@@ -652,11 +679,23 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               }
               style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
             />
-            <span className="text3" style={{ fontSize: 10, letterSpacing: 0.3 }}>
-              {parentItem ? 'PARENT — BUILT FROM THE PARTS BELOW' : 'PICK THE PARENT FIRST'}
-            </span>
+            {/* Always 1, and read-only on purpose: a BOM defines the parts for
+                ONE finished unit, and every child's Qty/Set is already
+                "per one parent". Making it editable would mean two different
+                places to say the same number. */}
+            <input
+              className="innovic-input fw-700"
+              readOnly
+              value="1"
+              title="A BOM builds one unit — each child's Qty / Set is per one parent."
+              style={{ textAlign: 'center', background: 'var(--bg2)', color: 'var(--text2)' }}
+            />
+            <span />
+            <span />
           </div>
 
+          {/* ── CHILD ITEMS ─────────────────────────────────────────────── */}
+          <div style={SECTION_LABEL}>Child Items</div>
           <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
             {parentLocked
               ? '⚠ Pick the parent item above to unlock the part list.'

@@ -37,7 +37,9 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   const importExcel = page.getByRole('button', { name: /Import Excel/i });
 
   // --- 1. locked ------------------------------------------------------------
-  await expect(page.getByText(/PICK THE PARENT FIRST/i)).toBeVisible();
+  // The two captions are what make the page readable: parent block, then children.
+  await expect(page.getByText('Parent Item', { exact: true })).toBeVisible();
+  await expect(page.getByText('Child Items', { exact: true })).toBeVisible();
   await expect(addItem).toBeDisabled();
   await expect(importExcel).toBeDisabled();
   await expect(page.getByText(/Locked — pick the/i)).toBeVisible();
@@ -48,7 +50,6 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   await pick(page, 'bom-parent-item', PARENT);
   const parentName = page.locator('input[readonly][placeholder="auto-filled"]').first();
   await expect(parentName).toHaveValue(PARENT_NAME, { timeout: 15_000 });
-  await expect(page.getByText(/PARENT — BUILT FROM THE PARTS BELOW/i)).toBeVisible();
   await expect(addItem).toBeEnabled();
   await expect(importExcel).toBeEnabled();
   // eslint-disable-next-line no-console
