@@ -14,23 +14,26 @@ import { expect, test } from '@playwright/test';
 
 const ITEM_A = '723009000000'; // HANDLE ELESA L.652/80 B-M8-C9
 const ITEM_A_NAME = /HANDLE/i;
+/** Any item that is NOT ITEM_A — a parent may not be its own child (ADR-108). */
+const PARENT = '554117133000';
 
-async function pickItem(
+async function pickInto(
   page: import('@playwright/test').Page,
-  lineIdx: number,
+  fieldId: string,
   code: string,
 ): Promise<void> {
-  const input = page.locator(`#bom-item-${lineIdx}`);
+  const input = page.locator(`#${fieldId}`);
   await input.click();
   await input.fill(code);
-  // Scope to THIS line's listbox — matching option text globally hits table
+  // Scope to THIS field's listbox — matching option text globally hits table
   // cells behind the form.
-  const option = page.locator(`#bom-item-${lineIdx}-listbox [role="option"]`, {
-    hasText: code,
-  });
+  const option = page.locator(`#${fieldId}-listbox [role="option"]`, { hasText: code });
   await expect(option.first()).toBeVisible({ timeout: 20_000 });
   await option.first().click();
 }
+
+const pickItem = (page: import('@playwright/test').Page, lineIdx: number, code: string) =>
+  pickInto(page, `bom-item-${lineIdx}`, code);
 
 test('@bomdup item picker resolves a real code, and a duplicate part is named', async ({
   page,
@@ -42,12 +45,18 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   // and "BOM Name is required" masks the line error we are here to check.
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill('E2E duplicate-check (not saved)');
 
+  // A parent is required before any part row exists at all (ADR-108), and the
+  // form now opens with zero rows — so pick one, then add the lines.
+  await pickInto(page, 'bom-parent-item', PARENT);
+  await page.getByRole('button', { name: /Add Item/i }).click();
+
   // --- 1. the lookup works again -------------------------------------------
   await pickItem(page, 0, ITEM_A);
 
   // Name auto-fills from the master → the item genuinely resolved, which is
-  // exactly what the limit=10000 400 used to prevent.
-  const nameBox = page.locator('input[readonly][placeholder="auto-filled"]').first();
+  // exactly what the limit=10000 400 used to prevent. nth(1): nth(0) is the
+  // parent's own auto-filled name box.
+  const nameBox = page.locator('input[readonly][placeholder="auto-filled"]').nth(1);
   await expect(nameBox).toHaveValue(ITEM_A_NAME, { timeout: 15_000 });
   // eslint-disable-next-line no-console
   console.log(`>> line 1 resolved ${ITEM_A} → "${await nameBox.inputValue()}"`);
