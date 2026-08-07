@@ -42,8 +42,9 @@ import {
   type UpdateSalesOrderInput,
   type Uom,
 } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { todayLocal } from '@/lib/date';
@@ -216,11 +217,54 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   // Equipment Part No. uses a free datalist (legacy allows off-master parts).
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
+
+  // The equipment datalist is fed by the same 50-row page as the line-item
+  // picker. Without pushing the typed code into the search term, an item past
+  // that page would never resolve — and the BOM note below would stay silent
+  // instead of saying anything. Debounced so a 12-character code is one fetch.
+  const equipSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function queueEquipSearch(term: string): void {
+    if (equipSearchTimer.current) clearTimeout(equipSearchTimer.current);
+    equipSearchTimer.current = setTimeout(() => setItemSearch(term.trim()), 250);
+  }
+
   function fillEquipFromItem(codeValue: string): void {
+    queueEquipSearch(codeValue);
     const it = itemsByCode.get(codeValue.trim().toUpperCase());
     if (!it) return;
     if (!getValues('lines.0.partName')) setValue('lines.0.partName', it.name);
   }
+
+  // ── Equipment → its BOM ──────────────────────────────────────────────────
+  // A BOM now names the parent item it builds (ADR-108), so picking the
+  // equipment is enough to find its BOM. Derived from render state rather than
+  // computed inside the keystroke handler: the item often resolves only AFTER
+  // the debounced search lands, and an imperative handler would already have
+  // run and left the note blank.
+  const equipCodeText = watch('lines.0.itemCodeText') ?? '';
+  const equipItem = isEquip
+    ? (itemsByCode.get(equipCodeText.trim().toUpperCase()) ?? null)
+    : null;
+  const equipBom = equipItem ? (boms.find((b) => b.parentItemId === equipItem.id) ?? null) : null;
+
+  // Attach (or detach) as the resolved parent changes. Keyed on the item id so
+  // it fires once per real change, not once per keystroke. On an EDIT form the
+  // first resolution is skipped — the saved SO already carries a BOM choice and
+  // silently overwriting it would lose a deliberate manual pick.
+  const lastEquipItemId = useRef<string | null>(isEdit ? '__initial__' : null);
+  useEffect(() => {
+    if (!isEquip) return;
+    const id = equipItem?.id ?? null;
+    if (lastEquipItemId.current === '__initial__') {
+      lastEquipItemId.current = id;
+      return;
+    }
+    if (lastEquipItemId.current === id) return;
+    lastEquipItemId.current = id;
+    if (!id) return;
+    // Never leave the previous parent's BOM attached to a different item.
+    setValue('header.bomMasterId', equipBom?.id ?? '', { shouldDirty: true });
+  }, [isEquip, equipItem, equipBom, setValue]);
 
   const [lineError, setLineError] = useState<string | null>(null);
   // At least one of Client PO No. / Email Ref must be provided (create form).
@@ -595,8 +639,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '12px 0 8px' }}>▸ EQUIPMENT DETAILS</div>
           <div className="form-grid">
             <div className="form-grp">
-              <label className="form-label">Equipment / Part No.<span className="req">★</span></label>
-              <input className="innovic-input" autoComplete="off" list="dlSoEquipItems" placeholder="Equipment ID" {...register('lines.0.itemCodeText', { required: isEquip ? 'Part No. is required' : false, onChange: (e) => fillEquipFromItem(e.target.value) })} />
+              {/* "Parent Item" not "Part No.": this is the assembly a BOM
+                  builds (ADR-108), and naming it the same on both screens is
+                  what makes the auto-attach below make sense. */}
+              <label className="form-label">Equipment / Parent Item<span className="req">★</span></label>
+              <input className="innovic-input" autoComplete="off" list="dlSoEquipItems" placeholder="Parent item code" {...register('lines.0.itemCodeText', { required: isEquip ? 'Parent item is required' : false, onChange: (e) => fillEquipFromItem(e.target.value) })} />
               <datalist id="dlSoEquipItems">
                 {items.map((it) => <option key={it.id} value={it.code}>{it.name}</option>)}
               </datalist>
@@ -619,7 +666,43 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 <option value="">— No BOM (BOM Pending) —</option>
                 {boms.map((b) => <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName} (Rev {b.revision}, {b.lineCount} items)</option>)}
               </select>
-              <div className="form-help">Select an active BOM from BOM Master. Equipment value total = SO Value × Order Qty.</div>
+              {/* Say which BOM was attached, or that none exists — and in that
+                  case hand the user the way out rather than leaving them to
+                  find BOM Master themselves. Silent while the code is still
+                  half-typed: no item resolved, nothing to report yet. */}
+              {equipItem ? (
+                <div
+                  style={{
+                    marginTop: 6,
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    background: equipBom ? 'rgba(34,197,94,0.10)' : 'rgba(245,158,11,0.10)',
+                    border: `1px solid ${equipBom ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                    color: equipBom ? 'var(--green)' : 'var(--amber)',
+                  }}
+                >
+                  {equipBom ? (
+                    <>
+                      ✓ {equipBom.bomNo} — {equipBom.bomName} (Rev {equipBom.revision},{' '}
+                      {equipBom.lineCount} parts) attached automatically for {equipItem.code}.
+                    </>
+                  ) : (
+                    <>
+                      ⚠ No BOM exists for {equipItem.code} — {equipItem.name}. Create one in BOM
+                      Master first, then come back and re-pick this item.
+                      <Link
+                        to="/bom-masters/new"
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 10, marginLeft: 6 }}
+                      >
+                        Go to BOM Master →
+                      </Link>
+                    </>
+                  )}
+                </div>
+              ) : null}
+              <div className="form-help">Attached automatically from the parent item — only active BOMs are matched. Equipment value total = SO Value × Order Qty.</div>
             </div>
           </div>
         </div>

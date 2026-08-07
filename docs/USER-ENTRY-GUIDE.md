@@ -325,11 +325,15 @@ The simplest sales order.
 Used when you sell a whole machine, not loose parts.
 1. SO No., Date, Client: as before.
 2. Type: change to `equipment`. The form now shows **Equipment Details**.
-3. Equipment / Part No.: `PUMP-A1`  *(comes from the Item master)*
+3. Equipment / Parent Item: `PUMP-A1`  *(comes from the Item master)*
 4. Description: `Pump Assembly A1`
 5. Order Qty: `2`
 6. SO Value ₹ / unit: `85000`
-7. BOM: pick `Pump Assembly A1 BOM`.  *(comes from the BOM master; only active BOMs show)*
+7. BOM: **attached automatically.** A BOM names the parent item it builds, so
+   picking the parent above finds its active BOM and fills this in — a green
+   note confirms which one. If no BOM exists for that item you get an amber
+   note and a link to BOM Master; create the BOM first, then re-pick the item.
+   The dropdown stays editable if you need to override the match.
 8. Save.
 - Cascade: linking a BOM lets Planning explode the equipment into its child
   parts (see 3.3).
