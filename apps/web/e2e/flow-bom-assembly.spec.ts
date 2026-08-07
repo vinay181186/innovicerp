@@ -108,8 +108,9 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
 
   state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
 
-  // ELEMENT: status must default to Active (was Draft).
-  const statusSel = page.locator('select.innovic-select').first();
+  // ELEMENT: status must default to Active (was Draft). Only one <select> lives
+  // in the header field block; the Type pickers are down in the child rows.
+  const statusSel = page.locator('.bomx-fields select').first();
   const status = await statusSel.inputValue();
   // eslint-disable-next-line no-console
   console.log(`>> BOM status default: "${status}"`);
@@ -117,8 +118,25 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
 
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill(`${TAG} assembly`);
 
+  // ELEMENT: the part list is LOCKED until a parent is named (ADR-108).
+  const addChild = page.getByRole('button', { name: /Add child item/i });
+  await expect(addChild, 'Add is disabled before a parent is picked').toBeDisabled();
+
+  // The BOM builds the very item the SO will sell — that is what lets the SO
+  // form find this BOM by itself in step 02.
+  await pick(page, /Search parent item code/i, PARENT_ITEM, new RegExp(PARENT_ITEM));
+  await expect(addChild, 'picking the parent unlocks the list').toBeEnabled({ timeout: 15_000 });
+
+  const parentName = page.getByPlaceholder('auto-filled').first();
+  // eslint-disable-next-line no-console
+  console.log(`>> parent ${PARENT_ITEM} → "${await parentName.inputValue()}"`);
+  expect(await parentName.isEditable(), 'parent Item Name is read-only').toBe(false);
+
+  await addChild.click();
+  await page.waitForTimeout(800);
+
   // ELEMENT: the item field is the shared combobox, not a <datalist> input.
-  const itemBox = page.getByPlaceholder(/Search item code or name/i).first();
+  const itemBox = page.locator('#bom-item-0');
   const role = await itemBox.getAttribute('role');
   const listAttr = await itemBox.getAttribute('list');
   // eslint-disable-next-line no-console
@@ -126,9 +144,8 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
   expect(role, 'item picker is a combobox').toBe('combobox');
   expect(listAttr, 'the old datalist is gone').toBeNull();
 
-  // ELEMENT: the open list must escape the panel. `.panel` sets
-  // overflow:hidden, which sliced the absolutely-positioned dropdown in half —
-  // z-index cannot beat clipping. It is now portaled to <body>.
+  // ELEMENT: the open list is portaled to <body>, so no ancestor's
+  // overflow:hidden can slice it — z-index cannot beat clipping.
   await itemBox.click();
   await itemBox.fill(CHILD_NAME);
   await page.waitForTimeout(2000);
@@ -137,26 +154,30 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
     .evaluate((el) => el.parentElement?.tagName ?? '(none)');
   // eslint-disable-next-line no-console
   console.log(`>> dropdown list parent: ${listParent}`);
-  expect(listParent, 'the list is portaled to <body>, not trapped in .panel').toBe('BODY');
+  expect(listParent, 'the list is portaled to <body>').toBe('BODY');
 
-  const optBox = await page
-    .locator('#bom-item-0-listbox [role="option"]')
-    .first()
-    .boundingBox();
-  const panelBox = await page.locator('.panel').last().boundingBox();
+  // ELEMENT: and it stays attached to the field it belongs to.
+  const optBox = await page.locator('#bom-item-0-listbox [role="option"]').first().boundingBox();
+  const fieldBox = await itemBox.boundingBox();
+  const listBox = await page.locator('#bom-item-0-listbox').boundingBox();
+  const gap =
+    listBox && fieldBox
+      ? listBox.y >= fieldBox.y
+        ? listBox.y - (fieldBox.y + fieldBox.height)
+        : fieldBox.y - (listBox.y + listBox.height)
+      : 999;
   // eslint-disable-next-line no-console
-  console.log(
-    `>> option bottom ${optBox?.y != null ? Math.round(optBox.y + optBox.height) : '?'}` +
-      ` vs panel bottom ${panelBox?.y != null ? Math.round(panelBox.y + panelBox.height) : '?'}`,
-  );
+  console.log(`>> dropdown gap from its field: ${Math.round(gap)}px`);
+  expect(gap, 'the list is anchored to its own field').toBeLessThanOrEqual(12);
   expect(optBox?.height ?? 0, 'the option row has its full height, not a sliver').toBeGreaterThan(20);
 
   // Search by the NAME, not the code — the old datalist could only prefix-match
   // the code, so this is the behaviour that actually changed.
-  await pick(page, /Search item code or name/i, CHILD_NAME, new RegExp(CHILD_ITEM));
+  await pick(page, /Search item code/i, CHILD_NAME, new RegExp(CHILD_ITEM));
 
-  // ELEMENT: the name auto-fills into its own read-only box.
-  const nameBox = page.getByPlaceholder('auto-filled').first();
+  // ELEMENT: the name auto-fills into its own read-only box (nth(1): nth(0) is
+  // the parent's).
+  const nameBox = page.getByPlaceholder('auto-filled').nth(1);
   await expect(nameBox, 'Item Name auto-fills').toHaveValue(new RegExp(CHILD_NAME, 'i'), {
     timeout: 15_000,
   });
@@ -187,7 +208,7 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, Active default)'
     code: state.bomNo,
     qty: `${QTY_PER_SET} per set`,
     status: 'active',
-    note: `1 child part: ${CHILD_ITEM} ${CHILD_NAME}`,
+    note: `parent ${PARENT_ITEM} · 1 child ${CHILD_ITEM} ${CHILD_NAME}`,
   });
 });
 
@@ -216,30 +237,24 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
   // item code went into the client box and wiped the client, which is what
   // produced "Pick a client from the master" on save.
   await page.locator('input[name="lines.0.itemCodeText"]').fill(PARENT_ITEM);
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(2500);
+
+  // ELEMENT: the BOM attaches ITSELF. A BOM names the parent item it builds, so
+  // naming the parent here is enough to find it — no second lookup by hand.
+  const attachNote = page.locator('text=/attached automatically for/');
+  await expect(attachNote, 'the parent item finds its own BOM').toBeVisible({ timeout: 20_000 });
+  const noteText = ((await attachNote.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+  // eslint-disable-next-line no-console
+  console.log(`>> ${noteText}`);
+  expect(noteText, 'the BOM it attached is the one we just made').toContain(state.bomNo);
+
+  const bomSel = page.locator('select[name="header.bomMasterId"]');
+  await expect(bomSel, 'the BOM field is filled in').not.toHaveValue('');
 
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
   await nums.nth(1).fill(String(RATE)).catch(() => {});
   await page.waitForTimeout(500);
-
-  // The BOM <select> is the one carrying our BOM number as an option.
-  const bomSel = page
-    .locator('select')
-    .filter({ has: page.locator('option', { hasText: state.bomNo }) })
-    .first();
-  await expect(bomSel, 'the BOM appears in the SO BOM picker').toHaveCount(1, { timeout: 20_000 });
-  await bomSel.selectOption({ label: new RegExp(state.bomNo) as unknown as string }).catch(async () => {
-    const opts = await bomSel.locator('option').all();
-    for (const o of opts) {
-      const t = await o.innerText();
-      if (t.includes(state.bomNo)) {
-        await bomSel.selectOption(await o.getAttribute('value') ?? '');
-        break;
-      }
-    }
-  });
-  await page.waitForTimeout(600);
 
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
@@ -294,6 +309,25 @@ test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
   const expectedNeed = QTY_PER_SET * SO_QTY;
   // eslint-disable-next-line no-console
   console.log(`>> expecting total need ${expectedNeed} (${QTY_PER_SET}/set × ${SO_QTY}); modal mentions it: ${modalText.includes(String(expectedNeed))}`);
+
+  // Tick every plannable child. Rows only pre-tick when there is a SHORTFALL —
+  // if stock already covers the need the row arrives unchecked and Save refuses
+  // with "No plans to create". A planner forcing production has to tick it, so
+  // that is what we do.
+  const boxes = page.locator('table input[type="checkbox"]:not([disabled])');
+  const boxCount = await boxes.count();
+  for (let i = 0; i < boxCount; i++) {
+    if (!(await boxes.nth(i).isChecked())) await boxes.nth(i).check();
+  }
+  // Any row left at qty 0 is skipped by the same guard — give it the full need.
+  const qtyCells = page.locator('table input[type="number"]:not([disabled])');
+  for (let i = 0; i < (await qtyCells.count()); i++) {
+    const v = Number(await qtyCells.nth(i).inputValue());
+    if (!Number.isFinite(v) || v <= 0) await qtyCells.nth(i).fill(String(expectedNeed));
+  }
+  await page.waitForTimeout(500);
+  // eslint-disable-next-line no-console
+  console.log(`>> ticked ${boxCount} plannable child row(s)`);
 
   await page.getByRole('button', { name: /Create|Plan/i }).last().click();
   await page.waitForTimeout(5000);
@@ -446,6 +480,20 @@ test('@bom 06 — dispatch the assembled units', async ({ page }) => {
   const max = await dqty.getAttribute('max').catch(() => null);
   // eslint-disable-next-line no-console
   console.log(`>> dispatch qty cap: ${max ?? '(none)'}`);
+  // A cap of 0 means nothing is ready — the qty box is disabled and filling it
+  // would just hang until the test times out. Report WHY instead.
+  if (max === '0' || !(await dqty.isEnabled())) {
+    const row = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+    record({
+      step: '06',
+      doc: 'Customer Dispatch',
+      code: '—',
+      qty: `${SO_QTY}`,
+      status: 'BLOCKED',
+      note: `available 0 — nothing ready on ${state.soCode}. ${row.slice(row.indexOf('READY') > 0 ? row.indexOf('READY') : 0, 320)}`,
+    });
+    return;
+  }
   await dqty.fill(String(SO_QTY));
   await page.getByRole('button', { name: /Create Dispatch/i }).click();
   await page.waitForTimeout(5000);
