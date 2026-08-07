@@ -4649,3 +4649,87 @@ The refusal message now names the part and shows the arithmetic:
 - **Tests UNRUN.** `pnpm --filter api test` seeds and deletes on the prod DB.
   Verified by typecheck + lint, plus running the new requirement query against
   the live rows (BOM-0001 × IN-SO-00007 → required = 6, matching the modal).
+
+## ADR-108: A BOM must name the parent item it builds — exactly one, before any part
+
+**Date:** 2026-08-07
+**Status:** Accepted
+
+### Context
+
+`bom_masters` held a name, a status and a list of child parts — and nothing
+that said *what those parts add up to*. The parent was implied by whichever
+sales-order line happened to carry `source_bom_master_id`, which means:
+
+- Reading a BOM on its own told you nothing about what it builds.
+- Two SO lines for different items could point at the same BOM and both be
+  "correct", because no rule tied a BOM to one product.
+- It is the root of the open gap noted after the assembly e2e run: an
+  equipment SO can be planned and produced, but never dispatched or invoiced,
+  because producing the BOM children credits stock for the *children* and
+  nothing ever credits the *parent*. Nothing could credit the parent — the
+  parent was never recorded.
+
+The user's instruction: "first add parent item, same as child item card, only
+one parent item allowed, without parent item user cannot step forward."
+
+### Decision
+
+`bom_masters.parent_item_id uuid REFERENCES items(id)` (migration 0085), plus a
+partial index for the "which BOM builds this item?" lookup.
+
+- **Exactly one.** A column, not a table. An assembly with two parents is not
+  an assembly.
+- **Required on every write.** `createBomMasterInputSchema` and
+  `updateBomMasterInputSchema` both demand it; `assertParentIsUsable` re-checks
+  server-side that the item exists in the company.
+- **The parent may not be one of its own children.** Enforced in the shared Zod
+  refine, again in the service, and again in the form — a self-referential BOM
+  is a loop that planning would explode forever.
+- **NULLABLE at the DB level.** Six BOMs already exist with no parent and no way
+  to infer one (no `sales_order_lines` row references any of them). A NOT NULL
+  column would have refused the ALTER.
+- **The form is the backfill.** Since update also requires a parent, each old
+  BOM gets one the first time anybody edits it. Once
+  `SELECT bom_no FROM bom_masters WHERE parent_item_id IS NULL AND deleted_at
+  IS NULL` returns zero rows, the column can be tightened to NOT NULL.
+
+**UI:** the parent sits at the top of the Part List panel in a card with the
+same grid tracks as a child row (index / code picker / auto-filled name), so it
+reads as the head of the list. It deliberately stops there — no Qty/Set (that is
+what the children carry), no Type, no remove button. Until a parent is picked
+the card is amber, "+ Add Item" and "Import Excel" are disabled, and the
+existing rows go inert rather than disappearing (on the edit form a pre-0085 BOM
+already has parts, and hiding them would read as "my BOM lost its parts").
+
+### Alternatives Considered
+
+- **A `bom_parents` child table** — rejected: models a many-parent BOM we
+  explicitly do not want, and every read would need a join to answer "what does
+  this build?".
+- **Infer the parent from the linked SO line** — rejected: that is today's
+  behaviour and it is exactly what is broken. A BOM with no SO yet has no
+  parent, and two SO lines could disagree.
+- **NOT NULL with a guessed backfill** — rejected: nothing in the data supports
+  a guess. Six wrong parents are worse than six blank ones.
+- **Warn instead of block** — rejected: the user asked for a hard gate, and a
+  BOM whose parent is optional is the state we are trying to leave.
+
+### Consequences
+
+- Positive: a BOM is now self-describing. This is the prerequisite for the
+  assembly/kitting step that will credit the finished parent to stock and let
+  an equipment SO reach dispatch and invoice.
+- Positive: BOM search now matches the parent's code and name — "which BOM
+  builds this part?" is the question people actually arrive with.
+- Positive: swapping the parent is recorded in the revision note
+  (`Parent OLD → NEW · …`) instead of changing silently.
+- Negative: the six existing BOMs cannot be edited until a parent is chosen.
+  That is the intended cutover, but it will surprise whoever hits it first.
+- Risk: nothing yet *uses* `parent_item_id` in planning or dispatch. It records
+  the fact; the assembly step that acts on it is still an open design decision.
+- **Tests UNRUN.** `apps/api/test/global-setup.ts` deletes from the live DB
+  (`DELETE FROM public.items WHERE code LIKE 'T%-%'`) and no separate test
+  database exists. Verified by typecheck + lint on all four packages, by
+  applying 0085 and re-reading the column/index/FK from the live DB, and by
+  driving the deployed form in Playwright.

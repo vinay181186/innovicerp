@@ -23,6 +23,11 @@ export const bomMasterSchema = z.object({
   companyId: z.string().uuid(),
   bomNo: z.string(),
   bomName: z.string(),
+  /** The assembled item this BOM builds. Nullable ONLY for BOMs created
+   *  before migration 0085 — every write since then requires one. */
+  parentItemId: z.string().uuid().nullable().default(null),
+  parentItemCode: z.string().nullable().default(null),
+  parentItemName: z.string().nullable().default(null),
   revision: z.number().int().positive(),
   status: bomStatusSchema,
   revisionDate: z.string(), // ISO date
@@ -117,18 +122,27 @@ export const createBomMasterLineInputSchema = z.object({
 });
 export type CreateBomMasterLineInput = z.infer<typeof createBomMasterLineInputSchema>;
 
+// A BOM says "this parent item is built from these child parts". The parent is
+// REQUIRED and there is exactly one — a single column, not a list — because an
+// assembly with two parents is not an assembly. Without it the BOM cannot say
+// what it builds, which is what left equipment SOs plannable but undeliverable.
 export const createBomMasterInputSchema = z
   .object({
     // bomNo is optional on create — server will auto-generate BOM-NNNN
     // if omitted (matches legacy _nextBOMNo behaviour).
     bomNo: z.string().min(1).max(64).optional(),
     bomName: z.string().min(1).max(255),
+    parentItemId: z.string().uuid('Pick the parent item this BOM builds'),
     status: bomStatusSchema.default('draft'),
     lines: z.array(createBomMasterLineInputSchema).min(1, 'Add at least one item to the BOM'),
   })
   .refine(
     (v) => new Set(v.lines.map((l) => l.childItemId)).size === v.lines.length,
     'Duplicate items in BOM',
+  )
+  .refine(
+    (v) => !v.lines.some((l) => l.childItemId === v.parentItemId),
+    'The parent item cannot also be one of its own child parts',
   );
 export type CreateBomMasterInput = z.infer<typeof createBomMasterInputSchema>;
 
@@ -140,6 +154,9 @@ export const updateBomMasterInputSchema = z
   .object({
     bomNo: z.string().min(1).max(64),
     bomName: z.string().min(1).max(255),
+    // Required on update too, so the pre-0085 BOMs that have no parent get one
+    // the first time anybody edits them — that is the whole backfill plan.
+    parentItemId: z.string().uuid('Pick the parent item this BOM builds'),
     status: bomStatusSchema,
     lines: z.array(createBomMasterLineInputSchema).min(1),
     revisionNote: z.string().max(2000).nullable().optional(),
@@ -147,5 +164,9 @@ export const updateBomMasterInputSchema = z
   .refine(
     (v) => new Set(v.lines.map((l) => l.childItemId)).size === v.lines.length,
     'Duplicate items in BOM',
+  )
+  .refine(
+    (v) => !v.lines.some((l) => l.childItemId === v.parentItemId),
+    'The parent item cannot also be one of its own child parts',
   );
 export type UpdateBomMasterInput = z.infer<typeof updateBomMasterInputSchema>;

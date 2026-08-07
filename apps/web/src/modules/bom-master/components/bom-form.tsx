@@ -31,6 +31,14 @@ async function loadXlsx(): Promise<XlsxModule> {
 // code picker, a wider read-only name, then qty / type / remove.
 const BOM_GRID = '30px 1.3fr 1.8fr 110px 140px 36px';
 
+// The parent row reuses the first three track widths so its code picker and
+// name box line up column-for-column with the children below — the parent
+// reads as the head of the list, not as a separate unrelated field. It stops
+// there: no Qty/Set (that is what the children carry), no Type (a parent is
+// always the thing being assembled), no remove button (there is exactly one).
+// The remaining width is one caption cell.
+const PARENT_GRID = '30px 1.3fr 1.8fr 1fr';
+
 export interface BomFormLineDraft {
   childItemId: string;
   childItemCodeText: string;
@@ -41,6 +49,11 @@ export interface BomFormLineDraft {
 export interface BomFormHeaderDraft {
   bomNo: string;
   bomName: string;
+  /** The assembled item this BOM builds. Exactly one, and required — the part
+   *  list stays locked until it is picked. Empty string = not picked yet. */
+  parentItemId: string;
+  /** What the user typed/picked, so a pasted exact code still resolves. */
+  parentItemCodeText: string;
   status: 'draft' | 'active' | 'obsolete';
 }
 
@@ -213,6 +226,45 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   };
   const resolvedLines = useMemo(() => lines.map(resolveLine), [lines, itemsByCode, itemPage]);
 
+  // ── Parent item ─────────────────────────────────────────────────────────
+  // Same paste-and-go resolution as a child line: a typed exact code becomes
+  // an id, so the user is not forced to click the dropdown row.
+  const resolvedParentId = useMemo(() => {
+    if (header.parentItemId) return header.parentItemId;
+    const typed = header.parentItemCodeText.trim().toUpperCase();
+    if (!typed) return '';
+    const match =
+      itemsByCode.get(typed) ??
+      (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
+    return match?.id ?? '';
+  }, [header.parentItemId, header.parentItemCodeText, itemsByCode, itemPage]);
+
+  const parentItem = resolvedParentId
+    ? (itemById.get(resolvedParentId) ??
+      (itemPage?.items ?? []).find((i) => i.id === resolvedParentId) ??
+      null)
+    : null;
+
+  // THE GATE. No parent → no part list. A BOM with children but no parent is
+  // a list of parts that builds nothing, which is exactly the state that let
+  // an equipment SO be planned and then never dispatched.
+  const parentLocked = !resolvedParentId;
+
+  const onParentPicked = (id: string | null): void => {
+    if (!id) {
+      setHeader((h) => ({ ...h, parentItemId: '' }));
+      return;
+    }
+    const picked = itemById.get(id) ?? (itemPage?.items ?? []).find((i) => i.id === id);
+    setHeader((h) => ({ ...h, parentItemId: id, parentItemCodeText: picked?.code ?? '' }));
+  };
+
+  const onParentSearch = (term: string): void => {
+    setItemSearch(term);
+    // Keep the typed text so resolvedParentId can still recover an exact code.
+    setHeader((h) => (h.parentItemId ? h : { ...h, parentItemCodeText: term }));
+  };
+
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
@@ -370,6 +422,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 
   const validationError = useMemo(() => {
     if (!header.bomName.trim()) return 'BOM Name is required';
+    // Parent before parts — it is the thing the parts add up to, and the part
+    // list is locked until it is set, so complain about it first.
+    if (!resolvedParentId) {
+      return header.parentItemCodeText.trim()
+        ? `Parent item: "${header.parentItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
+        : 'Pick the parent item this BOM builds before adding parts.';
+    }
     if (resolvedLines.length === 0) return 'Add at least one item to the BOM';
     const itemIds = new Map<string, number>();
     for (let i = 0; i < resolvedLines.length; i++) {
@@ -380,6 +439,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         return l.childItemCodeText.trim()
           ? `Line ${i + 1}: "${l.childItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
           : `Line ${i + 1}: pick an item from the dropdown list.`;
+      }
+      if (l.childItemId === resolvedParentId) {
+        const code = l.childItemCodeText.trim() || parentItem?.code || 'this item';
+        return `Line ${i + 1}: ${code} is the parent item, so it cannot also be one of its own parts. Remove this line, or pick a different parent.`;
       }
       const firstLine = itemIds.get(l.childItemId);
       if (firstLine !== undefined) {
@@ -395,13 +458,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       }
     }
     return null;
-  }, [header, resolvedLines, itemById]);
+  }, [header, resolvedLines, itemById, resolvedParentId, parentItem]);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (validationError) return;
     await onSubmit(
-      header,
+      // Hand back the RESOLVED parent id so a pasted code saves too.
+      { ...header, parentItemId: resolvedParentId },
       // Resolved, so a pasted exact code saves with its real item id.
       resolvedLines,
       mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
@@ -480,10 +544,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             >
               <Download size={13} /> Template
             </button>
+            {/* Import and Add are the two ways to put a part on the list, so
+                both are gated on the parent. Template stays open — you may
+                well want the empty sheet before you have decided the parent. */}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ color: 'var(--green)' }}
+              disabled={parentLocked}
+              title={parentLocked ? 'Pick the parent item first' : undefined}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload size={13} /> Import Excel
@@ -495,7 +564,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               style={{ display: 'none' }}
               onChange={(e) => void onImportFile(e)}
             />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={parentLocked}
+              title={parentLocked ? 'Pick the parent item first' : undefined}
+              onClick={addLine}
+            >
               <Plus size={13} /> Add Item
             </button>
           </div>
@@ -524,8 +599,68 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </div>
         ) : null}
         <div className="panel-body">
+          {/* ── Parent item ────────────────────────────────────────────────
+              Same card shape and same grid tracks as a child row, so the eye
+              reads "this assembly is made of these parts" top-to-bottom. One
+              only: it is a single field on the header, not a list. */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: PARENT_GRID,
+              gap: 8,
+              alignItems: 'center',
+              background: parentItem ? 'var(--green3)' : 'var(--amber3)',
+              border: `1px solid ${parentItem ? 'var(--green)' : 'var(--amber)'}`,
+              borderRadius: 8,
+              padding: 10,
+              marginBottom: 8,
+            }}
+          >
+            <span
+              className="fw-700"
+              style={{ textAlign: 'center', fontSize: 14 }}
+              title="Parent item — the assembly this BOM builds"
+            >
+              🔩
+            </span>
+            <SearchableSelect
+              id="bom-parent-item"
+              value={resolvedParentId || null}
+              onChange={onParentPicked}
+              onSearch={onParentSearch}
+              loading={itemsFetching}
+              options={itemOptions}
+              placeholder="🔍 Parent item code…"
+              emptyText="No matching item"
+              selectedLabel={(o) => o.code ?? o.name}
+              {...(parentItem
+                ? { valueLabel: parentItem.code }
+                : header.parentItemCodeText
+                  ? { valueLabel: header.parentItemCodeText }
+                  : {})}
+            />
+            <input
+              className="innovic-input"
+              readOnly
+              placeholder="auto-filled"
+              value={
+                parentItem
+                  ? parentItem.material
+                    ? `${parentItem.name} [${parentItem.material}]`
+                    : parentItem.name
+                  : ''
+              }
+              style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
+            />
+            <span className="text3" style={{ fontSize: 10, letterSpacing: 0.3 }}>
+              {parentItem ? 'PARENT — BUILT FROM THE PARTS BELOW' : 'PICK THE PARENT FIRST'}
+            </span>
+          </div>
+
           <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-            Add a line, then pick an item code — name auto-fills from the Item Master.
+            {parentLocked
+              ? '⚠ Pick the parent item above to unlock the part list.'
+              : 'Add a line, then pick an item code — name auto-fills from the Item Master.'}
           </div>
 
           {lines.length > 0 ? (
@@ -553,12 +688,23 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 
           {lines.length === 0 ? (
             <div className="empty-state" style={{ padding: 20 }}>
-              No items yet. Click <strong>+ Add Item</strong>.
+              {parentLocked ? (
+                <>
+                  Locked — pick the <strong>parent item</strong> above first.
+                </>
+              ) : (
+                <>
+                  No items yet. Click <strong>+ Add Item</strong>.
+                </>
+              )}
             </div>
           ) : null}
 
           {/* Render the RESOLVED lines so a pasted exact code fills the Name
-              box immediately, instead of staying blank until save. */}
+              box immediately, instead of staying blank until save.
+              While the parent is unset the rows go inert rather than vanishing:
+              on the EDIT form a pre-0085 BOM already has parts, and hiding them
+              would read as "my BOM lost its parts". */}
           {resolvedLines.map((line, idx) => {
             // Name follows the PICKED item. Resolve from the full master first
             // (covers a line loaded into the edit form), then from the current
@@ -580,7 +726,10 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   borderRadius: 8,
                   padding: 10,
                   marginBottom: 8,
+                  opacity: parentLocked ? 0.45 : 1,
+                  pointerEvents: parentLocked ? 'none' : 'auto',
                 }}
+                aria-disabled={parentLocked}
               >
                 <span
                   className="mono fw-700"

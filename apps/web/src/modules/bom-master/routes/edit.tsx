@@ -44,6 +44,7 @@ function BomMasterEditPage(): React.JSX.Element {
       const updated = await update.mutateAsync({
         bomNo: header.bomNo.trim(),
         bomName: header.bomName.trim(),
+        parentItemId: header.parentItemId,
         status: header.status,
         lines: linesToInput(lines),
         revisionNote,
@@ -85,6 +86,10 @@ function BomMasterEditPage(): React.JSX.Element {
       initialHeader={{
         bomNo: detail.bomNo,
         bomName: detail.bomName,
+        // Blank for the BOMs that predate migration 0085 — the form then locks
+        // the part list until one is chosen, which is how they get backfilled.
+        parentItemId: detail.parentItemId ?? '',
+        parentItemCodeText: detail.parentItemCode ?? '',
         status: detail.status,
       }}
       initialLines={initialLines}

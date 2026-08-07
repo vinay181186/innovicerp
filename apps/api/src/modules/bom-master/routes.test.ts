@@ -12,6 +12,7 @@ const TEST_PREFIX = 'TBOMR-';
 
 let admin: AuthContext;
 let testItemId: string;
+let testParentId: string;
 
 async function buildApp(user: AuthContext | null): Promise<FastifyInstance> {
   const app = Fastify();
@@ -37,18 +38,32 @@ beforeAll(async () => {
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
   const it = await db
     .insert(items)
-    .values({
-      companyId: u.companyId,
-      code: `${TEST_PREFIX}ITEM`,
-      name: 'BOM routes test item',
-      revision: 'A',
-      uom: 'NOS',
-      itemType: 'component',
-      createdBy: admin.id,
-      updatedBy: admin.id,
-    })
+    .values([
+      {
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}ITEM`,
+        name: 'BOM routes test item',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+      // The parent assembly every BOM must name (migration 0085).
+      {
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}PARENT`,
+        name: 'BOM routes test parent',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+    ])
     .returning();
   testItemId = it[0]!.id;
+  testParentId = it[1]!.id;
 });
 
 afterAll(async () => {
@@ -76,6 +91,7 @@ describe('bom-master routes', () => {
       payload: {
         bomNo: `${TEST_PREFIX}R1`,
         bomName: 'Routes test BOM',
+        parentItemId: testParentId,
         status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 3, bomType: 'manufacture' }],
       },
@@ -97,6 +113,7 @@ describe('bom-master routes', () => {
       payload: {
         bomNo: `${TEST_PREFIX}R-VIEWER`,
         bomName: 'should be denied',
+        parentItemId: testParentId,
         status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },
@@ -112,6 +129,7 @@ describe('bom-master routes', () => {
       payload: {
         bomNo: `${TEST_PREFIX}R-DEL`,
         bomName: 'del test',
+        parentItemId: testParentId,
         status: 'draft',
         lines: [{ childItemId: testItemId, qtyPerSet: 1, bomType: 'manufacture' }],
       },

@@ -2083,6 +2083,10 @@ export const bomMasters = pgTable(
       .references(() => companies.id),
     bomNo: text('bom_no').notNull(),
     bomName: text('bom_name').notNull(),
+    /** The assembled item this BOM builds — exactly one per BOM (migration
+     *  0085). Nullable at the DB level only because six BOMs predate the
+     *  column; the service requires it on every create AND update. */
+    parentItemId: uuid('parent_item_id').references(() => items.id),
     revision: integer('revision').notNull().default(1),
     status: bomStatusEnum('status').notNull().default('draft'),
     revisionDate: date('revision_date').notNull().defaultNow(),
@@ -2102,6 +2106,9 @@ export const bomMasters = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('bom_masters_company_status_idx')
       .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('bom_masters_parent_item_idx')
+      .on(t.parentItemId)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('bom_masters_company_read', {
       for: 'select',

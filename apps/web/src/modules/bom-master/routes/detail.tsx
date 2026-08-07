@@ -150,6 +150,24 @@ function BomMasterDetailPage(): React.JSX.Element {
         </div>
         <div className="panel-body">
           <div className="form-grid">
+            {/* The parent leads: it is what the BOM builds. Pre-0085 BOMs have
+                none — say so plainly and point at Edit rather than showing a
+                blank, so it is obvious something is missing. */}
+            <div className="form-grp">
+              <span className="form-label">Parent Item</span>
+              <div>
+                {detail.parentItemCode ? (
+                  <>
+                    <span className="mono fw-700">{detail.parentItemCode}</span>
+                    <span className="text3"> — {detail.parentItemName}</span>
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                    Not set — use Edit / Revise to pick it
+                  </span>
+                )}
+              </div>
+            </div>
             <div className="form-grp">
               <span className="form-label">Revision Date</span>
               <div>{detail.revisionDate}</div>

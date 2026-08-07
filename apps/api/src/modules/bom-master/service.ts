@@ -117,6 +117,28 @@ async function assertItemIdsExist(
 // which part collided — a bare unique-constraint violation from Postgres tells
 // the user nothing they can act on. The web form blocks this too; this is the
 // backstop for the API and the Excel import.
+// The parent must be a real item in this company, and it must not appear among
+// its own children — a BOM that builds X out of X is a loop, and planning would
+// explode it forever. The shared Zod refine catches the second case for typed
+// clients; this repeats it server-side because Zod cannot see the DB.
+function assertParentIsUsable(
+  parentItemId: string,
+  lines: ReadonlyArray<{ childItemId: string }>,
+  lookup: ItemsLookup,
+): void {
+  const parent = lookup.byId.get(parentItemId);
+  if (!parent) {
+    throw new ValidationError(`Parent item not found: ${parentItemId}`);
+  }
+  const at = lines.findIndex((l) => l.childItemId === parentItemId);
+  if (at >= 0) {
+    throw new ValidationError(
+      `${parent.code} (${parent.name}) is the parent item, so it cannot also be part ${at + 1} ` +
+        `of its own BOM. Remove that line, or pick a different parent.`,
+    );
+  }
+}
+
 function assertNoDuplicateChildItems(
   lines: ReadonlyArray<{ childItemId: string }>,
   lookup: ItemsLookup,
@@ -175,7 +197,11 @@ export async function listBomMasters(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
-    const searchFrag = term ? sql`AND (b.bom_no ILIKE ${term} OR b.bom_name ILIKE ${term})` : sql``;
+    // Search the parent's code/name too — "which BOM builds this part?" is the
+    // question people actually arrive with.
+    const searchFrag = term
+      ? sql`AND (b.bom_no ILIKE ${term} OR b.bom_name ILIKE ${term} OR pi.code ILIKE ${term} OR pi.name ILIKE ${term})`
+      : sql``;
     const statusFrag = input.status ? sql`AND b.status = ${input.status}::bom_status` : sql``;
 
     const result = await tx.execute(sql`
@@ -185,9 +211,13 @@ export async function listBomMasters(
         b.created_at AS "createdAt", b.created_by AS "createdBy",
         b.updated_at AS "updatedAt", b.updated_by AS "updatedBy",
         b.deleted_at AS "deletedAt",
+        b.parent_item_id AS "parentItemId",
+        pi.code AS "parentItemCode",
+        pi.name AS "parentItemName",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(so_agg.linked_so_count, 0)::int AS "linkedSoCount"
       FROM public.bom_masters b
+      LEFT JOIN public.items pi ON pi.id = b.parent_item_id
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS line_count
         FROM public.bom_master_lines l
@@ -227,6 +257,9 @@ function toListItem(r: Record<string, unknown>): BomMasterListItem {
     companyId: r['companyId'] as string,
     bomNo: r['bomNo'] as string,
     bomName: r['bomName'] as string,
+    parentItemId: (r['parentItemId'] as string | null) ?? null,
+    parentItemCode: (r['parentItemCode'] as string | null) ?? null,
+    parentItemName: (r['parentItemName'] as string | null) ?? null,
     revision: Number(r['revision'] ?? 1),
     status: r['status'] as BomMasterListItem['status'],
     revisionDate: dateLike(r['revisionDate']),
@@ -254,6 +287,12 @@ async function loadBomMasterDetail(
     .limit(1);
   const header = headers[0];
   if (!header) throw new NotFoundError(`BOM master ${id} not found`);
+
+  // Parent item display values. Nullable only for pre-0085 BOMs.
+  const parent = header.parentItemId
+    ? ((await loadItemsByIds(tx, [header.parentItemId], companyId)).byId.get(header.parentItemId) ??
+      null)
+    : null;
 
   // Lines with joined item code + name for display.
   const lineRows = await tx
@@ -297,6 +336,9 @@ async function loadBomMasterDetail(
     companyId: header.companyId,
     bomNo: header.bomNo,
     bomName: header.bomName,
+    parentItemId: header.parentItemId,
+    parentItemCode: parent?.code ?? null,
+    parentItemName: parent?.name ?? null,
     revision: header.revision,
     status: header.status,
     revisionDate: dateLike(header.revisionDate),
@@ -597,8 +639,10 @@ export async function createBomMaster(
 
   return withUserContext(user, async (tx) => {
     // Validate items exist + capture their codes for the revision snapshot.
-    const itemIds = input.lines.map((l) => l.childItemId);
+    // The parent goes in the same lookup so one round-trip covers both.
+    const itemIds = [input.parentItemId, ...input.lines.map((l) => l.childItemId)];
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
+    assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
 
     // Auto bomNo when not supplied; reject if supplied + already used.
@@ -626,6 +670,7 @@ export async function createBomMaster(
         companyId,
         bomNo,
         bomName: input.bomName,
+        parentItemId: input.parentItemId,
         revision: 1,
         status: input.status,
         revisionDate: sql`current_date` as unknown as string,
@@ -706,9 +751,10 @@ export async function updateBomMaster(
       if (dup.length > 0) throw new ConflictError(`BOM No. "${input.bomNo}" already exists`);
     }
 
-    // Validate items exist.
-    const itemIds = input.lines.map((l) => l.childItemId);
+    // Validate items exist (parent included — see createBomMaster).
+    const itemIds = [input.parentItemId, ...input.lines.map((l) => l.childItemId)];
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
+    assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
 
     // Capture PRE-update lines for the revision snapshot + diff note.
@@ -734,7 +780,19 @@ export async function updateBomMaster(
       bomType: l.bomType,
     }));
 
-    const autoNote = computeBomDiffNote(oldSnapshot, newSnapshot);
+    // Swapping the parent changes what the BOM builds — the single most
+    // consequential edit possible here — so it leads the auto note instead of
+    // being invisible next to the line diff.
+    let autoNote = computeBomDiffNote(oldSnapshot, newSnapshot);
+    if (header.parentItemId !== input.parentItemId) {
+      const to = itemsLookup.byId.get(input.parentItemId)?.code ?? input.parentItemId;
+      const from = header.parentItemId
+        ? ((await loadItemsByIds(tx, [header.parentItemId], companyId)).byId.get(
+            header.parentItemId,
+          )?.code ?? header.parentItemId)
+        : '(none)';
+      autoNote = `Parent ${from} → ${to} · ${autoNote}`;
+    }
     const finalNote = input.revisionNote?.trim() || autoNote;
 
     // Hard-delete old line rows (they're already in the revision snapshot).
@@ -751,6 +809,7 @@ export async function updateBomMaster(
       .set({
         bomNo: input.bomNo,
         bomName: input.bomName,
+        parentItemId: input.parentItemId,
         status: input.status,
         revision: newRevision,
         revisionDate: sql`current_date` as unknown as string,
@@ -848,6 +907,11 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
       companyId: header.companyId,
       bomNo: header.bomNo,
       bomName: header.bomName,
+      // The row is on its way out; the parent's code/name are display-only and
+      // nothing renders a deleted BOM, so the id alone is enough here.
+      parentItemId: header.parentItemId,
+      parentItemCode: null,
+      parentItemName: null,
       revision: header.revision,
       status: header.status,
       revisionDate: dateLike(header.revisionDate),

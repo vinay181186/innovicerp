@@ -97,6 +97,7 @@ function BomMastersListPage(): React.JSX.Element {
                 <th style={{ width: 28 }}></th>
                 <th>BOM No.</th>
                 <th>BOM Name</th>
+                <th>Parent Item</th>
                 <th className="td-ctr">Items</th>
                 <th className="td-ctr">Revision</th>
                 <th>Rev Date</th>
@@ -107,14 +108,14 @@ function BomMastersListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     <span style={{ color: 'var(--red)' }}>
                       {error instanceof Error ? error.message : 'Failed to load BOMs.'}
                     </span>
@@ -122,7 +123,7 @@ function BomMastersListPage(): React.JSX.Element {
                 </tr>
               ) : !data || data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     No BOMs created yet — click <strong>+ New BOM</strong>
                   </td>
                 </tr>
@@ -174,6 +175,16 @@ function BomRow({ bom, expanded, onToggle }: BomRowProps): React.JSX.Element {
           </Link>
         </td>
         <td style={{ fontWeight: 600 }}>{bom.bomName}</td>
+        <td>
+          {bom.parentItemCode ? (
+            <>
+              <span className="mono fw-700">{bom.parentItemCode}</span>
+              <span className="text3"> — {bom.parentItemName}</span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--amber)' }}>not set</span>
+          )}
+        </td>
         <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
           {bom.lineCount}
         </td>
@@ -198,7 +209,7 @@ function BomRow({ bom, expanded, onToggle }: BomRowProps): React.JSX.Element {
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={8} style={{ padding: 0, background: 'var(--bg3)' }}>
+          <td colSpan={9} style={{ padding: 0, background: 'var(--bg3)' }}>
             <ExpandedLines bomId={bom.id} />
           </td>
         </tr>

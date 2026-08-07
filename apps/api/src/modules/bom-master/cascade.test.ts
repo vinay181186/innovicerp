@@ -25,6 +25,7 @@ let admin: AuthContext;
 let itemA: string;
 let itemB: string;
 let itemC: string;
+let testParentId: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -71,11 +72,23 @@ beforeAll(async () => {
         createdBy: admin.id,
         updatedBy: admin.id,
       },
+      // The parent assembly every BOM must name (migration 0085).
+      {
+        companyId: u.companyId,
+        code: `${TEST_PREFIX}PARENT`,
+        name: 'Cascade parent',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
     ])
     .returning();
   itemA = it[0]!.id;
   itemB = it[1]!.id;
   itemC = it[2]!.id;
+  testParentId = it[3]!.id;
 });
 
 afterAll(async () => {
@@ -95,6 +108,7 @@ describe('BOM-8 cascadeBomToSoLine', () => {
       {
         bomNo: `${TEST_PREFIX}BOM-A`,
         bomName: 'mixed types',
+        parentItemId: testParentId,
         status: 'active',
         lines: [
           { childItemId: itemA, qtyPerSet: 2, bomType: 'manufacture' },
