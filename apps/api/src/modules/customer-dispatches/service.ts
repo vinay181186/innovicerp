@@ -16,7 +16,6 @@ import type {
 } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  bomMasterLines,
   customerDispatchLines,
   customerDispatches,
   items,
@@ -106,6 +105,27 @@ type DispatchableRow = {
   ready_qty: string | number;
 };
 
+// Which BOM does this SO line build? Two places carry it and BOTH are load-
+// bearing:
+//
+//   * assembly lines  -> sales_order_lines.source_bom_master_id (uuid)
+//   * EQUIPMENT SOs   -> sales_orders.bom_master_id, on the HEADER, and typed
+//                        text rather than uuid (legacy column)
+//
+// Keying only on the line column silently skipped every equipment SO — all five
+// in the database had a header BOM and a NULL line BOM — so those orders fell
+// back to SUMming unlike components: IN-SO-00011 read "Ready 9" from 4 plungers
+// plus 5 levers, an assembly count that cannot exist. Same rule as so-planning
+// (`so.type === 'equipment' && UUID_RE.test(so.bomMasterId)`), and the regex
+// guard matters: the text column holds legacy non-uuid values that would make a
+// bare ::uuid cast throw for the whole query.
+const UUID_SQL_RE = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+const EFFECTIVE_BOM_ID = `COALESCE(
+  sol.source_bom_master_id,
+  CASE WHEN so.type = 'equipment' AND so.bom_master_id ~ '${UUID_SQL_RE}'
+       THEN so.bom_master_id::uuid END
+)`;
+
 // Per-SO-line readiness: final-op effective output (QC-accepted for QC/qc-required
 // ops, received for completed outsource, else completed qty) summed across the
 // line's JCs, PLUS direct-purchase received-and-QC-accepted qty (a direct_purchase
@@ -142,10 +162,11 @@ async function loadDispatchable(
         COALESCE(i.code, sol.item_code_text) AS item_code,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
         CASE
-          WHEN sol.source_bom_master_id IS NOT NULL THEN COALESCE(bom.ready, 0)
+          WHEN ${EFFECTIVE_BOM_ID} IS NOT NULL THEN COALESCE(bom.ready, 0)
           ELSE COALESCE(rdy.ready, 0) + COALESCE(dp.ready, 0)
         END AS ready_qty
       FROM sales_order_lines sol
+      JOIN sales_orders so ON so.id = sol.sales_order_id
       LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(x.eff), 0) AS ready FROM (
@@ -251,7 +272,7 @@ async function loadDispatchable(
                 AND pol.deleted_at IS NULL
             ), 0) AS eff
         ) comp ON TRUE
-        WHERE bml.bom_master_id = sol.source_bom_master_id
+        WHERE bml.bom_master_id = ${EFFECTIVE_BOM_ID}
           AND bml.company_id = sol.company_id
           AND bml.deleted_at IS NULL
           AND bml.qty_per_set > 0
@@ -296,36 +317,43 @@ async function loadBomComponents(
 ): Promise<Map<string, BomComponent[]>> {
   const out = new Map<string, BomComponent[]>();
   if (soLineIds.length === 0) return out;
-  const rows = await tx
-    .select({
-      soLineId: salesOrderLines.id,
-      childItemId: bomMasterLines.childItemId,
-      childItemCode: items.code,
-      qtyPerSet: bomMasterLines.qtyPerSet,
-    })
-    .from(salesOrderLines)
-    // Inner join on the nullable FK: non-BOM lines have a NULL
-    // source_bom_master_id, match nothing, and drop out here.
-    .innerJoin(
-      bomMasterLines,
-      and(
-        eq(bomMasterLines.bomMasterId, salesOrderLines.sourceBomMasterId),
-        eq(bomMasterLines.companyId, companyId),
-        isNull(bomMasterLines.deletedAt),
-      ),
-    )
-    .innerJoin(items, and(eq(items.id, bomMasterLines.childItemId), isNull(items.deletedAt)))
-    .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)))
-    .orderBy(asc(bomMasterLines.lineNo));
+  // Raw SQL rather than the Drizzle builder because the BOM id has to be
+  // resolved with EFFECTIVE_BOM_ID — the line column OR the equipment SO's
+  // header column. Joining on the line column alone made every equipment
+  // dispatch fall through to "move the parent item", and nothing ever credits
+  // the parent, so it either hard-failed on on-hand 0 or moved nothing while
+  // the components stayed overstated.
+  const cid = `'${companyId}'::uuid`;
+  const idList = soLineIds.map((x) => `'${x}'::uuid`).join(',');
+  const rows = (await tx.execute(
+    sql.raw(`
+      SELECT sol.id AS so_line_id, bml.child_item_id, i.code AS child_item_code,
+             bml.qty_per_set
+      FROM sales_order_lines sol
+      JOIN sales_orders so ON so.id = sol.sales_order_id
+      JOIN bom_master_lines bml
+        ON bml.bom_master_id = ${EFFECTIVE_BOM_ID}
+       AND bml.company_id = ${cid}
+       AND bml.deleted_at IS NULL
+      JOIN items i ON i.id = bml.child_item_id AND i.deleted_at IS NULL
+      WHERE sol.company_id = ${cid} AND sol.id IN (${idList})
+      ORDER BY bml.line_no
+    `),
+  )) as unknown as Array<{
+    so_line_id: string;
+    child_item_id: string;
+    child_item_code: string | null;
+    qty_per_set: string | number;
+  }>;
 
   for (const r of rows) {
-    const list = out.get(r.soLineId) ?? [];
+    const list = out.get(r.so_line_id) ?? [];
     list.push({
-      childItemId: r.childItemId,
-      childItemCode: r.childItemCode ?? r.childItemId.slice(0, 8),
-      qtyPerSet: n(r.qtyPerSet),
+      childItemId: r.child_item_id,
+      childItemCode: r.child_item_code ?? r.child_item_id.slice(0, 8),
+      qtyPerSet: n(r.qty_per_set),
     });
-    out.set(r.soLineId, list);
+    out.set(r.so_line_id, list);
   }
   return out;
 }
