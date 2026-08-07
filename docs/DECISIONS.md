@@ -4733,3 +4733,91 @@ already has parts, and hiding them would read as "my BOM lost its parts").
   database exists. Verified by typecheck + lint on all four packages, by
   applying 0085 and re-reading the column/index/FK from the live DB, and by
   driving the deployed form in Playwright.
+
+## ADR-109: A BOM parent dispatches on its weakest component, and consumes components — never itself
+
+**Date:** 2026-08-07
+**Status:** Accepted
+
+### Context
+
+This closes the gap ADR-108 named: *"an equipment SO can be planned and
+produced, but never dispatched or invoiced, because producing the BOM children
+credits stock for the children and nothing ever credits the parent."*
+
+The user's scenario, verbatim in shape: parent PEN = 1 x ITEM-1 + 1 x ITEM-2.
+SO for 10 pens. ITEM-1 runs CNC-1 -> CNC-2 -> QC and credits stock on final QC.
+ITEM-2 runs its own process and credits stock. If ITEM-1 has 5 and ITEM-2 has 4,
+**ready to dispatch is 4 pens** — the 5th ITEM-1 has no partner. Dispatching 4
+debits 4 of each. The invoice bills 4 pens; the components never appear on it.
+
+Two defects blocked that, both traced to one root: `bom-master/cascade.ts`
+spawns every child JC / PR with `source_so_line_id` = **the parent SO line**.
+
+1. **Readiness summed the children.** `loadDispatchable` computed ready as
+   `SUM(effective output)` over all JCs on the line. For a BOM line that is
+   5 of ITEM-1 **plus** 4 of ITEM-2 = **9**, capped only by order qty. Nine of
+   nothing — there is no set of parts that makes 9 pens. The dispatch screen
+   invited shipping more than twice what exists.
+2. **The stock leg pointed at the phantom.** `createDispatch` moved stock for
+   `sales_order_lines.item_id` — the parent. Nothing ever credits the parent
+   (the QC cascade credits `job_cards.item_id`, i.e. the child), so the on-hand
+   floor saw 0 and the dispatch either hard-failed with *"Insufficient stock to
+   dispatch: on-hand 0"* or, when the parent was free text, **silently moved
+   nothing** — leaving component stock permanently overstated.
+
+### Decision
+
+**Readiness = MIN over components of FLOOR(componentReady / qtyPerSet).**
+A new LATERAL in `loadDispatchable`, selected by
+`CASE WHEN sol.source_bom_master_id IS NOT NULL`. Non-BOM lines keep the
+existing SUM branch untouched. Component readiness reuses the same
+effective-output math (QC-accepted for qc / qc_required ops, GRN-accepted for
+outsource, else completed), narrowed to that component's item, plus GRN-accepted
+qty on PO lines for `purchase` / `outsource` components — which previously
+contributed **nothing**, because the direct-purchase LATERAL requires a
+`plans` row and BOM-cascade PRs have none.
+
+**Dispatch consumes components, at `qty x qtyPerSet`, one ledger row each.**
+The parent is never debited. `source_ref` gains a ` / <childCode>` suffix so the
+rows stay distinguishable — and so the dispatch register's exact-match join on
+`code || ' / ln ' || line_no` does not fan out.
+
+**Cancel replays the ledger, it does not re-explode the BOM.**
+`loadDispatchedComponents` reads back the `out` rows this dispatch actually
+wrote and reverses exactly those. A BOM edited between dispatch and cancel
+therefore cannot leave the ledger unbalanced.
+
+### Alternatives Considered
+
+- **Derive readiness from component stock** (what `assembly/service.ts` does for
+  Equipment SOs) — rejected for dispatch: stock is company-wide and unreserved,
+  so a component consumed by another SO would still read as ready here.
+  Production output on *this* SO line is the honest number, and
+  `moveDispatchStock`'s existing on-hand floor remains the ledger-side guard.
+  This is the established split — see the SO-517 comment in that function.
+- **Credit the parent on assembly** (an assembly JC consuming children,
+  crediting the parent) — rejected as a much larger change: it needs an
+  assembly transaction, a new document, and a backfill. The phantom-parent model
+  matches what the user described and what `assembly_units` already assumes.
+- **Fix it in the dispatch UI** — rejected outright, Section 6 rule 1.
+
+### Consequences
+
+- Positive: the Equipment/BOM SO can finally reach dispatch and invoice.
+  Component stock now moves, so `v_item_stock` stops drifting upward.
+- Positive: the assembly tracker's `canAssemble` and dispatch's `ready` now
+  agree in shape (both are min-over-components), where before they disagreed.
+- Negative: readiness is still per-SO-line and unreserved — two SOs for the same
+  assembly each see the same free components as theirs. Named, not fixed.
+- Risk: components are debited only at dispatch, so stock sits unreserved from
+  QC until the lorry leaves. Same exposure the SO path already had.
+
+### Open
+
+- Multi-level BOMs are **not** recursed. A component that itself has a BOM is
+  read at its own produced qty, not exploded further. One level is what the
+  cascade spawns today, so this matches reality — but it is a real ceiling.
+- `assembly/service.ts` still derives readiness from stock while dispatch now
+  derives it from production. Both are defensible in their own context; that
+  they differ should be a deliberate call, not an accident.

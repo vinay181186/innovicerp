@@ -44,6 +44,14 @@ export default async function setup(): Promise<void> {
     await sql`DELETE FROM public.delivery_challan_receipts WHERE receipt_code LIKE 'RCPT-T%-%'`;
     await sql`DELETE FROM public.delivery_challans WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.goods_receipt_notes WHERE code LIKE 'T%-%'`;
+    // Item-anchored belt-and-braces (see job_cards / purchase_requests below):
+    // a GRN booked through the real receipt path gets a real code, so only its
+    // LINES betray it as test data. Drop the whole header — lines CASCADE.
+    await sql`
+      DELETE FROM public.goods_receipt_notes
+      WHERE id IN (
+        SELECT DISTINCT goods_receipt_note_id FROM public.goods_receipt_note_lines
+        WHERE item_id IN (SELECT id FROM public.items WHERE code LIKE 'T%-%'))`;
     // store_transactions has no `code` column; cruft surfaces via the
     // GRN-QC cascade with `source_ref` pointing at GRN codes that match.
     // Deleting goods_receipt_notes above should leave store_transactions
@@ -60,18 +68,40 @@ export default async function setup(): Promise<void> {
     await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
     // PL-4 executePlan generates PR codes like PR-DP-<slug>-NN / PR-FO-... / PR-FOMAT-...
     // Sweep those by prefix in case a test crashed before afterAll could clean them.
-    await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%' OR code LIKE 'PR-DP-%' OR code LIKE 'PR-FO-%' OR code LIKE 'PR-FOMAT-%'`;
+    // BOM-8 cascadeBomToSoLine generates PR-BOM-<slug>-NN for purchase /
+    // outsource components — no test prefix, so sweep by shape.
+    await sql`DELETE FROM public.purchase_requests WHERE code LIKE 'T%-%' OR code LIKE 'PR-DP-%' OR code LIKE 'PR-FO-%' OR code LIKE 'PR-FOMAT-%' OR code LIKE 'PR-BOM-%'`;
+    // Same item-anchored belt-and-braces as job_cards below: PRs raised through
+    // the real creation path carry a real code no prefix pattern can match.
+    await sql`
+      DELETE FROM public.purchase_requests
+      WHERE item_id IN (SELECT id FROM public.items WHERE code LIKE 'T%-%')`;
     await sql`DELETE FROM public.sales_orders WHERE code LIKE 'T%-%'`;
     await sql`DELETE FROM public.job_work_orders WHERE code LIKE 'T%-%'`;
     // job_cards CASCADE-deletes its jc_ops, op_log, running_ops (per
     // schema fk on_delete=cascade). Wiping here drops the whole subtree.
     // PL-4 executePlan generates codes JC-PLN-<slug>-NN — sweep those too
     // so a crashed test doesn't leave JCs referencing test items.
-    await sql`DELETE FROM public.job_cards WHERE code LIKE 'T%-%' OR code LIKE 'JC-PLN-%'`;
+    // BOM-8 cascadeBomToSoLine generates JC-BOM-<slug>-NN for `manufacture`
+    // components. Those carry no test prefix, so without this pattern they
+    // survive the wipe and pin the test items below (FK job_cards.item_id),
+    // failing the whole run at setup.
+    await sql`DELETE FROM public.job_cards WHERE code LIKE 'T%-%' OR code LIKE 'JC-PLN-%' OR code LIKE 'JC-BOM-%'`;
+    // Belt-and-braces: tests that go through the REAL job-card creation path
+    // get a real sequential code (IN-JC-26-000NN), which no prefix pattern can
+    // catch. Anchor on the item instead — a JC pointing at a test-prefixed item
+    // is test cruft by construction, and leaving it pins the items wipe below.
+    await sql`
+      DELETE FROM public.job_cards
+      WHERE item_id IN (SELECT id FROM public.items WHERE code LIKE 'T%-%')`;
     // route_cards CASCADE-delete their route_card_ops + route_card_revisions
     // (FK ON DELETE CASCADE). PL-4 tests create temporary route cards under
     // the test-prefix so cleanup wipes them too.
     await sql`DELETE FROM public.route_cards WHERE code LIKE 'T%-%'`;
+
+    // BOM masters (bom_master_lines CASCADE from the header). Must run after
+    // sales_orders above — sales_order_lines.source_bom_master_id FKs here.
+    await sql`DELETE FROM public.bom_masters WHERE bom_no LIKE 'T%-%'`;
 
     // 2. Master tables — referenced by transactional tables, so wipe last.
     //    These are also LIKE-matched at SELECT time by tests' notLike()

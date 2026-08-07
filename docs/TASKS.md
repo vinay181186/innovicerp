@@ -92,6 +92,56 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Closed — BOM dispatch: weakest component, and component stock (2026-08-07, ADR-109)
+
+**Status:** [x] Done. Closes the gap ADR-108 flagged — a BOM/Equipment SO could be
+planned and produced but never dispatched or invoiced.
+
+**Root cause (one, two symptoms):** `bom-master/cascade.ts:177` spawns every child
+JC with `source_so_line_id` = **the parent SO line**. So:
+
+1. `customer-dispatches/service.ts` `loadDispatchable` **summed** them — 5 of ITEM-1
+   + 4 of ITEM-2 read as **Ready 9** on a 10-pen order. There is no set of parts
+   that makes 9 pens. Now `MIN(FLOOR(componentReady / qtyPerSet))` = **4**.
+2. `createDispatch` moved stock for the **parent** item. Nothing ever credits the
+   parent (the QC cascade credits `job_cards.item_id`), so it either hard-failed on
+   `on-hand 0` or silently moved nothing and left component stock overstated
+   forever. Now each component moves at `qty x qtyPerSet`; cancel replays the
+   ledger rows rather than re-exploding the BOM.
+
+Also picked up: `purchase` / `outsource` BOM components contributed **0** to
+readiness (the direct-purchase LATERAL needs a `plans` row, which BOM-cascade PRs
+don't have). They now count their GRN-accepted qty.
+
+**Files:** `apps/api/src/modules/customer-dispatches/service.ts` ·
+`apps/api/src/modules/customer-dispatches/service.test.ts` (**new** — the module
+had no tests at all) · `apps/api/test/global-setup.ts`.
+
+**Test-infra fix (separate concern, same commit):** the global wipe could not run.
+It sweeps job cards / PRs by code prefix, but the BOM cascade mints `JC-BOM-…` /
+`PR-BOM-…` and tests going through the *real* creation path mint real sequential
+codes (`IN-JC-26-00008`), so leftovers pinned the `items` wipe via FK and **the
+whole suite aborted at setup**. Added those two prefixes plus an item-anchored
+sweep (`job_cards` / `purchase_requests` / `goods_receipt_notes` referencing a
+`T%-%` item) — this was pre-existing breakage, not caused by this change.
+
+**Verification:** 6/6 new tests pass · `tsc --noEmit` clean · `eslint` clean ·
+full API suite **20 failed / 763 passed**, identical count to the pre-change
+baseline (20 failed / 757 passed) with the *composition* churning between runs —
+shared-dev-DB flakiness in access-control / activity-log / delivery-challans /
+job-cards / plans / print-templates / purchase-orders / qc-* / reports. **None of
+those modules import customer-dispatches** (verified by grep). Not investigated
+further; they are a standing problem with running the suite against the shared dev
+Supabase project (the dedicated CI DB is still the proper fix).
+
+**Left open (in ADR-109):** multi-level BOMs are not recursed — a component that
+itself has a BOM is read at its own produced qty. Readiness is unreserved, so two
+SOs for the same assembly each see the same free components as theirs.
+`assembly/service.ts` derives readiness from **stock** while dispatch now derives
+it from **production**; that divergence should be a deliberate call.
+
+---
+
 ## Active Task
 
 **ID:** REFACTOR-1 (legacy page-parity refactor track, 2026-07-15)

@@ -16,6 +16,7 @@ import type {
 } from '@innovic/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  bomMasterLines,
   customerDispatchLines,
   customerDispatches,
   items,
@@ -53,6 +54,11 @@ async function moveDispatchStock(
   lineNo: number,
   itemId: string | null,
   qty: number,
+  // BOM-driven lines move stock for each COMPONENT, never for the assembled
+  // parent (the parent is a phantom — nothing ever credits it). Passing the
+  // component keeps one ledger row per child (distinct source_ref) and names
+  // the child in the insufficient-stock error.
+  component?: { code: string },
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
@@ -67,8 +73,8 @@ async function moveDispatchStock(
   // dispatch could drive on_hand negative — SO-517 class of bug).
   if (dir === 'out' && qty > before) {
     throw new ConflictError(
-      `Insufficient stock to dispatch: on-hand ${before}, requested ${qty}. ` +
-        `Cannot dispatch more than physical stock.`,
+      `Insufficient stock to dispatch${component ? ` ${component.code}` : ''}: ` +
+        `on-hand ${before}, requested ${qty}. Cannot dispatch more than physical stock.`,
     );
   }
   const after = dir === 'out' ? before - qty : before + qty;
@@ -79,7 +85,9 @@ async function moveDispatchStock(
     txnType: dir,
     qty,
     sourceType: 'dispatch',
-    sourceRef: `${code} / ln ${lineNo}${dir === 'in' ? ' (cancel)' : ''}`,
+    sourceRef:
+      `${code} / ln ${lineNo}` +
+      `${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
     stockBefore: before,
     stockAfter: after,
     remarks: dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
@@ -103,6 +111,24 @@ type DispatchableRow = {
 // line's JCs, PLUS direct-purchase received-and-QC-accepted qty (a direct_purchase
 // plan buys the finished item — no JC — so its GRN feeds readiness directly),
 // minus already-dispatched.
+//
+// BOM (assembly) lines are the exception and use a DIFFERENT rollup. When
+// sales_order_lines.source_bom_master_id is set, the BOM-8 cascade
+// (bom-master/cascade.ts) spawns one child JC per `manufacture` component and
+// one PR→PO per `purchase`/`outsource` component, ALL carrying
+// source_so_line_id = the parent SO line. The parent item itself is never
+// produced — it is a phantom that only exists to be sold. So SUMming the
+// children (the default branch above) is meaningless: 5 of ITEM-1 plus 4 of
+// ITEM-2 is not 9 of anything, it is 4 assemblies with one ITEM-1 stranded.
+// The correct rollup is the weakest component:
+//
+//   readyParent = MIN over components of FLOOR(componentReady / qtyPerSet)
+//
+// Component readiness is the same effective-output math as above, restricted to
+// that component's item, plus its GRN-accepted qty for bought/outsourced
+// components. Mirrors the assembly tracker's `enoughForUnits` / `canAssemble`
+// (assembly/service.ts) — that module already got this right for Equipment SOs;
+// dispatch was still summing.
 async function loadDispatchable(
   tx: DbTransaction,
   companyId: string,
@@ -115,7 +141,10 @@ async function loadDispatchable(
       SELECT sol.id AS so_line_id, sol.line_no,
         COALESCE(i.code, sol.item_code_text) AS item_code,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
-        COALESCE(rdy.ready, 0) + COALESCE(dp.ready, 0) AS ready_qty
+        CASE
+          WHEN sol.source_bom_master_id IS NOT NULL THEN COALESCE(bom.ready, 0)
+          ELSE COALESCE(rdy.ready, 0) + COALESCE(dp.ready, 0)
+        END AS ready_qty
       FROM sales_order_lines sol
       LEFT JOIN items i ON i.id = sol.item_id AND i.deleted_at IS NULL
       LEFT JOIN LATERAL (
@@ -169,6 +198,64 @@ async function loadDispatchable(
               AND pr.po_id = pol.purchase_order_id
           )
       ) dp ON TRUE
+      -- Assembly readiness: weakest component wins. One row per BOM component;
+      -- FLOOR(componentReady / qtyPerSet) is how many whole parents that
+      -- component can cover, and MIN across components is how many the set can
+      -- cover. Empty/absent BOM -> no rows -> MIN is NULL -> 0 ready, which is
+      -- the safe direction (you cannot assemble from nothing).
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(MIN(FLOOR(comp.eff / bml.qty_per_set)), 0) AS ready
+        FROM bom_master_lines bml
+        LEFT JOIN LATERAL (
+          SELECT
+            -- manufacture components: final-op effective output of the child JCs
+            -- the BOM cascade spawned for THIS parent line, narrowed to this
+            -- component's item.
+            COALESCE((
+              SELECT SUM(y.eff) FROM (
+                SELECT DISTINCT ON (jc.id)
+                  CASE
+                    WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
+                    WHEN vs.op_type = 'outsource' THEN COALESCE((
+                      SELECT SUM(grl.qc_accepted_qty)
+                      FROM goods_receipt_note_lines grl
+                      WHERE grl.purchase_order_line_id = jo2.outsource_po_line_id
+                        AND grl.deleted_at IS NULL
+                    ), 0)
+                    ELSE vs.completed_qty
+                  END AS eff
+                FROM job_cards jc
+                JOIN v_jc_op_status vs ON vs.job_card_id = jc.id
+                LEFT JOIN jc_ops jo2
+                  ON jo2.job_card_id = jc.id AND jo2.op_seq = vs.op_seq AND jo2.deleted_at IS NULL
+                WHERE jc.source_so_line_id = sol.id
+                  AND jc.item_id = bml.child_item_id
+                  AND jc.deleted_at IS NULL
+                ORDER BY jc.id, vs.op_seq DESC
+              ) y
+            ), 0)
+            +
+            -- purchase / outsource components: the BOM cascade raises a PR that
+            -- procurement converts to a PO carrying source_so_line_id. Ready is
+            -- what actually arrived and passed Incoming QC. source_jc_op_id IS
+            -- NULL keeps per-op outsource POs (already counted by the JC branch
+            -- above) from being double counted.
+            COALESCE((
+              SELECT SUM(grl.qc_accepted_qty)
+              FROM purchase_order_lines pol
+              JOIN goods_receipt_note_lines grl
+                ON grl.purchase_order_line_id = pol.id AND grl.deleted_at IS NULL
+              WHERE pol.source_so_line_id = sol.id
+                AND pol.item_id = bml.child_item_id
+                AND pol.source_jc_op_id IS NULL
+                AND pol.deleted_at IS NULL
+            ), 0) AS eff
+        ) comp ON TRUE
+        WHERE bml.bom_master_id = sol.source_bom_master_id
+          AND bml.company_id = sol.company_id
+          AND bml.deleted_at IS NULL
+          AND bml.qty_per_set > 0
+      ) bom ON TRUE
       WHERE sol.sales_order_id = ${sid} AND sol.company_id = ${cid} AND sol.deleted_at IS NULL
       ORDER BY sol.line_no
     `),
@@ -191,6 +278,87 @@ async function loadDispatchable(
       rate: n(r.rate),
     };
   });
+}
+
+interface BomComponent {
+  childItemId: string;
+  childItemCode: string;
+  qtyPerSet: number;
+}
+
+// Components of every BOM-driven line among `soLineIds`. Non-BOM lines are
+// simply absent from the map — callers fall back to moving the line's own item.
+// Dispatching an assembly consumes its components, never the phantom parent.
+async function loadBomComponents(
+  tx: DbTransaction,
+  companyId: string,
+  soLineIds: string[],
+): Promise<Map<string, BomComponent[]>> {
+  const out = new Map<string, BomComponent[]>();
+  if (soLineIds.length === 0) return out;
+  const rows = await tx
+    .select({
+      soLineId: salesOrderLines.id,
+      childItemId: bomMasterLines.childItemId,
+      childItemCode: items.code,
+      qtyPerSet: bomMasterLines.qtyPerSet,
+    })
+    .from(salesOrderLines)
+    // Inner join on the nullable FK: non-BOM lines have a NULL
+    // source_bom_master_id, match nothing, and drop out here.
+    .innerJoin(
+      bomMasterLines,
+      and(
+        eq(bomMasterLines.bomMasterId, salesOrderLines.sourceBomMasterId),
+        eq(bomMasterLines.companyId, companyId),
+        isNull(bomMasterLines.deletedAt),
+      ),
+    )
+    .innerJoin(items, and(eq(items.id, bomMasterLines.childItemId), isNull(items.deletedAt)))
+    .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, soLineIds)))
+    .orderBy(asc(bomMasterLines.lineNo));
+
+  for (const r of rows) {
+    const list = out.get(r.soLineId) ?? [];
+    list.push({
+      childItemId: r.childItemId,
+      childItemCode: r.childItemCode ?? r.childItemId.slice(0, 8),
+      qtyPerSet: n(r.qtyPerSet),
+    });
+    out.set(r.soLineId, list);
+  }
+  return out;
+}
+
+// What the dispatch ACTUALLY moved out for a BOM line, read back from the
+// ledger rows createDispatch wrote. Cancel reverses these exact rows rather
+// than re-exploding the BOM, so a BOM edited between dispatch and cancel can
+// never leave the ledger unbalanced.
+async function loadDispatchedComponents(
+  tx: DbTransaction,
+  companyId: string,
+  code: string,
+  lineNo: number,
+): Promise<Array<{ itemId: string; itemCode: string; qty: number }>> {
+  const prefix = `${code} / ln ${lineNo} / `;
+  const rows = (await tx.execute(sql`
+    SELECT st.item_id, st.qty, i.code AS item_code
+    FROM public.store_transactions st
+    LEFT JOIN public.items i ON i.id = st.item_id
+    WHERE st.company_id = ${companyId}::uuid
+      AND st.source_type = 'dispatch'
+      AND st.txn_type = 'out'
+      AND st.source_ref LIKE ${prefix} || '%'
+  `)) as unknown as Array<{ item_id: string | null; qty: number; item_code: string | null }>;
+  return rows
+    .filter((r): r is { item_id: string; qty: number; item_code: string | null } =>
+      Boolean(r.item_id),
+    )
+    .map((r) => ({
+      itemId: r.item_id,
+      itemCode: r.item_code ?? r.item_id.slice(0, 8),
+      qty: n(r.qty),
+    }));
 }
 
 async function loadSo(
@@ -525,6 +693,8 @@ export async function createDispatch(
         ),
       );
     const itemIdByLine = new Map(solRows.map((r) => [r.id, r.itemId]));
+    // BOM (assembly) lines move component stock instead of parent stock.
+    const bomByLine = await loadBomComponents(tx, companyId, lineIds);
 
     let lineNo = 0;
     for (const l of input.lines) {
@@ -548,8 +718,28 @@ export async function createDispatch(
         .update(salesOrderLines)
         .set({ dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${l.qty}`, updatedBy: user.id })
         .where(eq(salesOrderLines.id, l.salesOrderLineId));
-      // Reduce on-hand stock (finished goods out).
-      await moveDispatchStock(tx, companyId, user.id, 'out', code, input.dispatchDate, lineNo, itemId, l.qty);
+      // Reduce on-hand stock (finished goods out). A BOM line explodes: each
+      // component leaves stock at qty x qtyPerSet. The parent is never touched
+      // — it was never produced, so it has no stock to debit.
+      const components = bomByLine.get(l.salesOrderLineId);
+      if (components && components.length > 0) {
+        for (const c of components) {
+          await moveDispatchStock(
+            tx,
+            companyId,
+            user.id,
+            'out',
+            code,
+            input.dispatchDate,
+            lineNo,
+            c.childItemId,
+            Math.round(l.qty * c.qtyPerSet),
+            { code: c.childItemCode },
+          );
+        }
+      } else {
+        await moveDispatchStock(tx, companyId, user.id, 'out', code, input.dispatchDate, lineNo, itemId, l.qty);
+      }
     }
 
     const totalQty = input.lines.reduce((s, l) => s + l.qty, 0);
@@ -640,7 +830,27 @@ export async function cancelDispatch(
           })
           .where(eq(salesOrderLines.id, l.salesOrderLineId));
       }
-      await moveDispatchStock(tx, companyId, user.id, 'in', h.code, h.dispatchDate, l.lineNo, l.itemId, l.qty);
+      // Put back exactly what went out. For a BOM line that is one row per
+      // component, replayed from the ledger (see loadDispatchedComponents).
+      const moved = await loadDispatchedComponents(tx, companyId, h.code, l.lineNo);
+      if (moved.length > 0) {
+        for (const m of moved) {
+          await moveDispatchStock(
+            tx,
+            companyId,
+            user.id,
+            'in',
+            h.code,
+            h.dispatchDate,
+            l.lineNo,
+            m.itemId,
+            m.qty,
+            { code: m.itemCode },
+          );
+        }
+      } else {
+        await moveDispatchStock(tx, companyId, user.id, 'in', h.code, h.dispatchDate, l.lineNo, l.itemId, l.qty);
+      }
     }
 
     await tx
