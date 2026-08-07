@@ -126,8 +126,21 @@ async function fillPlanOp(page: Page, rowIdx: number, opName: string): Promise<v
   await page.waitForTimeout(600);
 }
 
+// Error banners are styled three different ways across these screens. Missing
+// one is not cosmetic: the job-card form paints its errors with
+// `background: var(--red3)`, so a refused save read as an empty string and the
+// spec concluded an over-quantity had been ALLOWED when the database showed the
+// qty unchanged — a false accusation against working code.
 async function bannerText(page: Page): Promise<string> {
-  for (const loc of [page.locator('.bomx-alert-red'), page.locator('[style*="rgba(239"]')]) {
+  for (const loc of [
+    page.locator('.bomx-alert-red'),
+    page.locator('[style*="rgba(239"]'),
+    // The job-card form's error box. Keyed on its border colour, not on
+    // `--red3`: that variable also paints the red STAT TILES, so matching it
+    // returned "PENDING QTY 1 pcs remaining" and the spec reported a refusal
+    // that never happened.
+    page.locator('[style*="fca5a5"]'),
+  ]) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
       if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
@@ -171,13 +184,32 @@ async function planCardButton(page: Page, code: string, name: RegExp) {
   return card.getByRole('button', { name });
 }
 
+// Once every line is planned the SO drops out of the planning list, so
+// searching for it and clicking waits forever — that is what hung step 07 for
+// ten minutes. Remember the id from the first successful open and go straight
+// to ?soId= from then on.
+let plannedSoId = process.env['E2E_M_SOID'] ?? '';
+
 async function openSoInPlanning(page: Page): Promise<void> {
+  if (plannedSoId) {
+    await page.goto(`/planning?soId=${plannedSoId}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(3500);
+    return;
+  }
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
   await page.getByPlaceholder(/Search/i).first().fill(state.soCode);
   await page.waitForTimeout(2500);
-  await page.getByText(state.soCode).first().click();
+  const link = page.getByText(state.soCode).first();
+  if ((await link.count()) === 0) {
+    throw new Error(
+      `${state.soCode} is not on the planning list — it may be fully planned. ` +
+        `Re-run with the whole tag so the id is captured, or pass E2E_M_SOID.`,
+    );
+  }
+  await link.click();
   await page.waitForTimeout(3000);
+  plannedSoId = new URL(page.url()).searchParams.get('soId') ?? '';
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -432,19 +464,33 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
     return bannerText(page);
   };
 
-  // (a) Order Qty edit persists.
+  // (a) An UNCHANGED save must go through. This is the one that was impossible:
+  // the balance rule counted the sibling children against the parent's qty, so
+  // remaining was 0 and even re-saving the card as-is was refused.
   const qtyBox = page.locator('input[type="number"]').first();
   const before = await qtyBox.inputValue();
-  const target = String(Number(before || '1') + 1);
-  await qtyBox.fill(target);
-  const qtyErr = await save();
-  await openEdit();
-  const qtyNow = await page.locator('input[type="number"]').first().inputValue();
-  const qtyOk = qtyNow === target;
-  notes.push(`qty ${before}→${target}: ${qtyOk ? 'saved' : `NOT saved (reads ${qtyNow}${qtyErr ? `; ${qtyErr}` : ''})`}`);
-  log(`JC edit — order qty ${before} → ${target}: form reads ${qtyNow} → ${qtyOk ? 'OK' : 'FAILED'}`);
+  const sameErr = await save();
+  const sameOk = !sameErr;
+  notes.push(`save unchanged: ${sameOk ? 'saved' : `REFUSED (${sameErr})`}`);
+  log(`JC edit — unchanged save: ${sameOk ? 'OK' : `FAILED — ${sameErr}`}`);
 
-  // (b) Adding an operation persists.
+  // (b) Going OVER the component's own requirement must still be refused, and
+  // the message must name the component rather than the parent's balance.
+  await openEdit();
+  const over = String(Number(before || '1') + 5);
+  await page.locator('input[type="number"]').first().fill(over);
+  const overErr = await save();
+  const overRefused = /BOM requirement|SO Line balance/i.test(overErr);
+  notes.push(`qty ${before}→${over}: ${overRefused ? `refused — "${overErr.slice(0, 80)}"` : 'ALLOWED (should not be)'}`);
+  log(`JC edit — over-qty ${over}: ${overRefused ? 'refused as it should be' : 'WRONGLY ALLOWED'} — ${overErr}`);
+
+  // Put the qty back so the rest of the chain is unaffected.
+  await openEdit();
+  await page.locator('input[type="number"]').first().fill(before);
+  await save();
+
+  // (c) Adding an operation persists.
+  await openEdit();
   const opsBefore = await opNames();
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
   await page.waitForTimeout(1200);
@@ -489,8 +535,8 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
     step: '05',
     doc: 'Job Card edits',
     code: jc,
-    qty: `qty ${before} → ${target}`,
-    status: notes.every((n) => /: saved|: removed/.test(n)) ? 'all passed' : 'FAILURES',
+    qty: `qty stays ${before}`,
+    status: notes.every((n) => /: saved|: removed|: refused/.test(n)) ? 'all passed' : 'FAILURES',
     note: notes.join(' · '),
   });
 });
@@ -539,6 +585,9 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
   });
 });
 
+// Each plan costs three page loads plus an Execute round-trip; two of them
+// overran the default budget.
+test.setTimeout(600_000);
 test('@bommulti 07 — execute the buy + outsource plans into PRs', async ({ page }) => {
   await openSoInPlanning(page);
   const before = await codesOnPage(page, /IN-(?:JW)?PR-\d+/);
