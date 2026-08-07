@@ -20,7 +20,7 @@ test('@bombrowse the child code field lists the item master, not the parent’s 
   page,
 }) => {
   await page.goto('/bom-masters/new');
-  await expect(page.getByText('📦 New BOM')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('New BOM', { exact: true })).toBeVisible({ timeout: 30_000 });
 
   // Narrow the shared list right down by searching the parent by full code.
   const parent = page.locator('#bom-parent-item');
@@ -30,7 +30,7 @@ test('@bombrowse the child code field lists the item master, not the parent’s 
   await expect(opt.first()).toBeVisible({ timeout: 20_000 });
   await opt.first().click();
 
-  await page.getByRole('button', { name: /Add Item/i }).click();
+  await page.getByRole('button', { name: /Add child item/i }).click();
 
   // Click the child field WITHOUT typing — the regression is here.
   await page.locator('#bom-item-0').click();

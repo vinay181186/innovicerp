@@ -39,7 +39,7 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   page,
 }) => {
   await page.goto('/bom-masters/new');
-  await expect(page.getByText('📦 New BOM')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('New BOM', { exact: true })).toBeVisible({ timeout: 30_000 });
 
   // The banner shows ONE error at a time, header first — leave BOM Name blank
   // and "BOM Name is required" masks the line error we are here to check.
@@ -48,7 +48,7 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   // A parent is required before any part row exists at all (ADR-108), and the
   // form now opens with zero rows — so pick one, then add the lines.
   await pickInto(page, 'bom-parent-item', PARENT);
-  await page.getByRole('button', { name: /Add Item/i }).click();
+  await page.getByRole('button', { name: /Add child item/i }).click();
 
   // --- 1. the lookup works again -------------------------------------------
   await pickItem(page, 0, ITEM_A);
@@ -62,7 +62,7 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   console.log(`>> line 1 resolved ${ITEM_A} → "${await nameBox.inputValue()}"`);
 
   // --- 2. the duplicate message names the part and both lines --------------
-  await page.getByRole('button', { name: /Add Item/i }).click();
+  await page.getByRole('button', { name: /Add child item/i }).click();
   await pickItem(page, 1, ITEM_A);
 
   const err = page.locator('text=/duplicate item code/i').first();
@@ -78,7 +78,7 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   // Save must be blocked while the duplicate stands.
   await expect(page.getByRole('button', { name: /Save BOM/i })).toBeDisabled();
 
-  // The caption counts FILLED child rows, so both duplicates count. Nothing
-  // is saved — the form is abandoned here.
-  await expect(page.getByText('Child Items (2)')).toBeVisible();
+  // The toolbar counter counts FILLED child rows, so both duplicates count.
+  // Nothing is saved — the form is abandoned here.
+  await expect(page.getByText('2 of 2 lines filled')).toBeVisible();
 });

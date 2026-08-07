@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 // Verifies the BOM parent-item gate shipped in afc6244 (ADR-108), WITHOUT
 // saving anything — this spec never writes to prod.
 //
-//   1. A new BOM opens with the part list LOCKED: "+ Add Item" and
+//   1. A new BOM opens with the part list LOCKED: "+ Add child item" and
 //      "Import Excel" are disabled until a parent is picked.
 //   2. Picking a parent auto-fills its name and unlocks the list.
 //   3. The parent cannot also be one of its own child parts.
@@ -31,21 +31,22 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   page,
 }) => {
   await page.goto('/bom-masters/new');
-  await expect(page.getByText('📦 New BOM')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('New BOM', { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  const addItem = page.getByRole('button', { name: /Add Item/i });
+  const addItem = page.getByRole('button', { name: /Add child item/i });
   const importExcel = page.getByRole('button', { name: /Import Excel/i });
 
   // --- 1. locked ------------------------------------------------------------
   // The two captions are what make the page readable: parent block, then children.
   await expect(page.getByText('Parent Item', { exact: true })).toBeVisible();
-  // The child caption carries the count of FILLED rows — zero on a fresh form.
-  await expect(page.getByText('Child Items (0)')).toBeVisible();
+  await expect(page.getByText('Child Items', { exact: true })).toBeVisible();
+  // The filled-vs-total counter sits on the list toolbar — zero on a fresh form.
+  await expect(page.getByText('0 of 0 lines filled')).toBeVisible();
   await expect(addItem).toBeDisabled();
   await expect(importExcel).toBeDisabled();
   await expect(page.getByText(/Locked — pick the/i)).toBeVisible();
   // eslint-disable-next-line no-console
-  console.log('>> locked: Add Item + Import Excel disabled, empty state says locked');
+  console.log('>> locked: Add child item + Import Excel disabled, empty state says locked');
 
   // --- 2. picking the parent unlocks ---------------------------------------
   await pick(page, 'bom-parent-item', PARENT);
