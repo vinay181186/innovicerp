@@ -923,12 +923,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   style={{ display: 'none' }}
                   onChange={(e) => void onImportFile(e)}
                 />
-                <span className="bomx-tools-sp">
-                  {filledChildCount} of {lines.length} lines filled
-                  {blankChildCount > 0
-                    ? ` · ${blankChildCount} blank row${blankChildCount > 1 ? 's' : ''}`
-                    : ''}
-                </span>
+                {/* The filled-vs-total count lives in the card header. Only
+                    the exception is repeated here, next to the button that
+                    creates blank rows. */}
+                {blankChildCount > 0 ? (
+                  <span className="bomx-tools-sp" style={{ color: '#b45309' }}>
+                    {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''} — pick an item or
+                    remove
+                  </span>
+                ) : null}
               </div>
             </div>
           </section>
