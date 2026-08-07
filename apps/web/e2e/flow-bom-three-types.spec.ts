@@ -263,6 +263,28 @@ test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
   // eslint-disable-next-line no-console
   console.log(`>> ticked ${n} plannable row(s)`);
 
+  // Buy and Outsource children cannot be planned without a vendor — a row for
+  // each appears once it is ticked. Fill them, or the save is refused.
+  await page.waitForTimeout(800);
+  for (const c of CHILDREN) {
+    if (c.type === 'manufacture') continue;
+    const picker = page.locator(`#bomplan-vendor-${c.code}`);
+    if ((await picker.count()) === 0) {
+      // eslint-disable-next-line no-console
+      console.log(`>> no vendor picker for ${c.code} (${c.type}) — already planned?`);
+      continue;
+    }
+    await picker.click();
+    await page.waitForTimeout(1200);
+    const opt = page.locator(`#bomplan-vendor-${c.code}-listbox [role="option"]`).first();
+    await expect(opt, `a vendor to pick for ${c.code}`).toBeVisible({ timeout: 20_000 });
+    const vendorText = ((await opt.textContent()) ?? '').trim();
+    await opt.click();
+    await page.waitForTimeout(500);
+    // eslint-disable-next-line no-console
+    console.log(`>> ${c.code} (${c.type}) → vendor ${vendorText}`);
+  }
+
   await page.getByRole('button', { name: /Create|Plan/i }).last().click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);

@@ -14,9 +14,11 @@ import type {
   CreatePlanInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useCreatePlan } from '@/modules/plans/api';
+import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
 import { Modal } from './modal';
 
@@ -32,7 +34,31 @@ interface Props {
 type RowState = {
   checked: boolean;
   qty: number;
+  /** Vendor for the types that cannot be planned without one — see NEEDS_VENDOR. */
+  vendorId: string | null;
+  vendorLabel: string;
+  /** full_outsource also demands a process description. */
+  process: string;
 };
+
+// A BOM line type maps to the plan type that actually does the work:
+//   manufacture -> make it here          (job card, no vendor)
+//   purchase    -> buy the finished part (direct_purchase, needs a vendor)
+//   outsource   -> send it to a vendor   (full_outsource, needs vendor + process)
+//
+// `outsource` used to fall into the manufacture branch, so a BOM line marked
+// Outsource quietly became an in-house job card — the type had no effect at all.
+function planTypeFor(bomType: PlanningBomChild['bomType']): CreatePlanInput['planType'] {
+  if (bomType === 'purchase') return 'direct_purchase';
+  if (bomType === 'outsource') return 'full_outsource';
+  return 'manufacture';
+}
+
+const NEEDS_VENDOR = new Set<PlanningBomChild['bomType']>(['purchase', 'outsource']);
+
+// The BOM cascade stamps outsource PRs with operation='OUTSOURCE'; use the same
+// word as the default so the two paths describe the work identically. Editable.
+const DEFAULT_OSP_PROCESS = 'OUTSOURCE';
 
 // Legacy renders the raw stored (Title Case) status text. Kept per-file, matching
 // the plans module's existing convention (routes/list.tsx, detail.tsx, dashboard.tsx).
@@ -81,25 +107,52 @@ export function BomPlanningModal({
       next.set(c.childItemCode, {
         checked: !c.existingPlan && hasShortfall,
         qty: c.shortfall,
+        vendorId: null,
+        vendorLabel: '',
+        process: c.bomType === 'outsource' ? DEFAULT_OSP_PROCESS : '',
       });
     }
     setRowState(next);
     if (data.supportsAssemblyPlan && !data.hasAssemblyPlan) setPlanAssembly(true);
   }, [data]);
 
+  // Rows that are ticked but cannot be sent yet. Caught HERE so the planner is
+  // told which row and what is missing, instead of the server's field-level
+  // "dpVendorId: direct_purchase plan requires a vendor".
+  const missing: string[] = [];
+  for (const c of data?.children ?? []) {
+    if (c.existingPlan) continue;
+    const s = rowState.get(c.childItemCode);
+    if (!s || !s.checked || s.qty <= 0) continue;
+    if (NEEDS_VENDOR.has(c.bomType) && !s.vendorId) {
+      missing.push(`${c.childItemCode} (${c.bomType}) — pick a vendor`);
+    }
+    if (c.bomType === 'outsource' && !s.process.trim()) {
+      missing.push(`${c.childItemCode} (outsource) — describe the process`);
+    }
+  }
+
   const submit = async () => {
     if (!data) return;
     setSubmitErr(null);
+    if (missing.length > 0) {
+      setSubmitErr(`Cannot plan yet: ${missing.join('; ')}.`);
+      return;
+    }
     setSubmitting(true);
     let plansCreated = 0;
+    // One child failing must NOT abandon the rest. The loop used to throw
+    // straight out, so a purchase child that the server refused silently took
+    // every child after it down with it: 3 ticked, 1 created, one message that
+    // named neither of the two that were dropped.
+    const failures: string[] = [];
     try {
       for (const c of data.children) {
         if (c.existingPlan) continue;
         const s = rowState.get(c.childItemCode);
         if (!s || !s.checked || s.qty <= 0) continue;
         const qty = Math.min(s.qty, c.totalNeed);
-        const planType: 'manufacture' | 'direct_purchase' =
-          c.bomType === 'purchase' ? 'direct_purchase' : 'manufacture';
+        const planType = planTypeFor(c.bomType);
         const input: CreatePlanInput = {
           // code omitted → server assigns the next sequential PLN-NNNN.
           planDate: todayLocal(),
@@ -114,9 +167,17 @@ export function BomPlanningModal({
           bomMasterId: data.bomMasterId,
           bomParentCode: data.parentItemCode ?? null,
           bomChildCode: c.childItemCode,
+          ...(planType === 'direct_purchase' ? { dpVendorId: s.vendorId } : {}),
+          ...(planType === 'full_outsource'
+            ? { foVendorId: s.vendorId, foProcess: s.process.trim() }
+            : {}),
         };
-        await createPlan.mutateAsync(input);
-        plansCreated++;
+        try {
+          await createPlan.mutateAsync(input);
+          plansCreated++;
+        } catch (e) {
+          failures.push(`${c.childItemCode}: ${e instanceof Error ? e.message : 'failed'}`);
+        }
       }
       if (data.supportsAssemblyPlan && !data.hasAssemblyPlan && planAssembly) {
         const input: CreatePlanInput = {
@@ -132,8 +193,21 @@ export function BomPlanningModal({
           bomMasterId: data.bomMasterId,
           bomParentCode: data.parentItemCode ?? null,
         };
-        await createPlan.mutateAsync(input);
-        plansCreated++;
+        try {
+          await createPlan.mutateAsync(input);
+          plansCreated++;
+        } catch (e) {
+          failures.push(`assembly: ${e instanceof Error ? e.message : 'failed'}`);
+        }
+      }
+      if (failures.length > 0) {
+        // Say what DID land as well as what did not — the planner has to know
+        // the partial state before deciding what to do next.
+        setSubmitErr(
+          `${plansCreated} plan(s) created. ${failures.length} failed — ${failures.join('; ')}`,
+        );
+        if (plansCreated > 0) onSaved();
+        return;
       }
       if (plansCreated === 0) {
         setSubmitErr('No plans to create. Check at least one item.');
@@ -221,10 +295,30 @@ function BomBody({
   setPlanAssembly: React.Dispatch<React.SetStateAction<boolean>>;
   submitErr: string | null;
 }): JSX.Element {
+  // Vendors for the Buy / Outsource rows. Server-side search, one shared term —
+  // only one picker is open at a time.
+  const [vendorSearch, setVendorSearch] = useState('');
+  const { data: vendorPage, isFetching: vendorsFetching } = useVendorsList({
+    ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
+    limit: 50,
+    offset: 0,
+  });
+  const vendors = useMemo(() => vendorPage?.vendors ?? [], [vendorPage]);
+  const vendorOptions = useMemo(
+    () => vendors.map((v) => ({ id: v.id, code: v.code, name: v.name })),
+    [vendors],
+  );
+
   const update = (childCode: string, patch: Partial<RowState>) => {
     setRowState((prev) => {
       const next = new Map(prev);
-      const cur = next.get(childCode) ?? { checked: false, qty: 0 };
+      const cur: RowState = next.get(childCode) ?? {
+        checked: false,
+        qty: 0,
+        vendorId: null,
+        vendorLabel: '',
+        process: '',
+      };
       next.set(childCode, { ...cur, ...patch });
       return next;
     });
@@ -343,7 +437,13 @@ function BomBody({
           </thead>
           <tbody>
             {data.children.map((c: PlanningBomChild, i) => {
-              const s = rowState.get(c.childItemCode) ?? { checked: false, qty: c.shortfall };
+              const s = rowState.get(c.childItemCode) ?? {
+                checked: false,
+                qty: c.shortfall,
+                vendorId: null,
+                vendorLabel: '',
+                process: '',
+              };
               const hasSufficient = c.shortfall === 0;
               const typeIcon =
                 c.bomType === 'manufacture'
@@ -446,6 +546,63 @@ function BomBody({
                         fontWeight: 700,
                       }}
                     />
+                  </td>
+                </tr>
+              );
+            })}
+            {/* Buy and Outsource rows need a vendor before a plan can exist
+                (and Outsource a process too). A second row under the item
+                rather than another column: the table already carries eleven,
+                and only two of the three types ever need these. */}
+            {data.children.map((c: PlanningBomChild) => {
+              if (c.existingPlan || !NEEDS_VENDOR.has(c.bomType)) return null;
+              const s = rowState.get(c.childItemCode);
+              if (!s?.checked) return null;
+              const needProcess = c.bomType === 'outsource';
+              return (
+                <tr key={`${c.childItemCode}-vendor`} style={{ background: 'var(--bg3)' }}>
+                  <td />
+                  <td colSpan={10} style={{ padding: '8px 10px' }}>
+                    <div
+                      style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
+                    >
+                      <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>
+                        ↳ {c.childItemCode} · {c.bomType === 'purchase' ? 'Buy from' : 'Send to'}
+                      </span>
+                      <div style={{ minWidth: 260 }}>
+                        <SearchableSelect
+                          id={`bomplan-vendor-${c.childItemCode}`}
+                          value={s.vendorId}
+                          onChange={(id) => {
+                            const v = vendors.find((x) => x.id === id);
+                            update(c.childItemCode, {
+                              vendorId: id,
+                              vendorLabel: v ? `${v.code} — ${v.name}` : '',
+                            });
+                          }}
+                          onSearch={setVendorSearch}
+                          loading={vendorsFetching}
+                          options={vendorOptions}
+                          placeholder="Search vendor code or name…"
+                          emptyText="No matching vendor"
+                          {...(s.vendorLabel ? { valueLabel: s.vendorLabel } : {})}
+                        />
+                      </div>
+                      {needProcess ? (
+                        <input
+                          className="innovic-input"
+                          style={{ width: 220, fontSize: 12 }}
+                          placeholder="Process (e.g. OUTSOURCE)"
+                          value={s.process}
+                          onChange={(e) => update(c.childItemCode, { process: e.target.value })}
+                        />
+                      ) : null}
+                      {!s.vendorId ? (
+                        <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
+                          vendor required
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               );
