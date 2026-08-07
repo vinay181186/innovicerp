@@ -26,6 +26,11 @@ test('@anchor the list stays attached to its field, and each row has its own id'
 
   const soSel = page.locator('select').first();
   await expect(soSel).toBeVisible({ timeout: 30_000 });
+  // The SO list arrives from the API — wait for it, or the options are just the
+  // "-- Select SO --" placeholder and the test skips itself for no reason.
+  await expect
+    .poll(async () => soSel.locator('option').count(), { timeout: 30_000 })
+    .toBeGreaterThan(1);
   const labels = await soSel.locator('option').allTextContents();
   const target = labels.find((t) => SO_MATCH.test(t));
   test.skip(!target, 'IN-SO-00011 not in the SO list');
@@ -33,6 +38,21 @@ test('@anchor the list stays attached to its field, and each row has its own id'
 
   const addLine = page.getByRole('button', { name: /Add Line/i });
   await addLine.click();
+  // The dispatchable lines arrive from the API. Measure only once a row really
+  // has options, otherwise every list is the one-row "No ready items" box and
+  // the populated case goes unchecked.
+  const firstBox = page.locator('input[role="combobox"]').first();
+  await expect
+    .poll(
+      async () => {
+        await firstBox.click();
+        const n = await page.locator('[role="listbox"] [role="option"]').count();
+        await page.keyboard.press('Escape');
+        return n;
+      },
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
   await addLine.click();
 
   // --- one id per row ------------------------------------------------------
