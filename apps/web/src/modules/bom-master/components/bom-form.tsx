@@ -274,6 +274,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     setHeader((h) => (h.parentItemId ? h : { ...h, parentItemCodeText: term }));
   };
 
+  // Rows that name a real part vs rows that are still empty. resolvedLines is
+  // used so a pasted-but-not-clicked code counts as filled — it saves fine.
+  const filledChildCount = resolvedLines.filter((l) => l.childItemId).length;
+  const blankChildCount = resolvedLines.length - filledChildCount;
+
   const addLine = (): void => setLines((prev) => [...prev, emptyLine()]);
   const removeLine = (idx: number): void => setLines((prev) => prev.filter((_, i) => i !== idx));
 
@@ -544,7 +549,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">📦 Part List / Items ({lines.length})</div>
+          {/* No count here. This panel now holds the parent AND the children,
+              so a single number above both contradicted whichever one it was
+              not counting — with a parent picked and no parts yet it read
+              "Items (0)" over a panel that visibly contained an item. The
+              count lives on the CHILD ITEMS caption below, where it has an
+              unambiguous subject. */}
+          <div className="panel-title">📦 Bill of Materials</div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
@@ -694,8 +705,20 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             <span />
           </div>
 
-          {/* ── CHILD ITEMS ─────────────────────────────────────────────── */}
-          <div style={SECTION_LABEL}>Child Items</div>
+          {/* ── CHILD ITEMS ───────────────────────────────────────────────
+              Counts rows that actually name a part, not rows on screen: three
+              clicks of "+ Add Item" used to read "3" when the BOM would save
+              with nothing in it. Blank rows are called out separately so the
+              gap between the two numbers is explained rather than hidden. */}
+          <div style={SECTION_LABEL}>
+            Child Items ({filledChildCount})
+            {blankChildCount > 0 ? (
+              <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                {' '}
+                · {blankChildCount} blank row{blankChildCount > 1 ? 's' : ''}
+              </span>
+            ) : null}
+          </div>
           <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
             {parentLocked
               ? '⚠ Pick the parent item above to unlock the part list.'

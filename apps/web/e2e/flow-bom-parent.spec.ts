@@ -39,7 +39,8 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   // --- 1. locked ------------------------------------------------------------
   // The two captions are what make the page readable: parent block, then children.
   await expect(page.getByText('Parent Item', { exact: true })).toBeVisible();
-  await expect(page.getByText('Child Items', { exact: true })).toBeVisible();
+  // The child caption carries the count of FILLED rows — zero on a fresh form.
+  await expect(page.getByText('Child Items (0)')).toBeVisible();
   await expect(addItem).toBeDisabled();
   await expect(importExcel).toBeDisabled();
   await expect(page.getByText(/Locked — pick the/i)).toBeVisible();

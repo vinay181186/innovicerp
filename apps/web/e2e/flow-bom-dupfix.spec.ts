@@ -78,6 +78,7 @@ test('@bomdup item picker resolves a real code, and a duplicate part is named', 
   // Save must be blocked while the duplicate stands.
   await expect(page.getByRole('button', { name: /Save BOM/i })).toBeDisabled();
 
-  // Removing the second line clears it — no save, nothing persisted.
-  await expect(page.getByText('📦 Part List / Items (2)')).toBeVisible();
+  // The caption counts FILLED child rows, so both duplicates count. Nothing
+  // is saved — the form is abandoned here.
+  await expect(page.getByText('Child Items (2)')).toBeVisible();
 });
