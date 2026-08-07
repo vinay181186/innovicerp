@@ -76,7 +76,12 @@ export function SearchableSelect({
 
   // Where to draw the list. The dropdown is rendered into document.body via a
   // portal, so it must be positioned in VIEWPORT coordinates against the input.
-  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [rect, setRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
 
   const baseId = id ?? 'searchable-select';
   const listboxId = `${baseId}-listbox`;
@@ -125,11 +130,28 @@ export function SearchableSelect({
       setRect(null);
       return;
     }
+    // Keep the list inside the viewport. A `position: fixed` element cannot be
+    // scrolled into view — so a picker low on the page (the second or third row
+    // of a line editor) opened its list below the fold, where it was literally
+    // unreachable. Flip above the input when there is more room there, and cap
+    // the height to whatever room the chosen side actually has.
+    const GAP = 4;
+    const EDGE = 8;
+    const IDEAL = 256; // matches max-h-64 below
     const measure = (): void => {
       const el = containerRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setRect({ left: r.left, top: r.bottom + 4, width: r.width });
+      const below = window.innerHeight - r.bottom - GAP - EDGE;
+      const above = r.top - GAP - EDGE;
+      const flip = below < Math.min(IDEAL, above) && above > below;
+      const room = Math.max(120, Math.min(IDEAL, flip ? above : below));
+      setRect({
+        left: r.left,
+        top: flip ? Math.max(EDGE, r.top - room - GAP) : r.bottom + GAP,
+        width: r.width,
+        maxHeight: room,
+      });
     };
     measure();
     window.addEventListener('scroll', measure, true);
@@ -271,9 +293,10 @@ export function SearchableSelect({
                 left: rect.left,
                 top: rect.top,
                 width: rect.width,
+                maxHeight: rect.maxHeight,
                 zIndex: 1000,
               }}
-              className="max-h-64 overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
+              className="overflow-y-auto rounded-md border border-input bg-popover py-1 text-popover-foreground shadow-md"
             >
           {loading ? (
             <li className="px-3 py-2 text-sm text-muted-foreground">Loading…</li>
