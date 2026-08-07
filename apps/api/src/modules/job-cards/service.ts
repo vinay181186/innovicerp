@@ -953,6 +953,49 @@ async function resolveCodeMap(
 
 type ResolvedOpType = 'process' | 'qc' | 'outsource';
 
+/** How many of `itemId` this SO line needs, when the line drives a BOM and the
+ *  item is one of its components. Null when neither is true — the caller then
+ *  falls back to the plain line-balance rule.
+ *
+ *  The BOM lives in one of two places: on the LINE for assembly lines, or on
+ *  the equipment SO's HEADER (a text column, hence the uuid guard — it holds
+ *  legacy non-uuid values that would make a bare cast throw). Same resolution
+ *  as so-planning and customer-dispatches. */
+async function loadBomComponentBudget(
+  tx: DbTransaction,
+  companyId: string,
+  soLineId: string,
+  itemId: string,
+): Promise<{ childCode: string; qtyPerSet: number; required: number } | null> {
+  const rows = (await tx.execute(sql`
+    SELECT i.code AS child_code,
+           bml.qty_per_set::float8 AS qty_per_set,
+           CEIL(bml.qty_per_set * sol.order_qty)::int AS required
+    FROM public.sales_order_lines sol
+    JOIN public.sales_orders so ON so.id = sol.sales_order_id
+    JOIN public.bom_master_lines bml
+      ON bml.bom_master_id = COALESCE(
+           sol.source_bom_master_id,
+           CASE WHEN so.type = 'equipment'
+                 AND so.bom_master_id ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                THEN so.bom_master_id::uuid END)
+     AND bml.company_id = sol.company_id
+     AND bml.deleted_at IS NULL
+    JOIN public.items i ON i.id = bml.child_item_id
+    WHERE sol.id = ${soLineId}::uuid
+      AND sol.company_id = ${companyId}::uuid
+      AND bml.child_item_id = ${itemId}::uuid
+    LIMIT 1
+  `)) as unknown as Array<{ child_code: string; qty_per_set: number; required: number }>;
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    childCode: r.child_code,
+    qtyPerSet: Number(r.qty_per_set),
+    required: Math.max(1, Number(r.required)),
+  };
+}
+
 /** Validates qty vs the linked SO/JW line balance (legacy CASCADE.orderBalance).
  *  remaining = line.order_qty − Σ(other active JCs' order_qty on that line). */
 async function assertLineBalance(
@@ -960,6 +1003,7 @@ async function assertLineBalance(
   input: JobCardWriteInput,
   companyId: string,
   excludeJcId: string | null,
+  itemId: string | null,
 ): Promise<void> {
   const check = async (
     lineTable: typeof salesOrderLines | typeof jobWorkOrderLines,
@@ -974,6 +1018,39 @@ async function assertLineBalance(
         .limit(1)
     )[0];
     if (!line) throw new ValidationError('Linked SO/JW line not found');
+
+    // A BOM line's child job cards ALL hang off the parent SO line but are for
+    // DIFFERENT items, each needing its own qtyPerSet × parent qty. Summing
+    // them against the parent's order qty is the same category error as adding
+    // 5 of ITEM-1 to 4 of ITEM-2 and calling it 9: a 1-unit parent with three
+    // children reported "Ordered: 1 | Already in JCs: 3 | Remaining: 0", so
+    // every child job card became uneditable and no further child could be
+    // added. When the line drives a BOM, budget PER COMPONENT instead.
+    const bomLine = itemId ? await loadBomComponentBudget(tx, companyId, lineId, itemId) : null;
+    if (bomLine) {
+      const sumRows = await tx
+        .select({ s: sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int` })
+        .from(jobCards)
+        .where(
+          and(
+            eq(fkCol, lineId),
+            eq(jobCards.itemId, itemId!),
+            isNull(jobCards.deletedAt),
+            excludeJcId ? sql`${jobCards.id} != ${excludeJcId}::uuid` : sql`TRUE`,
+          ),
+        );
+      const inJC = Number(sumRows[0]?.s ?? 0);
+      const remaining = Math.max(0, bomLine.required - inJC);
+      if (input.orderQty > remaining) {
+        throw new ValidationError(
+          `Cannot exceed the BOM requirement for ${bomLine.childCode}. ` +
+            `Needed: ${bomLine.required} (${bomLine.qtyPerSet} per set × ${line.oq}) | ` +
+            `Already in Job Cards: ${inJC} | Remaining: ${remaining}`,
+        );
+      }
+      return;
+    }
+
     const sumRows = await tx
       .select({ s: sql<number>`COALESCE(SUM(${jobCards.orderQty}), 0)::int` })
       .from(jobCards)
@@ -1097,7 +1174,7 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
 
   const newId = await withUserContext(user, async (tx) => {
     const item = await resolveItem(tx, input.itemCode, companyId);
-    await assertLineBalance(tx, input, companyId, null);
+    await assertLineBalance(tx, input, companyId, null, item.id);
 
     const ops = withTerminalQcOp(input.ops);
     const types = validateOps(ops);
@@ -1200,7 +1277,7 @@ export async function updateJobCard(
     if (!head) throw new NotFoundError(`Job card ${id} not found`);
 
     const item = await resolveItem(tx, input.itemCode, companyId);
-    await assertLineBalance(tx, input, companyId, id);
+    await assertLineBalance(tx, input, companyId, id, item.id);
     const ops = withTerminalQcOp(input.ops);
     const types = validateOps(ops);
     const machineMap = await resolveCodeMap(

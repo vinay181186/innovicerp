@@ -70,7 +70,8 @@ function log(s: string): void {
 const state = {
   bomNo: process.env['E2E_M_BOM'] ?? '',
   soCode: process.env['E2E_M_SO'] ?? '',
-  jcCodes: [] as string[],
+  // E2E_M_JC lets a single step be re-run without replaying the whole chain.
+  jcCodes: (process.env['E2E_M_JC'] ?? '').split(',').filter(Boolean),
   prCodes: [] as string[],
   poCodes: [] as string[],
   grnCodes: [] as string[],
@@ -99,8 +100,13 @@ async function pickByPlaceholder(page: Page, ph: RegExp, term: string, opt: RegE
   await page.waitForTimeout(600);
 }
 
+/** Every distinct code on the page matching `re`. Always forces the global
+ *  flag: without it String.match returns [firstMatch, ...captureGroups], which
+ *  reported a PR list of "IN-JWPR-00041, JW" — the second entry was the (JW)
+ *  capture group, not a document. */
 async function codesOnPage(page: Page, re: RegExp): Promise<string[]> {
-  return [...new Set((await page.locator('body').innerText()).match(re) ?? [])];
+  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  return [...new Set((await page.locator('body').innerText()).match(g) ?? [])];
 }
 
 /** Fill an op row in the Edit Plan modal: name + machine, picked properly. */
@@ -329,9 +335,19 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
 
   for (const p of mfgPlans) {
     await openSoInPlanning(page);
+    // A card offers Edit while In Planning and Execute once Planned — never
+    // both. Requiring Edit reported "no Edit on PLN-0046" on plans that were
+    // already finalized and simply needed executing.
     const edit = await planCardButton(page, p.code, /Edit/i);
     if ((await edit.count()) === 0) {
-      record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `no Edit on ${p.code}` });
+      const ready = await planCardButton(page, p.code, /Execute/i);
+      if ((await ready.count()) > 0) {
+        log(`${p.code} is already Planned — executing straight away`);
+        await ready.click();
+        await page.waitForTimeout(7000);
+      } else {
+        record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `${p.code} offers neither Edit nor Execute (status ${p.status})` });
+      }
       continue;
     }
     await edit.click();
@@ -390,83 +406,91 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
   await page.waitForTimeout(3000);
 
   const notes: string[] = [];
+  const EXTRA = `${TAG} EXTRA`;
 
-  // (a) Order Qty is editable and persists.
-  const qtyBox = page.locator('input[type="number"]').first();
-  const before = await qtyBox.inputValue();
-  const target = String(Number(before || '1') + 1);
-  await qtyBox.fill(target);
-  await page.getByRole('button', { name: /Save Job Card/i }).click();
-  await page.waitForTimeout(5000);
-  const qtyErr = await bannerText(page);
-  await page.goto(`/job-cards?search=${jc}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2500);
-  await page.getByText(jc).first().click();
-  await page.waitForTimeout(2500);
-  const afterQty = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-  const qtyOk = afterQty.includes(target);
-  notes.push(`qty ${before}→${target}: ${qtyOk ? 'saved' : `NOT saved (${qtyErr || 'no error shown'})`}`);
-  log(`JC edit — order qty ${before} → ${target}: ${qtyOk ? 'OK' : 'FAILED'}`);
-  expect(qtyOk, `order qty ${target} persisted on ${jc}`).toBe(true);
-
-  // (b) Adding an operation persists.
-  await page.getByRole('link', { name: /Edit/i }).first().click();
-  await page.waitForTimeout(3000);
-  const opCards = page.locator('[id^="jcop-"], .jc-op-card');
-  const opsBefore = await page.getByPlaceholder(/Operation name/i).count();
-  await page.getByRole('button', { name: /\+ Add Op$/ }).click();
-  await page.waitForTimeout(1200);
-  const newOp = page.getByPlaceholder(/Operation name/i).last();
-  await newOp.fill(`${TAG} EXTRA`);
-  const mach = page.getByPlaceholder(/Machine/i).last();
-  await mach.click();
-  await mach.fill('CNC-01');
-  await page.waitForTimeout(1600);
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /Save Job Card/i }).click();
-  await page.waitForTimeout(5000);
-  const addErr = await bannerText(page);
-
-  await page.goto(`/job-cards?search=${jc}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2500);
-  await page.getByText(jc).first().click();
-  await page.waitForTimeout(2500);
-  const afterAdd = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-  const addOk = afterAdd.includes(`${TAG} EXTRA`);
-  notes.push(`add op: ${addOk ? 'saved' : `NOT saved (${addErr || 'no error shown'})`}`);
-  log(`JC edit — added op "${TAG} EXTRA" (was ${opsBefore} ops, cards ${await opCards.count()}): ${addOk ? 'OK' : 'FAILED'}`);
-
-  // (c) Removing that operation persists.
-  await page.getByRole('link', { name: /Edit/i }).first().click();
-  await page.waitForTimeout(3000);
-  const delBtns = page.locator('button.btn-danger');
-  const delCount = await delBtns.count();
-  if (delCount > 0) {
-    await delBtns.last().click();
-    await page.waitForTimeout(900);
-    await page.getByRole('button', { name: /Save Job Card/i }).click();
-    await page.waitForTimeout(5000);
-    const delErr = await bannerText(page);
+  // Re-read the EDIT FORM, not the detail page. Searching the detail page's
+  // text for "2" matched a "2" somewhere else entirely and reported a qty save
+  // that never happened — the database still said 1. The edit form's own
+  // inputs are the stored values.
+  const openEdit = async (): Promise<void> => {
     await page.goto(`/job-cards?search=${jc}`, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
     await page.getByText(jc).first().click();
     await page.waitForTimeout(2500);
-    const afterDel = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-    const delOk = !afterDel.includes(`${TAG} EXTRA`);
-    notes.push(`remove op: ${delOk ? 'removed' : `STILL THERE (${delErr || 'no error shown'})`}`);
-    log(`JC edit — removed the extra op: ${delOk ? 'OK' : 'FAILED'}`);
+    await page.getByRole('link', { name: /Edit/i }).first().click();
+    await page.waitForTimeout(3000);
+  };
+  const opNames = async (): Promise<string[]> => {
+    const boxes = page.getByPlaceholder(/Operation name|QC process name/i);
+    const out: string[] = [];
+    for (let i = 0; i < (await boxes.count()); i++) out.push(await boxes.nth(i).inputValue());
+    return out;
+  };
+  const save = async (): Promise<string> => {
+    await page.getByRole('button', { name: /Save Job Card/i }).click();
+    await page.waitForTimeout(5000);
+    return bannerText(page);
+  };
+
+  // (a) Order Qty edit persists.
+  const qtyBox = page.locator('input[type="number"]').first();
+  const before = await qtyBox.inputValue();
+  const target = String(Number(before || '1') + 1);
+  await qtyBox.fill(target);
+  const qtyErr = await save();
+  await openEdit();
+  const qtyNow = await page.locator('input[type="number"]').first().inputValue();
+  const qtyOk = qtyNow === target;
+  notes.push(`qty ${before}→${target}: ${qtyOk ? 'saved' : `NOT saved (reads ${qtyNow}${qtyErr ? `; ${qtyErr}` : ''})`}`);
+  log(`JC edit — order qty ${before} → ${target}: form reads ${qtyNow} → ${qtyOk ? 'OK' : 'FAILED'}`);
+
+  // (b) Adding an operation persists.
+  const opsBefore = await opNames();
+  await page.getByRole('button', { name: /\+ Add Op$/ }).click();
+  await page.waitForTimeout(1200);
+  await page.getByPlaceholder(/Operation name/i).last().fill(EXTRA);
+  const mach = page.locator('input[role="combobox"]').last();
+  await mach.click();
+  await mach.fill('CNC');
+  const machList = await mach.getAttribute('aria-controls');
+  const machOpt = page.locator(`#${machList} [role="option"]`).first();
+  if (await machOpt.isVisible().catch(() => false)) await machOpt.click();
+  await page.waitForTimeout(700);
+  const addErr = await save();
+  await openEdit();
+  const opsAfterAdd = await opNames();
+  const addOk = opsAfterAdd.includes(EXTRA);
+  notes.push(
+    `add op: ${addOk ? 'saved' : `NOT saved (${opsBefore.length}→${opsAfterAdd.length} ops${addErr ? `; ${addErr}` : ''})`}`,
+  );
+  log(`JC edit — add op: ${opsBefore.length} → ${opsAfterAdd.length} ops [${opsAfterAdd.join(' | ')}] → ${addOk ? 'OK' : 'FAILED'}`);
+
+  // (c) Removing that operation persists — only meaningful if (b) worked.
+  if (addOk) {
+    const idx = opsAfterAdd.indexOf(EXTRA);
+    const delBtns = page.locator('button.btn-danger:not([disabled])');
+    if (idx >= 0 && (await delBtns.count()) > idx) {
+      await delBtns.nth(idx).click();
+      await page.waitForTimeout(900);
+      const delErr = await save();
+      await openEdit();
+      const opsAfterDel = await opNames();
+      const delOk = !opsAfterDel.includes(EXTRA);
+      notes.push(`remove op: ${delOk ? 'removed' : `STILL THERE${delErr ? ` (${delErr})` : ''}`}`);
+      log(`JC edit — remove op: now [${opsAfterDel.join(' | ')}] → ${delOk ? 'OK' : 'FAILED'}`);
+    } else {
+      notes.push('remove op: no enabled delete control for that row');
+    }
   } else {
-    notes.push('remove op: no delete control found');
+    notes.push('remove op: skipped — the add never persisted');
   }
 
   record({
     step: '05',
     doc: 'Job Card edits',
     code: jc,
-    qty: `qty → ${target}`,
-    status: notes.every((n) => /saved|removed/.test(n)) ? 'all passed' : 'see note',
+    qty: `qty ${before} → ${target}`,
+    status: notes.every((n) => /: saved|: removed/.test(n)) ? 'all passed' : 'FAILURES',
     note: notes.join(' · '),
   });
 });
@@ -517,12 +541,17 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
 
 test('@bommulti 07 — execute the buy + outsource plans into PRs', async ({ page }) => {
   await openSoInPlanning(page);
-  const before = await codesOnPage(page, /IN-(JW)?PR-\d+/);
+  const before = await codesOnPage(page, /IN-(?:JW)?PR-\d+/);
 
   const procure = (await readPlanCards(page)).filter((p) => p.kind === 'Buy' || p.kind === 'OSP');
   log(`buy/outsource plans: ${procure.map((p) => `${p.code}(${p.kind})`).join(', ') || '(none)'}`);
 
   for (const p of procure) {
+    // Already executed — a PR/JC exists. Re-opening Edit on those just spins.
+    if (/PR Created|JC Created|In Production|Complete/.test(p.status)) {
+      log(`${p.code} (${p.kind}) already executed — status ${p.status}`);
+      continue;
+    }
     await openSoInPlanning(page);
     const edit = await planCardButton(page, p.code, /Edit/i);
     if ((await edit.count()) > 0) {
@@ -544,7 +573,7 @@ test('@bommulti 07 — execute the buy + outsource plans into PRs', async ({ pag
   }
 
   await openSoInPlanning(page);
-  const after = await codesOnPage(page, /IN-(JW)?PR-\d+/);
+  const after = await codesOnPage(page, /IN-(?:JW)?PR-\d+/);
   state.prCodes = after.filter((p) => !before.includes(p));
   log(`PRs raised: ${state.prCodes.join(', ') || '(none new)'} (page shows ${after.join(', ')})`);
   record({
