@@ -184,6 +184,51 @@ describe('bom-master service — CRUD', () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
+  it('createBomMaster rejects the same child item twice, naming both lines', async () => {
+    await expect(
+      service.createBomMaster(
+        {
+          bomNo: `${TEST_PREFIX}DUPCHILD`,
+          bomName: 'same part twice',
+          status: 'draft',
+          lines: [
+            { childItemId: testItemId1, qtyPerSet: 2, bomType: 'manufacture' },
+            { childItemId: testItemId2, qtyPerSet: 1, bomType: 'purchase' },
+            { childItemId: testItemId1, qtyPerSet: 1, bomType: 'purchase' },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/Duplicate item code on line 3.*already on line 1/s);
+  });
+
+  it('updateBomMaster rejects the same child item twice', async () => {
+    const created = await service.createBomMaster(
+      {
+        bomNo: `${TEST_PREFIX}DUPCHILD-U`,
+        bomName: 'ok at first',
+        status: 'draft',
+        lines: [{ childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' }],
+      },
+      admin,
+    );
+    await expect(
+      service.updateBomMaster(
+        created.id,
+        {
+          bomNo: `${TEST_PREFIX}DUPCHILD-U`,
+          bomName: 'now duplicated',
+          status: 'draft',
+          lines: [
+            { childItemId: testItemId1, qtyPerSet: 1, bomType: 'manufacture' },
+            { childItemId: testItemId1, qtyPerSet: 3, bomType: 'purchase' },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/Duplicate item code on line 2/);
+  });
+
   it('createBomMaster denies viewer with AuthorizationError', async () => {
     const viewer: AuthContext = { ...admin, role: 'viewer' };
     await expect(

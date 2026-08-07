@@ -112,6 +112,31 @@ async function assertItemIdsExist(
   return lookup;
 }
 
+// A BOM lists each child part once, with one qty/set. Two lines for the same
+// item would double-count in every downstream plan, so refuse the save and say
+// which part collided — a bare unique-constraint violation from Postgres tells
+// the user nothing they can act on. The web form blocks this too; this is the
+// backstop for the API and the Excel import.
+function assertNoDuplicateChildItems(
+  lines: ReadonlyArray<{ childItemId: string }>,
+  lookup: ItemsLookup,
+): void {
+  const seen = new Map<string, number>();
+  for (let i = 0; i < lines.length; i++) {
+    const id = lines[i]!.childItemId;
+    const first = seen.get(id);
+    if (first !== undefined) {
+      const it = lookup.byId.get(id);
+      const label = it ? `${it.code} (${it.name})` : 'this item';
+      throw new ValidationError(
+        `Duplicate item code on line ${i + 1}: ${label} is already on line ${first + 1}. ` +
+          `A BOM can list a part only once — remove one line, or put the combined quantity on a single line.`,
+      );
+    }
+    seen.set(id, i);
+  }
+}
+
 // Generate next BOM-NNNN per company. Mirrors legacy _nextBOMNo helper —
 // finds the highest numeric suffix used so far and adds 1, zero-padded
 // to 4 digits.
@@ -574,6 +599,7 @@ export async function createBomMaster(
     // Validate items exist + capture their codes for the revision snapshot.
     const itemIds = input.lines.map((l) => l.childItemId);
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
+    assertNoDuplicateChildItems(input.lines, itemsLookup);
 
     // Auto bomNo when not supplied; reject if supplied + already used.
     const bomNo = input.bomNo?.trim() || (await nextBomNo(tx, companyId));
@@ -683,6 +709,7 @@ export async function updateBomMaster(
     // Validate items exist.
     const itemIds = input.lines.map((l) => l.childItemId);
     const itemsLookup = await assertItemIdsExist(tx, itemIds, companyId);
+    assertNoDuplicateChildItems(input.lines, itemsLookup);
 
     // Capture PRE-update lines for the revision snapshot + diff note.
     const oldLineRows = await tx

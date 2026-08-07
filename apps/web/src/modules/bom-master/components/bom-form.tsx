@@ -4,10 +4,17 @@
 // Line editor: item picker (the shared SearchableSelect) + qty/set + bom_type
 // dropdown + remove button. Excel template download + import.
 
-import type { BomLineType, BomMaster, CreateBomMasterLineInput, Item } from '@innovic/shared';
+import type {
+  BomLineType,
+  BomMaster,
+  CreateBomMasterLineInput,
+  Item,
+  ListItemsResponse,
+} from '@innovic/shared';
 import { Plus, Trash2, Upload, Download } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { apiFetch } from '@/lib/api';
 import { getCol, readSheetRows } from '@/lib/xlsx-import';
 import { useItemsList } from '@/modules/items/api';
 import { useNextBomNo } from '../api';
@@ -67,6 +74,10 @@ const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
 
+// listItemsQuerySchema (packages/shared/src/schemas/item.ts) caps `limit` at
+// 1000. Asking for more is a 400, not a bigger page — keep these in step.
+const ITEM_PAGE_MAX = 1000;
+
 function emptyLine(): BomFormLineDraft {
   return { childItemId: '', childItemCodeText: '', qtyPerSet: '1', bomType: 'manufacture' };
 }
@@ -96,10 +107,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   }, [mode, nextBomNo]);
 
   // Items list — drives the code autocomplete + Excel-import resolution.
-  // Cap deliberately high (10000) so an item master beyond a few thousand rows
-  // does not make valid import codes falsely fail to resolve. Revisit only if a
-  // company's item master realistically exceeds this.
-  const { data: itemsList } = useItemsList({ limit: 10000, offset: 0 });
+  //
+  // 1000 is the SERVER's ceiling (listItemsQuerySchema caps limit at 1000).
+  // This used to ask for 10000, which Zod rejected: the request 400'd, the map
+  // below stayed empty, and every imported row came back "item_code not found
+  // in master" — even codes that plainly exist. Never ask for more than the
+  // schema allows. Beyond 1000 items the map is only a fast path anyway:
+  // lookupMissingCodes() below asks the server directly for whatever it misses.
+  const { data: itemsList } = useItemsList({ limit: ITEM_PAGE_MAX, offset: 0 });
 
   const itemsByCode = useMemo(() => {
     const m = new Map<string, Item>();
@@ -111,6 +126,28 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     for (const i of itemsList?.items ?? []) m.set(i.id, i);
     return m;
   }, [itemsList]);
+
+  // A code the first page did not cover is not proof the item is missing — the
+  // master may simply be larger than one page. Ask the server for each such
+  // code before declaring it unknown. An import file holds a handful of rows,
+  // so this stays a handful of small requests.
+  const lookupMissingCodes = async (codes: string[]): Promise<Map<string, Item>> => {
+    const found = new Map<string, Item>();
+    await Promise.all(
+      codes.map(async (code) => {
+        try {
+          const page = await apiFetch<ListItemsResponse>(
+            `/items?search=${encodeURIComponent(code)}&limit=50&offset=0`,
+          );
+          const hit = page.items.find((i) => i.code.toUpperCase() === code);
+          if (hit) found.set(code, hit);
+        } catch {
+          // Leave it unresolved — the row error below reports it as not found.
+        }
+      }),
+    );
+    return found;
+  };
 
   // Item picker — server-side search, as the dropdown skill requires. One
   // shared term is enough: only the open dropdown is visible, so whichever line
@@ -237,6 +274,27 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           ? ` (read sheet "${sheetName}" of ${sheetNames!.length}: ${sheetNames!.join(', ')})`
           : '';
 
+      // Resolve every code in one go BEFORE walking the rows: whatever the
+      // preloaded page missed gets one targeted ?search= each. Without this a
+      // large item master reads as "not found" for perfectly valid codes.
+      const fileCodes = Array.from(
+        new Set(
+          rows
+            .map((r) => getCol(r, ['item_code', 'Item Code', 'code']).trim().toUpperCase())
+            .filter(Boolean),
+        ),
+      );
+      const lateFound = await lookupMissingCodes(fileCodes.filter((c) => !itemsByCode.has(c)));
+
+      // What is already on the form, and what THIS file has already claimed.
+      // A BOM cannot list the same part twice — one line, one qty/set — so both
+      // kinds of repeat are reported by name rather than silently dropped.
+      const existingByItemId = new Map<string, number>();
+      lines.forEach((l, i) => {
+        if (l.childItemId && !existingByItemId.has(l.childItemId)) existingByItemId.set(l.childItemId, i);
+      });
+      const seenInFile = new Map<string, number>();
+
       const added: BomFormLineDraft[] = [];
       const errors: ExcelRowError[] = [];
       rows.forEach((row, idx) => {
@@ -249,9 +307,28 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           errors.push({ rowIndex: idx, itemCode: '(blank)', reason: 'item_code is required' });
           return;
         }
-        const item = itemsByCode.get(itemCode.toUpperCase());
+        const key = itemCode.toUpperCase();
+        const item = itemsByCode.get(key) ?? lateFound.get(key);
         if (!item) {
           errors.push({ rowIndex: idx, itemCode, reason: 'item_code not found in master' });
+          return;
+        }
+        const firstRow = seenInFile.get(item.id);
+        if (firstRow !== undefined) {
+          errors.push({
+            rowIndex: idx,
+            itemCode,
+            reason: `duplicate item code — ${item.code} (${item.name}) is already on row ${firstRow + 2} of this file. A BOM can list a part only once; delete one row or add the two quantities together.`,
+          });
+          return;
+        }
+        const onFormAt = existingByItemId.get(item.id);
+        if (onFormAt !== undefined) {
+          errors.push({
+            rowIndex: idx,
+            itemCode,
+            reason: `duplicate item code — ${item.code} (${item.name}) is already part ${onFormAt + 1} in the list below. Remove that part first, or drop this row from the file.`,
+          });
           return;
         }
         const qty = Number(qtyRaw);
@@ -267,6 +344,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           });
           return;
         }
+        seenInFile.set(item.id, idx);
         added.push({
           childItemId: item.id,
           childItemCodeText: item.code,
@@ -275,17 +353,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         });
       });
 
-      // Merge into existing lines, skipping duplicates already in the list.
-      const existingItemIds = new Set(lines.map((l) => l.childItemId).filter(Boolean));
-      const novel = added.filter((l) => !existingItemIds.has(l.childItemId));
-      const skippedDuplicates = added.length - novel.length;
-
       setLines((prev) =>
-        prev.length === 1 && prev[0]!.childItemId === '' ? novel : [...prev, ...novel],
+        prev.length === 1 && prev[0]!.childItemId === '' ? added : [...prev, ...added],
       );
       setImportErrors(errors);
       setImportSummary(
-        `Imported ${novel.length} row(s)${skippedDuplicates > 0 ? `, skipped ${skippedDuplicates} duplicate(s)` : ''}${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
+        `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
       );
     } catch (err) {
       setImportSummary(err instanceof Error ? err.message : 'Failed to parse Excel file');
@@ -298,7 +371,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const validationError = useMemo(() => {
     if (!header.bomName.trim()) return 'BOM Name is required';
     if (resolvedLines.length === 0) return 'Add at least one item to the BOM';
-    const itemIds = new Set<string>();
+    const itemIds = new Map<string, number>();
     for (let i = 0; i < resolvedLines.length; i++) {
       const l = resolvedLines[i]!;
       if (!l.childItemId) {
@@ -308,17 +381,21 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           ? `Line ${i + 1}: "${l.childItemCodeText.trim()}" is not an item code in the master — pick the item from the dropdown list.`
           : `Line ${i + 1}: pick an item from the dropdown list.`;
       }
-      if (itemIds.has(l.childItemId)) {
-        return `Line ${i + 1}: duplicate item code`;
+      const firstLine = itemIds.get(l.childItemId);
+      if (firstLine !== undefined) {
+        // Name the part and both lines. "duplicate item code" alone left the
+        // user hunting for which two rows collided in a 20-part BOM.
+        const code = l.childItemCodeText.trim() || itemById.get(l.childItemId)?.code || 'this item';
+        return `Line ${i + 1}: duplicate item code — ${code} is already on line ${firstLine + 1}. A BOM can list a part only once; remove one line, or put the combined quantity on a single line.`;
       }
-      itemIds.add(l.childItemId);
+      itemIds.set(l.childItemId, i);
       const qty = Number(l.qtyPerSet);
       if (!Number.isFinite(qty) || qty <= 0) {
         return `Line ${i + 1}: qty must be > 0`;
       }
     }
     return null;
-  }, [header, resolvedLines]);
+  }, [header, resolvedLines, itemById]);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
