@@ -12,7 +12,7 @@
 // load the whole table into the browser. The extra client-side substring filter here
 // is only a refinement over whatever rows the server already returned for the term.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -76,14 +76,24 @@ export function SearchableSelect({
 
   // Where to draw the list. The dropdown is rendered into document.body via a
   // portal, so it must be positioned in VIEWPORT coordinates against the input.
-  const [rect, setRect] = useState<{
-    left: number;
-    top: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
+  //
+  // Opening UPWARD anchors the list's BOTTOM edge to the input's top edge. It
+  // used to compute a `top` of "input top minus the full height it may use",
+  // which is only correct when the list actually fills that height — a short
+  // list (one row, or "No matches") was left pinned to the top of the reserved
+  // space, floating ~250px above its own field and looking like it belonged to
+  // a different one. Worse, the gap changed with the number of options, so the
+  // list appeared somewhere different every time.
+  type Anchor =
+    | { placement: 'below'; left: number; width: number; maxHeight: number; top: number }
+    | { placement: 'above'; left: number; width: number; maxHeight: number; bottom: number };
+  const [rect, setRect] = useState<Anchor | null>(null);
 
-  const baseId = id ?? 'searchable-select';
+  // Falls back to a per-instance id. Line editors render one picker per row and
+  // most do not pass an id, so every row shared `searchable-select` — duplicate
+  // DOM ids, and an aria-controls that pointed at an ambiguous element.
+  const autoId = useId();
+  const baseId = id ?? `searchable-select-${autoId.replace(/:/g, '')}`;
   const listboxId = `${baseId}-listbox`;
 
   // Show a pre-selected value's label when the field is not being edited — even
@@ -146,12 +156,19 @@ export function SearchableSelect({
       const above = r.top - GAP - EDGE;
       const flip = below < Math.min(IDEAL, above) && above > below;
       const room = Math.max(120, Math.min(IDEAL, flip ? above : below));
-      setRect({
-        left: r.left,
-        top: flip ? Math.max(EDGE, r.top - room - GAP) : r.bottom + GAP,
-        width: r.width,
-        maxHeight: room,
-      });
+      setRect(
+        flip
+          ? {
+              placement: 'above',
+              left: r.left,
+              width: r.width,
+              maxHeight: room,
+              // Anchored by its BOTTOM, so the list always touches the input
+              // however few rows it has.
+              bottom: window.innerHeight - r.top + GAP,
+            }
+          : { placement: 'below', left: r.left, width: r.width, maxHeight: room, top: r.bottom + GAP },
+      );
     };
     measure();
     window.addEventListener('scroll', measure, true);
@@ -291,7 +308,7 @@ export function SearchableSelect({
               style={{
                 position: 'fixed',
                 left: rect.left,
-                top: rect.top,
+                ...(rect.placement === 'below' ? { top: rect.top } : { bottom: rect.bottom }),
                 width: rect.width,
                 maxHeight: rect.maxHeight,
                 zIndex: 1000,

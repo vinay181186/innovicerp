@@ -254,6 +254,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                       {idx + 1}
                     </span>
                     <SearchableSelect
+                      // One id per card. The component falls back to a unique
+                      // generated id, but a stable, meaningful one keeps the
+                      // label/listbox wiring readable and gives tests a handle.
+                      id={`dispatch-line-${card.id}`}
                       value={card.soLineId}
                       onChange={(id) => patchLine(card.id, { soLineId: id })}
                       onSearch={() => {}}
