@@ -36,6 +36,11 @@ type RowState = {
   qty: number;
   /** Vendor for the types that cannot be planned without one — see NEEDS_VENDOR. */
   vendorId: string | null;
+  /** The vendor's CODE, snapshotted alongside the id. The Edit Plan modal reads
+   *  dpVendorCodeText / foVendorCodeText, not the FK — sending only the id left
+   *  it seeing a blank vendor and refusing to save with "Select a vendor for
+   *  direct purchase" on a plan that plainly had one. */
+  vendorCode: string;
   vendorLabel: string;
   /** full_outsource also demands a process description. */
   process: string;
@@ -108,6 +113,7 @@ export function BomPlanningModal({
         checked: !c.existingPlan && hasShortfall,
         qty: c.shortfall,
         vendorId: null,
+        vendorCode: '',
         vendorLabel: '',
         process: c.bomType === 'outsource' ? DEFAULT_OSP_PROCESS : '',
       });
@@ -167,9 +173,18 @@ export function BomPlanningModal({
           bomMasterId: data.bomMasterId,
           bomParentCode: data.parentItemCode ?? null,
           bomChildCode: c.childItemCode,
-          ...(planType === 'direct_purchase' ? { dpVendorId: s.vendorId } : {}),
+          // Send the vendor's CODE as well as its id. The Edit Plan modal reads
+          // the *CodeText snapshot, so an id-only plan opened there showed a
+          // blank vendor and refused to save.
+          ...(planType === 'direct_purchase'
+            ? { dpVendorId: s.vendorId, dpVendorCodeText: s.vendorCode || null }
+            : {}),
           ...(planType === 'full_outsource'
-            ? { foVendorId: s.vendorId, foProcess: s.process.trim() }
+            ? {
+                foVendorId: s.vendorId,
+                foVendorCodeText: s.vendorCode || null,
+                foProcess: s.process.trim(),
+              }
             : {}),
         };
         try {
@@ -316,6 +331,7 @@ function BomBody({
         checked: false,
         qty: 0,
         vendorId: null,
+        vendorCode: '',
         vendorLabel: '',
         process: '',
       };
@@ -441,6 +457,7 @@ function BomBody({
                 checked: false,
                 qty: c.shortfall,
                 vendorId: null,
+                vendorCode: '',
                 vendorLabel: '',
                 process: '',
               };
@@ -577,6 +594,7 @@ function BomBody({
                             const v = vendors.find((x) => x.id === id);
                             update(c.childItemCode, {
                               vendorId: id,
+                              vendorCode: v?.code ?? '',
                               vendorLabel: v ? `${v.code} — ${v.name}` : '',
                             });
                           }}

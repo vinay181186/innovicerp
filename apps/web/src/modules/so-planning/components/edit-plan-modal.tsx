@@ -131,6 +131,25 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const vendorIdByCode = (code: string): string | null =>
     vendorOpts.find((v) => v.code === code)?.id ?? null;
 
+  // Heal a plan that carries only the vendor FK and no code snapshot. Plans
+  // raised by the BOM planning modal before it sent the code arrive that way,
+  // and validate() reads the code — so the modal refused to save with
+  // "Select a vendor for direct purchase" on a plan that plainly had a vendor.
+  // Fill the code in from the id the moment the vendor list can resolve it.
+  useEffect(() => {
+    if (vendorById.size === 0) return;
+    if (!dpVendor && plan.dpVendorId) {
+      const v = vendorById.get(plan.dpVendorId);
+      if (v) setDpVendor(v.code);
+    }
+    if (!foVendor && plan.foVendorId) {
+      const v = vendorById.get(plan.foVendorId);
+      if (v) setFoVendor(v.code);
+    }
+    // dpVendor/foVendor are deliberately not dependencies: this only ever fills
+    // a BLANK one, and re-running on every keystroke would fight the user.
+  }, [vendorById, plan.dpVendorId, plan.foVendorId, dpVendor, foVendor]);
+
   // Datalists
   const costCenters = useCostCentersList({ limit: 200, offset: 0 });
   const qcProcesses = useQcProcessesList({ limit: 200, offset: 0 });
