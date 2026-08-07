@@ -555,9 +555,29 @@ export async function listDispatchRegister(
       LEFT JOIN public.items i ON i.id = l.item_id AND i.deleted_at IS NULL
       LEFT JOIN sales_order_lines sol ON sol.id = l.sales_order_line_id
       LEFT JOIN public.users u ON u.id = h.created_by
-      LEFT JOIN store_transactions st ON st.company_id = h.company_id
-        AND st.source_type = 'dispatch' AND st.txn_type = 'out'
-        AND st.source_ref = h.code || ' / ln ' || l.line_no
+      -- Stock before/after for this dispatch line. A plain equality on
+      -- "<code> / ln <n>" stopped matching once a BOM line began writing one
+      -- ledger row PER COMPONENT, suffixed with the component code
+      -- ("DSP-0009 / ln 1 / 554117144000") — so both columns went blank on
+      -- every assembly dispatch. Match the suffixed form too.
+      --
+      -- When a line moved SEVERAL components there is no single before/after to
+      -- report, so those stay NULL deliberately rather than showing one
+      -- component's numbers as if they were the line's. The " / " in the LIKE
+      -- keeps "ln 1" from swallowing "ln 10".
+      LEFT JOIN LATERAL (
+        SELECT
+          CASE WHEN COUNT(*) = 1 THEN MIN(m.stock_before) END AS stock_before,
+          CASE WHEN COUNT(*) = 1 THEN MIN(m.stock_after) END AS stock_after
+        FROM store_transactions m
+        WHERE m.company_id = h.company_id
+          AND m.source_type = 'dispatch'
+          AND m.txn_type = 'out'
+          AND (
+            m.source_ref = h.code || ' / ln ' || l.line_no
+            OR m.source_ref LIKE h.code || ' / ln ' || l.line_no || ' / %'
+          )
+      ) st ON TRUE
       LEFT JOIN v_item_stock vis
         ON vis.company_id = h.company_id AND vis.item_id = l.item_id
       LEFT JOIN LATERAL (
