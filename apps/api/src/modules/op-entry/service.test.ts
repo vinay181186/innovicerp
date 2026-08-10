@@ -631,6 +631,81 @@ describe('op-entry submitQcLog (T-040d)', () => {
     }
   });
 
+  it('0087: a QC reject resolves the piece — pendingQty is 0, and rework shows on the op it went back to', async () => {
+    // Regression for the IN-JC-26-00085 audit (2026-08-10). QC inspected every
+    // piece: some passed, some failed and were sent back for rework. The QC op
+    // is DONE — it has nothing left to look at — but the JC card computed
+    // `inputAvail − qcAccepted` locally and so kept advertising the rejected
+    // pieces as still awaiting inspection, double-counting them against the
+    // rework owed upstream.
+    const id = await ensureFreshFixture();
+    await service.submitOpLog(
+      {
+        jcOpId: testJcOpId,
+        qty: 10,
+        rejectQty: 0,
+        logDate: '2026-05-02',
+        shift: 'day',
+        operatorName: 'TestOp',
+      },
+      admin,
+    );
+    await service.submitQcLog(
+      {
+        jcOpId: id,
+        qty: 8,
+        rejectQty: 2,
+        logDate: '2026-05-03',
+        shift: 'day',
+        operatorName: 'QC-Insp',
+      },
+      admin,
+    );
+
+    const rows = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
+    const qcOp = rows.find((r) => r.opSeq === 2)!;
+    expect(qcOp.qcAcceptedQty).toBe(8);
+    expect(qcOp.qcRejectedQty).toBe(2);
+    // 10 in, 10 resolved (8 accepted + 2 rejected) → nothing pending.
+    expect(qcOp.pendingQty).toBe(0);
+    // pendingQty on a QC op IS qc_pending — same number, one definition.
+    expect(qcOp.pendingQty).toBe(qcOp.qcPending);
+    // `available` is untouched by 0087 and still means something else on a QC
+    // op (input − op_log completes, and a QC op never gets a complete log).
+    // That is exactly why the Op Entry table must not print it as "Pending".
+    expect(qcOp.available).toBe(10);
+
+    // Now send the 2 rejects back to op 1 for rework, as an NC rework
+    // disposition does (nc-register/cascades.ts writes jc_ops.rework_qty).
+    await db
+      .update(jcOps)
+      .set({ reworkQty: 2, updatedBy: admin.id })
+      .where(eq(jcOps.id, testJcOpId));
+
+    const after = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
+    const processOp = after.find((r) => r.opSeq === 1)!;
+    // The 2 pieces are pending HERE — on the bench that has to re-work them —
+    // and nowhere else. Before 0087 this op read 0 pending (10 of 10 done)
+    // while the QC op read 2, i.e. the count sat on the wrong operation.
+    expect(processOp.reworkQty).toBe(2);
+    expect(processOp.pendingQty).toBe(2);
+    expect(processOp.pendingQty).toBe(processOp.available);
+    expect(after.find((r) => r.opSeq === 2)!.pendingQty).toBe(0);
+
+    await db
+      .update(jcOps)
+      .set({ reworkQty: 0, updatedBy: admin.id })
+      .where(eq(jcOps.id, testJcOpId));
+    await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
+    await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
+    await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
+    if (qcOpId) {
+      await db.delete(opLog).where(eq(opLog.jcOpId, qcOpId));
+      await db.delete(jcOps).where(eq(jcOps.id, qcOpId));
+      qcOpId = null;
+    }
+  });
+
   it('backfills qc_call_date from prior op completion log when null', async () => {
     const id = await ensureFreshFixture();
     // Manually clear qcCallDate that submitOpLog would have set. We want to

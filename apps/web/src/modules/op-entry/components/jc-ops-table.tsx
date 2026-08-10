@@ -78,8 +78,13 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                   </td>
                   <td className="td-ctr green mono fw-700">{op.completedQty}</td>
                   <td className="td-ctr">
+                    {/* pending_qty (0087), not `available`. On a QC op
+                        `available` is input − op_log completes, and a QC op
+                        never gets a complete log — so this column printed the
+                        whole batch (50 on IN-JC-26-00085 Op2) against an op
+                        that had already inspected every piece. */}
                     <span className="mono fw-700 amber" style={{ fontSize: 15 }}>
-                      {op.available}
+                      {op.pendingQty}
                     </span>
                   </td>
                   <td>

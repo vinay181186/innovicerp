@@ -4821,3 +4821,184 @@ therefore cannot leave the ledger unbalanced.
 - `assembly/service.ts` still derives readiness from stock while dispatch now
   derives it from production. Both are defensible in their own context; that
   they differ should be a deliberate call, not an accident.
+
+## ADR-110: Job work can assemble — a JW line may name a BOM, but never a bought part
+
+**Date:** 2026-08-07
+**Status:** Accepted
+
+### Context
+
+ADR-109 fixed BOM assembly on the SALES side. An audit of the job-work side
+then found BOM support was not broken there — it was **absent at every layer**:
+no column on `job_work_order_lines`, no field on the create form, no cascade,
+no readiness branch, no "where used" reporting, and no trace of it in the
+legacy HTML either. `so-planning/service.ts` even documents the assumption in
+a comment: *"JW lines carry no BOM master, so the Equipment and assembly-BOM
+branches are always off here."*
+
+That is defensible for classic job work — the client sends raw material, you
+machine it, you send it back. It is wrong for **assembly** job work, which the
+user confirmed they do: the client ships components and wants a finished unit
+back. Without a BOM, such a JWSO has no way to say what it builds, and its
+return challan counts only what its own job cards produced.
+
+### Decision
+
+`job_work_order_lines.source_bom_master_id` (migration 0086), and with it the
+same three-part treatment ADR-109 gave sales orders:
+
+1. **Cascade** — `cascadeBomToJwLine` spawns one child Job Card per component,
+   carrying `source_jw_line_id`. Idempotent on re-save.
+2. **Readiness** — `jw-returns.producedForLine` becomes
+   `MIN over components of FLOOR(componentProduced / qtyPerSet)` for a BOM
+   line, keeping the existing own-output SUM for every ordinary line.
+3. **Stock** — a return debits each COMPONENT at `qty x qtyPerSet`. Cancel
+   replays the ledger rows the return actually wrote rather than re-exploding
+   the BOM, so a BOM edited in between cannot unbalance it.
+
+**Component types are gated by CONTEXT** (the user's rule, 2026-08-07:
+*"jwso bom type - purchase disable. jwso fulloutsource, manf valid. in case of
+invalid type show friendly err. block for that type."*):
+
+- `manufacture` — allowed, spawns a child JC.
+- `outsource` — allowed, spawns a child JC **carrying an OUTSOURCE op**.
+- `purchase` — **rejected**, with an error naming the offending parts.
+
+### Alternatives Considered
+
+- **Spawn a `purchase_request` for outsource components, as the SO cascade
+  does** — rejected. `purchase_requests` has `source_so_line_id` but no
+  job-work equivalent, so the PR would lose its link home. Adding that column
+  was the alternative; seeding a JC + OSP op instead needs no new column, is
+  exactly what `executePlan(full_outsource)` already does (ADR-095), and makes
+  readiness work with no new code because an outsource final op is already
+  scored from its GRN.
+- **A CHECK constraint for the purchase rule** — rejected. The BOM is not
+  invalid; it is invalid *here*. The same BOM is legitimate on a sales order,
+  where buying the material is the whole point. A DB constraint would have to
+  live on the BOM and would break sales.
+- **Silently ignoring purchase components on a JW BOM** — rejected outright.
+  It would quietly under-build the assembly and leave the user with no signal.
+
+### Consequences
+
+- Positive: an assembly JWSO can now be created, cascaded, produced, returned
+  and invoiced end to end.
+- Positive: the gate runs BEFORE any insert, so a bad BOM leaves no half-built
+  JWSO behind.
+- Negative: re-pointing an existing line at a different BOM updates the field
+  but deliberately does NOT re-cascade (the cascade is idempotent on existing
+  child JCs). Same behaviour as the sales-order update path. Changing the BOM
+  of a line that has already spawned work is therefore a record-only change.
+- Risk: the outsource child JC is seeded with **no vendor** — procurement picks
+  it later through the existing OSP flow. A JC sitting with an unassigned
+  OUTSOURCE op is now a state the shop floor can see.
+
+### Open
+
+- Multi-level BOMs still are not recursed, on either side (ADR-109 carries the
+  same limitation).
+- The BOM "where used" report reads `sales_order_lines` only, so an assembly
+  JWSO does not yet show up as a consumer of its BOM.
+- **No UI sets `source_bom_master_id` on the SALES side.** A picker was added
+  to the JWSO line form here; the sales-order form still has none, so ADR-109's
+  chain remains API-only until that is closed.
+
+## ADR-111: "Pending" is one number, computed once, in the view
+
+**Date:** 2026-08-10
+**Status:** Accepted
+
+### Context
+
+The user reported that Job Card `IN-JC-26-00085` (item 229619569, PIN UNI ISO
+2338-A-8x40, order 50) showed **"Op2 — 5 pending"** at a QC operation that had
+already inspected every piece.
+
+The trace found the ledger correct and the screens wrong. Op1 cut 50; Op2 (QC)
+logged 25 accepted, then 20 accepted + **5 rejected**; the auto-NC
+`NC-AUTO-IN-JC-26-00085-Op2-113117058` was dispositioned **rework at op_seq 1**,
+which wrote `jc_ops(op1).rework_qty = 5`. So 50 arrived at Op2 and 50 were
+resolved — `v_jc_op_status` correctly returned `qc_pending = 0`,
+`computed_status = 'complete'`, and the QC Command / QC Dashboard queues
+correctly did not list it.
+
+Three screens each did their own arithmetic and produced three answers for that
+one op:
+
+| Screen | Formula | Op2 |
+| --- | --- | --- |
+| JC detail card (`jc-op-card.tsx:138`) | `inputAvail − qcAccepted` | **5** |
+| Op Entry table (`jc-ops-table.tsx:82`) | `available` | **50** |
+| QC dashboards | `v_jc_op_status.qc_pending` | **0** ← correct |
+
+The JC card subtracted what QC **accepted** but never what it **rejected**, so
+every rejected piece stayed on that screen as "still to inspect" forever —
+whatever the NC disposition was. The 5 pins were advertised twice over: as
+rework owed at Op1 and as pending inspection at Op2. It also grew: once the 5
+are re-cut and logged, Op1 completed goes 50 → 55 and the card would have
+printed `55 − 45 = 10`. The Op Entry column was worse — `available` on a QC op
+is `input − op_log completes`, and a QC op never gets a complete log, so it
+printed the whole batch.
+
+### Decision
+
+`v_jc_op_status` publishes **`pending_qty`** (migration 0087) and every screen
+labelled "Pending" prints it and nothing else.
+
+It is deliberately **not new arithmetic** — it selects between two columns the
+view already computes:
+
+- `op_type = 'qc'` → `qc_pending` (`input − accepted − rejected`; a reject
+  resolves a piece exactly as an accept does)
+- everything else → `available` (`input − done − sent + rework`; the work still
+  on that bench)
+
+So no existing consumer of `available` / `qc_pending` changes value, and the
+three screens cannot drift apart again.
+
+### Alternatives Considered
+
+- **Fix the formula in `jc-op-card.tsx`** (subtract `qcRejectedQty` too) —
+  rejected. It repairs one screen and leaves the Op Entry table printing 50,
+  and it keeps a business calculation in a React component, which CLAUDE.md
+  §6 rule 1 forbids. The bug existed *because* the number had three definitions.
+- **Have the card read `qcPending` for QC ops and `available` otherwise** —
+  rejected. Correct output, but the op-type switch is itself the business rule
+  and would then have to be duplicated into every screen that grows a Pending
+  column later.
+- **Change what `available` means on a QC op** — rejected outright.
+  `submitOpLog` validates against `available` (`service.ts:445`) and the
+  op-entry availability snapshot depends on it; redefining it to fix a label
+  would move a display bug into the write path.
+
+### Consequences
+
+- Positive: one definition. JC-85 Op2 now reads 0 on both screens; Op4 reads 2
+  on both (it was 2 and 40).
+- Positive: rework finally surfaces where the work is. Op1's pending goes 0 → 5,
+  and the JC card gained the `♻ N` tag the Op Entry table always had — before
+  this, the 5 rework pins were invisible on the JC screen entirely.
+- Negative: `available` and `pending_qty` are now different numbers on a QC op,
+  which will read as a redundancy to anyone who doesn't know why. The view
+  comment and this ADR are the defence.
+- Risk: none to data — the migration is `CREATE OR REPLACE` with an appended
+  column and writes nothing.
+
+### Open — two real defects this audit found and this ADR does NOT fix
+
+1. **An op reads `complete` while it owes rework.** The complete branch fires on
+   `completed_qty >= order_qty` before it looks at rework. `v_jc_status`
+   (`0006_phase3_views.sql:145`) calls a JC complete when every op is complete,
+   and `op-entry/sales-cascade.ts:106,138-141` then stamps `closed_at` and
+   closes the SO/JW line. **A Job Card whose only outstanding work is rework can
+   auto-close and close its sales-order line.**
+2. **`jc_ops.rework_qty` only ever increments.** `nc-register/cascades.ts:130`
+   adds to it; `closeNcReworkCascade` (`:369-409`) records
+   `nc_register.rework_done_qty` and closes the NC but never decrements it. Once
+   the 5 are re-cut, Op1's pending stays at 5 permanently.
+
+They must be fixed in that order **reversed** — 2 before 1. Fixing 1 against a
+counter that never comes down would mean an op that has ever had rework can
+never complete, so the JC never closes and the SO line never closes.

@@ -126,16 +126,15 @@ export function JcOpCard({
   // accepted; process/outsource → completedQty, which for outsource is
   // accepted-back per 0068).
   //
-  // Pending = what has REACHED this op minus what it finished — NOT
-  // `jc.orderQty − done`, which the legacy table used. `inputAvail`
-  // (v_jc_op_status) is the qty upstream has actually cleared: order qty on
-  // op 1, and whatever the previous op released after that. The old formula
-  // printed the full order against an op nothing had reached yet, so a
-  // `waiting` op with zero parts on the floor advertised the whole batch as
-  // pending work. Every jc_op has a status-view row, so inputAvail is always
-  // populated.
+  // Pending comes STRAIGHT from the server (v_jc_op_status.pending_qty, 0087).
+  // This card used to compute `inputAvail − done` itself, which for a QC op
+  // subtracted what QC accepted but not what it REJECTED — so 5 pins rejected
+  // at Op2 of IN-JC-26-00085 and sent back to Op1 for rework showed as 5 still
+  // awaiting inspection at Op2, i.e. the same 5 pieces counted in two places.
+  // The number is business logic (CLAUDE.md §6 rule 1) and now has exactly one
+  // definition, shared with the Op Entry table and the QC dashboards.
   const doneQty = isQc ? op.qcAcceptedQty : op.completedQty;
-  const pendingQty = Math.max(0, op.inputAvail - doneQty);
+  const pendingQty = op.pendingQty;
 
   // Footer action ladder — the table's Action cell, condition-for-condition.
   const showLog =
@@ -202,6 +201,19 @@ export function JcOpCard({
           {isQc ? <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>QC</span> : null}
           {!isQc && op.qcRequired ? (
             <span className="tag" style={{ background: 'var(--green3)', color: 'var(--green2)' }}>QC YES</span>
+          ) : null}
+          {/* Rework owed here — pieces an NC sent BACK to this op. The Op Entry
+              table has always shown this (♻N beside the operation); this card
+              did not, so on IN-JC-26-00085 Op1 read a bare "Complete" while it
+              still owed 5 re-cut pins. Same marker, same place. */}
+          {op.reworkQty > 0 ? (
+            <span
+              className="tag"
+              style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}
+              title={`${op.reworkQty} piece(s) sent back to this operation for rework`}
+            >
+              ♻ {op.reworkQty}
+            </span>
           ) : null}
           <span style={{ flex: 1 }} />
           <span className={`badge ${st.cls}`}>{st.label}</span>

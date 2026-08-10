@@ -73,6 +73,11 @@ export const jcOpEnrichedSchema = z.object({
   /** Outsource pieces returned but incoming-QC still pending (received − accepted − rejected); 0 otherwise. */
   inQcQty: z.number().int().nonnegative(),
   qcPending: z.number().int().nonnegative(),
+  /** THE number every screen labels "Pending" (0087). QC op → qc_pending (a
+   *  reject resolves a piece just as an accept does); every other op →
+   *  available. Computed in v_jc_op_status so the JC card, the Op Entry table
+   *  and the QC dashboards can never disagree about the same op again. */
+  pendingQty: z.number().int().nonnegative(),
   computedStatus: computedJcOpStatusSchema,
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;

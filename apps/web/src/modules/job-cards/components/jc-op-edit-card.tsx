@@ -105,10 +105,10 @@ export function JcOpEditCard({
   const st = en ? (OP_STATUS[en.computedStatus] ?? { label: en.computedStatus, cls: 'b-grey' }) : null;
   const doneQty = en ? (isQc ? en.qcAcceptedQty : en.completedQty) : 0;
   const orderQty = jc?.orderQty ?? 0;
-  // Pending = reached-this-op − done, not order − done. See the same note in
-  // jc-op-card.tsx: `inputAvail` is what upstream cleared, so a blocked op no
-  // longer claims the whole batch is waiting on it.
-  const pendingQty = en ? Math.max(0, en.inputAvail - doneQty) : 0;
+  // Pending comes straight from the server (v_jc_op_status.pending_qty, 0087) —
+  // see the note in jc-op-card.tsx for why this card no longer does its own
+  // maths. Null enrichment (a brand-new unsaved op) still reads 0.
+  const pendingQty = en ? en.pendingQty : 0;
 
   return (
     <div

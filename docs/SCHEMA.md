@@ -668,6 +668,8 @@ Realtime: enable; client subscribes filtered by `(company_id = X)` for the Live 
 
 `v_jc_status` — projects from `job_cards + v_jc_op_status` the columns: `job_card_id, total_ops, done_ops, qc_pending_ops, computed_status` where `computed_status` is one of `no_ops | open | qc_pending | complete | closed`. Mirrors `calcEngine().jcStatus` (legacy line 1718–1728). `closed` triggers when `closed_at is not null`.
 
+`v_jc_op_status.pending_qty` (0087, 2026-08-10) — the single canonical "Pending" number for one operation, added because three screens each computed their own and disagreed about the same op. **Not new arithmetic:** it selects between two columns the view already publishes — `qc_pending` for `op_type='qc'` (a QC op resolves a piece by accepting OR rejecting it), `available` for every other op (work still on that bench, rework included). Every screen labelled "Pending" reads this and nothing else. See ADR-111.
+
 `v_machine_load` — Phase 7 candidate, NOT included in T-024b. Mirrors `calcEngine().machineLoad`.
 
 ### Phase 3 Triggers
@@ -830,14 +832,39 @@ RLS: same pattern as `sales_orders`.
 | `material_received_date` | `date`          | nullable                                                                 |
 | `material_received_qty`  | `numeric(12,2)` | nullable                                                                 |
 | `status`                 | `so_status`     | not null, default `'open'`                                               |
+| `source_bom_master_id`   | `uuid`          | nullable, FK → `bom_masters(id)`. **0086.** Assembly job work — see below |
 | audit + `deleted_at`     | (audit pattern) |                                                                          |
 
 Indexes:
 
 - `unique (job_work_order_id, line_no) where deleted_at is null`
 - `(item_id) where deleted_at is null`
+- `(source_bom_master_id) where source_bom_master_id is not null`
 
 RLS: same pattern as parent.
+
+**`source_bom_master_id` (migration 0086, ADR-110).** Set = this line is an
+ASSEMBLY: the client ships components and wants a finished unit back. The BOM
+cascade then spawns one child Job Card per component (all carrying
+`job_cards.source_jw_line_id` = this line), readiness becomes
+`MIN over components of FLOOR(componentProduced / qty_per_set)` instead of this
+line's own output, and a JW Return Challan consumes the COMPONENTS at
+`qty x qty_per_set` rather than the parent (which is a phantom — nothing ever
+credits it). NULL = an ordinary machining line, behaviour unchanged.
+
+Allowed component types are constrained by CONTEXT, not by the DB:
+
+| `bom_type`    | On a job-work line | Why |
+| ------------- | ------------------ | --- |
+| `manufacture` | allowed            | spawns a child Job Card |
+| `outsource`   | allowed            | spawns a child Job Card carrying an OUTSOURCE op (not a bare PR — `purchase_requests` has no job-work link column, `job_cards` does; mirrors the `full_outsource` plan path, ADR-095) |
+| `purchase`    | **rejected**       | job work runs on client-supplied material — the same rule that already refuses Direct Purchase on a job-work plan |
+
+There is deliberately **no CHECK constraint** for the `purchase` rule: the BOM
+itself is valid, it is only invalid in a job-work context, and the same BOM may
+legitimately be used by a sales order. Enforced in
+`bom-master/cascade.ts::assertBomUsableForJobWork`, which names the offending
+parts in the error.
 
 ### `job_cards` — Phase 4 ALTERS
 
@@ -1551,3 +1578,4 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-07-14 | `0061_jw_gst_percent.sql` (hand-written, idempotent)                                                                                | JWSO header parity with SO (ADR-056). **Additive, single column.** `job_work_orders.gst_percent numeric(5,2) NOT NULL DEFAULT 18` — existing rows backfill to 18. Drives the subtotal / GST / grand totals on the JWSO form (mirrors `sales_orders.gst_percent`). **DEPLOY-BLOCKING:** the JWSO service now selects `gst_percent`, so this must be applied before/with the code deploy or every JWSO read 500s. Pending prod apply. |
 | — | _(0062–0084 were applied but not logged in this table; see `apps/api/src/db/migrations/` and the ADR for each)_ | Gap noted 2026-08-07. |
 | 2026-08-07 | `0085_bom_parent_item.sql` (hand-written, idempotent)                                                                               | ADR-108 — a BOM must name the parent item it builds. **Additive, single column + index.** `bom_masters.parent_item_id uuid REFERENCES items(id)`, plus partial index `bom_masters_parent_item_idx (parent_item_id) WHERE deleted_at IS NULL` for the "which BOM builds this item?" lookup. **NULLABLE on purpose:** six BOMs already exist with no parent and nothing in the data can infer one (no `sales_order_lines` row references any of them), so NOT NULL would refuse the ALTER. The API requires `parentItemId` on **every create AND update**, so the form is the backfill — each old BOM gets a parent the first time somebody edits it. Tighten to NOT NULL once `SELECT bom_no FROM bom_masters WHERE parent_item_id IS NULL AND deleted_at IS NULL` returns zero. **DEPLOY-BLOCKING:** the BOM service selects and writes `parent_item_id`, so this must land before the API deploy. Applied to prod 2026-08-07 via `apply-sql.ts`; column + index + FK (`bom_masters_parent_item_id_fkey`) verified live. |
+| 2026-08-10 | `0087_jc_op_pending_qty.sql` (hand-written, idempotent)                                                                             | ADR-111 — one canonical `pending_qty` on `v_jc_op_status`. **Additive, view only — no table touched, no data written.** `CREATE OR REPLACE VIEW` with the new column APPENDED (existing 16 columns keep name/type/order, which is what Postgres requires and what the dependent `v_jc_status` needs). `pending_qty` = `qc_pending` for `op_type='qc'`, `available` otherwise — the same expressions already in the view, so no existing consumer changes value and the number cannot drift. Raised by the IN-JC-26-00085 audit: the JC card computed `input_avail − qc_accepted` locally, never subtracting rejects, so 5 pins rejected at Op2 and sent back to Op1 for rework read as pending inspection at Op2 **and** as rework at Op1 — the same pieces counted twice. Applied to dev via `apply-sql.ts` 2026-08-10; `op-entry/service.test.ts` 25/25 green including the new regression. **Must land before the API deploy** — `listJcOpsEnriched` now selects `s.pending_qty`. |
