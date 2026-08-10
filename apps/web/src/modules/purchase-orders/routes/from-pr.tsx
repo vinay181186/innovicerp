@@ -72,8 +72,15 @@ const CSS = `
 /* Read-only PR facts — one strip, dividers between groups. */
 .pof-strip{ display:flex; align-items:stretch; border:1px solid #e4e7ee; border-radius:8px;
   background:#fbfcfe; margin-bottom:14px; overflow:hidden; }
+/* Codes get a fixed narrow column, names get the leftover width. Splitting
+   code and name into their own boxes stops "VN-00001 · Shree Heat Treatment"
+   being ellipsised into uselessness at the old six-equal-columns width.
+   Every cell keeps min-width:0 so the strip can never overflow its card. */
 .pof-fact{ flex:1 1 0; min-width:0; padding:6px 12px; border-left:1px solid #e9ecf3; }
 .pof-fact:first-child{ border-left:0; }
+.pof-fact-code{ flex:0 1 116px; }
+.pof-fact-name{ flex:2.4 1 0; }
+.pof-fact-sm{ flex:0 1 88px; }
 .pof-fact-l{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
   color:#8b93a2; line-height:1.5; }
 .pof-fact-v{ font-size:12.5px; font-weight:600; color:#1c2333; line-height:1.5;
@@ -93,7 +100,12 @@ const CSS = `
 .pof-note-ok{ color:#1f7a44; font-weight:600; }
 .pof-note-bad{ color:#c0392b; font-weight:600; }
 
-.pof-row4{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
+/* Sized to their content instead of stretched across the full card — a date
+   picker does not need 280px. Wraps rather than overflows on a narrow window. */
+.pof-row4{ display:flex; flex-wrap:wrap; gap:12px 14px; margin-bottom:14px; }
+.pof-f-po{ flex:0 1 176px; min-width:0; }
+.pof-f-date{ flex:0 1 148px; min-width:0; }
+.pof-f-type{ flex:0 1 158px; min-width:0; }
 
 /* Tax + live totals share one row. */
 .pof-tax{ background:#f7f9fc; border:1px solid #e4e7ee; border-radius:8px; padding:12px 14px;
@@ -234,8 +246,12 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   const alreadyConverted = pr.poId !== null || pr.status === 'po_created';
   const isCancelled = pr.status === 'cancelled';
 
-  const vendor = `${pr.vendorCode ?? pr.vendorCodeText ?? '—'}${pr.vendorName ? ` · ${pr.vendorName}` : ''}`;
-  const item = `${pr.itemCode ?? pr.itemCodeText ?? '—'}${pr.itemName ? ` · ${pr.itemName}` : ''}`;
+  // Code and name are shown in their own boxes. A PR may carry either a master
+  // link (vendorCode/itemCode) or free text (…CodeText) — prefer the master.
+  const vendorCode = pr.vendorCode ?? pr.vendorCodeText ?? '—';
+  const vendorName = pr.vendorName ?? '—';
+  const itemCode = pr.itemCode ?? pr.itemCodeText ?? '—';
+  const itemName = pr.itemName ?? '—';
 
   return (
     <div className="pof-page pof-root">
@@ -259,12 +275,15 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
 
         {/* One strip, six facts, divider between each — never a card per fact. */}
         <div className="pof-strip">
-          <Fact label="Vendor" value={vendor} />
-          <Fact label="Item" value={item} />
+          <Fact label="Vendor Code" value={vendorCode} mono cls="pof-fact-code" />
+          <Fact label="Vendor Name" value={vendorName} cls="pof-fact-name" />
+          <Fact label="Item Code" value={itemCode} mono cls="pof-fact-code" />
+          <Fact label="Item Name" value={itemName} cls="pof-fact-name" />
           <Fact label="Operation" value={pr.operation ?? '—'} />
-          <Fact label="Qty" value={String(pr.qty)} mono />
-          <Fact label="Est. Cost / pc" value={inr(est)} mono />
-          <Fact label="Required By" value={pr.requiredDate ?? '—'} mono />
+          <Fact label="Qty" value={String(pr.qty)} mono cls="pof-fact-sm" />
+          {/* Currency needs the wider column — "₹1,250.00" ellipsises at 88px. */}
+          <Fact label="Est. Cost / pc" value={inr(est)} mono cls="pof-fact-code" />
+          <Fact label="Required By" value={pr.requiredDate ?? '—'} mono cls="pof-fact-code" />
         </div>
 
         {alreadyConverted ? (
@@ -288,7 +307,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
           <form onSubmit={handleSubmit(onSubmit)}>
             {/* Four inputs, four columns, one row. */}
             <div className="pof-row4">
-              <div>
+              <div className="pof-f-po">
                 <label className="pof-lbl" htmlFor="pof-code">
                   PO No.<span className="pof-req">*</span>
                 </label>
@@ -325,7 +344,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 )}
               </div>
 
-              <div>
+              <div className="pof-f-date">
                 <label className="pof-lbl" htmlFor="pof-date">
                   PO Date<span className="pof-req">*</span>
                 </label>
@@ -340,7 +359,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 ) : null}
               </div>
 
-              <div>
+              <div className="pof-f-type">
                 <label className="pof-lbl" htmlFor="pof-type">
                   PO Type
                 </label>
@@ -356,7 +375,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 </select>
               </div>
 
-              <div>
+              <div className="pof-f-date">
                 <label className="pof-lbl" htmlFor="pof-due">
                   Due Date
                 </label>
@@ -483,9 +502,15 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   );
 }
 
-function Fact(props: { label: string; value: string; mono?: boolean }): React.JSX.Element {
+function Fact(props: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  /** Width class — codes narrow, names wide. Defaults to an even share. */
+  cls?: string;
+}): React.JSX.Element {
   return (
-    <div className="pof-fact">
+    <div className={`pof-fact${props.cls ? ` ${props.cls}` : ''}`}>
       <div className="pof-fact-l">{props.label}</div>
       <div className={`pof-fact-v${props.mono ? ' pof-num' : ''}`} title={props.value}>
         {props.value}
