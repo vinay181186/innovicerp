@@ -65,6 +65,9 @@ export type PurchaseRequest = z.infer<typeof purchaseRequestSchema>;
 export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(), // resolved from vendors master when vendorId set
+  /** Address line + city + state + pincode, comma-joined, blanks skipped.
+   *  Null when the vendor is free text only, or the master has no address. */
+  vendorAddress: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master when itemId set
   // Source/linked document codes resolved from the FK ids, so the detail page
   // shows real values instead of a '— linked —' placeholder.

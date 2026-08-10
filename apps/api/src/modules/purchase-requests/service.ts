@@ -333,6 +333,25 @@ export async function getPurchaseRequest(
         // OSP/planning PR that stored the vendor code still shows the real name.
         vendorName: sql<string | null>`coalesce(${vendors.name}, ${vendorByCode.name})`,
         vendorCode: sql<string | null>`coalesce(${vendors.code}, ${vendorByCode.code})`,
+        // Postal address for the PR detail header. concat_ws skips NULLs; the
+        // inner NULLIFs make empty strings behave the same way, and the outer
+        // one turns a vendor with no address at all into NULL rather than ''.
+        // Same coalesce pattern as name/code above — the two joins are mutually
+        // exclusive in practice (a PR carries either vendor_id or the code text).
+        //
+        // btrim strips stray spaces AND commas off each part before joining:
+        // the migrated master has values like 'adjacent villages,' and
+        // 'Dist-Godda,', which would otherwise render as ',, ' runs and a
+        // trailing comma on screen.
+        // The outer regexp_replace collapses repeated comma runs — the migrated
+        // master also carries them INSIDE a single field ('PANCHVATI,, VALLABH'),
+        // which btrim cannot reach. Display-only tidy-up; the master is untouched.
+        vendorAddress: sql<string | null>`NULLIF(regexp_replace(concat_ws(', ',
+          NULLIF(btrim(coalesce(${vendors.addressLine1}, ${vendorByCode.addressLine1}), ' ,'), ''),
+          NULLIF(btrim(coalesce(${vendors.city}, ${vendorByCode.city}), ' ,'), ''),
+          NULLIF(btrim(coalesce(${vendors.state}, ${vendorByCode.state}), ' ,'), ''),
+          NULLIF(btrim(coalesce(${vendors.pincode}, ${vendorByCode.pincode}), ' ,'), '')
+        ), '(,\s*){2,}', ', ', 'g'), '')`,
         itemCode: items.code,
         // Resolve the source/linked document codes so the detail page shows real
         // values instead of a '— linked —' placeholder.
@@ -387,6 +406,7 @@ export async function getPurchaseRequest(
       ...toPurchaseRequest(found.row),
       vendorName: found.vendorName,
       vendorCode: found.vendorCode,
+      vendorAddress: found.vendorAddress,
       itemCode: found.itemCode,
       poCode: found.poCode,
       sourceJcCode: found.sourceJcCode,
