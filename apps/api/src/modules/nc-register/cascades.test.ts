@@ -364,11 +364,19 @@ describe('nc-register close-rework (T-040b)', () => {
     });
     const op1 = f.jcOpIds.find((o) => o.opSeq === 1)!.jcOpId;
 
+    const op2 = f.jcOpIds.find((o) => o.opSeq === 2)!.jcOpId;
     const readOp = async (
       jcOpId: string,
-    ): Promise<{ available: number; pendingQty: number; reworkPendingQty: number }> => {
+    ): Promise<{
+      available: number;
+      pendingQty: number;
+      reworkPendingQty: number;
+      reworkRaisedQty: number;
+      reworkRaisedToOps: string | null;
+    }> => {
       const rows = await db.execute(sql`
-        SELECT available, pending_qty, rework_pending_qty
+        SELECT available, pending_qty, rework_pending_qty,
+               rework_raised_qty, rework_raised_to_ops
         FROM public.v_jc_op_status WHERE jc_op_id = ${jcOpId}::uuid
       `);
       const r = (
@@ -376,12 +384,16 @@ describe('nc-register close-rework (T-040b)', () => {
           available: string | number;
           pending_qty: string | number;
           rework_pending_qty: string | number;
+          rework_raised_qty: string | number;
+          rework_raised_to_ops: string | null;
         }>
       )[0]!;
       return {
         available: Number(r.available),
         pendingQty: Number(r.pending_qty),
         reworkPendingQty: Number(r.rework_pending_qty),
+        reworkRaisedQty: Number(r.rework_raised_qty),
+        reworkRaisedToOps: r.rework_raised_to_ops,
       };
     };
 
@@ -395,12 +407,23 @@ describe('nc-register close-rework (T-040b)', () => {
     expect(owed.available).toBe(before.available + 5);
     expect(owed.pendingQty).toBe(before.pendingQty + 5);
 
+    // 0090: the op that REJECTED (the NC's own op 2) reports the same 5 from the
+    // other end — what became of its rejects — and names where they went.
+    const raiser = await readOp(op2);
+    expect(raiser.reworkRaisedQty).toBe(5);
+    expect(raiser.reworkRaisedToOps).toBe('1');
+    expect(raiser.reworkPendingQty).toBe(0); // the redo is not ITS work
+
     // Rework done → close the NC. The balance must go away.
     await service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin);
     const cleared = await readOp(op1);
     expect(cleared.reworkPendingQty).toBe(0);
     expect(cleared.available).toBe(before.available);
     expect(cleared.pendingQty).toBe(before.pendingQty);
+    // Both ends clear together — they read the same NC rows.
+    const raiserCleared = await readOp(op2);
+    expect(raiserCleared.reworkRaisedQty).toBe(0);
+    expect(raiserCleared.reworkRaisedToOps).toBeNull();
 
     // The counter itself is untouched — it stays as the audit trail of what was
     // ever raised against the op, which is why it must not drive the maths.

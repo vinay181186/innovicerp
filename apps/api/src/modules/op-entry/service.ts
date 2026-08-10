@@ -97,6 +97,8 @@ export async function listJcOpsEnriched(
         s.qc_pending           AS "qcPending",
         s.pending_qty          AS "pendingQty",
         s.rework_pending_qty   AS "reworkPendingQty",
+        s.rework_raised_qty    AS "reworkRaisedQty",
+        s.rework_raised_to_ops AS "reworkRaisedToOps",
         s.computed_status      AS "computedStatus"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
@@ -125,6 +127,8 @@ export async function listJcOpsEnriched(
       qcPending: Number(r['qcPending'] ?? 0),
       pendingQty: Number(r['pendingQty'] ?? 0),
       reworkPendingQty: Number(r['reworkPendingQty'] ?? 0),
+      reworkRaisedQty: Number(r['reworkRaisedQty'] ?? 0),
+      reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
     })) as unknown as JcOpEnriched[];
   });
 }

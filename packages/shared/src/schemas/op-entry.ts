@@ -83,6 +83,12 @@ export const jcOpEnrichedSchema = z.object({
   /** Pieces this op still OWES rework on (0088) — summed live from the NC
    *  register, so it falls to 0 when the NC is closed. This is the ♻ marker. */
   reworkPendingQty: z.number().int().nonnegative(),
+  /** Pieces THIS op rejected that are currently out for rework (0090) — the
+   *  mirror of reworkPendingQty, seen from the op that found the fault. */
+  reworkRaisedQty: z.number().int().nonnegative(),
+  /** Which op seq(s) those pieces went back to, e.g. "1" or "1, 3". Null when
+   *  reworkRaisedQty is 0. */
+  reworkRaisedToOps: z.string().nullable(),
   computedStatus: computedJcOpStatusSchema,
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;

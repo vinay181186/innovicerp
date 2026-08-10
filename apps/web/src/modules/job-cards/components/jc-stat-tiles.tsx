@@ -271,10 +271,17 @@ export function JcStatTiles({
                   : st === 'in_progress' || st === 'running'
                     ? 'var(--amber)'
                     : 'var(--text3)';
+              // Flow qty = what this op RELEASED over what actually REACHED it.
+              // The denominator used to be jc.orderQty for every non-QC op, so
+              // an op that only ever received part of the batch advertised the
+              // whole order against itself: on IN-JC-26-00085, 45 pieces reached
+              // Op3 (drill) and it read "40/50" instead of "40/45", and the
+              // outsource op showed no qty at all. `inputAvail` is the qty
+              // upstream actually cleared — the same correction the PENDING tile
+              // got in migration 0087. Fall back to orderQty only when the
+              // enrichment row is missing.
               const flowQty = isQc ? o.qcAcceptedQty : o.completedQty;
-              const flowLabel = isQc
-                ? `${flowQty}/${o.inputAvail || jc.orderQty}`
-                : `${flowQty}/${jc.orderQty}`;
+              const flowLabel = `${flowQty}/${o.inputAvail || jc.orderQty}`;
               return (
                 <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div
@@ -318,9 +325,18 @@ export function JcStatTiles({
                       <div style={{ fontSize: 9, marginTop: 3, fontWeight: 700, color: 'var(--amber)' }}>
                         {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
                       </div>
-                    ) : (
-                      <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>{flowLabel}</div>
-                    )}
+                    ) : null}
+                    {/* Every op carries a qty, outsource included — it used to
+                        show the vendor status alone, so a chip with 38 pieces
+                        accepted back read as bare "Received" with no number. */}
+                    <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>
+                      {flowLabel}
+                    </div>
+                    {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
+                      <div style={{ fontSize: 9, marginTop: 2, fontWeight: 700, color: 'var(--amber)' }}>
+                        ♻{o.reworkPendingQty > 0 ? o.reworkPendingQty : o.reworkRaisedQty}
+                      </div>
+                    ) : null}
                   </div>
                   {i < sortedOps.length - 1 ? <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span> : null}
                 </div>

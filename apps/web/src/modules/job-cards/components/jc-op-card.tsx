@@ -136,6 +136,18 @@ export function JcOpCard({
   const doneQty = isQc ? op.qcAcceptedQty : op.completedQty;
   const pendingQty = op.pendingQty;
 
+  // What became of THIS op's rejects (0090). `reworkPendingQty` above lights the
+  // op that has to redo the work; this lights the op that found the fault, which
+  // otherwise showed a bare "✗5 rej" and no sign of the disposition. Suppressed
+  // when the rework came back to this same op — the ♻ tag in the header already
+  // says so and two markers for one decision reads as two decisions.
+  const reworkOutTo =
+    op.reworkRaisedToOps && op.reworkRaisedToOps !== String(op.opSeq)
+      ? ` → Op${op.reworkRaisedToOps}`
+      : '';
+  const reworkOut = op.reworkRaisedQty > 0 && reworkOutTo !== '';
+  const reworkOutTitle = `${op.reworkRaisedQty} piece(s) rejected here and sent back to Op${op.reworkRaisedToOps ?? ''} for rework. Clears when the NC is closed.`;
+
   // Footer action ladder — the table's Action cell, condition-for-condition.
   const showLog =
     !isOut &&
@@ -270,6 +282,11 @@ export function JcOpCard({
                       {op.qcRejectedQty > 0 ? (
                         <div style={{ fontSize: 8, color: 'var(--red)' }}>✗{op.qcRejectedQty} rej</div>
                       ) : null}
+                      {reworkOut ? (
+                        <div style={{ fontSize: 8, color: 'var(--amber)' }} title={reworkOutTitle}>
+                          ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                        </div>
+                      ) : null}
                       {op.qcPending > 0 ? (
                         <div style={{ fontSize: 8, color: 'var(--amber)' }}>⏳{op.qcPending} pending</div>
                       ) : null}
@@ -279,6 +296,11 @@ export function JcOpCard({
                       <div style={{ fontSize: 8, color: 'var(--green)' }}>✓{op.qcAcceptedQty} acc</div>
                       {op.qcRejectedQty > 0 ? (
                         <div style={{ fontSize: 8, color: 'var(--red)' }}>✗{op.qcRejectedQty} rej</div>
+                      ) : null}
+                      {reworkOut ? (
+                        <div style={{ fontSize: 8, color: 'var(--amber)' }} title={reworkOutTitle}>
+                          ♻{op.reworkRaisedQty} rework{reworkOutTo}
+                        </div>
                       ) : null}
                       {op.qcPending > 0 ? (
                         <div style={{ fontSize: 8, color: 'var(--amber)' }}>⏳{op.qcPending} pend</div>

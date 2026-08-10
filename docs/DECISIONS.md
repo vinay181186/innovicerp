@@ -5174,3 +5174,81 @@ safe.
 - Nothing surfaces "Job Cards held open by an unclosed rework NC". Until
   something does, the failure mode is a quiet one — an order that will not close
   and no obvious reason on the order screen.
+
+## ADR-114: The Job Card screen tells the rework story from both ends, and its operation flow counts against what reached each op
+
+**Date:** 2026-08-10
+**Status:** Accepted
+**Follows:** ADR-111/112/113. Same audit, same Job Card.
+
+### Context
+
+Two things the user raised after ADR-113 shipped, both on the Job Card screen.
+
+**1. The rejecting op says nothing about the disposition.** ADR-112's
+`rework_pending_qty` is grouped on `rework_op_seq` — the op the work went back
+TO — so it lights Op1 of IN-JC-26-00085. Op2, the QC operation that actually
+found the fault, still showed a bare `✗5 rej` with no sign of what was decided.
+A QC engineer looking at their own operation could not tell a reject still
+awaiting a disposition from one already sent for rework.
+
+**2. The operation-flow strip counted against the wrong denominator.**
+
+```ts
+const flowLabel = isQc ? `${flowQty}/${o.inputAvail}` : `${flowQty}/${jc.orderQty}`;
+```
+
+QC ops used `inputAvail`; every other op used the **full order qty**. On JC-85,
+45 pieces reached Op3 (drill) and 40 were drilled — the chip read **40/50**,
+not 40/45. Outsource chips showed no qty at all, only the vendor status label,
+so Op5 with 38 pieces accepted back read as a bare "Received". This is the same
+defect ADR-111 fixed on the PENDING tile: an op advertising the whole batch
+when only part of it ever arrived.
+
+### Decision
+
+**`rework_raised_qty` + `rework_raised_to_ops`** (migration 0090) — the mirror
+of `rework_pending_qty`: the same open-NC balance grouped on `nc.op_seq`, the op
+that RAISED the NC, plus the target op seq(s) for the label. The QC op now reads
+`♻5 rework → Op1` beside its `✗5 rej`. Same source rows and same
+`status <> 'closed'` filter as `rework_pending_qty`, so the two ends can never
+tell different stories and both clear together when the NC is closed.
+
+The marker is suppressed when the rework came back to the same op — the header
+♻ tag already says so, and two markers for one decision reads as two decisions.
+
+**The flow strip uses `inputAvail` for every op type**, and outsource chips show
+their qty alongside the vendor status instead of instead of it. The strip also
+gained a ♻ line so rework is visible at the summary level, not only in the op
+cards below.
+
+### Alternatives Considered
+
+- **Derive the rejecting-op marker on the client** from the NC list already
+  loaded by the page — rejected. It is the same grouping the view does, and
+  putting it in React is what produced ADR-111 in the first place.
+- **Show the raised marker on the op card only, not the flow strip** — rejected.
+  The flow strip is what the user reads first; the ADR-113 status change is
+  invisible there without it.
+- **Include closed rework NCs in `rework_raised_qty`** so the QC op keeps a
+  permanent "5 went to rework" record — rejected. That is history, and the
+  op_log already holds it. These columns describe what is outstanding NOW;
+  mixing the two is how `jc_ops.rework_qty` became wrong (ADR-112).
+
+### Consequences
+
+- Positive: the two ends of a rework agree by construction — one set of NC rows,
+  two groupings.
+- Positive: every flow chip now counts against what actually reached it, so a
+  blocked op no longer reads as though the whole batch is sitting on it.
+- Negative: the flow chip is denser — qty, status and possibly ♻ on an
+  80px-wide box. Acceptable, but it is close to the limit of that layout.
+- Risk: none to data. View-only, additive columns, nothing written.
+
+### Open
+
+- The vendor status label on an outsource chip comes from the
+  `jc_ops.outsource_status` column while its qty comes from the view. They agree
+  on JC-85 (`received` / 38 of 38), but nothing enforces it — the column is
+  maintained by the OSP flow and the qty by GRN receipts. A chip could yet read
+  "Sent" over "38/38".
