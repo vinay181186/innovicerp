@@ -266,13 +266,16 @@
   border: 1px solid var(--border);
   border-radius: var(--radius2);
   overflow: hidden;
-  margin-bottom: 16px;
+  /* Density pass: pages stack 5.4 panels on average (20 on Assembly detail),
+     so each panel's chrome is paid several times per screen. 16 -> 10. */
+  margin-bottom: 10px;
 }
 .panel-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  /* 12px 16px -> 8px 14px: the header holds one line of text. */
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, var(--bg3), var(--bg2));
 }
@@ -283,7 +286,8 @@
   letter-spacing: 0.03em;
 }
 .panel-body {
-  padding: 16px;
+  /* 16 -> 11. Biggest single contributor: 32px of vertical padding per panel. */
+  padding: 11px;
 }
 
 /* ═══ STAT CARDS (dashboard KPI tiles) ═══ */
@@ -362,7 +366,8 @@
   font-size: var(--fs-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  padding: 9px 12px;
+  /* 9px 12px -> 6px 10px. Compounds over a 20-row list: ~120px recovered. */
+  padding: 6px 10px;
   text-align: left;
   font-family: var(--mono);
   white-space: nowrap;
@@ -378,7 +383,7 @@
   color: var(--cyan);
 }
 .innovic-table td {
-  padding: 9px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-control);
   vertical-align: middle;

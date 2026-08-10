@@ -92,6 +92,59 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Closed — Density pass 1: panel + table padding (2026-08-10)
+
+**Status:** [x] Done. Four CSS values in `apps/web/src/styles/innovic-theme.css`.
+No components, logic, API, DB or routing touched.
+
+**Audit finding that shaped this:** the components a density fix would normally
+target — `PageContainer`, `PageHeader`, `Card`, `DetailGrid`, `FormGrid`,
+`DataTable` — **do not exist**. `components/shared/` holds no layout wrappers,
+and shadcn's `Card`/`Table` are imported by 3 and 1 file respectively. All 155
+route files inherit spacing from global classes in one 911-line stylesheet, so
+the maximum-pages/minimum-changes fix is editing that file directly.
+
+Measured usage: `.panel` 166 files · `.innovic-table` 118 · `.panel-body` 114 ·
+`.tbl-wrap` 111 · `.section-hdr` 102 · `.panel-hdr` 90 · `.form-grid` 52.
+**Mean 5.4 panels stacked per page** (max 20 — Assembly detail).
+
+**Changed:** `.panel-body` 16→11px · `.panel` margin-bottom 16→10px ·
+`.panel-hdr` 12px 16px→8px 14px · `.innovic-table` th/td 9px 12px→6px 10px.
+
+**Verified by running the app** (Playwright, 1366×768, logged in, local API on
+the dev DB), measuring each page then `git stash`ing the CSS and re-measuring:
+
+| Page | Before | After |
+| --- | --- | --- |
+| SO detail (4 panels) | 1700px | **1537px (−163px, −10%)** |
+| Job Card status | 1052px | 1028px |
+| Items / Vendors list — rows visible | 12 | **14** (row 45→39px) |
+| Job Cards list — rows visible | 9 | **10** (row 59→53px) |
+
+No clipping, no new horizontal scrolling (`scrollWidth` vs `clientWidth`
+asserted on every page).
+
+**🔴 Why list pages barely shortened — read before planning pass 2.**
+`.tbl-wrap` sets `max-height: calc(100vh - 220px)` **and** `overflow-y:auto`
+while `#content` already scrolls. The table is a fixed-height box nested in a
+scrolling page, so shrinking rows cannot shorten the page — it only fits more
+rows. **This nested scroll is the dominant constraint on all 111 list pages**
+and is the single highest-impact remaining fix. It was deliberately left out of
+this pass. The `220px` constant is also wrong for any page with panels above the
+table, which is most of them.
+
+**Estimate correction:** the pre-work estimate of ~150px/page assumed the 5.4
+panel mean applied evenly. It does not — that mean is dragged up by
+detail/dashboard pages. SO detail hit −163px (on estimate); list pages carry 1–2
+panels and had little to give.
+
+**Remaining, in order:** `.tbl-wrap` nested scroll (111 pages) → `#content`
+padding 20px + `.section-hdr` 22px/16px (needs a visual pass) → `.form-grid`
+2-column default (52 files; the only change that can break a layout — add
+`.form-grid-4` and opt in rather than changing the default).
+
+---
+
 ## Closed — Create PO from PR: compact one-screen form (2026-08-10)
 
 **Status:** [x] Done. UI only — no service, schema, or API change.
