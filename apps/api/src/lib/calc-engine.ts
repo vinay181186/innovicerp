@@ -125,6 +125,13 @@ export function enrichOps(
 
     const prev = enriched[i - 1];
     const inputAvail = prev ? outputOf(prev) : jc.orderQty;
+    // KNOWN DIVERGENCE from v_jc_op_status since 0088: the view derives
+    // outstanding rework live from nc_register (it falls to 0 when the NC is
+    // closed), while this pure helper still adds jc_ops.rework_qty, which only
+    // ever increments. Callers here (so-status, so-overview) use `available`
+    // for rollups, not for the write path, so the drift is cosmetic — but it IS
+    // drift. Closing it means feeding NC rows in, which is a bigger change than
+    // ADR-112 took on. Recorded as Open there.
     const available = Math.max(0, inputAvail - completed) + op.reworkQty;
 
     const isQcOp = op.opType === 'qc';

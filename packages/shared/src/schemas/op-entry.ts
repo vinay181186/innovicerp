@@ -60,6 +60,8 @@ export const jcOpEnrichedSchema = z.object({
   program: z.string().nullable(),
   toolNo: z.string().nullable(),
   qcRequired: z.boolean(),
+  /** Running total ever RAISED against this op by an NC rework disposition.
+   *  Audit trail only — it never decrements. Show `reworkPendingQty` instead. */
   reworkQty: z.number().int().nonnegative(),
   outsourceStatus: outsourceStatusSchema.nullable(),
   // From v_jc_op_status (computed)
@@ -78,6 +80,9 @@ export const jcOpEnrichedSchema = z.object({
    *  available. Computed in v_jc_op_status so the JC card, the Op Entry table
    *  and the QC dashboards can never disagree about the same op again. */
   pendingQty: z.number().int().nonnegative(),
+  /** Pieces this op still OWES rework on (0088) — summed live from the NC
+   *  register, so it falls to 0 when the NC is closed. This is the ♻ marker. */
+  reworkPendingQty: z.number().int().nonnegative(),
   computedStatus: computedJcOpStatusSchema,
 });
 export type JcOpEnriched = z.infer<typeof jcOpEnrichedSchema>;

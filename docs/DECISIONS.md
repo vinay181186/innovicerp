@@ -5002,3 +5002,98 @@ three screens cannot drift apart again.
 They must be fixed in that order **reversed** — 2 before 1. Fixing 1 against a
 counter that never comes down would mean an op that has ever had rework can
 never complete, so the JC never closes and the SO line never closes.
+
+## ADR-112: Outstanding rework is derived from the NC, not from a counter
+
+**Date:** 2026-08-10
+**Status:** Accepted
+**Closes:** ADR-111 §Open item 2. Item 1 (an op reads `complete` while owing
+rework) remains open and is the next change.
+
+### Context
+
+`nc-register/cascades.ts:130` adds an NC's rejected qty to
+`jc_ops.rework_qty` when the disposition is `rework`. Nothing ever subtracts
+it: `closeNcReworkCascade` (`:369-409`) records `nc_register.rework_done_qty`
+and flips the NC to `closed`, but leaves the counter alone.
+
+So on IN-JC-26-00085, once the 5 pins are re-cut and logged at Op1:
+
+```
+available = GREATEST(0, 50 − 55) + 5 = 5      -- forever
+```
+
+A permanent 5 pieces of phantom work on a finished operation — and since
+ADR-111 that phantom is printed in the Pending column too. The ♻ marker had
+the same defect: it showed the running total ever raised, so it stayed lit
+after the rework was done.
+
+### Decision
+
+`v_jc_op_status` sums the outstanding qty **live from `nc_register`** and uses
+that everywhere it previously used `jc_ops.rework_qty` (migration 0088):
+
+```sql
+rework_outstanding AS (
+  SELECT nc.job_card_id, nc.rework_op_seq,
+         GREATEST(0, SUM(nc.rejected_qty - COALESCE(nc.rework_done_qty, 0))) AS qty
+  FROM public.nc_register nc
+  WHERE nc.disposition = 'rework' AND nc.status <> 'closed'
+    AND nc.rework_op_seq IS NOT NULL AND nc.deleted_at IS NULL
+  GROUP BY nc.job_card_id, nc.rework_op_seq
+)
+```
+
+joined on `(job_card_id, op_seq = rework_op_seq)` — the op the NC sent the work
+back to, which is not necessarily the op that rejected it. A new
+`rework_pending_qty` column carries it to the UI for the ♻ marker.
+
+`jc_ops.rework_qty` is left in place and still written by the dispose cascade.
+It is now **audit trail only** — what was ever raised against the op.
+
+**The rule this creates:** rework stays outstanding until the NC is closed.
+NC Register → the NC → **Close Rework** is what clears it. Closing without
+entering a done-qty still clears it in full (the row leaves the
+`status <> 'closed'` set), so the qty field stays optional as it is today.
+
+### Alternatives Considered
+
+- **Decrement `jc_ops.rework_qty` inside `closeNcReworkCascade`** — rejected.
+  Two writers, one number: the counter would still be wrong for every NC closed
+  before the fix, needing a backfill, and any future path that closes an NC
+  without going through that one function silently re-breaks it. Deriving needs
+  no backfill and cannot drift.
+- **Track outstanding rework on a new column of `jc_ops`** — rejected for the
+  same reason plus a migration to maintain. The NC rows already carry every
+  fact required.
+- **Count only `rework_done_qty` and ignore NC status** — rejected. The field
+  is optional today, so a closed NC with no qty entered would leave its rework
+  outstanding forever. Status is the reliable signal; the qty refines it.
+
+### Consequences
+
+- Positive: a reworked op can finish. Close the NC and `available`,
+  `pending_qty` and ♻ all return to their pre-NC values.
+- Positive: **it tightens the write path too.** `submitOpLog` validates against
+  `available` (`op-entry/service.ts:445`), read from this view — so the extra
+  allowance to re-log rework pieces now disappears when the NC closes, instead
+  of persisting indefinitely.
+- Negative: closing the NC becomes load-bearing. An NC dispositioned `rework`
+  and never closed keeps its op showing pending work forever — arguably correct
+  (the pieces really are owed), but it will surface stale NCs nobody closed.
+- Negative: `available` is now a live aggregate over `nc_register` as well as
+  `op_log`. One more table in a view read on hot screens; at current row counts
+  the cost is not measurable, but it is not free forever.
+- Risk: none to data. `CREATE OR REPLACE VIEW` with an appended column; writes
+  nothing, and `jc_ops.rework_qty` is untouched.
+
+### Open
+
+- **`calc-engine.ts` still adds `op.reworkQty`** (`enrichOps`, line ~128) and so
+  disagrees with the view for `so-status` / `so-overview` rollups. Those use
+  `available` for reporting, not for the write path, so the drift is cosmetic —
+  but it is drift. Closing it means feeding NC rows into a helper whose whole
+  premise is "no DB access, caller batches the reads". Commented in place.
+- ADR-111 §Open item 1 is now unblocked: an op still reads `complete` while it
+  owes rework, so a Job Card can auto-close and close its SO line with rework
+  outstanding.

@@ -3,7 +3,7 @@
 // op_log + new JC rows + flip jc_ops.reworkQty without polluting prod-shape
 // data. Same defensive prefix pattern as sales-cascade.test.ts.
 
-import { and, eq, like } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, jcOps, jobCards, ncRegister, opLog, users } from '../../db/schema';
@@ -348,6 +348,68 @@ describe('nc-register close-rework (T-040b)', () => {
     const closed = await service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin);
     expect(closed.status).toBe('closed');
     expect(closed.reworkDoneQty).toBe('5.00');
+  });
+
+  it('0088: rework counts down — outstanding is derived from the NC, so closing it clears the op', async () => {
+    // ADR-112. `jc_ops.rework_qty` only ever increments (cascades.ts:130) and
+    // closeNcRework never touched it, so a reworked op carried a permanent
+    // phantom balance in `available` — and, after 0087, in Pending too. The
+    // view now sums the outstanding qty from nc_register instead.
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}RWD-JC`,
+      ncCode: `${TEST_PREFIX}RWD-NC`,
+      rejectedQty: 5,
+      opSeqs: [1, 2],
+      ncOpSeq: 2,
+    });
+    const op1 = f.jcOpIds.find((o) => o.opSeq === 1)!.jcOpId;
+
+    const readOp = async (
+      jcOpId: string,
+    ): Promise<{ available: number; pendingQty: number; reworkPendingQty: number }> => {
+      const rows = await db.execute(sql`
+        SELECT available, pending_qty, rework_pending_qty
+        FROM public.v_jc_op_status WHERE jc_op_id = ${jcOpId}::uuid
+      `);
+      const r = (
+        rows as unknown as Array<{
+          available: string | number;
+          pending_qty: string | number;
+          rework_pending_qty: string | number;
+        }>
+      )[0]!;
+      return {
+        available: Number(r.available),
+        pendingQty: Number(r.pending_qty),
+        reworkPendingQty: Number(r.rework_pending_qty),
+      };
+    };
+
+    const before = await readOp(op1);
+    expect(before.reworkPendingQty).toBe(0);
+
+    // Send the 5 back to op 1.
+    await service.disposeNcRegister(f.ncId, { action: 'rework', reworkOpSeq: 1 }, admin);
+    const owed = await readOp(op1);
+    expect(owed.reworkPendingQty).toBe(5);
+    expect(owed.available).toBe(before.available + 5);
+    expect(owed.pendingQty).toBe(before.pendingQty + 5);
+
+    // Rework done → close the NC. The balance must go away.
+    await service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin);
+    const cleared = await readOp(op1);
+    expect(cleared.reworkPendingQty).toBe(0);
+    expect(cleared.available).toBe(before.available);
+    expect(cleared.pendingQty).toBe(before.pendingQty);
+
+    // The counter itself is untouched — it stays as the audit trail of what was
+    // ever raised against the op, which is why it must not drive the maths.
+    const opRow = await db
+      .select({ reworkQty: jcOps.reworkQty })
+      .from(jcOps)
+      .where(eq(jcOps.id, op1))
+      .limit(1);
+    expect(opRow[0]?.reworkQty).toBe(5);
   });
 
   it('blocks close-rework on a non-rework disposition (ConflictError)', async () => {

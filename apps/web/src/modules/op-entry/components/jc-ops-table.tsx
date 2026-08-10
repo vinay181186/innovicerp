@@ -57,7 +57,10 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                   <td className="td-ctr mono">{op.opSeq}</td>
                   <td>
                     {op.operation}
-                    {op.reworkQty > 0 ? (
+                    {/* Rework STILL OWED (0088), not the running total ever
+                        raised — jc_ops.rework_qty never decrements, so this
+                        marker used to stay lit after the rework was done. */}
+                    {op.reworkPendingQty > 0 ? (
                       <span
                         style={{
                           color: 'var(--amber)',
@@ -65,8 +68,9 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                           fontWeight: 700,
                           marginLeft: 3,
                         }}
+                        title="Clears when the NC is closed (NC Register → Close Rework)"
                       >
-                        ♻{op.reworkQty}
+                        ♻{op.reworkPendingQty}
                       </span>
                     ) : null}
                   </td>

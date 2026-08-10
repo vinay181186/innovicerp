@@ -206,13 +206,13 @@ export function JcOpCard({
               table has always shown this (♻N beside the operation); this card
               did not, so on IN-JC-26-00085 Op1 read a bare "Complete" while it
               still owed 5 re-cut pins. Same marker, same place. */}
-          {op.reworkQty > 0 ? (
+          {op.reworkPendingQty > 0 ? (
             <span
               className="tag"
               style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}
-              title={`${op.reworkQty} piece(s) sent back to this operation for rework`}
+              title={`${op.reworkPendingQty} piece(s) sent back to this operation for rework. Clears when the NC is closed (NC Register → Close Rework).`}
             >
-              ♻ {op.reworkQty}
+              ♻ {op.reworkPendingQty}
             </span>
           ) : null}
           <span style={{ flex: 1 }} />

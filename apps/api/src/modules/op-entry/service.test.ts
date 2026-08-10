@@ -675,27 +675,31 @@ describe('op-entry submitQcLog (T-040d)', () => {
     // That is exactly why the Op Entry table must not print it as "Pending".
     expect(qcOp.available).toBe(10);
 
-    // Now send the 2 rejects back to op 1 for rework, as an NC rework
-    // disposition does (nc-register/cascades.ts writes jc_ops.rework_qty).
+    // Now send the 2 rejects back to op 1 for rework by dispositioning the
+    // auto-NC the reject raised — the same row shape nc-register/cascades.ts
+    // writes. Since 0088 the view reads the outstanding qty from HERE, not
+    // from the jc_ops.rework_qty counter (which never decrements).
     await db
-      .update(jcOps)
-      .set({ reworkQty: 2, updatedBy: admin.id })
-      .where(eq(jcOps.id, testJcOpId));
+      .update(ncRegister)
+      .set({
+        disposition: 'rework',
+        dispositionDate: '2026-05-03',
+        reworkOpSeq: 1,
+        status: 'disposed',
+        updatedBy: admin.id,
+      })
+      .where(eq(ncRegister.jobCardId, testJcId));
 
     const after = await service.listJcOpsEnriched({ jobCardCode: testJcCode }, admin);
     const processOp = after.find((r) => r.opSeq === 1)!;
     // The 2 pieces are pending HERE — on the bench that has to re-work them —
     // and nowhere else. Before 0087 this op read 0 pending (10 of 10 done)
     // while the QC op read 2, i.e. the count sat on the wrong operation.
-    expect(processOp.reworkQty).toBe(2);
+    expect(processOp.reworkPendingQty).toBe(2);
     expect(processOp.pendingQty).toBe(2);
     expect(processOp.pendingQty).toBe(processOp.available);
     expect(after.find((r) => r.opSeq === 2)!.pendingQty).toBe(0);
 
-    await db
-      .update(jcOps)
-      .set({ reworkQty: 0, updatedBy: admin.id })
-      .where(eq(jcOps.id, testJcOpId));
     await db.delete(storeTransactions).where(eq(storeTransactions.itemId, testItemId));
     await db.delete(ncRegister).where(eq(ncRegister.jobCardId, testJcId));
     await db.delete(activityLog).where(eq(activityLog.refId, testJcCode));
