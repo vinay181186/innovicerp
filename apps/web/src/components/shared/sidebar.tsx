@@ -409,27 +409,23 @@ export function Sidebar(): React.JSX.Element {
   // Sections collapsed by default per legacy UX — but the section
   // containing the current route auto-opens so the active item is
   // visible on cold load. Persisting across navigations: keep
-  // collapsed/open state per-section in React state, seed it from
-  // pathname.
-  const initialOpen = new Set<string>();
-  for (const sec of SECTIONS) {
-    if (
+  // collapsed/open state in React state, seeded from pathname.
+  //
+  // ACCORDION: exactly one section open at a time — opening a department
+  // collapses whichever was open. Previously each toggled independently, so
+  // several expanded at once pushed the lower departments below the fold and
+  // the sidebar had to be scrolled to reach them. Clicking the open section
+  // still closes it, leaving none open.
+  const initialOpen =
+    SECTIONS.find((sec) =>
       sec.groups.some((g) =>
         g.items.some((i) => pathname === i.to || pathname.startsWith(i.to + '/')),
-      )
-    ) {
-      initialOpen.add(sec.key);
-    }
-  }
-  const [openSections, setOpenSections] = useState<Set<string>>(initialOpen);
+      ),
+    )?.key ?? null;
+  const [openSection, setOpenSection] = useState<string | null>(initialOpen);
 
   const toggle = (key: string): void => {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setOpenSection((prev) => (prev === key ? null : key));
   };
 
   const isActive = (to: string): boolean => pathname === to || pathname.startsWith(to + '/');
@@ -464,7 +460,7 @@ export function Sidebar(): React.JSX.Element {
       </a>
 
       {ORDERED_SECTIONS.filter((sec) => shouldShowSection(sec.key, isAdmin, eff)).map((sec) => {
-        const open = openSections.has(sec.key);
+        const open = openSection === sec.key;
         return (
           <div key={sec.key}>
             <div className={`sb-section sb-mod-${sec.modClass}`} onClick={() => toggle(sec.key)}>
