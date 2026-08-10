@@ -8,7 +8,6 @@ import type {
   JobCardEditModel,
   JobCardListItem,
   JobCardStatusExtras,
-  JobCardStatusOpExtra,
   OpLog,
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -33,7 +32,6 @@ import { JcOpCard } from './jc-op-card';
 import { JcOpEditCard, type JcOpEditValues } from './jc-op-edit-card';
 import { OutsourceBalanceModal } from './outsource-balance-modal';
 import { buildJcWriteInput } from '../lib/build-jc-write-input';
-import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 
@@ -177,154 +175,6 @@ function QcDocCard({
   );
 }
 
-const cardStyle = (bg: string, brd: string): React.CSSProperties => ({
-  background: bg,
-  border: `1px solid ${brd}`,
-  borderRadius: 8,
-  padding: 12,
-});
-const lblStyle: React.CSSProperties = {
-  fontSize: 10,
-  color: 'var(--text3)',
-  textTransform: 'uppercase',
-  letterSpacing: '.08em',
-  marginBottom: 4,
-};
-
-// Operation Flow stepper (legacy L11210-11240). Extracted from the view body so
-// the JC edit branch (mode='edit') renders the identical read-only strip — same
-// markup for both, per the JcStatTiles precedent. Presentation-only.
-function OperationFlowStrip({
-  jc,
-  sortedOps,
-  opExtraById,
-}: {
-  jc: JobCardListItem;
-  sortedOps: JcOpEnriched[];
-  opExtraById: Map<string, JobCardStatusOpExtra>;
-}): React.JSX.Element {
-  return (
-    <div style={{ ...cardStyle('var(--bg3)', 'var(--border)'), marginBottom: 16 }}>
-      <div style={{ ...lblStyle, marginBottom: 8 }}>Operation Flow</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-        {sortedOps.length === 0 ? (
-          <span className="text3" style={{ fontSize: 12 }}>No operations</span>
-        ) : (
-          sortedOps.map((o, i) => {
-            const isQc = o.opType === 'qc';
-            const isOut = o.opType === 'outsource';
-            const st = o.computedStatus;
-            // Legacy L11213-11216 bg / bdr / opColor / doneColor ladders.
-            // (Legacy's OSP branch is skipped: jc_ops.op_type has no 'osp'
-            // value in this system — OSP is handled at op-entry start.)
-            const bg =
-              st === 'complete'
-                ? 'var(--green3)'
-                : st === 'qc_pending'
-                  ? 'rgba(34,197,94,0.12)'
-                  : isOut
-                    ? 'rgba(255,176,32,0.12)'
-                    : isQc
-                      ? 'rgba(34,197,94,0.08)'
-                      : st === 'in_progress' || st === 'running'
-                        ? 'var(--amber3)'
-                        : st === 'available'
-                          ? 'var(--blue3)'
-                          : 'var(--bg4)';
-            const bdr =
-              st === 'complete'
-                ? 'var(--green2)'
-                : st === 'qc_pending'
-                  ? 'rgba(34,197,94,0.5)'
-                  : isOut
-                    ? 'rgba(255,176,32,0.4)'
-                    : isQc
-                      ? 'rgba(34,197,94,0.3)'
-                      : st === 'in_progress' || st === 'running'
-                        ? 'var(--amber2)'
-                        : st === 'available'
-                          ? 'var(--blue2)'
-                          : 'var(--border2)';
-            const opColor =
-              st === 'complete'
-                ? 'var(--green)'
-                : isQc
-                  ? 'var(--green)'
-                  : isOut
-                    ? 'var(--amber)'
-                    : st === 'in_progress' || st === 'running'
-                      ? 'var(--amber)'
-                      : st === 'available'
-                        ? 'var(--blue)'
-                        : 'var(--text3)';
-            const doneColor =
-              st === 'complete' || st === 'qc_pending'
-                ? 'var(--green)'
-                : st === 'in_progress' || st === 'running'
-                  ? 'var(--amber)'
-                  : 'var(--text3)';
-            const flowQty = isQc ? o.qcAcceptedQty : o.completedQty;
-            const flowLabel = isQc
-              ? `${flowQty}/${o.inputAvail || jc.orderQty}`
-              : `${flowQty}/${jc.orderQty}`;
-            return (
-              <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <div
-                  style={{
-                    background: bg,
-                    border: `1px solid ${bdr}`,
-                    borderRadius: 6,
-                    padding: '6px 10px',
-                    textAlign: 'center',
-                    minWidth: 80,
-                  }}
-                >
-                  <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: opColor }}>
-                    Op{o.opSeq}
-                    {isOut ? ' 🏭' : ''}
-                    {isQc ? ' 🔬' : ''}
-                  </div>
-                  {isQc ? (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--green)' }}>QC</div>
-                      <div style={{ fontSize: 9, color: 'var(--text3)' }}>{o.operation}</div>
-                    </>
-                  ) : isOut ? (
-                    <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--amber)' }}>OUTSOURCE</div>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 600, margin: '2px 0', color: 'var(--cyan)' }}>
-                        {o.machineCode ?? o.machineCodeText ?? '—'}
-                      </div>
-                      {/* Resolved machine name (legacy L11230 sub-line). */}
-                      {opExtraById.get(o.id)?.machineName ? (
-                        <div style={{ fontSize: 9, color: 'var(--text3)' }}>
-                          {opExtraById.get(o.id)?.machineName}
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                  <div style={{ fontSize: 9, color: 'var(--text3)' }}>
-                    {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
-                  </div>
-                  {isOut ? (
-                    <div style={{ fontSize: 9, marginTop: 3, fontWeight: 700, color: 'var(--amber)' }}>
-                      {OUTSOURCE_STATUS_LABEL[o.outsourceStatus ?? 'pending']}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: doneColor }}>{flowLabel}</div>
-                  )}
-                </div>
-                {i < sortedOps.length - 1 ? <span style={{ color: 'var(--text3)', fontSize: 18 }}>›</span> : null}
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Mode dispatcher. VIEW mode renders the canonical read-only status body
 // (byte-identical to before). EDIT mode renders the same sections (tiles +
 // operation flow + operations table) with the editable fields, reusing the JC
@@ -453,13 +303,16 @@ function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         </div>
       ) : null}
 
-      {/* 6 stat cards — shared with the JC edit page via JcStatTiles so both
-          screens carry the same summary header (same format, only mode differs). */}
-      <JcStatTiles jc={jc} ops={ops} rmAvailable={extras?.rmAvailable ?? null} />
-
-      {/* OPERATION FLOW — extracted so the JC edit branch renders the SAME
-          read-only stepper (shared component, identical markup). */}
-      <OperationFlowStrip jc={jc} sortedOps={sortedOps} opExtraById={opExtraById} />
+      {/* Consolidated summary card (item · SO/WO · quantity · status · route
+          progress · operation flow) — shared with the JC edit page via
+          JcStatTiles so both screens carry the same header. */}
+      <JcStatTiles
+        jc={jc}
+        ops={ops}
+        rmAvailable={extras?.rmAvailable ?? null}
+        sortedOps={sortedOps}
+        opExtraById={opExtraById}
+      />
 
       {/* OPERATIONS DETAIL */}
       <button
@@ -844,8 +697,14 @@ function JcStatusEditForm({
         ))}
       </datalist>
 
-      {/* Same summary tiles as the view — shared JcStatTiles. */}
-      <JcStatTiles jc={jc} ops={enrichedOps} rmAvailable={extras?.rmAvailable ?? null} />
+      {/* Same consolidated summary card as the view — shared JcStatTiles. */}
+      <JcStatTiles
+        jc={jc}
+        ops={enrichedOps}
+        rmAvailable={extras?.rmAvailable ?? null}
+        sortedOps={sortedEnriched}
+        opExtraById={opExtraById}
+      />
 
       {/* Editable header fields */}
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -915,9 +774,6 @@ function JcStatusEditForm({
           </div>
         </div>
       </div>
-
-      {/* Operation Flow — SAME read-only stepper as the view. */}
-      <OperationFlowStrip jc={jc} sortedOps={sortedEnriched} opExtraById={opExtraById} />
 
       {/* OPERATIONS DETAIL — same table as the view, with editable cells for
           Machine/Operation/Cycle/Prog-Tool/QC/Outsource. The qty/status/logs
