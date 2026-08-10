@@ -412,6 +412,61 @@ describe('nc-register close-rework (T-040b)', () => {
     expect(opRow[0]?.reworkQty).toBe(5);
   });
 
+  it('0089: an op that owes rework is not complete, so its JC cannot auto-close', async () => {
+    // ADR-113. The complete branch fired on output >= order_qty and never asked
+    // about rework, so Op1 of IN-JC-26-00085 read `complete` with 5 pins still
+    // waiting to be re-cut. v_jc_status calls a JC complete when every op is
+    // complete, and sales-cascade then stamps closed_at and closes the SO line —
+    // so the JC could close with work outstanding.
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}RWC-JC`,
+      ncCode: `${TEST_PREFIX}RWC-NC`,
+      rejectedQty: 5,
+      opSeqs: [1],
+    });
+    const op1 = f.jcOpIds[0]!.jcOpId;
+    // Produce the whole order on the only op — the JC is now "finished".
+    await db.insert(opLog).values({
+      companyId: admin.companyId!,
+      jcOpId: op1,
+      logNo: `${TEST_PREFIX}RWC-LOG`,
+      logType: 'complete',
+      logDate: '2026-05-04',
+      shift: 'day',
+      qty: 100,
+      rejectQty: 0,
+      operatorName: 'TestOp',
+      createdBy: admin.id,
+    });
+
+    const opStatus = async (): Promise<string> => {
+      const rows = await db.execute(sql`
+        SELECT computed_status FROM public.v_jc_op_status WHERE jc_op_id = ${op1}::uuid
+      `);
+      return (rows as unknown as Array<{ computed_status: string }>)[0]!.computed_status;
+    };
+    const jcStatus = async (): Promise<string> => {
+      const rows = await db.execute(sql`
+        SELECT computed_status FROM public.v_jc_status WHERE job_card_id = ${f.jcId}::uuid
+      `);
+      return (rows as unknown as Array<{ computed_status: string }>)[0]!.computed_status;
+    };
+
+    expect(await opStatus()).toBe('complete');
+    expect(await jcStatus()).toBe('complete');
+
+    // Send 5 back for rework — the op is no longer finished, and neither is the
+    // JC, so the sales cascade's `jc_not_complete` guard now holds it open.
+    await service.disposeNcRegister(f.ncId, { action: 'rework', reworkOpSeq: 1 }, admin);
+    expect(await opStatus()).toBe('in_progress');
+    expect(await jcStatus()).not.toBe('complete');
+
+    // Rework closed → the op finishes and the JC is free to close again.
+    await service.closeNcRework(f.ncId, { reworkDoneQty: 5 }, admin);
+    expect(await opStatus()).toBe('complete');
+    expect(await jcStatus()).toBe('complete');
+  });
+
   it('blocks close-rework on a non-rework disposition (ConflictError)', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}CLR2-JC`,

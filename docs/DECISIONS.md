@@ -5096,4 +5096,81 @@ entering a done-qty still clears it in full (the row leaves the
   premise is "no DB access, caller batches the reads". Commented in place.
 - ADR-111 §Open item 1 is now unblocked: an op still reads `complete` while it
   owes rework, so a Job Card can auto-close and close its SO line with rework
-  outstanding.
+  outstanding. **Closed by ADR-113.**
+
+## ADR-113: An operation that owes rework is not complete
+
+**Date:** 2026-08-10
+**Status:** Accepted
+**Closes:** ADR-111 §Open item 1. Requires ADR-112 (migration 0088).
+
+### Context
+
+`v_jc_op_status`'s `complete` branch fired on output `>= order_qty` with QC
+resolved, and never asked whether the op still owed rework. Op1 of
+IN-JC-26-00085 therefore read **`complete`** with 5 pins waiting to be re-cut.
+
+That is not a display problem. `v_jc_status`
+(`0006_phase3_views.sql:145`) calls a Job Card complete when **every** op reads
+complete, and `op-entry/sales-cascade.ts:106,138-141` then stamps
+`job_cards.closed_at`, closes the source SO/JW line and emits `JC_COMPLETE`. So
+a Job Card whose only outstanding work was rework could auto-close and close its
+sales-order line with pieces still owed on the floor. It did not fire on JC-85
+only because Ops 3–5 were unfinished for other reasons.
+
+### Decision
+
+Both `complete` branches in `v_jc_op_status` gain `AND COALESCE(rw.qty, 0) = 0`
+(migration 0089) — the general one and the whole-outsource one, since an NC can
+send work back to an outsource op too. A fully produced op that owes rework
+falls through to `in_progress`, which is what it is, and the sales cascade's
+existing `jc_not_complete` guard holds the Job Card open until the NC is closed.
+
+`rw.qty` is ADR-112's live NC-derived balance. **This ordering was mandatory:**
+against the old never-decrementing `jc_ops.rework_qty`, an op that had ever had
+rework could never complete again, so its JC would never close and its SO line
+would never close. 0088 made the balance clearable; only then was blocking on it
+safe.
+
+### Alternatives Considered
+
+- **A dedicated `rework_pending` op status** — rejected for now. It reads better
+  than `in_progress`, but costs a value in `COMPUTED_JC_OP_STATUSES` plus badge
+  and colour handling on every screen that renders an op status. `in_progress`
+  is accurate, and the ♻ marker (ADR-112) already names the reason. Worth
+  revisiting if the floor finds `in_progress` ambiguous.
+- **Block only the JC-level status, not the op** — rejected. `v_jc_status` is a
+  pure count over op statuses; special-casing rework there would put the same
+  rule in two places and leave the op card itself still claiming "Complete".
+- **Warn at close time instead of blocking** — rejected. The cascade runs inside
+  the QC-log transaction with no user present; there is nobody to warn.
+
+### Consequences
+
+- Positive: a Job Card can no longer close, and an SO/JW line can no longer be
+  marked delivered, while rework is outstanding.
+- Positive: the op card stops contradicting itself — "Complete" next to a ♻5.
+- Negative: **closing the NC is now on the critical path to closing the order.**
+  An NC dispositioned `rework` and forgotten will hold its Job Card, and
+  therefore its sales-order line, open indefinitely. That is the correct default
+  — the pieces really are owed — but it makes stale NCs visible in a way they
+  were not before, and somebody has to work them.
+- Negative: `calc-engine.ts`'s `deriveOpStatus` has the same
+  complete-before-rework ordering and is not changed (it cannot see NC rows), so
+  `so-status` / `so-overview` may still call such an op complete. Same
+  divergence ADR-112 recorded.
+- Risk on live data: bounded and measured before applying — exactly **1** open
+  rework NC existed across the whole database (JC-85), on a Job Card that was
+  not complete anyway. Already-closed Job Cards cannot be reopened by this:
+  `v_jc_status` returns `closed` from `closed_at` before it counts ops, and the
+  sales cascade is one-way.
+
+### Open
+
+- The `calc-engine.ts` divergence (carried from ADR-112) is now two-fold:
+  `available` and `deriveOpStatus`. It should be closed by giving so-status and
+  so-overview the view instead of the helper, rather than by teaching the helper
+  about NCs.
+- Nothing surfaces "Job Cards held open by an unclosed rework NC". Until
+  something does, the failure mode is a quiet one — an order that will not close
+  and no obvious reason on the order screen.
