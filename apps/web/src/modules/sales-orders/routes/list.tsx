@@ -220,112 +220,151 @@ function SalesOrdersListPage(): React.JSX.Element {
     }
   }
 
-  // Column order mirrors legacy renderSOmaster thead L11971:
-  //   SO/WO No. | Lines | Date | Client | Client PO | Total Qty | JC Qty | Due |
-  //   Type | Status | Remarks | (actions)
-  // "Raised By" has no legacy counterpart and is kept (see report) next to Client.
+  // Columns follow the SO/WO Orders reference layout (2026-08-10): the twelve
+  // loose legacy columns are grouped into five, because at twelve the row was
+  // wider than any screen and the eye had to travel the full width to read one
+  // order. Nothing is dropped — Lines, Date, Client PO, Raised By and Remarks
+  // all still render, stacked into the identity cell as a second line, which is
+  // how the reference reaches its density.
+  //
+  //   SO / WO · CLIENT · PO · DATE · RAISED · REMARKS | QTY / JC | TYPE · DUE |
+  //   STATUS | ACTIONS
   const columns = useMemo<ColumnDef<SalesOrderListItem>[]>(
     () => [
       {
-        // Legacy has no separate expander column — the ▶/▼ marker sits inside the
-        // SO No. cell (L11860). Kept as a button because, unlike legacy (where the
-        // whole row calls _editFullSO), the React chevron is what toggles expand.
-        header: 'SO/WO No.',
+        header: 'SO / WO · Client · PO · Date · Raised · Remarks',
         accessorKey: 'code',
-        meta: { tdClass: 'td-code cyan' },
         cell: ({ row }) => {
-          const isExpanded = expandedId === row.original.id;
+          const so = row.original;
+          const isExpanded = expandedId === so.id;
           return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 800 }}>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.id); }}
-                aria-label={isExpanded ? 'Collapse' : 'Expand'}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 0, width: 16, display: 'inline-flex', alignItems: 'center' }}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+              <span
+                aria-hidden
+                style={{
+                  color: 'var(--text3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  paddingTop: 2,
+                  flexShrink: 0,
+                }}
               >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              <Link to="/sales-orders/$id" params={{ id: row.original.id }} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
-                {row.original.code}
-              </Link>
-            </span>
+              </span>
+              <div style={{ minWidth: 0 }}>
+                {/* Line 1 — identity. The row itself previews lines, so the CODE
+                    is the way into the detail page; stopPropagation keeps the
+                    click from also toggling the preview underneath it. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Link
+                    to="/sales-orders/$id"
+                    params={{ id: so.id }}
+                    className="mono"
+                    style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
+                    title="Open the full detail page"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {so.code}
+                  </Link>
+                  <span className="fw-700" style={{ fontSize: 13 }}>{so.customerName ?? '—'}</span>
+                  <span
+                    className="badge b-grey"
+                    style={{ fontSize: 9, padding: '1px 6px' }}
+                  >
+                    {so.lineCount} line{so.lineCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {/* Line 2 — the supporting facts, dot-separated so they read as
+                    one sentence instead of five columns of mostly-empty cells. */}
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text3)',
+                    marginTop: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span className="text2">{so.soDate}</span>
+                  <span>•</span>
+                  <span>
+                    PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{so.clientPoNo ?? '—'}</span>
+                  </span>
+                  {so.clientPoFilePath ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0 4px', fontSize: 12, lineHeight: 1 }}
+                      title="View Client PO Document"
+                      onClick={(e) => { e.stopPropagation(); void openClientPoFile(so.clientPoFilePath!); }}
+                    >
+                      📎
+                    </button>
+                  ) : null}
+                  <span>•</span>
+                  <span className="text2">{so.createdByName ?? '—'}</span>
+                  <span>•</span>
+                  <span
+                    style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={so.remarks ?? ''}
+                  >
+                    {so.remarks || '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
           );
         },
       },
       {
-        header: 'Lines',
-        accessorKey: 'lineCount',
-        meta: { tdClass: 'td-ctr mono' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
-            {row.original.lineCount} line{row.original.lineCount > 1 ? 's' : ''}
-          </span>
-        ),
-      },
-      { header: 'Date', accessorKey: 'soDate', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.soDate}</span> },
-      { header: 'Client', accessorKey: 'customerName', cell: ({ row }) => <span className="fw-700">{row.original.customerName ?? '—'}</span> },
-      { header: 'Raised By', accessorKey: 'createdByName', cell: ({ row }) => <span className="text2" style={{ fontSize: 11 }}>{row.original.createdByName ?? '—'}</span> },
-      {
-        header: 'Client PO',
-        accessorKey: 'clientPoNo',
-        meta: { tdClass: 'td-code mono' },
-        cell: ({ row }) => (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--purple)' }}>{row.original.clientPoNo ?? '—'}</span>
-            {row.original.clientPoFilePath ? (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ padding: '0 4px', fontSize: 12 }}
-                title="View Client PO Document"
-                onClick={(e) => { e.stopPropagation(); void openClientPoFile(row.original.clientPoFilePath!); }}
-              >
-                📎
-              </button>
-            ) : null}
-          </span>
-        ),
-      },
-      {
-        header: 'Total Qty',
+        header: 'Qty / JC',
         accessorKey: 'totalQty',
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => row.original.totalQty,
-      },
-      {
-        header: 'JC Qty',
-        accessorKey: 'jcQty',
-        meta: { tdClass: 'td-ctr mono' },
+        meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => {
           const jc = row.original.jcQty;
           const total = row.original.totalQty;
           const color = jc >= total && total > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
           return (
-            <span style={{ fontSize: 11 }}>
-              <span style={{ color }}>{jc}</span>
-              <span className="text3" style={{ fontSize: 10 }}> /{total}</span>
-            </span>
+            <div style={{ lineHeight: 1.2 }}>
+              <div className="mono fw-700" style={{ fontSize: 14 }}>{total}</div>
+              <div className="mono" style={{ fontSize: 11 }}>
+                <span className="text3">JC </span>
+                <span style={{ color, fontWeight: 700 }}>{jc}</span>
+                <span className="text3">/{total}</span>
+              </div>
+            </div>
           );
         },
       },
       {
-        header: 'Due',
+        header: 'Type · Due',
         accessorKey: 'earliestDueDate',
-        meta: { tdClass: 'text2 td-ctr' },
         cell: ({ row }) => {
           const due = row.original.earliestDueDate;
-          if (!due) return <span className="text3">—</span>;
           const today = new Date().toISOString().slice(0, 10);
-          const overdue = due < today && row.original.status === 'open';
-          return <span style={{ fontSize: 11, color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>{due}{overdue ? ' ⚠' : ''}</span>;
+          const overdue = due != null && due < today && row.original.status === 'open';
+          return (
+            <div style={{ lineHeight: 1.3 }}>
+              {/* Legacy renders the type through badge() (L11870), which has no
+                  map entry for either SO type and so falls through to b-grey. */}
+              <span className="badge b-grey">{row.original.type.replaceAll('_', ' ')}</span>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  marginTop: 3,
+                  color: overdue ? 'var(--red)' : 'var(--text3)',
+                  fontWeight: overdue ? 700 : undefined,
+                }}
+              >
+                {due ? `Due ${due.slice(5)}${overdue ? ' ⚠' : ''}` : 'No due date'}
+              </div>
+            </div>
+          );
         },
-      },
-      {
-        header: 'Type',
-        accessorKey: 'type',
-        // Legacy renders the type through badge() (L11870), which has no map entry
-        // for either SO type and so falls through to b-grey.
-        cell: ({ row }) => <span className="badge b-grey">{row.original.type.replaceAll('_', ' ')}</span>,
       },
       {
         header: 'Status',
@@ -339,18 +378,9 @@ function SalesOrdersListPage(): React.JSX.Element {
           </div>
         ),
       },
-      {
-        header: 'Remarks',
-        accessorKey: 'remarks',
-        cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11, maxWidth: 80, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.original.remarks ?? ''}>
-            {row.original.remarks ?? ''}
-          </span>
-        ),
-      },
       ...(canWrite
         ? [{
-            header: '',
+            header: 'Actions',
             id: 'actions',
             enableSorting: false,
             cell: ({ row }: { row: { original: SalesOrderListItem } }) => (
@@ -403,14 +433,21 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
-        <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Master</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Orders</div>
+          {/* Count comes from the list response's `total` — the only aggregate
+              the endpoint returns. The reference mock also shows "N open ·
+              N overdue"; those are not derivable without a new API, and
+              counting the loaded page would quietly report 25 rows' worth as
+              the whole book, so they are left out rather than faked. */}
+          <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+            {total} order{total === 1 ? '' : 's'}
+            {search.status ? <> · <span className="text2">{search.status}</span> only</> : null}
+          </div>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <input className="innovic-input" placeholder="Search code, customer, client PO…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
-          <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
-            <option value="">All statuses</option>
-            {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
           <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
             <option value="">All types</option>
             {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
@@ -439,6 +476,32 @@ function SalesOrdersListPage(): React.JSX.Element {
           {canWrite ? (
             <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
           ) : null}
+        </div>
+      </div>
+
+      {/* Status filter as pills, per the reference layout. Replaces the status
+          <select> it used to sit beside — every SO_STATUSES value gets a pill,
+          so nothing that could be filtered before is unreachable now. Same
+          `status` search param, same query; only the control changed. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {([null, ...SO_STATUSES] as (SoStatus | null)[]).map((s) => {
+            const active = (search.status ?? null) === s;
+            return (
+              <button
+                key={s ?? 'all'}
+                type="button"
+                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ fontSize: 11, textTransform: 'capitalize', borderRadius: 999, padding: '3px 12px' }}
+                onClick={() => void navigate({ search: (prev) => ({ ...prev, status: s ?? undefined, page: 1 }), replace: true })}
+              >
+                {s ?? 'All'}
+              </button>
+            );
+          })}
+        </div>
+        <div className="text3" style={{ fontSize: 11 }}>
+          Click the SO number to open its detail page · click the row to preview lines
         </div>
       </div>
 
@@ -482,8 +545,13 @@ function SalesOrdersListPage(): React.JSX.Element {
                   const isExpanded = expandedId === row.original.id;
                   return (
                     <Fragment key={row.id}>
+                      {/* The row previews its lines; the SO code opens the detail
+                          page. The row used to navigate to detail and the chevron
+                          alone toggled the preview, which made a 14px target the
+                          only way to see what an order contains. */}
                       <tr
-                        onClick={() => void navigate({ to: '/sales-orders/$id', params: { id: row.original.id } })}
+                        onClick={() => toggleExpand(row.original.id)}
+                        title={isExpanded ? 'Hide lines' : 'Preview lines'}
                         style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
                       >
                         {row.getVisibleCells().map((cell) => (
@@ -676,7 +744,19 @@ function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
   };
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {so.code}</div>
+      {/* Preview header. The row no longer navigates, so the preview carries its
+          own way through to the full record — same route the SO code uses. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>▸ LINE ITEMS — {so.code}</div>
+        <Link
+          to="/sales-orders/$id"
+          params={{ id: so.id }}
+          style={{ fontSize: 11, color: 'var(--cyan)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          Open full detail →
+        </Link>
+      </div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
