@@ -6,11 +6,15 @@
     <title>Innovic ERP</title>
     <!-- Innovic theme fonts — Barlow (body), Barlow Condensed (headings),
          Source Code Pro (mono). Preconnect lets the browser open the TLS
-         + DNS handshake while the rest of the doc parses. -->
+         + DNS handshake while the rest of the doc parses.
+         Public Sans + JetBrains Mono are the redesign pair, currently used by
+         the compact Create-PO screen only; they ride along in the same request
+         so adding them costs no extra round-trip. Both fall back to the theme
+         fonts, so a blocked/offline CDN degrades to the existing look. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&family=Source+Code+Pro:wght@400;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&family=Source+Code+Pro:wght@400;600;700&family=Public+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
   </head>

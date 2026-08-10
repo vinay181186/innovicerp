@@ -1,13 +1,22 @@
 // "Create PO from PR" route (UI-003-04).
+//
+// Compact single-screen layout: the whole form fits above the fold on a laptop,
+// so the buyer sees the PO total before submitting instead of scrolling to find
+// the button. Deliberately dense — 36px controls, 10px labels — and the
+// read-only PR facts sit in ONE horizontal strip rather than a card per fact.
+//
+// Styles are scoped under `.pof-` and live in this file: the spec's palette
+// (#eef1f6 / #e4e7ee / #f7f9fc) and type scale differ from the global theme
+// tokens, and confining them here keeps every other screen untouched.
 
 import { type CreatePurchaseOrderFromPrInput, PO_TYPES, type PoType } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { todayLocal } from '@/lib/date';
+import { useDocNumber } from '@/lib/use-doc-number';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPr } from '../api';
@@ -35,6 +44,91 @@ interface FormValues {
   remarks?: string;
 }
 
+const inr = (n: number): string =>
+  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/* Scoped stylesheet — see file header for why it is local. */
+const CSS = `
+/* Bleed the page tint to the edges of #content. The negative margin MUST match
+   #content's padding exactly (20px, 12px under 768px in innovic-theme.css) —
+   a mismatch pushes the box wider than its parent and adds a horizontal
+   scrollbar to the whole app, which this screen must never do.
+   Sides and bottom only — a negative TOP margin would ride up over the
+   breadcrumb trail that #content renders above the outlet. */
+.pof-page{ background:#eef1f6; margin:0 -20px -20px; padding:14px 26px 26px;
+  min-height:100%; box-sizing:border-box; }
+@media (max-width:768px){ .pof-page{ margin:0 -12px -12px; padding:12px; } }
+.pof-root{ font-family:'Public Sans',var(--bfont),sans-serif; color:#1c2333; }
+.pof-root .mono,.pof-root .pof-num{ font-family:'JetBrains Mono',var(--mono),monospace; }
+.pof-card{ background:#fff; border:1px solid #e4e7ee; border-radius:12px;
+  max-width:1180px; margin:0 auto; padding:18px; }
+
+/* Header — title and source chip share one line. */
+.pof-hdr{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+.pof-title{ font-size:16px; font-weight:700; letter-spacing:-.01em; }
+.pof-chip{ font-family:'JetBrains Mono',var(--mono),monospace; font-size:11.5px; font-weight:600;
+  background:#eef3fb; color:#2054a8; border:1px solid #d6e3f7; border-radius:6px; padding:3px 8px; }
+
+/* Read-only PR facts — one strip, dividers between groups. */
+.pof-strip{ display:flex; align-items:stretch; border:1px solid #e4e7ee; border-radius:8px;
+  background:#fbfcfe; margin-bottom:14px; overflow:hidden; }
+.pof-fact{ flex:1 1 0; min-width:0; padding:6px 12px; border-left:1px solid #e9ecf3; }
+.pof-fact:first-child{ border-left:0; }
+.pof-fact-l{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+  color:#8b93a2; line-height:1.5; }
+.pof-fact-v{ font-size:12.5px; font-weight:600; color:#1c2333; line-height:1.5;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Fields */
+.pof-lbl{ display:block; font-size:10px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.07em; color:#8b93a2; margin-bottom:4px; }
+.pof-req{ color:#c0392b; margin-left:2px; }
+.pof-in{ width:100%; height:36px; border:1px solid #d9dee8; border-radius:7px;
+  padding:0 9px; font-size:13px; color:#1c2333; background:#fff; font-family:inherit; }
+.pof-in:focus{ outline:2px solid #cfe0f8; border-color:#2563c9; }
+.pof-in.pof-num{ font-family:'JetBrains Mono',var(--mono),monospace; }
+.pof-ok{ border-color:#1f7a44; }
+.pof-bad{ border-color:#c0392b; }
+.pof-note{ font-size:11.5px; color:#5a6376; margin-top:3px; line-height:1.4; }
+.pof-note-ok{ color:#1f7a44; font-weight:600; }
+.pof-note-bad{ color:#c0392b; font-weight:600; }
+
+.pof-row4{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
+
+/* Tax + live totals share one row. */
+.pof-tax{ background:#f7f9fc; border:1px solid #e4e7ee; border-radius:8px; padding:12px 14px;
+  display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+.pof-tax-f{ width:96px; flex:0 0 auto; }
+.pof-tax-f.pof-tax-type{ width:150px; }
+.pof-dim{ opacity:.45; }
+.pof-tot{ margin-left:auto; display:flex; align-items:flex-end; gap:20px; text-align:right; }
+.pof-tot-l{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+  color:#8b93a2; margin-bottom:2px; }
+.pof-tot-v{ font-family:'JetBrains Mono',var(--mono),monospace; font-size:14px; font-weight:600; color:#3a4256; }
+.pof-tot-big .pof-tot-v{ font-size:20px; font-weight:700; color:#8a5a00; }
+
+.pof-ta{ width:100%; border:1px solid #d9dee8; border-radius:7px; padding:7px 9px;
+  font-size:13px; color:#1c2333; font-family:inherit; resize:vertical; }
+.pof-ta:focus{ outline:2px solid #cfe0f8; border-color:#2563c9; }
+
+/* Footer */
+.pof-foot{ display:flex; align-items:center; justify-content:space-between; gap:12px;
+  border-top:1px solid #e4e7ee; margin-top:16px; padding-top:13px; }
+.pof-foot-hint{ font-size:11.5px; color:#5a6376; }
+.pof-acts{ display:flex; gap:8px; }
+.pof-btn{ height:36px; padding:0 15px; border-radius:7px; font-size:13px; font-weight:600;
+  font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.pof-btn-cancel{ background:#fff; color:#3a4256; border:1px solid #d9dee8; }
+.pof-btn-cancel:hover{ background:#f4f6fa; }
+.pof-btn-go{ background:#1f7a44; color:#fff; border:1px solid #1f7a44; }
+.pof-btn-go:hover:not(:disabled){ background:#1a6839; }
+.pof-btn-go:disabled{ opacity:.5; cursor:not-allowed; }
+
+.pof-msg{ border-radius:7px; padding:8px 12px; font-size:12.5px; margin-bottom:12px; }
+.pof-msg-warn{ background:#fdf3da; border:1px solid #f2d9a0; color:#8a5a00; }
+.pof-msg-err{ background:#fdecea; border:1px solid #f5c2bc; color:#a4291c; }
+`;
+
 function PurchaseOrderFromPrPage(): React.JSX.Element {
   const { prId } = purchaseOrderFromPrRoute.useSearch();
   const navigate = useNavigate();
@@ -53,7 +147,37 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch, setValue } = form;
-  const [docNoValid, setDocNoValid] = useState(false);
+
+  // PO number field is built inline rather than via the shared DocNumberInput:
+  // the spec's 10px label / 36px control / "✕ Already used" wording is local to
+  // this screen, and restyling the shared component would move every other form.
+  const code = watch('code') ?? '';
+  const docNo = useDocNumber('purchase_order', code);
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!prefilled.current && docNo.nextCode && code.trim() === '') {
+      setValue('code', docNo.nextCode);
+      prefilled.current = true;
+    }
+  }, [docNo.nextCode, code, setValue]);
+
+  const taxType = watch('taxType') ?? '';
+  const isSplit = taxType === 'sgst_cgst';
+  const isIgst = taxType === 'igst';
+
+  const qty = Number(pr?.qty ?? 0);
+  const est = Number(pr?.estCost ?? 0);
+  const subtotal = qty * est;
+  const taxPct = isSplit
+    ? Number(watch('cgstPct') || 0) + Number(watch('sgstPct') || 0)
+    : isIgst
+      ? Number(watch('igstPct') || 0)
+      : 0;
+  const taxAmt = (subtotal * taxPct) / 100;
+  const poTotal = subtotal + taxAmt;
+
+  const codeEmpty = code.trim() === '';
+  const canSubmit = !codeEmpty && docNo.valid && !docNo.checking;
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
@@ -110,8 +234,13 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   const alreadyConverted = pr.poId !== null || pr.status === 'po_created';
   const isCancelled = pr.status === 'cancelled';
 
+  const vendor = `${pr.vendorCode ?? pr.vendorCodeText ?? '—'}${pr.vendorName ? ` · ${pr.vendorName}` : ''}`;
+  const item = `${pr.itemCode ?? pr.itemCodeText ?? '—'}${pr.itemName ? ` · ${pr.itemName}` : ''}`;
+
   return (
-    <div>
+    <div className="pof-page pof-root">
+      <style>{CSS}</style>
+
       <Link
         to="/purchase-requests/$id"
         params={{ id: pr.id }}
@@ -121,252 +250,246 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to PR
       </Link>
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code cyan fw-700">From PR {pr.code}</div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Create Purchase Order
-            </div>
-          </div>
+      <div className="pof-card">
+        {/* Title and source ref on ONE line. */}
+        <div className="pof-hdr">
+          <span className="pof-title">Create Purchase Order</span>
+          <span className="pof-chip">from PR {pr.code}</span>
         </div>
-        <div className="panel-body">
-          {alreadyConverted ? (
-            <div
-              style={{
-                color: 'var(--amber2)',
-                background: 'var(--amber3)',
-                border: '1px solid #fcd34d',
-                borderRadius: 6,
-                padding: '8px 12px',
-                fontSize: 12,
-              }}
-            >
-              This PR is already linked to a PO.{' '}
-              {pr.poId ? (
-                <Link
-                  to="/purchase-orders/$id"
-                  params={{ id: pr.poId }}
-                  className="td-code"
-                  style={{ color: 'var(--cyan)', fontWeight: 700 }}
-                >
-                  View the PO →
-                </Link>
-              ) : null}
-            </div>
-          ) : isCancelled ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '8px 12px',
-                fontSize: 12,
-              }}
-            >
-              This PR is cancelled — no PO can be generated.
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit(onSubmit)}>
-              <div
-                style={{
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  marginBottom: 14,
-                }}
+
+        {/* One strip, six facts, divider between each — never a card per fact. */}
+        <div className="pof-strip">
+          <Fact label="Vendor" value={vendor} />
+          <Fact label="Item" value={item} />
+          <Fact label="Operation" value={pr.operation ?? '—'} />
+          <Fact label="Qty" value={String(pr.qty)} mono />
+          <Fact label="Est. Cost / pc" value={inr(est)} mono />
+          <Fact label="Required By" value={pr.requiredDate ?? '—'} mono />
+        </div>
+
+        {alreadyConverted ? (
+          <div className="pof-msg pof-msg-warn">
+            This PR is already linked to a PO.{' '}
+            {pr.poId ? (
+              <Link
+                to="/purchase-orders/$id"
+                params={{ id: pr.poId }}
+                style={{ color: '#2054a8', fontWeight: 700 }}
               >
-                <div className="form-grid">
-                  <Pair
-                    label="Vendor"
-                    value={`${pr.vendorCode ?? pr.vendorCodeText ?? '—'}${pr.vendorName ? ` · ${pr.vendorName}` : ''}`}
-                  />
-                  <Pair
-                    label="Item"
-                    value={`${pr.itemCode ?? pr.itemCodeText ?? '—'} · ${pr.itemName ?? ''}`}
-                  />
-                  <Pair label="Qty" value={String(pr.qty)} />
-                  <Pair label="Est. cost / pc" value={`₹${Number(pr.estCost).toFixed(2)}`} />
-                  <Pair
-                    label="Total est."
-                    value={`₹${(Number(pr.estCost) * Number(pr.qty)).toFixed(2)}`}
-                  />
-                  <Pair label="Operation" value={pr.operation ?? '—'} />
-                  <Pair label="Required by" value={pr.requiredDate ?? '—'} />
-                </div>
-              </div>
-
-              <div className="form-grid form-grid-3">
-                {/* Auto-fills the next IN-PO-##### and live-checks duplicates,
-                    same as the main PO form. Previously this was a blank manual
-                    input whose `required` error was never rendered, so pressing
-                    Create PO with an empty PO No. silently did nothing. */}
-                <DocNumberInput
-                  type="purchase_order"
-                  label="PO No."
-                  required
-                  value={watch('code') ?? ''}
-                  onChange={(v) => setValue('code', v)}
-                  onValidityChange={setDocNoValid}
+                View the PO →
+              </Link>
+            ) : null}
+          </div>
+        ) : isCancelled ? (
+          <div className="pof-msg pof-msg-err">
+            This PR is cancelled — no PO can be generated.
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)}>
+            {/* Four inputs, four columns, one row. */}
+            <div className="pof-row4">
+              <div>
+                <label className="pof-lbl" htmlFor="pof-code">
+                  PO No.<span className="pof-req">*</span>
+                </label>
+                <input
+                  id="pof-code"
+                  className={`pof-in pof-num ${
+                    codeEmpty || docNo.error ? 'pof-bad' : docNo.valid ? 'pof-ok' : ''
+                  }`}
+                  autoComplete="off"
+                  value={code}
+                  onChange={(e) => setValue('code', e.target.value)}
+                  onBlur={() => {
+                    if (code.trim()) setValue('code', docNo.padded);
+                  }}
                 />
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="poDate">
-                    PO Date<span className="req">★</span>
-                  </label>
-                  <input
-                    id="poDate"
-                    type="date"
-                    className="innovic-input"
-                    {...register('poDate', { required: 'Date is required' })}
-                  />
-                  {formState.errors.poDate?.message ? (
-                    <div className="form-error">{formState.errors.poDate.message}</div>
-                  ) : null}
-                </div>
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="poType">
-                    PO Type
-                  </label>
-                  <select id="poType" className="innovic-select" {...register('poType')}>
-                    {/* Only standard/job_work are offered; the server anyway
-                        derives the final type from the source PR (OSP → job work,
-                        plain buy → standard), so a wrong pick here is corrected. */}
-                    {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work').map((t) => (
-                      <option key={t} value={t}>
-                        {t.replaceAll('_', ' ')}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="dueDate">
-                    Due date
-                  </label>
-                  <input
-                    id="dueDate"
-                    type="date"
-                    className="innovic-input"
-                    {...register('dueDate')}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="taxType">
-                    Tax type
-                  </label>
-                  <select id="taxType" className="innovic-select" {...register('taxType')}>
-                    <option value="">— None —</option>
-                    <option value="sgst_cgst">SGST + CGST</option>
-                    <option value="igst">IGST</option>
-                    <option value="none">None</option>
-                  </select>
-                </div>
-
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="sgstPct">
-                    SGST %
-                  </label>
-                  <input
-                    id="sgstPct"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    className="innovic-input"
-                    {...register('sgstPct', { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="cgstPct">
-                    CGST %
-                  </label>
-                  <input
-                    id="cgstPct"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    className="innovic-input"
-                    {...register('cgstPct', { valueAsNumber: true })}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label" htmlFor="igstPct">
-                    IGST %
-                  </label>
-                  <input
-                    id="igstPct"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    className="innovic-input"
-                    {...register('igstPct', { valueAsNumber: true })}
-                  />
-                </div>
-
-                <div className="form-grp form-full">
-                  <label className="form-label" htmlFor="remarks">
-                    PO Remarks
-                  </label>
-                  <textarea
-                    id="remarks"
-                    className="innovic-textarea"
-                    rows={2}
-                    placeholder={`From PR ${pr.code}${pr.operation ? ` — ${pr.operation}` : ''} (default if blank)`}
-                    {...register('remarks')}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                {submitError ? (
-                  <div
-                    style={{
-                      color: 'var(--red)',
-                      background: 'var(--red3)',
-                      border: '1px solid #fca5a5',
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      fontSize: 12,
-                      marginBottom: 10,
-                    }}
-                  >
-                    {submitError}
+                {codeEmpty ? (
+                  <div className="pof-note pof-note-bad">
+                    <X size={11} style={{ verticalAlign: -1 }} /> PO number is required
                   </div>
+                ) : docNo.checking ? (
+                  <div className="pof-note">Checking…</div>
+                ) : docNo.duplicate ? (
+                  <div className="pof-note pof-note-bad">
+                    <X size={11} style={{ verticalAlign: -1 }} /> Already used
+                  </div>
+                ) : docNo.error ? (
+                  <div className="pof-note pof-note-bad">
+                    <X size={11} style={{ verticalAlign: -1 }} /> {docNo.error}
+                  </div>
+                ) : (
+                  <div className="pof-note pof-note-ok">
+                    <Check size={11} style={{ verticalAlign: -1 }} /> Available
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="pof-lbl" htmlFor="pof-date">
+                  PO Date<span className="pof-req">*</span>
+                </label>
+                <input
+                  id="pof-date"
+                  type="date"
+                  className="pof-in pof-num"
+                  {...register('poDate', { required: 'Date is required' })}
+                />
+                {formState.errors.poDate?.message ? (
+                  <div className="pof-note pof-note-bad">{formState.errors.poDate.message}</div>
                 ) : null}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() =>
-                      void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
-                    }
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-success"
-                    disabled={formState.isSubmitting || !docNoValid}
-                  >
-                    {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-                    ✓ Create PO
-                  </button>
+              </div>
+
+              <div>
+                <label className="pof-lbl" htmlFor="pof-type">
+                  PO Type
+                </label>
+                {/* Only standard/job_work are offered; the server anyway derives
+                    the final type from the source PR (OSP → job work, plain buy
+                    → standard), so a wrong pick here is corrected. */}
+                <select id="pof-type" className="pof-in" {...register('poType')}>
+                  {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work').map((t) => (
+                    <option key={t} value={t}>
+                      {t.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="pof-lbl" htmlFor="pof-due">
+                  Due Date
+                </label>
+                <input id="pof-due" type="date" className="pof-in pof-num" {...register('dueDate')} />
+              </div>
+            </div>
+
+            {/* Tax inputs sized to their content, with the running total in the
+                same row so the amount is visible before submitting. */}
+            <div className="pof-tax">
+              <div className="pof-tax-f pof-tax-type">
+                <label className="pof-lbl" htmlFor="pof-taxtype">
+                  Tax Type
+                </label>
+                <select id="pof-taxtype" className="pof-in" {...register('taxType')}>
+                  <option value="">— None —</option>
+                  <option value="sgst_cgst">SGST + CGST</option>
+                  <option value="igst">IGST</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+
+              <div className={`pof-tax-f ${isSplit ? '' : 'pof-dim'}`}>
+                <label className="pof-lbl" htmlFor="pof-cgst">
+                  CGST %
+                </label>
+                <input
+                  id="pof-cgst"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  className="pof-in pof-num"
+                  {...register('cgstPct', { valueAsNumber: true })}
+                />
+              </div>
+              <div className={`pof-tax-f ${isSplit ? '' : 'pof-dim'}`}>
+                <label className="pof-lbl" htmlFor="pof-sgst">
+                  SGST %
+                </label>
+                <input
+                  id="pof-sgst"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  className="pof-in pof-num"
+                  {...register('sgstPct', { valueAsNumber: true })}
+                />
+              </div>
+              <div className={`pof-tax-f ${isIgst ? '' : 'pof-dim'}`}>
+                <label className="pof-lbl" htmlFor="pof-igst">
+                  IGST %
+                </label>
+                <input
+                  id="pof-igst"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  className="pof-in pof-num"
+                  {...register('igstPct', { valueAsNumber: true })}
+                />
+              </div>
+
+              <div className="pof-tot">
+                <div>
+                  <div className="pof-tot-l">Subtotal</div>
+                  <div className="pof-tot-v">{inr(subtotal)}</div>
+                </div>
+                <div>
+                  <div className="pof-tot-l">Tax</div>
+                  <div className="pof-tot-v">{inr(taxAmt)}</div>
+                </div>
+                <div className="pof-tot-big">
+                  <div className="pof-tot-l">PO Total</div>
+                  <div className="pof-tot-v">{inr(poTotal)}</div>
                 </div>
               </div>
-            </form>
-          )}
-        </div>
+            </div>
+
+            <div>
+              <label className="pof-lbl" htmlFor="pof-remarks">
+                PO Remarks
+              </label>
+              <textarea
+                id="pof-remarks"
+                className="pof-ta"
+                rows={2}
+                placeholder={`From PR ${pr.code}${pr.operation ? ` — ${pr.operation}` : ''} (default if blank)`}
+                {...register('remarks')}
+              />
+            </div>
+
+            {submitError ? (
+              <div className="pof-msg pof-msg-err" style={{ marginTop: 12, marginBottom: 0 }}>
+                {submitError}
+              </div>
+            ) : null}
+
+            <div className="pof-foot">
+              <span className="pof-foot-hint">Fields marked * are required</span>
+              <div className="pof-acts">
+                <button
+                  type="button"
+                  className="pof-btn pof-btn-cancel"
+                  onClick={() =>
+                    void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="pof-btn pof-btn-go"
+                  disabled={formState.isSubmitting || !canSubmit}
+                >
+                  {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : '✓'}{' '}
+                  Create PO
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string }): React.JSX.Element {
+function Fact(props: { label: string; value: string; mono?: boolean }): React.JSX.Element {
   return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div className="fw-700">{props.value}</div>
+    <div className="pof-fact">
+      <div className="pof-fact-l">{props.label}</div>
+      <div className={`pof-fact-v${props.mono ? ' pof-num' : ''}`} title={props.value}>
+        {props.value}
+      </div>
     </div>
   );
 }

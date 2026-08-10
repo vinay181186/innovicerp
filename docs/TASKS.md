@@ -92,6 +92,45 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Closed — Create PO from PR: compact one-screen form (2026-08-10)
+
+**Status:** [x] Done. UI only — no service, schema, or API change.
+
+Rebuilt `purchase-orders/routes/from-pr.tsx` to a single-screen layout so the
+buyer sees the **PO total before submitting** instead of scrolling to find the
+button. Title + source-PR chip on one line; the six read-only PR facts in **one
+48px strip** (was a grid cell each); PO No / Date / Type / Due in a single
+4-column row; Tax Type + CGST + SGST + IGST on one row in a `#f7f9fc` panel with
+96px number inputs and the running Subtotal / Tax / **PO Total** right-aligned in
+that same row. Inactive tax fields dim to 45%. 36px controls, 10px labels.
+
+**Judgement calls worth knowing:**
+
+- **Nearly shipped an app-wide horizontal scrollbar.** The page tint bleeds to
+  the edge of `#content` via a negative margin, and I first wrote `-16px` —
+  `#content` is actually **20px** (12px under 768px, `innovic-theme.css:867`).
+  A mismatch makes the box wider than its parent. Now matched, breakpoint
+  mirrored, and sides/bottom only so it can't ride over the breadcrumbs.
+- **Fonts.** Spec asked for Public Sans + JetBrains Mono; the theme is Barlow +
+  Source Code Pro. Added both to the *existing* Google Fonts request (no extra
+  round-trip) and scoped them to `.pof-root`, falling back to the theme fonts.
+  **If the redesign spreads, this belongs in `tokens.css` as a token change,
+  not per page** — same for the palette (`#eef1f6` / `#e4e7ee` / `#f7f9fc`),
+  which is currently local to this file.
+- **Built the PO-number field inline** rather than restyling the shared
+  `DocNumberInput` — that component is used by many forms and restyling it
+  would have moved all of them. Uses the same `useDocNumber` hook.
+- **Behaviour change:** PO No is now genuinely required (submit disabled while
+  blank). Previously blank meant "server auto-generates". The field still
+  auto-fills, so this only bites if the user clears it.
+
+**Verified:** `tsc --noEmit` clean · `eslint` clean · production build passes ·
+CSS brace/comment balance checked. The 8 e2e specs that touch this page all
+select `getByRole('button', {name: /Create PO/i})`, which is unchanged —
+**but the e2e suite was NOT run** (needs a live app + DB).
+
+---
+
 ## Closed — Assembly job work: JWSO can name a BOM (2026-08-07, ADR-110)
 
 **Status:** [x] Done. Follows ADR-109 (which did the same for sales orders).
