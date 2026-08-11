@@ -1,0 +1,27 @@
+-- 0091 — `assembly` becomes a store-transaction source type (ADR-115).
+--
+-- Assembling a unit of an Equipment SO physically empties the shelf: build one
+-- Rotator and one PAWL plus one SUPPORT leave the store. The Assembly Tracker
+-- wrote no ledger row for any of it — markUnitAssembled inserted the unit row
+-- and an audit row and stopped there — so component stock never moved.
+--
+-- Live evidence at the time of this migration (IN-SO-00016, "Rotator", 5 units
+-- assembled, each needing 1 PAWL + 1 SUPPORT):
+--   PAWL     554117210000 — one GRN in of 10, zero outs, balance 10
+--   SUPPORT  559904000000 — one qc_accept in of 4, zero outs, balance 4
+-- Five of each are inside finished machines, yet both still read as free
+-- stock, so the tracker kept offering to build five more Rotators out of parts
+-- that no longer exist. SUPPORT is worse: 4 ever produced against 5 consumed,
+-- i.e. physically -1, which an admin readiness override of 5 concealed.
+--
+-- The tracker's own per-unit "Dispatch" button does not close the gap either —
+-- markUnitDispatched sets a boolean and writes an audit row, nothing more. It
+-- is NOT the Customer Dispatch document, so the "components are debited at
+-- dispatch" rule (ADR-109) never fires for a unit shipped from this page.
+--
+-- ALTER TYPE ... ADD VALUE is not transactional in Postgres and cannot run
+-- inside an explicit BEGIN; apply-sql.ts issues each statement on its own
+-- connection without wrapping, so this is safe. IF NOT EXISTS makes re-runs
+-- no-ops. Purely additive — no existing row changes, no column changes.
+
+ALTER TYPE public.store_txn_source_type ADD VALUE IF NOT EXISTS 'assembly';

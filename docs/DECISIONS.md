@@ -5252,3 +5252,97 @@ cards below.
   on JC-85 (`received` / 38 of 38), but nothing enforces it — the column is
   maintained by the OSP flow and the qty by GRN receipts. A chip could yet read
   "Sent" over "38/38".
+
+## ADR-115: Assembling a unit consumes its components
+
+**Date:** 2026-08-11
+**Status:** Accepted
+
+### Context
+
+`markUnitAssembled` inserted the unit row, wrote an audit row, and stopped. It
+never touched stock. Building a machine physically empties the shelf, so the
+ledger and the shop floor diverged by one BOM per unit, permanently.
+
+Live evidence, `IN-SO-00016` "Rotator" — 5 units assembled, each needing 1 PAWL
+and 1 SUPPORT:
+
+| Component | ledger IN | ledger OUT | balance | actually consumed |
+| --- | --- | --- | --- | --- |
+| PAWL `554117210000` | 10 (one GRN) | **none** | 10 | 5 |
+| SUPPORT `559904000000` | 4 (one JC) | **none** | 4 | 5 |
+
+Five of each sit inside finished machines while both still read as free stock,
+so the tracker kept offering to build five more Rotators out of parts that no
+longer exist. SUPPORT is worse than stale: 4 ever produced against 5 consumed,
+i.e. physically **−1**, concealed by an admin readiness override of 5.
+
+The tracker's own per-unit **Dispatch** button does not close the gap either —
+`markUnitDispatched` sets a boolean and writes an audit row, nothing more. It is
+not the Customer Dispatch document, so ADR-109's "components are debited at
+dispatch" never fires for a unit shipped from this page. A unit could be built
+and shipped end to end without a single component ever leaving the ledger.
+
+### Decision
+
+`assembly` joins `store_txn_source_type` (migration 0091), and
+`applyAssemblyStockCascade` debits every BOM component — `qtyPerSet` each — in
+the same transaction as the unit insert. `reverseAssemblyStockCascade` credits
+them back on Undo Last Unit.
+
+Three properties, each matching an established pattern in this codebase:
+
+- **Locks then reads**, item row `FOR UPDATE` before `v_item_stock`, exactly as
+  the GRN and QC cascades do. Components are locked in `itemId` order so two
+  concurrent assembles cannot deadlock.
+- **Undo replays what assembly wrote** rather than re-exploding the BOM, so a
+  BOM edited between building and undoing cannot unbalance the ledger. Same
+  reasoning as the dispatch-cancel path in ADR-109.
+- **Append-only** — undo posts a compensating `in`, never a delete, per
+  ADR-011 #4.
+
+`assemblyDebitExists` guards the case where a unit number is reused after an
+undo, so a re-assemble cannot double-debit.
+
+`item_stock_balances` is trigger-maintained from `store_transactions`
+(migration 0020), so this debit flows straight into the readiness maths the
+tracker reads. Can Assemble now genuinely falls as units are built.
+
+### Alternatives Considered
+
+- **Debit at dispatch instead, reusing ADR-109's path** — rejected. The parts
+  leave the shelf when the machine is built, not when it ships; a unit can sit
+  assembled for weeks. It also would not have helped here, because the
+  tracker's Dispatch button never creates a Customer Dispatch document.
+- **Block assembly when a component is short** (what legacy does, HTML L28901)
+  — rejected *for now*. The live data already carries a component at −1, so
+  gating would stop the floor assembling on day one. The debit is honest either
+  way: on-hand goes negative and says so. Gate once the shelf has been counted.
+- **Reserve stock at planning time** — rejected as a much larger change. Named
+  in Open below; it is the real answer to two orders sharing one component.
+
+### Consequences
+
+- Positive: Can Assemble stops counting parts that are already inside finished
+  machines. The number now falls as you build.
+- Positive: two equipment orders sharing a component no longer both see the
+  full quantity indefinitely — the first one to build takes it out.
+- Negative: **stock can now go negative**, and on this data it immediately will.
+  That is the truth surfacing, not a new fault, but nothing in the store module
+  currently warns about a negative balance.
+- **NOT retroactive.** Units assembled before this ships debited nothing and are
+  not backfilled. `IN-SO-00016`'s five units still show as un-consumed; PAWL
+  and SUPPORT need a counted physical stock adjustment. Code cannot fix an
+  opening balance.
+- Risk: assembling now writes N ledger rows per unit inside the same
+  transaction, so a unit insert can fail on a lock it previously never took.
+
+### Open
+
+- **The per-unit Dispatch button still means nothing to stock or billing.**
+  It sets a flag; invoicing is gated on the Customer Dispatch document. Either
+  make it create one or remove it in favour of a link.
+- **Nothing reserves.** Free stock is still shared between all open equipment
+  orders until one of them builds.
+- **Overrides are invisible in the rollup.** SUPPORT reads 5 buildable off
+  physical 4 because of an override, with no signal on the page.

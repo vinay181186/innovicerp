@@ -56,6 +56,11 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
+import {
+  applyAssemblyStockCascade,
+  assemblyDebitExists,
+  reverseAssemblyStockCascade,
+} from './stock-cascade';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -477,12 +482,32 @@ export async function markUnitAssembled(
       .returning();
     const row = inserted[0]!;
 
+    // ADR-115 — the components this unit swallowed leave the store. Same tx as
+    // the unit insert, so a rollback unwinds both. Skipped when this unit-no
+    // has already been debited (re-assemble after an undo reuses the number).
+    const alreadyDebited = await assemblyDebitExists(tx, companyId, so.code, nextUnitNo);
+    const debited = alreadyDebited
+      ? []
+      : await applyAssemblyStockCascade(
+          tx,
+          {
+            companyId,
+            bomMasterId: so.bomMasterId ?? null,
+            soCode: so.code,
+            unitNo: nextUnitNo,
+            txnDate: row.assemblyDate,
+          },
+          user,
+        );
+
     await emitActivityLog(
       tx,
       {
         action: 'ASSEMBLED',
         entity: 'AssemblyUnit',
-        detail: `${so.code} — unit #${nextUnitNo}${input.serialNo ? ` (S/N ${input.serialNo})` : ''}`,
+        detail:
+          `${so.code} — unit #${nextUnitNo}${input.serialNo ? ` (S/N ${input.serialNo})` : ''}` +
+          (debited.length > 0 ? ` · ${debited.length} component(s) consumed` : ''),
         refId: so.code,
       },
       companyId,
@@ -593,12 +618,23 @@ export async function undoLastUnit(
       .set({ deletedAt: new Date(), updatedBy: user.id })
       .where(eq(assemblyUnits.id, row.id));
 
+    // ADR-115 — the unit is un-built, so its components go back on the shelf.
+    // Replays the rows that assembly actually wrote rather than re-exploding
+    // the BOM, so a BOM edited in between cannot unbalance the ledger.
+    const returned = await reverseAssemblyStockCascade(
+      tx,
+      { companyId, soCode: so.code, unitNo: row.unitNo, txnDate: todayIso() },
+      user,
+    );
+
     await emitActivityLog(
       tx,
       {
         action: 'UNDO_ASSEMBLY',
         entity: 'AssemblyUnit',
-        detail: `${so.code} — undo unit #${row.unitNo}`,
+        detail:
+          `${so.code} — undo unit #${row.unitNo}` +
+          (returned.length > 0 ? ` · ${returned.length} component(s) returned` : ''),
         refId: so.code,
       },
       companyId,

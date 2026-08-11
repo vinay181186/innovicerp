@@ -15,6 +15,11 @@ export const STORE_TXN_SOURCE_TYPES = [
   // JWSO Job Card, mirroring dispatch on the sales side. NOT 'jw_out', which is
   // the historical OSP-send debit that ADR-067 retired.
   'jw_return',
+  // ADR-115 (2026-08-11): components consumed by assembling one unit of an
+  // Equipment SO. Assembling physically empties the shelf, but the tracker
+  // wrote no ledger row at all — so components already inside finished
+  // machines still counted as available to build more.
+  'assembly',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

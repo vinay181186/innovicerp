@@ -15,6 +15,7 @@ import {
   items,
   salesOrderLines,
   salesOrders,
+  storeTransactions,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -371,7 +372,77 @@ describe('assembly service — Equipment-only', () => {
   });
 });
 
+describe('assembly service — assembly consumes component stock (ADR-115)', () => {
+  // Before this, markUnitAssembled wrote the unit row and an audit row and
+  // stopped. Components physically inside finished machines still counted as
+  // free stock, so the tracker offered to build more units out of parts that
+  // no longer existed. On the live DB that had already driven one component to
+  // -1 behind a readiness override.
+  it('debits every component on assemble and credits them back on undo', async () => {
+    // Earlier describes in this file already assemble units, so scope every
+    // assertion to THIS unit's own ledger rows rather than the whole prefix.
+    const readLedger = async (
+      unitNo: number,
+    ): Promise<Array<{ qty: number; txnType: string; ref: string }>> =>
+      db
+        .select({
+          qty: storeTransactions.qty,
+          txnType: storeTransactions.txnType,
+          ref: storeTransactions.sourceRef,
+        })
+        .from(storeTransactions)
+        .where(
+          and(
+            eq(storeTransactions.sourceType, 'assembly'),
+            like(storeTransactions.sourceRef, `%${TEST_PREFIX}SO-EQ unit #${unitNo}%`),
+          ),
+        );
+
+    // The lifecycle describe above fills the fixture to 5 of 5, so make room
+    // for one more unit and put the order qty back afterwards.
+    await db.update(salesOrderLines).set({ orderQty: 6 }).where(eq(salesOrderLines.salesOrderId, soId));
+    try {
+      // Fixture BOM: CHILD-X at 1/set, CHILD-Y at 2/set → one unit eats 1 + 2.
+      const unit = await service.markUnitAssembled(soId, { serialNo: `${TEST_PREFIX}SN-STK` }, admin);
+
+      const afterAssemble = await readLedger(unit.unitNo);
+      expect(afterAssemble).toHaveLength(2);
+      expect(afterAssemble.every((r) => r.txnType === 'out')).toBe(true);
+      expect(afterAssemble.map((r) => r.qty).sort((a, b) => a - b)).toEqual([1, 2]);
+
+      // Undo puts them back — a compensating IN, never a delete, so the ledger
+      // stays append-only and the audit trail survives.
+      await service.undoLastUnit(soId, admin);
+      const afterUndo = await readLedger(unit.unitNo);
+      const ins = afterUndo.filter((r) => r.txnType === 'in');
+      expect(ins).toHaveLength(2);
+      expect(ins.map((r) => r.qty).sort((a, b) => a - b)).toEqual([1, 2]);
+      // Net effect of assemble-then-undo on the shelf is zero.
+      const net = afterUndo.reduce((s, r) => s + (r.txnType === 'in' ? r.qty : -r.qty), 0);
+      expect(net).toBe(0);
+    } finally {
+      await db.update(salesOrderLines).set({ orderQty: 5 }).where(eq(salesOrderLines.salesOrderId, soId));
+      await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `%${TEST_PREFIX}%`));
+    }
+  });
+});
+
 describe('assembly service — listAssemblies', () => {
+  // Assembling now CONSUMES component stock (ADR-115), and the describes above
+  // build units — so by the time these run the fixture's shelf has been eaten
+  // into. Reset it to the values setupFixture wrote (X 50, Y 10) so the
+  // readiness assertions below test the list maths, not test ordering.
+  beforeAll(async () => {
+    await db
+      .update(itemStockBalances)
+      .set({ onHandQty: 50 })
+      .where(eq(itemStockBalances.itemId, childAId));
+    await db
+      .update(itemStockBalances)
+      .set({ onHandQty: 10 })
+      .where(eq(itemStockBalances.itemId, childBId));
+  });
+
   it('returns the fixture Equipment SO with the correct counters', async () => {
     const result = await service.listAssemblies(admin);
     const row = result.items.find((r) => r.soCode === `${TEST_PREFIX}SO-EQ`);
