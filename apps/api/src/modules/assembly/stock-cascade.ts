@@ -31,6 +31,9 @@ export interface AssemblyStockContext {
   /** SO code + unit no, for the ledger's source_ref. */
   soCode: string;
   unitNo: number;
+  /** Batch quantity — how many units this record builds. Each BOM line's
+   *  qtyPerSet is multiplied by this, so a batch of 5 debits 5 sets. Default 1. */
+  qty: number;
   /** YYYY-MM-DD — the unit's assembly date, so the ledger matches the build. */
   txnDate: string;
 }
@@ -83,8 +86,12 @@ export async function applyAssemblyStockCascade(
   user: AuthContext,
 ): Promise<AssemblyStockLine[]> {
   if (!ctx.bomMasterId || !UUID_RE.test(ctx.bomMasterId)) return [];
-  const components = await loadPerUnitComponents(tx, ctx.bomMasterId);
-  if (components.length === 0) return [];
+  const perUnit = await loadPerUnitComponents(tx, ctx.bomMasterId);
+  if (perUnit.length === 0) return [];
+
+  // Batch multiplier: a record of qty N consumes N sets of every component.
+  const batchQty = Math.max(1, Math.round(ctx.qty));
+  const components = perUnit.map((c) => ({ itemId: c.itemId, qty: c.qty * batchQty }));
 
   const written: AssemblyStockLine[] = [];
   // Sorted by itemId so two concurrent assembles take the row locks in the same

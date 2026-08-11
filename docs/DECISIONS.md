@@ -5346,3 +5346,62 @@ tracker reads. Can Assemble now genuinely falls as units are built.
   orders until one of them builds.
 - **Overrides are invisible in the rollup.** SUPPORT reads 5 buildable off
   physical 4 because of an override, with no signal on the page.
+
+## ADR-116: Batch assemble — one record can build N units in a click, with a stock cap
+
+**Date:** 2026-08-11
+**Status:** Accepted
+
+### Context
+
+`markUnitAssembled` built exactly one unit per call (`unitNo = MAX+1`, one row).
+Building five units meant clicking "Assemble" five times. The user asked to
+enter a quantity and build the whole batch in one action, as a single record
+carrying one serial — not five separate serial rows — and to stop the qty
+exceeding what stock can actually build (the legacy stock gate ADR-115 declined
+to add, now wanted for this action).
+
+### Decision
+
+`assembly_units` gains a `qty` column (migration 0092, `NOT NULL DEFAULT 1`,
+`CHECK qty > 0`). One record now represents a batch of `qty` units built
+together under one auto-generated serial (`<SO code>-U<n>`).
+
+- **All rollups moved from `COUNT(rows)` to `SUM(qty)`** — the per-SO tracker,
+  the list-page aggregate, and the units-table heading. `assembledQty`,
+  `dispatchedQty`, `balanceQty` and `canAssembleAdditional` are all batch-aware.
+  Pre-batch rows read `qty = 1` via the default, so no history shifts.
+- **The stock cascade multiplies** each BOM line's `qtyPerSet` by the batch qty,
+  so a batch of 5 debits 5 sets in the same transaction (extends ADR-115).
+  `reverseAssemblyStockCascade` already nets from what assembly wrote, so Undo
+  returns the whole batch unchanged.
+- **Two server-side guards** (Rule 1 — the gate lives in the service, not the
+  browser): qty may not exceed the order balance, and may not exceed
+  `computeSoCanAssemble` (min `floor(finalReady/qtyPerSet)` across components).
+  The qty box mirrors the cap client-side, but the server rejects regardless.
+- **Serial is auto-generated**, one per batch; the manual serial input was
+  removed from the form. An explicit `serialNo` in the request is still honoured
+  if sent.
+
+### Alternatives Considered
+
+- **Loop the existing one-row path N times, sharing one serial** — rejected. It
+  satisfies "one serial" but leaves N rows, which the user explicitly did not
+  want; and it needs no schema change but complicates Undo (five undos for one
+  batch).
+- **No stock cap, keep ADR-115's "assembly never gates"** — rejected *for this
+  action only*. The user asked for the cap on the batch qty specifically; the
+  per-component ledger can still go negative through other paths, but the batch
+  button will not knowingly over-build past Can Assemble.
+
+### Consequences
+
+- Positive: one click builds a batch; Can Assemble caps it honestly.
+- Positive: `qty` default keeps every existing unit reading as 1 — no backfill.
+- Negative: `unitNo` is now a batch sequence, not a unit index; the units table
+  header was relabelled "Batch #" with a separate Qty column.
+- Negative: **Dispatch is still whole-record** — a 5-unit batch dispatches all
+  five at once (its `dispatched` flag flips and `SUM(qty)` counts them). Partial
+  dispatch of a batch is not supported; split into smaller batches if needed.
+- Carries ADR-115's open items forward unchanged (dispatch-button semantics,
+  no reservation, overrides invisible in the rollup).

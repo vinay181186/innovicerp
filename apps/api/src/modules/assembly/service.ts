@@ -15,8 +15,8 @@
 // Rollup:
 //   canAssemble   = min(enoughForUnits) across all components
 //   bottleneck    = component with the minimum enoughForUnits
-//   assembledQty  = count of non-deleted assembly_units
-//   dispatchedQty = count of assembled units with dispatched=true
+//   assembledQty  = SUM(qty) of non-deleted assembly_units (batch-aware)
+//   dispatchedQty = SUM(qty) of assembled units with dispatched=true
 //   status        = done (assembledQty >= orderQty)
 //                 | assembling (assembledQty > 0)
 //                 | ready (canAssemble > 0 and assembledQty == 0)
@@ -203,8 +203,10 @@ export async function getAssemblyTracker(
       .orderBy(asc(assemblyUnits.unitNo));
     const units = unitRows.map(toUnitRow);
 
-    const assembledQty = units.length;
-    const dispatchedQty = units.filter((u) => u.dispatched).length;
+    // A record can now carry qty > 1 (batch assemble), so both counters SUM the
+    // per-record qty rather than counting rows.
+    const assembledQty = units.reduce((sum, u) => sum + u.qty, 0);
+    const dispatchedQty = units.reduce((sum, u) => (u.dispatched ? sum + u.qty : sum), 0);
 
     // Rollup
     let canAssembleAdditional = 0;
@@ -326,8 +328,9 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
         : tx
             .select({
               soId: assemblyUnits.salesOrderId,
-              assembled: sql<number>`COUNT(*)::int`,
-              dispatched: sql<number>`COUNT(*) FILTER (WHERE ${assemblyUnits.dispatched})::int`,
+              // Batch records carry qty > 1 — SUM(qty), not COUNT(rows).
+              assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}), 0)::int`,
+              dispatched: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.dispatched}), 0)::int`,
             })
             .from(assemblyUnits)
             .where(
@@ -448,20 +451,43 @@ export async function markUnitAssembled(
     }
 
     const unitsRequired = await sumEquipmentLineQty(tx, soId);
+    const requestedQty = Math.max(1, Math.round(input.qty ?? 1));
 
-    // Compute next unitNo via SELECT MAX (uniqueness is enforced by partial
-    // unique index so a race would surface as ConflictError on the insert).
-    const maxRows = await tx
-      .select({ m: sql<number>`COALESCE(MAX(${assemblyUnits.unitNo}), 0)::int` })
+    // Already assembled (SUM qty across batch records) + the next batch number
+    // (MAX unit_no + 1). Uniqueness on unit_no is enforced by a partial unique
+    // index so a race surfaces as ConflictError on the insert.
+    const aggRows = await tx
+      .select({
+        assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}), 0)::int`,
+        maxUnitNo: sql<number>`COALESCE(MAX(${assemblyUnits.unitNo}), 0)::int`,
+      })
       .from(assemblyUnits)
       .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
-    const nextUnitNo = Number(maxRows[0]?.m ?? 0) + 1;
+    const alreadyAssembled = Number(aggRows[0]?.assembled ?? 0);
+    const nextUnitNo = Number(aggRows[0]?.maxUnitNo ?? 0) + 1;
 
-    if (nextUnitNo > unitsRequired && unitsRequired > 0) {
+    // Guard 1 — never build more than the order still owes.
+    const balance = unitsRequired > 0 ? Math.max(0, unitsRequired - alreadyAssembled) : requestedQty;
+    if (unitsRequired > 0 && requestedQty > balance) {
       throw new ConflictError(
-        `Cannot assemble more units than required (orderQty=${unitsRequired})`,
+        `Cannot assemble ${requestedQty} — only ${balance} unit(s) remain on order (orderQty=${unitsRequired})`,
       );
     }
+
+    // Guard 2 — never build more than the components on hand allow. This is the
+    // cap the user asked for: qty may not exceed "Can Assemble". Stock already
+    // reflects earlier assembles (the ledger was debited), so the min across
+    // components is the additional-buildable count right now.
+    const cap = await computeSoCanAssemble(tx, companyId, soId, so.bomMasterId ?? null, unitsRequired);
+    if (cap.canAssemble < requestedQty) {
+      throw new ConflictError(
+        `Cannot assemble ${requestedQty} — only ${cap.canAssemble} buildable from stock` +
+          (cap.bottleneck ? ` (short on ${cap.bottleneck})` : ''),
+      );
+    }
+
+    // One serial for the whole batch. Auto-generated when the caller omits it.
+    const serial = input.serialNo ?? `${so.code}-U${nextUnitNo}`;
 
     const inserted = await tx
       .insert(assemblyUnits)
@@ -470,7 +496,8 @@ export async function markUnitAssembled(
         salesOrderId: soId,
         soCodeText: so.code,
         unitNo: nextUnitNo,
-        serialNo: input.serialNo ?? null,
+        qty: requestedQty,
+        serialNo: serial,
         assemblyDate: input.assemblyDate ?? todayIso(),
         assembledBy: input.assembledBy ?? null,
         remarks: input.remarks ?? null,
@@ -482,9 +509,10 @@ export async function markUnitAssembled(
       .returning();
     const row = inserted[0]!;
 
-    // ADR-115 — the components this unit swallowed leave the store. Same tx as
-    // the unit insert, so a rollback unwinds both. Skipped when this unit-no
-    // has already been debited (re-assemble after an undo reuses the number).
+    // ADR-115 — the components this batch swallowed leave the store (qtyPerSet ×
+    // batch qty). Same tx as the unit insert, so a rollback unwinds both.
+    // Skipped when this unit-no has already been debited (re-assemble after an
+    // undo reuses the number).
     const alreadyDebited = await assemblyDebitExists(tx, companyId, so.code, nextUnitNo);
     const debited = alreadyDebited
       ? []
@@ -495,6 +523,7 @@ export async function markUnitAssembled(
             bomMasterId: so.bomMasterId ?? null,
             soCode: so.code,
             unitNo: nextUnitNo,
+            qty: requestedQty,
             txnDate: row.assemblyDate,
           },
           user,
@@ -506,7 +535,7 @@ export async function markUnitAssembled(
         action: 'ASSEMBLED',
         entity: 'AssemblyUnit',
         detail:
-          `${so.code} — unit #${nextUnitNo}${input.serialNo ? ` (S/N ${input.serialNo})` : ''}` +
+          `${so.code} — unit #${nextUnitNo}${requestedQty > 1 ? ` ×${requestedQty}` : ''} (S/N ${serial})` +
           (debited.length > 0 ? ` · ${debited.length} component(s) consumed` : ''),
         refId: so.code,
       },
@@ -562,7 +591,7 @@ export async function markUnitDispatched(
       {
         action: 'DISPATCHED',
         entity: 'AssemblyUnit',
-        detail: `${row.soCodeText} — unit #${row.unitNo}${row.serialNo ? ` (S/N ${row.serialNo})` : ''}`,
+        detail: `${row.soCodeText} — unit #${row.unitNo}${row.qty > 1 ? ` ×${row.qty}` : ''}${row.serialNo ? ` (S/N ${row.serialNo})` : ''}`,
         refId: row.soCodeText,
       },
       companyId,
@@ -847,6 +876,66 @@ async function computeListReadiness(
   return out;
 }
 
+/**
+ * How many MORE units this SO can build from components on hand right now —
+ * min(floor(finalReady / qtyPerSet)) across the BOM, plus the bottleneck code.
+ * Same math as getAssemblyTracker's rollup, isolated so markUnitAssembled can
+ * enforce the batch-qty cap server-side (Rule 1 — the gate lives here, not the
+ * browser). Stock reflects earlier assembles because the ledger is debited each
+ * build, so this is the additional-buildable count, not the original order size.
+ */
+async function computeSoCanAssemble(
+  tx: Parameters<typeof withUserContext>[1] extends (tx: infer T) => unknown ? T : never,
+  companyId: string,
+  soId: string,
+  bomMasterId: string | null,
+  unitsRequired: number,
+): Promise<{ canAssemble: number; bottleneck: string | null }> {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!bomMasterId || !UUID_RE.test(bomMasterId)) return { canAssemble: 0, bottleneck: null };
+
+  const childRows = await tx
+    .select({
+      childItemId: bomMasterLines.childItemId,
+      childItemCode: items.code,
+      qtyPerSet: bomMasterLines.qtyPerSet,
+    })
+    .from(bomMasterLines)
+    .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
+    .where(and(eq(bomMasterLines.bomMasterId, bomMasterId), isNull(bomMasterLines.deletedAt)));
+  if (childRows.length === 0) return { canAssemble: 0, bottleneck: null };
+
+  const childIds = childRows.map((r) => r.childItemId);
+  const stockMap = new Map<string, number>();
+  const stockRows = await tx
+    .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
+    .from(itemStockBalances)
+    .where(
+      and(eq(itemStockBalances.companyId, companyId), inArray(itemStockBalances.itemId, childIds)),
+    );
+  for (const r of stockRows) stockMap.set(r.itemId, Number(r.qty));
+
+  const overrideMap = await fetchOverrideMap(tx, companyId, soId);
+
+  let min = Infinity;
+  let bottleneck: string | null = null;
+  for (const r of childRows) {
+    const code = r.childItemCode ?? '—';
+    const qtyPerSet = Number(r.qtyPerSet);
+    const totalNeed = Math.round(qtyPerSet * unitsRequired);
+    const stockQty = Math.max(0, Math.floor(stockMap.get(r.childItemId) ?? 0));
+    const autoReadyQty = Math.min(stockQty, totalNeed);
+    const overrideQty = overrideMap.get(code) ?? 0;
+    const finalReadyQty = Math.max(autoReadyQty, overrideQty);
+    const enoughForUnits = qtyPerSet > 0 ? Math.floor(finalReadyQty / qtyPerSet) : 0;
+    if (enoughForUnits < min) {
+      min = enoughForUnits;
+      bottleneck = code;
+    }
+  }
+  return { canAssemble: min === Infinity ? 0 : Math.max(0, min), bottleneck };
+}
+
 async function fetchOverrideMap(
   tx: Parameters<typeof withUserContext>[1] extends (tx: infer T) => unknown ? T : never,
   companyId: string,
@@ -871,6 +960,7 @@ function toUnitRow(row: typeof assemblyUnits.$inferSelect): AssemblyUnitRow {
   return {
     id: row.id,
     unitNo: row.unitNo,
+    qty: row.qty,
     serialNo: row.serialNo,
     assemblyDate: row.assemblyDate,
     assembledBy: row.assembledBy,

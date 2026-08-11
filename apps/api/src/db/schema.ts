@@ -2652,6 +2652,10 @@ export const assemblyUnits = pgTable(
       .references(() => salesOrders.id, { onDelete: 'cascade' }),
     soCodeText: text('so_code_text').notNull(),
     unitNo: integer('unit_no').notNull(),
+    // Batch quantity for this record. One row now represents `qty` assembled
+    // units built in a single action (batch assemble), sharing one serial.
+    // Legacy/pre-batch rows are 1. All rollups SUM(qty), never COUNT(*).
+    qty: integer('qty').notNull().default(1),
     serialNo: text('serial_no'),
     assemblyDate: date('assembly_date').notNull(),
     assembledBy: text('assembled_by'),
@@ -2687,6 +2691,7 @@ export const assemblyUnits = pgTable(
       .on(t.serialNo)
       .where(sql`${t.serialNo} is not null AND ${t.deletedAt} is null`),
     check('assembly_units_unit_no_positive', sql`${t.unitNo} > 0`),
+    check('assembly_units_qty_positive', sql`${t.qty} > 0`),
     pgPolicy('assembly_units_company_read', {
       for: 'select',
       to: 'authenticated',

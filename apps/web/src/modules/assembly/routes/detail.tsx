@@ -45,7 +45,9 @@ function AssemblyDetailPage(): React.JSX.Element {
   const mark = useMarkUnitAssembled(soId);
   const undo = useUndoLastUnit(soId);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [serial, setSerial] = useState('');
+  // Batch quantity to build in one click. Serial is auto-generated server-side
+  // (one serial per batch), so there is no serial input any more.
+  const [qty, setQty] = useState('1');
   const [assembledBy, setAssembledBy] = useState('');
   const [assemblyDate, setAssemblyDate] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -72,18 +74,29 @@ function AssemblyDetailPage(): React.JSX.Element {
     );
   }
 
+  // Most units still buildable in one batch: stock-limited (canAssemble) and
+  // never past the order balance — the server enforces the same cap.
+  const maxBuildable = data.rollup.canAssembleAdditional;
   const onAssemble = (): void => {
     setActionError(null);
+    const n = Math.max(1, Math.floor(Number(qty) || 1));
+    if (n > maxBuildable) {
+      setActionError(
+        `Only ${maxBuildable} unit(s) can be built from stock right now` +
+          (data.rollup.bottleneck ? ` — short on ${data.rollup.bottleneck.childItemCode}.` : '.'),
+      );
+      return;
+    }
     mark.mutate(
       {
-        serialNo: serial || undefined,
+        qty: n,
         assembledBy: assembledBy || undefined,
         assemblyDate: assemblyDate || undefined,
         remarks: remarks || undefined,
       },
       {
         onSuccess: () => {
-          setSerial('');
+          setQty('1');
           setRemarks('');
         },
         onError: (e) => setActionError(e instanceof Error ? e.message : 'Mark failed'),
@@ -143,14 +156,17 @@ function AssemblyDetailPage(): React.JSX.Element {
                 marginBottom: 4,
               }}
             >
-              Serial #
+              Qty to build
             </label>
             <input
+              type="number"
+              min={1}
+              max={Math.max(1, maxBuildable)}
               className="innovic-input"
-              style={{ width: 180 }}
-              value={serial}
-              onChange={(e) => setSerial(e.target.value)}
-              placeholder="optional"
+              style={{ width: 110 }}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              title={`Up to ${maxBuildable} buildable from stock now. One serial is auto-generated for the whole batch.`}
             />
           </div>
           <div>
@@ -227,15 +243,17 @@ function AssemblyDetailPage(): React.JSX.Element {
             type="button"
             className="btn btn-primary btn-sm"
             onClick={onAssemble}
-            disabled={mark.isPending || data.rollup.balanceQty === 0}
+            disabled={mark.isPending || data.rollup.balanceQty === 0 || maxBuildable < 1}
             title={
               data.rollup.balanceQty === 0
                 ? 'All required units assembled'
-                : 'Insert a new assembly unit'
+                : maxBuildable < 1
+                  ? 'No units buildable from stock on hand'
+                  : `Build up to ${maxBuildable} unit(s) in one batch`
             }
           >
             {mark.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            Assemble unit
+            Assemble
           </button>
           <button
             type="button"
@@ -679,7 +697,13 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div className="panel-title">📦 Assembled Units ({units.length})</div>
+        <div className="panel-title">
+          📦 Assembled Units ({units.reduce((s, u) => s + u.qty, 0)}
+          {units.length !== units.reduce((s, u) => s + u.qty, 0)
+            ? ` in ${units.length} batch${units.length === 1 ? '' : 'es'}`
+            : ''}
+          )
+        </div>
       </div>
       {error ? (
         <div style={{ color: 'var(--red)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
@@ -688,7 +712,8 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
         <table className="innovic-table">
           <thead>
             <tr>
-              <th style={{ textAlign: 'center' }}>Unit #</th>
+              <th style={{ textAlign: 'center' }}>Batch #</th>
+              <th style={{ textAlign: 'center' }}>Qty</th>
               <th>Serial No.</th>
               <th>Assembly Date</th>
               <th>Assembled By</th>
@@ -704,6 +729,7 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
                 <td className="td-ctr fw-700" style={{ fontSize: 16 }}>
                   {u.unitNo}
                 </td>
+                <td className="td-ctr fw-700">{u.qty}</td>
                 <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}>
                   {u.serialNo ?? '—'}
                 </td>

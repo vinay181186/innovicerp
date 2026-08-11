@@ -34,6 +34,8 @@ export type AssemblyComponentRow = z.infer<typeof assemblyComponentRowSchema>;
 export const assemblyUnitRowSchema = z.object({
   id: z.string().uuid(),
   unitNo: z.number().int().positive(),
+  /** Batch quantity — how many units this one record represents (default 1). */
+  qty: z.number().int().positive(),
   serialNo: z.string().nullable(),
   assemblyDate: z.string(),
   assembledBy: z.string().nullable(),
@@ -48,9 +50,10 @@ export type AssemblyUnitRow = z.infer<typeof assemblyUnitRowSchema>;
 export const assemblyRollupSchema = z.object({
   /** Equipment SO order qty (units required). */
   orderQty: z.number().int().nonnegative(),
-  /** Number of units assembled (rows in assembly_units, not deleted). */
+  /** Units assembled — SUM(qty) across non-deleted assembly_units (a record
+   *  can be a batch of qty > 1), not a row count. */
   assembledQty: z.number().int().nonnegative(),
-  /** Number of assembled units flipped to dispatched=true. */
+  /** Units dispatched — SUM(qty) across records flipped to dispatched=true. */
   dispatchedQty: z.number().int().nonnegative(),
   /** orderQty - assembledQty (clamped at 0). */
   balanceQty: z.number().int().nonnegative(),
@@ -128,6 +131,11 @@ export type AssemblyListResponse = z.infer<typeof assemblyListResponseSchema>;
 // ─── Write inputs ────────────────────────────────────────────────────────
 
 export const markUnitAssembledInputSchema = z.object({
+  /** How many units to build in this one action (batch). Omitted → 1. The
+   *  server rejects a qty above what's buildable from stock (canAssemble). */
+  qty: z.number().int().positive().max(9999).optional(),
+  /** Optional explicit serial. When omitted the server auto-generates one
+   *  serial for the whole batch (`<SO code>-U<n>`). */
   serialNo: z.string().trim().max(80).optional(),
   assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   assembledBy: z.string().trim().max(80).optional(),
