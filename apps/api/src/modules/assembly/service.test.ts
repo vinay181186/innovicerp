@@ -397,6 +397,21 @@ describe('assembly service — listAssemblies', () => {
     expect(row.canAssemble).toBe(5);
   });
 
+  it('drops closed Equipment SOs — nothing left to assemble', async () => {
+    // Legacy's _atBuildAssemblies skips `so.status!=='Closed'` (HTML L28675).
+    // Ours listed them, so the tracker was mostly finished work.
+    const before = await service.listAssemblies(admin);
+    expect(before.items.some((r) => r.soCode === `${TEST_PREFIX}SO-EQ`)).toBe(true);
+
+    await db.update(salesOrders).set({ status: 'closed' }).where(eq(salesOrders.id, soId));
+    try {
+      const after = await service.listAssemblies(admin);
+      expect(after.items.some((r) => r.soCode === `${TEST_PREFIX}SO-EQ`)).toBe(false);
+    } finally {
+      await db.update(salesOrders).set({ status: 'open' }).where(eq(salesOrders.id, soId));
+    }
+  });
+
   it("reaches 'ready' — the status the list could never return", async () => {
     // listAssemblies passed a hardcoded 0 as canAssemble into deriveStatus,
     // which only returns 'ready' when that argument is > 0. So the Ready KPI

@@ -22,7 +22,7 @@
 //                 | ready (canAssemble > 0 and assembledQty == 0)
 //                 | waiting (otherwise)
 
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type {
   AssemblyComponentRow,
   AssemblyComponentStatus,
@@ -279,6 +279,12 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
           eq(salesOrders.companyId, companyId),
           isNull(salesOrders.deletedAt),
           eq(salesOrders.type, 'equipment'),
+          // Closed orders have nothing left to assemble, and legacy drops them
+          // (_atBuildAssemblies, HTML L28675: `so.status!=='Closed'`). Ours
+          // listed them, so the tracker was mostly finished work — 7 of the 11
+          // equipment SOs on the live DB. Only 'closed' is excluded, matching
+          // legacy exactly; a cancelled SO still shows.
+          ne(salesOrders.status, 'closed'),
         ),
       )
       .orderBy(asc(salesOrders.code));
