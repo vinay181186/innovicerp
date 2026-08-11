@@ -1,5 +1,8 @@
-// SO / WO Master (UI-003-05 + legacy renderSOmaster L11839 parity). Grouped,
-// expandable rows; per-row +Line / Del; expanded component lines show JC Qty /
+// SO / WO Orders (UI-003-05 + legacy renderSOmaster L11839 parity), rendered as
+// one CARD per order per the reference supplied 2026-08-11 — accent bar, chip
+// row, metric strip, line items inside. Replaced a twelve-column table that was
+// wider than any screen; no field was dropped in the move, only regrouped.
+// Per-card +Line / Assign / Del; expanded component lines show JC Qty /
 // Dispatched / Balance with inline Edit + Del; expanded equipment shows the
 // BOM-status strip + exploded BOM items table. Header has Excel Export.
 
@@ -16,18 +19,9 @@ import {
   type SoType,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
 import { ChevronDown, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
@@ -58,6 +52,41 @@ import {
 // so the flexRender loop puts it where legacy has it. Mirrors the augmentation
 // in items/routes/list.tsx.
 const PAGE_SIZE = 25;
+
+/** One cell of the card's metric strip — big number over a small caps label,
+ *  the shape the reference uses for TOTAL QTY / JC QTY / LINES. */
+function QtyBox({
+  label,
+  value,
+  color,
+  bordered,
+}: {
+  label: string;
+  value: number;
+  color?: string;
+  bordered?: boolean;
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        padding: '4px 12px',
+        textAlign: 'center',
+        minWidth: 58,
+        borderLeft: bordered ? '1px solid var(--border)' : undefined,
+      }}
+    >
+      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>
+        {value}
+      </div>
+      <div
+        className="mono"
+        style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
 
 /** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
 async function openClientPoFile(storagePath: string): Promise<void> {
@@ -136,8 +165,19 @@ function SalesOrdersListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const toggleExpand = (id: string): void => setExpandedId((prev) => (prev === id ? null : id));
+  // Many cards can be open at once (the reference shows every order with its
+  // lines visible), so this is a Set rather than the single id it used to be.
+  // Nothing auto-expands on load: each open card fetches that SO's detail, and
+  // expanding 25 of them on arrival would fire 25 requests nobody asked for.
+  // "Expand all" is one click away for the reference's fully-open view.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string): void =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const softDelete = useSoftDeleteSalesOrder();
   const onDeleteSo = (so: SalesOrderListItem): void => {
@@ -220,212 +260,31 @@ function SalesOrdersListPage(): React.JSX.Element {
     }
   }
 
-  // Columns follow the SO/WO Orders reference layout (2026-08-10): the twelve
-  // loose legacy columns are grouped into five, because at twelve the row was
-  // wider than any screen and the eye had to travel the full width to read one
-  // order. Nothing is dropped — Lines, Date, Client PO, Raised By and Remarks
-  // all still render, stacked into the identity cell as a second line, which is
-  // how the reference reaches its density.
+  // One CARD per order, per the SO / WO Orders reference (2026-08-11). The
+  // twelve-column table it replaces was wider than any screen, so reading one
+  // order meant travelling the full width past mostly-empty cells.
   //
-  //   SO / WO · CLIENT · PO · DATE · RAISED · REMARKS | QTY / JC | TYPE · DUE |
-  //   STATUS | ACTIONS
-  const columns = useMemo<ColumnDef<SalesOrderListItem>[]>(
-    () => [
-      {
-        header: 'SO / WO · Client · PO · Date · Raised · Remarks',
-        accessorKey: 'code',
-        cell: ({ row }) => {
-          const so = row.original;
-          const isExpanded = expandedId === so.id;
-          return (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-              <span
-                aria-hidden
-                style={{
-                  color: 'var(--text3)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  paddingTop: 2,
-                  flexShrink: 0,
-                }}
-              >
-                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                {/* Line 1 — identity. The row itself previews lines, so the CODE
-                    is the way into the detail page; stopPropagation keeps the
-                    click from also toggling the preview underneath it. */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <Link
-                    to="/sales-orders/$id"
-                    params={{ id: so.id }}
-                    className="mono"
-                    style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
-                    title="Open the full detail page"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {so.code}
-                  </Link>
-                  <span className="fw-700" style={{ fontSize: 13 }}>{so.customerName ?? '—'}</span>
-                  <span
-                    className="badge b-grey"
-                    style={{ fontSize: 9, padding: '1px 6px' }}
-                  >
-                    {so.lineCount} line{so.lineCount === 1 ? '' : 's'}
-                  </span>
-                </div>
-                {/* Line 2 — the supporting facts, dot-separated so they read as
-                    one sentence instead of five columns of mostly-empty cells. */}
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text3)',
-                    marginTop: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span className="text2">{so.soDate}</span>
-                  <span>•</span>
-                  <span>
-                    PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{so.clientPoNo ?? '—'}</span>
-                  </span>
-                  {so.clientPoFilePath ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '0 4px', fontSize: 12, lineHeight: 1 }}
-                      title="View Client PO Document"
-                      onClick={(e) => { e.stopPropagation(); void openClientPoFile(so.clientPoFilePath!); }}
-                    >
-                      📎
-                    </button>
-                  ) : null}
-                  <span>•</span>
-                  <span className="text2">{so.createdByName ?? '—'}</span>
-                  <span>•</span>
-                  <span
-                    style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    title={so.remarks ?? ''}
-                  >
-                    {so.remarks || '—'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        header: 'Qty / JC',
-        accessorKey: 'totalQty',
-        meta: { tdClass: 'td-ctr' },
-        cell: ({ row }) => {
-          const jc = row.original.jcQty;
-          const total = row.original.totalQty;
-          const color = jc >= total && total > 0 ? 'var(--green)' : jc > 0 ? 'var(--amber)' : 'var(--text3)';
-          return (
-            <div style={{ lineHeight: 1.2 }}>
-              <div className="mono fw-700" style={{ fontSize: 14 }}>{total}</div>
-              <div className="mono" style={{ fontSize: 11 }}>
-                <span className="text3">JC </span>
-                <span style={{ color, fontWeight: 700 }}>{jc}</span>
-                <span className="text3">/{total}</span>
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        header: 'Type · Due',
-        accessorKey: 'earliestDueDate',
-        cell: ({ row }) => {
-          const due = row.original.earliestDueDate;
-          const today = new Date().toISOString().slice(0, 10);
-          const overdue = due != null && due < today && row.original.status === 'open';
-          return (
-            <div style={{ lineHeight: 1.3 }}>
-              {/* Legacy renders the type through badge() (L11870), which has no
-                  map entry for either SO type and so falls through to b-grey. */}
-              <span className="badge b-grey">{row.original.type.replaceAll('_', ' ')}</span>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  marginTop: 3,
-                  color: overdue ? 'var(--red)' : 'var(--text3)',
-                  fontWeight: overdue ? 700 : undefined,
-                }}
-              >
-                {due ? `Due ${due.slice(5)}${overdue ? ' ⚠' : ''}` : 'No due date'}
-              </div>
-            </div>
-          );
-        },
-      },
-      {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            <SoStatusBadge status={row.original.status} />
-            {row.original.type === 'equipment' && row.original.bomStatus ? (
-              <span className={`badge ${row.original.bomStatus === 'BOM Pending' ? 'b-amber' : row.original.bomStatus === 'BOM Planned' ? 'b-green' : 'b-blue'}`}>{row.original.bomStatus}</span>
-            ) : null}
-          </div>
-        ),
-      },
-      ...(canWrite
-        ? [{
-            header: 'Actions',
-            id: 'actions',
-            enableSorting: false,
-            cell: ({ row }: { row: { original: SalesOrderListItem } }) => (
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                <Link to="/sales-orders/$id/edit" params={{ id: row.original.id }} className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} title="Add line to this SO">
-                  + Line
-                </Link>
-                {row.original.status !== 'closed' ? (
-                  <AssignTaskButton
-                    linkedRef={{
-                      type: 'sales_order',
-                      id: row.original.id,
-                      display: `SO ${row.original.code}`,
-                      navPage: `/sales-orders/${row.original.id}`,
-                    }}
-                    suggestedTitle={
-                      row.original.type === 'equipment' && row.original.bomStatus === 'BOM Pending'
-                        ? `Create BOM for ${row.original.code}`
-                        : `Follow up ${row.original.code}`
-                    }
-                    label=""
-                  />
-                ) : null}
-                {row.original.status !== 'closed' ? (
-                  <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 10, padding: '3px 8px' }} onClick={() => onDeleteSo(row.original)}>
-                    Del
-                  </button>
-                ) : null}
-              </div>
-            ),
-          } as ColumnDef<SalesOrderListItem>]
-        : []),
-    ],
-    [expandedId, canWrite],
-  );
+  // Every field the table showed still renders — code, client, lines, date,
+  // client PO, raised by, remarks, total qty, JC qty, due, type, status, BOM
+  // status — regrouped into the card's three bands: identity + chips on top,
+  // the metric boxes and meta line below, line items inside.
+  //
+  // The table machinery (TanStack column defs + SortableHead) is gone with it:
+  // a card list has no column headers to click, so per-column sorting goes too.
+  // It only ever sorted the 25 rows already on screen.
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = data?.items ?? [];
+  const allExpanded = rows.length > 0 && rows.every((r) => expandedIds.has(r.id));
 
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
+  /** Left accent bar — red when the order is late, green once it is finished,
+   *  blue while it is simply open. Same three tokens the badges use. */
+  const accentFor = (so: SalesOrderListItem): string => {
+    if (so.earliestDueDate != null && so.earliestDueDate < today && so.status === 'open') {
+      return 'var(--red)';
+    }
+    if (so.status === 'closed' || so.status === 'dispatched') return 'var(--green)';
+    return 'var(--blue)';
+  };
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -500,9 +359,17 @@ function SalesOrdersListPage(): React.JSX.Element {
             );
           })}
         </div>
-        <div className="text3" style={{ fontSize: 11 }}>
-          Click the SO number to open its detail page · click the row to preview lines
-        </div>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() =>
+            setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
+          }
+          disabled={rows.length === 0}
+          title={allExpanded ? 'Hide every card’s line items' : 'Show every card’s line items'}
+        >
+          {allExpanded ? 'Collapse all' : 'Expand all'}
+        </button>
       </div>
 
       {importMsg ? (
@@ -529,52 +396,175 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={columns.length} className="empty-state"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</td></tr>
-              ) : isError ? (
-                <tr><td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load sales orders'}</td></tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr><td colSpan={columns.length} className="empty-state">No orders — click + New SO/WO</td></tr>
-              ) : (
-                table.getRowModel().rows.map((row) => {
-                  const isExpanded = expandedId === row.original.id;
-                  return (
-                    <Fragment key={row.id}>
-                      {/* The row previews its lines; the SO code opens the detail
-                          page. The row used to navigate to detail and the chevron
-                          alone toggled the preview, which made a 14px target the
-                          only way to see what an order contains. */}
-                      <tr
-                        onClick={() => toggleExpand(row.original.id)}
-                        title={isExpanded ? 'Hide lines' : 'Preview lines'}
-                        style={{ cursor: 'pointer', background: isExpanded ? 'rgba(34,197,94,0.04)' : undefined }}
-                      >
-                        {row.getVisibleCells().map((cell) => (
-                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        ))}
-                      </tr>
-                      {isExpanded ? (
-                        <tr>
-                          <td colSpan={columns.length} style={{ padding: 0, background: 'var(--bg3)' }}>
-                            <SoExpandedPanel soId={row.original.id} soType={row.original.type} canWrite={canWrite} />
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {isLoading ? (
+        <div className="panel empty-state" style={{ padding: 24 }}>
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…
         </div>
-      </div>
+      ) : isError ? (
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+          {error instanceof Error ? error.message : 'Failed to load sales orders'}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="panel empty-state" style={{ padding: 24 }}>No orders — click + New SO/WO</div>
+      ) : (
+        rows.map((so) => {
+          const isExpanded = expandedIds.has(so.id);
+          const overdue =
+            so.earliestDueDate != null && so.earliestDueDate < today && so.status === 'open';
+          const jcColor =
+            so.jcQty >= so.totalQty && so.totalQty > 0
+              ? 'var(--green)'
+              : so.jcQty > 0
+                ? 'var(--amber)'
+                : 'var(--text3)';
+          return (
+            <div
+              key={so.id}
+              className="panel"
+              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+            >
+              {/* Accent bar — red late, green finished, blue open. */}
+              <div style={{ width: 4, flexShrink: 0, background: accentFor(so) }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* ── Band 1: identity + chips — actions ── */}
+                <div
+                  onClick={() => toggleExpand(so.id)}
+                  title={isExpanded ? 'Hide line items' : 'Show line items'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ color: 'var(--text3)', display: 'inline-flex' }} aria-hidden>
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </span>
+                  {/* The card body toggles the lines, so the CODE is the way to
+                      the detail page — stopPropagation keeps the click off the
+                      toggle underneath it. */}
+                  <Link
+                    to="/sales-orders/$id"
+                    params={{ id: so.id }}
+                    className="td-code"
+                    style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
+                    title="Open the SO Master detail page"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {so.code}
+                  </Link>
+                  <span className="fw-700" style={{ fontSize: 13 }}>{so.customerName ?? '—'}</span>
+                  {/* Legacy renders the type through badge() (L11870), which has
+                      no map entry for either SO type and falls through to grey. */}
+                  <span className="badge b-grey">{so.type.replaceAll('_', ' ')}</span>
+                  <SoStatusBadge status={so.status} />
+                  {so.type === 'equipment' && so.bomStatus ? (
+                    <span
+                      className={`badge ${so.bomStatus === 'BOM Pending' ? 'b-amber' : so.bomStatus === 'BOM Planned' ? 'b-green' : 'b-blue'}`}
+                    >
+                      {so.bomStatus}
+                    </span>
+                  ) : null}
+                  <span style={{ flex: 1 }} />
+                  {canWrite ? (
+                    <div
+                      style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link
+                        to="/sales-orders/$id/edit"
+                        params={{ id: so.id }}
+                        className="btn btn-primary btn-sm"
+                        title="Add line to this SO"
+                      >
+                        + Line
+                      </Link>
+                      {so.status !== 'closed' ? (
+                        <AssignTaskButton
+                          linkedRef={{
+                            type: 'sales_order',
+                            id: so.id,
+                            display: `SO ${so.code}`,
+                            navPage: `/sales-orders/${so.id}`,
+                          }}
+                          suggestedTitle={
+                            so.type === 'equipment' && so.bomStatus === 'BOM Pending'
+                              ? `Create BOM for ${so.code}`
+                              : `Follow up ${so.code}`
+                          }
+                          label=""
+                        />
+                      ) : null}
+                      {so.status !== 'closed' ? (
+                        <button type="button" className="btn btn-danger btn-sm" onClick={() => onDeleteSo(so)}>
+                          Del
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* ── Band 2: metric boxes + meta line ── */}
+                <div
+                  onClick={() => toggleExpand(so.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    padding: '0 14px 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    <QtyBox label="Total Qty" value={so.totalQty} />
+                    <QtyBox label="JC Qty" value={so.jcQty} color={jcColor} bordered />
+                    <QtyBox label="Lines" value={so.lineCount} bordered />
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    <span className="text2">{so.soDate}</span>
+                    <span>·</span>
+                    <span>
+                      PO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{so.clientPoNo ?? '—'}</span>
+                    </span>
+                    {so.clientPoFilePath ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '0 4px', lineHeight: 1 }}
+                        title="View Client PO Document"
+                        onClick={(e) => { e.stopPropagation(); void openClientPoFile(so.clientPoFilePath!); }}
+                      >
+                        📎
+                      </button>
+                    ) : null}
+                    <span>·</span>
+                    <span className="text2">{so.createdByName ?? '—'}</span>
+                    <span>·</span>
+                    <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
+                      {so.earliestDueDate ? `Due ${so.earliestDueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    </span>
+                    <span>·</span>
+                    <span title={so.remarks ?? ''}>{so.remarks || '—'}</span>
+                  </div>
+                </div>
+
+                {/* ── Band 3: line items ── */}
+                {isExpanded ? (
+                  <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
+                    <SoExpandedPanel soId={so.id} soType={so.type} canWrite={canWrite} />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          );
+        })
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
         <span>{total === 0 ? 'No sales orders' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
@@ -585,7 +575,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         </div>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click a row to open the SO. Click the chevron to expand line items inline. Use <b>+ Line</b> to add or edit lines.
+        💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.
       </div>
 
       {importPreview ? (
