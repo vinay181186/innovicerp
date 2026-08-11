@@ -292,84 +292,113 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Orders</div>
-          {/* Count comes from the list response's `total` — the only aggregate
-              the endpoint returns. The reference mock also shows "N open ·
-              N overdue"; those are not derivable without a new API, and
-              counting the loaded page would quietly report 25 rows' worth as
-              the whole book, so they are left out rather than faked. */}
-          <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-            {total} order{total === 1 ? '' : 's'}
-            {search.status ? <> · <span className="text2">{search.status}</span> only</> : null}
+      {/* Frozen header band (the reference supplied 2026-08-11) — the title,
+          the search/type/export toolbar and the status pills stay put while the
+          order cards scroll underneath.
+
+          `#content` is the app's scroll container (innovic-theme.css: flex:1 +
+          overflow-y:auto), so `top:0` pins this band to ITS padding box: it
+          lands flush under the topbar and the breadcrumb trail scrolls away
+          behind it. The background must therefore be opaque and match
+          #content's own (`--bg`, via .innovic-body) or the cards show through
+          as they pass under it.
+
+          Deliberately NOT bled to the edges with negative side margins: the
+          band and the cards below it are both inset by #content's padding, so
+          they already line up. Bleeding would mean matching that padding at two
+          breakpoints (20px, 12px under 768px) and a mismatch gives the whole
+          app a horizontal scrollbar — same warning as in
+          purchase-orders/routes/from-pr.tsx. */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>SO / WO Orders</div>
+            {/* Count comes from the list response's `total` — the only aggregate
+                the endpoint returns. The reference mock also shows "N open ·
+                N overdue"; those are not derivable without a new API, and
+                counting the loaded page would quietly report 25 rows' worth as
+                the whole book, so they are left out rather than faked. */}
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} order{total === 1 ? '' : 's'}
+              {search.status ? <> · <span className="text2">{search.status}</span> only</> : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input className="innovic-input" placeholder="Search code, customer, client PO…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+            <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
+              <option value="">All types</option>
+              {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
+            </select>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
+              {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
+            </button>
+            {canWrite ? (
+              <>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} title="Download the bulk SO import template (.xlsx)" onClick={() => downloadSoTemplate()}>
+                  ⬇ Template
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={importing} title="Import many Sales Orders from one spreadsheet" onClick={() => importFileRef.current?.click()}>
+                  {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
+                </button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImportFile(f); }}
+                />
+              </>
+            ) : null}
+            {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
+            {canWrite ? (
+              <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
+            ) : null}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <input className="innovic-input" placeholder="Search code, customer, client PO…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
-          <select className="innovic-select" value={search.type ?? ''} onChange={(e) => { const v = e.target.value as SoType | ''; void navigate({ search: (prev) => ({ ...prev, type: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 160, fontSize: 12 }}>
-            <option value="">All types</option>
-            {SELECTABLE_SO_TYPES.map((t) => <option key={t} value={t}>{t.replaceAll('_', ' ')}</option>)}
-          </select>
-          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
-            {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
+  
+        {/* Status filter as pills, per the reference layout. Replaces the status
+            <select> it used to sit beside — every SO_STATUSES value gets a pill,
+            so nothing that could be filtered before is unreachable now. Same
+            `status` search param, same query; only the control changed. */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {([null, ...SO_STATUSES] as (SoStatus | null)[]).map((s) => {
+              const active = (search.status ?? null) === s;
+              return (
+                <button
+                  key={s ?? 'all'}
+                  type="button"
+                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 11, textTransform: 'capitalize', borderRadius: 999, padding: '3px 12px' }}
+                  onClick={() => void navigate({ search: (prev) => ({ ...prev, status: s ?? undefined, page: 1 }), replace: true })}
+                >
+                  {s ?? 'All'}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() =>
+              setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
+            }
+            disabled={rows.length === 0}
+            title={allExpanded ? 'Hide every card’s line items' : 'Show every card’s line items'}
+          >
+            {allExpanded ? 'Collapse all' : 'Expand all'}
           </button>
-          {canWrite ? (
-            <>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} title="Download the bulk SO import template (.xlsx)" onClick={() => downloadSoTemplate()}>
-                ⬇ Template
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={importing} title="Import many Sales Orders from one spreadsheet" onClick={() => importFileRef.current?.click()}>
-                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
-              </button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImportFile(f); }}
-              />
-            </>
-          ) : null}
-          {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-          {canWrite ? (
-            <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
-          ) : null}
         </div>
-      </div>
-
-      {/* Status filter as pills, per the reference layout. Replaces the status
-          <select> it used to sit beside — every SO_STATUSES value gets a pill,
-          so nothing that could be filtered before is unreachable now. Same
-          `status` search param, same query; only the control changed. */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {([null, ...SO_STATUSES] as (SoStatus | null)[]).map((s) => {
-            const active = (search.status ?? null) === s;
-            return (
-              <button
-                key={s ?? 'all'}
-                type="button"
-                className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ fontSize: 11, textTransform: 'capitalize', borderRadius: 999, padding: '3px 12px' }}
-                onClick={() => void navigate({ search: (prev) => ({ ...prev, status: s ?? undefined, page: 1 }), replace: true })}
-              >
-                {s ?? 'All'}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() =>
-            setExpandedIds(allExpanded ? new Set() : new Set(rows.map((r) => r.id)))
-          }
-          disabled={rows.length === 0}
-          title={allExpanded ? 'Hide every card’s line items' : 'Show every card’s line items'}
-        >
-          {allExpanded ? 'Collapse all' : 'Expand all'}
-        </button>
       </div>
 
       {importMsg ? (

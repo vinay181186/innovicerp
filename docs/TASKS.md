@@ -92,6 +92,45 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Closed — SO / WO list: frozen header band (2026-08-11)
+
+**Status:** [x] Done. UI only, one file:
+`apps/web/src/modules/sales-orders/routes/list.tsx`. No logic, API, schema or
+routing touched.
+
+**Ask (screenshot supplied as `New Microsoft Word Document.docx`):** freeze the
+page header so the order cards scroll under it.
+
+**Built:** the title + count row, the search / type / Export / Template / Import
+/ + New toolbar and the status-pill row (`All … Cancelled` + `Expand all`) now
+share one `position:sticky; top:0` band with an opaque `--bg` background and a
+bottom border.
+
+**Why `top:0` is the right offset:** `#content` is the app's scroll container
+(`innovic-theme.css` L69 — `flex:1; overflow-y:auto; padding:20px`), so sticky
+resolves against **its** padding box, not the viewport. The band lands flush
+under the topbar; the breadcrumb trail scrolls away behind it, which is why the
+background has to be opaque.
+
+**Deliberately NOT full-bled** with negative side margins: the band and the
+cards are both inset by `#content`'s padding and already line up, and bleeding
+means matching that padding at two breakpoints (20px / 12px under 768px) —
+a mismatch gives the whole app a horizontal scrollbar (the warning already
+written up in `purchase-orders/routes/from-pr.tsx` L52-57).
+
+**Verified:** `pnpm --filter web typecheck` PASS · `lint` PASS. **Not** browser-
+verified — no dev server was running. `git diff -w` is +30/-1; the rest of the
+177-line diff is the re-indent of the wrapped block.
+
+**⚠ Do not run `prettier --write` on this file** — it is not Prettier-clean and
+reformatting it turns a 3-line change into 705 insertions. Tried and reverted.
+
+**Left for the user's call:** the breadcrumb itself still scrolls (freezing it
+is a `Breadcrumbs`/layout change, i.e. all 155 pages), and each expanded card's
+own SO-No. header is not sticky.
+
+---
+
 ## Closed — Density pass 1: panel + table padding (2026-08-10)
 
 **Status:** [x] Done. Four CSS values in `apps/web/src/styles/innovic-theme.css`.
