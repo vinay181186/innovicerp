@@ -3,11 +3,12 @@
 // math + the unit lifecycle (assemble → dispatch → undo) + the manual
 // override path.
 
-import { eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
   activityLog,
+  assemblyUnits,
   bomMasterLines,
   bomMasters,
   itemStockBalances,
@@ -378,5 +379,51 @@ describe('assembly service — listAssemblies', () => {
     expect(row!.orderQty).toBe(5);
     expect(row!.assembledQty).toBe(5);
     expect(row!.status).toBe('done');
+  });
+
+  it('carries BOM name + revision and the component-readiness counters', async () => {
+    // These four fields did not exist on the list payload. Without them the
+    // card could not print legacy's "BOM: <no> Rev <n>", searching by BOM name
+    // matched nothing, and the "Waiting — 3/7" badge had no numbers.
+    const result = await service.listAssemblies(admin);
+    const row = result.items.find((r) => r.soCode === `${TEST_PREFIX}SO-EQ`)!;
+    expect(row.bomCode).toBe(`${TEST_PREFIX}BOM-1`);
+    expect(row.bomName).not.toBeNull();
+    expect(row.bomRevision).not.toBeNull();
+    // Fixture BOM: CHILD-X (need 5, stock 50) + CHILD-Y (need 10, stock 10).
+    // Both fully covered, and each is good for 5 units.
+    expect(row.totalCount).toBe(2);
+    expect(row.readyCount).toBe(2);
+    expect(row.canAssemble).toBe(5);
+  });
+
+  it("reaches 'ready' — the status the list could never return", async () => {
+    // listAssemblies passed a hardcoded 0 as canAssemble into deriveStatus,
+    // which only returns 'ready' when that argument is > 0. So the Ready KPI
+    // tile always read 0, the "ALL READY ✓" badge was dead code, and an SO
+    // with every component in stock was labelled "Waiting" — the one question
+    // this page exists to answer. Nothing caught it because no test asserted
+    // any status other than the one the fixture happened to be in.
+    //
+    // Park the fixture's units so assembledQty drops to 0, which is the only
+    // state where waiting-vs-ready is decided; restore them afterwards.
+    // Park only the LIVE units and restore exactly those — an earlier test
+    // soft-deleted one and its unit_no was reused, so un-deleting everything
+    // resurrects a duplicate and trips assembly_units_so_unit_uniq.
+    const live = await db
+      .select({ id: assemblyUnits.id })
+      .from(assemblyUnits)
+      .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
+    const liveIds = live.map((r) => r.id);
+    await db.update(assemblyUnits).set({ deletedAt: new Date() }).where(inArray(assemblyUnits.id, liveIds));
+    try {
+      const result = await service.listAssemblies(admin);
+      const row = result.items.find((r) => r.soCode === `${TEST_PREFIX}SO-EQ`)!;
+      expect(row.assembledQty).toBe(0);
+      expect(row.canAssemble).toBe(5);
+      expect(row.status).toBe('ready');
+    } finally {
+      await db.update(assemblyUnits).set({ deletedAt: null }).where(inArray(assemblyUnits.id, liveIds));
+    }
   });
 });

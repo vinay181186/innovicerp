@@ -97,12 +97,24 @@ export const assemblyListItemSchema = z.object({
   soCode: z.string(),
   customerName: z.string().nullable(),
   bomCode: z.string().nullable(),
+  /** BOM master name + revision — legacy prints "BOM: <bomNo> Rev <n>" in the
+   *  card header (HTML L28785) and the Excel export keys off the name. */
+  bomName: z.string().nullable(),
+  bomRevision: z.number().int().nullable(),
   partNoText: z.string().nullable(),
   partName: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
   assembledQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
   dueDate: z.string().nullable(),
+  /** Units still buildable from stock on hand — min(floor(finalReady/qtyPerSet))
+   *  across the BOM, the same math getAssemblyTracker does per SO. Was never
+   *  computed for the list, which hardwired 0 and so made `ready` unreachable. */
+  canAssemble: z.number().int().nonnegative(),
+  /** Components fully covered / total components — drives legacy's
+   *  "Waiting — 3/7" badge (HTML L28781). */
+  readyCount: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
   status: z.enum(['waiting', 'ready', 'assembling', 'done']),
 });
 export type AssemblyListItem = z.infer<typeof assemblyListItemSchema>;

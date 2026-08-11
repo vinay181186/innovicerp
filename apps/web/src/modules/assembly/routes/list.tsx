@@ -39,11 +39,10 @@ const STATUS_BADGE_CLASS: Record<StatusKey, string> = {
   done: 'b-teal',
 };
 
-// Legacy badge text (L28778–28781). Legacy's waiting variant reads
-// "Waiting — <readyCount>/<totalCount>", but the /assemblies list payload
-// carries no component-readiness counts (the service never computes them for
-// the list — see service.ts listAssemblies), so the counter is omitted rather
-// than computed in the browser.
+// Legacy badge text (L28778–28781). The waiting variant's "— <ready>/<total>"
+// component counter used to be dropped because the list payload carried no
+// readiness figures; listAssemblies now computes them (batched), so it reads
+// exactly as legacy does.
 function statusBadgeLabel(row: AssemblyListItem): string {
   switch (row.status) {
     case 'ready':
@@ -53,7 +52,7 @@ function statusBadgeLabel(row: AssemblyListItem): string {
     case 'done':
       return `Done ✓ ${row.assembledQty}/${row.orderQty}`;
     case 'waiting':
-      return 'Waiting';
+      return row.totalCount > 0 ? `Waiting — ${row.readyCount}/${row.totalCount}` : 'Waiting';
   }
 }
 
@@ -88,7 +87,11 @@ function AssemblyListPage(): React.JSX.Element {
     return data.items.filter((it) => {
       if (filter !== 'all' && it.status !== filter) return false;
       if (q) {
-        const hay = `${it.soCode} ${it.customerName ?? ''} ${it.bomCode ?? ''} ${it.partName ?? ''}`.toLowerCase();
+        // Legacy matches on soNo + customer + partName + BOM NAME (L28768).
+        // bomName was not in the payload before, so a search for the BOM by
+        // name silently matched nothing.
+        const hay =
+          `${it.soCode} ${it.customerName ?? ''} ${it.bomCode ?? ''} ${it.bomName ?? ''} ${it.partName ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -172,10 +175,21 @@ function AssemblyListPage(): React.JSX.Element {
                             </Link>
                           </td>
                           <td>{row.customerName ?? '—'}</td>
+                          {/* Legacy prints "BOM: <bomNo> Rev <n>" plus the BOM
+                              NAME in the card title (L28784-28785). Both were
+                              absent from the list payload until now. */}
                           <td>
                             <span className="text3" style={{ fontSize: 12 }}>
                               {row.bomCode ?? '—'}
+                              {/* Loose != null on purpose: web and API deploy
+                                  independently, so for a few minutes the old
+                                  API returns no bomRevision at all. Strict
+                                  !== null would print "Rev undefined". */}
+                              {row.bomRevision != null ? ` Rev ${row.bomRevision}` : ''}
                             </span>
+                            {row.bomName ? (
+                              <div style={{ fontSize: 11 }}>{row.bomName}</div>
+                            ) : null}
                           </td>
                           <td style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 600 : undefined }}>
                             {row.dueDate ?? '—'}

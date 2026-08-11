@@ -329,7 +329,12 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       bomIds.length === 0
         ? Promise.resolve([])
         : tx
-            .select({ id: bomMasters.id, bomNo: bomMasters.bomNo })
+            .select({
+              id: bomMasters.id,
+              bomNo: bomMasters.bomNo,
+              bomName: bomMasters.bomName,
+              revision: bomMasters.revision,
+            })
             .from(bomMasters)
             .where(and(inArray(bomMasters.id, bomIds), isNull(bomMasters.deletedAt))),
     ]);
@@ -347,26 +352,50 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
         dispatched: Number(r.dispatched),
       });
     }
-    const bomCodeMap = new Map<string, string>();
-    for (const r of bomCodes) bomCodeMap.set(r.id, r.bomNo);
+    const bomCodeMap = new Map<string, { bomNo: string; bomName: string | null; revision: number | null }>();
+    for (const r of bomCodes) {
+      bomCodeMap.set(r.id, { bomNo: r.bomNo, bomName: r.bomName, revision: r.revision });
+    }
+
+    // ── Component readiness, batched across every SO on the page ──
+    //
+    // This list used to pass a hardcoded 0 as `canAssemble` into deriveStatus,
+    // which only returns 'ready' when that argument is > 0 — so the Ready tile
+    // always read 0, the "ALL READY ✓" badge was dead code, and an SO with
+    // every component in stock was labelled "Waiting". That is the one question
+    // this page exists to answer.
+    //
+    // Same math as getAssemblyTracker: per component
+    // enoughForUnits = floor(max(stock, override) / qtyPerSet), and the SO's
+    // canAssemble is the MIN across components. Batched into three queries for
+    // the whole page (BOM lines, stock, overrides) rather than one round of
+    // them per SO, so adding SOs costs rows, not round-trips.
+    const readiness = await computeListReadiness(tx, companyId, soRows, orderQtyMap);
 
     const items = soRows.map((r) => {
       const orderQty = orderQtyMap.get(r.soId) ?? 0;
       const agg = assembledMap.get(r.soId);
       const assembledQty = agg?.assembled ?? 0;
       const dispatchedQty = agg?.dispatched ?? 0;
+      const bom = r.bomMasterId ? bomCodeMap.get(r.bomMasterId) ?? null : null;
+      const ready = readiness.get(r.soId) ?? { canAssemble: 0, readyCount: 0, totalCount: 0 };
       return {
         soId: r.soId,
         soCode: r.soCode,
         customerName: r.customerName,
-        bomCode: r.bomMasterId ? bomCodeMap.get(r.bomMasterId) ?? null : null,
+        bomCode: bom?.bomNo ?? null,
+        bomName: bom?.bomName ?? null,
+        bomRevision: bom?.revision ?? null,
         partNoText: null,
         partName: null,
         orderQty,
         assembledQty,
         dispatchedQty,
         dueDate: dueDateMap.get(r.soId) ?? null,
-        status: deriveStatus(orderQty, assembledQty, 0),
+        canAssemble: ready.canAssemble,
+        readyCount: ready.readyCount,
+        totalCount: ready.totalCount,
+        status: deriveStatus(orderQty, assembledQty, ready.canAssemble),
       };
     });
 
@@ -672,6 +701,108 @@ async function sumEquipmentLineQty(
     WHERE sales_order_id = ${soId}::uuid AND deleted_at IS NULL
   `);
   return Number((r as unknown as Array<{ q: number }>)[0]?.q ?? 0);
+}
+
+/**
+ * Component readiness for MANY SOs in three queries (BOM lines, stock,
+ * overrides) — the list-page counterpart of the per-SO rollup inside
+ * getAssemblyTracker, which is far too heavy to loop once per row.
+ *
+ * Returns, per SO: how many more units the stock on hand can build, and how
+ * many of its components are fully covered (legacy's "Waiting — 3/7").
+ *
+ * An SO with no BOM, or a BOM with no lines, gets zeroes — matching legacy,
+ * which drops such SOs from the tracker entirely (HTML L28678).
+ */
+async function computeListReadiness(
+  tx: Parameters<typeof withUserContext>[1] extends (tx: infer T) => unknown ? T : never,
+  companyId: string,
+  soRows: Array<{ soId: string; bomMasterId: string | null }>,
+  orderQtyMap: Map<string, number>,
+): Promise<Map<string, { canAssemble: number; readyCount: number; totalCount: number }>> {
+  const out = new Map<string, { canAssemble: number; readyCount: number; totalCount: number }>();
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const withBom = soRows.filter(
+    (r): r is { soId: string; bomMasterId: string } =>
+      r.bomMasterId !== null && UUID_RE.test(r.bomMasterId),
+  );
+  if (withBom.length === 0) return out;
+
+  const bomIds = [...new Set(withBom.map((r) => r.bomMasterId))];
+  const lineRows = await tx
+    .select({
+      bomMasterId: bomMasterLines.bomMasterId,
+      childItemId: bomMasterLines.childItemId,
+      childItemCode: items.code,
+      qtyPerSet: bomMasterLines.qtyPerSet,
+    })
+    .from(bomMasterLines)
+    .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
+    .where(and(inArray(bomMasterLines.bomMasterId, bomIds), isNull(bomMasterLines.deletedAt)));
+  if (lineRows.length === 0) return out;
+
+  const childIds = [...new Set(lineRows.map((l) => l.childItemId))];
+  const soIds = withBom.map((r) => r.soId);
+  const [stockRows, overrideRows] = await Promise.all([
+    tx
+      .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
+      .from(itemStockBalances)
+      .where(
+        and(eq(itemStockBalances.companyId, companyId), inArray(itemStockBalances.itemId, childIds)),
+      ),
+    tx
+      .select({
+        soId: assemblyTracking.salesOrderId,
+        code: assemblyTracking.childItemCode,
+        qty: assemblyTracking.readyQtyOverride,
+      })
+      .from(assemblyTracking)
+      .where(
+        and(
+          eq(assemblyTracking.companyId, companyId),
+          inArray(assemblyTracking.salesOrderId, soIds),
+          isNull(assemblyTracking.deletedAt),
+        ),
+      ),
+  ]);
+
+  const stockMap = new Map<string, number>();
+  for (const r of stockRows) stockMap.set(r.itemId, Number(r.qty));
+  // Overrides are keyed (so, childCode) — the same composite the per-SO path uses.
+  const overrideMap = new Map<string, number>();
+  for (const r of overrideRows) overrideMap.set(`${r.soId}::${r.code}`, r.qty);
+
+  const linesByBom = new Map<string, typeof lineRows>();
+  for (const l of lineRows) {
+    const arr = linesByBom.get(l.bomMasterId);
+    if (arr) arr.push(l);
+    else linesByBom.set(l.bomMasterId, [l]);
+  }
+
+  for (const so of withBom) {
+    const lines = linesByBom.get(so.bomMasterId);
+    if (!lines || lines.length === 0) continue;
+    const unitsRequired = orderQtyMap.get(so.soId) ?? 0;
+    let min = Infinity;
+    let readyCount = 0;
+    for (const l of lines) {
+      const qtyPerSet = Number(l.qtyPerSet);
+      const totalNeed = Math.round(qtyPerSet * unitsRequired);
+      const stockQty = Math.max(0, Math.floor(stockMap.get(l.childItemId) ?? 0));
+      const autoReadyQty = Math.min(stockQty, totalNeed);
+      const overrideQty = overrideMap.get(`${so.soId}::${l.childItemCode ?? '—'}`) ?? 0;
+      const finalReadyQty = Math.max(autoReadyQty, overrideQty);
+      if (finalReadyQty >= totalNeed) readyCount++;
+      const enoughForUnits = qtyPerSet > 0 ? Math.floor(finalReadyQty / qtyPerSet) : 0;
+      if (enoughForUnits < min) min = enoughForUnits;
+    }
+    out.set(so.soId, {
+      canAssemble: min === Infinity ? 0 : Math.max(0, min),
+      readyCount,
+      totalCount: lines.length,
+    });
+  }
+  return out;
 }
 
 async function fetchOverrideMap(

@@ -47,6 +47,8 @@ function AssemblyDetailPage(): React.JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null);
   const [serial, setSerial] = useState('');
   const [assembledBy, setAssembledBy] = useState('');
+  const [assemblyDate, setAssemblyDate] = useState('');
+  const [remarks, setRemarks] = useState('');
 
   if (isLoading) {
     return (
@@ -73,10 +75,16 @@ function AssemblyDetailPage(): React.JSX.Element {
   const onAssemble = (): void => {
     setActionError(null);
     mark.mutate(
-      { serialNo: serial || undefined, assembledBy: assembledBy || undefined },
+      {
+        serialNo: serial || undefined,
+        assembledBy: assembledBy || undefined,
+        assemblyDate: assemblyDate || undefined,
+        remarks: remarks || undefined,
+      },
       {
         onSuccess: () => {
           setSerial('');
+          setRemarks('');
         },
         onError: (e) => setActionError(e instanceof Error ? e.message : 'Mark failed'),
       },
@@ -166,6 +174,55 @@ function AssemblyDetailPage(): React.JSX.Element {
               placeholder="optional"
             />
           </div>
+          {/* Assembly Date + Remarks (legacy L28947, L28949). The API has
+              always accepted and persisted both — markUnitAssembled writes
+              them at service.ts:463,465 — but this form never sent them, so
+              every unit was stamped "today" with no way to back-date one, and
+              the Remarks column in the units table below could only ever
+              print "—". Fields only; no schema or service change needed. */}
+          <div>
+            <label
+              className="text3"
+              style={{
+                display: 'block',
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: 4,
+              }}
+            >
+              Assembly date
+            </label>
+            <input
+              type="date"
+              className="innovic-input"
+              style={{ width: 150 }}
+              value={assemblyDate}
+              onChange={(e) => setAssemblyDate(e.target.value)}
+              title="Defaults to today when left blank"
+            />
+          </div>
+          <div>
+            <label
+              className="text3"
+              style={{
+                display: 'block',
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: 4,
+              }}
+            >
+              Remarks
+            </label>
+            <input
+              className="innovic-input"
+              style={{ width: 200 }}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="optional"
+            />
+          </div>
           <button
             type="button"
             className="btn btn-primary btn-sm"
@@ -190,6 +247,23 @@ function AssemblyDetailPage(): React.JSX.Element {
             {undo.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
             Undo Last Unit
           </button>
+        </div>
+
+        {/* Legacy's action row (L28878-28880) carried three navigation buttons
+            beside assemble/undo. Both target screens already exist here, so
+            these are links, not new features. "Dispatch Register" points at
+            Customer Dispatch — the new ERP's name for that register. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <Link to="/planning" className="btn btn-ghost btn-sm" title="Plan this equipment BOM's parts">
+            📦 BOM Planning
+          </Link>
+          <Link
+            to="/customer-dispatches"
+            className="btn btn-ghost btn-sm"
+            title="Open the Customer Dispatch register"
+          >
+            🚚 Dispatch Register
+          </Link>
         </div>
       </div>
 
