@@ -248,6 +248,36 @@ Notes:
 - Roll back deployment.
 - Fix migration locally, test in staging, redeploy.
 
+### `column "x" does not exist` → every page in a module 500s
+
+The single most likely cause of a whole module going 500 at once. A migration was **committed but
+never applied** — `schema.ts` and the services reference a column the live DB doesn't have, so every
+query in that module fails at the driver.
+
+Nothing applies migrations automatically: not CI, not the Railway deploy. `apply-sql.ts` is a manual
+step (see Database — Migrations).
+
+Diagnose — run the module's test suite; the Postgres error names the missing column verbatim:
+
+```
+pnpm.cmd --filter api exec dotenv -e ../../.env.local -- vitest run src/modules/<module>
+```
+
+Find the file that adds it (`grep -rl '<column>' apps/api/src/db/migrations/`), then apply it:
+
+```
+pnpm.cmd --filter api exec dotenv -e ../../.env.local -- tsx src/db/apply-sql.ts src/db/migrations/NNNN_<name>.sql
+```
+
+Re-run the suite to confirm. No API restart is needed — the column appears mid-connection.
+
+On Windows, use `pnpm.cmd`, not `pnpm`: PowerShell's execution policy blocks `pnpm.ps1` with
+`running scripts is disabled on this system`. The `.cmd` shim isn't a PowerShell script, so it runs.
+
+Precedent: `0092_assembly_batch_qty.sql` shipped in commit `9dead53` unapplied; the Assembly Tracker
+list, detail, assemble, dispatch and undo all 500'd on `column "qty" does not exist` until it was
+applied by hand.
+
 ## API Error Codes — Decoder
 
 Every error response from the Fastify API has the shape `{ error: <code>, message: <msg>, details?: <obj> }`. The frontend surfaces these via TanStack Query `onError` → toast notifications; `details` is logged to the console but not shown to users.
@@ -397,9 +427,13 @@ now mis-numbers into a filename collision and `migrate` relies on the removed jo
 
 ### Authoring a migration
 
-Create the next-numbered `apps/api/src/db/migrations/NNNN_<name>.sql` by hand — current highest is
-`0062`, so next is `0063`. Write plain SQL (prefer `CREATE OR REPLACE` / `… IF [NOT] EXISTS` so
-re-runs are safe), and keep `schema.ts` in sync by hand so the ORM types match the DB.
+Create the next-numbered `apps/api/src/db/migrations/NNNN_<name>.sql` by hand — check the directory
+for the current highest and add one. Write plain SQL (prefer `CREATE OR REPLACE` / `… IF [NOT]
+EXISTS` so re-runs are safe), and keep `schema.ts` in sync by hand so the ORM types match the DB.
+
+**Apply it before you commit the code that depends on it.** Nothing in CI or the Railway deploy
+runs migrations — a committed-but-unapplied file ships code that queries a column the DB doesn't
+have. See "`column \"x\" does not exist` → every page in a module 500s" under Common Issues.
 
 ### Applying hand-written migrations (`apply-sql.ts`)
 
