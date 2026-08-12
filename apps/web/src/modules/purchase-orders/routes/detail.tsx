@@ -38,7 +38,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -175,7 +175,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <div>
             <div
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 800 }}
+              style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 800 }}
             >
               {detail.code}
             </div>
@@ -319,7 +319,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">▸ PO Line Items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>PO Line Items ({detail.lines.length})</div>
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -353,7 +353,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <RelatedDocsPanel module="purchase-orders" id={detail.id} />
+      <RelatedDocsTabs module="purchase-orders" id={detail.id} />
 
       {/* Approve modal */}
       {approveOpen ? (
@@ -606,22 +606,22 @@ function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
   const pending = Math.max(0, l.qty - l.receivedQty);
   return (
     <tr>
-      <td className="td-ctr mono fw-700">{l.lineNo}</td>
-      <td className="td-code" style={{ color: 'var(--purple)' }}>
+      <td className="mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+      <td className="td-code">
         {l.itemCode ?? l.itemCodeText ?? '—'}
       </td>
-      <td>{l.itemName}</td>
-      <td className="mono" style={{ fontSize: 10, color: 'var(--cyan)' }}>
+      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
+      <td className="mono text2" style={{ fontSize: 10 }}>
         {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
       </td>
-      <td className="td-ctr mono fw-700">{l.qty}</td>
-      <td className="td-ctr mono" style={{ fontSize: 11 }}>
+      <td className="mono fw-700">{l.qty}</td>
+      <td className="mono" style={{ fontSize: 11 }}>
         {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
       </td>
-      <td className="td-ctr mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
-      <td className="td-ctr mono green fw-700">{l.receivedQty}</td>
+      <td className="mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+      <td className="mono green fw-700">{l.receivedQty}</td>
       <td
-        className="td-ctr mono"
+        className="mono"
         style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}
       >
         {pending}
@@ -694,7 +694,7 @@ function VendorAndPoDetails(props: {
         </div>
         <div style={{ fontSize: 12 }}>
           Date: <b>{detail.poDate}</b> | PR:{' '}
-          <b className="cyan">{detail.prCodeText ?? '—'}</b>
+          <b style={{ color: 'var(--purple)' }}>{detail.prCodeText ?? '—'}</b>
         </div>
         {detail.remarks ? (
           <div className="text3" style={{ fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap' }}>
@@ -730,7 +730,7 @@ function SummaryTiles(props: {
         marginBottom: 16,
       }}
     >
-      <Tile label="Lines" value={String(props.lineCount)} color="var(--cyan)" />
+      <Tile label="Lines" value={String(props.lineCount)} color="var(--blue)" />
       <Tile label="Total Qty" value={String(props.totalQty)} />
       <Tile label="Received" value={String(props.receivedQty)} color="var(--green)" />
       <Tile label="Subtotal" value={`₹${props.totalValue.toFixed(2)}`} />
@@ -769,25 +769,25 @@ function Tile(props: { label: string; value: string; color?: string }): React.JS
 function DetailGrid(props: { detail: PurchaseOrderDetail }): React.JSX.Element {
   const { detail } = props;
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="Type" value={detail.poType.replaceAll('_', ' ')} />
-      <Pair label="Due date" value={detail.dueDate ?? '—'} />
-      <Pair label="Tax type" value={detail.taxType ?? '—'} />
-      <Pair
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
+      <StripItem label="Type" value={detail.poType.replaceAll('_', ' ')} />
+      <StripItem label="Due date" value={detail.dueDate ?? '—'} />
+      <StripItem label="Tax type" value={detail.taxType ?? '—'} />
+      <StripItem
         label="GST split"
         value={`SGST ${detail.sgstPct}% · CGST ${detail.cgstPct}% · IGST ${detail.igstPct}%`}
       />
-      <Pair label="Approved at" value={detail.approvedAt ?? '—'} />
-      <Pair label="Rejected by" value={detail.rejectedBy ?? '—'} />
-      <Pair label="Rejected at" value={detail.rejectedAt ?? '—'} />
-      <Pair label="Rejection reason" value={detail.rejectionReason ?? '—'} />
+      <StripItem label="Approved at" value={detail.approvedAt ?? '—'} />
+      <StripItem label="Rejected by" value={detail.rejectedBy ?? '—'} />
+      <StripItem label="Rejected at" value={detail.rejectedAt ?? '—'} />
+      <StripItem label="Rejection reason" value={detail.rejectionReason ?? '—'} />
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="form-grp">
+    <div style={{ minWidth: 0 }}>
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
