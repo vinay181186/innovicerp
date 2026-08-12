@@ -477,10 +477,32 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
         value={<span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>}
       />
       <StripItem label="Cost center" value={detail.costCenter ?? '—'} />
-      <StripItem
-        label="BOM master"
-        value={detail.bomMasterId ? `${detail.bomMasterId} (${detail.bomStatus ?? '—'})` : '—'}
-      />
+      {detail.type !== 'component_manufacturing' ? (
+        <StripItem
+          label="BOM master"
+          value={
+            detail.bomMasterId ? (
+              <>
+                <Link
+                  to="/bom-masters/$id"
+                  params={{ id: detail.bomMasterId }}
+                  className="td-code"
+                  style={{ color: 'var(--blue)' }}
+                >
+                  {detail.bomMasterCode ?? detail.bomMasterId}
+                </Link>
+                {detail.bomStatus ? (
+                  <span className="text3" style={{ marginLeft: 6, fontSize: 11 }}>
+                    ({detail.bomStatus})
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              '—'
+            )
+          }
+        />
+      ) : null}
       <StripItem
         label="SO raised by"
         value={

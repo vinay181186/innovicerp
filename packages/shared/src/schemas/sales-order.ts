@@ -113,6 +113,11 @@ export type SalesOrder = z.infer<typeof salesOrderSchema>;
 export const salesOrderDetailSchema = salesOrderSchema.extend({
   lines: z.array(salesOrderLineSchema),
   milestones: z.array(soMilestoneSchema).default([]),
+  // BOM master document NUMBER (bom_masters.bom_no) resolved from bomMasterId,
+  // null when unassigned. Only the detail read (getSalesOrder) populates it; the
+  // UI shows it as a clickable link to the BOM master (and only for non-component
+  // SOs — component orders have no equipment BOM).
+  bomMasterCode: z.string().nullable().optional(),
   // Storage path of the latest active client-PO file in file_registry (ISSUE-013),
   // null when none uploaded. UI renders a 📎 view link + an upload control.
   clientPoFilePath: z.string().nullable().default(null),

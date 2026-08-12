@@ -426,9 +426,29 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
 
     const createdByName = await resolveUserName(tx, header.createdBy);
 
+    // BOM master NUMBER (bom_masters.bom_no) for the header's assigned BOM.
+    // bom_master_id is stored as text; compare on id::text so a non-UUID legacy
+    // value can never break the cast. Null when unassigned or not found.
+    let bomMasterCode: string | null = null;
+    if (header.bomMasterId) {
+      const bomRows = await tx
+        .select({ bomNo: bomMasters.bomNo })
+        .from(bomMasters)
+        .where(
+          and(
+            sql`${bomMasters.id}::text = ${header.bomMasterId}`,
+            eq(bomMasters.companyId, companyId),
+            isNull(bomMasters.deletedAt),
+          ),
+        )
+        .limit(1);
+      bomMasterCode = bomRows[0]?.bomNo ?? null;
+    }
+
     return {
       ...toSalesOrder(header),
       createdByName,
+      bomMasterCode,
       lines: lineRows.map((r) => ({
         ...toSalesOrderLine(r.row, r.itemCode),
         billedQty: billedByLine.get(r.row.id) ?? 0,
