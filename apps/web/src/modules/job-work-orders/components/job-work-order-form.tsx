@@ -473,7 +473,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   <button
                     type="button"
                     onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                    style={{ color: 'var(--cyan)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    style={{ color: 'var(--blue)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                   >
                     👁 View
                   </button>
@@ -509,7 +509,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             />
             {poFileName ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <span className="mono" style={{ color: 'var(--cyan)' }}>📎 {poFileName}</span>
+                <span className="mono" style={{ color: 'var(--blue)' }}>📎 {poFileName}</span>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={clearPoFile} aria-label="Remove PO document">✕</button>
               </div>
             ) : (
