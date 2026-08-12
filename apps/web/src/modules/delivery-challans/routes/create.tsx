@@ -188,7 +188,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       </Link>
 
       <div className="panel" style={{ padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--cyan)', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 12 }}>
           ➕ Create OSP Delivery Challan
         </div>
 
@@ -211,7 +211,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             <div>
               <span style={{ fontSize: 9, color: 'var(--text3)' }}>PO NO.</span>
               <br />
-              <b className="mono" style={{ color: 'var(--cyan)' }}>
+              <b className="mono" style={{ color: 'var(--blue)' }}>
                 {po.code}
               </b>
             </div>
@@ -269,38 +269,38 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           </div>
         </div>
 
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', margin: '14px 0 6px' }}>
+        <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '14px 0 6px' }}>
           Items to Send
         </div>
         <div className="tbl-wrap" style={{ marginBottom: 14 }}>
-          <table className="innovic-table">
+          <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th>#</th>
-                <th>Item Code</th>
-                <th>Name</th>
-                <th style={{ textAlign: 'right' }}>PO Qty</th>
-                <th style={{ textAlign: 'right', color: 'var(--green)' }}>Send Now ★</th>
-                <th>Material</th>
-                <th>Remarks</th>
+                <th style={{ width: '5%' }}>#</th>
+                <th style={{ width: '15%' }}>Item Code</th>
+                <th style={{ width: '22%' }}>Name</th>
+                <th style={{ width: '8%' }}>PO Qty</th>
+                <th style={{ width: '12%', color: 'var(--green)' }}>Send Now ★</th>
+                <th style={{ width: '17%' }}>Material</th>
+                <th style={{ width: '21%' }}>Remarks</th>
               </tr>
             </thead>
             <tbody>
               {lineDrafts.map((l, idx) => (
                 <tr key={l.purchaseOrderLineId}>
-                  <td className="mono">{idx + 1}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>{idx + 1}</td>
                   <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
                     {l.itemCodeText}
                   </td>
                   <td>{l.itemNameText}</td>
-                  <td className="td-right mono">{l.poLineQty}</td>
-                  <td className="td-right">
-                      <input
-                        type="number"
-                        step="1"
-                        min={0}
-                        max={l.poLineQty}
-                        className="innovic-input"
+                  <td className="mono">{l.poLineQty}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step="1"
+                      min={0}
+                      max={l.poLineQty}
+                      className="innovic-input"
                       value={l.shipQty}
                       onChange={(e) =>
                         setLineDrafts((prev) => {
@@ -309,12 +309,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                           return next;
                         })
                       }
-                      style={{
-                        width: 80,
-                        textAlign: 'right',
-                        fontWeight: 700,
-                        color: 'var(--green)',
-                      }}
+                      style={{ width: '100%', fontWeight: 700, color: 'var(--green)' }}
                     />
                   </td>
                   <td>
@@ -329,7 +324,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                         })
                       }
                       placeholder="optional"
-                      style={{ width: 130 }}
+                      style={{ width: '100%' }}
                     />
                   </td>
                   <td>
@@ -345,7 +340,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                         })
                       }
                       placeholder="optional"
-                      style={{ width: 200 }}
+                      style={{ width: '100%' }}
                     />
                   </td>
                 </tr>
