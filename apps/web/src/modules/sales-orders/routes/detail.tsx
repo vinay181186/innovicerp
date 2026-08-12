@@ -86,7 +86,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
               {detail.code}
             </div>
             <div
@@ -190,7 +190,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {totalValue > 0 ? (
@@ -212,8 +212,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <th>Drawing</th>
                 <th className="td-right">Qty</th>
                 <th className="td-right" style={{ color: 'var(--green)' }}>Dispatched</th>
-                <th className="td-right" style={{ color: 'var(--cyan)' }}>Billed</th>
-                <th className="td-right" style={{ color: 'var(--amber)' }}>Pending</th>
+                <th className="td-right" style={{ color: 'var(--green)' }}>Billed</th>
+                <th className="td-right" style={{ color: 'var(--red)' }}>Pending</th>
                 <th>UOM</th>
                 <th className="td-right">Rate</th>
                 <th>Due date</th>
@@ -405,11 +405,11 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
   const { line: l } = props;
   return (
     <tr>
-      <td className="mono">{l.lineNo}</td>
+      <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
       <td className="mono" style={{ fontSize: 11 }}>
         {l.itemCode ?? l.itemCodeText ?? '—'}
       </td>
-      <td>{l.partName}</td>
+      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.partName}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
@@ -418,10 +418,10 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
       </td>
       <td className="td-right mono">{l.orderQty}</td>
       <td className="td-right mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>
-      <td className="td-right mono" style={{ color: 'var(--cyan)' }}>{l.billedQty}</td>
+      <td className="td-right mono" style={{ color: 'var(--green)' }}>{l.billedQty}</td>
       <td
         className="td-right mono fw-700"
-        style={{ color: l.orderQty - l.billedQty > 0 ? 'var(--amber)' : 'var(--green)' }}
+        style={{ color: l.orderQty - l.billedQty > 0 ? 'var(--red)' : 'var(--green)' }}
       >
         {l.orderQty - l.billedQty}
       </td>
@@ -445,8 +445,8 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
     <div className="form-grid form-grid-3">
       <Pair label="Type" value={detail.type.replaceAll('_', ' ')} />
       <Pair label="Date" value={detail.soDate} />
-      <Pair label="GST %" value={`${detail.gstPercent}%`} />
-      <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
+      <Pair label="GST %" value={<span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>} />
+      <Pair label="Client PO" value={detail.clientPoNo ? <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{detail.clientPoNo}</span> : '—'} />
       <Pair label="Cost center" value={detail.costCenter ?? '—'} />
       <Pair
         label="BOM master"
