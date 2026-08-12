@@ -19,7 +19,7 @@ import {
   type SoType,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
@@ -51,7 +51,10 @@ import {
 // left-aligned where legacy centres them. Carry the class through the column def
 // so the flexRender loop puts it where legacy has it. Mirrors the augmentation
 // in items/routes/list.tsx.
-const PAGE_SIZE = 25;
+// No pagination — the SO/WO list loads all matching orders into one scrolling
+// list (user decision: scroll, not Prev/Next pages). One fetch, offset 0. The
+// API caps `limit` at 1000; the count line flags the rare case of a larger set.
+const LIST_LIMIT = 1000;
 
 /** One cell of the card's metric strip — big number over a small caps label,
  *  the shape the reference uses for TOTAL QTY / JC QTY / LINES. */
@@ -156,10 +159,10 @@ function SalesOrdersListPage(): React.JSX.Element {
       search: search.search,
       status: search.status,
       type: search.type,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
-    [search.search, search.status, search.type, search.page],
+    [search.search, search.status, search.type],
   );
 
   const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
@@ -287,8 +290,6 @@ function SalesOrdersListPage(): React.JSX.Element {
   };
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
 
   return (
     <div>
@@ -595,13 +596,14 @@ function SalesOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>{total === 0 ? 'No sales orders' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage <= 1} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }), replace: true })}><ChevronLeft size={14} /> Prev</button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>Page {currentPage} / {totalPages}</span>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }), replace: true })}>Next <ChevronRight size={14} /></button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
+        <span>
+          {total === 0
+            ? 'No sales orders'
+            : total > LIST_LIMIT
+              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+              : `Showing all ${total} sales order${total === 1 ? '' : 's'}`}
+        </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
         💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.

@@ -273,7 +273,7 @@ export const listSalesOrdersQuerySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  limit: z.coerce.number().int().positive().max(200).default(50),
+  limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListSalesOrdersQuery = z.infer<typeof listSalesOrdersQuerySchema>;
