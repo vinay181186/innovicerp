@@ -4,7 +4,7 @@ import type { JobWorkOrderDetail, JobWorkOrderLine, JwDocumentFile } from '@inno
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import {
   jwDocSignedUrl,
@@ -82,7 +82,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
               {detail.code}
             </div>
             <div
@@ -168,7 +168,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Line items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {lineValueTotal > 0 ? (
@@ -196,10 +196,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>Part name</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th className="td-right">Qty</th>
+                <th>Qty</th>
                 <th>UOM</th>
-                <th className="td-right" style={{ color: 'var(--green)' }}>Rate ₹</th>
-                <th className="td-right" style={{ color: 'var(--green)' }}>Amount</th>
+                <th style={{ color: 'var(--green)' }}>Rate ₹</th>
+                <th style={{ color: 'var(--green)' }}>Amount</th>
                 <th>Due</th>
                 <th>Status</th>
               </tr>
@@ -221,7 +221,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 
       <JwDocumentsPanel jwId={detail.id} canDelete={me?.role !== 'viewer'} />
 
-      <RelatedDocsPanel module="job-work-orders" id={detail.id} />
+      <RelatedDocsTabs module="job-work-orders" id={detail.id} />
     </div>
   );
 }
@@ -333,21 +333,21 @@ function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
   const { line: l } = props;
   return (
     <tr>
-      <td className="mono">{l.lineNo}</td>
+      <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
       <td className="mono" style={{ fontSize: 11 }}>
         {l.itemCodeText ?? (l.itemId ? '— linked —' : '—')}
       </td>
-      <td>{l.partName}</td>
+      <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.partName}</td>
       <td className="text3" style={{ fontSize: 11 }}>
         {l.material ?? '—'}
       </td>
       <td className="mono" style={{ fontSize: 11 }}>
         {l.drawingNo ?? '—'}
       </td>
-      <td className="td-right mono">{l.orderQty}</td>
+      <td className="mono">{l.orderQty}</td>
       <td>{l.uom}</td>
-      <td className="td-right mono" style={{ color: 'var(--green)' }}>{Number(l.rate).toFixed(2)}</td>
-      <td className="td-right mono fw-700" style={{ color: 'var(--green)' }}>
+      <td className="mono" style={{ color: 'var(--green)' }}>{Number(l.rate).toFixed(2)}</td>
+      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
         {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
@@ -362,24 +362,70 @@ function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
 
 function DetailGrid(props: { detail: JobWorkOrderDetail }): React.JSX.Element {
   const { detail } = props;
+  // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
+  // strip stays one compact band. Presentation only — no data change.
+  const [showAllRemarks, setShowAllRemarks] = useState(false);
+  const remarks = detail.remarks ?? '';
+  const remarksLong = remarks.length > 80;
+  const toggleStyle: React.CSSProperties = {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    marginLeft: 4,
+    color: 'var(--blue)',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
+  };
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="Date" value={detail.jwDate} />
-      <Pair label="Client PO" value={detail.clientPoNo ?? '—'} />
-      <Pair label="Status" value={<SoStatusBadge status={detail.status} />} />
-      <Pair label="🟢 Client Material" value={detail.clientMaterial ?? '—'} />
-      <Pair label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
-      <div className="form-grp form-full">
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
+      <StripItem label="Date" value={<span className="mono">{detail.jwDate}</span>} />
+      <StripItem
+        label="Client PO"
+        value={
+          detail.clientPoNo ? (
+            <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+              {detail.clientPoNo}
+            </span>
+          ) : (
+            '—'
+          )
+        }
+      />
+      <StripItem label="Status" value={<SoStatusBadge status={detail.status} />} />
+      <StripItem label="🟢 Client Material" value={detail.clientMaterial ?? '—'} />
+      <StripItem label="Material Qty" value={String(Number(detail.clientMaterialQty ?? 0))} />
+      <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
+        <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
+          {remarks === '' ? (
+            '—'
+          ) : remarksLong && !showAllRemarks ? (
+            <>
+              {`${remarks.slice(0, 80).trimEnd()}…`}
+              <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
+                more
+              </button>
+            </>
+          ) : (
+            <>
+              {remarks}
+              {remarksLong ? (
+                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(false)}>
+                  less
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="form-grp">
+    <div style={{ minWidth: 0 }}>
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>

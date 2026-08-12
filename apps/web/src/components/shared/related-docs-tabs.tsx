@@ -1,15 +1,17 @@
-// SO-detail-only "Related Documents" view.
+// Related Documents shown as clickable category tabs — the SO Master detail
+// treatment, generalized so any document detail page can reuse it.
 //
-// Same data as the shared <RelatedDocsPanel variant="full">, but presented as
-// clickable category tabs (Client / Planning / Job Cards / Purchase Orders — one
-// tab per bucket that actually has documents, so nothing is ever hidden). The
-// selected tab's documents show in the table below; the 🕒 Document Timeline is
-// kept always-visible underneath. This is SO-detail-only by design — every other
-// detail page keeps RelatedDocsPanel's stacked-sections look untouched.
+// Same data as <RelatedDocsPanel variant="full">, but presented as tabs: one tab
+// per bucket that actually has documents (Client / Planning / Job Cards /
+// Purchase Orders / … — whatever the module's /related endpoint returns), so
+// nothing is ever hidden. The selected tab's docs render in a table below, and
+// the 🕒 Document Timeline stays always-visible underneath.
 //
-// No new API call: it reuses the exact ['related-docs','sales-orders',id] query
-// the panel already caches, and the panel's own renderCode/StatusBadge/Timeline
-// helpers, so links, badges and the timeline stay identical to before.
+// No new API call: it reuses the exact ['related-docs', module, id] query that
+// RelatedDocsPanel caches, plus that panel's renderCode/StatusBadge/Timeline
+// helpers, so links, badges and the timeline stay identical to before. Any
+// module whose GET /<module>/:id/related returns the shared DocumentTraceability
+// shape (SO, JWSO, …) can drop this in.
 
 import type { DocumentTraceability, RelatedSection } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -17,10 +19,16 @@ import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { StatusBadge, Timeline, renderCode } from '@/components/shared/related-docs-panel';
 
-export function SoRelatedTabs({ id }: { id: string }): React.JSX.Element | null {
+export function RelatedDocsTabs({
+  module,
+  id,
+}: {
+  module: string;
+  id: string;
+}): React.JSX.Element | null {
   const { data, isLoading, isError } = useQuery<DocumentTraceability>({
-    queryKey: ['related-docs', 'sales-orders', id],
-    queryFn: () => apiFetch<DocumentTraceability>(`/sales-orders/${id}/related`),
+    queryKey: ['related-docs', module, id],
+    queryFn: () => apiFetch<DocumentTraceability>(`/${module}/${id}/related`),
     enabled: Boolean(id),
   });
   // Which tab is open. Null until the user clicks — the render then defaults to

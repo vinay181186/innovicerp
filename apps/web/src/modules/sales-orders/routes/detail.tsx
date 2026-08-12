@@ -9,9 +9,9 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
-import { SoRelatedTabs } from '../components/so-related-tabs';
 
 /** Open a stored SO document (PO doc / email ref) via a short-lived signed URL,
  *  inline in a new tab — the signed URL carries no attachment disposition, so
@@ -265,7 +265,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <SoRelatedTabs id={detail.id} />
+      <RelatedDocsTabs module="sales-orders" id={detail.id} />
     </div>
   );
 }
