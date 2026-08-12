@@ -26,7 +26,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
@@ -35,7 +35,10 @@ import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
 
-const PAGE_SIZE = 25;
+// No pagination — mirror the SO/WO list: load all matching JWSOs in one fetch
+// and scroll (no Prev/Next). Uses the JW list-query cap (200); the count line
+// flags the rare larger set instead of silently hiding rows.
+const LIST_LIMIT = 200;
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -85,10 +88,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       status: search.status,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
-    [search.search, search.status, search.page],
+    [search.search, search.status],
   );
 
   const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
@@ -121,7 +124,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         // React chevron is what toggles expand (the row itself opens the JWSO).
         header: 'JWSO No.',
         accessorKey: 'code',
-        meta: { tdClass: 'td-code cyan' },
+        meta: { tdClass: 'td-code' },
         cell: ({ row }) => {
           const isExpanded = expandedId === row.original.jwId;
           return (
@@ -134,7 +137,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
-              <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} style={{ color: 'var(--cyan)', textDecoration: 'none' }}>
+              <Link to="/job-work-orders/$id" params={{ id: row.original.jwId }} style={{ color: 'var(--blue)', fontWeight: 800, textDecoration: 'none' }}>
                 {row.original.code}
               </Link>
             </span>
@@ -146,7 +149,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         accessorKey: 'lineCount',
         meta: { tdClass: 'td-ctr mono' },
         cell: ({ row }) => (
-          <span style={{ fontSize: 11, color: 'var(--cyan)' }}>
+          <span style={{ fontSize: 11, color: 'var(--blue)' }}>
             {row.original.lineCount} line{row.original.lineCount > 1 ? 's' : ''}
           </span>
         ),
@@ -237,8 +240,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     onSortingChange: setSorting,
   });
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
 
   return (
     <div>
@@ -301,13 +302,14 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
-        <span>{total === 0 ? 'No JWSOs' : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}</span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage <= 1} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }), replace: true })}><ChevronLeft size={14} /> Prev</button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>Page {currentPage} / {totalPages}</span>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={currentPage >= totalPages} onClick={() => void navigate({ search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }), replace: true })}>Next <ChevronRight size={14} /></button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
+        <span>
+          {total === 0
+            ? 'No JWSOs'
+            : total > LIST_LIMIT
+              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+              : `Showing all ${total} JWSO${total === 1 ? '' : 's'}`}
+        </span>
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
         💡 Click a row to open the JWSO. Click the chevron to expand its line items inline.
@@ -329,7 +331,7 @@ function JwExpandedPanel({ jwId, canWrite }: { jwId: string; canWrite: boolean }
 function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: boolean }): React.JSX.Element {
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
-      <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
+      <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
       <table className="innovic-table" style={{ width: '100%', margin: 0 }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
@@ -344,9 +346,9 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
           ) : (
             jw.lines.map((l) => (
               <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{l.lineNo}</td>
-                <td className="td-code" style={{ color: 'var(--text2)' }}>{l.itemCodeText ?? '—'}</td>
-                <td>{l.partName}</td>
+                <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
+                <td className="td-code" style={{ color: 'var(--text)' }}>{l.itemCodeText ?? '—'}</td>
+                <td style={{ color: 'var(--blue)', fontWeight: 600 }}>{l.partName}</td>
                 <td className="text2" style={{ fontSize: 11 }}>{l.material ?? '—'}</td>
                 <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{l.drawingNo ?? '—'}</td>
                 <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
