@@ -80,7 +80,36 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                   <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                     {op.opType}
                   </td>
-                  <td className="td-ctr green mono fw-700">{op.completedQty}</td>
+                  {/* Completed count. A QC / qc_required step records its
+                      throughput as qc_accepted_qty (via `qc` logs), NOT as
+                      completed_qty (which only counts `complete` machining
+                      logs and is always 0 on a pure QC op). Showing
+                      completedQty on those rows made an inspection that had
+                      passed every piece read as "0 completed"
+                      (IN-JC-26-00093 Op2). Show the accepted count there, with
+                      a red ✗ marker for any rejected. */}
+                  <td className="td-ctr green mono fw-700">
+                    {op.opType === 'qc' || op.qcRequired ? (
+                      <>
+                        {op.qcAcceptedQty}
+                        {op.qcRejectedQty > 0 ? (
+                          <span
+                            style={{
+                              color: 'var(--red)',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              marginLeft: 3,
+                            }}
+                            title="Rejected at inspection"
+                          >
+                            ✗{op.qcRejectedQty}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      op.completedQty
+                    )}
+                  </td>
                   <td className="td-ctr">
                     {/* pending_qty (0087), not `available`. On a QC op
                         `available` is input − op_log completes, and a QC op
