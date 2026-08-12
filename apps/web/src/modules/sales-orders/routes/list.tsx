@@ -478,7 +478,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                     to="/sales-orders/$id"
                     params={{ id: so.id }}
                     className="td-code"
-                    style={{ color: 'var(--cyan)', fontWeight: 800, fontSize: 13 }}
+                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
                     title="Open the SO Master detail page"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -766,11 +766,11 @@ function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
       {/* Preview header. The row no longer navigates, so the preview carries its
           own way through to the full record — same route the SO code uses. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>▸ LINE ITEMS — {so.code}</div>
+        <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>▸ LINE ITEMS — {so.code}</div>
         <Link
           to="/sales-orders/$id"
           params={{ id: so.id }}
-          style={{ fontSize: 11, color: 'var(--cyan)' }}
+          style={{ fontSize: 11, color: 'var(--blue)' }}
           onClick={(e) => e.stopPropagation()}
         >
           Open full detail →
@@ -794,10 +794,10 @@ function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
               const balance = Math.max(0, l.orderQty - l.dispatchedQty);
               return (
                 <tr key={l.id} style={{ background: 'var(--bg)' }}>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{l.lineNo}</td>
+                  <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
                   <td className="mono" style={{ fontSize: 12, color: 'var(--purple)', fontWeight: 700 }}>{l.clientPoLineNo ?? '—'}</td>
-                  <td className="td-code" style={{ color: 'var(--text2)' }}>{l.itemCode ?? l.itemCodeText ?? '—'}</td>
-                  <td>{l.partName}</td>
+                  <td className="td-code" style={{ color: 'var(--text)' }}>{l.itemCode ?? l.itemCodeText ?? '—'}</td>
+                  <td style={{ color: 'var(--blue)', fontWeight: 600 }}>{l.partName}</td>
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
                   <td className="td-ctr mono" style={{ fontSize: 11 }}>
                     <span style={{ color: l.jcQty >= l.orderQty ? 'var(--green)' : l.jcQty > 0 ? 'var(--amber)' : 'var(--text3)' }}>{l.jcQty}</span>
