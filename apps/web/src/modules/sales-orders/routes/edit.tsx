@@ -81,27 +81,24 @@ function SalesOrderNewPage(): React.JSX.Element {
   };
 
   return (
-    <div>
-      <Link to="/sales-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Sales Orders
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            {/* Legacy addSO L12425 modal title. */}
-            <div className="panel-title">New SO / WO</div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="create"
-            onSubmit={onSubmit}
-            onPoFileChange={(f) => { poFileRef.current = f; }}
-            onEmailFileChange={(f) => { emailFileRef.current = f; }}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/sales-orders' })}
-          />
-        </div>
+    <div className="panel">
+      <div className="panel-body">
+        <SalesOrderForm
+          mode="create"
+          headerBack={
+            <Link to="/sales-orders" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          }
+          /* Legacy addSO L12425 modal title. */
+          headerTitle="New SO / WO"
+          headerCrumb="Sales & CRM › SO Master › New"
+          onSubmit={onSubmit}
+          onPoFileChange={(f) => { poFileRef.current = f; }}
+          onEmailFileChange={(f) => { emailFileRef.current = f; }}
+          submitError={submitError}
+          onCancel={() => void navigate({ to: '/sales-orders' })}
+        />
       </div>
     </div>
   );
@@ -169,34 +166,24 @@ function SalesOrderEditPage(): React.JSX.Element {
   }
 
   return (
-    <div>
-      <Link
-        to="/sales-orders/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to SO
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            {/* Legacy _editFullSO L12549 modal title — this route is the
-                all-lines editor, so it mirrors that title, not editSOLine's. */}
-            <div className="panel-title">
-              Edit SO — {detail.code} ({detail.lines.length} lines)
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <SalesOrderForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/sales-orders/$id', params: { id } })}
-          />
-        </div>
+    <div className="panel">
+      <div className="panel-body">
+        <SalesOrderForm
+          mode="edit"
+          detail={detail}
+          headerBack={
+            <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          }
+          /* Legacy _editFullSO L12549 modal title — this route is the all-lines
+             editor, so it mirrors that title, not editSOLine's. */
+          headerTitle={`Edit SO — ${detail.code} (${detail.lines.length} lines)`}
+          headerCrumb="Sales & CRM › SO Master › Edit"
+          onSubmit={onSubmit}
+          submitError={submitError}
+          onCancel={() => void navigate({ to: '/sales-orders/$id', params: { id } })}
+        />
       </div>
     </div>
   );

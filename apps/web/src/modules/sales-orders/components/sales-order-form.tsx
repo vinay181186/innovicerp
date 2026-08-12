@@ -110,7 +110,16 @@ const HEADER_DEFAULTS: FormValues['header'] = {
 const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
-type CreateMode = {
+/** Chrome for the form's own action bar. The Back link, title and breadcrumb are
+ *  the page's to name, but the Save buttons must stay inside <form> to keep
+ *  type="submit" and their disabled state — so the page hands its chrome down
+ *  rather than rendering a separate header row above. */
+type FormChrome = {
+  headerBack?: React.ReactNode;
+  headerTitle?: React.ReactNode;
+  headerCrumb?: React.ReactNode;
+};
+type CreateMode = FormChrome & {
   mode: 'create';
   onSubmit: (values: CreateSalesOrderInput) => Promise<void> | void;
   submitLabel?: string;
@@ -121,7 +130,7 @@ type CreateMode = {
   /** Email reference (e.g. .eml/.msg/pdf) attached against the Client PO. */
   onEmailFileChange?: (file: File | null) => void;
 };
-type EditMode = {
+type EditMode = FormChrome & {
   mode: 'edit';
   detail: SalesOrderDetail;
   onSubmit: (values: UpdateSalesOrderInput) => Promise<void> | void;
@@ -505,9 +514,57 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid(false))}>
-      {/* Header — legacy soHeaderForm L12196 renders a 2-col `.form-grid` in the
-          order: SO/WO No. · Date · Type · Client · Client PO No. · Remarks · GST %. */}
-      <div className="form-grid" style={{ marginBottom: 16 }}>
+      {/* Action bar — Back · title · breadcrumb on the left, the save actions on
+          the right, all on one row. The buttons live here (not in a footer) but
+          are still inside <form>, so submit and the disabled rules are unchanged. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          paddingBottom: 10,
+          marginBottom: 12,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        {props.headerBack ?? null}
+        {props.headerTitle ? (
+          <div className="panel-title" style={{ fontSize: 16 }}>{props.headerTitle}</div>
+        ) : null}
+        {props.headerCrumb ? (
+          <div className="text3" style={{ fontSize: 11 }}>{props.headerCrumb}</div>
+        ) : null}
+        {/* Always rendered, chrome or not — this row owns the submit button, so
+            gating the whole bar on the optional title would lose it. */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          {props.onCancel ? (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={props.onCancel}>Cancel</button>
+          ) : null}
+          {isCreate ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+              disabled={formState.isSubmitting || !docNoValid}
+              onClick={() => void handleSubmit(onValid(true))()}
+              title="Save this Sales Order as a draft (status: draft)"
+            >
+              Save as draft
+            </button>
+          ) : null}
+          <button type="submit" className="btn btn-success btn-sm" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
+            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+            {props.submitLabel ?? 'Save SO'}
+          </button>
+        </div>
+      </div>
+
+      {/* Header — legacy soHeaderForm L12196 renders the fields in the order
+          SO/WO No. · Date · Type · Client · Client PO No. · Remarks · GST %.
+          Laid out 4-up: doc no · date · due date · type, then client (wide) ·
+          client PO · GST, then remarks across the full width. */}
+      <div className="form-grid-4" style={{ marginBottom: 10 }}>
         <DocNumberInput
           type="sales_order"
           label="SO/WO No."
@@ -532,8 +589,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </select>
         </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label">Client<span className="req">★</span> (type to search)</label>
+        <div className="form-grp form-span-2">
+          <label className="form-label">Client<span className="req">★</span></label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <SearchableSelect
@@ -559,38 +616,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           {errors.header?.clientId?.message ? (
             <div className="form-error">{errors.header.clientId.message}</div>
           ) : null}
-          <div className="form-help">Sales Orders must reference a client from the master. Not listed? Use <b>+ New</b>.</div>
         </div>
 
         <div className="form-grp">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-            {/* No ★: clientPoNo is schema-optional (max(64).optional()) and legacy
-                stars neither mode — an attached Email Ref satisfies the rule. */}
-            <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
-              Client PO No.
-            </label>
-            <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
-            {emailFileName ? (
-              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                📧 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
-                {emailFileUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                    style={{ color: 'var(--cyan)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                  >
-                    👁 View
-                  </button>
-                ) : null}
-                <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
-              </span>
-            ) : (
-              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                📧 Attach Email Ref
-                <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
-              </label>
-            )}
-          </div>
+          {/* No ★: clientPoNo is schema-optional (max(64).optional()) and legacy
+              stars neither mode — an attached Email Ref satisfies the rule. */}
+          <label className="form-label" htmlFor="clientPoNo">Client PO No.</label>
           <input
             id="clientPoNo"
             className="innovic-input"
@@ -602,27 +633,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               },
             })}
           />
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {poFileName ? (
-              <span style={{ fontSize: 11, color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                📄 <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poFileName}</span>
-                <button type="button" onClick={clearPoFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>✕</button>
-              </span>
-            ) : (
-              <label style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px dashed var(--border)', color: 'var(--text3)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                📤 Upload PO Doc
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickPoFile} />
-              </label>
-            )}
-          </div>
           {poEmailError ? (
-            <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red)' }}>⚠ {poEmailError}</div>
+            <div className="form-error">{poEmailError}</div>
           ) : null}
-        </div>
-
-        <div className="form-grp">
-          <label className="form-label" htmlFor="remarks">Remarks</label>
-          <textarea id="remarks" className="innovic-textarea" rows={2} placeholder="Notes" {...register('header.remarks')} />
         </div>
 
         <div className="form-grp">
@@ -631,12 +644,57 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
         </div>
+
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="remarks">Remarks</label>
+          <textarea id="remarks" className="innovic-textarea" rows={2} placeholder="Notes" {...register('header.remarks')} />
+        </div>
+      </div>
+
+      {/* One helper line under the header carries what used to be scattered
+          through it: the client rule, plus the two attachment pickers that sat
+          as dashed pills inside the Client PO group. Same inputs, same handlers. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 11, marginBottom: 14 }}>
+        <span className="text3">
+          Client must exist in master — use <b style={{ color: 'var(--blue)' }}>+ New</b> if not listed.
+        </span>
+        {poFileName ? (
+          <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{poFileName}</span>
+            <button type="button" onClick={clearPoFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
+          </span>
+        ) : (
+          <label style={{ color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
+            Upload PO Doc
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickPoFile} />
+          </label>
+        )}
+        {emailFileName ? (
+          <span style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailFileName}</span>
+            {emailFileUrl ? (
+              <button
+                type="button"
+                onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
+                style={{ color: 'var(--blue)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+              >
+                View
+              </button>
+            ) : null}
+            <button type="button" onClick={clearEmailFile} style={{ color: 'var(--red)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>✕</button>
+          </span>
+        ) : (
+          <label style={{ color: 'var(--blue)', fontWeight: 600, cursor: 'pointer' }}>
+            Attach Email Ref
+            <input type="file" accept=".eml,.msg,.pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={onPickEmailFile} />
+          </label>
+        )}
       </div>
 
       {isEquip ? (
         /* ── Equipment Details (legacy L12258) ── */
         <div>
-          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '12px 0 8px' }}>▸ EQUIPMENT DETAILS</div>
+          <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', margin: '4px 0 8px' }}>EQUIPMENT DETAILS</div>
           <div className="form-grid">
             <div className="form-grp">
               {/* "Parent Item" not "Part No.": this is the assembly a BOM
@@ -657,11 +715,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <input type="number" min={1} className="innovic-input" {...register('lines.0.orderQty', { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>💰 SO Value (₹ / unit)</label>
+              <label className="form-label" style={{ color: 'var(--green)' }}>SO Value (₹ / unit)</label>
               <input type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { valueAsNumber: true })} />
             </div>
             <div className="form-grp">
-              <label className="form-label">📦 BOM (Bill of Materials)</label>
+              <label className="form-label">BOM (Bill of Materials)</label>
               <select className="innovic-select" {...register('header.bomMasterId')}>
                 <option value="">— No BOM (BOM Pending) —</option>
                 {boms.map((b) => <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName} (Rev {b.revision}, {b.lineCount} items)</option>)}
@@ -709,14 +767,19 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       ) : (
         /* ── Component / With-Material line items (legacy L12278) ── */
         <div>
-          {/* Legacy L12279 styles this heading exactly like ▸ EQUIPMENT DETAILS. */}
-          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, margin: '12px 0 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>▸ SO LINE ITEMS</span>
+          {/* Legacy L12279 styles this heading exactly like ▸ EQUIPMENT DETAILS.
+              The "items must exist in Item Master" rule sits inline with the
+              heading rather than as a separate note under the table. */}
+          <div style={{ margin: '4px 0 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>SO LINE ITEMS</span>
+              <span className="text3" style={{ fontSize: 11 }}>Items must exist in Item Master</span>
+            </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => downloadSoLineTemplate()}>⬇ Template</button>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => lineFileRef.current?.click()}>📄 Import Excel</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => downloadSoLineTemplate()}>Template</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => lineFileRef.current?.click()}>Import Excel</button>
               <input ref={lineFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onImportLines(f); }} />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => append({ ...NEW_LINE })}><Plus size={13} /> Add Line</button>
             </div>
           </div>
           {importMsg ? (() => {
@@ -749,7 +812,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               the page scrolls horizontally when narrow. */}
           {/* Fixed layout so every column gets exactly its share — the percentage
               widths are balanced to each field's data and scale with the panel. */}
-          <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}>
             <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 940 }}>
               <thead>
                 {/* Legacy column order (L12163): # · Item Code ★ · Part Name ·
@@ -780,7 +843,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     const amt = (Number(ln?.orderQty) || 0) * (Number(ln?.rate) || 0);
                     return (
                       <tr key={field.id}>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{idx + 1}</td>
                         <td>
                           <SearchableSelect
                             id={`soln-ic-${idx}`}
@@ -803,10 +866,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.drawingNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
-                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
-                        <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button></td>
+                        <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Del</button></td>
                       </tr>
                     );
                   })
@@ -814,42 +877,57 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               </tbody>
             </table>
           </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>ⓘ Items must exist in Item Master first. Add lines manually or use <b>⬇ Template</b> → fill in Excel → <b>📄 Import Excel</b> to bulk-add lines.</div>
-
-          {/* SO Totals (legacy L12291 / _soTotalsHtml L12366) — right-aligned
-              stacked rows in a min-width:320px block. */}
-          <div style={{ marginTop: 12, border: '2px solid var(--green)', borderRadius: 8, padding: '12px 16px', background: 'rgba(34,197,94,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <div style={{ minWidth: 320 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
-                  <span className="text3">Subtotal:</span>
-                  <span className="mono fw-700 text2">₹{inrFormat(subtotal)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
-                  <span className="text3">GST ({gstPercent}%):</span>
-                  <span className="mono fw-700 amber">₹{inrFormat(gstAmt)}</span>
-                </div>
-                <div style={{ borderTop: '2px solid var(--green)', margin: '4px 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 16 }}>
-                  <span className="green" style={{ fontWeight: 800 }}>GRAND TOTAL:</span>
-                  <span className="mono fw-700 green" style={{ fontSize: 18 }}>₹{inrFormat(grand)}</span>
-                </div>
-                <div className="text3" style={{ fontSize: 10, textAlign: 'right' }}>{lineCount} items • {totalPcs} total pcs</div>
-              </div>
+          {/* SO Totals (legacy L12291 / _soTotalsHtml L12366) — one strip closing
+              the line table: the item/pcs count on the left, the money on the
+              right, so the grand total lands in the corner the eye already
+              tracks down the Amount column. */}
+          <div
+            style={{
+              border: '1px solid var(--border)',
+              borderTop: '1px solid var(--border2)',
+              borderRadius: '0 0 8px 8px',
+              background: 'var(--green3)',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 14,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span className="text3" style={{ fontSize: 11 }}>{lineCount} items · {totalPcs} total pcs</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 18, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12 }}>
+                <span className="text3">Subtotal </span>
+                <span className="mono fw-700 text2">₹{inrFormat(subtotal)}</span>
+              </span>
+              <span style={{ fontSize: 12 }}>
+                <span className="text3">GST {gstPercent}% </span>
+                <span className="mono fw-700 amber">₹{inrFormat(gstAmt)}</span>
+              </span>
+              <span style={{ fontSize: 12 }}>
+                <span className="green" style={{ fontWeight: 800 }}>GRAND TOTAL </span>
+                <span className="mono fw-700 green" style={{ fontSize: 16 }}>₹{inrFormat(grand)}</span>
+              </span>
             </div>
           </div>
 
           {/* Delivery Schedule / Milestones (ISSUE-015, legacy L12294 /
-              _soMilestonesHtml L12392) — purple-bordered box + plain table.
-              `--purple` is a real token with no utility class → inline. */}
-          <div style={{ border: '1px solid var(--purple)', borderRadius: 8, padding: 12, marginTop: 12, background: 'rgba(139,92,246,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)' }}>📅 DELIVERY SCHEDULE / MILESTONES</span>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
+              _soMilestonesHtml L12392). Empty is the normal case — full qty on
+              the due date — so it collapses to a single line that says so,
+              rather than an empty box demanding attention. `--purple` is a real
+              token with no utility class → inline. */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: msFields.length === 0 ? '8px 14px' : 12, marginTop: 12, background: 'var(--bg3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: msFields.length === 0 ? 0 : 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', letterSpacing: '0.04em' }}>DELIVERY SCHEDULE / MILESTONES</span>
+                {msFields.length === 0 ? (
+                  <span className="text3" style={{ fontSize: 11 }}>No lots — full qty on the due date. Add lots for staggered delivery.</span>
+                ) : null}
+              </div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}><Plus size={13} /> Add Lot</button>
             </div>
-            {msFields.length === 0 ? (
-              <div className="text3" style={{ fontSize: 11, padding: 8, textAlign: 'center' }}>No delivery lots defined. Click + Add Lot for staggered delivery.</div>
-            ) : (
+            {msFields.length === 0 ? null : (
               <table className="innovic-table" style={{ width: '100%' }}>
                 <thead>
                   <tr>
@@ -866,7 +944,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       {/* Legacy prints the row index here; ours keeps the editable
                           Lot # the save reads (`lotNo`) — feature retained. */}
                       <td style={{ width: 80 }}><input type="number" min={1} className="innovic-input td-ctr mono fw-700" style={{ color: 'var(--purple)' }} {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} /></td>
-                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
+                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--text)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
                       <td><input type="date" className="innovic-input" style={{ fontSize: 11 }} {...register(`milestones.${idx}.dueDate` as const)} /></td>
                       <td><input className="innovic-input" autoComplete="off" placeholder="e.g. 1st lot" style={{ fontSize: 11 }} {...register(`milestones.${idx}.remarks` as const)} /></td>
                       <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button></td>
@@ -879,36 +957,21 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        {lineError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
-        ) : null}
-        {props.submitError ? (
-          <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{props.submitError}</div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? <button type="button" className="btn btn-ghost" onClick={props.onCancel}>Cancel</button> : null}
-          {isCreate ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
-              disabled={formState.isSubmitting || !docNoValid}
-              onClick={() => void handleSubmit(onValid(true))()}
-              title="Save this Sales Order as a draft (status: draft)"
-            >
-              Save as draft
-            </button>
+      {/* Errors stay at the bottom, next to the fields that caused them. The
+          save actions moved to the action bar at the top of the form.
+          Legacy footer: addSO L12427 / editSOLine L12476 / _editFullSO L12619
+          all reach showModalLg (L28032) with no explicit saveLabel, so the
+          title-derived label is "Save SO" in BOTH modes, on .btn-success. */}
+      {lineError || props.submitError ? (
+        <div style={{ marginTop: 16 }}>
+          {lineError ? (
+            <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12, marginBottom: 10 }}>{lineError}</div>
           ) : null}
-          {/* Legacy footer: addSO L12427 / editSOLine L12476 / _editFullSO L12619
-              all reach showModalLg (L28032) with no explicit saveLabel, so the
-              title-derived label is "Save SO" in BOTH modes, on .btn-success. */}
-          <button type="submit" className="btn btn-success" disabled={formState.isSubmitting || (isCreate && !docNoValid)}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? '✓ Save SO'}
-          </button>
+          {props.submitError ? (
+            <div style={{ color: 'var(--red)', background: 'var(--red3)', border: '1px solid #fca5a5', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>{props.submitError}</div>
+          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {showAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />
