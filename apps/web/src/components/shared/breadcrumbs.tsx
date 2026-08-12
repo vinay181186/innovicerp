@@ -58,18 +58,10 @@ export function Breadcrumbs(): React.JSX.Element {
   const crumbs = buildCrumbs(pathname);
 
   return (
-    <nav
-      aria-label="Breadcrumb"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        flexWrap: 'wrap',
-        fontSize: 12,
-        color: 'var(--text3)',
-        marginBottom: 12,
-      }}
-    >
+    /* Layout lives in CSS (#breadcrumbs) rather than inline: sitting outside
+       #content it must carry #content's own horizontal padding, and that padding
+       changes at the 768px breakpoint — which an inline style cannot express. */
+    <nav id="breadcrumbs" aria-label="Breadcrumb">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (

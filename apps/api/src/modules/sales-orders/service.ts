@@ -281,7 +281,13 @@ export async function listSalesOrders(
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY so.code ASC
+      -- Newest first: today's order is the one being worked, and ordering by
+      -- code ASC buried it at the bottom under every order ever raised. Sorted
+      -- on so_date (not code) so a back-dated or imported order still lands by
+      -- when it was placed; code DESC breaks same-day ties into a stable,
+      -- newest-first order — a total ordering, which pagination needs to avoid
+      -- rows shifting between pages. Covered by the (company_id, so_date) index.
+      ORDER BY so.so_date DESC, so.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 

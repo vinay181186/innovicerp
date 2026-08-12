@@ -66,6 +66,21 @@
   padding: 0 20px;
   gap: 12px;
 }
+/* Fixed chrome between the topbar and the scrolling content — see
+   _authenticated.tsx for why it lives outside #content. Mirrors #content's
+   horizontal padding at both breakpoints so the trail lines up with the page
+   body underneath it. */
+#breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text3);
+  padding: 10px 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
 #content {
   flex: 1;
   overflow-y: auto;
@@ -886,6 +901,9 @@
   }
   #sidebar.sb-open {
     left: 0;
+  }
+  #breadcrumbs {
+    padding: 8px 12px;
   }
   #content {
     padding: 12px;
