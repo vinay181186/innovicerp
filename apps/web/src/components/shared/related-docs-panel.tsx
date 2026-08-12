@@ -135,7 +135,7 @@ const ROUTE_LINKS: Record<string, (label: string, linkId: string) => React.JSX.E
 
 /** Render a document code as a Link when its kind is routable, else plain text
  *  (no dead link — rule #8). */
-function renderCode(
+export function renderCode(
   code: string,
   routeKind: string | null,
   id: string,
@@ -176,7 +176,7 @@ function statusBadgeClass(status: string | null): string {
   }
 }
 
-function StatusBadge({ status }: { status: string | null }): React.JSX.Element | null {
+export function StatusBadge({ status }: { status: string | null }): React.JSX.Element | null {
   if (!status) return null;
   return <span className={`badge ${statusBadgeClass(status)}`}>{status.replaceAll('_', ' ')}</span>;
 }
@@ -261,7 +261,7 @@ function SectionBlock({
   );
 }
 
-function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.JSX.Element | null {
+export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.JSX.Element | null {
   if (events.length === 0) return null;
   return (
     <div>

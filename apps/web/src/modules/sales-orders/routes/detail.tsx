@@ -9,9 +9,9 @@ import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button'
 import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
+import { SoRelatedTabs } from '../components/so-related-tabs';
 
 /** Open a stored SO document (PO doc / email ref) via a short-lived signed URL,
  *  inline in a new tab — the signed URL carries no attachment disposition, so
@@ -265,7 +265,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <RelatedDocsPanel module="sales-orders" id={detail.id} variant="full" />
+      <SoRelatedTabs id={detail.id} />
     </div>
   );
 }
@@ -441,27 +441,76 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
 
 function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
   const { detail } = props;
+  // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
+  // strip stays one compact band. Presentation only — no data change.
+  const [showAllRemarks, setShowAllRemarks] = useState(false);
+  const remarks = detail.remarks ?? '';
+  const remarksLong = remarks.length > 80;
+  const toggleStyle: React.CSSProperties = {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    marginLeft: 4,
+    color: 'var(--blue)',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 600,
+  };
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="Type" value={detail.type.replaceAll('_', ' ')} />
-      <Pair label="Date" value={detail.soDate} />
-      <Pair label="GST %" value={<span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>} />
-      <Pair label="Client PO" value={detail.clientPoNo ? <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{detail.clientPoNo}</span> : '—'} />
-      <Pair label="Cost center" value={detail.costCenter ?? '—'} />
-      <Pair
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
+      <StripItem label="Type" value={detail.type.replaceAll('_', ' ')} />
+      <StripItem label="Date" value={<span className="mono">{detail.soDate}</span>} />
+      <StripItem
+        label="Client PO"
+        value={
+          detail.clientPoNo ? (
+            <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+              {detail.clientPoNo}
+            </span>
+          ) : (
+            '—'
+          )
+        }
+      />
+      <StripItem
+        label="GST %"
+        value={<span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>}
+      />
+      <StripItem label="Cost center" value={detail.costCenter ?? '—'} />
+      <StripItem
         label="BOM master"
         value={detail.bomMasterId ? `${detail.bomMasterId} (${detail.bomStatus ?? '—'})` : '—'}
       />
-      <Pair
+      <StripItem
         label="SO raised by"
         value={
           (detail.createdByName ?? '—') +
           (detail.createdAt ? ` · ${fmtIstDateTime(detail.createdAt)}` : '')
         }
       />
-      <div className="form-grp form-full">
+      <div style={{ flex: '1 1 240px', minWidth: 200 }}>
         <span className="form-label">Remarks</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>
+        <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
+          {remarks === '' ? (
+            '—'
+          ) : remarksLong && !showAllRemarks ? (
+            <>
+              {`${remarks.slice(0, 80).trimEnd()}…`}
+              <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
+                more
+              </button>
+            </>
+          ) : (
+            <>
+              {remarks}
+              {remarksLong ? (
+                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(false)}>
+                  less
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -482,9 +531,9 @@ function fmtIstDateTime(iso: string): string {
   });
 }
 
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
+function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="form-grp">
+    <div style={{ minWidth: 0 }}>
       <span className="form-label">{props.label}</span>
       <div style={{ fontWeight: 600 }}>{props.value}</div>
     </div>
