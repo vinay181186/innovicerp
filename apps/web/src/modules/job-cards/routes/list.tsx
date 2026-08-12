@@ -7,18 +7,9 @@ import {
   type ListJobCardsQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useSession } from '@/lib/session';
@@ -30,13 +21,33 @@ import { JcRowWriteActions } from '../components/jc-row-write-actions';
 import { JcStatusBadge } from '../components/jc-status-badge';
 import { PrintJcButton } from '../components/print-jc-button';
 
-// Legacy renderJobCards puts the alignment/format classes on the <td> itself
-// (L5754 `td-ctr mono fw-700`, L5755 `td-ctr`, L5762, L5765) — not on a wrapper
-// span. `.td-ctr` is text-align:center (innovic-theme.css:397), which is inert
-// on an inline <span>, so those columns rendered left-aligned (ISSUE-020).
-// Carry the class through the column def so the flexRender loop can put it
-// where legacy has it.
-const PAGE_SIZE = 25;
+// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
+// JC list-query cap is 200; the count line flags a rare larger set.
+const LIST_LIMIT = 200;
+
+/** One cell of the card's metric strip — big mono value over a tiny uppercase
+ *  label, mirroring the SO/WO list (ORDER QTY / COMPLETED / PENDING / OPS). */
+function QtyBox({ label, value, color, bordered }: { label: string; value: number | string; color?: string; bordered?: boolean }): React.JSX.Element {
+  return (
+    <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
+      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
+      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+    </div>
+  );
+}
+
+/** Left accent bar — red when late & unfinished, green when finished, blue
+ *  otherwise. Same tokens the badges use (mirrors the SO/WO list). */
+function accentFor(jc: JobCardListItem, today: string): string {
+  const overdue =
+    jc.dueDate != null &&
+    jc.dueDate < today &&
+    jc.computedStatus !== 'closed' &&
+    jc.computedStatus !== 'complete';
+  if (overdue) return 'var(--red)';
+  if (jc.computedStatus === 'closed' || jc.computedStatus === 'complete') return 'var(--green)';
+  return 'var(--blue)';
+}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -91,8 +102,8 @@ function JobCardsListPage(): React.JSX.Element {
       operatorId: search.operatorId,
       fromDate: search.fromDate,
       toDate: search.toDate,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
     [
       search.search,
@@ -101,7 +112,6 @@ function JobCardsListPage(): React.JSX.Element {
       search.operatorId,
       search.fromDate,
       search.toDate,
-      search.page,
     ],
   );
 
@@ -115,271 +125,11 @@ function JobCardsListPage(): React.JSX.Element {
   // codebase's admin/manager write gate.
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
-  // Columns mirror legacy renderJobCards L5786 exactly (14 cols):
-  // JC No. · Date · SO/WO · CPO Ln · Item Code · Item Name · Order Qty ·
-  // Completed (bar) · Pending · Priority · Due Date · Ops Done · Status · Actions.
-  const columns = useMemo<ColumnDef<JobCardListItem>[]>(
-    () => [
-      {
-        header: 'JC No.',
-        accessorKey: 'code',
-        cell: ({ row }) => (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: row.original.id }}
-            className="td-code"
-            style={{
-              color: 'var(--cyan)',
-              textDecoration: 'underline dotted',
-              whiteSpace: 'nowrap',
-            }}
-            title="View job card status"
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Date',
-        accessorKey: 'jcDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.jcDate}
-          </span>
-        ),
-      },
-      {
-        header: 'SO/WO',
-        id: 'source',
-        accessorFn: (r) => r.sourceLink?.code ?? '',
-        cell: ({ row }) => {
-          const s = row.original.sourceLink;
-          if (!s)
-            return (
-              <span className="text3" style={{ fontSize: 11 }}>
-                —
-              </span>
-            );
-          const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
-          const id = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
-          return (
-            <Link
-              to={to}
-              params={{ id }}
-              className="mono"
-              style={{
-                fontSize: 11,
-                color: 'var(--cyan)',
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {s.code}
-              {s.lineNo !== 1 ? (
-                <span style={{ fontSize: 9, color: 'var(--cyan)', marginLeft: 3 }}>
-                  /{s.lineNo}
-                </span>
-              ) : null}
-            </Link>
-          );
-        },
-      },
-      {
-        // Legacy L5786 colours this header purple, matching its cell text.
-        header: () => <span style={{ color: 'var(--purple)' }}>CPO Ln</span>,
-        accessorKey: 'clientPoLineNo',
-        cell: ({ row }) => (
-          <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-            {row.original.clientPoLineNo ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Item Code',
-        accessorKey: 'itemCode',
-        cell: ({ row }) => (
-          <span className="td-code" style={{ color: 'var(--purple)' }}>
-            {row.original.itemCode}
-          </span>
-        ),
-      },
-      {
-        header: 'Item Name',
-        accessorKey: 'itemName',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.itemName || '—'}</span>,
-      },
-      {
-        header: 'Order Qty',
-        accessorKey: 'orderQty',
-        // Legacy L5754: <td class="td-ctr mono fw-700">
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => <>{row.original.orderQty}</>,
-      },
-      {
-        id: 'completed',
-        accessorFn: (r) => r.lastOpCompletedQty,
-        header: () => <span style={{ color: 'var(--green)' }}>Completed</span>,
-        // Legacy L5755: <td class="td-ctr"> wrapping the qty, bar and pct directly.
-        meta: { tdClass: 'td-ctr' },
-        cell: ({ row }) => {
-          const done = row.original.lastOpCompletedQty;
-          const pct =
-            row.original.orderQty > 0
-              ? Math.min(100, Math.round((done / row.original.orderQty) * 100))
-              : 0;
-          return (
-            <>
-              <span className="mono fw-700 green">{done}</span>
-              <div
-                style={{
-                  width: 52,
-                  height: 4,
-                  background: 'var(--bg5)',
-                  borderRadius: 2,
-                  margin: '3px auto 0',
-                }}
-              >
-                <div
-                  style={{
-                    width: `${pct}%`,
-                    height: '100%',
-                    background: 'var(--green)',
-                    borderRadius: 2,
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: 9, color: 'var(--text3)', textAlign: 'center' }}>{pct}%</div>
-            </>
-          );
-        },
-      },
-      {
-        id: 'pending',
-        accessorFn: (r) => Math.max(0, r.orderQty - r.lastOpCompletedQty),
-        header: () => <span style={{ color: 'var(--red)' }}>Pending</span>,
-        // Legacy L5762: <td class="td-ctr mono fw-700" style="color:…"> — only the
-        // colour is per-row, so it stays on an inner span.
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => {
-          const pending = Math.max(0, row.original.orderQty - row.original.lastOpCompletedQty);
-          return (
-            <span style={{ color: pending > 0 ? 'var(--red)' : 'var(--green)' }}>{pending}</span>
-          );
-        },
-      },
-      {
-        header: 'Priority',
-        accessorKey: 'priority',
-        cell: ({ row }) => {
-          const high = row.original.priority === 'high';
-          return (
-            <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>
-              {high ? 'High' : 'Normal'}
-            </span>
-          );
-        },
-      },
-      {
-        header: 'Due Date',
-        accessorKey: 'dueDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.dueDate ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Ops Done',
-        accessorKey: 'doneOps',
-        // Legacy L5765: <td class="td-ctr text2">
-        meta: { tdClass: 'td-ctr text2' },
-        cell: ({ row }) => (
-          <>
-            {row.original.doneOps}/{row.original.totalOps}
-          </>
-        ),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'computedStatus',
-        cell: ({ row }) => (
-          <span style={{ whiteSpace: 'nowrap' }}>
-            <JcStatusBadge status={row.original.computedStatus} />
-            {row.original.runningCount > 0 ? (
-              <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700, marginLeft: 4 }}>
-                ▶{row.original.runningCount}
-              </span>
-            ) : null}
-          </span>
-        ),
-      },
-      {
-        header: 'Remarks',
-        accessorKey: 'remarks',
-        cell: ({ row }) => (
-          <span
-            className="text3"
-            style={{
-              fontSize: 11,
-              maxWidth: 140,
-              display: 'inline-block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={row.original.remarks ?? ''}
-          >
-            {row.original.remarks ?? '—'}
-          </span>
-        ),
-      },
-      {
-        header: 'Actions',
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span style={{ display: 'inline-flex', gap: 4, whiteSpace: 'nowrap' }}>
-            <Link
-              to="/job-cards/$id"
-              params={{ id: row.original.id }}
-              className="btn btn-ghost btn-sm"
-              style={{ whiteSpace: 'nowrap' }}
-              title="View job card status"
-            >
-              👁 View
-            </Link>
-            <PrintJcButton jc={row.original} />
-            <ExcelJcButton jc={row.original} />
-            <JcRowWriteActions jc={row.original} />
-            <AssignTaskButton
-              linkedRef={{
-                type: 'job_card',
-                id: row.original.id,
-                display: `JC ${row.original.code}`,
-                navPage: '/job-cards',
-              }}
-              suggestedTitle={`Follow up on JC ${row.original.code}`}
-            />
-          </span>
-        ),
-      },
-    ],
-    [],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
+  // Column definitions removed — the list renders SO-style cards below.
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
+  const rows = data?.items ?? [];
+  const today = new Date().toISOString().slice(0, 10);
 
   const setNav = (
     update: Partial<
@@ -517,92 +267,155 @@ function JobCardsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading job cards…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load job cards'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No job cards match these filters.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {isLoading ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Loading job cards…
+          </div>
         </div>
-      </div>
+      ) : isError ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load job cards'}
+          </div>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>No job cards match these filters.</div>
+        </div>
+      ) : (
+        rows.map((jc) => {
+          const done = jc.lastOpCompletedQty;
+          const pending = Math.max(0, jc.orderQty - done);
+          const pct = jc.orderQty > 0 ? Math.min(100, Math.round((done / jc.orderQty) * 100)) : 0;
+          const overdue =
+            jc.dueDate != null &&
+            jc.dueDate < today &&
+            jc.computedStatus !== 'closed' &&
+            jc.computedStatus !== 'complete';
+          const s = jc.sourceLink;
+          const high = jc.priority === 'high';
+          return (
+            <div
+              key={jc.id}
+              className="panel"
+              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+            >
+              <div style={{ width: 4, flexShrink: 0, background: accentFor(jc, today) }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Band 1: identity + priority + status + actions */}
+                <div
+                  onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', cursor: 'pointer' }}
+                >
+                  <Link
+                    to="/job-cards/$id"
+                    params={{ id: jc.id }}
+                    className="td-code"
+                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
+                    title="View job card status"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {jc.code}
+                  </Link>
+                  <span className="fw-700" style={{ fontSize: 13 }}>{jc.itemName || '—'}</span>
+                  <span className="td-code" style={{ color: 'var(--purple)', fontSize: 11 }}>{jc.itemCode}</span>
+                  {s
+                    ? (() => {
+                        const to = s.type === 'so' ? '/sales-orders/$id' : '/job-work-orders/$id';
+                        const sid = s.type === 'so' ? s.salesOrderId : s.jobWorkOrderId;
+                        return (
+                          <Link
+                            to={to}
+                            params={{ id: sid }}
+                            className="mono"
+                            style={{ fontSize: 11, color: 'var(--blue)', textDecoration: 'none' }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {s.code}
+                            {s.lineNo !== 1 ? (
+                              <span style={{ fontSize: 9, color: 'var(--blue)', marginLeft: 2 }}>/{s.lineNo}</span>
+                            ) : null}
+                          </Link>
+                        );
+                      })()
+                    : null}
+                  <span className={`badge ${high ? 'b-amber' : 'b-grey'}`}>{high ? 'High' : 'Normal'}</span>
+                  <JcStatusBadge status={jc.computedStatus} />
+                  {jc.runningCount > 0 ? (
+                    <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 700 }}>▶{jc.runningCount}</span>
+                  ) : null}
+                  <span style={{ flex: 1 }} />
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <Link to="/job-cards/$id" params={{ id: jc.id }} className="btn btn-ghost btn-sm" title="View job card status">
+                      👁 View
+                    </Link>
+                    <PrintJcButton jc={jc} />
+                    <ExcelJcButton jc={jc} />
+                    <JcRowWriteActions jc={jc} />
+                    <AssignTaskButton
+                      linkedRef={{ type: 'job_card', id: jc.id, display: `JC ${jc.code}`, navPage: '/job-cards' }}
+                      suggestedTitle={`Follow up on JC ${jc.code}`}
+                    />
+                  </div>
+                </div>
+                {/* Band 2: metric strip + progress + meta line */}
+                <div
+                  onClick={() => void navigate({ to: '/job-cards/$id', params: { id: jc.id } })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '0 14px 10px', cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    <QtyBox label="Order Qty" value={jc.orderQty} />
+                    <QtyBox label="Completed" value={done} color="var(--green)" bordered />
+                    <QtyBox label="Pending" value={pending} color={pending > 0 ? 'var(--red)' : 'var(--green)'} bordered />
+                    <QtyBox label="Ops" value={`${jc.doneOps}/${jc.totalOps}`} bordered />
+                  </div>
+                  <div style={{ minWidth: 90 }}>
+                    <div style={{ width: 90, height: 4, background: 'var(--bg5)', borderRadius: 2 }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--green)', borderRadius: 2 }} />
+                    </div>
+                    <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{pct}% complete</div>
+                  </div>
+                  <div
+                    className="mono"
+                    style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    <span className="text2">{jc.jcDate}</span>
+                    {jc.clientPoLineNo ? (
+                      <>
+                        <span>·</span>
+                        <span>CPO <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{jc.clientPoLineNo}</span></span>
+                      </>
+                    ) : null}
+                    <span>·</span>
+                    <span style={{ color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 700 : undefined }}>
+                      {jc.dueDate ? `Due ${jc.dueDate}${overdue ? ' ⚠' : ''}` : 'No due date'}
+                    </span>
+                    {jc.remarks ? (
+                      <>
+                        <span>·</span>
+                        <span title={jc.remarks} style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {jc.remarks}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
         <span>
           {total === 0
             ? 'No job cards'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            : total > LIST_LIMIT
+              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+              : `Showing all ${total} job card${total === 1 ? '' : 's'}`}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px', color: 'var(--text)' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
       </div>
     </div>
   );
