@@ -210,12 +210,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <th>Part Name</th>
                 <th>Material</th>
                 <th>Drawing</th>
-                <th className="td-right">Qty</th>
-                <th className="td-right" style={{ color: 'var(--green)' }}>Dispatched</th>
-                <th className="td-right" style={{ color: 'var(--green)' }}>Billed</th>
-                <th className="td-right" style={{ color: 'var(--red)' }}>Pending</th>
+                <th>Qty</th>
+                <th style={{ color: 'var(--green)' }}>Dispatched</th>
+                <th style={{ color: 'var(--green)' }}>Billed</th>
+                <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>UOM</th>
-                <th className="td-right">Rate</th>
+                <th>Rate</th>
                 <th>Due date</th>
                 <th>Status</th>
               </tr>
@@ -416,17 +416,17 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
       <td className="mono" style={{ fontSize: 11 }}>
         {l.drawingNo ?? '—'}
       </td>
-      <td className="td-right mono">{l.orderQty}</td>
-      <td className="td-right mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>
-      <td className="td-right mono" style={{ color: 'var(--green)' }}>{l.billedQty}</td>
+      <td className="mono">{l.orderQty}</td>
+      <td className="mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>
+      <td className="mono" style={{ color: 'var(--green)' }}>{l.billedQty}</td>
       <td
-        className="td-right mono fw-700"
+        className="mono fw-700"
         style={{ color: l.orderQty - l.billedQty > 0 ? 'var(--red)' : 'var(--green)' }}
       >
         {l.orderQty - l.billedQty}
       </td>
       <td>{l.uom}</td>
-      <td className="td-right mono">
+      <td className="mono">
         {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
