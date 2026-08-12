@@ -32,28 +32,31 @@ import {
   PO_TYPES,
   type PoStatus,
   type PoType,
-  type PurchaseOrderListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
 
-const PAGE_SIZE = 25;
+// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next). The
+// PO list-query cap is 200; the count line flags a rare larger set.
+const LIST_LIMIT = 200;
+
+/** One cell of the card's metric strip — big mono number over a tiny uppercase
+ *  label, mirroring the SO/WO list (TOTAL QTY / RECEIVED / PENDING / LINES). */
+function QtyBox({ label, value, color, bordered }: { label: string; value: number; color?: string; bordered?: boolean }): React.JSX.Element {
+  return (
+    <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
+      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
+      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+    </div>
+  );
+}
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -94,192 +97,17 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       search: search.search,
       status: search.status,
       poType: search.poType,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
-    [search.search, search.status, search.poType, search.page],
+    [search.search, search.status, search.poType],
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
-  const columns = useMemo<ColumnDef<PurchaseOrderListItem>[]>(
-    () => [
-      // Legacy L25248: the type badge sits inside the PO No. cell, after the
-      // code — it is not a column of its own. (The expand caret and the `Rev N`
-      // tag are not ported: no line data on the list payload, no poRevision
-      // field.)
-      {
-        header: 'PO No.',
-        accessorKey: 'code',
-        meta: { tdClass: 'td-code cyan' },
-        cell: ({ row }) => {
-          const isJW = row.original.poType === 'job_work';
-          return (
-            <>
-              <Link
-                to="/purchase-orders/$id"
-                params={{ id: row.original.id }}
-                style={{ color: 'inherit', fontWeight: 800, textDecoration: 'underline dotted' }}
-              >
-                {row.original.code}
-              </Link>
-              <span
-                style={{
-                  fontSize: 9,
-                  padding: '1px 6px',
-                  borderRadius: 3,
-                  marginLeft: 6,
-                  background: isJW ? 'rgba(196,122,0,0.12)' : 'rgba(0,136,187,0.12)',
-                  color: isJW ? 'var(--amber)' : 'var(--cyan)',
-                  border: `1px solid ${isJW ? 'rgba(196,122,0,0.3)' : 'rgba(0,136,187,0.3)'}`,
-                  fontWeight: 700,
-                }}
-              >
-                {isJW ? 'JW' : 'MAT'}
-              </span>
-            </>
-          );
-        },
-      },
-      {
-        header: 'Lines',
-        accessorKey: 'lineCount',
-        meta: { tdClass: 'td-ctr mono' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.lineCount}</span>,
-      },
-      {
-        header: 'Date',
-        accessorKey: 'poDate',
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.poDate}</span>,
-      },
-      {
-        header: 'Vendor',
-        id: 'vendor',
-        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
-        meta: { tdClass: 'fw-700' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 12 }}>
-            {row.original.vendorName ?? row.original.vendorCodeText ?? '—'}
-          </span>
-        ),
-      },
-      // Legacy's slot 5 is SO/JW (L25252). We have no SO/JW back-reference on
-      // the payload; `prCodeText` is the upstream-document reference this port
-      // does carry, so it takes the slot. See ISSUE-030.
-      {
-        header: 'PR ref',
-        accessorKey: 'prCodeText',
-        meta: { tdClass: 'mono text3' },
-        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.prCodeText ?? '—'}</span>,
-      },
-      {
-        header: 'Total Qty',
-        accessorKey: 'totalQty',
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => row.original.totalQty,
-      },
-      // Legacy L25254 is unconditionally green with no "/total" suffix — Total
-      // Qty is the adjacent column and Pending is its own. The port's
-      // green/amber/grey ramp was invented semantics; dropped (ISSUE-030).
-      {
-        header: 'Received',
-        accessorKey: 'receivedQty',
-        meta: { tdClass: 'td-ctr mono green fw-700' },
-        cell: ({ row }) => row.original.receivedQty,
-      },
-      {
-        header: 'Pending',
-        id: 'pending',
-        accessorFn: (r) => r.totalQty - r.receivedQty,
-        meta: { tdClass: 'td-ctr mono' },
-        cell: ({ row }) => {
-          const pend = row.original.totalQty - row.original.receivedQty;
-          return (
-            <span style={{ color: pend > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
-              {pend}
-            </span>
-          );
-        },
-      },
-      {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: ({ row }) => <PoStatusBadge status={row.original.status} />,
-      },
-      // Legacy L25258-25274 (rowActions). View is legacy's primary button; the
-      // rest are its dropdown items, rendered inline here because the
-      // `.row-actions*` menu chrome is in no stylesheet (ISSUE-030).
-      {
-        header: 'Actions',
-        id: 'actions',
-        enableSorting: false,
-        cell: ({ row }) => {
-          const po = row.original;
-          return (
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <Link
-                to="/purchase-orders/$id"
-                params={{ id: po.id }}
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11, padding: '4px 10px' }}
-                title="View"
-              >
-                👁 View
-              </Link>
-              {canWrite && po.status !== 'closed' ? (
-                <Link
-                  to="/purchase-orders/$id/edit"
-                  params={{ id: po.id }}
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 10, padding: '2px 6px' }}
-                >
-                  ✎ Edit
-                </Link>
-              ) : null}
-              {canWrite && po.poType === 'job_work' && po.status !== 'draft' ? (
-                <Link
-                  to="/delivery-challans/new"
-                  search={{ poId: po.id }}
-                  className="btn btn-ghost btn-sm"
-                  style={{ fontSize: 10, padding: '2px 6px' }}
-                >
-                  📦 Create DC
-                </Link>
-              ) : null}
-              {po.status !== 'closed' && po.status !== 'cancelled' ? (
-                <AssignTaskButton
-                  linkedRef={{
-                    type: 'purchase_order',
-                    id: po.id,
-                    display: `PO ${po.code}`,
-                    navPage: `/purchase-orders/${po.id}`,
-                  }}
-                  suggestedTitle={`Follow up ${po.code}`}
-                  label=""
-                />
-              ) : null}
-            </div>
-          );
-        },
-      },
-    ],
-    [canWrite],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
+  const rows = data?.items ?? [];
 
   // Legacy L25347-25348: when a filter is on, the panel title names it and a
   // "Show All" button clears it. Legacy's `_poFlt` is set by the stat cards;
@@ -362,120 +190,142 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <span className="panel-title">
-            Purchase Orders{' '}
-            {activeFilter ? (
-              <span className="amber" style={{ fontSize: 12 }}>
-                ({activeFilter})
-              </span>
-            ) : null}
+      {activeFilter ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}>
+          <span className="text3">
+            Filtered: <span className="amber" style={{ fontWeight: 700 }}>{activeFilter}</span>
           </span>
-          {activeFilter ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() =>
-                void navigate({
-                  search: (prev) => ({ ...prev, status: undefined, poType: undefined, page: 1 }),
-                  replace: true,
-                })
-              }
-            >
-              Show All
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, status: undefined, poType: undefined, page: 1 }),
+                replace: true,
+              })
+            }
+          >
+            Show All
+          </button>
         </div>
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
-                    {error instanceof Error ? error.message : 'Failed to load purchase orders'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No purchase orders yet
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      ) : null}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
+      {isLoading ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+            Loading…
+          </div>
+        </div>
+      ) : isError ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20, color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load purchase orders'}
+          </div>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="panel">
+          <div className="empty-state" style={{ padding: 20 }}>No purchase orders yet</div>
+        </div>
+      ) : (
+        rows.map((po) => {
+          const isJW = po.poType === 'job_work';
+          const pending = po.totalQty - po.receivedQty;
+          const accent =
+            po.status === 'closed'
+              ? 'var(--green)'
+              : po.status === 'cancelled'
+                ? 'var(--red)'
+                : 'var(--blue)';
+          return (
+            <div
+              key={po.id}
+              className="panel"
+              style={{ display: 'flex', overflow: 'hidden', padding: 0, marginBottom: 10 }}
+            >
+              {/* Accent bar — green closed, red cancelled, blue otherwise. */}
+              <div style={{ width: 4, flexShrink: 0, background: accent }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Band 1: identity + type + status + actions */}
+                <div
+                  onClick={() => void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', cursor: 'pointer' }}
+                >
+                  <Link
+                    to="/purchase-orders/$id"
+                    params={{ id: po.id }}
+                    className="td-code"
+                    style={{ color: 'var(--blue)', fontWeight: 800, fontSize: 13 }}
+                    title="Open the PO detail page"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {po.code}
+                  </Link>
+                  <span className={`badge ${isJW ? 'b-amber' : 'b-blue'}`}>{isJW ? 'JW' : 'MAT'}</span>
+                  <span className="fw-700" style={{ fontSize: 13 }}>{po.vendorName ?? po.vendorCodeText ?? '—'}</span>
+                  <PoStatusBadge status={po.status} />
+                  <span style={{ flex: 1 }} />
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                    <Link to="/purchase-orders/$id" params={{ id: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} title="View">
+                      👁 View
+                    </Link>
+                    {canWrite && po.status !== 'closed' ? (
+                      <Link to="/purchase-orders/$id/edit" params={{ id: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                        ✎ Edit
+                      </Link>
+                    ) : null}
+                    {canWrite && po.poType === 'job_work' && po.status !== 'draft' ? (
+                      <Link to="/delivery-challans/new" search={{ poId: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                        📦 Create DC
+                      </Link>
+                    ) : null}
+                    {po.status !== 'closed' && po.status !== 'cancelled' ? (
+                      <AssignTaskButton
+                        linkedRef={{
+                          type: 'purchase_order',
+                          id: po.id,
+                          display: `PO ${po.code}`,
+                          navPage: `/purchase-orders/${po.id}`,
+                        }}
+                        suggestedTitle={`Follow up ${po.code}`}
+                        label=""
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                {/* Band 2: metric strip + meta line */}
+                <div
+                  onClick={() => void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '0 14px 10px', cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    <QtyBox label="Total Qty" value={po.totalQty} />
+                    <QtyBox label="Received" value={po.receivedQty} color={po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)'} bordered />
+                    <QtyBox label="Pending" value={pending} color={pending > 0 ? 'var(--red)' : 'var(--green)'} bordered />
+                    <QtyBox label="Lines" value={po.lineCount} bordered />
+                  </div>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span className="text2">{po.poDate}</span>
+                    <span>·</span>
+                    <span>
+                      PR <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{po.prCodeText ?? '—'}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
         <span>
           {total === 0
             ? 'No purchase orders'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            : total > LIST_LIMIT
+              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+              : `Showing all ${total} purchase order${total === 1 ? '' : 's'}`}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
       </div>
     </div>
   );
