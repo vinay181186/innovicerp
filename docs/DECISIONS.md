@@ -5664,3 +5664,79 @@ failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
   wraps to a second line on a narrow card instead of staying on one row.
 - Risks: not visually verified in a browser at the time of writing — typecheck and
   lint pass, the side-by-side-with-SO-Master check still needs a real render.
+
+## ADR-121: OSP Outward DC list — SO-Master cards, frozen band, and a read-only StatStrip
+**Date:** 2026-08-13
+**Status:** Accepted
+
+### Context
+`delivery-challans/routes/list.tsx` was the last Purchase-group Entry screen on
+the pre-card layout, and at 479 lines it was already over the CLAUDE.md §12
+400-line rule. Four concrete defects:
+
+1. **Horizontal scroll.** Only 8 columns, so the count was never the problem —
+   the content was. `.innovic-table td` is `white-space: nowrap`, and **Vendor**
+   and **SO** are unbounded server text with no `max-width`, no ellipsis and no
+   `title`. One long vendor name widened the whole table. `tbl-frozen` was not
+   applied, so the DC No. scrolled out of view with it.
+2. **Two vertical scrollbars.** `.tbl-wrap` is `overflow-y: auto` +
+   `max-height: calc(100vh - 220px)` inside `#content`, which is itself
+   `overflow-y: auto`. On this page ~300–340px of chrome (topbar, breadcrumbs,
+   content padding, header row, KPI tiles, warning panel) sits above the wrap,
+   so a wrap capped at `100vh - 220px` runs past the fold: the inner scroller
+   appears *and* `#content` scrolls. The sticky `<th>` then freezes against the
+   inner wrap rather than the viewport, so the header only pins after you have
+   already scrolled the page to the bottom.
+3. **KPI tiles violated the `styling` skill Rule 3 / ADR-120** — three
+   hand-styled `.panel` tiles in a hard `repeat(3, 1fr)` grid (no `auto-fit`,
+   despite a comment claiming otherwise), duplicating the existing `.stat-*` CSS
+   family inline and bypassing `--fs-stat` (used 28 where the token is 32).
+4. **Layout jump.** The strip was gated on `data?.summary`, so it was absent on
+   first load and the list jumped ~116px when it arrived.
+
+### Decision
+Restyle the list to SO Master. **Presentation only — no data, filters, query,
+pagination maths, print output or navigation changed.**
+
+- One `.panel` card per DC (`components/dc-card.tsx`): 4px accent bar (amber
+  issued / green received / grey cancelled), Band 1 identity + vendor + PO chip
+  + status + `+ Receive`, Band 2 metric strip (`Sent`, `Lines`) + mono meta line
+  (date · SO · transport). Whole card opens the detail page; `+ Receive` and the
+  code link `stopPropagation`.
+- Frozen header band carrying title + count + search + status filter + Print
+  Register + New DC, with `<StatStrip>` inside it per Rule 3.
+- `<StatStrip>` widened (`components/shared/stat-strip.tsx`): `count` accepts a
+  string so a formatted total fits, a `sub` caption is supported, and `onClick`
+  is now optional — **without it the cell renders as a `<div>`, not a `<button>`
+  that does nothing.** These three DC numbers are totals, not filters. Existing
+  PR-list usage is unaffected.
+- Strip renders zeros while loading, killing the jump.
+- Loading / error / empty become the SO `.panel.empty-state` chain.
+
+### Alternatives Considered
+- **Add `tbl-frozen` + `max-width`/ellipsis on Vendor and SO** — the two
+  cheapest fixes, and they do stop the DC No. disappearing. Rejected as the
+  endpoint: the page still scrolls sideways, still nests two vertical
+  scrollbars, and Dispatch would remain the odd list out. Cards fix all three.
+- **Change `.tbl-wrap`'s `max-height`** — rejected: that class is global, so it
+  would silently alter every table in the app to fix one page.
+- **Give the three DC stats a no-op `onClick` to reuse StatStrip unchanged** —
+  rejected: it ships three buttons that are focusable, Enter-activatable and do
+  nothing. Making `onClick` optional was a smaller, honest change.
+- **Recolour the DC code on `routes/detail.tsx` from `--cyan` to `--blue` too** —
+  deliberately NOT done; it is outside the page asked for. Flagged instead: the
+  list now uses `--blue` like every other card list and like `bf18bd7`'s own
+  recolour of the create page, so detail is currently the odd page out by one
+  line.
+
+### Consequences
+- Positive: no horizontal scroll, no nested scrollbar, DC No. always visible,
+  `lineCount` now on screen (it was already fetched and already on the printed
+  register), and the file drops 479 → 311 lines.
+- Negative: per-column sorting is gone. It was client-side over the 25 loaded
+  rows only — it never re-queried, so it could not sort across pages — and a
+  card list has no column headers to click. Same trade ADR-120 recorded for PRs.
+- Risks: not visually verified in a browser — typecheck and lint pass, but the
+  no-horizontal-scroll and side-by-side-with-SO-Master checks still need a real
+  render. The three `#fca5a5` literals in this module's create/detail/receive
+  error boxes are untouched and still violate the no-hard-coded-hex rule.

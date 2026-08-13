@@ -1,28 +1,38 @@
-// Delivery-challans list (UI-003-06).
+// OSP / JW Outward DC list — delivery challans issued against a PO_jw.
+//
+// Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
+//  - The three hand-rolled KPI tiles are one `<StatStrip>` row (styling skill
+//    Rule 3, ADR-120) — same three numbers, no per-tile cards, and it now
+//    renders zeros while loading instead of popping in and shoving the list
+//    down ~116px.
+//  - Title + count + search + status filter + Print Register + New DC sit in
+//    the frozen header band.
+//  - The 8-column table is one `.panel` card per DC. Only 8 columns, but
+//    `.innovic-table td` is `white-space: nowrap` and Vendor + SO are unbounded
+//    server text with no max-width, so a long vendor name scrolled the page
+//    sideways; without `tbl-frozen` the DC No. went with it. `.tbl-wrap` also
+//    nested its own `max-height: calc(100vh - 220px)` scroller inside
+//    `#content`'s, giving the page two vertical scrollbars. Cards retire all
+//    three problems. Every column the table showed is still on the card.
+//
+// Dropped with the table: per-column sorting. It was client-side over the 25
+// loaded rows only (it never re-queried, so it could not sort across pages),
+// and a card list has no column headers to click — the same trade ADR-120
+// recorded for the PR list.
+//
+// Nothing about the data, the filters, the query or the print output changed.
 
-import {
-  DC_STATUSES,
-  type DcStatus,
-  type DeliveryChallanListItem,
-  type ListDeliveryChallansQuery,
-} from '@innovic/shared';
+import type { ListDeliveryChallansQuery } from '@innovic/shared';
+import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  type SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
 import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { SortableHead } from '@/components/shared/sortable-head';
-import { useMyCompany } from '@/modules/settings/api';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
-import { DcStatusBadge } from '../components/dc-status-badge';
+import { DcCard } from '../components/dc-card';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 
 const PAGE_SIZE = 25;
@@ -72,270 +82,178 @@ function DeliveryChallansListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
   const { data: company } = useMyCompany();
 
-  const onPrintRegister = (): void => {
-    if (!data) return;
-    const parts: string[] = [];
-    if (search.search) parts.push(`search "${search.search}"`);
-    if (search.status) parts.push(`status ${search.status.replaceAll('_', ' ')}`);
-    const pages = Math.max(1, Math.ceil((data.total ?? 0) / PAGE_SIZE));
-    parts.push(`page ${search.page} of ${pages}`);
-    const ok = printDispatchRegister({
-      rows: data.items,
-      summary: data.summary,
-      filterLabel: parts.join(' · '),
-      company,
-    });
-    if (!ok) window.alert('Allow popups to print.');
-  };
-
-  const columns = useMemo<ColumnDef<DeliveryChallanListItem>[]>(
-    () => [
-      {
-        header: 'DC No.',
-        accessorKey: 'code',
-        // Legacy L27434: <td class="mono fw-700" style="color:var(--cyan)">
-        meta: { tdClass: 'mono fw-700' },
-        cell: ({ row }) => (
-          <Link
-            to="/delivery-challans/$id"
-            params={{ id: row.original.id }}
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {row.original.code}
-          </Link>
-        ),
-      },
-      {
-        header: 'Date',
-        accessorKey: 'dcDate',
-        cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
-            {row.original.dcDate}
-          </span>
-        ),
-      },
-      {
-        header: 'PO',
-        id: 'po',
-        accessorFn: (r) => r.poCode ?? r.poCodeText ?? '',
-        cell: ({ row }) => {
-          if (row.original.poCode) {
-            return (
-              <span
-                className="badge b-green"
-                title={`Linked PO ${row.original.poCode}`}
-                style={{ fontSize: 11 }}
-              >
-                {row.original.poCode}
-              </span>
-            );
-          }
-          if (row.original.poCodeText) {
-            return (
-              <span
-                className="badge b-amber"
-                title="Snapshot text — no PO linked. Will mismatch if the PO is renumbered."
-                style={{ fontSize: 11 }}
-              >
-                {row.original.poCodeText}*
-              </span>
-            );
-          }
-          return <span className="text3">—</span>;
-        },
-      },
-      {
-        header: 'Vendor',
-        id: 'vendor',
-        accessorFn: (r) => r.vendorName ?? r.vendorCodeText ?? '',
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>
-            {row.original.vendorName ?? (
-              <span className="text3">{row.original.vendorCodeText}</span>
-            )}
-          </span>
-        ),
-      },
-      {
-        header: 'SO',
-        id: 'so',
-        accessorFn: (r) => r.soCode ?? r.soRefText ?? '',
-        cell: ({ row }) => (
-          <span className="text3" style={{ fontSize: 11 }}>
-            {row.original.soCode ?? row.original.soRefText ?? '—'}
-          </span>
-        ),
-      },
-      {
-        // Legacy L27440 calls this "Sent": <td class="td-ctr mono fw-700">.
-        header: 'Sent',
-        id: 'totalQty',
-        accessorFn: (r) => Number(r.totalQty),
-        meta: { tdClass: 'td-ctr mono fw-700' },
-        cell: ({ row }) => Number(row.original.totalQty).toFixed(2),
-      },
-      {
-        header: 'Status',
-        accessorKey: 'status',
-        cell: ({ row }) => <DcStatusBadge status={row.original.status} />,
-      },
-      {
-        // T26: Receive action — enabled only while the DC is still 'issued'
-        // (a partially-received DC stays 'issued'); greyed for received/cancelled.
-        header: 'Action',
-        id: 'action',
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.status === 'issued' ? (
-            <Link
-              to="/delivery-challans/$id/receive"
-              params={{ id: row.original.id }}
-              className="btn btn-sm"
-              style={{ fontSize: 11, padding: '2px 8px' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              + Receive
-            </Link>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled
-              style={{ fontSize: 11, padding: '2px 8px' }}
-            >
-              + Receive
-            </button>
-          ),
-      },
-    ],
-    [],
-  );
-
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const table = useReactTable({
-    data: data?.items ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    state: { sorting },
-    onSortingChange: setSorting,
-  });
-
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+  const rows = data?.items ?? [];
+
+  function onPrintRegister(): void {
+    if (!data) return;
+    const bits: string[] = [];
+    if (search.search) bits.push(`search "${search.search}"`);
+    if (search.status) bits.push(search.status.replaceAll('_', ' '));
+    bits.push(`page ${currentPage} of ${totalPages}`);
+    try {
+      printDispatchRegister({
+        rows: data.items,
+        summary: data.summary,
+        filterLabel: bits.join(' · '),
+        company,
+      });
+    } catch {
+      window.alert('Allow popups to print.');
+    }
+  }
 
   return (
     <div>
+      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
+          Title + count + filters + Print/New and the count strip stay pinned while
+          the cards scroll underneath. `#content` is the scroll container, so top:0
+          pins this to its padding box; the background must be opaque var(--bg) or
+          cards show through as they pass under. Not bled to the edges — that would
+          give the app a horizontal scrollbar. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🚛 OSP / JW Outward DC
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: 10,
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              🚛 OSP / JW Outward DC
+            </div>
+            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} DC{total === 1 ? '' : 's'}
+              {search.status ? (
+                <>
+                  {' '}· <span className="text2">{search.status}</span> only
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="🔍 Search DC, PO, vendor..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 240, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as DcStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 160, fontSize: 12 }}
+            >
+              <option value="">All statuses</option>
+              {DC_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 12 }}
+              onClick={onPrintRegister}
+              disabled={isLoading || !data}
+              title="Print the dispatch register for the current filter/page"
+            >
+              <Printer size={14} /> Print Register
+            </button>
+            {/* A DC is always issued against a PO, so "new" starts on the PO
+                list rather than a standalone create form. */}
+            <Link to="/purchase-orders" className="btn btn-primary">
+              <Plus size={14} /> New DC (via PO)
+            </Link>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search DC, PO, vendor..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as DcStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 160, fontSize: 12 }}
-          >
-            <option value="">All statuses</option>
-            {DC_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onPrintRegister}
-            disabled={isLoading || !data}
-            title="Print the dispatch register for the current filter/page"
-          >
-            <Printer size={14} /> Print Register
-          </button>
-          <Link to="/purchase-orders" className="btn btn-primary">
-            <Plus size={14} /> New DC (via PO)
-          </Link>
-        </div>
-      </div>
 
-      {data?.summary ? <DispatchKpiStrip summary={data.summary} /> : null}
+        {/* Read-only totals, not filters — no onClick, so each cell renders as a
+            <div> instead of a button that does nothing. Rendered with zeros
+            while the first page loads so the list below does not jump. */}
+        <StatStrip
+          items={[
+            {
+              key: 'dispatched',
+              label: 'Total Dispatched',
+              count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
+                maximumFractionDigits: 2,
+              }),
+              color: 'var(--red)',
+              sub: 'pieces',
+              title: 'Total quantity sent out on the DCs matching this filter',
+            },
+            {
+              key: 'entries',
+              label: 'Dispatch Entries',
+              count: data?.summary?.entryCount ?? 0,
+              title: 'Number of DC lines in this filter',
+            },
+            {
+              key: 'items',
+              label: 'Items Dispatched',
+              count: data?.summary?.itemCount ?? 0,
+              color: 'var(--cyan)',
+              title: 'Distinct items sent out in this filter',
+            },
+          ]}
+        />
+      </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            ⚠️ DCs are issued against PO_jw. Create from a PO detail page → "Issue DC". Receive
-            back from the DC detail page.
+            ⚠️ DCs are issued against PO_jw. Create from a PO detail page → &ldquo;Issue DC&rdquo;.
+            Receive back from the DC detail page.
           </span>
         </div>
       </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load DCs'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No OSP DCs yet.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {isLoading ? (
+        <div className="panel empty-state" style={{ padding: 24 }}>
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading…
         </div>
-      </div>
+      ) : isError ? (
+        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+          {error instanceof Error ? error.message : 'Failed to load DCs'}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="panel empty-state" style={{ padding: 24 }}>
+          No OSP DCs yet — issue one from a PO detail page.
+        </div>
+      ) : (
+        rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
+      )}
 
       <div
         style={{
@@ -352,7 +270,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             ? 'No DCs'
             : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
@@ -384,95 +302,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
 
-// PL-DR-1b — KPI strip mirroring legacy renderDispatchRegister L10756–10770.
-// 3 tiles in a 3-col auto-fit grid: Total Dispatched (red), Dispatch Entries
-// (default), Items Dispatched (cyan).
-function DispatchKpiStrip({
-  summary,
-}: {
-  summary: { totalDispatched: number; entryCount: number; itemCount: number };
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--text3)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: 6,
-          }}
-        >
-          Total Dispatched
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 28,
-            fontWeight: 800,
-            color: 'var(--red)',
-          }}
-        >
-          {summary.totalDispatched.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>pieces</div>
-      </div>
-      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--text3)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: 6,
-          }}
-        >
-          Dispatch Entries
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 28,
-            fontWeight: 800,
-          }}
-        >
-          {summary.entryCount}
-        </div>
-      </div>
-      <div className="panel" style={{ padding: 14, textAlign: 'center' }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--text3)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            marginBottom: 6,
-          }}
-        >
-          Items Dispatched
-        </div>
-        <div
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 28,
-            fontWeight: 800,
-            color: 'var(--cyan)',
-          }}
-        >
-          {summary.itemCount}
-        </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
+        💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
       </div>
     </div>
   );
