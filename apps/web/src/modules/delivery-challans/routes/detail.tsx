@@ -251,10 +251,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 <tr>
                   <th>#</th>
                   <th>Item</th>
-                  <th className="td-right">Ship qty</th>
-                  <th className="td-right">Received</th>
-                  <th className="td-right">Rejected</th>
-                  <th className="td-right">Remaining</th>
+                  <th>Ship qty</th>
+                  <th>Received</th>
+                  <th>Rejected</th>
+                  <th>Remaining</th>
                 </tr>
               </thead>
               <tbody>
@@ -273,7 +273,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     const remaining = Math.max(0, ship - received - rejected);
                     return (
                       <tr key={line.id}>
-                        <td className="td-ctr mono">{line.lineNo}</td>
+                        <td className="mono">{line.lineNo}</td>
                         <td>
                           <span className="mono">{line.itemCode ?? line.itemCodeText ?? '—'}</span>
                           {line.itemName ?? line.itemNameText ? (
@@ -282,14 +282,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                             </span>
                           ) : null}
                         </td>
-                        <td className="td-right mono fw-700">{ship.toFixed(2)}</td>
-                        <td className="td-right mono" style={{ color: 'var(--green2)' }}>
+                        <td className="mono fw-700">{ship.toFixed(2)}</td>
+                        <td className="mono" style={{ color: 'var(--green2)' }}>
                           {received.toFixed(2)}
                         </td>
-                        <td className="td-right mono" style={{ color: 'var(--red2)' }}>
+                        <td className="mono" style={{ color: 'var(--red2)' }}>
                           {rejected.toFixed(2)}
                         </td>
-                        <td className="td-right mono">{remaining.toFixed(2)}</td>
+                        <td className="mono">{remaining.toFixed(2)}</td>
                       </tr>
                     );
                   })
@@ -298,17 +298,17 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>
+                    <td colSpan={2} style={{ textAlign: 'left', fontWeight: 700 }}>
                       Total
                     </td>
-                    <td className="td-right mono fw-700">{totals.ship.toFixed(2)}</td>
-                    <td className="td-right mono fw-700" style={{ color: 'var(--green2)' }}>
+                    <td className="mono fw-700">{totals.ship.toFixed(2)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
                       {totals.received.toFixed(2)}
                     </td>
-                    <td className="td-right mono fw-700" style={{ color: 'var(--red2)' }}>
+                    <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
                       {totals.rejected.toFixed(2)}
                     </td>
-                    <td className="td-right mono fw-700">{totals.remaining.toFixed(2)}</td>
+                    <td className="mono fw-700">{totals.remaining.toFixed(2)}</td>
                   </tr>
                 </tfoot>
               ) : null}
