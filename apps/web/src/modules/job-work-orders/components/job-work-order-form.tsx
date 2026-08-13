@@ -387,9 +387,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         ))}
       </datalist>
 
-      {/* Header — legacy jwHeaderForm L12797 renders a 2-col `.form-grid`
-          (same as soHeaderForm); `.form-full` still spans the row. */}
-      <div className="form-grid" style={{ marginBottom: 16 }}>
+      {/* Header — 4-up grid (matches the SO form's `.form-grid-4`): the four
+          short fields (JWSO No · Date · Due Date · GST %) fit on ONE row instead
+          of two 2-up rows. `.form-full` still spans the whole row; the rich
+          Client PO No. block takes `.form-span-2` to keep room for its controls. */}
+      <div className="form-grid-4" style={{ marginBottom: 16 }}>
         {/* No ★: `code` is `.optional()` and the server generates the next
             IN-JW-##### in series when omitted — the field's own help text says
             "leave blank to auto-generate on save", and useDocNumber treats empty
@@ -460,7 +462,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           </div>
         </div>
 
-        <div className="form-grp">
+        <div className="form-grp form-span-2">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
             <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
               Client PO No. {isCreate ? <span className="req">★</span> : null}
