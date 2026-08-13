@@ -149,7 +149,11 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+            {/* --blue, not --cyan: blue is the app's identity/link colour for a
+                document code (SO detail, PR, JWSO, and the DC list card all use
+                it). This page was the last one left on the old teal, so opening
+                a DC from the list changed the colour of its own number. */}
+            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
               {dc.code}
             </div>
             <div
