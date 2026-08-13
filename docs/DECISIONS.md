@@ -5566,3 +5566,48 @@ payload, query, mutation or calculation changed.**
 - Risks: not visually verified in a browser — typecheck and lint pass, but the
   no-horizontal-scroll and side-by-side-with-SO-Master checks the UI rule calls
   for still need a real render.
+
+## ADR-119: Service PO lines are bought against an Item Master item, not free text
+**Date:** 2026-08-13
+**Status:** Accepted
+
+### Context
+The New Service PO line grid had one free-text `Description` column — the only
+"what are we buying" field in the app that was not an Item Master picker. Users
+were already typing bare item codes into it: all 4 live `service_po_lines` rows
+hold `554117146000`, which is the code of the master item LEVER CATCH RAMMER.
+The code therefore existed in the data but nothing linked it, so the printed SPO
+showed a bare number with no item name, and an item rename would never reach it.
+The system-wide item rule (docs/CONVENTIONS.md "Item pickers") requires code →
+master-only picker, name → auto-filled and read-only.
+
+### Decision
+Split the column in two: **Item Code** first (a master-only `<SearchableSelect>`,
+per the `dropdown` skill), then **Item Name**, auto-fetched from the picked item
+and rendered read-only. On the DB side `service_po_lines.description` is renamed
+to `item_name` and joined by `item_id` + `item_code_text`, mirroring
+`purchase_order_lines`. The API input carries only `itemId`; the service snapshots
+code + name from the master and rejects an id that is not an active item of the
+company. Reads resolve code + name **live** from a `leftJoin items`, with the
+stored snapshot as the fallback for pre-0094 rows.
+
+### Alternatives Considered
+- **Keep `description` and add the item columns beside it** — rejected: two
+  places would claim to say what the line is, and the grid would carry a stale
+  third column no form writes.
+- **Free text allowed when the code is off-master (the PO/PR/GRN pattern)** —
+  rejected: Service PO has no GRN or buyer-text history to preserve, and the item
+  rule's default is master-only. An off-master service is registered in the Item
+  Master first, like everywhere else.
+- **Store only `item_id` and always join for code/name** — rejected: the snapshot
+  columns are what keeps a printed SPO readable if an item is ever hard-removed,
+  and they match `purchase_order_lines`.
+
+### Consequences
+- Positive: SPO print now shows item code *and* name; an item rename shows on old
+  Service POs; the code can no longer be mistyped.
+- Negative: a service that is not in the Item Master cannot be put on a Service PO
+  until someone adds it there — this is a real workflow change for ad-hoc expenses
+  (transport, AMC) that used to be typed straight in.
+- Risks: the column rename means the migration and the API deploy must land
+  together; the currently deployed API selects `description`.

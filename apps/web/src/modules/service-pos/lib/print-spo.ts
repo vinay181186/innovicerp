@@ -104,9 +104,9 @@ export function printServicePo(args: {
     },
     meta,
     lines: lines.map((l) => ({
-      // Service lines have a free-text description, no item code.
-      itemCode: l.description,
-      itemName: '',
+      // Item code comes from the Item Master; pre-0094 lines have only the text.
+      itemCode: l.itemCode ?? '',
+      itemName: l.itemName,
       qty: String(l.qty),
       uom: 'NOS',
       rate: inrFormat(l.rate),

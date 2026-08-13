@@ -12,6 +12,7 @@ import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useItemsList } from '@/modules/items/api';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useCreateServicePo } from '../api';
@@ -23,13 +24,16 @@ export const servicePosNewRoute = createRoute({
 });
 
 interface LineDraft {
-  description: string;
+  /** Item Master id — the saved value. Item code + name both come from it. */
+  itemId: string;
+  itemCode: string;
+  itemName: string;
   qty: number;
   rate: number;
 }
 
 function emptyLine(): LineDraft {
-  return { description: '', qty: 1, rate: 0 };
+  return { itemId: '', itemCode: '', itemName: '', qty: 1, rate: 0 };
 }
 
 function ServicePosNewPage(): React.JSX.Element {
@@ -39,6 +43,11 @@ function ServicePosNewPage(): React.JSX.Element {
   const createMut = useCreateServicePo();
   const [vendorSearch, setVendorSearch] = useState('');
   const [soSearch, setSoSearch] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
+  const itemsQuery = useItemsList(
+    { search: itemSearch || undefined, limit: 50, offset: 0 },
+    { enabled: canEdit },
+  );
   const vendorsQuery = useVendorsList(
     { search: vendorSearch || undefined, limit: 50, offset: 0 },
     { enabled: canEdit },
@@ -87,7 +96,7 @@ function ServicePosNewPage(): React.JSX.Element {
 
   async function save(): Promise<void> {
     setSubmitError(null);
-    const validLines = lines.filter((l) => l.description.trim());
+    const validLines = lines.filter((l) => l.itemId);
     if (!spoNo.trim()) {
       setSubmitError('SPO No. is required');
       return;
@@ -97,7 +106,7 @@ function ServicePosNewPage(): React.JSX.Element {
       return;
     }
     if (validLines.length === 0) {
-      setSubmitError('Add at least one service line with description');
+      setSubmitError('Add at least one service line with an item code');
       return;
     }
     const input: CreateServicePoInput = {
@@ -113,7 +122,7 @@ function ServicePosNewPage(): React.JSX.Element {
       // the input type; there is no submit/approval step.
       status: 'pending',
       lines: validLines.map<ServicePoLineInput>((l) => ({
-        description: l.description.trim(),
+        itemId: l.itemId,
         qty: l.qty,
         rate: l.rate,
       })),
@@ -237,7 +246,8 @@ function ServicePosNewPage(): React.JSX.Element {
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
                 <th style={{ width: 30, fontSize: 10 }}>#</th>
-                <th style={{ fontSize: 10 }}>Description <span className="req">★</span></th>
+                <th style={{ width: 260, fontSize: 10 }}>Item Code <span className="req">★</span></th>
+                <th style={{ fontSize: 10 }}>Item Name</th>
                 <th style={{ width: 80, fontSize: 10 }}>Qty</th>
                 <th style={{ width: 110, fontSize: 10 }}>Rate (₹)</th>
                 <th style={{ width: 100, fontSize: 10, textAlign: 'right' }}>Amount</th>
@@ -249,12 +259,45 @@ function ServicePosNewPage(): React.JSX.Element {
                 <tr key={i}>
                   <td style={{ textAlign: 'center', fontSize: 12 }}>{i + 1}</td>
                   <td>
+                    {/* Master-only picker (CONVENTIONS "Item pickers"): the code
+                        is chosen from the Item Master, never typed free-hand. */}
+                    <SearchableSelect
+                      id={`spo-line-item-${i}`}
+                      value={l.itemId || null}
+                      onChange={(id) => {
+                        const it = (itemsQuery.data?.items ?? []).find((x) => x.id === id);
+                        updateLine(i, {
+                          itemId: id ?? '',
+                          itemCode: it?.code ?? '',
+                          // Name is auto-fetched from the master, never hand-typed.
+                          itemName: it?.name ?? '',
+                        });
+                      }}
+                      onSearch={setItemSearch}
+                      loading={itemsQuery.isFetching}
+                      placeholder="🔍 Item code — type code or name…"
+                      selectedLabel={(o) => o.code ?? o.name}
+                      valueLabel={l.itemCode || undefined}
+                      options={(itemsQuery.data?.items ?? []).map((it) => ({
+                        id: it.id,
+                        code: it.code,
+                        name: it.name,
+                      }))}
+                    />
+                  </td>
+                  <td>
                     <input
                       className="innovic-input"
-                      value={l.description}
-                      onChange={(e) => updateLine(i, { description: e.target.value })}
-                      placeholder="Service description…"
-                      style={{ width: '100%', fontSize: 12 }}
+                      value={l.itemName}
+                      readOnly
+                      tabIndex={-1}
+                      placeholder="— auto from Item Master —"
+                      style={{
+                        width: '100%',
+                        fontSize: 12,
+                        background: 'var(--bg4)',
+                        color: 'var(--text2)',
+                      }}
                     />
                   </td>
                   <td>

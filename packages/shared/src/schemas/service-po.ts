@@ -34,11 +34,17 @@ export const SERVICE_PO_EXPENSE_HEADS = [
 
 const codeRegex = /^[A-Za-z0-9._/-]+$/;
 
+// A service line now names the item it is bought against: item code first, then
+// the item name auto-fetched from the Item Master (CONVENTIONS "Item pickers").
+// `itemId` / `itemCode` are nullable only for rows created before that change —
+// new lines always carry a master item.
 export const servicePoLineSchema = z.object({
   id: z.string().uuid(),
   servicePoId: z.string().uuid(),
   lineNo: z.number().int().positive(),
-  description: z.string(),
+  itemId: z.string().uuid().nullable(),
+  itemCode: z.string().nullable(),
+  itemName: z.string(),
   qty: z.number().nonnegative(),
   rate: z.number().nonnegative(),
   amount: z.number().nonnegative(),
@@ -105,8 +111,10 @@ export interface ListServicePosResponse {
   offset: number;
 }
 
+// Master-only: the client sends the picked item's id, the server snapshots code +
+// name from the Item Master. A client-supplied name is never trusted.
 export const servicePoLineInputSchema = z.object({
-  description: z.string().min(1).max(500),
+  itemId: z.string().uuid(),
   qty: z.coerce.number().nonnegative().default(1),
   rate: z.coerce.number().nonnegative().default(0),
 });

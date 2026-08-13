@@ -288,7 +288,8 @@ function ServicePosDetailPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th style={{ width: 30 }}>#</th>
-                  <th>Description</th>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
                   <th className="td-ctr">Qty</th>
                   <th className="td-ctr">Rate</th>
                   <th className="td-ctr">Amount</th>
@@ -298,7 +299,8 @@ function ServicePosDetailPage(): React.JSX.Element {
                 {po.lines.map((l) => (
                   <tr key={l.id}>
                     <td className="td-ctr">{l.lineNo}</td>
-                    <td>{l.description}</td>
+                    <td className="mono">{l.itemCode ?? '—'}</td>
+                    <td>{l.itemName}</td>
                     <td className="td-ctr mono">{l.qty}</td>
                     <td className="td-ctr mono">₹{l.rate.toFixed(2)}</td>
                     <td className="td-ctr mono fw-700">₹{l.amount.toFixed(2)}</td>
@@ -307,17 +309,17 @@ function ServicePosDetailPage(): React.JSX.Element {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>Subtotal</td>
+                  <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>Subtotal</td>
                   <td className="td-ctr mono fw-700">₹{po.subtotal.toFixed(2)}</td>
                 </tr>
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'right' }}>
+                  <td colSpan={5} style={{ textAlign: 'right' }}>
                     {po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} @ {po.gstPct}%
                   </td>
                   <td className="td-ctr mono">₹{po.taxAmount.toFixed(2)}</td>
                 </tr>
                 <tr style={{ background: 'var(--bg4)' }}>
-                  <td colSpan={4} style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                  <td colSpan={5} style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
                     TOTAL
                   </td>
                   <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>

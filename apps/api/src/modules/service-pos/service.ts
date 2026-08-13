@@ -16,7 +16,7 @@ import type {
   UpdateServicePoInput,
 } from '@innovic/shared';
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
-import { salesOrders, servicePoLines, servicePos, vendors } from '../../db/schema';
+import { items, salesOrders, servicePoLines, servicePos, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import {
@@ -37,16 +37,45 @@ function n(s: string | number): number {
   return Number(s) || 0;
 }
 
-function toLine(r: typeof servicePoLines.$inferSelect): ServicePoLine {
+// `master` is the joined Item Master row (null for pre-0094 free-text lines).
+// Code + name are read LIVE from the master when the line is linked, so an item
+// rename shows on old Service POs too; the stored snapshot is the fallback.
+function toLine(
+  r: typeof servicePoLines.$inferSelect,
+  master?: { code: string; name: string } | null,
+): ServicePoLine {
   return {
     id: r.id,
     servicePoId: r.servicePoId,
     lineNo: r.lineNo,
-    description: r.description,
+    itemId: r.itemId,
+    itemCode: master?.code ?? r.itemCodeText,
+    itemName: master?.name ?? r.itemName,
     qty: n(r.qty),
     rate: n(r.rate),
     amount: n(r.amount),
   };
+}
+
+/** Resolve the picked item ids against this company's Item Master. Master-only:
+ *  an id that isn't an active item of this company blocks the save. */
+async function resolveLineItems(
+  tx: DbTransaction,
+  companyId: string,
+  lines: { itemId: string }[],
+): Promise<Map<string, { id: string; code: string; name: string }>> {
+  const ids = [...new Set(lines.map((l) => l.itemId))];
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: items.id, code: items.code, name: items.name })
+    .from(items)
+    .where(and(inArray(items.id, ids), eq(items.companyId, companyId), isNull(items.deletedAt)));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const missing = ids.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    throw new ValidationError(`Item not found in Item Master: ${missing.join(', ')}`);
+  }
+  return byId;
 }
 
 function toServicePo(r: typeof servicePos.$inferSelect): ServicePo {
@@ -179,8 +208,9 @@ async function getServicePoInternal(
   if (!row) throw new NotFoundError(`Service PO ${id} not found`);
 
   const lineRows = await tx
-    .select()
+    .select({ line: servicePoLines, itemCode: items.code, itemName: items.name })
     .from(servicePoLines)
+    .leftJoin(items, and(eq(items.id, servicePoLines.itemId), isNull(items.deletedAt)))
     .where(and(eq(servicePoLines.servicePoId, id), eq(servicePoLines.companyId, companyId)))
     .orderBy(asc(servicePoLines.lineNo));
 
@@ -188,7 +218,9 @@ async function getServicePoInternal(
     ...toServicePo(row.header),
     vendorName: row.vendorName,
     soCode: row.soCode,
-    lines: lineRows.map(toLine),
+    lines: lineRows.map((r) =>
+      toLine(r.line, r.itemCode && r.itemName ? { code: r.itemCode, name: r.itemName } : null),
+    ),
   };
 }
 
@@ -227,6 +259,8 @@ export async function createServicePo(
       )
       .limit(1);
     if (vendor.length === 0) throw new NotFoundError(`Vendor ${input.vendorId} not found`);
+
+    const itemsById = await resolveLineItems(tx, companyId, input.lines);
 
     const lineData = input.lines.map((l) => ({ qty: l.qty, rate: l.rate }));
     const { subtotal, taxAmount, total, lineAmounts } = computeTotals({
@@ -270,7 +304,9 @@ export async function createServicePo(
           companyId,
           servicePoId: header.id,
           lineNo: i + 1,
-          description: l.description,
+          itemId: l.itemId,
+          itemCodeText: itemsById.get(l.itemId)!.code,
+          itemName: itemsById.get(l.itemId)!.name,
           qty: String(l.qty),
           rate: String(l.rate),
           amount: String(lineAmounts[i] ?? 0),
@@ -328,8 +364,10 @@ export async function updateServicePo(
     // If lines are provided, recompute totals; otherwise keep existing.
     let totals = { subtotal: n(cur.subtotal), taxAmount: n(cur.taxAmount), total: n(cur.total) };
     let lineAmounts: number[] = [];
+    let itemsById = new Map<string, { id: string; code: string; name: string }>();
     const gstPct = input.gstPct ?? n(cur.gstPct);
     if (input.lines) {
+      itemsById = await resolveLineItems(tx, companyId, input.lines);
       const lineData = input.lines.map((l) => ({ qty: l.qty, rate: l.rate }));
       const t = computeTotals({ lines: lineData, gstPct });
       totals = t;
@@ -368,7 +406,9 @@ export async function updateServicePo(
             companyId,
             servicePoId: id,
             lineNo: i + 1,
-            description: l.description,
+            itemId: l.itemId,
+            itemCodeText: itemsById.get(l.itemId)!.code,
+            itemName: itemsById.get(l.itemId)!.name,
             qty: String(l.qty),
             rate: String(l.rate),
             amount: String(lineAmounts[i] ?? 0),

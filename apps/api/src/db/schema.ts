@@ -5168,7 +5168,11 @@ export const servicePoLines = pgTable(
       .notNull()
       .references(() => servicePos.id, { onDelete: 'cascade' }),
     lineNo: integer('line_no').notNull(),
-    description: text('description').notNull(),
+    // Item Master link (0094). `item_name` is the renamed `description` column —
+    // pre-0094 rows keep their free text with a null item_id / item_code_text.
+    itemId: uuid('item_id').references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    itemName: text('item_name').notNull(),
     qty: numeric('qty', { precision: 12, scale: 2 }).notNull().default('1'),
     rate: numeric('rate', { precision: 14, scale: 2 }).notNull().default('0'),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull().default('0'),
@@ -5183,6 +5187,7 @@ export const servicePoLines = pgTable(
   },
   (t) => [
     uniqueIndex('service_po_lines_po_lineno_uq').on(t.servicePoId, t.lineNo),
+    index('service_po_lines_item_idx').on(t.itemId),
     pgPolicy('service_po_lines_company_read', {
       for: 'select',
       to: 'authenticated',
