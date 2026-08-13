@@ -112,8 +112,10 @@ export function PoHeaderBand({
           gridTemplateColumns:
             'minmax(200px, 1.2fr) minmax(200px, 1.3fr) minmax(170px, 0.9fr) minmax(220px, 1.4fr)',
           // 1px gap over a border-coloured ground = the vertical dividers.
+          // `--border3` (the darkest of the three border depths) — `--border2`
+          // still read as too faint against the white columns.
           gap: 1,
-          background: 'var(--border2)',
+          background: 'var(--border3)',
         }}
       >
         {/* ── Supplier ── */}
@@ -203,7 +205,9 @@ export function PoHeaderBand({
               justifyContent: 'space-between',
               alignItems: 'baseline',
               gap: 10,
-              borderTop: '1px solid var(--border)',
+              // Matches the column dividers' weight so the Total rule doesn't
+              // read lighter than the lines crossing beside it.
+              borderTop: '1px solid var(--border3)',
               paddingTop: 6,
               marginTop: 2,
             }}
