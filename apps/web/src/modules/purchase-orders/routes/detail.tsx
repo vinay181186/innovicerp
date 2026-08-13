@@ -32,8 +32,18 @@
 // Kept over legacy (never delete a working feature): Back link, Approve/Reject,
 // Delete, Assign task, Issue DC / Receive (new GRN), Due date, Tax type, GST
 // split, PR ref, Approved at.
+//
+// CSS pass 2026-08-13 (user-supplied header mock). PRESENTATION ONLY — no data,
+// query, mutation or calculation changed. The legacy trio above the line items
+// (2-up Vendor / PO Details boxes → 6 bordered KPI tiles → a loose wrapped strip
+// of label/value pairs, each with its own border, fill, alignment and value
+// size) is now ONE four-column band, `components/po-header-band.tsx`:
+// SUPPLIER | ORDER REFERENCES | TOTALS | TAX & APPROVAL, hairline-divided, under
+// a status accent bar. Every field those three blocks showed is still on screen;
+// the vendor name moved out of the panel header into the SUPPLIER column, where
+// its address and GSTIN already belonged.
 
-import type { PurchaseOrderDetail, PurchaseOrderLine, Vendor } from '@innovic/shared';
+import type { PurchaseOrderLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
@@ -51,6 +61,7 @@ import {
   useRejectPurchaseOrder,
   useSoftDeletePurchaseOrder,
 } from '../api';
+import { PoHeaderBand } from '../components/po-header-band';
 import { PoStatusBadge } from '../components/po-status-badge';
 import { printPurchaseOrder } from '../lib/print-po';
 
@@ -81,8 +92,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase order…
+      <div className="panel empty-state" style={{ padding: 24 }}>
+        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+        Loading purchase order…
       </div>
     );
   }
@@ -170,22 +182,19 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to Purchase Orders
       </Link>
 
-      <div className="panel">
+      <div className="panel" style={{ overflow: 'hidden' }}>
         <div className="panel-hdr">
-          <div>
+          {/* Code + status on one line: the vendor name used to sit here as a
+              second line and now heads the SUPPLIER column of the band below,
+              where its address and GSTIN are. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <div
               className="td-code"
               style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 800 }}
             >
               {detail.code}
             </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {detail.vendorName ?? detail.vendorCodeText ?? '—'}
-              <PoStatusBadge status={detail.status} />
-            </div>
+            <PoStatusBadge status={detail.status} />
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <AssignTaskButton
@@ -286,35 +295,29 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             ) : null}
           </div>
         </div>
-        <div className="panel-body">
-          {softDelete.isError ? (
-            <div
-              style={{
-                color: 'var(--red)',
-                background: 'var(--red3)',
-                border: '1px solid #fca5a5',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {softDelete.error instanceof Error
-                ? softDelete.error.message
-                : 'Failed to delete purchase order.'}
-            </div>
-          ) : null}
-          <VendorAndPoDetails detail={detail} vendor={vendor} />
-          <SummaryTiles
-            lineCount={detail.lines.length}
-            totalQty={totalQty}
-            receivedQty={receivedQty}
-            totalValue={totalValue}
-            taxAmount={detail.taxAmount}
-            totalAmount={detail.totalAmount}
-          />
-          <DetailGrid detail={detail} />
-        </div>
+        {softDelete.isError ? (
+          <div
+            style={{
+              color: 'var(--red)',
+              background: 'var(--red3)',
+              border: '1px solid var(--red)',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              margin: '10px 14px 0',
+            }}
+          >
+            {softDelete.error instanceof Error
+              ? softDelete.error.message
+              : 'Failed to delete purchase order.'}
+          </div>
+        ) : null}
+        <PoHeaderBand
+          detail={detail}
+          vendor={vendor}
+          totalQty={totalQty}
+          receivedQty={receivedQty}
+        />
       </div>
 
       <div className="panel">
@@ -631,165 +634,5 @@ function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
         {l.lineRemarks ?? '—'}
       </td>
     </tr>
-  );
-}
-
-// Legacy L26364-26376 — Vendor box | PO Details box. The vendor's address /
-// GST / contact were already fetched by `useVendor` but rendered nowhere on
-// this page (print-only); legacy shows them here.
-function VendorAndPoDetails(props: {
-  detail: PurchaseOrderDetail;
-  vendor: Vendor | null | undefined;
-}): React.JSX.Element {
-  const { detail, vendor } = props;
-  const address = [vendor?.addressLine1, vendor?.city, vendor?.state].filter(Boolean).join(', ');
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 14,
-        marginBottom: 16,
-      }}
-    >
-      <div
-        style={{
-          background: 'var(--bg3)',
-          padding: 14,
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div
-          className="text3"
-          style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 6 }}
-        >
-          Vendor
-        </div>
-        <div className="fw-700">{detail.vendorName ?? detail.vendorCodeText ?? '—'}</div>
-        {vendor ? (
-          <div className="text3" style={{ fontSize: 11 }}>
-            {address || '—'}
-          </div>
-        ) : null}
-        {vendor ? (
-          <div className="text3" style={{ fontSize: 11 }}>
-            GST: {vendor.gstNumber ?? '—'} | Contact: {vendor.contactPerson ?? '—'}
-          </div>
-        ) : null}
-      </div>
-      <div
-        style={{
-          background: 'var(--bg3)',
-          padding: 14,
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div
-          className="text3"
-          style={{ fontSize: 10, textTransform: 'uppercase', marginBottom: 6 }}
-        >
-          PO Details
-        </div>
-        <div style={{ fontSize: 12 }}>
-          Date: <b>{detail.poDate}</b> | PR:{' '}
-          <b style={{ color: 'var(--purple)' }}>{detail.prCodeText ?? '—'}</b>
-        </div>
-        {detail.remarks ? (
-          <div className="text3" style={{ fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap' }}>
-            Remarks: {detail.remarks}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// Legacy L26377-26399 — summary tiles. Legacy hand-rolls these boxes inline
-// with `.mono .fw-700` values; it does NOT use the `.stat-card` KPI tiles
-// (those are the list's filter row, L25332). Mirrored as legacy has them.
-// Legacy's 5th/6th tiles (Tax + Grand Total, L26394) are now backed by the
-// stored header roll-up (subtotal / tax_amount / total_amount, migration
-// 0078) — the API persists them, so this is a read of a server-owned figure,
-// not tax math computed in React.
-function SummaryTiles(props: {
-  lineCount: number;
-  totalQty: number;
-  receivedQty: number;
-  totalValue: number;
-  taxAmount: number;
-  totalAmount: number;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(6, 1fr)',
-        gap: 10,
-        marginBottom: 16,
-      }}
-    >
-      <Tile label="Lines" value={String(props.lineCount)} color="var(--blue)" />
-      <Tile label="Total Qty" value={String(props.totalQty)} />
-      <Tile label="Received" value={String(props.receivedQty)} color="var(--green)" />
-      <Tile label="Subtotal" value={`₹${props.totalValue.toFixed(2)}`} />
-      <Tile label="Tax" value={`₹${props.taxAmount.toFixed(2)}`} />
-      <Tile label="Total" value={`₹${props.totalAmount.toFixed(2)}`} color="var(--green)" />
-    </div>
-  );
-}
-
-function Tile(props: { label: string; value: string; color?: string }): React.JSX.Element {
-  return (
-    <div
-      style={{
-        background: 'var(--bg3)',
-        padding: 10,
-        borderRadius: 8,
-        textAlign: 'center',
-        border: '1px solid var(--border)',
-      }}
-    >
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase' }}>
-        {props.label}
-      </div>
-      <div
-        className="mono fw-700"
-        style={props.color ? { fontSize: 18, color: props.color } : { fontSize: 18 }}
-      >
-        {props.value}
-      </div>
-    </div>
-  );
-}
-
-// Header fields legacy's PO Details box (L26371-26375) has no slot for. Date /
-// PR ref / Remarks live in that box above, so they are not repeated here.
-function DetailGrid(props: { detail: PurchaseOrderDetail }): React.JSX.Element {
-  const { detail } = props;
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem label="Type" value={detail.poType.replaceAll('_', ' ')} />
-      <StripItem label="Due date" value={detail.dueDate ?? '—'} />
-      <StripItem label="Tax type" value={detail.taxType ?? '—'} />
-      <StripItem
-        label="GST split"
-        value={`SGST ${detail.sgstPct}% · CGST ${detail.cgstPct}% · IGST ${detail.igstPct}%`}
-      />
-      <StripItem label="Approved at" value={detail.approvedAt ?? '—'} />
-      <StripItem label="Rejected by" value={detail.rejectedBy ?? '—'} />
-      <StripItem label="Rejected at" value={detail.rejectedAt ?? '—'} />
-      <StripItem label="Rejection reason" value={detail.rejectionReason ?? '—'} />
-    </div>
-  );
-}
-
-function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
   );
 }
