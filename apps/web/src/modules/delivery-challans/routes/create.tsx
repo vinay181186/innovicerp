@@ -233,7 +233,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="form-grid">
+        <div className="form-grid-3">
           <DocNumberInput
             type="delivery_challan"
             value={code}
