@@ -5740,3 +5740,104 @@ pagination maths, print output or navigation changed.**
   no-horizontal-scroll and side-by-side-with-SO-Master checks still need a real
   render. The three `#fca5a5` literals in this module's create/detail/receive
   error boxes are untouched and still violate the no-hard-coded-hex rule.
+
+## ADR-122: Party Material GRN — SO-Master cards, frozen band, StatStrip, and a 969-line file split
+**Date:** 2026-08-13
+**Status:** Accepted
+
+### Context
+`party-grn/routes/list.tsx` was 969 lines — the list page, two hand-rolled
+modals, a line-row editor and a label helper in one file, more than twice the
+CLAUDE.md §12 400-line limit. Defects found:
+
+1. **Horizontal scroll.** 11 columns under `.innovic-table td`'s
+   `white-space: nowrap`, with **four** unbounded free-text columns — Client,
+   Received By (which renders the user's *email*), Client PO and DC No. — none
+   with a max-width. Only Remarks was defended with an ellipsis + `title`, so
+   the file already contained the fix and simply had not applied it to the
+   others. No `tbl-frozen`, so the GRN No. scrolled off with everything else.
+2. **Two vertical scrollbars.** `.tbl-wrap` is `overflow-y: auto` +
+   `max-height: calc(100vh - 220px)` inside `#content`'s own scroller, and this
+   page stacks ~180px of chrome above the table (banner + title row + KPI grid),
+   so the inner scroller ran past the fold.
+3. **Nothing was pinned.** No `position: sticky` anywhere — banner, title,
+   search box and tiles all scrolled away.
+4. **Three `.stat-card` boxes**, violating the `styling` skill Rule 3 / ADR-120.
+5. **The New-GRN modal reimplemented `.form-grid` inline** as
+   `display: grid; gridTemplateColumns: '1fr 1fr'` — identical to the class,
+   minus its `@media (max-width: 768px)` collapse, so the modal did not respond
+   on a narrow screen. Its line table sat in an **`overflow: hidden`** box,
+   which clips rather than scrolls: a wide row simply vanished.
+6. **Four raw hexes** in a theme-blind amber banner, and both modals at
+   `zIndex: 100` while the SO Master dialogs use 200.
+
+### Decision
+Restyle and split. **Presentation only — no data, query, validation, payload or
+mutation behaviour changed. Every validation and confirm message string is
+verbatim, and the `dlPGrnMaterial` datalist id and `pgrn-jwso` picker id are
+preserved because they are load-bearing.**
+
+- `routes/list.tsx` (252) — frozen band with title + count + search + New, and
+  `<StatStrip>` inside it. Cards, pagination, hint.
+- `components/party-grn-card.tsx` (182) — one `.panel` card per GRN: green
+  accent bar, identity + client + Cancel, metric strip (Received / Lines) +
+  meta line (date · JWSO · PO · DC · received-by · remarks), the last three
+  clipped with ellipsis + `title`.
+- `components/new-party-grn-modal.tsx` (397), `components/cancel-party-grn-modal.tsx`
+  (125), `components/party-grn-line-row.tsx` (196).
+- Banner keeps its content but moves to the token amber rgba wash and stays
+  OUTSIDE the band so it scrolls away rather than eating pinned height.
+- Line editor → `.innovic-table` with `tableLayout: fixed`, percentage widths,
+  `minWidth: 900`, wrapper `overflow: visible`. Manual JS zebra striping
+  (`idx % 2` → inline background) dropped; `.innovic-table` already does it.
+
+### Alternatives Considered
+- **Make the card clickable to a detail page** (styling skill Rule 2) —
+  impossible: `GET /party-grn/:id` exists on the API and `usePartyGrnDetail` is
+  written, but **no detail route exists in the web app**, so there is nowhere to
+  navigate. For the same reason the GRN code stays `--cyan` and is NOT rendered
+  as a `--blue` link: blue is this app's colour for a code you can click, and a
+  blue code that does nothing reads as broken. Same call as the Dispatch card.
+- **Convert the three stats to filters** so they earn `<StatStrip>`'s button
+  treatment — rejected as scope creep; they are totals. The strip's optional
+  `onClick` (added in ADR-121) renders them as plain cells instead.
+- **Fix the pre-existing bugs found during the audit** — deliberately NOT done,
+  see below. This was a styling task.
+- **Drop the 2px amber / 2px green borders on the line inputs** for SO's
+  colour-only convention — rejected: the amber border is conditional state
+  ("this required field is empty"), and removing a working cue to match a
+  reference is not an improvement.
+
+### Consequences
+- Positive: no horizontal scroll, no nested scrollbar, GRN No. always visible,
+  search always reachable, modal usable on a narrow screen, line editor no
+  longer clips. 969 lines → five files, largest 397.
+- Negative: the card is not clickable, so this list is the one SO-Master port
+  that does not satisfy styling Rule 2 — it cannot until a detail route exists.
+- Risks: not visually verified in a browser. This page carries far more logic
+  than the previous two ports (a 6-step validation ladder, two modals, three
+  dependent queries), so a real render matters more here than it did there.
+
+### Pre-existing defects found during the audit — reported, NOT fixed
+Recorded so they are not lost. None were introduced or touched by this change.
+1. **`total` ignores the search filter** (`service.ts` counts with company +
+   not-deleted only, omitting the search predicate the items query applies), so
+   "Showing 1–50 of N" and the Next button lie whenever the user searches.
+2. **The summary tiles are global while the table is filtered** — a search
+   showing 2 rows still sits under "TOTAL GRNs 900". A hint line under the list
+   now says so in plain words; the honest fix is server-side.
+3. **The TODAY tile uses a UTC date** while the form defaults to local, so
+   between 00:00 and 05:30 IST a GRN saved today is not counted. Violates
+   CLAUDE.md §6 rule 5.
+4. **Client-side qty check is weaker than the schema** — it accepts any finite
+   value > 0, so `2.5` passes the UI and gets an opaque 400 from the server's
+   `z.number().int()`.
+5. **The server's cumulative order-qty cap has no client-side mirror**, even
+   though `orderQty` is already loaded — the user only finds out on Save.
+6. **The JWSO picker hard-codes `status: 'open'`**, so a GRN against a draft or
+   closed JWSO is impossible from this screen with no explanation, though the
+   API allows it.
+7. **Neither mutation invalidates `['job-work-orders']`**, so a JWSO's
+   material badge is stale right after a GRN is recorded or cancelled.
+8. **`<LineRow key={i}>` is index-keyed** — removing a middle line re-keys every
+   row below it and focus jumps.
