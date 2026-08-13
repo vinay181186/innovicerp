@@ -144,6 +144,23 @@ function JobCardsListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
+          Title + create buttons AND the filter panel (search / status / machine /
+          operator / dates) stay pinned while the job-card cards scroll underneath,
+          so filters stay reachable like the SO list's search. Background must be
+          opaque var(--bg) or cards show through as they pass under. Not bled
+          edge-to-edge — that would give the app a horizontal scrollbar. */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
       <div
         style={{
           display: 'flex',
@@ -179,7 +196,7 @@ function JobCardsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 0 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
           <div
             style={{
@@ -265,6 +282,7 @@ function JobCardsListPage(): React.JSX.Element {
             />
           </div>
         </div>
+      </div>
       </div>
 
       {isLoading ? (

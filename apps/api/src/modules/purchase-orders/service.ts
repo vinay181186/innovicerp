@@ -270,7 +270,7 @@ export async function listPurchaseOrders(
         ${vendorFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY po.code ASC
+      ORDER BY po.po_date DESC, po.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 

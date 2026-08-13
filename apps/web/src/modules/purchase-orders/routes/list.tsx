@@ -119,12 +119,27 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
+          Title + search + filters + New button stay pinned while the PO cards
+          scroll underneath. Background must be opaque var(--bg) or cards show
+          through as they pass under. Not bled edge-to-edge — that would give the
+          app a horizontal scrollbar. */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 14,
           gap: 8,
         }}
       >
@@ -188,6 +203,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             </Link>
           ) : null}
         </div>
+      </div>
       </div>
 
       {activeFilter ? (
