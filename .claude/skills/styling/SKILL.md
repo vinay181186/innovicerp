@@ -1,6 +1,6 @@
 ---
 name: styling
-description: Innovic ERP table/row styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), and make data rows clickable to open the detail page.
+description: Innovic ERP table/row + KPI styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) or any row of count/status/KPI tiles above a list — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), make data rows clickable to open the detail page, and render all counts as ONE single-row strip instead of separate cards.
 ---
 
 # Styling — Innovic ERP tables
@@ -100,6 +100,70 @@ Keep the helper hint under the table so it's discoverable:
 </div>
 ```
 
+## Rule 3 — KPI counts go in ONE single-row strip, never separate cards
+
+The counts above a list (Open / Approved / PO Created / All PRs, and every
+equivalent on SO, JC, GRN, Dispatch, NC…) are **one horizontal strip inside one
+container**, not four floating `.panel` cards.
+
+**Wrong** — the old Purchase Requests header: four `.panel` cards in a
+`flex; gap: 12` row, each with its own padding, radius, shadow and a 2px coloured
+ring when active. It eats ~120px of vertical space, centres its text against a
+left-aligned page, and the "active" ring reads as a selected card rather than a
+filter.
+
+**Right** — one row, dividers between the stats, nothing else:
+
+```tsx
+<div
+  className="panel"
+  style={{ display: 'flex', alignItems: 'stretch', padding: 0, marginBottom: 14 }}
+>
+  {STATS.map((s, i) => (
+    <button
+      key={s.key}
+      type="button"
+      onClick={s.onClick}
+      style={{
+        flex: 1,
+        textAlign: 'left',                 // left-aligned, like the page title
+        padding: '10px 16px',
+        background: 'transparent',
+        border: 'none',
+        borderLeft: i === 0 ? 'none' : '1px solid var(--border)',  // thin divider
+        cursor: 'pointer',
+      }}
+    >
+      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 700 }}>
+        {s.label}
+      </div>
+      <div className="mono fw-700" style={{ fontSize: 22, color: s.color }}>
+        {s.count}
+      </div>
+    </button>
+  ))}
+</div>
+```
+
+Non-negotiables for the strip:
+
+- **One row, one container.** No per-stat card, box, border-radius, shadow or
+  background. The only separator is a `1px solid var(--border)` vertical divider
+  between stats (none before the first).
+- **Label above number, both left-aligned.** Label: `text3`, `fontSize: 10`,
+  uppercase, bold. Number: `mono fw-700`, ~`fontSize: 22`, coloured by meaning
+  (`var(--amber)` open, `var(--blue)` approved/awaiting, `var(--green)` done,
+  `var(--cyan)`/default for the "All" total). **Never a hard-coded hex.**
+- **Keep whatever behavior the tiles had.** These are usually status filters — the
+  strip stays clickable (`<button>`, `cursor: 'pointer'`, Enter/Space works for
+  free). Show the active filter by colouring the label + a 2px bottom border in the
+  stat's own colour — **not** by ringing the whole cell like a card.
+- **It does not scroll away with the list.** Put the strip in the page's existing
+  frozen header band if the page has one; otherwise directly under the title.
+- Narrow screens: `flexWrap: 'wrap'` is allowed; a wrapped stat keeps its divider
+  rule (first-in-row loses the left border only if you compute it — simplest is to
+  let it wrap and accept the divider).
+
 ## Checklist before finishing a table
 
 - [ ] Table uses `<div className="tbl-wrap"><table className="innovic-table">` (gives no-wrap + side-scroll for free).
@@ -107,3 +171,5 @@ Keep the helper hint under the table so it's discoverable:
 - [ ] `<tr>` has `onClick` → detail page and `cursor: 'pointer'`.
 - [ ] Every in-row button / link-that-does-something-else / filter / chevron / icon calls `e.stopPropagation()`.
 - [ ] The "click a row to open it" hint is present under the table.
+- [ ] Counts above the list are ONE single-row strip (`var(--border)` dividers, left-aligned label over number) — not separate `.panel` cards.
+- [ ] Strip stats still filter on click, active state shown by colour + bottom border, and every colour is a `var(--*)` token.

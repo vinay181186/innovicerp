@@ -5611,3 +5611,56 @@ stored snapshot as the fallback for pre-0094 rows.
   (transport, AMC) that used to be typed straight in.
 - Risks: the column rename means the migration and the API deploy must land
   together; the currently deployed API selects `description`.
+
+## ADR-120: KPI counts are one single-row strip, and the PR list is SO-Master cards
+**Date:** 2026-08-13
+**Status:** Accepted
+
+### Context
+Purchase Requests was the last list still carrying two shapes the rest of the app
+had moved off. (a) Its four status counts were four separate `.panel` cards in a
+flex row (`StatusCard`, list.tsx L572) — ~120px of height, centred text against a
+left-aligned page, and a 2px coloured ring on the active one that read as "this
+card is selected" rather than "this filter is on". (b) Its record list was an
+11-column `innovic-table`; `.innovic-table td` is `white-space: nowrap` and the
+Actions column carries a ~330px cluster of un-shrinkable `.btn`s on every row, so
+the table ran past the viewport and the PR No. scrolled out of view — the same
+failure the SO/WO, JWSO and Dispatch lists were already fixed for (ADR-118).
+
+### Decision
+1. **KPI counts = one strip, never cards.** New shared `<StatStrip>`
+   (`components/shared/stat-strip.tsx`): one container, one row, each stat a real
+   `<button>` with a left-aligned uppercase label over its coloured number,
+   separated only by a `1px solid var(--border)` divider. The active filter is a
+   coloured label + 2px bottom border, not a ring. Written up as Rule 3 in the
+   local `styling` skill so every future list starts here.
+2. **PR list = SO-Master cards.** One `.panel` card per PR (accent bar by status,
+   identity band, metric strip + meta line), whole card clickable to the detail
+   page, actions `stopPropagation`. Every column the table showed is still on the
+   card. Split into `components/pr-card.tsx` so both files stay under 400 lines.
+3. **Newest first.** The list SQL was `ORDER BY pr.code ASC`, which sank every new
+   PR to the last page; now `ORDER BY pr.pr_date DESC, pr.code DESC`, matching the
+   SO list. This is API business logic, so it was raised and approved explicitly
+   before the change.
+
+### Alternatives Considered
+- **Keep the cards, just shrink them** — rejected: the height is not the only
+  problem; centred text and the selection ring are what make them read as tiles
+  rather than a filter bar.
+- **Several PR cards side by side (a tile grid)** — rejected: the design reference
+  is one full-width `.panel` per row, stacked; a grid narrows each card until the
+  item name, vendor and action buttons have to be truncated.
+- **Keep the table and let it scroll sideways** — rejected by the standing
+  no-horizontal-scroll rule.
+- **Keep the column sorting the table had** — dropped: it only sorted the 25 rows
+  on screen, and SO Master (the reference) has no sort control. Flagged to the
+  user rather than silently replaced.
+
+### Consequences
+- Positive: no horizontal scroll; PR No. always visible; ~2× the counts' vertical
+  space returned to the list; `<StatStrip>` means the next list reuses instead of
+  hand-rolling.
+- Negative: per-column sorting is gone from the PR list; the actions cluster now
+  wraps to a second line on a narrow card instead of staying on one row.
+- Risks: not visually verified in a browser at the time of writing — typecheck and
+  lint pass, the side-by-side-with-SO-Master check still needs a real render.

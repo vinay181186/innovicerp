@@ -251,7 +251,9 @@ export async function listPurchaseRequests(
         ${jcOpFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY pr.code ASC
+      -- Newest first, matching the SO list (sales-orders/service.ts). This was
+      -- pr.code ASC, which sank every new PR to the last page.
+      ORDER BY pr.pr_date DESC, pr.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
