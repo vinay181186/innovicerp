@@ -5487,3 +5487,82 @@ no backfill, self-healing.
   dispositioned before this change and so was already `closed`; it was reopened
   to `disposed` on the user's decision that VND-001 holds the piece. It was the
   only `return_to_vendor` NC in the entire database, so there was no backfill.
+
+## ADR-118: Customer Dispatch restyled to SO Master — cards + frozen header + SO-form line table
+**Date:** 2026-08-13
+**Status:** Accepted
+
+### Context
+`customer-dispatches` was the last Entry screen still on the pre-SO-Master
+layout. Two concrete defects, both the ones the SO card port exists to fix:
+
+1. **List** — the Dispatch Log was an 11-column `<table>` inside `.tbl-wrap`.
+   The theme sets `white-space: nowrap` on every `th` and `td`, and three of the
+   columns are free text (Customer / Ref, Dispatched By, Remarks) with no
+   `max-width` and no ellipsis, so the table grew with the content and scrolled
+   sideways. `tbl-frozen` was not applied, so Dispatch No. slid out of view on
+   that scroll. The expanded line table was nested in a `<td colSpan={10}>`
+   *without* its own wrapper, so its 8 nowrap columns pushed the parent table
+   wider still. Title, filters and KPI tiles were plain flow content and
+   scrolled away; only the `<th>` band was pinned (z-index 5, from the theme).
+   `.tbl-wrap`'s `max-height: calc(100vh - 220px)` also nested a second vertical
+   scrollbar inside `#content`'s own.
+2. **Create** — the line editor was a hand-rolled CSS grid,
+   `'34px 1.4fr 1.8fr 70px 70px 90px 90px 110px 34px'`. Seven fixed px columns
+   sum to ~498px before the two `fr` columns, so it overflowed `#content` below
+   roughly 900px with no wrapper and no responsive fallback — the exact failure
+   mode `sales-orders/routes/list.tsx` warns about. The per-line error was
+   aligned by a magic `paddingLeft: 44` hand-derived from the grid template, so
+   it would silently desync if the template ever changed, and the column captions
+   were `fontSize: 9` — below `--fs-mono`, the smallest token in the scale.
+
+### Decision
+Restyle both pages to SO Master. **Presentation only — no data, validation,
+payload, query, mutation or calculation changed.**
+
+- **List:** frozen header band (`position:sticky, top:0, zIndex:20,
+  background:var(--bg), borderBottom`) carrying title + count line + SO filter +
+  search + Export + Print + Expand all + New. Dispatch Log becomes one `.panel`
+  card per dispatch: 4px accent bar (green dispatched / grey cancelled), Band 1
+  identity + status badge + actions, Band 2 metric strip (`Total Qty`, `Lines`)
+  + mono meta line (date · SO · dispatched by · remarks), Band 3 the item lines.
+  KPI tiles and the Item-wise Summary panel are unchanged and left outside the
+  band so they scroll away. Loading / error / empty become the SO
+  `.panel.empty-state` chain instead of early returns.
+- **Create:** SO-form page shell — top action bar with Back + title + crumb +
+  Cancel/Save (SO deliberately has no sticky footer), `.form-grid-4` header with
+  the SO picker on `.form-span-2`, and the line editor rebuilt as the SO line
+  table: `tableLayout:'fixed'` + percentage widths + `minWidth: 880`, wrapper
+  `overflow: visible` so the item picker's dropdown is not clipped, closed by a
+  totals strip. The per-line error now renders under its own qty input, so no
+  alignment constant exists to desync.
+- Split into `components/dispatch-card.tsx` and
+  `components/dispatch-line-table.tsx` — all four files are now under the 400-line
+  rule (list was already at 415).
+
+### Alternatives Considered
+- **Wrap the grid / table in `overflow-x: auto`** — rejected: it hides the
+  overflow rather than removing it, and the standing UI rule is that a list wide
+  enough to scroll sideways is the signal to switch to cards, not to add a
+  scroller.
+- **Apply `tbl-frozen` and keep the 11-column table** — rejected: it pins the
+  first column but the page still scrolls sideways, and it leaves Dispatch as
+  the only Entry screen not on the card layout.
+- **Normalise every inline `fontSize` to a `--fs-*` token** — rejected: SO
+  Master itself writes these as inline numbers (13 / 11 / 15 / 9). Matching the
+  reference matters more than tokenising a scale the reference does not use.
+- **Copy SO's error box verbatim** — rejected on one detail: SO hard-codes
+  `#fca5a5` for its border. This module has zero literal colours and the
+  no-hard-coded-hex rule is explicit, so the border is `var(--red)` instead.
+
+### Consequences
+- Positive: no horizontal scrollbar on either page; Dispatch No. is always
+  visible; the module now reads as part of the same ERP as SO / JWSO / PO / JC.
+  Every field that was on screen is still on screen.
+- Negative: the create page's Save/Cancel moved from bottom-right to the top
+  action bar, and `+ Add Line` moved from below the lines into the section
+  toolbar. Both are SO Master's placements, but they are a habit change for
+  anyone who used this screen daily.
+- Risks: not visually verified in a browser — typecheck and lint pass, but the
+  no-horizontal-scroll and side-by-side-with-SO-Master checks the UI rule calls
+  for still need a real render.

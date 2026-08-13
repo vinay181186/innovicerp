@@ -1,16 +1,21 @@
-// New Customer Dispatch — pick an SO, then add dispatch lines (card-per-line,
-// like the SO/PO line editor). The user types an item code; the item name and
-// the order/ready/dispatched/available metrics auto-fetch from the SO's
-// dispatchable lines. Dispatch is capped at each line's available qty.
+// New Customer Dispatch — pick an SO, then add dispatch lines. The user types an
+// item code; the item name and the order/ready/dispatched/available metrics
+// auto-fetch from the SO's dispatchable lines. Dispatch is capped at each line's
+// available qty.
+//
+// Styled to SO Master (sales-orders/components/sales-order-form.tsx): top action
+// bar carrying Back + title + crumb + Cancel/Save, a 4-up header grid, and the
+// shared line-item table. Errors stay at the bottom, next to the fields that
+// caused them. No validation, payload or mutation behaviour changed.
 
 import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { SearchableSelect } from '@/components/shared/searchable-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
+import { DispatchLineTable, type LineCard } from '../components/dispatch-line-table';
 
 export const customerDispatchNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -21,15 +26,6 @@ export const customerDispatchNewRoute = createRoute({
 function todayStr(): string {
   return todayLocal();
 }
-
-interface LineCard {
-  id: number;
-  soLineId: string | null;
-  qty: string;
-}
-
-// Grid template shared by the header row + every card so columns line up.
-const GRID = '34px 1.4fr 1.8fr 70px 70px 90px 90px 110px 34px';
 
 function CustomerDispatchNewPage(): React.JSX.Element {
   const navigate = useNavigate();
@@ -73,7 +69,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   }
 
   // Live per-line validation (no silent clamp): a qty over the available amount
-  // is a hard block — the card shows a friendly message and Save is disabled
+  // is a hard block — the line shows a friendly message and Save is disabled
   // until every line is within its available qty.
   const lineErrors = new Map<number, string>();
   let anyPositiveQty = false;
@@ -143,18 +139,61 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/customer-dispatches" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Dispatch Register
-      </Link>
       <div className="panel">
-        <div className="panel-hdr">
-          <span className="panel-title">🚚 New Customer Dispatch</span>
-        </div>
         <div className="panel-body">
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label">Sales Order ★</label>
-              <select className="innovic-input" value={soId} onChange={(e) => setSoId(e.target.value)}>
+          {/* Top action bar — SO Master keeps Save/Cancel here, not in a sticky
+              footer, so they stay visible with the header fields. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              paddingBottom: 10,
+              marginBottom: 12,
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <Link to="/customer-dispatches" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+            <div className="panel-title" style={{ fontSize: 16 }}>🚚 New Customer Dispatch</div>
+            <div className="text3" style={{ fontSize: 11 }}>Sales &amp; CRM › Customer Dispatch › New</div>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void navigate({ to: '/customer-dispatches' })}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-success btn-sm"
+                disabled={!canSave}
+                title={
+                  lineErrors.size > 0
+                    ? 'Fix the highlighted lines — dispatch qty cannot exceed the available qty.'
+                    : undefined
+                }
+                onClick={() => void submit()}
+              >
+                {create.isPending ? 'Saving…' : 'Create Dispatch'}
+              </button>
+            </div>
+          </div>
+
+          <div className="form-grid-4" style={{ marginBottom: 10 }}>
+            <div className="form-grp form-span-2">
+              <label className="form-label" htmlFor="dispatchSo">
+                Sales Order<span className="req">★</span>
+              </label>
+              <select
+                id="dispatchSo"
+                className="innovic-select"
+                value={soId}
+                onChange={(e) => setSoId(e.target.value)}
+              >
                 <option value="">-- Select SO --</option>
                 {(soOpts?.options ?? []).map((o) => (
                   <option key={o.salesOrderId} value={o.salesOrderId}>
@@ -164,187 +203,118 @@ function CustomerDispatchNewPage(): React.JSX.Element {
               </select>
             </div>
             <div className="form-grp">
-              <label className="form-label">Dispatch No.</label>
+              <label className="form-label" htmlFor="dispatchNo">Dispatch No.</label>
               <input
+                id="dispatchNo"
                 className="innovic-input"
                 readOnly
                 value={next?.code ?? '(auto on save)'}
-                style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label">Dispatch Date</label>
-              <input type="date" className="innovic-input" value={dispatchDate} onChange={(e) => setDispatchDate(e.target.value)} />
+              <label className="form-label" htmlFor="dispatchDate">Dispatch Date</label>
+              <input
+                id="dispatchDate"
+                type="date"
+                className="innovic-input"
+                value={dispatchDate}
+                onChange={(e) => setDispatchDate(e.target.value)}
+              />
             </div>
             <div className="form-grp">
-              <label className="form-label">Transport</label>
-              <input className="innovic-input" value={transport} onChange={(e) => setTransport(e.target.value)} />
+              <label className="form-label" htmlFor="transport">Transport</label>
+              <input
+                id="transport"
+                className="innovic-input"
+                autoComplete="off"
+                value={transport}
+                onChange={(e) => setTransport(e.target.value)}
+              />
             </div>
             <div className="form-grp">
-              <label className="form-label">Vehicle No.</label>
-              <input className="innovic-input" value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} />
+              <label className="form-label" htmlFor="vehicleNo">Vehicle No.</label>
+              <input
+                id="vehicleNo"
+                className="innovic-input"
+                autoComplete="off"
+                value={vehicleNo}
+                onChange={(e) => setVehicleNo(e.target.value)}
+              />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
-              <input className="innovic-input" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <label className="form-label" htmlFor="remarks">Remarks</label>
+              <input
+                id="remarks"
+                className="innovic-input"
+                autoComplete="off"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
             </div>
           </div>
 
           {soId ? (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', marginBottom: 6 }}>
-                ▸ READY TO DISPATCH (produced + QC-accepted)
-              </div>
-              <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-                Add a line, then type an item code — name and quantities auto-fill from this SO.
-              </div>
-
-              {cards.length > 0 ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: GRID,
-                    gap: 8,
-                    padding: '0 10px 4px',
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: 0.4,
-                    color: 'var(--text3)',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  <span>#</span>
-                  <span>Item Code ★</span>
-                  <span>Item Name</span>
-                  <span style={{ textAlign: 'center' }}>Order</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Ready</span>
-                  <span style={{ textAlign: 'center' }}>Dispatched</span>
-                  <span style={{ textAlign: 'center', color: 'var(--amber)' }}>Available</span>
-                  <span style={{ textAlign: 'center', color: 'var(--green)' }}>Dispatch Qty</span>
-                  <span />
-                </div>
-              ) : null}
-
-              {cards.map((card, idx) => {
-                const line = resolveLine(card.soLineId);
-                // Options = this SO's dispatchable lines, minus ones already
-                // picked on other cards (can't dispatch the same line twice).
-                const usedElsewhere = new Set(
-                  cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
-                );
-                const opts = lines
-                  .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
-                  .map((l) => ({ id: l.salesOrderLineId, code: l.itemCode, name: l.itemName }));
-                const hasErr = lineErrors.has(card.id);
-                return (
-                  <div key={card.id} style={{ marginBottom: 8 }}>
-                  <div
+            <>
+              <div
+                style={{
+                  margin: '4px 0 8px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: GRID,
-                      gap: 8,
-                      alignItems: 'center',
-                      background: 'var(--bg)',
-                      border: `1px solid ${hasErr ? 'var(--red)' : 'var(--border)'}`,
-                      borderRadius: 8,
-                      padding: 10,
+                      fontSize: 11,
+                      color: 'var(--cyan)',
+                      fontFamily: 'var(--mono)',
+                      fontWeight: 700,
+                      letterSpacing: '0.06em',
                     }}
                   >
-                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--text3)' }}>
-                      {idx + 1}
-                    </span>
-                    <SearchableSelect
-                      // One id per card. The component falls back to a unique
-                      // generated id, but a stable, meaningful one keeps the
-                      // label/listbox wiring readable and gives tests a handle.
-                      id={`dispatch-line-${card.id}`}
-                      value={card.soLineId}
-                      onChange={(id) => patchLine(card.id, { soLineId: id })}
-                      onSearch={() => {}}
-                      options={opts}
-                      placeholder="🔍 code or name…"
-                      emptyText="No ready items"
-                      // Item Code field shows the code only; the adjacent Item
-                      // Name field carries the name. The open dropdown still
-                      // renders "CODE — Name" so you can search by either.
-                      selectedLabel={(o) => o.code ?? o.name}
-                      valueLabel={line ? (line.itemCode ?? line.itemName) : undefined}
-                    />
-                    <input
-                      className="innovic-input"
-                      readOnly
-                      placeholder="auto-filled"
-                      value={line?.itemName ?? ''}
-                      style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
-                    />
-                    <span className="mono" style={{ textAlign: 'center' }}>{line ? line.orderQty : '—'}</span>
-                    <span className="mono" style={{ textAlign: 'center', color: 'var(--green)' }}>
-                      {line ? line.readyQty : '—'}
-                    </span>
-                    <span className="mono text3" style={{ textAlign: 'center' }}>
-                      {line ? line.dispatchedQty : '—'}
-                    </span>
-                    <span className="mono fw-700" style={{ textAlign: 'center', color: 'var(--amber)' }}>
-                      {line ? line.availableQty : '—'}
-                    </span>
-                    <input
-                      type="number"
-                      className="innovic-input"
-                      min={0}
-                      max={line?.availableQty ?? undefined}
-                      value={card.qty}
-                      disabled={!line || line.availableQty <= 0}
-                      onChange={(e) => patchLine(card.id, { qty: e.target.value })}
-                      style={{
-                        textAlign: 'center',
-                        ...(hasErr ? { borderColor: 'var(--red)', color: 'var(--red)' } : {}),
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      title="Remove line"
-                      onClick={() => removeLine(card.id)}
-                      style={{ color: 'var(--red)', padding: 4 }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                  {hasErr ? (
-                    <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 4, paddingLeft: 44 }}>
-                      ⚠ {lineErrors.get(card.id)}
-                    </div>
-                  ) : null}
-                  </div>
-                );
-              })}
+                    READY TO DISPATCH (produced + QC-accepted)
+                  </span>
+                  <span className="text3" style={{ fontSize: 11 }}>
+                    Add a line, then type an item code — name and quantities auto-fill from this SO.
+                  </span>
+                </div>
+                <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
+                  <Plus size={13} /> Add Line
+                </button>
+              </div>
 
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addLine} style={{ marginTop: 4 }}>
-                <Plus size={14} /> Add Line
-              </button>
-            </div>
+              <DispatchLineTable
+                cards={cards}
+                lines={lines}
+                lineErrors={lineErrors}
+                onPatch={patchLine}
+                onRemove={removeLine}
+              />
+            </>
           ) : null}
 
-          {err ? <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>{err}</div> : null}
-
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-ghost" onClick={() => void navigate({ to: '/customer-dispatches' })}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!canSave}
-              title={
-                lineErrors.size > 0
-                  ? 'Fix the highlighted lines — dispatch qty cannot exceed the available qty.'
-                  : undefined
-              }
-              onClick={() => void submit()}
-            >
-              {create.isPending ? 'Saving…' : 'Create Dispatch'}
-            </button>
-          </div>
+          {err ? (
+            <div style={{ marginTop: 16 }}>
+              {/* SO Master's error box, with the border taken from --red rather
+                  than the hex it hard-codes — this module keeps zero literal
+                  colours. */}
+              <div
+                style={{
+                  color: 'var(--red)',
+                  background: 'var(--red3)',
+                  border: '1px solid var(--red)',
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                }}
+              >
+                {err}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
