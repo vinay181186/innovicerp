@@ -35,25 +35,22 @@ const CAPTION: React.CSSProperties = {
   marginBottom: 8,
 };
 
-/** One column of the band. `bordered` draws the hairline that separates it from
- *  the column on its left. */
+/** One column of the band.
+ *
+ *  The dividers are NOT per-column borders: a 1px `var(--border)` left border
+ *  read as nothing against the white panel, and it only ran as tall as its own
+ *  column. Instead the grid carries a 1px gap over a `--border2` background and
+ *  each column paints itself `--bg2` — so the gap IS the divider: always the
+ *  full height of the tallest column, and one shade stronger. */
 function Col({
   caption,
-  bordered,
   children,
 }: {
   caption: string;
-  bordered?: boolean | undefined;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div
-      style={{
-        padding: '12px 16px',
-        minWidth: 0,
-        borderLeft: bordered ? '1px solid var(--border)' : undefined,
-      }}
-    >
+    <div style={{ padding: '12px 16px', minWidth: 0, background: 'var(--bg2)' }}>
       <div style={CAPTION}>{caption}</div>
       {children}
     </div>
@@ -112,7 +109,11 @@ export function PoHeaderBand({
           flex: 1,
           minWidth: 0,
           display: 'grid',
-          gridTemplateColumns: 'minmax(220px, 1.2fr) minmax(220px, 1.3fr) minmax(180px, 0.9fr) minmax(240px, 1.4fr)',
+          gridTemplateColumns:
+            'minmax(200px, 1.2fr) minmax(200px, 1.3fr) minmax(170px, 0.9fr) minmax(220px, 1.4fr)',
+          // 1px gap over a border-coloured ground = the vertical dividers.
+          gap: 1,
+          background: 'var(--border2)',
         }}
       >
         {/* ── Supplier ── */}
@@ -148,7 +149,7 @@ export function PoHeaderBand({
         </Col>
 
         {/* ── Order references ── */}
-        <Col caption="Order References" bordered>
+        <Col caption="Order References">
           <Row
             label="PO No."
             value={
@@ -174,7 +175,7 @@ export function PoHeaderBand({
         </Col>
 
         {/* ── Totals ── */}
-        <Col caption="Totals" bordered>
+        <Col caption="Totals">
           <Row label="Lines" value={<span className="mono">{detail.lines.length}</span>} align="right" />
           <Row label="Total qty" value={<span className="mono">{totalQty}</span>} align="right" />
           <Row
@@ -215,7 +216,7 @@ export function PoHeaderBand({
         </Col>
 
         {/* ── Tax & approval ── */}
-        <Col caption="Tax & Approval" bordered>
+        <Col caption="Tax & Approval">
           <Row label="Tax type" value={detail.taxType ?? '—'} />
           <Row label="Due date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
           <div style={{ fontSize: 11, marginBottom: 6 }}>
