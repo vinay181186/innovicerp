@@ -9,11 +9,17 @@
 // Styled to SO Master (sales-orders/routes/list.tsx): frozen header band, one
 // `.panel` card per dispatch instead of the 11-column table that scrolled
 // sideways. Nothing about the data, the filters or the mutations changed.
+//
+// 2026-08-13: the 3 KPI tiles (three `.panel` cards in a 3-col grid, below the
+// band, scrolling away with the list) are one `<StatStrip>` inside the band —
+// styling skill Rule 3. Read-only metrics, not filters, so the strip's cells
+// render as divs. Same three numbers over the same ACTIVE rows.
 
 import type { CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useCancelDispatch, useDispatchRegister } from '../api';
@@ -26,20 +32,6 @@ export const customerDispatchListRoute = createRoute({
   path: 'customer-dispatches',
   component: CustomerDispatchListPage,
 });
-
-const tileStyle: React.CSSProperties = { padding: 14, textAlign: 'center' };
-const tileLbl: React.CSSProperties = {
-  fontSize: 10,
-  color: 'var(--text3)',
-  textTransform: 'uppercase',
-  letterSpacing: '.08em',
-  marginBottom: 6,
-};
-const tileVal: React.CSSProperties = {
-  fontFamily: 'var(--mono)',
-  fontSize: 28,
-  fontWeight: 800,
-};
 
 function groupByDispatch(rows: CustomerDispatchRegisterRow[]): DispatchGroup[] {
   const groups: DispatchGroup[] = [];
@@ -227,6 +219,37 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </Link>
           </div>
         </div>
+
+        {/* The three KPIs were three `.panel` tiles in a 3-col grid below the
+            band — centred text, ~120px tall, and they scrolled away with the
+            list. Now one strip in the band (styling skill Rule 3). Read-only
+            metrics, so no onClick: they are totals, not filters. Counts are
+            over ACTIVE rows (cancelled dispatches were reversed) and follow the
+            SO filter + search, exactly as before. */}
+        <div style={{ marginTop: 10 }}>
+          <StatStrip
+            items={[
+              {
+                key: 'pcs',
+                label: 'Total Dispatched',
+                count: totalPcs,
+                color: 'var(--red)',
+                sub: 'pieces',
+              },
+              {
+                key: 'entries',
+                label: 'Dispatch Entries',
+                count: groups.filter((g) => g.status !== 'cancelled').length,
+              },
+              {
+                key: 'items',
+                label: 'Items Dispatched',
+                count: summary.length,
+                color: 'var(--cyan)',
+              },
+            ]}
+          />
+        </div>
       </div>
 
       {isLoading ? (
@@ -239,22 +262,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
-            <div className="panel" style={tileStyle}>
-              <div style={tileLbl}>Total Dispatched</div>
-              <div style={{ ...tileVal, color: 'var(--red)' }}>{totalPcs}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>pieces</div>
-            </div>
-            <div className="panel" style={tileStyle}>
-              <div style={tileLbl}>Dispatch Entries</div>
-              <div style={tileVal}>{groups.filter((g) => g.status !== 'cancelled').length}</div>
-            </div>
-            <div className="panel" style={tileStyle}>
-              <div style={tileLbl}>Items Dispatched</div>
-              <div style={{ ...tileVal, color: 'var(--cyan)' }}>{summary.length}</div>
-            </div>
-          </div>
-
           {summary.length > 0 ? (
             <div className="panel" style={{ marginBottom: 14 }}>
               <div className="panel-hdr">

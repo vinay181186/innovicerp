@@ -112,38 +112,36 @@ ring when active. It eats ~120px of vertical space, centres its text against a
 left-aligned page, and the "active" ring reads as a selected card rather than a
 filter.
 
-**Right** — one row, dividers between the stats, nothing else:
+**Right** — reuse the shared component, never hand-roll the row:
+`apps/web/src/components/shared/stat-strip.tsx` → `<StatStrip>`.
 
 ```tsx
-<div
-  className="panel"
-  style={{ display: 'flex', alignItems: 'stretch', padding: 0, marginBottom: 14 }}
->
-  {STATS.map((s, i) => (
-    <button
-      key={s.key}
-      type="button"
-      onClick={s.onClick}
-      style={{
-        flex: 1,
-        textAlign: 'left',                 // left-aligned, like the page title
-        padding: '10px 16px',
-        background: 'transparent',
-        border: 'none',
-        borderLeft: i === 0 ? 'none' : '1px solid var(--border)',  // thin divider
-        cursor: 'pointer',
-      }}
-    >
-      <div className="text3" style={{ fontSize: 10, textTransform: 'uppercase', fontWeight: 700 }}>
-        {s.label}
-      </div>
-      <div className="mono fw-700" style={{ fontSize: 22, color: s.color }}>
-        {s.count}
-      </div>
-    </button>
-  ))}
-</div>
+import { StatStrip } from '@/components/shared/stat-strip';
+
+// Filter stats (Purchase Requests) — pass onClick + active:
+<StatStrip
+  items={[
+    { key: 'open', label: 'Open', count: openCount, color: 'var(--amber)',
+      active: search.status === 'open', onClick: () => setStatusFilter('open') },
+    { key: 'all', label: 'All PRs', count: allCount, color: 'var(--cyan)',
+      active: search.status === undefined, onClick: () => setStatusFilter(undefined) },
+  ]}
+/>
+
+// Read-only metrics (Dispatch Register) — omit onClick, so the cell renders as a
+// <div> and is not announced as a control that does nothing. `sub` is the small
+// caption some metrics carry:
+<StatStrip
+  items={[
+    { key: 'pcs', label: 'Total Dispatched', count: totalPcs, color: 'var(--red)', sub: 'pieces' },
+    { key: 'entries', label: 'Dispatch Entries', count: entryCount },
+  ]}
+/>
 ```
+
+Reference implementations: `purchase-requests/routes/list.tsx` (filters) and
+`customer-dispatches/routes/list.tsx` (read-only). The component itself is what
+enforces the rules below — only change it if the rule changes.
 
 Non-negotiables for the strip:
 
@@ -154,10 +152,11 @@ Non-negotiables for the strip:
   uppercase, bold. Number: `mono fw-700`, ~`fontSize: 22`, coloured by meaning
   (`var(--amber)` open, `var(--blue)` approved/awaiting, `var(--green)` done,
   `var(--cyan)`/default for the "All" total). **Never a hard-coded hex.**
-- **Keep whatever behavior the tiles had.** These are usually status filters — the
-  strip stays clickable (`<button>`, `cursor: 'pointer'`, Enter/Space works for
-  free). Show the active filter by colouring the label + a 2px bottom border in the
-  stat's own colour — **not** by ringing the whole cell like a card.
+- **Keep whatever behavior the tiles had.** Status filters stay clickable
+  (`onClick` → `<button>`, so `cursor: 'pointer'` + Enter/Space come for free);
+  show the active one by colouring the label + a 2px bottom border in the stat's
+  own colour — **not** by ringing the whole cell like a card. Tiles that were only
+  totals stay totals: omit `onClick` and the cell renders as a plain `<div>`.
 - **It does not scroll away with the list.** Put the strip in the page's existing
   frozen header band if the page has one; otherwise directly under the title.
 - Narrow screens: `flexWrap: 'wrap'` is allowed; a wrapped stat keeps its divider
