@@ -430,7 +430,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           </div>
         ) : null}
 
-        <div className="form-grp form-full">
+        <div className="form-grp form-span-2">
           <label className="form-label">Client<span className="req">★</span> (type to search)</label>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
@@ -536,7 +536,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       <div style={{ border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: 12, margin: '0 0 16px', background: 'rgba(34,197,94,0.04)' }}>
         <div style={{ fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 8 }}>▸ CLIENT MATERIAL DETAILS</div>
         <div className="form-grid">
-          <div className="form-grp form-full">
+          <div className="form-grp">
             <label className="form-label">Client Material (Party Supplied Item)</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input className="innovic-input" style={{ flex: 1 }} autoComplete="off" list="dlRmItems" placeholder="🔍 Search -rm items…" {...register('header.clientMaterial')} />
@@ -617,7 +617,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     <button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}><Trash2 size={12} /></button>
                   </span>
                 </div>
-                <div className="form-grid form-grid-3">
+                <div className="form-grid form-grid-4">
                   <div className="form-grp">
                     <label className="form-label">Item Code</label>
                     <input className="innovic-input" autoComplete="off" list="dlJwItems" placeholder="🔍 ITM-001" {...register(`lines.${idx}.itemCodeText` as const, { onChange: (e) => fillLineFromItem(idx, e.target.value) })} />
