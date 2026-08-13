@@ -179,6 +179,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       setValue(`lines.${idx}.material`, it.material ?? '');
       setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
       setValue(`lines.${idx}.uom`, it.uom);
+      // Keep the hidden master link in step with the visible code so save uses
+      // the item now shown, not a stale itemId from a prior pick or an edit-mode
+      // load (fixes the edit-mode "swap to another master code" mismatch). The
+      // reset branch below already drops itemId when the code stops matching.
+      setValue(`lines.${idx}.itemId`, it.id);
       prevMatchedCodeRef.current[lineKey] = it.code.trim().toUpperCase();
       return;
     }
