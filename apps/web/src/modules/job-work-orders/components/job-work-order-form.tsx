@@ -149,18 +149,56 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     ? itemsByCode.get(clientMaterialCode.trim().toUpperCase())
     : undefined;
 
-  /** On item-code change, fill empty line fields from the master (fill-only, so
-   *  manual edits are never clobbered); UOM mirrors the master. */
+  // Per-line memory of the master code we last auto-filled a line from, keyed by
+  // the react-hook-form field id (stable as lines are added/removed). This is
+  // how we tell an AUTO-FILLED value (safe to refresh or reset) from a value the
+  // user hand-typed on an OFF-MASTER line (must never be wiped). A synchronous
+  // client-side Map drives this fill, so there is no fetch to race — the shared
+  // fetch-oriented use-field-cascade hook would not fit, so the cascade lives
+  // here inline.
+  const prevMatchedCodeRef = useRef<Record<string, string>>({});
+
+  /** Item Code is the unique key for a line; the master-derived fields (Part
+   *  Name, Material, Drawing No, UOM) follow it on every change:
+   *   - resolves to a master item  → REPLACE all four with the master's values
+   *     (overwrite, mirroring the SO form's line auto-fill), and remember the
+   *     matched code for this line;
+   *   - cleared / no longer matches → RESET all four (and drop the stale master
+   *     link) ONLY IF this line was previously auto-filled from a master, so no
+   *     stale master data lingers. A pure off-master line the user typed by hand
+   *     is left exactly as typed.
+   *  Rate and Qty are always user-entered and are never touched here. */
   function fillLineFromItem(idx: number, codeValue: string): void {
+    const lineKey = fields[idx]?.id ?? String(idx);
     const it = itemsByCode.get(codeValue.trim().toUpperCase());
-    if (!it) return;
-    // Rule: item code is the unique key — the name ALWAYS follows the selected
-    // code from the master (never a stale manual edit). Other attributes stay
-    // fill-only.
-    setValue(`lines.${idx}.partName`, it.name);
-    if (!getValues(`lines.${idx}.material`)) setValue(`lines.${idx}.material`, it.material ?? '');
-    if (!getValues(`lines.${idx}.drawingNo`)) setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
-    setValue(`lines.${idx}.uom`, it.uom);
+    if (it) {
+      // Matched a master item — the code is the key, so the master wins: refresh
+      // all four derived fields (replace, not fill-only), even across a change
+      // from one valid code to another.
+      setValue(`lines.${idx}.partName`, it.name);
+      setValue(`lines.${idx}.material`, it.material ?? '');
+      setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '');
+      setValue(`lines.${idx}.uom`, it.uom);
+      prevMatchedCodeRef.current[lineKey] = it.code.trim().toUpperCase();
+      return;
+    }
+    // No master match. Reset the derived fields only if THIS line was previously
+    // auto-filled from a master — either matched earlier in this session, or
+    // loaded in edit mode as a master-linked line (itemId set). A hand-typed
+    // off-master line has neither signal and is left untouched, so manual Part
+    // Name / Material / Drawing entered on a non-master code is never wiped.
+    const wasAutoFilled =
+      prevMatchedCodeRef.current[lineKey] !== undefined ||
+      Boolean(getValues(`lines.${idx}.itemId`));
+    if (!wasAutoFilled) return;
+    setValue(`lines.${idx}.partName`, '');
+    setValue(`lines.${idx}.material`, '');
+    setValue(`lines.${idx}.drawingNo`, '');
+    setValue(`lines.${idx}.uom`, NEW_LINE.uom);
+    // The code no longer resolves to a master, so drop the stale master link too
+    // — leaving it would save blank/new text against the old item.
+    setValue(`lines.${idx}.itemId`, undefined);
+    delete prevMatchedCodeRef.current[lineKey];
   }
 
   const watchedLines = watch('lines');
