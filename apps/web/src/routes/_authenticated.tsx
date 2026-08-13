@@ -1,5 +1,6 @@
 import { createRoute, Outlet, redirect } from '@tanstack/react-router';
 import { Breadcrumbs } from '@/components/shared/breadcrumbs';
+import { OpenTabsBar } from '@/components/shared/open-tabs-bar';
 import { Sidebar } from '@/components/shared/sidebar';
 import { TopBar } from '@/components/shared/topbar';
 import { supabase } from '@/lib/supabase';
@@ -40,6 +41,7 @@ function AuthenticatedLayout(): React.JSX.Element {
       <div id="main">
         <TopBar />
         <Breadcrumbs />
+        <OpenTabsBar />
         <div id="content">
           <Outlet />
         </div>

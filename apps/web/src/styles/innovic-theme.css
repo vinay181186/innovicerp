@@ -81,6 +81,72 @@
   background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
+/* Open-pages tab bar (components/shared/open-tabs-bar.tsx) — browser-style tabs
+   for visited routes, sits between the breadcrumb and #content as fixed chrome.
+   Horizontal overflow scrolls INSIDE the strip so a long tab set never gives the
+   app a horizontal scrollbar. Mirrors #breadcrumbs' padding so tabs line up with
+   the page body. */
+#pagetabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px 20px 0;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+.pgtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  font-size: 12px;
+  font-family: var(--bfont);
+  color: var(--text2);
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  max-width: 200px;
+}
+.pgtab:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.pgtab.active {
+  background: var(--bg2);
+  color: var(--blue);
+  font-weight: 700;
+  border-top: 2px solid var(--blue);
+  padding-top: 4px;
+}
+.pgtab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pgtab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.pgtab-close:hover {
+  background: var(--red3);
+  color: var(--red);
+}
 #content {
   flex: 1;
   overflow-y: auto;
