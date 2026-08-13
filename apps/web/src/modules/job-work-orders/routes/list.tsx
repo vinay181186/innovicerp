@@ -121,16 +121,35 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
-        <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input className="innovic-input" placeholder="Search JWSO, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
-          <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
-            <option value="">All statuses</option>
-            {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-          {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
+      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
+          Title + search + status filter + New button stay pinned while the cards
+          scroll underneath. `#content` is the scroll container, so top:0 pins this
+          to its padding box; the background must be opaque var(--bg) or cards show
+          through as they pass under. The green info banner below is a one-time
+          explainer, so it is left OUTSIDE the band and scrolls away. Not bled to
+          the edges — that would give the app a horizontal scrollbar. */}
+      <div
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="section-hdr" style={{ marginBottom: 0 }}>JWSO Master — Job Work Sales Order (Material from Client)</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input className="innovic-input" placeholder="Search JWSO, client, item…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ width: 220, fontSize: 12 }} />
+            <select className="innovic-select" value={search.status ?? ''} onChange={(e) => { const v = e.target.value as SoStatus | ''; void navigate({ search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }), replace: true }); }} style={{ width: 130, fontSize: 12 }}>
+              <option value="">All statuses</option>
+              {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
+            {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
+          </div>
         </div>
       </div>
 
