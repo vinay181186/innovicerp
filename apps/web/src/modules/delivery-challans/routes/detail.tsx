@@ -1,4 +1,16 @@
-// Delivery-challan detail (UI-003-06).
+// Delivery-challan detail (UI-003-06) — the OSP Outward DC.
+//
+// Styling pass 2026-08-13 against the SO Master detail page. Presentation only;
+// no data, mutation or API change. Fixed: the bare "Loading DC…" line (now the
+// `.panel.empty-state` chain), a hard-coded `#fca5a5` error border (→
+// `var(--red)`), `1px solid var(--line)` on the receipt separators (`--line` is
+// not a token, so the browser dropped the declaration and the receipts ran
+// together), `form-grid form-grid-3` stacked on one element with an empty
+// filler cell (→ one `.form-grid-3`, sixth cell now "Issued on" in IST), the
+// receipts' nested table missing its `.tbl-wrap`, and receipt rows showing only
+// the item snapshot while the lines table showed the live master name. Added a
+// totals row to the lines table. Receipts moved to components/dc-receipts-panel
+// to stay under the 400-line rule.
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -11,6 +23,7 @@ import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
 import { useCancelDeliveryChallan, useDeliveryChallan } from '../api';
+import { DcReceiptsPanel } from '../components/dc-receipts-panel';
 import { DcStatusBadge } from '../components/dc-status-badge';
 import { printOspDc } from '../lib/print-ospdc';
 
@@ -50,6 +63,24 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     return map;
   }, [data]);
 
+  // Column totals for the lines table's footer — the same four numbers each row
+  // shows, so the DC can be reconciled without adding them up by hand.
+  const totals = useMemo(() => {
+    const t = { ship: 0, received: 0, rejected: 0, remaining: 0 };
+    if (!data) return t;
+    for (const line of data.lines) {
+      const ship = Number(line.qty);
+      const agg = aggregatesByLine.get(line.id);
+      const received = agg?.receivedQty ?? 0;
+      const rejected = agg?.rejectedQty ?? 0;
+      t.ship += ship;
+      t.received += received;
+      t.rejected += rejected;
+      t.remaining += Math.max(0, ship - received - rejected);
+    }
+    return t;
+  }, [data, aggregatesByLine]);
+
   const lineLookup = useMemo(() => {
     const m = new Map<string, DeliveryChallanLine>();
     if (!data) return m;
@@ -58,9 +89,12 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   }, [data]);
 
   if (isLoading) {
+    // Same loading / error / empty chain as the SO Master pages — a bare
+    // sentence with no panel around it read as a broken page.
     return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading DC…
+      <div className="panel empty-state" style={{ padding: 24 }}>
+        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+        Loading DC…
       </div>
     );
   }
@@ -185,7 +219,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               style={{
                 color: 'var(--red)',
                 background: 'var(--red3)',
-                border: '1px solid #fca5a5',
+                border: '1px solid var(--red)',
                 borderRadius: 6,
                 padding: '6px 10px',
                 fontSize: 12,
@@ -257,96 +291,58 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   })
                 )}
               </tbody>
+              {dc.lines.length > 0 ? (
+                <tfoot>
+                  <tr style={{ background: 'var(--bg4)' }}>
+                    <td colSpan={2} style={{ textAlign: 'right', fontWeight: 700 }}>
+                      Total
+                    </td>
+                    <td className="td-right mono fw-700">{totals.ship.toFixed(2)}</td>
+                    <td className="td-right mono fw-700" style={{ color: 'var(--green2)' }}>
+                      {totals.received.toFixed(2)}
+                    </td>
+                    <td className="td-right mono fw-700" style={{ color: 'var(--red2)' }}>
+                      {totals.rejected.toFixed(2)}
+                    </td>
+                    <td className="td-right mono fw-700">{totals.remaining.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              ) : null}
             </table>
           </div>
         </div>
       </div>
 
-      {dc.receipts.length > 0 ? (
-        <div className="panel">
-          <div className="panel-hdr">
-            <div className="panel-title">Receipts</div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              {dc.receipts.length} receipt{dc.receipts.length === 1 ? '' : 's'}
-            </span>
-          </div>
-          <div className="panel-body" style={{ padding: 0 }}>
-            {dc.receipts.map((rcpt) => (
-              <div
-                key={rcpt.id}
-                style={{ padding: '10px 14px', borderTop: '1px solid var(--line)' }}
-              >
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}
-                >
-                  <div style={{ fontSize: 12 }}>
-                    <span className="mono">{rcpt.receiptCode}</span>{' '}
-                    <span className="text3">· {rcpt.receiptDate}</span>
-                    {rcpt.vendorInvoiceText ? (
-                      <span className="text3">
-                        {' '}
-                        · inv <span className="mono">{rcpt.vendorInvoiceText}</span>
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="text3" style={{ fontSize: 11 }}>
-                    {rcpt.lines.length} line{rcpt.lines.length === 1 ? '' : 's'}
-                  </div>
-                </div>
-                {rcpt.remarks ? (
-                  <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
-                    {rcpt.remarks}
-                  </div>
-                ) : null}
-                <table className="innovic-table" style={{ fontSize: 11 }}>
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th className="td-right">Received</th>
-                      <th className="td-right">Rejected</th>
-                      <th>Reject reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rcpt.lines.map((rl) => {
-                      const ll = lineLookup.get(rl.deliveryChallanLineId);
-                      return (
-                        <tr key={rl.id}>
-                          <td>
-                            <span className="mono">{ll?.itemCodeText ?? '—'}</span>
-                            {ll?.itemNameText ? (
-                              <span className="text3" style={{ marginLeft: 6 }}>
-                                {ll.itemNameText}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="td-right mono" style={{ color: 'var(--green2)' }}>
-                            {Number(rl.receivedQty).toFixed(2)}
-                          </td>
-                          <td className="td-right mono" style={{ color: 'var(--red2)' }}>
-                            {Number(rl.rejectedQty).toFixed(2)}
-                          </td>
-                          <td className="text3">{rl.rejectReason ?? '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <DcReceiptsPanel receipts={dc.receipts} lineLookup={lineLookup} />
 
       <RelatedDocsPanel module="delivery-challans" id={dc.id} />
     </div>
   );
 }
 
+/** Format a stored UTC timestamp as IST date + time — same helper the SO detail
+ *  page uses (CLAUDE.md §6 rule 5: stored UTC, displayed IST). */
+function fmtIstDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element {
   const { dc } = props;
+  // `form-grid form-grid-3` stacked a 2-col and a 3-col grid on one element and
+  // left an empty `.form-grp` filler in the last cell. One grid class, and the
+  // sixth cell carries "Issued on" instead of a blank — no orphan cells.
   return (
-    <div className="form-grid form-grid-3">
+    <div className="form-grid-3">
       <Pair label="DC date" value={dc.dcDate} />
       <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
       <Pair
@@ -363,12 +359,12 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           )
         }
       />
-      <Pair
-        label="SO"
-        value={dc.soCode ?? dc.soRefText ?? '—'}
-      />
+      <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
       <Pair label="Transport" value={dc.transport ?? '—'} />
-      <div className="form-grp" />
+      <Pair
+        label="Issued on"
+        value={<span className="mono" style={{ fontSize: 12 }}>{fmtIstDateTime(dc.createdAt)}</span>}
+      />
     </div>
   );
 }
