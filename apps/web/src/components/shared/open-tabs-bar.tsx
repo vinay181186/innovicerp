@@ -74,7 +74,9 @@ export function OpenTabsBar(): React.JSX.Element | null {
         const active = t.base === current.base;
         return (
           <Link key={t.base} to={t.path} className={`pgtab${active ? ' active' : ''}`} title={t.label}>
-            <span aria-hidden>{t.icon}</span>
+            <span className="pgtab-icon" aria-hidden>
+              {t.icon}
+            </span>
             <span className="pgtab-label">{t.label}</span>
             <button
               type="button"

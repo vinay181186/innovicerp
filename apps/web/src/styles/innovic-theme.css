@@ -83,9 +83,9 @@
 }
 /* Open-pages tab bar (components/shared/open-tabs-bar.tsx) — browser-style tabs
    for visited routes, sits between the breadcrumb and #content as fixed chrome.
-   Horizontal overflow scrolls INSIDE the strip so a long tab set never gives the
-   app a horizontal scrollbar. Mirrors #breadcrumbs' padding so tabs line up with
-   the page body. */
+   The strip stays within the available width with NO horizontal scroll: tabs
+   share the row and shrink (labels ellipsize) when crowded, backed by the store's
+   MAX_TABS cap. Mirrors #breadcrumbs' padding so tabs line up with the page body. */
 #pagetabs {
   display: flex;
   align-items: stretch;
@@ -93,14 +93,15 @@
   padding: 4px 20px 0;
   background: var(--bg3);
   border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: thin;
+  overflow: hidden;
   flex-shrink: 0;
 }
 .pgtab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
   padding: 5px 6px 5px 10px;
   font-size: 12px;
   font-family: var(--bfont);
@@ -114,6 +115,9 @@
   text-decoration: none;
   max-width: 200px;
 }
+.pgtab-icon {
+  flex-shrink: 0;
+}
 .pgtab:hover {
   background: var(--bg2);
   color: var(--text);
@@ -126,6 +130,8 @@
   padding-top: 4px;
 }
 .pgtab-label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -133,6 +139,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
   border: none;
