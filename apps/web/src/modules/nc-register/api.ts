@@ -152,3 +152,21 @@ export function useCloseNcRework(id: string) {
     },
   });
 }
+
+/** Replacement received (or the piece written off) on a return-to-vendor NC.
+ *  Clears the at-vendor balance the open NC holds against its source op, so the
+ *  op-entry / job-card caches have to go too — the op's Pending and At-Vendor
+ *  both move (0093). */
+export function useCloseNcReturn(id: string) {
+  const qc = useQueryClient();
+  return useMutation<NcRegister, Error, void>({
+    mutationFn: () => apiFetch<NcRegister>(`/nc-register/${id}/close-return`, { method: 'POST' }),
+    onSuccess: (updated) => {
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
+      void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
+      qc.setQueryData(ncRegisterKeys.detail(id), updated);
+      void qc.invalidateQueries({ queryKey: ['op-entry'] });
+      void qc.invalidateQueries({ queryKey: ['job-cards'] });
+    },
+  });
+}

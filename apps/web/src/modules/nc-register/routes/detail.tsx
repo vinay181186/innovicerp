@@ -11,6 +11,7 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
+  useCloseNcReturn,
   useCloseNcRework,
   useDisposeNcRegister,
   useNcRegister,
@@ -34,6 +35,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
+  const closeReturn = useCloseNcReturn(id);
   const createCapa = useCreateCapa();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showDispose, setShowDispose] = useState(false);
@@ -74,6 +76,11 @@ function NcRegisterDetailPage(): React.JSX.Element {
 
   const isPending = detail.status === 'pending';
   const isReworkDisposed = detail.status === 'disposed' && detail.disposition === 'rework';
+  // A return-to-vendor NC now stays `disposed` while the vendor owes a
+  // replacement (0093) — its rejected qty counts as at-vendor and holds the
+  // source op out of complete. Closing it is what says the replacement landed.
+  const isReturnDisposed =
+    detail.status === 'disposed' && detail.disposition === 'return_to_vendor';
   const canEdit = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
   const isAdmin = me?.role === 'admin';
   // CAPA can be created/seen by admin/manager/qc (matches capa_records RLS).
@@ -129,6 +136,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
       setReworkDoneQty('');
     } catch (e) {
       setCloseError(e instanceof Error ? e.message : 'Failed to close rework.');
+    }
+  };
+
+  const onCloseReturn = async (): Promise<void> => {
+    setCloseError(null);
+    try {
+      await closeReturn.mutateAsync();
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : 'Failed to close the vendor return.');
     }
   };
 
@@ -220,6 +236,27 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     <CheckCircle2 size={13} />
                   )}
                   Close rework
+                </button>
+              </>
+            ) : null}
+            {isReturnDisposed && canEdit ? (
+              <>
+                <span className="text3" style={{ fontSize: 11 }}>
+                  {Number(detail.rejectedQty)} pc(s) at vendor
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-success btn-sm"
+                  onClick={() => void onCloseReturn()}
+                  title="The vendor's replacement has arrived (or the piece is written off) — clears the at-vendor balance and lets the operation finish"
+                  disabled={closeReturn.isPending}
+                >
+                  {closeReturn.isPending ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <CheckCircle2 size={13} />
+                  )}
+                  Replacement received
                 </button>
               </>
             ) : null}

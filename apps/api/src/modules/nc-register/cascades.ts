@@ -11,7 +11,12 @@
 //   use_as_is         → status=closed; append op_log row with type='qc',
 //                        qty=rejected_qty, operator resolved by name lookup,
 //                        remarks = 'Use As Is — from <ncCode> (...)'.
-//   return_to_vendor  → status=closed; no other cascade.
+//   return_to_vendor  → status=DISPOSED (not closed — ADR-117 / migration 0093).
+//                        While it stays open, v_jc_op_status + v_osp_wip count
+//                        its rejected_qty as at_vendor and take it out of the
+//                        source op's pending, so the vendor visibly owes a
+//                        replacement and the op cannot read `complete`.
+//                        closeNcReturnToVendorCascade clears it.
 //   make_fresh        → status=closed; create supplementary JC inheriting
 //                        origin's source SO/JW link + parent_nc_id pointing
 //                        at this NC; rework_jc_code_text stored on NC.
@@ -249,10 +254,21 @@ export async function disposeNcCascade(
   }
 
   if (input.action === 'return_to_vendor') {
+    // ADR-117 / migration 0093 — the piece goes back on the VENDOR's account.
+    // Left at `disposed`, NOT closed: while this NC is open, v_jc_op_status and
+    // v_osp_wip count its rejected_qty as at_vendor and take it out of the op's
+    // pending, so the vendor visibly owes a replacement. Closing it here (what
+    // this branch used to do) made the piece vanish — it was not in stock, not
+    // at the vendor, and the op it came from owed a qty nothing could ever
+    // satisfy, so the JC and its SO line could never close.
+    //
+    // Cleared by closeNcReturnToVendor when the replacement lands or the piece
+    // is written off — the same close-when-resolved rule rework has had since
+    // 0088.
     await tx
       .update(ncRegister)
       .set({
-        status: 'closed',
+        status: 'disposed',
         disposition: 'return_to_vendor',
         dispositionDate: today,
         dispositionByText: ctx.userName,
@@ -260,7 +276,7 @@ export async function disposeNcCascade(
         updatedBy: ctx.userId,
       })
       .where(eq(ncRegister.id, ncId));
-    result.status = 'closed';
+    result.status = 'disposed';
     return result;
   }
 
@@ -405,6 +421,53 @@ export async function closeNcReworkCascade(
   }
 
   await tx.update(ncRegister).set(updates).where(eq(ncRegister.id, ncId));
+  return { ncId, status: 'closed' };
+}
+
+/**
+ * Close a `return_to_vendor` NC — the replacement arrived, or the piece was
+ * written off. Until this runs, migration 0093's views count the NC's
+ * rejected_qty as sitting AT THE VENDOR and hold the source op out of
+ * `complete`, so the Job Card cannot close with a replacement still owed.
+ *
+ * Deliberately separate from closeNcReworkCascade rather than a widened guard:
+ * the two clear different balances (rework_pending_qty vs returned_to_vendor_qty)
+ * and rework carries a done-qty this path has no equivalent for. Same shape and
+ * same transaction contract.
+ */
+export async function closeNcReturnToVendorCascade(
+  tx: DbTransaction,
+  ncId: string,
+  ctx: DisposeNcContext,
+): Promise<{ ncId: string; status: 'closed' }> {
+  const ncRows = await tx
+    .select()
+    .from(ncRegister)
+    .where(
+      and(
+        eq(ncRegister.id, ncId),
+        eq(ncRegister.companyId, ctx.companyId),
+        isNull(ncRegister.deletedAt),
+      ),
+    )
+    .limit(1);
+  const nc = ncRows[0];
+  if (!nc) {
+    throw new ValidationError(`NC ${ncId} not found`);
+  }
+  if (nc.disposition !== 'return_to_vendor') {
+    throw new ConflictError(
+      `NC ${nc.code} is not on a return-to-vendor path (disposition=${nc.disposition ?? 'null'})`,
+    );
+  }
+  if (nc.status !== 'disposed') {
+    throw new ConflictError(`NC ${nc.code} cannot be return-closed (status=${nc.status})`);
+  }
+
+  await tx
+    .update(ncRegister)
+    .set({ status: 'closed', updatedBy: ctx.userId })
+    .where(eq(ncRegister.id, ncId));
   return { ncId, status: 'closed' };
 }
 

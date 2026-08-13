@@ -5405,3 +5405,85 @@ together under one auto-generated serial (`<SO code>-U<n>`).
   dispatch of a batch is not supported; split into smaller batches if needed.
 - Carries ADR-115's open items forward unchanged (dispatch-button semantics,
   no reservation, overrides invisible in the rollup).
+
+## ADR-117: A piece returned to the vendor sits on the vendor's account
+
+**Date:** 2026-08-12
+**Status:** Accepted
+
+### Context
+
+Traced from the user's OSP case on IN-JC-26-00093 / IN-JWPR-00052 / PLN-0072:
+5 PLUNGERs went to VND-001 for paint, 5 came back on IN-GRN-00045, incoming QC
+passed 4 and rejected 1, and the 1 was dispositioned `return_to_vendor`.
+
+`nc-register/cascades.ts` closed the NC and stopped — its module header said so
+outright: *"return_to_vendor → status=closed; no other cascade."* Verified
+against live data, the consequences were:
+
+- **The piece vanished.** Not in stock (only the 4 accepted were credited, one
+  `in / grn_qc / 4` row on the ledger), no document recording it leaving the
+  building, and nothing saying VND-001 owed a replacement. `nc_register` has no
+  vendor, PO or GRN link, and there is no debit-note table anywhere in the
+  schema, so a vendor-caused rejection created no liability at all.
+- **The op owed a phantom piece.** `v_jc_op_status` Op5 read `pending_qty = 1`
+  (input 5 − osp_accepted 4) with nothing able to satisfy it, so the op could not
+  complete, so the Job Card could not close, so its SO line could not close.
+  Structurally identical to the rework bug ADR-113 fixed.
+- **The register's arithmetic was short.** Migration 0071 documents
+  `order = accepted + in_qc + at_vendor + not_sent`; live it came to 49 against
+  an order of 50. `at_vendor_qty` read 0 (sent 5 − received 5) even though a
+  piece had just been sent back. Every rejected piece fell out silently.
+
+### Decision
+
+An **open** `return_to_vendor` NC puts its `rejected_qty` back into
+`at_vendor_qty` and takes it out of the source op's `available` / `pending_qty`
+(migration 0093, both `v_jc_op_status` and `v_osp_wip`). Both `complete` branches
+also require the balance to be zero, exactly as they require zero rework since
+ADR-113.
+
+The disposition therefore leaves the NC at **`disposed`, not `closed`**. It is
+cleared by `closeNcReturnToVendorCascade` — `POST /nc-register/:id/close-return`,
+surfaced as **"Replacement received"** on the NC detail page — which is what says
+the vendor's replacement landed or the piece was written off.
+
+Derived live from `nc_register`, like rework since ADR-112: no counter to drift,
+no backfill, self-healing.
+
+### Alternatives Considered
+
+- **Keep closing the NC and add a `returned_to_vendor_qty` column on `jc_ops`** —
+  rejected: a second counter that only ever increments is the exact failure mode
+  ADR-112 removed for rework, and nothing would ever decrement it.
+- **Post a stock movement for the returned piece** — rejected: it was never
+  credited to stock (only QC-accepted qty is, and mid-route OSP returns are
+  skipped per ADR-092), so there is nothing to move out. Inventing an `out` row
+  against a balance that never took it `in` would corrupt the ledger.
+- **Widen `closeNcReworkCascade` instead of a sibling function** — rejected: the
+  two clear different balances and rework carries a `rework_done_qty` this path
+  has no equivalent for. A shared guard would have to branch internally anyway.
+- **Support partial replacement via a running balance** — rejected for now: the
+  only column shaped for it is `rework_done_qty`, and overloading it would be a
+  lie about what it holds. A return NC is outstanding in full until closed;
+  partials are handled by closing it and raising the shortfall separately.
+
+### Consequences
+
+- Positive: JC-93 Op5 went `pending 1 → 0`, `at_vendor 0 → 1`; the OSP register
+  now reconciles `4 + 0 + 1 + 45 = 50`. The vendor visibly owes a replacement,
+  and a Job Card can no longer auto-close while one is outstanding.
+- Positive: scoped to ops with an OSP lane, so an in-house QC reject
+  dispositioned `return_to_vendor` cannot move that op's pending — there is no
+  vendor holding it.
+- Negative: **a return-to-vendor NC now stays open.** Someone must close it when
+  the replacement arrives, or the Job Card stays open forever. Same operational
+  rule as rework, which the shop already runs.
+- Negative: still **no vendor liability**. `nc_register` has no vendor/PO/GRN
+  link and `purchase_order_lines.received_qty` still counts the rejected piece
+  (5 of 50 on IN-PO-00024), so you remain set up to pay for what you sent back.
+  A debit-note document needs those links first — the next change, not this one.
+- Migration: one live row repaired. `NC-AUTO-IN-JC-26-00093-Op5-100745431` was
+  dispositioned before this change and so was already `closed`; it was reopened
+  to `disposed` on the user's decision that VND-001 holds the piece. It was the
+  only `return_to_vendor` NC in the entire database, so there was no backfill.

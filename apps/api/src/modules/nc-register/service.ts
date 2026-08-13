@@ -21,6 +21,7 @@ import {
 } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import {
+  closeNcReturnToVendorCascade,
   closeNcReworkCascade,
   type DisposeNcContext,
   type DisposeNcResult,
@@ -833,6 +834,36 @@ export async function closeNcRework(
         action: 'NC_CLOSE_REWORK',
         entity: 'NonConformance',
         detail: `${row.code} — REWORK CLOSED${input.reworkDoneQty !== undefined ? ` qty=${input.reworkDoneQty}` : ''}`,
+        refId: row.code,
+      },
+      companyId,
+      user,
+    );
+    return toNcRegister(row);
+  });
+}
+
+/**
+ * Close a return-to-vendor NC — the vendor's replacement arrived, or the piece
+ * was written off. Clears the at-vendor balance migration 0093 derives from the
+ * open NC, which is what lets the source op complete and its Job Card close.
+ */
+export async function closeNcReturnToVendor(id: string, user: AuthContext): Promise<NcRegister> {
+  requireOpEntryRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const userName = await resolveUserName(tx, user.id);
+    const ctx: DisposeNcContext = { companyId, userId: user.id, userName };
+    await closeNcReturnToVendorCascade(tx, id, ctx);
+    const nc = await tx.select().from(ncRegister).where(eq(ncRegister.id, id)).limit(1);
+    const row = nc[0]!;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'NC_CLOSE_RETURN',
+        entity: 'NonConformance',
+        detail: `${row.code} — RETURN TO VENDOR CLOSED (qty=${row.rejectedQty})`,
         refId: row.code,
       },
       companyId,

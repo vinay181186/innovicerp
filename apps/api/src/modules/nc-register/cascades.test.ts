@@ -226,7 +226,11 @@ describe('nc-register dispose cascades (T-040b)', () => {
     expect(log[0]!.remarks).toContain(f.ncCode);
   });
 
-  it('return_to_vendor: flips status=closed, no other side effects', async () => {
+  // 0093 / ADR-117: this used to assert status=closed. Closing on the spot made
+  // the returned piece disappear — not in stock, not at the vendor, and the op
+  // it came from owed a qty nothing could satisfy. It now stays `disposed` so
+  // the views can count it as at-vendor until the replacement lands.
+  it('return_to_vendor: leaves the NC disposed (vendor owes a replacement), no op_log', async () => {
     const f = await createJcWithOpsAndNc({
       jcCode: `${TEST_PREFIX}RTV-JC`,
       ncCode: `${TEST_PREFIX}RTV-NC`,
@@ -237,13 +241,30 @@ describe('nc-register dispose cascades (T-040b)', () => {
       .from(opLog)
       .where(eq(opLog.jcOpId, f.jcOpIds[0]!.jcOpId));
     const { nc } = await service.disposeNcRegister(f.ncId, { action: 'return_to_vendor' }, admin);
-    expect(nc.status).toBe('closed');
+    expect(nc.status).toBe('disposed');
     expect(nc.disposition).toBe('return_to_vendor');
     const afterOpLogs = await db
       .select({ id: opLog.id })
       .from(opLog)
       .where(eq(opLog.jcOpId, f.jcOpIds[0]!.jcOpId));
     expect(afterOpLogs.length).toBe(beforeOpLogs.length); // no op_log appended
+
+    // Closing it is what says the replacement arrived.
+    const closed = await service.closeNcReturnToVendor(f.ncId, admin);
+    expect(closed.status).toBe('closed');
+
+    // Second close is refused — the balance is already cleared.
+    await expect(service.closeNcReturnToVendor(f.ncId, admin)).rejects.toThrow();
+  });
+
+  it('close-return refuses an NC that is not on the return-to-vendor path', async () => {
+    const f = await createJcWithOpsAndNc({
+      jcCode: `${TEST_PREFIX}RTVX-JC`,
+      ncCode: `${TEST_PREFIX}RTVX-NC`,
+      rejectedQty: 2,
+    });
+    await service.disposeNcRegister(f.ncId, { action: 'scrap' }, admin);
+    await expect(service.closeNcReturnToVendor(f.ncId, admin)).rejects.toThrow();
   });
 
   it('make_fresh: creates supplementary JC inheriting source + parent_nc_id', async () => {

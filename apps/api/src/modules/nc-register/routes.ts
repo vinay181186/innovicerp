@@ -74,4 +74,14 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     const body = closeNcReworkInputSchema.parse(req.body);
     return service.closeNcRework(id, body, req.user);
   });
+
+  // Replacement received (or the piece written off) — clears the at-vendor
+  // balance an open return_to_vendor NC holds against its source op (0093).
+  // No body: the whole NC is outstanding or it is not, so there is no partial
+  // qty to post here.
+  app.post('/nc-register/:id/close-return', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.closeNcReturnToVendor(id, req.user);
+  });
 }
