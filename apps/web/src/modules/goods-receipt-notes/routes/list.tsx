@@ -19,6 +19,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -253,10 +254,21 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     <div>
       <div
         style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+      <div
+        style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 14,
+          marginBottom: 0,
           gap: 8,
         }}
       >
@@ -301,6 +313,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             </Link>
           ) : null}
         </div>
+      </div>
       </div>
 
       {data?.summary ? (
@@ -450,75 +463,45 @@ function GrnKpiStrip({
   activeStatus: GrnQcStatus | null;
   onSelectStatus: (next: GrnQcStatus | undefined) => void;
 }): React.JSX.Element {
-  const tiles: Array<{
-    key: 'all' | 'qcpending' | 'qccleared' | 'today';
-    label: string;
-    value: number;
-    /** stat-card accent variant (legacy L26484-26487). */
-    variant: string;
-    accent: string;
-    onClick?: () => void;
-    active: boolean;
-    sub?: string;
-  }> = [
-    {
-      key: 'all',
-      label: 'Total GRNs',
-      value: summary.total,
-      variant: 'cyan',
-      accent: 'var(--cyan)',
-      onClick: () => onSelectStatus(undefined),
-      active: activeStatus === null,
-    },
-    {
-      key: 'qcpending',
-      label: 'QC Pending',
-      value: summary.qcPending,
-      variant: 'amber',
-      accent: 'var(--amber)',
-      onClick: () => onSelectStatus('pending'),
-      active: activeStatus === 'pending',
-      sub: '→ Go to Incoming QC',
-    },
-    {
-      key: 'qccleared',
-      label: 'QC Cleared',
-      value: summary.qcCleared,
-      variant: 'green',
-      accent: 'var(--green)',
-      onClick: () => onSelectStatus('completed'),
-      active: activeStatus === 'completed',
-    },
-    {
-      // `blue` is intentionally accent-less: legacy writes `stat-card blue`
-      // here (L26487) but only ever defines cyan/amber/green/red (L97-102), so
-      // this tile has no accent bar in legacy either. Matching that is correct;
-      // adding a .blue rule would diverge.
-      key: 'today',
-      label: 'Today',
-      value: summary.today,
-      variant: 'blue',
-      accent: 'var(--blue)',
-      active: false,
-    },
-  ];
   return (
-    <div className="stat-grid">
-      {tiles.map((t) => (
-        <div
-          key={t.key}
-          className={`stat-card ${t.variant}`}
-          onClick={t.onClick}
-          style={{
-            cursor: t.onClick ? 'pointer' : 'default',
-            boxShadow: t.active ? `0 0 0 2px ${t.accent}` : undefined,
-          }}
-        >
-          <div className="stat-label">{t.label}</div>
-          <div className="stat-val">{t.value}</div>
-          {t.sub ? <div className="stat-sub">{t.sub}</div> : null}
-        </div>
-      ))}
+    <div style={{ marginBottom: 12 }}>
+      <StatStrip
+        items={[
+          {
+            key: 'all',
+            label: 'Total GRNs',
+            count: summary.total,
+            color: 'var(--cyan)',
+            onClick: () => onSelectStatus(undefined),
+            active: activeStatus === null,
+          },
+          {
+            key: 'qcpending',
+            label: 'QC Pending',
+            count: summary.qcPending,
+            color: 'var(--amber)',
+            sub: '→ Go to Incoming QC',
+            onClick: () => onSelectStatus('pending'),
+            active: activeStatus === 'pending',
+          },
+          {
+            key: 'qccleared',
+            label: 'QC Cleared',
+            count: summary.qcCleared,
+            color: 'var(--green)',
+            onClick: () => onSelectStatus('completed'),
+            active: activeStatus === 'completed',
+          },
+          {
+            // Read-only total (no onClick) — legacy showed a "Today" count for
+            // context only, with no filter behind it.
+            key: 'today',
+            label: 'Today',
+            count: summary.today,
+            color: 'var(--blue)',
+          },
+        ]}
+      />
     </div>
   );
 }

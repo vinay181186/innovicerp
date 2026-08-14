@@ -193,11 +193,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <th>#</th>
                 <th>Item</th>
                 <th>Item Name</th>
-                <th className="td-right">Received</th>
+                <th>Received</th>
                 <th>DC ref</th>
                 <th>QC</th>
-                <th className="td-right">Accepted</th>
-                <th className="td-right">Rejected</th>
+                <th>Accepted</th>
+                <th>Rejected</th>
                 <th>QC date</th>
               </tr>
             </thead>
@@ -230,17 +230,17 @@ function LineRow(props: { line: GoodsReceiptNoteLineDetail }): React.JSX.Element
         {l.itemCode ?? l.itemCodeText ?? '—'}
       </td>
       <td>{l.itemName}</td>
-      <td className="td-right mono">{l.receivedQty}</td>
+      <td className="mono">{l.receivedQty}</td>
       <td className="mono" style={{ fontSize: 11 }}>
         {l.dcRefNo ?? '—'}
       </td>
       <td>
         <QcStatusBadge status={l.qcStatus} />
       </td>
-      <td className="td-right mono" style={{ color: 'var(--green2)' }}>
+      <td className="mono" style={{ color: 'var(--green2)' }}>
         {l.qcAcceptedQty}
       </td>
-      <td className="td-right mono" style={{ color: 'var(--amber2)' }}>
+      <td className="mono" style={{ color: 'var(--amber2)' }}>
         {l.qcRejectedQty}
       </td>
       <td className="text2" style={{ fontSize: 11 }}>
