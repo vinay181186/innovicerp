@@ -5841,3 +5841,51 @@ Recorded so they are not lost. None were introduced or touched by this change.
    material badge is stale right after a GRN is recorded or cancelled.
 8. **`<LineRow key={i}>` is index-keyed** — removing a middle line re-keys every
    row below it and focus jumps.
+
+## ADR-123: The Incoming QC queue names the job card, and says when there isn't one
+
+**Date:** 2026-08-14
+**Status:** Accepted
+
+### Context
+
+The user QC'd the wrong GRN. JC-93 Op 5 needed a replacement piece received on
+IN-GRN-00045 (item `554117163000`, PO IN-PO-00024, JC-93 Op 5); they instead
+accepted 5 qty on IN-GRN-00029 (item `554117145000`, PO IN-PO-00015, no job card
+at all). Both items are named **PLUNGER**, and the codes differ only in the
+middle digits. The QC had no effect on the job card, so Op 5 still read 1 pending
+and the mistake looked like a bug in the 0093 return-to-vendor fix.
+
+Four names are shared by nine of the 43 active items (LEVER ×3, BUSH, PLUNGER,
+SPACER ×2 each), so this is not a one-off.
+
+### Decision
+
+Add `jcCode` / `opSeq` / `opName` to `IncomingQcPendingRow`, off the PO line →
+`jc_ops` → `job_cards` trace the query already walked for `soCode`. The queue row
+shows `→ IN-JC-26-00093 Op 5 · paint`; when that trace is null it shows a
+**NO JOB CARD** tag, and opening the inspect form shows an amber note saying
+accepting the line credits stock only.
+
+Rejected, having checked the code first:
+
+- **"Show the item code everywhere" (the obvious fix).** Already true. The shared
+  `SearchableSelect` renders `CODE — Name`, this queue already printed the code in
+  bold cyan above the name, and the line tables carry a separate code column. The
+  code was on screen and did not help — two twelve-digit codes differing in the
+  middle are not distinguishable at a glance. Adding it again would have been
+  busywork that left the defect in place.
+- **A unique constraint on item name.** In a job shop "LEVER" genuinely is three
+  different levers for three customers. Blocking it forces `LEVER-2`, which is a
+  worse name than the collision.
+
+### Consequences
+
+- Positive: guards every wrong-GRN mistake, not just duplicate names — an operator
+  clearing a job card can see whether the line reaches one before submitting.
+- Negative: the warning is advisory; nothing blocks accepting an unlinked line,
+  because raw-material receipts are legitimately unlinked and are the common case.
+- Follow-on not done: the completed-inspection feed still shows no job card link,
+  so a mistake is only visible before submit, not after. `incoming-qc` has no test
+  file at all (pre-existing) — this change is covered by typecheck and a live
+  query check, not by a test.

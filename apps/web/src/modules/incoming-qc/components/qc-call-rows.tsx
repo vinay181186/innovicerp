@@ -124,6 +124,27 @@ export function IncomingPendingRow(props: {
             🏭 {o.vendorName ?? '—'} · SO <b className="mono">{o.soCode ?? '—'}</b>
             <span style={{ marginLeft: 6, opacity: 0.6 }}>· GRN {o.grnNo}</span>
           </div>
+          <div style={{ fontSize: 10, marginTop: 2 }}>
+            {o.jcCode ? (
+              <span className="text2">
+                → <b className="mono">{o.jcCode}</b> Op {o.opSeq}
+                {o.opName ? ` · ${o.opName}` : ''}
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: 'var(--amber)',
+                  border: '1px solid var(--amber)',
+                  borderRadius: 3,
+                  padding: '0 5px',
+                }}
+              >
+                NO JOB CARD
+              </span>
+            )}
+          </div>
         </div>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>{o.pendingQty}</div>
@@ -146,7 +167,34 @@ export function IncomingPendingRow(props: {
             <span style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}>
               GRN {o.grnNo}
             </span>
+            {o.jcCode ? (
+              <span className="text2" style={{ fontWeight: 600 }}>
+                {' '}
+                · {o.jcCode} Op {o.opSeq}
+              </span>
+            ) : null}
           </div>
+          {/* Two items can share a name (PLUNGER 554117145000 vs …163000), so the
+              item line alone doesn't prove you opened the right GRN. This says
+              plainly when the line feeds no operation — the one signal that
+              distinguishes a raw-material receipt from an OSP return. */}
+          {o.jcCode ? null : (
+            <div
+              role="note"
+              style={{
+                fontSize: 11,
+                color: 'var(--amber)',
+                border: '1px solid var(--amber)',
+                background: 'rgba(245,158,11,0.08)',
+                borderRadius: 4,
+                padding: '6px 8px',
+                marginBottom: 10,
+              }}
+            >
+              This line feeds <b>no job card operation</b> — accepting it credits stock only. If
+              you meant to clear a job-card operation, you are on the wrong GRN.
+            </div>
+          )}
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ fontSize: 10 }}>
