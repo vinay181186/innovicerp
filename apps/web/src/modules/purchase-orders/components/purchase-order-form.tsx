@@ -184,8 +184,10 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      {/* Header — legacy `poHeaderForm()` L25605 (2-col `.form-grid`, not 3). */}
-      <div className="form-grid">
+      {/* Header — packed to the SO-Master 4-up grid (was legacy's 2-col
+          `.form-grid`, L25605): 8 short fields fit two 4-across rows above the
+          fold; Vendor drops to one column and Remarks spans the bottom row. */}
+      <div className="form-grid-4">
         <DocNumberInput
           type="purchase_order"
           label="PO No."
@@ -250,7 +252,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           )}
         </div>
 
-        <div className="form-grp form-full">
+        <div className="form-grp">
           <label className="form-label" htmlFor="vendorId">
             Vendor
           </label>
@@ -296,7 +298,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
         {/* Legacy L25661 uses a single-line <input> here. Kept as a textarea: the
             column is max(2000) and may already hold multi-line text, which an
             <input> silently strips on value assignment (ISSUE-104 class). */}
-        <div className="form-grp">
+        <div className="form-grp form-full">
           <label className="form-label" htmlFor="remarks">
             Remarks
           </label>
