@@ -128,7 +128,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid">
+      <div className="form-grid-4">
         <div className="form-grp">
           <label className="form-label" htmlFor="code">
             PR No.
@@ -250,7 +250,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             onChange={onItemCodeChange}
           />
         </div>
-        <div className="form-grp">
+        <div className="form-grp form-span-2">
           <label className="form-label" htmlFor="itemName">
             Item Name (snapshot)
           </label>

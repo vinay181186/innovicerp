@@ -286,7 +286,7 @@ export async function listGoodsReceiptNotes(
         ${qcStatusFrag}
         ${fromFrag}
         ${toFrag}
-      ORDER BY grn.grn_date DESC, grn.code ASC
+      ORDER BY grn.grn_date DESC, grn.code DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
