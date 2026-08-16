@@ -101,7 +101,12 @@ export async function listJcOpsEnriched(
         s.rework_pending_qty   AS "reworkPendingQty",
         s.rework_raised_qty    AS "reworkRaisedQty",
         s.rework_raised_to_ops AS "reworkRaisedToOps",
-        s.computed_status      AS "computedStatus"
+        s.computed_status      AS "computedStatus",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126).
+        -- The machine columns above are the op's CURRENT machine — where the
+        -- REMAINING qty runs — so on a re-routed op they name a machine that
+        -- may have produced nothing. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops o
       JOIN public.job_cards jc ON jc.id = o.job_card_id
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
@@ -110,6 +115,14 @@ export async function listJcOpsEnriched(
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = o.id
+      ) mo ON true
       WHERE o.company_id = ${companyId}::uuid
         AND o.deleted_at IS NULL
         AND ${filter}
@@ -131,6 +144,9 @@ export async function listJcOpsEnriched(
       reworkPendingQty: Number(r['reworkPendingQty'] ?? 0),
       reworkRaisedQty: Number(r['reworkRaisedQty'] ?? 0),
       reworkRaisedToOps: (r['reworkRaisedToOps'] as string | null) ?? null,
+      machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
+        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
+      ),
     })) as unknown as JcOpEnriched[];
   });
 }

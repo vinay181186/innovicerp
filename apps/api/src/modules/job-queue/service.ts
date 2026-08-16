@@ -78,7 +78,12 @@ export async function getJobQueue(
           WHERE ro.jc_op_id = op.id AND ro.status = 'running'
         ) AS "isRunning",
         op.queue_position AS "queuePosition",
-        (COALESCE(op.cycle_time_min, 0) * COALESCE(s.available, 0) / 60.0) AS "pendingHrsRow"
+        (COALESCE(op.cycle_time_min, 0) * COALESCE(s.available, 0) / 60.0) AS "pendingHrsRow",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
+        -- row is bucketed under the op's CURRENT machine — where the REMAINING
+        -- qty runs — so on a re-routed op the queue it sits in did not make the
+        -- Done figure beside it. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops op
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
@@ -89,6 +94,14 @@ export async function getJobQueue(
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.clients cl_jw ON cl_jw.id = jw.client_id AND cl_jw.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = op.id
+      ) mo ON true
       WHERE op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
         AND (op.machine_id IS NOT NULL OR op.machine_code_text IS NOT NULL)
@@ -131,6 +144,9 @@ export async function getJobQueue(
         dueDate: (r['dueDate'] as string | null) ?? null,
         orderQty: num(r['orderQty']),
         completed: num(r['completed']),
+        machines: (
+          (r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []
+        ).map((v) => ({ machineCode: String(v.machineCode), qty: num(v.qty) })),
         available: num(r['available']),
         status: String(r['status'] ?? 'waiting'),
         isRunning: Boolean(r['isRunning']),

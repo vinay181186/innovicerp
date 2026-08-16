@@ -106,7 +106,12 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
         vos.computed_status AS "computedStatus",
-        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs"
+        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
+        -- machine columns above are the op's CURRENT machine — where the
+        -- REMAINING qty runs — so on a re-routed op they name a machine that may
+        -- have produced nothing. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops jo
       JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -116,6 +121,14 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = jo.id
+      ) mo ON true
       WHERE jo.company_id = ${companyId}::uuid
         AND jo.deleted_at IS NULL
         AND jo.op_type <> 'outsource'
@@ -131,6 +144,9 @@ export async function getMachineLoading(user: AuthContext): Promise<MachineLoadi
       operation: (r['operation'] as string | null) ?? '',
       machineId: (r['machineId'] as string | null) ?? null,
       machineCode: (r['machineCode'] as string | null) ?? null,
+      machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
+        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
+      ),
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,

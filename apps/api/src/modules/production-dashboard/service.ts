@@ -104,11 +104,24 @@ export async function getProductionDashboard(
         jo.operation, m.code AS "machineCode",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
-        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs"
+        ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
+        -- machine column above is the op's CURRENT machine — where the REMAINING
+        -- qty runs — so on a re-routed op it names a machine that may have
+        -- produced nothing. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops jo
       JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = jo.machine_id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = jo.id
+      ) mo ON true
       WHERE jo.company_id = ${companyId}::uuid
         AND jo.deleted_at IS NULL
         AND jo.op_type <> 'outsource'
@@ -124,6 +137,9 @@ export async function getProductionDashboard(
       opSeq: Number(r['opSeq']),
       operation: (r['operation'] as string | null) ?? '',
       machineCode: (r['machineCode'] as string | null) ?? null,
+      machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
+        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
+      ),
       orderQty: Number(r['orderQty'] ?? 0),
       completedQty: Number(r['completedQty'] ?? 0),
       available: Number(r['available'] ?? 0),

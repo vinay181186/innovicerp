@@ -631,9 +631,22 @@ export async function getJobCardStatusExtras(
 
     // 2. Per-op machine name + tool_details.
     const opRows = (await tx.execute(sql`
-      SELECT o.id AS "jcOpId", o.tool_details AS "toolDetails", m.name AS "machineName"
+      SELECT o.id AS "jcOpId", o.tool_details AS "toolDetails", m.name AS "machineName",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126).
+        -- m.name above is the op's CURRENT machine — where the REMAINING qty
+        -- runs — so on a re-routed op it names a machine that may have produced
+        -- nothing. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops o
       LEFT JOIN public.machines m ON m.id = o.machine_id AND m.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = o.id
+      ) mo ON true
       WHERE o.job_card_id = ${id}::uuid AND o.deleted_at IS NULL
       ORDER BY o.op_seq
     `)) as unknown as Array<Record<string, unknown>>;
@@ -641,6 +654,9 @@ export async function getJobCardStatusExtras(
       jcOpId: o['jcOpId'] as string,
       machineName: (o['machineName'] as string | null) ?? null,
       toolDetails: (o['toolDetails'] as string | null) ?? null,
+      machines: ((o['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
+        (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
+      ),
     }));
 
     // 3. Completion feed sources (all JC-scoped, soft-delete filtered on
@@ -650,10 +666,16 @@ export async function getJobCardStatusExtras(
         ol.start_time AS "startTime", ol.shift, ol.qty, ol.reject_qty AS "rejectQty",
         ol.remarks, ol.operator_name AS "operatorName",
         o.op_seq AS "opSeq", o.operation,
-        COALESCE(m.code, o.machine_code_text) AS "machineCode"
+        -- The machine that made THIS entry (0095), not the op's current one.
+        -- These rows ARE op_log rows, so joining o.machine_id made a 12-Aug
+        -- start on CNC-01 render "on CNC-03" the moment the op was re-routed.
+        -- COALESCE keeps pre-0095 and text-only rows attributed. Same shape as
+        -- daily-report/service.ts:57-58.
+        COALESCE(m.code, ol.machine_code_text, o.machine_code_text) AS "machineCode"
       FROM public.op_log ol
       JOIN public.jc_ops o ON o.id = ol.jc_op_id AND o.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = o.machine_id AND m.deleted_at IS NULL
+      LEFT JOIN public.machines m
+        ON m.id = COALESCE(ol.machine_id, o.machine_id) AND m.deleted_at IS NULL
       WHERE o.job_card_id = ${id}::uuid AND ol.company_id = ${companyId}::uuid
       ORDER BY ol.log_date DESC, ol.start_time DESC NULLS LAST, ol.created_at DESC
       LIMIT ${COMPLETION_LOG_OPLOG_CAP}
@@ -1385,6 +1407,12 @@ export async function updateJobCard(
       }
     }
 
+    // Machine swaps made through THIS form, collected for the activity log.
+    // Before 0095 the form could not change a started op's machine at all, so
+    // there was nothing to record; now it can, and a swap that leaves only the
+    // generic "Updated <JC>" line is untraceable (ADR-125).
+    const machineSwaps: string[] = [];
+
     // Guard: a locked op may not be removed, retyped, or re-sequenced. `started`
     // wins over `committed` so its (logged-work) message shows when both apply.
     for (const ex of existing) {
@@ -1421,6 +1449,15 @@ export async function updateJobCard(
       ) {
         throw new ValidationError(
           'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
+        );
+      }
+      if (
+        inPayload &&
+        inPayload.opType === 'process' &&
+        (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
+      ) {
+        machineSwaps.push(
+          `op ${ex.opSeq} ${ex.machineCodeText ?? '(none)'} → ${inPayload.machineCode || '(none)'}`,
         );
       }
     }
@@ -1586,6 +1623,8 @@ export async function updateJobCard(
         entity: 'Job Card',
         detail: `Updated ${head.code} — ${item.code} x ${input.orderQty}${
           raisedPrCodes.length ? ` · raised OSP PR ${raisedPrCodes.join(', ')}` : ''
+        }${
+          machineSwaps.length ? ` · machine changed: ${machineSwaps.join('; ')}` : ''
         }`,
         refId: head.code,
       },

@@ -33,6 +33,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -333,7 +334,9 @@ export async function rescheduleJcOp(
           detail:
             `Machine changed on ${op.jcCode} op ${Number(op.opSeq)} ${op.operation} — ` +
             `${op.oldMachineCode ?? '(none)'} → ${machRows[0].code}; ` +
-            `${Number(op.done)} pcs already completed stay recorded against ${op.oldMachineCode ?? '(none)'}`,
+            // Real per-machine split, not the op total against the outgoing
+            // machine — on a second swap the total spans several (ADR-125).
+            describeMachineSplit(await loadMachineSplit(tx, jcOpId)),
           refId: op.jcCode,
         },
         companyId,

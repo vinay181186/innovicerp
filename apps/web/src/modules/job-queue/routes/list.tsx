@@ -5,6 +5,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { MachineSplitLines } from '@/components/shared/machine-split';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
@@ -246,6 +247,21 @@ function JobQueuePage(): React.JSX.Element {
                   <tbody>
                     {m.rows.map((r, idx) => {
                       const isNext = r.available > 0 && !r.isRunning;
+                      // ADR-126 — "started" has to mean started ON THIS MACHINE.
+                      // The row is bucketed under the machine that runs the
+                      // REMAINING qty, so after a mid-flight re-route it carries a
+                      // Done figure made on a DIFFERENT machine — and testing the
+                      // op total offered "Log Op" on a machine that had produced
+                      // nothing. When the split is empty nothing is attributed to
+                      // any machine (an OSP-accepted qty belongs to no machine), so
+                      // fall back to the op total: every single-machine op behaves
+                      // exactly as before.
+                      const startedHere =
+                        r.machines.length > 0
+                          ? r.machines.some(
+                              (s) => s.machineCode === m.machineCode && s.qty > 0,
+                            )
+                          : r.completed > 0;
                       return (
                         <tr
                           key={r.jcOpId}
@@ -327,7 +343,14 @@ function JobQueuePage(): React.JSX.Element {
                             {r.dueDate ?? '—'}
                           </td>
                           <td className="td-ctr mono">{r.orderQty}</td>
-                          <td className="td-ctr green mono fw-700">{r.completed}</td>
+                          <td className="td-ctr green mono fw-700">
+                            {r.completed}
+                            {/* The per-machine breakdown of that total (ADR-126).
+                                This row sits in THIS machine's queue, but after a
+                                re-route the Done figure was made elsewhere. Renders
+                                nothing unless the op ran on more than one machine. */}
+                            <MachineSplitLines machines={r.machines} />
+                          </td>
                           <td className="td-ctr">
                             <span
                               className="mono fw-700"
@@ -357,8 +380,8 @@ function JobQueuePage(): React.JSX.Element {
                           <td>
                             {isNext && canWrite ? (
                               // T33: only offer "Log Op" once the op is started
-                              // (some completed); otherwise show "Start".
-                              r.completed > 0 ? (
+                              // on this machine; otherwise show "Start".
+                              startedHere ? (
                                 <Link
                                   to="/op-entry"
                                   search={{ jc: r.jcCode, op: r.jcOpId, mode: 'complete' }}

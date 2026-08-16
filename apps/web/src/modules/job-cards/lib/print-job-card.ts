@@ -15,7 +15,13 @@
 //   - Production Log: intentionally NOT printed (the print is a shop-floor
 //     document). The production log is available via the ⬇ Excel export instead.
 
-import type { Company, ComputedJcOpStatus, JcOpEnriched, JobCardListItem } from '@innovic/shared';
+import type {
+  Company,
+  ComputedJcOpStatus,
+  JcOpEnriched,
+  JobCardListItem,
+  MachineSplit,
+} from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -45,9 +51,39 @@ function opStatusBadgeClass(status: ComputedJcOpStatus): string {
 }
 
 // machLabel equivalent: machine code (or machineCodeText fallback). OSP / QC
-// ops have no machine — the enriched row's machineCode is null there.
+// ops have no machine — the enriched row's machineCode is null there. This is
+// the machine the REMAINING qty runs on, NOT who made the completed qty.
 function machineLabel(op: JcOpEnriched): string {
   return op.machineCode ?? op.machineCodeText ?? '—';
+}
+
+// Per-machine production split (0095 / ADR-126), from the correlated LATERAL
+// over v_op_machine_output in the op-entry service. Empty for an op that only
+// ever ran on one machine — which is why every cell below degrades to exactly
+// what it printed before.
+function machineSplit(op: JcOpEnriched): MachineSplit {
+  return op.machines ?? [];
+}
+
+// Machine cell. One machine (the normal case) prints unchanged; a split op gets
+// a "(+N)" suffix counting the OTHER machines that made part of the done qty,
+// so a shop-floor sheet cannot be read as "this machine made all of it".
+function machineCell(op: JcOpEnriched): string {
+  const label = machineLabel(op);
+  const split = machineSplit(op);
+  if (split.length <= 1) return esc(label);
+  const others = split.filter((m) => m.machineCode !== label).length;
+  return others > 0 ? `${esc(label)} (+${others})` : esc(label);
+}
+
+// Done cell. Split ops print the per-machine breakdown as a small second line
+// under the total — the paper equivalent of MachineSplitLines, which cannot be
+// hovered for a tooltip.
+function doneCell(op: JcOpEnriched): string {
+  const split = machineSplit(op);
+  if (split.length <= 1) return String(op.completedQty);
+  const parts = split.map((m) => `${esc(m.machineCode)} ${m.qty}`).join(' · ');
+  return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
 }
 
 // dd-MM-yyyy with no TZ shift; null-safe (mirrors legacy fmt()).
@@ -74,13 +110,13 @@ export function printJobCard(args: {
     .map(
       (o) => `<tr>
       <td style="width:30px;text-align:center;font-weight:700">${o.opSeq}</td>
-      <td>${esc(machineLabel(o))}</td>
+      <td>${machineCell(o)}</td>
       <td>${esc(o.operation)}</td>
       <td style="text-align:center">${Number(o.cycleTimeMin) || '—'}</td>
       <td style="font-family:monospace">${esc(o.program || '—')}</td>
       <td>${esc(o.toolNo || '—')}</td>
       <td style="text-align:center">${o.inputAvail}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:700">${o.completedQty}</td>
+      <td style="text-align:center;color:#16a34a;font-weight:700">${doneCell(o)}</td>
       <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>
       <td><span class="badge ${opStatusBadgeClass(o.computedStatus)}">${esc(OP_STATUS_LABEL[o.computedStatus])}</span></td>
     </tr>`,

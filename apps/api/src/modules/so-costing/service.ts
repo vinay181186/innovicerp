@@ -168,6 +168,7 @@ type DetailOpRow = {
   operation: string;
   op_type: string;
   machine_code: string | null;
+  machines: Array<{ machineCode: string; qty: unknown }> | null;
   outsource_cost: string | number;
   machine_time_cost: string | number;
   qty: string | number;
@@ -224,12 +225,12 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
         SELECT sol.id AS so_line_id, jc.code AS jc_no, o.op_seq, o.operation,
           -- machine_code stays the op's CURRENT machine while the cost below is
           -- the per-machine blend, so on a re-routed op the label names one
-          -- machine and the money spans several.
-          -- TODO(0095): so-costing/service.ts detail op rows — show the machine
-          -- split (one sub-row per machine, qty + rate + cost). Needs a
-          -- machines[] (machineCode, qty, cost) field on SoCostingOpRow in
-          -- packages/shared, which is outside this change's file scope.
+          -- machine and the money spans several. The machines column added below
+          -- carries who actually produced the qty, so the UI can name every
+          -- machine the cost spans (ADR-126). Label data only -- the money is
+          -- already split per machine by the ms LATERAL and is not touched here.
           o.op_type::text AS op_type, o.machine_code_text AS machine_code,
+          COALESCE(mo.machines, '[]'::json) AS machines,
           COALESCE((
             SELECT pol.qty * pol.rate FROM purchase_order_lines pol
             WHERE pol.id = o.outsource_po_line_id
@@ -257,6 +258,16 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
           LEFT JOIN machines mm ON mm.id = v.machine_id
           WHERE v.jc_op_id = o.id
         ) ms ON TRUE
+        -- Label-only split, correlated on the op id so it never scans the
+        -- company. Same canonical aggregate as jc-ops / op-entry.
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+                   json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                   ORDER BY v.completed_qty DESC, v.machine_code
+                 ) AS machines
+          FROM public.v_op_machine_output v
+          WHERE v.jc_op_id = o.id
+        ) mo ON TRUE
         WHERE sol.sales_order_id = ${sid} AND o.deleted_at IS NULL AND jc.deleted_at IS NULL
         ORDER BY sol.line_no, jc.code, o.op_seq
       `),
@@ -271,6 +282,10 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
         operation: r.operation,
         opType: r.op_type,
         machineCode: r.machine_code,
+        machines: (r.machines ?? []).map((v) => ({
+          machineCode: String(v.machineCode),
+          qty: Number(v.qty ?? 0),
+        })),
         outsourceCost: Number(r.outsource_cost) || 0,
         machineTimeCost: Number(r.machine_time_cost) || 0,
         qty: Number(r.qty) || 0,

@@ -8,6 +8,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Printer } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
+import { MachineSplitLines } from '@/components/shared/machine-split';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '../../settings/api';
 import { useMachineLoading } from '../api';
@@ -383,7 +384,14 @@ function OpRowCells({ op }: { op: MachineLoadOp }): React.JSX.Element {
         {op.dueDate ?? '—'}
       </td>
       <td className="td-ctr mono">{op.orderQty}</td>
-      <td className="td-ctr green mono fw-700">{op.completedQty}</td>
+      <td className="td-ctr green mono fw-700">
+        {op.completedQty}
+        {/* The per-machine breakdown of that total (ADR-126). The op is listed
+            under the machine that runs the REMAINING qty, so after a re-route
+            this figure was not made there. Renders nothing unless the op ran on
+            more than one machine. */}
+        <MachineSplitLines machines={op.machines} />
+      </td>
       <td className="td-ctr">
         <span
           className="mono fw-700"

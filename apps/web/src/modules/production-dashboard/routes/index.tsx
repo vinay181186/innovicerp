@@ -22,6 +22,7 @@ import type {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachineLoading } from '@/modules/machine-loading/api';
 import { useProductionDashboard } from '../api';
@@ -569,9 +570,22 @@ function ReadyRow({ op }: { op: ProductionDashboardReadyOp }): React.JSX.Element
       </td>
       <td className="td-ctr mono">{op.opSeq}</td>
       <td>{op.operation}</td>
-      <td>{op.machineCode ? <MachineTag code={op.machineCode} /> : '—'}</td>
+      <td>
+        {op.machineCode ? <MachineTag code={op.machineCode} /> : '—'}
+        {/* ADR-126 — this column is the machine the REMAINING qty runs on. Once
+            an op has run on more than one machine it stops matching the Completed
+            figure beside it, so say so instead of implying the current machine
+            made everything. One machine (the norm) renders exactly as before —
+            MachineChip returns null. */}
+        <MachineChip machines={op.machines} />
+      </td>
       <td className="td-ctr">{op.orderQty}</td>
-      <td className="td-ctr green mono fw-700">{op.completedQty}</td>
+      <td className="td-ctr green mono fw-700">
+        {op.completedQty}
+        {/* The per-machine breakdown of that total (ADR-126). Renders nothing
+            unless the op ran on more than one machine. */}
+        <MachineSplitLines machines={op.machines} />
+      </td>
       <td className="td-ctr">
         <span className="mono fw-700 amber" style={{ fontSize: 16 }}>
           {op.available}

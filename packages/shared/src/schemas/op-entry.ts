@@ -17,6 +17,7 @@ import { OP_TYPES } from '../enums/op-type';
 import { OUTSOURCE_STATUSES } from '../enums/outsource-status';
 import { RUNNING_OP_STATUSES } from '../enums/running-op-status';
 import { SHIFTS } from '../enums/shift';
+import { machineSplitSchema } from './machine-split';
 
 export const opTypeSchema = z.enum(OP_TYPES);
 export const opLogTypeSchema = z.enum(OP_LOG_TYPES);
@@ -54,6 +55,11 @@ export const jcOpEnrichedSchema = z.object({
   opSeq: z.number().int().positive(),
   machineCode: z.string().nullable(), // joined from machines.code; null for OSP / QC
   machineCodeText: z.string().nullable(),
+  /** Who actually MADE the completed qty, per machine (ADR-126). The two machine
+   *  fields above are the op's CURRENT machine — where the REMAINING qty runs —
+   *  so on a re-routed op they name a machine that may have produced nothing.
+   *  See machineSplitSchema. */
+  machines: machineSplitSchema,
   operation: z.string(),
   opType: opTypeSchema,
   cycleTimeMin: z.string(), // numeric stored as string

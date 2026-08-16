@@ -17,6 +17,7 @@
 import { z } from 'zod';
 import { JC_COMPUTED_STATUSES } from '../enums/jc-computed-status';
 import { JC_PRIORITIES } from '../enums/jc-priority';
+import { machineSplitSchema } from './machine-split';
 
 export const jcComputedStatusSchema = z.enum(JC_COMPUTED_STATUSES);
 export const jcPrioritySchema = z.enum(JC_PRIORITIES);
@@ -324,6 +325,11 @@ export const jobCardStatusOpExtraSchema = z.object({
   jcOpId: z.string().uuid(),
   machineName: z.string().nullable(),
   toolDetails: z.string().nullable(),
+  /** Who actually MADE this op's completed qty, per machine (ADR-126).
+   *  `machineName` above is the op's CURRENT machine — where the REMAINING qty
+   *  runs — so on a re-routed op it names a machine that may have produced
+   *  nothing. See machineSplitSchema. */
+  machines: machineSplitSchema,
 });
 export type JobCardStatusOpExtra = z.infer<typeof jobCardStatusOpExtraSchema>;
 

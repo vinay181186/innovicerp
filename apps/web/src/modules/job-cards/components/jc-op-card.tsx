@@ -28,6 +28,7 @@ import type {
   OutsourceStatus,
 } from '@innovic/shared';
 import { useState } from 'react';
+import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { OP_STATUS, OUTSOURCE_STATUS_LABEL, opAccentColor } from '../lib/jc-op-labels';
 import { QtyTile, SetupChip, secLabel } from './jc-op-card-parts';
@@ -204,6 +205,12 @@ export function JcOpCard({
           </span>
           <span className="fw-700" style={{ fontSize: 14 }}>
             {isQc ? 'QC' : isOut ? 'OSP' : (op.machineCode ?? op.machineCodeText ?? '—')}
+            {/* ADR-126 — the label above is the machine the REMAINING qty runs
+                on. Once an op has run on more than one machine it stops matching
+                the DONE tile below, so say so rather than implying the current
+                machine made everything. One machine (the norm) renders exactly
+                as before — MachineChip returns null. */}
+            <MachineChip machines={op.machines} />
           </span>
           {machineName && !isQc && !isOut ? (
             <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
@@ -276,7 +283,8 @@ export function JcOpCard({
                 value={doneQty}
                 color="var(--green)"
                 sub={
-                  isQc ? (
+                  <>
+                    {isQc ? (
                     <>
                       <div style={{ fontSize: 8, color: 'var(--green)' }}>✓ accepted</div>
                       {op.qcRejectedQty > 0 ? (
@@ -306,7 +314,14 @@ export function JcOpCard({
                         <div style={{ fontSize: 8, color: 'var(--amber)' }}>⏳{op.qcPending} pend</div>
                       ) : null}
                     </>
-                  ) : null
+                    ) : null}
+                    {/* The per-machine breakdown of this DONE figure (ADR-126).
+                        Renders nothing unless the op ran on more than one
+                        machine. Skipped on a QC op: the split describes
+                        MACHINED production, and DONE there is the inspection's
+                        accepted count (doneQty above), which no machine made. */}
+                    {isQc ? null : <MachineSplitLines machines={op.machines} />}
+                  </>
                 }
               />
               <QtyTile

@@ -4,6 +4,7 @@
 // renderJobQueue (HTML L10363).
 
 import { z } from 'zod';
+import { machineSplitSchema } from './machine-split';
 
 export const jobQueueRowSchema = z.object({
   jcOpId: z.string().uuid(),
@@ -19,6 +20,10 @@ export const jobQueueRowSchema = z.object({
   dueDate: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
   completed: z.number().int().nonnegative(),
+  /** Who actually made `completed`, per machine (ADR-126). The row is bucketed
+   *  under the machine that runs the REMAINING qty, which on a re-routed op is
+   *  not the machine that made the completed figure. See machineSplitSchema. */
+  machines: machineSplitSchema,
   available: z.number().int().nonnegative(),
   /** 11-state enum from calc-engine. */
   status: z.string(),

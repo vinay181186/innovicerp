@@ -13,6 +13,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -72,7 +73,12 @@ export async function listJcOpsBoard(
         pr.code AS "outsourcePrCode",
         po.code AS "outsourcePoCode",
         po.id AS "outsourcePoId",
-        op.outsource_sent_qty AS "sentQty"
+        op.outsource_sent_qty AS "sentQty",
+        -- Who actually made the completed qty, per machine (0095 / ADR-126). The
+        -- machine columns above are the op's CURRENT machine — where the
+        -- REMAINING qty runs — so on a re-routed op they name a machine that
+        -- may have produced nothing. This is the honest breakdown.
+        COALESCE(mo.machines, '[]'::json) AS "machines"
       FROM public.jc_ops op
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
@@ -82,6 +88,14 @@ export async function listJcOpsBoard(
       LEFT JOIN public.purchase_order_lines pol ON pol.id = op.outsource_po_line_id AND pol.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
+                 ORDER BY v.completed_qty DESC, v.machine_code
+               ) AS machines
+        FROM public.v_op_machine_output v
+        WHERE v.jc_op_id = op.id
+      ) mo ON true
       WHERE op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
         ${jcFrag}
@@ -102,6 +116,9 @@ export async function listJcOpsBoard(
         operation: String(r['operation'] ?? ''),
         machineId: (r['machineId'] as string | null) ?? null,
         machineCode: (r['machineCode'] as string | null) ?? null,
+        machines: (
+          (r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []
+        ).map((v) => ({ machineCode: String(v.machineCode), qty: num(v.qty) })),
         cycleTime: num(r['cycleTime']),
         qcRequired: Boolean(r['qcRequired']),
         opType: String(r['opType'] ?? 'process'),
@@ -237,6 +254,10 @@ export async function changeJcOpMachine(
 
     // Audit trail: the swap itself. Past production keeps its own machine on
     // op_log; this line records who moved the remaining qty, and from where.
+    // The "stays where" clause is read from the real per-machine split, NOT
+    // from the op total — on a second swap the total spans several machines
+    // and naming only the outgoing one is a lie (ADR-125).
+    const split = await loadMachineSplit(tx, jcOpId);
     await emitActivityLog(
       tx,
       {
@@ -245,7 +266,7 @@ export async function changeJcOpMachine(
         detail:
           `Machine changed on ${op.jcCode} op ${num(op.opSeq)} ${op.operation} — ` +
           `${op.oldMachineCode ?? '(none)'} → ${machineRows[0].code}; ` +
-          `${num(op.done)} pcs already completed stay recorded against ${op.oldMachineCode ?? '(none)'}`,
+          describeMachineSplit(split),
         refId: op.jcCode,
       },
       companyId,

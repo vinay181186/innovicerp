@@ -9,6 +9,7 @@
 // feedback_shared_schema_name_collisions.
 
 import { z } from 'zod';
+import { machineSplitSchema } from './machine-split';
 
 export const jcOpsBoardRowSchema = z.object({
   jcOpId: z.string().uuid(),
@@ -19,8 +20,12 @@ export const jcOpsBoardRowSchema = z.object({
   jcOrderQty: z.number().int().nonnegative(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
+  /** The machine the REMAINING qty runs on. Not who made `completed` — an op
+   *  re-routed mid-flight has produced pieces on other machines (ADR-126). */
   machineId: z.string().uuid().nullable(),
   machineCode: z.string().nullable(),
+  /** Who actually made `completed`, per machine (ADR-126). See machineSplitSchema. */
+  machines: machineSplitSchema,
   cycleTime: z.number(),
   qcRequired: z.boolean(),
   /** op type: process | outsource | qc */

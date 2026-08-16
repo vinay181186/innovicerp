@@ -9,7 +9,7 @@
 // flag. Those columns are omitted rather than invented. Everything else maps
 // 1:1 to the board.
 
-import type { Company, MachineLoadCard, MachineLoadOp } from '@innovic/shared';
+import type { Company, MachineLoadCard, MachineLoadOp, MachineSplit } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -27,6 +27,25 @@ function statusBadge(status: string): string {
   // Title-case the computed status for the print.
   const label = s.replace(/\b\w/g, (c) => c.toUpperCase());
   return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+// Per-machine production split (0095 / ADR-126). Every row here prints under a
+// MACHINE heading, so its Done figure reads as "this machine made this much" —
+// false for an op re-routed mid-flight. `machines` is the shared split shape
+// (v_op_machine_output), filled by the correlated LATERAL in the machine-loading
+// service. Single-machine → empty → the queue prints exactly as before.
+function machineSplit(op: MachineLoadOp): MachineSplit {
+  return op.machines ?? [];
+}
+
+// Done cell: the total, plus a small per-machine second line when the op ran on
+// more than one machine. A printed queue sheet cannot be hovered for a tooltip,
+// so the breakdown has to be on the paper.
+function doneCell(op: MachineLoadOp): string {
+  const split = machineSplit(op);
+  if (split.length <= 1) return String(op.completedQty);
+  const parts = split.map((m) => `${esc(m.machineCode)} ${m.qty}`).join(' · ');
+  return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
 }
 
 function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string {
@@ -47,7 +66,7 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       <td>${priorityBadge(o.priority)}</td>
       <td style="text-align:center">${esc(o.dueDate ?? '—')}</td>
       <td style="text-align:center">${o.orderQty}</td>
-      <td style="text-align:center;color:#16a34a;font-weight:700">${o.completedQty}</td>
+      <td style="text-align:center;color:#16a34a;font-weight:700">${doneCell(o)}</td>
       <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>
       <td style="text-align:center;font-weight:700;color:#dc2626">${o.pendingHrs}h</td>
       <td>${statusBadge(o.computedStatus)}</td>

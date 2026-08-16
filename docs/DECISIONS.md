@@ -6213,3 +6213,172 @@ only return a master row's id, and `purchase_requests_item_check`
 - All touched files are under the 400-line rule: `purchase-request-form.tsx` 371 →
   389, `vendor-picker.tsx` 111, `pr-vendor-field.tsx` 61, `pr-form-values.ts` 56,
   `po-vendor-field.tsx` 104 → 67.
+
+## ADR-126: A machine label next to a qty must say WHICH of the two machines it means
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+ADR-125 moved the machine onto `op_log`, so the DATA is now right. Tracing
+IN-JC-26-00093 op 1 immediately afterwards showed the SCREENS are not. The JC
+Operations row read:
+
+```
+IN-JC-26-00093 · op 1 · CNC-03 · drill · order 50 · done 10 · avail 40
+```
+
+while the log held `CNC-01 5` (12-Aug) + `CNC-02 5` (16-Aug) and **CNC-03 had
+produced nothing**. Both numbers are individually correct; pairing them is what
+lies. The root confusion is that one column carries two meanings:
+
+- `jc_ops.machine_id` — where the REMAINING work runs (forward-looking)
+- `op_log.machine_id` — who made THESE pieces (historical)
+
+A full sweep found the pairing on: the JC Operations board, JC status op cards,
+the JC completion feed, the Op Entry ops table, Production Dashboard, the Job
+Queue `Done` column, Machine Loading op rows, Print Job Card, the Excel export
+and Print Machine Queue. Correct-by-design (machine = where remaining work runs,
+no historical qty implied): Job Queue grouping, Machine Loading cards,
+Production Schedule bars, Shop Floor, SO Overview "current location".
+
+Two outright defects, not just labelling:
+
+1. **The completion feed** (`job-cards/service.ts:653-657`) joined the OP's
+   machine onto rows that ARE `op_log` rows — so a 12-Aug start on CNC-01
+   rendered "on CNC-03". Verified: the old SQL returned `CNC-03` for all five
+   log rows; the fixed SQL returns `CNC-01, CNC-01, CNC-01, CNC-02, CNC-01`.
+2. **The machine-change audit line** asserted the op TOTAL against the single
+   outgoing machine — *"10 pcs already completed stay recorded against CNC-02"*
+   when 5 were on CNC-01. Wrong from the second swap onward.
+3. And a machine change made through the **JC edit form** emitted no machine
+   detail at all — only the generic `Updated <JC>` line — so one of the two
+   swaps on JC-93 left no trace.
+
+### Decision
+The display rule, applied everywhere:
+
+> Never print a machine beside a quantity without saying which meaning it
+> carries. One machine ever → render exactly as today. More than one → mark the
+> machine cell and break the qty out per machine.
+
+This keeps the blast radius small: almost every op has only ever run on one
+machine, so the common path is unchanged.
+
+Phase 1 (this ADR) fixes the three defects above and leaves the labelling work
+staged:
+- Completion feed joins `COALESCE(ol.machine_id, o.machine_id)`, mirroring the
+  shape `daily-report/service.ts:57-58` already uses.
+- New `apps/api/src/lib/machine-split.ts` — `loadMachineSplit` reads
+  `v_op_machine_output`; `describeMachineSplit` renders "CNC-01 5 · CNC-02 5
+  stay recorded against their own machines", collapsing to the single-machine
+  wording when only one ran it. Consumed by BOTH audit sites
+  (`jc-ops/service.ts`, `production-schedule/service.ts`) so they cannot drift.
+- `updateJobCard` collects machine swaps and appends them to its activity line.
+
+### Alternatives Considered
+- **Show the log's machine in the machine column instead.** Rejected: on the
+  Job Queue and Machine Loading the column legitimately means "where the
+  remaining work runs" — replacing it would break the forward-looking screens to
+  fix the historical ones. The two meanings both need to exist.
+- **Drop the machine column wherever a qty appears.** Rejected: the machine is
+  the single most useful thing on a shop-floor row.
+- **A `machine_change_log` table to source the audit line.** Rejected for the
+  same reason as in ADR-125 — `v_op_machine_output` already answers it, and a
+  second source would drift.
+
+### Consequences
+- Positive: log-row screens now name the machine that did the work; the audit
+  line survives repeated swaps; a swap made from the JC edit form is traceable.
+- Negative: the ranked labelling work (JC Operations board, op cards, Op Entry
+  table, Production Dashboard, Job Queue Done, Machine Loading rows, the two
+  print paths, the Excel export) is NOT done. Those rows still pair the current
+  machine with a cross-machine total. Tracked as Phase 2-4.
+- Behavioural bug still open: `job-queue/routes/list.tsx:361` picks
+  `'Log Op'` vs `'Start'` from the op-total `completed`, so a freshly re-routed
+  op offers "Log Op" on a machine that has produced nothing.
+- `so-costing` money is already per-machine correct (ADR-125); only its
+  `machine_code` LABEL is still op-level, carrying a `TODO(0095)`.
+
+### Phase 2 addendum (same day) — the JC Operations board
+
+`jcOpsBoardRowSchema` gains `machines: { machineCode, qty }[]` (default `[]`),
+filled by a `LEFT JOIN LATERAL … json_agg` over `v_op_machine_output` in
+`jc-ops/service.ts`. The LATERAL is correlated on `op.id`, so it does not scan
+the company.
+
+Render rule, implemented in `jc-ops/routes/list.tsx`:
+- `machines.length <= 1` → **byte-identical to before.** No marker, no
+  breakdown. This is the overwhelmingly common case.
+- `machines.length > 1` → the Machine cell appends an amber `⚙N` chip (with the
+  split in its `title`), and the Done cell lists `CNC-01 5` / `CNC-02 5` beneath
+  the total.
+
+The Change Machine modal used the same broken pairing (`row.completed` total
+next to `row.machineCode` singular) and now lists each machine's own qty.
+
+Verified against live data on IN-JC-26-00093:
+- op 1 → `machineCode CNC-03`, `completed 10`, `machines [CNC-01 5, CNC-02 5]` —
+  the marker case. CNC-03 has produced nothing.
+- op 3 → one machine, renders unchanged.
+- QC ops and the outsource op → `machines []`, unchanged.
+- **Exactly 1 op company-wide** currently trips the marker, so the visual delta
+  is negligible.
+- Invariant `Σ machines.qty <= completed` holds with **0 violations** company-wide
+  (the gap is OSP-accepted qty, which belongs to no machine).
+
+Still open after Phase 2: Op Entry ops table, JC status op cards, Production
+Dashboard, Job Queue Done column + its `'Log Op'`/`'Start'` choice, Machine
+Loading op rows, Print Job Card, Excel export, Print Machine Queue, and the
+so-costing label.
+
+### Phases 3-4 addendum (same day) — every remaining surface
+
+The split shape and its renderers were factored out so eight screens plus three
+export paths could not diverge:
+
+- `packages/shared/src/schemas/machine-split.ts` — `machineSplitSchema` /
+  `MachineSplit`. Its header carries the canonical correlated LATERAL and the
+  render rule; every consumer imports rather than restates it.
+- `apps/web/src/components/shared/machine-split.tsx` — `<MachineChip>` and
+  `<MachineSplitLines>`. **Both return null at 0 or 1 machines**, so callers drop
+  them in with no length check and the ordinary op renders byte-identical.
+
+Carrying `machines`: `jcOpsBoardRowSchema`, `jcOpEnrichedSchema`,
+`jobCardStatusOpExtraSchema`, `jobQueueRowSchema`, `machineLoadOpSchema`,
+`productionDashboard` ready-rows, `soCostingOpRowSchema`. Fed by the same
+LATERAL in jc-ops, op-entry, job-cards, job-queue, machine-loading,
+production-dashboard and so-costing services.
+
+Rendered on: JC Operations board, Op Entry ops table, JC status op cards
+(suppressed on QC ops — that figure is inspection accepted, not machined
+output), Job Queue Done, Machine Loading Done, Production Dashboard. Printed on:
+Print Job Card, Print Machine Queue, and the Excel Operations sheet. The Excel
+**Production Log sheet gained a Machine column** — one row per log, so it is
+honest machine-wise history with no aggregation at all.
+
+**Behaviour bug fixed alongside** (`job-queue/routes/list.tsx`): the action
+button chose `'Log Op'` vs `'Start'` from the op TOTAL, so a re-routed op invited
+an operator to log against a machine that had never run the job. It now asks
+whether THIS panel's machine has produced anything, falling back to the old test
+when the split is empty — that case is real, since OSP-accepted qty belongs to
+no machine and would otherwise flip a genuinely-started op back to 'Start'.
+
+so-costing: the `TODO(0095)` is closed. **No cost arithmetic was touched** — the
+new LATERAL is a bare aggregate with no GROUP BY, so it cannot multiply rows or
+alter a sum; it only supplies the label data. No UI consumes
+`SoCostingOpRow.machines` yet.
+
+Verified against live data after the change:
+- The LATERAL returns **105 rows for 105 ops** — one per op, so it can never
+  multiply a costing row.
+- Distribution across the company: **74 ops with no machine, 30 with exactly
+  one, 1 with two.** So 104 of 105 ops render exactly as before.
+- Every op where the split disagrees with `completed_qty` is an **outsource** op
+  with an empty split (vendor work belongs to no machine). **Zero in-house
+  mismatches.**
+- The button fix, on JC-93: op 1 under panel CNC-03 → 0 made there → now offers
+  Start; op 3 under CNC-02 → 5 made there → keeps Log Op.
+
+Remaining after Phase 4: no UI renders `SoCostingOpRow.machines`; and ISSUE-272
+(Stop captures no qty) / ISSUE-273 (`machines.status` is decorative) are
+untouched and still open.

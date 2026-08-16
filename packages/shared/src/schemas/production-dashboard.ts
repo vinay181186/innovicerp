@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { JC_PRIORITIES } from '../enums/jc-priority';
+import { machineSplitSchema } from './machine-split';
 
 export const productionDashboardCountersSchema = z.object({
   openJc: z.number().int().nonnegative(),
@@ -38,7 +39,11 @@ export const productionDashboardReadyOpSchema = z.object({
   jobCardCode: z.string(),
   opSeq: z.number().int(),
   operation: z.string(),
+  /** The machine the REMAINING qty runs on — forward-looking. Not who made
+   *  `completedQty`: an op re-routed mid-flight made pieces elsewhere (ADR-126). */
   machineCode: z.string().nullable(),
+  /** Who actually made `completedQty`, per machine (ADR-126). See machineSplitSchema. */
+  machines: machineSplitSchema,
   orderQty: z.number().int(),
   completedQty: z.number().int().nonnegative(),
   available: z.number().int(),

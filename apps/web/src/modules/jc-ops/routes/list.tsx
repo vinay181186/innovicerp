@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 // Reuse the existing PR create hook — do not build a parallel one.
@@ -200,7 +201,15 @@ function Row({
         {isOutsource ? (
           <span style={{ fontSize: 10, color: 'var(--amber)' }}>—</span>
         ) : (
-          <span style={{ fontSize: 11 }}>{o.machineCode ?? '—'}</span>
+          <>
+            <span style={{ fontSize: 11 }}>{o.machineCode ?? '—'}</span>
+            {/* ADR-126 — this column is the machine the REMAINING qty runs on.
+                Once an op has run on more than one machine it stops matching
+                the Done figure beside it, so say so instead of implying the
+                current machine made everything. One machine (the norm) renders
+                exactly as before — MachineChip returns null. */}
+            <MachineChip machines={o.machines} />
+          </>
         )}
       </td>
       <td>
@@ -284,6 +293,9 @@ function Row({
       <td className="td-ctr">{o.jcOrderQty}</td>
       <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
         {o.completed}
+        {/* The per-machine breakdown of that total (ADR-126). Renders nothing
+            unless the op ran on more than one machine. */}
+        <MachineSplitLines machines={o.machines} />
         {o.qcRequired && o.qcPending > 0 ? (
           <div style={{ fontSize: 9, color: 'var(--amber)' }}>⏳{o.qcPending} QC</div>
         ) : null}
@@ -501,11 +513,28 @@ function ChangeMachineModal({
               started", which 0095 made false. Spell out what actually happens
               instead: the switch routes the REMAINING qty only, and the pieces
               already made keep their own machine on every report. */}
-          {row.completed > 0 ? (
+          {row.machines.length > 1 ? (
+            // ADR-126 — after a second swap the completed total spans several
+            // machines, so naming only the current one would be a lie. List them.
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              Already made:{' '}
+              {row.machines.map((m, i) => (
+                <span key={m.machineCode}>
+                  {i > 0 ? ' · ' : ''}
+                  <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b> {m.qty}
+                </span>
+              ))}
+              . Each stays recorded against its own machine. The new machine takes the
+              remaining <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+            </div>
+          ) : row.completed > 0 ? (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
               {row.completed} pcs already made stay recorded against{' '}
-              <b style={{ color: 'var(--text2)' }}>{row.machineCode ?? 'the current machine'}</b>.
-              The new machine takes the remaining <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+              <b style={{ color: 'var(--text2)' }}>
+                {row.machines[0]?.machineCode ?? row.machineCode ?? 'the current machine'}
+              </b>
+              . The new machine takes the remaining{' '}
+              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
             </div>
           ) : (
             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>

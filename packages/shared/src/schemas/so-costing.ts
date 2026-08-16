@@ -4,6 +4,7 @@
 // Read-only.
 
 import { z } from 'zod';
+import { machineSplitSchema } from './machine-split';
 
 export const soCostingRowSchema = z.object({
   soId: z.string().uuid(),
@@ -32,7 +33,14 @@ export const soCostingOpRowSchema = z.object({
   opSeq: z.number().int(),
   operation: z.string(),
   opType: z.string(),
+  /** The op's CURRENT machine — where the REMAINING qty runs. On a re-routed op
+   *  this names one machine while `machineTimeCost` below is a blend of several,
+   *  so read `machines` for what the money actually spans (ADR-126). */
   machineCode: z.string().nullable(),
+  /** Which machines actually produced `qty`, busiest first (0095 / ADR-126).
+   *  Label data only — the cost is already priced per machine server-side.
+   *  Empty or one entry on the ordinary never-re-routed op. */
+  machines: machineSplitSchema,
   outsourceCost: z.number().nonnegative(),
   machineTimeCost: z.number().nonnegative(),
   qty: z.number().int().nonnegative(),

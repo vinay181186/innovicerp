@@ -48,6 +48,7 @@ export * from './schemas/so-document';
 export * from './schemas/jw-document';
 export * from './schemas/qc-command';
 export * from './schemas/operator';
+export * from './schemas/machine-split';
 export * from './schemas/op-entry';
 export * from './schemas/sales-order';
 export * from './schemas/job-work-order';

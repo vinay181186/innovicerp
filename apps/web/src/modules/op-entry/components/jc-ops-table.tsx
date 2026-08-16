@@ -10,6 +10,7 @@
 // is omitted. Closing that gap needs a data-layer change, not a markup change.
 
 import type { JcOpEnriched } from '@innovic/shared';
+import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { JcOpStatusBadge } from './status-badge';
 
 interface Props {
@@ -76,6 +77,13 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                   </td>
                   <td className="mono text3" style={{ fontSize: 11 }}>
                     {machineLabel}
+                    {/* ADR-126 — this cell is the machine the REMAINING qty runs
+                        on. Once an op has run on more than one machine it stops
+                        matching the Completed figure beside it, so say so rather
+                        than implying the current machine made everything. One
+                        machine (the norm) renders exactly as before —
+                        MachineChip returns null. */}
+                    <MachineChip machines={op.machines} />
                   </td>
                   <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                     {op.opType}
@@ -109,6 +117,12 @@ export function JcOpsTable({ ops, selectedOpId, onSelect }: Props): React.JSX.El
                     ) : (
                       op.completedQty
                     )}
+                    {/* The per-machine breakdown of that total (ADR-126).
+                        Renders nothing unless the op ran on more than one
+                        machine. Skipped on a pure QC op: the split describes
+                        MACHINED production, and the number above it there is
+                        the inspection's accepted count. */}
+                    {op.opType === 'qc' ? null : <MachineSplitLines machines={op.machines} />}
                   </td>
                   <td className="td-ctr">
                     {/* pending_qty (0087), not `available`. On a QC op
