@@ -7,6 +7,12 @@
 // counted as free, and the tracker kept offering to build more units out of
 // them (see 0091_store_txn_assembly.sql for the live evidence).
 //
+// A build is TWO stock moves, not one: the child components leave the store
+// (OUT), and the finished good this BOM produces — bom_masters.parent_item_id —
+// arrives on the shelf (IN, `qty` pcs of the assembled item). The parent credit
+// is tagged with an "(output)" source_ref so the undo path finds and reverses it
+// on its own, without disturbing the child debits.
+//
 // Mirrors the shape of op-entry/qc-stock-cascade.ts and the GRN cascade: lock
 // the items row FOR UPDATE to serialise concurrent writes on the same item,
 // read on-hand from v_item_stock, then insert the ledger row with
@@ -21,7 +27,7 @@
 // opening balances have been counted and corrected.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { bomMasterLines, storeTransactions } from '../../db/schema';
+import { bomMasterLines, bomMasters, storeTransactions } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 
 export interface AssemblyStockContext {
@@ -59,6 +65,21 @@ async function loadPerUnitComponents(
   return rows
     .map((r) => ({ itemId: r.childItemId, qty: Math.round(Number(r.qtyPerSet)) }))
     .filter((r) => r.qty > 0);
+}
+
+/** The finished good this BOM builds (bom_masters.parent_item_id). Null when the
+ *  BOM predates the column (six legacy BOMs) — then there is no item to credit
+ *  and the output step is skipped. */
+async function loadParentItemId(
+  tx: DbTransaction,
+  bomMasterId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ parentItemId: bomMasters.parentItemId })
+    .from(bomMasters)
+    .where(and(eq(bomMasters.id, bomMasterId), isNull(bomMasters.deletedAt)))
+    .limit(1);
+  return rows[0]?.parentItemId ?? null;
 }
 
 /** Read on-hand for one item, locking its items row first. */
@@ -114,6 +135,29 @@ export async function applyAssemblyStockCascade(
     });
     written.push({ itemId: c.itemId, qty: c.qty, stockBefore, stockAfter });
   }
+
+  // The finished good this build produced goes ON the shelf: one IN for the
+  // BOM's parent item, `batchQty` pcs. Tagged "(output)" so reverseAssembly can
+  // find and undo just this credit. Skipped when the BOM has no parent item.
+  const parentItemId = await loadParentItemId(tx, ctx.bomMasterId);
+  if (parentItemId) {
+    const stockBefore = await lockAndRead(tx, ctx.companyId, parentItemId);
+    const stockAfter = stockBefore + batchQty;
+    await tx.insert(storeTransactions).values({
+      companyId: ctx.companyId,
+      txnDate: ctx.txnDate,
+      itemId: parentItemId,
+      txnType: 'in',
+      qty: batchQty,
+      sourceType: 'assembly',
+      sourceRef: `${ctx.soCode} unit #${ctx.unitNo} (output)`,
+      stockBefore,
+      stockAfter,
+      remarks: `Assembly output · unit #${ctx.unitNo} · ${batchQty} pcs built`,
+      createdBy: user.id,
+    });
+  }
+
   return written;
 }
 
@@ -174,6 +218,46 @@ export async function reverseAssemblyStockCascade(
     });
     written.push({ itemId, qty, stockBefore, stockAfter });
   }
+
+  // Reverse the finished-good output credit (the "(output)" IN row) — the unit
+  // is un-built, so its finished good leaves the shelf again. Mirror of the
+  // credit in applyAssemblyStockCascade; a compensating OUT, never a delete.
+  const outputRef = `${sourceRef} (output)`;
+  const outputRows = await tx
+    .select({ itemId: storeTransactions.itemId, qty: storeTransactions.qty })
+    .from(storeTransactions)
+    .where(
+      and(
+        eq(storeTransactions.companyId, ctx.companyId),
+        eq(storeTransactions.sourceType, 'assembly'),
+        eq(storeTransactions.sourceRef, outputRef),
+        eq(storeTransactions.txnType, 'in'),
+      ),
+    );
+  const outNetByItem = new Map<string, number>();
+  for (const r of outputRows) {
+    if (r.itemId === null) continue;
+    outNetByItem.set(r.itemId, (outNetByItem.get(r.itemId) ?? 0) + r.qty);
+  }
+  for (const [itemId, qty] of [...outNetByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (qty <= 0) continue;
+    const stockBefore = await lockAndRead(tx, ctx.companyId, itemId);
+    const stockAfter = stockBefore - qty;
+    await tx.insert(storeTransactions).values({
+      companyId: ctx.companyId,
+      txnDate: ctx.txnDate,
+      itemId,
+      txnType: 'out',
+      qty,
+      sourceType: 'assembly',
+      sourceRef: `${outputRef} undo`,
+      stockBefore,
+      stockAfter,
+      remarks: `Assembly undo · unit #${ctx.unitNo} · ${qty} pcs finished good removed`,
+      createdBy: user.id,
+    });
+  }
+
   return written;
 }
 
