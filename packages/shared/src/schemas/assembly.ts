@@ -31,10 +31,19 @@ export const assemblyComponentRowSchema = z.object({
 });
 export type AssemblyComponentRow = z.infer<typeof assemblyComponentRowSchema>;
 
+export const assemblyUnitStatusEnum = z.enum(['in_progress', 'completed']);
+export type AssemblyUnitStatus = z.infer<typeof assemblyUnitStatusEnum>;
+
 export const assemblyUnitRowSchema = z.object({
   id: z.string().uuid(),
   unitNo: z.number().int().positive(),
-  /** Batch quantity — how many units this one record represents (default 1). */
+  /** Assembly Start/Stop (ADR-129). 'in_progress' = a started batch still on
+   *  the bench (its `qty` is how many are left to complete); 'completed' = built
+   *  units that debited their components. */
+  status: assemblyUnitStatusEnum,
+  /** For an in_progress batch, units still to complete; for a completed batch,
+   *  the good units built. Rollups: Assembled = SUM(qty) over completed rows,
+   *  In Assembly = SUM(qty) over in_progress rows. */
   qty: z.number().int().positive(),
   serialNo: z.string().nullable(),
   assemblyDate: z.string(),
@@ -50,9 +59,13 @@ export type AssemblyUnitRow = z.infer<typeof assemblyUnitRowSchema>;
 export const assemblyRollupSchema = z.object({
   /** Equipment SO order qty (units required). */
   orderQty: z.number().int().nonnegative(),
-  /** Units assembled — SUM(qty) across non-deleted assembly_units (a record
-   *  can be a batch of qty > 1), not a row count. */
+  /** Units assembled — SUM(qty) across COMPLETED assembly_units (a record can
+   *  be a batch of qty > 1), not a row count. Excludes in-progress WIP. */
   assembledQty: z.number().int().nonnegative(),
+  /** Units currently in assembly (WIP) — SUM(qty) across in_progress batches
+   *  (ADR-129). These are started but not yet completed, so they debit no stock
+   *  and don't count as assembled until stopped. */
+  inProgressQty: z.number().int().nonnegative(),
   /** Units dispatched — SUM(qty) across records flipped to dispatched=true. */
   dispatchedQty: z.number().int().nonnegative(),
   /** orderQty - assembledQty (clamped at 0). */
@@ -142,6 +155,31 @@ export const markUnitAssembledInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
 });
 export type MarkUnitAssembledInput = z.infer<typeof markUnitAssembledInputSchema>;
+
+// ── Start / Stop (ADR-129) ──────────────────────────────────────────────────
+
+/** START a batch: put `qty` units on the bench. No stock leaves yet; that
+ *  happens at STOP for the good qty. Server caps qty so assembled + in-progress
+ *  + qty never exceeds the order. */
+export const startAssemblyInputSchema = z.object({
+  qty: z.number().int().positive().max(9999),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startedBy: z.string().trim().max(80).optional(),
+  remarks: z.string().trim().max(500).optional(),
+});
+export type StartAssemblyInput = z.infer<typeof startAssemblyInputSchema>;
+
+/** STOP a started batch: `completedQty` units came out good and are completed
+ *  now (they debit their components); the remainder stays in assembly. Server
+ *  rejects a qty above the batch's remaining or above what stock can build. */
+export const stopAssemblyInputSchema = z.object({
+  completedQty: z.number().int().positive().max(9999),
+  serialNo: z.string().trim().max(80).optional(),
+  assemblyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  assembledBy: z.string().trim().max(80).optional(),
+  remarks: z.string().trim().max(500).optional(),
+});
+export type StopAssemblyInput = z.infer<typeof stopAssemblyInputSchema>;
 
 export const markUnitDispatchedInputSchema = z.object({
   dispatchDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

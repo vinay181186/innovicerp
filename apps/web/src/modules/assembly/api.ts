@@ -5,6 +5,8 @@ import type {
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
   SetReadinessOverrideInput,
+  StartAssemblyInput,
+  StopAssemblyInput,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -39,6 +41,34 @@ export function useMarkUnitAssembled(soId: string) {
     mutationFn: (input: MarkUnitAssembledInput) =>
       apiFetch<AssemblyUnitRow>(`/assemblies/${soId}/units`, {
         method: 'POST',
+        json: input,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+    },
+  });
+}
+
+export function useStartAssembly(soId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartAssemblyInput) =>
+      apiFetch<AssemblyUnitRow>(`/assemblies/${soId}/start`, {
+        method: 'POST',
+        json: input,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+    },
+  });
+}
+
+export function useStopAssembly() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ unitId, input }: { unitId: string; input: StopAssemblyInput }) =>
+      apiFetch<AssemblyUnitRow>(`/assemblies/units/${unitId}/stop`, {
+        method: 'PATCH',
         json: input,
       }),
     onSuccess: () => {

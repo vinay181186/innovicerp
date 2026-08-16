@@ -2,6 +2,8 @@ import {
   markUnitAssembledInputSchema,
   markUnitDispatchedInputSchema,
   setReadinessOverrideInputSchema,
+  startAssemblyInputSchema,
+  stopAssemblyInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -42,6 +44,25 @@ export async function assemblyRoutes(app: FastifyInstance): Promise<void> {
     const result = await service.markUnitAssembled(soId, input, req.user);
     reply.code(201);
     return result;
+  });
+
+  // START a batch (WIP) — no stock movement (ADR-129).
+  app.post('/assemblies/:soId/start', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { soId } = soParamsSchema.parse(req.params);
+    const input = startAssemblyInputSchema.parse(req.body ?? {});
+    const result = await service.startAssembly(soId, input, req.user);
+    reply.code(201);
+    return result;
+  });
+
+  // STOP a batch — enter the good qty; it completes + debits stock, the
+  // remainder stays in assembly (ADR-129).
+  app.patch('/assemblies/units/:unitId/stop', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { unitId } = unitParamsSchema.parse(req.params);
+    const input = stopAssemblyInputSchema.parse(req.body ?? {});
+    return service.stopAssembly(unitId, input, req.user);
   });
 
   app.patch('/assemblies/units/:unitId/dispatch', async (req) => {

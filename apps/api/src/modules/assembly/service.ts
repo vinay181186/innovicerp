@@ -9,8 +9,12 @@
 //   autoReadyQty  = min(stockQty, totalNeed)
 //   overrideQty   = assembly_tracking.ready_qty_override (default 0)
 //   finalReady    = max(autoReadyQty, overrideQty)
-//   shortfall     = max(0, totalNeed - finalReady)
 //   enoughForUnits = floor(finalReady / qtyPerSet)
+//   shortfall     = max(0, remainingNeed - min(stock|override, remainingNeed))
+//                   where remainingNeed = qtyPerSet * (orderQty - assembledQty)
+//                   — a shortage against the units STILL to build, not the whole
+//                   order (assembling debits stock, so a full-order shortfall
+//                   would count consumed parts as missing and never fall).
 //
 // Rollup:
 //   canAssemble   = min(enoughForUnits) across all components
@@ -29,12 +33,15 @@ import type {
   AssemblyListResponse,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  AssemblyUnitStatus,
   DocumentTraceability,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
   RelatedDoc,
   RelatedSection,
   SetReadinessOverrideInput,
+  StartAssemblyInput,
+  StopAssemblyInput,
 } from '@innovic/shared';
 import {
   assemblyTracking,
@@ -71,9 +78,15 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function deriveStatus(orderQty: number, assembledQty: number, canAssemble: number): 'waiting' | 'ready' | 'assembling' | 'done' {
+function deriveStatus(
+  orderQty: number,
+  assembledQty: number,
+  inProgressQty: number,
+  canAssemble: number,
+): 'waiting' | 'ready' | 'assembling' | 'done' {
   if (orderQty > 0 && assembledQty >= orderQty) return 'done';
-  if (assembledQty > 0) return 'assembling';
+  // A started-but-not-completed batch (WIP) is also "assembling".
+  if (assembledQty > 0 || inProgressQty > 0) return 'assembling';
   if (canAssemble > 0) return 'ready';
   return 'waiting';
 }
@@ -129,6 +142,32 @@ export async function getAssemblyTracker(
     // assembled equipment" — same convention as the legacy app.
     const unitsRequired = await sumEquipmentLineQty(tx, soId);
 
+    // Assembled units — read BEFORE the component readiness loop so `Short` can
+    // be measured against the units still to build (unitsRequired − assembled),
+    // not the full order. A record can carry qty > 1 (batch assemble), so both
+    // counters SUM the per-record qty rather than counting rows.
+    const unitRows = await tx
+      .select()
+      .from(assemblyUnits)
+      .where(
+        and(
+          eq(assemblyUnits.salesOrderId, soId),
+          isNull(assemblyUnits.deletedAt),
+        ),
+      )
+      .orderBy(asc(assemblyUnits.unitNo));
+    const units = unitRows.map(toUnitRow);
+    // Assembled = completed batches only; in-progress (WIP) batches are started
+    // but not yet built, so they debit no stock and don't count as assembled
+    // until stopped (ADR-129).
+    const assembledQty = units.reduce((sum, u) => (u.status === 'completed' ? sum + u.qty : sum), 0);
+    const inProgressQty = units.reduce((sum, u) => (u.status === 'in_progress' ? sum + u.qty : sum), 0);
+    const dispatchedQty = units.reduce((sum, u) => (u.dispatched ? sum + u.qty : sum), 0);
+    // Units still owed on the order (not yet completed). `Short` is a shortage
+    // against THESE, so components already consumed into built units don't read
+    // as missing.
+    const remainingUnits = Math.max(0, unitsRequired - assembledQty);
+
     const components: AssemblyComponentRow[] = [];
     if (bomRow) {
       const childRows = await tx
@@ -170,7 +209,15 @@ export async function getAssemblyTracker(
         const autoReadyQty = Math.min(stockQty, totalNeed);
         const overrideQty = overrideMap.get(childCode) ?? 0;
         const finalReadyQty = Math.max(autoReadyQty, overrideQty);
-        const shortfall = Math.max(0, totalNeed - finalReadyQty);
+        // Short = shortage to finish the REMAINING units, not the full order.
+        // Assembling debits components from stock, so a full-order shortfall
+        // (totalNeed − finalReady) would climb by the amount already consumed
+        // and never fall as you build. Measuring against remainingNeed keeps it
+        // honest: it aligns with the "In Assembly" column (qtyPerSet ×
+        // remainingUnits) and drops to 0 once stock covers what's left.
+        const remainingNeed = Math.round(qtyPerSet * remainingUnits);
+        const readyForRemaining = Math.max(Math.min(stockQty, remainingNeed), Math.min(overrideQty, remainingNeed));
+        const shortfall = Math.max(0, remainingNeed - readyForRemaining);
         const enoughForUnits = qtyPerSet > 0 ? Math.floor(finalReadyQty / qtyPerSet) : 0;
         components.push({
           childItemId: r.line.childItemId,
@@ -190,24 +237,6 @@ export async function getAssemblyTracker(
       }
     }
 
-    // Assembled units
-    const unitRows = await tx
-      .select()
-      .from(assemblyUnits)
-      .where(
-        and(
-          eq(assemblyUnits.salesOrderId, soId),
-          isNull(assemblyUnits.deletedAt),
-        ),
-      )
-      .orderBy(asc(assemblyUnits.unitNo));
-    const units = unitRows.map(toUnitRow);
-
-    // A record can now carry qty > 1 (batch assemble), so both counters SUM the
-    // per-record qty rather than counting rows.
-    const assembledQty = units.reduce((sum, u) => sum + u.qty, 0);
-    const dispatchedQty = units.reduce((sum, u) => (u.dispatched ? sum + u.qty : sum), 0);
-
     // Rollup
     let canAssembleAdditional = 0;
     let bottleneck: { childItemCode: string; enoughForUnits: number } | null = null;
@@ -220,12 +249,12 @@ export async function getAssemblyTracker(
           minRow = c;
         }
       }
-      // Headroom is what we can ADD on top of what's already assembled — the
-      // legacy semantic. Actual stock-deduction lifecycle is the user's call
-      // (assembly_units.deductions snapshot it).
+      // Headroom for a NEW start: what stock can build, capped by the order
+      // balance NOT already committed — completed AND in-progress both count
+      // as committed, so we never offer to start beyond the order (ADR-129).
       canAssembleAdditional = Math.max(
         0,
-        Math.min(min === Infinity ? 0 : min, Math.max(0, unitsRequired - assembledQty)),
+        Math.min(min === Infinity ? 0 : min, Math.max(0, unitsRequired - assembledQty - inProgressQty)),
       );
       bottleneck = minRow
         ? { childItemCode: minRow.childItemCode, enoughForUnits: minRow.enoughForUnits }
@@ -251,11 +280,12 @@ export async function getAssemblyTracker(
       rollup: {
         orderQty: unitsRequired,
         assembledQty,
+        inProgressQty,
         dispatchedQty,
         balanceQty: Math.max(0, unitsRequired - assembledQty),
         canAssembleAdditional,
         bottleneck,
-        status: deriveStatus(unitsRequired, assembledQty, canAssembleAdditional),
+        status: deriveStatus(unitsRequired, assembledQty, inProgressQty, canAssembleAdditional),
       },
       units,
     };
@@ -329,7 +359,10 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
             .select({
               soId: assemblyUnits.salesOrderId,
               // Batch records carry qty > 1 — SUM(qty), not COUNT(rows).
-              assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}), 0)::int`,
+              // Assembled counts COMPLETED batches only; in-progress (WIP) is
+              // tracked separately so the list can show "assembling" (ADR-129).
+              assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.status} = 'completed'), 0)::int`,
+              inProgress: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.status} = 'in_progress'), 0)::int`,
               dispatched: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.dispatched}), 0)::int`,
             })
             .from(assemblyUnits)
@@ -359,10 +392,11 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       orderQtyMap.set(r.soId, Number(r.orderQty));
       dueDateMap.set(r.soId, r.earliestDueDate ?? null);
     }
-    const assembledMap = new Map<string, { assembled: number; dispatched: number }>();
+    const assembledMap = new Map<string, { assembled: number; inProgress: number; dispatched: number }>();
     for (const r of assembledAggRows) {
       assembledMap.set(r.soId, {
         assembled: Number(r.assembled),
+        inProgress: Number(r.inProgress),
         dispatched: Number(r.dispatched),
       });
     }
@@ -390,6 +424,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       const orderQty = orderQtyMap.get(r.soId) ?? 0;
       const agg = assembledMap.get(r.soId);
       const assembledQty = agg?.assembled ?? 0;
+      const inProgressQty = agg?.inProgress ?? 0;
       const dispatchedQty = agg?.dispatched ?? 0;
       const bom = r.bomMasterId ? bomCodeMap.get(r.bomMasterId) ?? null : null;
       const ready = readiness.get(r.soId) ?? { canAssemble: 0, readyCount: 0, totalCount: 0 };
@@ -409,7 +444,7 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
         canAssemble: ready.canAssemble,
         readyCount: ready.readyCount,
         totalCount: ready.totalCount,
-        status: deriveStatus(orderQty, assembledQty, ready.canAssemble),
+        status: deriveStatus(orderQty, assembledQty, inProgressQty, ready.canAssemble),
       };
     });
 
@@ -496,6 +531,9 @@ export async function markUnitAssembled(
         salesOrderId: soId,
         soCodeText: so.code,
         unitNo: nextUnitNo,
+        // One-shot assemble builds the units outright — a completed batch that
+        // debits its components immediately (below), same as a Stop (ADR-129).
+        status: 'completed',
         qty: requestedQty,
         serialNo: serial,
         assemblyDate: input.assemblyDate ?? todayIso(),
@@ -547,6 +585,244 @@ export async function markUnitAssembled(
   });
 }
 
+// ── Start / Stop (ADR-129) ──────────────────────────────────────────────────
+
+/**
+ * START a batch — put `qty` units on the bench. Creates an `in_progress`
+ * assembly_units row and moves NOTHING out of stock (the debit happens at STOP
+ * for the good qty). Capped so committed (completed + in-progress) + qty never
+ * exceeds the order.
+ */
+export async function startAssembly(
+  soId: string,
+  input: StartAssemblyInput,
+  user: AuthContext,
+): Promise<AssemblyUnitRow> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const soRows = await tx
+      .select({
+        id: salesOrders.id,
+        code: salesOrders.code,
+        type: salesOrders.type,
+        bomMasterId: salesOrders.bomMasterId,
+      })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, soId),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const so = soRows[0];
+    if (!so) throw new NotFoundError(`Sales order ${soId} not found`);
+    if (so.type !== 'equipment') {
+      throw new ValidationError('Assembly tracker only applies to Equipment SOs');
+    }
+
+    const unitsRequired = await sumEquipmentLineQty(tx, soId);
+    const requestedQty = Math.max(1, Math.round(input.qty));
+
+    // Committed = every non-deleted batch (completed AND in-progress). A start
+    // may not push the committed total past the order.
+    const aggRows = await tx
+      .select({
+        committed: sql<number>`COALESCE(SUM(${assemblyUnits.qty}), 0)::int`,
+        maxUnitNo: sql<number>`COALESCE(MAX(${assemblyUnits.unitNo}), 0)::int`,
+      })
+      .from(assemblyUnits)
+      .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
+    const committed = Number(aggRows[0]?.committed ?? 0);
+    const nextUnitNo = Number(aggRows[0]?.maxUnitNo ?? 0) + 1;
+
+    const balance = unitsRequired > 0 ? Math.max(0, unitsRequired - committed) : requestedQty;
+    if (unitsRequired > 0 && requestedQty > balance) {
+      throw new ConflictError(
+        `Cannot start ${requestedQty} — only ${balance} unit(s) remain on order (orderQty=${unitsRequired}).`,
+      );
+    }
+
+    // No stock cascade: a start reserves nothing in the ledger. Components leave
+    // the store at STOP, for the qty that actually came out good.
+    const inserted = await tx
+      .insert(assemblyUnits)
+      .values({
+        companyId,
+        salesOrderId: soId,
+        soCodeText: so.code,
+        unitNo: nextUnitNo,
+        status: 'in_progress',
+        qty: requestedQty,
+        serialNo: null,
+        assemblyDate: input.startDate ?? todayIso(),
+        assembledBy: input.startedBy ?? null,
+        remarks: input.remarks ?? null,
+        bomMasterId: so.bomMasterId ?? null,
+        dispatched: false,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const row = inserted[0]!;
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'ASSEMBLY_START',
+        entity: 'AssemblyUnit',
+        detail: `${so.code} — started batch #${nextUnitNo} ×${requestedQty}`,
+        refId: so.code,
+      },
+      companyId,
+      user,
+    );
+
+    return toUnitRow(row);
+  });
+}
+
+/**
+ * STOP a started batch — `completedQty` units came out good. Spawns a normal
+ * `completed` batch for that qty (which debits its components through the ADR-115
+ * cascade, exactly like a one-shot assemble) and shrinks the in-progress batch
+ * by the same amount; when the batch reaches 0 it is soft-deleted. The remainder
+ * stays "in assembly" and can be completed by a later Stop.
+ */
+export async function stopAssembly(
+  unitId: string,
+  input: StopAssemblyInput,
+  user: AuthContext,
+): Promise<AssemblyUnitRow> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select()
+      .from(assemblyUnits)
+      .where(
+        and(
+          eq(assemblyUnits.id, unitId),
+          eq(assemblyUnits.companyId, companyId),
+          isNull(assemblyUnits.deletedAt),
+        ),
+      )
+      .limit(1);
+    const batch = existing[0];
+    if (!batch) throw new NotFoundError(`Assembly unit ${unitId} not found`);
+    if (batch.status !== 'in_progress') {
+      throw new ConflictError(`Unit #${batch.unitNo} is not in progress — nothing to complete.`);
+    }
+
+    const remaining = batch.qty;
+    const completedQty = Math.max(1, Math.round(input.completedQty));
+    if (completedQty > remaining) {
+      throw new ConflictError(
+        `Cannot complete ${completedQty} — only ${remaining} left in this batch.`,
+      );
+    }
+
+    const soId = batch.salesOrderId;
+    const unitsRequired = await sumEquipmentLineQty(tx, soId);
+
+    // Stock gate at STOP (not START): the good qty may not exceed what stock can
+    // build right now. Stock reflects earlier completed debits; in-progress
+    // batches debited nothing, so this is the true additional-buildable count.
+    const cap = await computeSoCanAssemble(
+      tx,
+      companyId,
+      soId,
+      batch.bomMasterId ?? null,
+      unitsRequired,
+    );
+    if (cap.canAssemble < completedQty) {
+      throw new ConflictError(
+        `Cannot complete ${completedQty} — only ${cap.canAssemble} buildable from stock` +
+          (cap.bottleneck ? ` (short on ${cap.bottleneck})` : ''),
+      );
+    }
+
+    // Next batch number for the completed row (above every existing unit_no).
+    const maxRows = await tx
+      .select({ maxUnitNo: sql<number>`COALESCE(MAX(${assemblyUnits.unitNo}), 0)::int` })
+      .from(assemblyUnits)
+      .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
+    const nextUnitNo = Number(maxRows[0]?.maxUnitNo ?? 0) + 1;
+    const serial = input.serialNo ?? `${batch.soCodeText}-U${nextUnitNo}`;
+
+    // The completed batch — a normal assembly_units row that debits stock.
+    const inserted = await tx
+      .insert(assemblyUnits)
+      .values({
+        companyId,
+        salesOrderId: soId,
+        soCodeText: batch.soCodeText,
+        unitNo: nextUnitNo,
+        status: 'completed',
+        qty: completedQty,
+        serialNo: serial,
+        assemblyDate: input.assemblyDate ?? todayIso(),
+        assembledBy: input.assembledBy ?? null,
+        remarks: input.remarks ?? null,
+        bomMasterId: batch.bomMasterId ?? null,
+        dispatched: false,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const completedRow = inserted[0]!;
+
+    // ADR-115 debit for the good units (qtyPerSet × completedQty).
+    const debited = await applyAssemblyStockCascade(
+      tx,
+      {
+        companyId,
+        bomMasterId: batch.bomMasterId ?? null,
+        soCode: batch.soCodeText,
+        unitNo: nextUnitNo,
+        qty: completedQty,
+        txnDate: completedRow.assemblyDate,
+      },
+      user,
+    );
+
+    // Shrink the in-progress batch; drop it once nothing is left to build.
+    const newRemaining = remaining - completedQty;
+    if (newRemaining <= 0) {
+      await tx
+        .update(assemblyUnits)
+        .set({ deletedAt: new Date(), updatedBy: user.id })
+        .where(eq(assemblyUnits.id, batch.id));
+    } else {
+      await tx
+        .update(assemblyUnits)
+        .set({ qty: newRemaining, updatedBy: user.id })
+        .where(eq(assemblyUnits.id, batch.id));
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'ASSEMBLED',
+        entity: 'AssemblyUnit',
+        detail:
+          `${batch.soCodeText} — completed ${completedQty} of batch #${batch.unitNo} (S/N ${serial})` +
+          (newRemaining > 0 ? ` · ${newRemaining} still in assembly` : '') +
+          (debited.length > 0 ? ` · ${debited.length} component(s) consumed` : ''),
+        refId: batch.soCodeText,
+      },
+      companyId,
+      user,
+    );
+
+    return toUnitRow(completedRow);
+  });
+}
+
 export async function markUnitDispatched(
   unitId: string,
   input: MarkUnitDispatchedInput,
@@ -569,6 +845,11 @@ export async function markUnitDispatched(
       .limit(1);
     const row = existing[0];
     if (!row) throw new NotFoundError(`Assembly unit ${unitId} not found`);
+    if (row.status !== 'completed') {
+      throw new ConflictError(
+        `Unit #${row.unitNo} is still in assembly — complete (Stop) it before dispatching.`,
+      );
+    }
     if (row.dispatched) {
       throw new ConflictError(`Unit #${row.unitNo} is already dispatched`);
     }
@@ -960,6 +1241,7 @@ function toUnitRow(row: typeof assemblyUnits.$inferSelect): AssemblyUnitRow {
   return {
     id: row.id,
     unitNo: row.unitNo,
+    status: row.status as AssemblyUnitStatus,
     qty: row.qty,
     serialNo: row.serialNo,
     assemblyDate: row.assemblyDate,

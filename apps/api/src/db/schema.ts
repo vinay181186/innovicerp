@@ -2677,6 +2677,12 @@ export const assemblyUnits = pgTable(
     // units built in a single action (batch assemble), sharing one serial.
     // Legacy/pre-batch rows are 1. All rollups SUM(qty), never COUNT(*).
     qty: integer('qty').notNull().default(1),
+    // Assembly Start/Stop (ADR-129). 'in_progress' = a started batch of `qty`
+    // units still on the bench (no stock debited yet); 'completed' = built units
+    // that debited their components (one-shot assemble or a Stop). Rollups sum
+    // qty FILTER (status='completed') for Assembled and status='in_progress' for
+    // the In-Assembly (WIP) count. Existing/one-shot rows default 'completed'.
+    status: text('status').notNull().default('completed'),
     serialNo: text('serial_no'),
     assemblyDate: date('assembly_date').notNull(),
     assembledBy: text('assembled_by'),
@@ -2711,8 +2717,12 @@ export const assemblyUnits = pgTable(
     index('assembly_units_serial_idx')
       .on(t.serialNo)
       .where(sql`${t.serialNo} is not null AND ${t.deletedAt} is null`),
+    index('assembly_units_so_status_idx')
+      .on(t.salesOrderId, t.status)
+      .where(sql`${t.deletedAt} is null`),
     check('assembly_units_unit_no_positive', sql`${t.unitNo} > 0`),
     check('assembly_units_qty_positive', sql`${t.qty} > 0`),
+    check('assembly_units_status_check', sql`${t.status} in ('in_progress', 'completed')`),
     pgPolicy('assembly_units_company_read', {
       for: 'select',
       to: 'authenticated',

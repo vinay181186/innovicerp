@@ -21,14 +21,15 @@ import type {
   AssemblyUnitRow,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Plus, RotateCcw, Truck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Play, RotateCcw, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAssemblyTracker,
-  useMarkUnitAssembled,
   useMarkUnitDispatched,
+  useStartAssembly,
+  useStopAssembly,
   useUndoLastUnit,
 } from '../api';
 
@@ -41,11 +42,11 @@ export const assemblyDetailRoute = createRoute({
 function AssemblyDetailPage(): React.JSX.Element {
   const { soId } = assemblyDetailRoute.useParams();
   const { data, isLoading, isError, error } = useAssemblyTracker(soId);
-  const mark = useMarkUnitAssembled(soId);
+  const start = useStartAssembly(soId);
   const undo = useUndoLastUnit(soId);
   const [actionError, setActionError] = useState<string | null>(null);
-  // Batch quantity to build in one click. Serial is auto-generated server-side
-  // (one serial per batch), so there is no serial input any more.
+  // Batch quantity to START (put on the bench). No stock leaves yet — that
+  // happens per unit at STOP. Serial is auto-generated server-side.
   const [qty, setQty] = useState('1');
   const [assembledBy, setAssembledBy] = useState('');
   const [assemblyDate, setAssemblyDate] = useState('');
@@ -73,24 +74,22 @@ function AssemblyDetailPage(): React.JSX.Element {
     );
   }
 
-  // Most units still buildable in one batch: stock-limited (canAssemble) and
-  // never past the order balance — the server enforces the same cap.
-  const maxBuildable = data.rollup.canAssembleAdditional;
-  const onAssemble = (): void => {
+  // How many more can be STARTED: the order balance not already committed
+  // (completed + in-progress). A start reserves no stock, so it is NOT
+  // stock-limited — stock is checked per unit at STOP instead.
+  const startMax = Math.max(0, data.rollup.balanceQty - data.rollup.inProgressQty);
+  const onStart = (): void => {
     setActionError(null);
     const n = Math.max(1, Math.floor(Number(qty) || 1));
-    if (n > maxBuildable) {
-      setActionError(
-        `Only ${maxBuildable} unit(s) can be built from stock right now` +
-          (data.rollup.bottleneck ? ` — short on ${data.rollup.bottleneck.childItemCode}.` : '.'),
-      );
+    if (n > startMax) {
+      setActionError(`Only ${startMax} unit(s) left to start on this order.`);
       return;
     }
-    mark.mutate(
+    start.mutate(
       {
         qty: n,
-        assembledBy: assembledBy || undefined,
-        assemblyDate: assemblyDate || undefined,
+        startedBy: assembledBy || undefined,
+        startDate: assemblyDate || undefined,
         remarks: remarks || undefined,
       },
       {
@@ -98,7 +97,7 @@ function AssemblyDetailPage(): React.JSX.Element {
           setQty('1');
           setRemarks('');
         },
-        onError: (e) => setActionError(e instanceof Error ? e.message : 'Mark failed'),
+        onError: (e) => setActionError(e instanceof Error ? e.message : 'Start failed'),
       },
     );
   };
@@ -138,11 +137,15 @@ function AssemblyDetailPage(): React.JSX.Element {
         components={data.components}
         orderQty={data.rollup.orderQty}
         assembledQty={data.rollup.assembledQty}
+        inProgressQty={data.rollup.inProgressQty}
       />
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title">Assemble next unit</div>
+          <div className="panel-title">Start assembly</div>
+          <span className="text3" style={{ fontSize: 11 }}>
+            Put units on the bench — no stock leaves yet. Complete (Stop) each batch below to record the good qty.
+          </span>
         </div>
         <div
           className="panel-body"
@@ -159,17 +162,17 @@ function AssemblyDetailPage(): React.JSX.Element {
                 marginBottom: 4,
               }}
             >
-              Qty to build
+              Qty to start
             </label>
             <input
               type="number"
               min={1}
-              max={Math.max(1, maxBuildable)}
+              max={Math.max(1, startMax)}
               className="innovic-input"
               style={{ width: 110 }}
               value={qty}
               onChange={(e) => setQty(e.target.value)}
-              title={`Up to ${maxBuildable} buildable from stock now. One serial is auto-generated for the whole batch.`}
+              title={`Up to ${startMax} unit(s) left to start on this order.`}
             />
           </div>
           <div>
@@ -183,7 +186,7 @@ function AssemblyDetailPage(): React.JSX.Element {
                 marginBottom: 4,
               }}
             >
-              Assembled by
+              Started by
             </label>
             <input
               className="innovic-input"
@@ -193,12 +196,7 @@ function AssemblyDetailPage(): React.JSX.Element {
               placeholder="optional"
             />
           </div>
-          {/* Assembly Date + Remarks (legacy L28947, L28949). The API has
-              always accepted and persisted both — markUnitAssembled writes
-              them at service.ts:463,465 — but this form never sent them, so
-              every unit was stamped "today" with no way to back-date one, and
-              the Remarks column in the units table below could only ever
-              print "—". Fields only; no schema or service change needed. */}
+          {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
             <label
               className="text3"
@@ -210,7 +208,7 @@ function AssemblyDetailPage(): React.JSX.Element {
                 marginBottom: 4,
               }}
             >
-              Assembly date
+              Start date
             </label>
             <input
               type="date"
@@ -245,25 +243,23 @@ function AssemblyDetailPage(): React.JSX.Element {
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            onClick={onAssemble}
-            disabled={mark.isPending || data.rollup.balanceQty === 0 || maxBuildable < 1}
+            onClick={onStart}
+            disabled={start.isPending || startMax < 1}
             title={
-              data.rollup.balanceQty === 0
-                ? 'All required units assembled'
-                : maxBuildable < 1
-                  ? 'No units buildable from stock on hand'
-                  : `Build up to ${maxBuildable} unit(s) in one batch`
+              startMax < 1
+                ? 'All order units are already started or completed'
+                : `Start up to ${startMax} unit(s)`
             }
           >
-            {mark.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            Assemble
+            {start.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+            Start
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={onUndo}
-            disabled={undo.isPending || data.rollup.assembledQty === 0}
-            title="Undo the latest non-dispatched unit"
+            disabled={undo.isPending || data.units.length === 0}
+            title="Undo the latest batch (in-progress, or completed but not dispatched)"
           >
             {undo.isPending ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
             Undo Last Unit
@@ -427,6 +423,13 @@ function RollupPanel({
             <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
           </div>
           <div>
+            <span style={{ fontSize: 10, color: 'var(--amber)' }}>IN ASSEMBLY</span>
+            <br />
+            <b style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}>
+              {rollup.inProgressQty}
+            </b>
+          </div>
+          <div>
             <span style={{ fontSize: 10, color: 'var(--cyan)' }}>DISPATCHED</span>
             <br />
             <b style={{ fontSize: 18, color: 'var(--cyan)' }}>{rollup.dispatchedQty}</b>
@@ -474,10 +477,12 @@ function ComponentsPanel({
   components,
   orderQty,
   assembledQty,
+  inProgressQty,
 }: {
   components: AssemblyComponentRow[];
   orderQty: number;
   assembledQty: number;
+  inProgressQty: number;
 }): React.JSX.Element {
   if (components.length === 0) {
     return (
@@ -542,12 +547,12 @@ function ComponentsPanel({
                 <td className="td-ctr" style={{ color: 'var(--green2)' }}>
                   {c.stockQty}
                 </td>
-                {/* In Assembly = components still headed into the units left to
-                    build (qtyPerSet × remaining units). Assembled = components
-                    already consumed into built units (qtyPerSet × units built).
-                    Both derive from rollup.assembledQty — no fabricated data. */}
+                {/* In Assembly = components tied up in STARTED-but-not-completed
+                    batches (qtyPerSet × in-progress units, ADR-129). Assembled =
+                    components already consumed into completed units (qtyPerSet ×
+                    units built). Both derive from the rollup — no fabricated data. */}
                 <td className="td-ctr" style={{ color: 'var(--amber2)', fontWeight: 600 }}>
-                  {Math.max(0, c.totalNeed - c.qtyPerSet * assembledQty)}
+                  {c.qtyPerSet * inProgressQty}
                 </td>
                 <td className="td-ctr fw-700" style={{ color: 'var(--green)' }}>
                   {c.qtyPerSet * assembledQty}
@@ -600,7 +605,11 @@ function ComponentStatusBadge({
 
 function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element {
   const dispatch = useMarkUnitDispatched();
+  const stop = useStopAssembly();
   const [error, setError] = useState<string | null>(null);
+  // Per in-progress row: how many of the batch to complete now (default = all
+  // that's left in the batch).
+  const [stopQty, setStopQty] = useState<Record<string, string>>({});
 
   if (units.length === 0) {
     return (
@@ -608,7 +617,7 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
         <div className="panel-body">
           <div className="empty-state">
             <div className="empty-icon">🔧</div>
-            No units assembled yet.
+            No batches yet — click <strong>Start</strong> above to put units on the bench.
           </div>
         </div>
       </div>
@@ -625,15 +634,32 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
     );
   };
 
+  const onStop = (u: AssemblyUnitRow): void => {
+    setError(null);
+    const raw = stopQty[u.id];
+    const completedQty = Math.max(1, Math.floor(Number(raw ?? u.qty) || u.qty));
+    if (completedQty > u.qty) {
+      setError(`Batch #${u.unitNo} has only ${u.qty} left to complete.`);
+      return;
+    }
+    stop.mutate(
+      { unitId: u.id, input: { completedQty } },
+      {
+        onSuccess: () => setStopQty((s) => ({ ...s, [u.id]: '' })),
+        onError: (e) => setError(e instanceof Error ? e.message : 'Complete failed'),
+      },
+    );
+  };
+
+  const completedTotal = units.reduce((s, u) => (u.status === 'completed' ? s + u.qty : s), 0);
+  const wipTotal = units.reduce((s, u) => (u.status === 'in_progress' ? s + u.qty : s), 0);
+
   return (
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">
-          📦 Assembled Units ({units.reduce((s, u) => s + u.qty, 0)}
-          {units.length !== units.reduce((s, u) => s + u.qty, 0)
-            ? ` in ${units.length} batch${units.length === 1 ? '' : 'es'}`
-            : ''}
-          )
+          📦 Assembly Batches — {completedTotal} completed
+          {wipTotal > 0 ? `, ${wipTotal} in assembly` : ''}
         </div>
       </div>
       {error ? (
@@ -644,70 +670,111 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
           <thead>
             <tr>
               <th style={{ textAlign: 'center' }}>Batch #</th>
+              <th style={{ textAlign: 'center' }}>Status</th>
               <th style={{ textAlign: 'center' }}>Qty</th>
               <th>Serial No.</th>
-              <th>Assembly Date</th>
-              <th>Assembled By</th>
+              <th>Date</th>
+              <th>By</th>
               <th>Remarks</th>
-              <th style={{ textAlign: 'center' }}>Dispatch Status</th>
+              <th style={{ textAlign: 'center' }}>Dispatch</th>
               <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {/* Server returns units already ordered by unitNo asc (service.ts). */}
-            {units.map((u) => (
-              <tr key={u.id}>
-                <td className="td-ctr fw-700" style={{ fontSize: 16 }}>
-                  {u.unitNo}
-                </td>
-                <td className="td-ctr fw-700">{u.qty}</td>
-                <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}>
-                  {u.serialNo ?? '—'}
-                </td>
-                <td className="mono" style={{ fontSize: 12 }}>
-                  {u.assemblyDate}
-                </td>
-                <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
-                <td className="text3" style={{ fontSize: 12 }}>
-                  {u.remarks ?? '—'}
-                </td>
-                <td className="td-ctr">
-                  {u.dispatched ? (
-                    <span className="badge b-green">Dispatched ✓</span>
-                  ) : (
-                    <span className="badge b-amber">Pending</span>
-                  )}
-                  {u.dispatchDate ? (
-                    <span className="text3" style={{ fontSize: 10 }}>
-                      {' '}
-                      {u.dispatchDate}
-                    </span>
-                  ) : null}
-                </td>
-                <td className="td-ctr">
-                  {!u.dispatched ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-success"
-                      onClick={() => onDispatch(u.id)}
-                      disabled={dispatch.isPending}
-                      title="Mark dispatched"
-                    >
-                      {dispatch.isPending ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <Truck size={13} />
-                      )}
-                      Dispatch
-                    </button>
-                  ) : (
-                    <span className="text3" style={{ fontSize: 11 }}>
-                      —
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {/* Server returns units ordered by unitNo asc (service.ts). */}
+            {units.map((u) => {
+              const wip = u.status === 'in_progress';
+              return (
+                <tr key={u.id}>
+                  <td className="td-ctr fw-700" style={{ fontSize: 16 }}>
+                    {u.unitNo}
+                  </td>
+                  <td className="td-ctr">
+                    {wip ? (
+                      <span className="badge b-amber">In assembly</span>
+                    ) : (
+                      <span className="badge b-green">Completed ✓</span>
+                    )}
+                  </td>
+                  <td className="td-ctr fw-700">
+                    {u.qty}
+                    {wip ? (
+                      <span className="text3" style={{ fontSize: 10 }}> left</span>
+                    ) : null}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}>
+                    {u.serialNo ?? '—'}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    {u.assemblyDate}
+                  </td>
+                  <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
+                  <td className="text3" style={{ fontSize: 12 }}>
+                    {u.remarks ?? '—'}
+                  </td>
+                  <td className="td-ctr">
+                    {wip ? (
+                      <span className="text3" style={{ fontSize: 11 }}>—</span>
+                    ) : u.dispatched ? (
+                      <span className="badge b-green">
+                        Dispatched ✓{u.dispatchDate ? ` ${u.dispatchDate}` : ''}
+                      </span>
+                    ) : (
+                      <span className="badge b-amber">Pending</span>
+                    )}
+                  </td>
+                  <td className="td-ctr">
+                    {wip ? (
+                      /* STOP: enter how many came out good; the rest stays in
+                         assembly (ADR-129). */
+                      <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={u.qty}
+                          className="innovic-input"
+                          style={{ width: 64, textAlign: 'center', padding: '3px 4px' }}
+                          value={stopQty[u.id] ?? String(u.qty)}
+                          onChange={(e) => setStopQty((s) => ({ ...s, [u.id]: e.target.value }))}
+                          title="Good qty to complete now"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={() => onStop(u)}
+                          disabled={stop.isPending}
+                          title="Complete this many — the rest stays in assembly"
+                        >
+                          {stop.isPending ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <CheckCircle2 size={13} />
+                          )}
+                          Complete
+                        </button>
+                      </div>
+                    ) : !u.dispatched ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-success"
+                        onClick={() => onDispatch(u.id)}
+                        disabled={dispatch.isPending}
+                        title="Mark dispatched"
+                      >
+                        {dispatch.isPending ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Truck size={13} />
+                        )}
+                        Dispatch
+                      </button>
+                    ) : (
+                      <span className="text3" style={{ fontSize: 11 }}>—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

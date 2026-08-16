@@ -513,3 +513,108 @@ describe('assembly service — listAssemblies', () => {
     }
   });
 });
+
+// ── Start / Stop (WIP, ADR-129) ─────────────────────────────────────────────
+// Isolated fixture (own SO + BOM + 2 children with ample stock) so the WIP
+// flow is deterministic and never collides with the shared soId's sequential
+// assertions above.
+describe('assembly service — start / stop (WIP, ADR-129)', () => {
+  let wipSoId: string;
+  let wipChildX: string;
+  let wipChildY: string;
+  let startedUnitId: string;
+
+  beforeAll(async () => {
+    const ins = await db
+      .insert(items)
+      .values([
+        { companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-CX`, name: 'WIP Child X', revision: 'A', uom: 'NOS', itemType: 'component', createdBy: admin.id, updatedBy: admin.id },
+        { companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-CY`, name: 'WIP Child Y', revision: 'A', uom: 'NOS', itemType: 'component', createdBy: admin.id, updatedBy: admin.id },
+      ])
+      .returning();
+    wipChildX = ins[0]!.id;
+    wipChildY = ins[1]!.id;
+    await db.insert(itemStockBalances).values([
+      { companyId: admin.companyId!, itemId: wipChildX, onHandQty: 1000 },
+      { companyId: admin.companyId!, itemId: wipChildY, onHandQty: 1000 },
+    ]);
+    const bom = await db
+      .insert(bomMasters)
+      .values({ companyId: admin.companyId!, bomNo: `${TEST_PREFIX}WIP-BOM`, bomName: 'WIP BOM', revision: 1, status: 'active', createdBy: admin.id, updatedBy: admin.id })
+      .returning();
+    await db.insert(bomMasterLines).values([
+      { companyId: admin.companyId!, bomMasterId: bom[0]!.id, lineNo: 1, childItemId: wipChildX, qtyPerSet: '1', bomType: 'manufacture', createdBy: admin.id, updatedBy: admin.id },
+      { companyId: admin.companyId!, bomMasterId: bom[0]!.id, lineNo: 2, childItemId: wipChildY, qtyPerSet: '1', bomType: 'manufacture', createdBy: admin.id, updatedBy: admin.id },
+    ]);
+    const so = await db
+      .insert(salesOrders)
+      .values({ companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-SO`, soDate: '2026-05-21', customerName: 'WIP Cust', type: 'equipment', status: 'open', gstPercent: '18.00', bomMasterId: bom[0]!.id, createdBy: admin.id, updatedBy: admin.id })
+      .returning();
+    wipSoId = so[0]!.id;
+    await db.insert(salesOrderLines).values({ companyId: admin.companyId!, salesOrderId: wipSoId, lineNo: 1, itemId: wipChildX, partName: 'WIP Equip', uom: 'NOS', orderQty: 5, rate: '1000', status: 'open', createdBy: admin.id, updatedBy: admin.id });
+  });
+
+  afterAll(async () => {
+    // Assembly-consume ledger + stock rows for the WIP children (the top-level
+    // teardown deletes the TEST_PREFIX SO/BOM/items but not these).
+    await db.delete(storeTransactions).where(inArray(storeTransactions.itemId, [wipChildX, wipChildY]));
+    await db.delete(itemStockBalances).where(inArray(itemStockBalances.itemId, [wipChildX, wipChildY]));
+  });
+
+  it('start puts the batch in WIP with no stock debit', async () => {
+    const started = await service.startAssembly(wipSoId, { qty: 5 }, admin);
+    startedUnitId = started.id;
+    expect(started.status).toBe('in_progress');
+    expect(started.qty).toBe(5);
+    expect(started.serialNo).toBeNull();
+
+    const t = await service.getAssemblyTracker(wipSoId, admin);
+    expect(t.rollup.inProgressQty).toBe(5);
+    expect(t.rollup.assembledQty).toBe(0);
+    expect(t.rollup.status).toBe('assembling');
+    // No stock left the store yet (start reserves nothing).
+    const x = t.components.find((c) => c.childItemCode === `${TEST_PREFIX}WIP-CX`)!;
+    expect(x.stockQty).toBe(1000);
+  });
+
+  it('stop above the batch remaining is rejected', async () => {
+    await expect(
+      service.stopAssembly(startedUnitId, { completedQty: 6 }, admin),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('an in-progress batch cannot be dispatched', async () => {
+    await expect(
+      service.markUnitDispatched(startedUnitId, {}, admin),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('stop completes the good qty and leaves the rest in assembly', async () => {
+    await service.stopAssembly(startedUnitId, { completedQty: 3 }, admin);
+    const t = await service.getAssemblyTracker(wipSoId, admin);
+    expect(t.rollup.assembledQty).toBe(3);
+    expect(t.rollup.inProgressQty).toBe(2);
+    const wip = t.units.find((u) => u.status === 'in_progress');
+    const done = t.units.filter((u) => u.status === 'completed');
+    expect(wip?.qty).toBe(2);
+    expect(done.reduce((s, u) => s + u.qty, 0)).toBe(3);
+    // The 3 good units debited their X + Y components.
+    const x = t.components.find((c) => c.childItemCode === `${TEST_PREFIX}WIP-CX`)!;
+    expect(x.stockQty).toBe(997);
+  });
+
+  it('stopping the remainder finishes the order and clears WIP', async () => {
+    await service.stopAssembly(startedUnitId, { completedQty: 2 }, admin);
+    const t = await service.getAssemblyTracker(wipSoId, admin);
+    expect(t.rollup.assembledQty).toBe(5);
+    expect(t.rollup.inProgressQty).toBe(0);
+    expect(t.rollup.status).toBe('done');
+    expect(t.units.some((u) => u.status === 'in_progress')).toBe(false);
+  });
+
+  it('start is rejected once the order is fully committed', async () => {
+    await expect(service.startAssembly(wipSoId, { qty: 1 }, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+  });
+});

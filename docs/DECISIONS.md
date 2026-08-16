@@ -6382,3 +6382,95 @@ Verified against live data after the change:
 Remaining after Phase 4: no UI renders `SoCostingOpRow.machines`; and ISSUE-272
 (Stop captures no qty) / ISSUE-273 (`machines.status` is decorative) are
 untouched and still open.
+
+## ADR-128: Assembly Tracker "Short" measures the remaining balance, not the full order
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+On the Assembly Tracker detail page the **Short** column read
+`shortfall = max(0, totalNeed − finalReady)` where `totalNeed = qtyPerSet ×
+orderQty` (the whole order) and stock is live. Assembling a unit debits its
+components from stock (ADR-115), so as units were built the Short value *climbed*
+by the amount already consumed and never fell — a component with exactly enough
+stock for the last remaining unit could still show a large "shortage". Users read
+this as "the Short column isn't updating / is wrong".
+
+### Decision
+Compute `shortfall` against the units STILL to build:
+`remainingNeed = qtyPerSet × (unitsRequired − assembledQty)`;
+`shortfall = max(0, remainingNeed − min(max(stock, override), remainingNeed))`.
+Only the `shortfall` field changed; `totalNeed`, `autoReadyQty`, `finalReadyQty`,
+`enoughForUnits`, component `status`, and the `canAssemble`/rollup all keep their
+full-order semantics (they answer "can the whole order be built"). The assembled-
+units read was moved above the component loop so `assembledQty` is in scope.
+
+### Alternatives Considered
+- Redefine `totalNeed` itself to the remaining balance — rejected: it also feeds
+  the Need column, `enoughForUnits`, `status`, and `canAssemble`, which are
+  legitimately full-order measures. Changing it would shift all of them.
+- Add a second "Short (remaining)" column beside the existing one — rejected:
+  two shortage columns is more confusing than one that means what users expect.
+
+### Consequences
+- Positive: Short now aligns with the "In Assembly" column (`qtyPerSet ×
+  remainingUnits`) and drops to 0 once stock covers what's left. Scope is one
+  field, isolated to `assembly/service.ts`; the only consumer is the assembly
+  detail Short column.
+- Negative / Risk: the Short number no longer answers "is the entire order
+  covered" — that question is still answered by the component `status` badge and
+  the CAN ASSEMBLE / BALANCE rollup tiles, so nothing is lost, just relocated.
+- No schema change. Existing service tests assert `totalNeed`/`autoReadyQty`/
+  `finalReadyQty`/`enoughForUnits`/`status` (untouched) and do not assert
+  `shortfall`, so they stay green.
+
+## ADR-129: Assembly Start / Stop (WIP) with partial completion
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+Assembling an Equipment SO was atomic: one "Assemble" click built N units, debited
+their BOM components, and the batch was done. The user wanted a two-step floor
+flow — START a batch (parts go to the bench, nothing leaves stock yet), then STOP
+it entering how many actually came out good; the good qty completes and the
+remainder stays "in assembly" to finish later.
+
+### Decision
+Add a `status` column to `assembly_units` (`in_progress` | `completed`, default
+`completed` so existing/one-shot rows are unaffected). Model:
+- **START** (`startAssembly`) inserts an `in_progress` batch of the started qty.
+  **No stock movement.** Capped so committed (completed + in-progress) never
+  exceeds the order.
+- **STOP** (`stopAssembly`) takes the good qty. It spawns a normal `completed`
+  batch for that qty — which debits components through the existing ADR-115
+  cascade, exactly like a one-shot assemble — and shrinks the in-progress batch
+  by that amount; at 0 the in-progress row is soft-deleted. Stock is gated here
+  (good qty ≤ what stock can build). The remainder stays in assembly.
+- One-shot `markUnitAssembled` is retained (creates a `completed` row directly),
+  so the quick path and all its tests keep working.
+
+Rollups: `assembledQty = SUM(qty) FILTER (status='completed')`,
+`inProgressQty = SUM(qty) FILTER (status='in_progress')` (the new "In Assembly"
+count). `Short` (ADR-128) measures against `order − assembledQty(completed)`.
+Dispatch is blocked on an in-progress batch.
+
+### Alternatives Considered
+- **Debit components at START (reserve)** — rejected by the user; a start now
+  reserves nothing and stock only moves at STOP for the good units.
+- **A `completed_qty` counter on one row** instead of spawning completed rows —
+  rejected: it would fork the stock-cascade's per-unit source_ref bookkeeping and
+  complicate undo. Spawning a normal completed row per Stop reuses the existing
+  debit + reverse paths unchanged.
+- **Scrap the leftover at a partial stop** — rejected by the user; the leftover
+  stays in assembly (the in-progress batch keeps the remainder) to complete later.
+
+### Consequences
+- Positive: real WIP tracking; the "In Assembly" column is now a true started-
+  but-not-completed count instead of a derived remainder; partial yields are
+  first-class; the stock ledger and undo paths are untouched (each completed
+  batch is an ordinary assembly_units row).
+- Negative / Risk: two ways to build (one-shot Assemble via service + Start/Stop
+  via UI) — the UI now leads with Start/Stop; the one-shot stays for the API/tests.
+  Unit numbers are per-batch and no longer strictly sequential with meaning.
+- Additive migration only (`0096_assembly_wip_status.sql`): new `status` column
+  with a safe default + a check + a WIP lookup index. No data migration.
