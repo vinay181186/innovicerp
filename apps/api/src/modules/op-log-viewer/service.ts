@@ -9,7 +9,7 @@
 // corrective log entry, not deletion. If a soft-delete column is added
 // later, restore the action behind admin-only RLS.
 
-import { and, asc, count, desc, eq, gte, ilike, lte, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
 import { items, jcOps, jobCards, machines, opLog, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
@@ -27,6 +27,12 @@ export async function listOpLog(
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
+    // The machine a log row belongs to: the machine stamped on the LOG (migration
+    // 0095 — the one the qty was actually made on), falling back to the op's
+    // machine for rows the backfill could not resolve. Used for both the join and
+    // the machine filter so the two can never disagree.
+    const logMachine = sql`COALESCE(${opLog.machineId}, ${jcOps.machineId})`;
+
     const conditions: SQL[] = [eq(opLog.companyId, companyId)];
     if (input.logType) conditions.push(eq(opLog.logType, input.logType));
     if (input.shift) {
@@ -37,6 +43,10 @@ export async function listOpLog(
     if (input.fromDate) conditions.push(gte(opLog.logDate, input.fromDate));
     if (input.toDate) conditions.push(lte(opLog.logDate, input.toDate));
     if (input.jcNo) conditions.push(ilike(jobCards.code, `%${input.jcNo}%`));
+    // machineId + fromDate/toDate together answer "what did CNC-01 produce between
+    // these two dates" — the date-range machine report the Daily Report cannot
+    // give, because that one is locked to a single day.
+    if (input.machineId) conditions.push(sql`${logMachine} = ${input.machineId}::uuid`);
 
     const where = and(...conditions);
 
@@ -52,6 +62,7 @@ export async function listOpLog(
           opSeq: jcOps.opSeq,
           operation: jcOps.operation,
           machineCode: machines.code,
+          logMachineCodeText: opLog.machineCodeText,
           machineCodeText: jcOps.machineCodeText,
           shift: opLog.shift,
           qty: opLog.qty,
@@ -69,7 +80,7 @@ export async function listOpLog(
         .innerJoin(jcOps, eq(jcOps.id, opLog.jcOpId))
         .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
         .innerJoin(items, eq(items.id, jobCards.itemId))
-        .leftJoin(machines, eq(machines.id, jcOps.machineId))
+        .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
         .leftJoin(users, eq(users.id, opLog.createdBy))
         .where(where)
         .orderBy(desc(opLog.logDate), desc(opLog.createdAt), asc(opLog.logNo))
@@ -92,7 +103,8 @@ export async function listOpLog(
       itemCode: r.itemCode ?? null,
       opSeq: r.opSeq,
       operation: r.operation,
-      machineCode: r.machineCode ?? r.machineCodeText ?? null,
+      // Live master code first, then the LOG's snapshot, then the OP's snapshot.
+      machineCode: r.machineCode ?? r.logMachineCodeText ?? r.machineCodeText ?? null,
       shift: r.shift,
       qty: r.qty,
       rejectQty: r.rejectQty,

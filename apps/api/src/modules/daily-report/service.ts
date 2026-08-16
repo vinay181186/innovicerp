@@ -25,8 +25,14 @@ export async function getDailyReport(
 ): Promise<DailyReportResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
+    // Machine comes off the LOG row (migration 0095) — the machine the qty was
+    // actually produced on — with the op's machine as fallback for rows the
+    // backfill could not resolve. Reading op.machine_id alone re-attributed all
+    // past production whenever the op's machine was changed. The filter must use
+    // the SAME expression as the SELECT, or filtering by machine drops rows whose
+    // op has since been re-routed.
     const machineFrag = input.machineId
-      ? sql`AND op.machine_id = ${input.machineId}::uuid`
+      ? sql`AND COALESCE(l.machine_id, op.machine_id) = ${input.machineId}::uuid`
       : sql``;
 
     const result = await tx.execute(sql`
@@ -41,20 +47,21 @@ export async function getDailyReport(
         l.qty,
         l.operator_name AS operator,
         l.remarks,
-        op.machine_id AS "machineId",
-        COALESCE(m.code, op.machine_code_text, '—') AS "machineCode",
+        COALESCE(l.machine_id, op.machine_id) AS "machineId",
+        COALESCE(m.code, l.machine_code_text, op.machine_code_text, '—') AS "machineCode",
         m.name AS "machineName"
       FROM public.op_log l
       JOIN public.jc_ops op ON op.id = l.jc_op_id AND op.deleted_at IS NULL
       JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
+      LEFT JOIN public.machines m
+        ON m.id = COALESCE(l.machine_id, op.machine_id) AND m.deleted_at IS NULL
       WHERE l.company_id = ${companyId}::uuid
         AND l.log_date = ${input.date}::date
         AND l.log_type <> 'start'
         AND l.qty > 0
         ${machineFrag}
-      ORDER BY COALESCE(m.code, op.machine_code_text, ''), op.op_seq, l.id
+      ORDER BY COALESCE(m.code, l.machine_code_text, op.machine_code_text, ''), op.op_seq, l.id
     `);
 
     const allRows = result as unknown as Array<Record<string, unknown>>;

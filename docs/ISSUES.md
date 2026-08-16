@@ -168,6 +168,8 @@ Pure presentation change; no view/service edits needed.
 1. **Renderer fix (recommended):** For `op_type='qc'` rows, render MACHINE cell as `—` (or hide entirely) — TYPE already conveys "QC", machine is not a meaningful field for inspection. Pure web change; legacy data left intact.
 2. **Data fix:** One-off SQL `UPDATE jc_ops SET machine_code_text = NULL WHERE op_type = 'qc' AND machine_code_text = 'QC'`. Cleaner but touches legacy data; bundle with the audit-pass cleanup.
 
+**Contained, not fixed, by 0095 (ADR-125).** The new `op_log.machine_id` / `machine_code_text` are explicitly left NULL on `'qc'` entries, and both the migration backfill and `v_op_machine_output` exclude `op_type = 'qc'` — so the literal `'QC'` can never leak into the machine-wise output as if it were a machine. The `/op-entry` ops-table cell this issue is actually about still renders it; option 1 above remains the fix.
+
 ## ISSUE-011 — `cycle_time_min` column name vs stored hours semantics across `route_card_ops` + `jc_ops`
 
 - **Surfaced:** 2026-05-20 (RC-1 schema review per ADR-029)
@@ -5633,3 +5635,45 @@ Legacy's **`_nextToolIssueNo()` (L24042)** renders a **readonly Issue No.** Ours
 **Zero logic changes** — `onSave`, `onExcel`, `updateMutation`, `navigate`, `loading`/`errored`/`errorMessage` all untouched.
 
 **Correctly NOT re-litigated** (ISSUE-097/096): the drag grips (**inert in legacy** — `_rbDropCol` L17513 rejects `COL:` payloads), `N records match`, the preview stat tiles, the Load Template dropdown. **`list.tsx`/`run.tsx` untouched** (No Legacy Counterpart). **ISSUE-096 context noted, not acted on** (it lives in `runner.ts`): the cap is **`ROW_LIMIT = 5000`**, and **`SUMMARY_LIMIT = 200` truncates the summary with no indicator** where **legacy rendered all groups + a TOTAL row.**
+
+## ISSUE-272 — Stop captures no qty, so a stopped op can read "Available" as if untouched
+
+- **Surfaced:** 2026-08-16 (Job Queue trace requested by user; found while auditing IN-JC-26-00093 for ADR-125)
+- **Severity:** P2 (silent production loss on screen — the pieces exist, the system denies it)
+- **Status:** [ ] open
+
+**Mechanism, confirmed in code.** `stopOp` (`apps/api/src/modules/op-entry/service.ts:961`) does exactly one thing:
+
+```ts
+.set({ status: 'stopped', endedAt: new Date(), updatedBy: user.id })
+```
+
+No quantity is captured. The Job Queue's Running flag is `EXISTS(running_ops WHERE jc_op_id = op.id AND status = 'running')` (`job-queue/service.ts:76-79`), so the moment the session closes the op falls back to `v_jc_op_status.computed_status`, whose ladder is (migration 0093, lines 215-237):
+
+| Condition | Status |
+| --- | --- |
+| open session | `running` |
+| `completed_qty > 0` | `in_progress` |
+| `input_avail > 0` | **`available`** |
+
+`startOp` writes its `'start'` marker with `qty: 0` (`op-entry/service.ts:868-882`). So **Start → work → Stop, with no Log Op submitted**, leaves `completed_qty = 0` and the operation drops all the way to `available` — indistinguishable on screen from one never touched. `list.tsx:248` then sets `isNext = available > 0 && !isRunning`, highlighting the row amber and offering **▶ Start** again.
+
+**Verified NOT the case when qty was logged:** the user confirmed IN-JC-26-00093 reads `in_progress` after stopping, which is correct. So this is a data-entry hazard on the no-log path, not a status-derivation bug.
+
+**Fix sketch:** make Stop capture the qty — either prompt "how many did you finish?" on Stop, or make Stop reachable only through Log Op. Not bundled into 0095/ADR-125, which deliberately changed only where the machine is stored.
+
+## ISSUE-273 — `machines.status` is decorative: written by hand, read by nothing that matters
+
+- **Surfaced:** 2026-08-16 (Job Queue trace, same audit as ISSUE-272)
+- **Severity:** P3 (misleading shop-floor screens; no data corruption)
+- **Status:** [ ] open
+
+**Never auto-driven.** The only writers of `machines.status` are the master form's create/update path (`apps/api/src/modules/machines/service.ts:114` and `:145`), reached via `PATCH /machines/:id`. `startOp` and `stopOp` both leave it untouched — they only `SELECT machines.code` for the audit string (`op-entry/service.ts:831-836`, `:980-982`). No trigger writes it. It is `text`, not an enum (`schema.ts:372`, default `'Idle'`); the four values `Idle / Running / Down / Maintenance` exist only in the frontend (`machines/components/machine-form.tsx:31`).
+
+**Never read by the production screens.** The Job Queue's machine query selects `id, code, name, machine_type` and nothing else (`job-queue/service.ts:43`) — `status` is not even in the SELECT. Same for `machine-loading` and `shop-floor`. The `JobQueueMachine` response type has no status field at all (`packages/shared/src/schemas/job-queue.ts:31-44`). Only the Machines master screens read it.
+
+**Consequence:** a machine marked **Down** or **Maintenance** appears in the Job Queue identically to an idle one, and its card badge is hours-only — `pendingHrs > 80 ? 'Overloaded' : > 40 ? 'Busy' : 'Clear'` (`apps/web/src/modules/job-queue/routes/list.tsx:209`) — so a broken machine with a light queue renders green **"Clear"** and jobs keep getting queued onto it.
+
+**Already known to the system.** Alert AL-013 (`apps/api/src/modules/alerts/definitions/al-013-machines-idle.ts:34-42`) exists purely to detect the drift, matching `m.status = 'Running'` with no corresponding `running_ops` row; its header comment records the decision not to normalise the column.
+
+**Fix sketch:** (a) have the Job Queue read `machines.status` and visibly mark Down/Maintenance machines as unavailable for queueing; (b) drive `status` from `running_ops` on start/stop instead of by hand, or drop the manual field to Down/Maintenance only and derive Running/Idle. Deliberately out of scope for ADR-125.

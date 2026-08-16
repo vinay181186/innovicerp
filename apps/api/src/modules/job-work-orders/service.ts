@@ -32,6 +32,7 @@ import {
 } from '../../lib/errors';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { assertBomUsableForJobWork, cascadeBomToJwLine } from '../bom-master/cascade';
 import type {
   CreateJobWorkOrderInput,
   JobWorkOrder,
@@ -616,6 +617,7 @@ function toJobWorkOrderLine(
     rate: row.rate,
     dueDate: row.dueDate,
     status: row.status,
+    sourceBomMasterId: row.sourceBomMasterId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -716,11 +718,30 @@ export async function createJobWorkOrder(
           rate: (l.rate ?? 0).toFixed(2),
           dueDate: l.dueDate ?? null,
           status: l.status ?? headerStatus,
+          sourceBomMasterId: l.sourceBomMasterId ?? null,
           createdBy: user.id,
           updatedBy: user.id,
         };
       });
+
+      // BOM-8 for job work (0086): refuse bought parts BEFORE writing anything,
+      // so the user gets the friendly error instead of a half-built JWSO.
+      for (const bomId of new Set(
+        lineValues.flatMap((l) => (l.sourceBomMasterId ? [l.sourceBomMasterId] : [])),
+      )) {
+        await assertBomUsableForJobWork(tx, bomId, companyId);
+      }
+
       const insertedLines = await tx.insert(jobWorkOrderLines).values(lineValues).returning();
+
+      // Spawn a child Job Card per BOM component. Same tx as the JWSO insert,
+      // so a cascade failure rolls the whole order back.
+      for (const line of insertedLines) {
+        if (line.sourceBomMasterId) {
+          await cascadeBomToJwLine(tx, line.id, user);
+        }
+      }
+
       const codeMap = await resolveItemCodesById(
         tx,
         insertedLines.map((l) => l.itemId),
@@ -907,6 +928,16 @@ async function mergeLines(
     if (u.data.rate !== undefined) lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
+    if (u.data.sourceBomMasterId !== undefined) {
+      // Validate before storing. Deliberately does NOT re-cascade: the cascade
+      // is idempotent on existing child JCs, so re-pointing a line that already
+      // spawned work would silently change the BOM of record without changing
+      // the shop floor. Same behaviour as the sales-order update path.
+      if (u.data.sourceBomMasterId) {
+        await assertBomUsableForJobWork(tx, u.data.sourceBomMasterId, companyId);
+      }
+      lineUpdate['sourceBomMasterId'] = u.data.sourceBomMasterId ?? null;
+    }
 
     await tx.update(jobWorkOrderLines).set(lineUpdate).where(eq(jobWorkOrderLines.id, u.id));
   }
@@ -933,11 +964,24 @@ async function mergeLines(
         rate: (l.rate ?? 0).toFixed(2),
         dueDate: l.dueDate ?? null,
         status: l.status ?? 'open',
+        sourceBomMasterId: l.sourceBomMasterId ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       };
     });
-    await tx.insert(jobWorkOrderLines).values(values);
+
+    // Same gate + cascade as create — a line added on edit is still a new line.
+    for (const bomId of new Set(
+      values.flatMap((l) => (l.sourceBomMasterId ? [l.sourceBomMasterId] : [])),
+    )) {
+      await assertBomUsableForJobWork(tx, bomId, companyId);
+    }
+    const newRows = await tx.insert(jobWorkOrderLines).values(values).returning();
+    for (const line of newRows) {
+      if (line.sourceBomMasterId) {
+        await cascadeBomToJwLine(tx, line.id, user);
+      }
+    }
   }
 }
 

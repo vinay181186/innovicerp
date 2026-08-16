@@ -26,12 +26,15 @@ import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
 import {
   bomMasterLines,
   bomMasters,
+  items,
+  jcOps,
   jobCards,
+  jobWorkOrderLines,
   purchaseRequests,
   salesOrderLines,
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { NotFoundError } from '../../lib/errors';
+import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
 export interface CascadeBomToSoLineResult {
@@ -234,6 +237,215 @@ export async function cascadeBomToSoLine(
     bomMasterId,
     createdJobCardCodes,
     createdPrCodes,
+  };
+}
+
+// ─── Job-work variant (migration 0086) ────────────────────────────────────
+//
+// Job work also covers assembly: the client ships components and asks for a
+// finished unit back. Same idea as the SO cascade above, with two deliberate
+// differences, both flowing from one fact — on job work the CLIENT owns and
+// supplies the material:
+//
+//   purchase    REJECTED before we get here (assertBomUsableForJobWork). We do
+//               not buy parts for a job-work order; the same rule already
+//               refuses Direct Purchase on a job-work plan.
+//   outsource   spawns a Job Card carrying an OUTSOURCE op, NOT a bare
+//               purchase_request. purchase_requests has no job-work link
+//               column; job_cards does (source_jw_line_id). Seeding a JC + OSP
+//               op is also exactly what the full_outsource plan path does
+//               (ADR-095), so the existing PR -> PO -> DC -> GRN -> QC chain
+//               picks it up unchanged, and readiness scores an outsource final
+//               op from its GRN with no new code.
+
+export interface CascadeBomToJwLineResult {
+  /** True when at least one child JC was inserted (false on idempotent no-op). */
+  fired: boolean;
+  /** JW line id passed in. */
+  jwLineId: string;
+  /** BOM master id consulted. */
+  bomMasterId: string;
+  createdJobCardCodes: string[];
+}
+
+interface JwLineForCascade {
+  id: string;
+  companyId: string;
+  partName: string;
+  orderQty: number;
+  sourceBomMasterId: string | null;
+}
+
+async function nextJwJobCardCode(
+  tx: DbTransaction,
+  companyId: string,
+  parentJwLineId: string,
+): Promise<string> {
+  const rows = await tx
+    .select({ value: count() })
+    .from(jobCards)
+    .where(and(eq(jobCards.companyId, companyId), eq(jobCards.sourceJwLineId, parentJwLineId)));
+  const seq = (rows[0]?.value ?? 0) + 1;
+  return `JC-BOM-${parentJwLineId.slice(0, 8)}-${String(seq).padStart(2, '0')}`;
+}
+
+/**
+ * Refuse a BOM that contains bought parts on a job-work order, naming them so
+ * the user can act. Call this BEFORE persisting the JW line — it is a
+ * context rule, not a property of the BOM: the very same BOM is perfectly
+ * valid on a sales order, where we do buy the material.
+ */
+export async function assertBomUsableForJobWork(
+  tx: DbTransaction,
+  bomMasterId: string,
+  companyId: string,
+): Promise<void> {
+  const offenders = await tx
+    .select({ code: items.code, name: items.name })
+    .from(bomMasterLines)
+    .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
+    .where(
+      and(
+        eq(bomMasterLines.bomMasterId, bomMasterId),
+        eq(bomMasterLines.companyId, companyId),
+        eq(bomMasterLines.bomType, 'purchase'),
+        isNull(bomMasterLines.deletedAt),
+      ),
+    )
+    .orderBy(asc(bomMasterLines.lineNo));
+  if (offenders.length === 0) return;
+
+  const bomRows = await tx
+    .select({ bomNo: bomMasters.bomNo })
+    .from(bomMasters)
+    .where(eq(bomMasters.id, bomMasterId))
+    .limit(1);
+  const bomNo = bomRows[0]?.bomNo ?? 'That BOM';
+  const list = offenders.map((o) => o.code ?? o.name).join(', ');
+  const many = offenders.length > 1;
+  throw new ValidationError(
+    `${bomNo} can't be used on a job work order — ${list} ${many ? 'are bought parts' : 'is a bought part'}. ` +
+      `Job work runs on material the client supplies, so only machined and outsourced parts are allowed. ` +
+      `Change ${many ? 'them' : 'it'} to Manufacture or Outsource in the BOM, or pick a different BOM.`,
+  );
+}
+
+export async function cascadeBomToJwLine(
+  tx: DbTransaction,
+  jwLineId: string,
+  user: AuthContext,
+): Promise<CascadeBomToJwLineResult> {
+  const jwRows = await tx
+    .select({
+      id: jobWorkOrderLines.id,
+      companyId: jobWorkOrderLines.companyId,
+      partName: jobWorkOrderLines.partName,
+      orderQty: jobWorkOrderLines.orderQty,
+      sourceBomMasterId: jobWorkOrderLines.sourceBomMasterId,
+    })
+    .from(jobWorkOrderLines)
+    .where(and(eq(jobWorkOrderLines.id, jwLineId), isNull(jobWorkOrderLines.deletedAt)))
+    .limit(1);
+  const jwLine = jwRows[0] as JwLineForCascade | undefined;
+  if (!jwLine) throw new NotFoundError(`Job work order line ${jwLineId} not found`);
+  if (!jwLine.sourceBomMasterId) {
+    return { fired: false, jwLineId, bomMasterId: '', createdJobCardCodes: [] };
+  }
+  const bomMasterId = jwLine.sourceBomMasterId;
+
+  // Idempotency: any child JC already pointing at this line means the cascade
+  // has run. Re-saving the JW must not double the shop-floor work.
+  const existing = await tx
+    .select({ value: count() })
+    .from(jobCards)
+    .where(eq(jobCards.sourceJwLineId, jwLineId));
+  if ((existing[0]?.value ?? 0) > 0) {
+    return { fired: false, jwLineId, bomMasterId, createdJobCardCodes: [] };
+  }
+
+  // Belt-and-braces — the service asserts this before insert, but the cascade
+  // is also reachable from update paths, and silently buying client material
+  // is not a failure mode worth risking.
+  await assertBomUsableForJobWork(tx, bomMasterId, jwLine.companyId);
+
+  const bomLines = await tx
+    .select()
+    .from(bomMasterLines)
+    .where(
+      and(
+        eq(bomMasterLines.bomMasterId, bomMasterId),
+        eq(bomMasterLines.companyId, jwLine.companyId),
+        isNull(bomMasterLines.deletedAt),
+      ),
+    )
+    .orderBy(asc(bomMasterLines.lineNo));
+
+  const createdJobCardCodes: string[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const bl of bomLines) {
+    const childQty = Math.round(jwLine.orderQty * Number(bl.qtyPerSet));
+    if (childQty <= 0) continue;
+
+    const code = await nextJwJobCardCode(tx, jwLine.companyId, jwLineId);
+    const jc = await tx
+      .insert(jobCards)
+      .values({
+        companyId: jwLine.companyId,
+        code,
+        jcDate: today,
+        itemId: bl.childItemId,
+        orderQty: childQty,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: jobCards.id });
+    createdJobCardCodes.push(code);
+
+    // An outsourced component gets its OSP op seeded now, with no vendor —
+    // procurement picks the vendor and raises the PR through the existing
+    // outsource flow, exactly as it does for a full_outsource plan.
+    if (bl.bomType === 'outsource') {
+      await tx.insert(jcOps).values({
+        companyId: jwLine.companyId,
+        jobCardId: jc[0]!.id,
+        opSeq: 1,
+        operation: 'OUTSOURCE',
+        opType: 'outsource',
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+    }
+  }
+
+  const bomRows = await tx
+    .select({ bomNo: bomMasters.bomNo })
+    .from(bomMasters)
+    .where(eq(bomMasters.id, bomMasterId))
+    .limit(1);
+  const bomNo = bomRows[0]?.bomNo ?? bomMasterId.slice(0, 8);
+
+  if (createdJobCardCodes.length > 0) {
+    await emitActivityLog(
+      tx,
+      {
+        action: 'BOM_CASCADE',
+        entity: 'BOM',
+        detail: `${bomNo} → JW line ${jwLine.partName}: ${createdJobCardCodes.length} JC`,
+        refId: bomNo,
+      },
+      jwLine.companyId,
+      user,
+    );
+  }
+
+  return {
+    fired: createdJobCardCodes.length > 0,
+    jwLineId,
+    bomMasterId,
+    createdJobCardCodes,
   };
 }
 

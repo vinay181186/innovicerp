@@ -13,6 +13,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -155,23 +156,62 @@ export async function changeJcOpMachine(
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
-    // Verify op exists + still editable (status must be Waiting / Available — i.e. no logged work yet)
+    // Verify the op exists and that a machine change is still meaningful.
+    //
+    // Since migration 0095 every op_log row permanently carries the machine that
+    // produced its qty (`op_log.machine_id` / `machine_code_text`), so changing
+    // `jc_ops.machine_id` no longer re-attributes past production — it only says
+    // "which machine runs the REMAINING qty". Mid-flight swaps (50 pcs on CNC-01,
+    // balance on CNC-02) are therefore allowed and BOTH records are kept.
     const opRows = (await tx.execute(sql`
-      SELECT op.id, op.company_id, COALESCE(s.computed_status, 'waiting') AS status,
+      SELECT op.id,
+             op.op_seq AS "opSeq",
+             op.operation,
+             jc.code AS "jcCode",
+             COALESCE(m.code, op.machine_code_text) AS "oldMachineCode",
+             COALESCE(s.computed_status, 'waiting') AS status,
              COALESCE(s.completed_qty, 0) AS done
       FROM public.jc_ops op
+      JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       WHERE op.id = ${jcOpId}::uuid
         AND op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
       LIMIT 1
-    `)) as unknown as Array<{ status: string; done: number }>;
+    `)) as unknown as Array<{
+      opSeq: number;
+      operation: string;
+      jcCode: string;
+      oldMachineCode: string | null;
+      status: string;
+      done: number;
+    }>;
     const op = opRows[0];
     if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
     const status = String(op.status);
-    if (status !== 'waiting' && status !== 'available') {
+    if (status === 'complete') {
       throw new ConflictError(
-        `Cannot change machine: op status is "${status}" (only waiting/available allowed).`,
+        'Cannot change machine: this operation is complete — there is no remaining qty to run.',
+      );
+    }
+
+    // Guard (mirrors ADR-084): an OPEN in-house running session means pieces are
+    // being produced on the CURRENT machine right now, and they are only written
+    // to op_log — with that machine stamped on them — when the session is
+    // stopped. Swapping the machine first would stamp the new machine on work the
+    // old one actually did. isOsp=false = the in-house lane (not a vendor lane).
+    const runningRows = (await tx.execute(sql`
+      SELECT 1 AS one
+      FROM public.running_ops
+      WHERE jc_op_id = ${jcOpId}::uuid
+        AND status = 'running'
+        AND is_osp = false
+      LIMIT 1
+    `)) as unknown as Array<{ one: number }>;
+    if (runningRows.length > 0) {
+      throw new ConflictError(
+        'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
       );
     }
 
@@ -194,6 +234,23 @@ export async function changeJcOpMachine(
       WHERE id = ${jcOpId}::uuid
         AND company_id = ${companyId}::uuid
     `);
+
+    // Audit trail: the swap itself. Past production keeps its own machine on
+    // op_log; this line records who moved the remaining qty, and from where.
+    await emitActivityLog(
+      tx,
+      {
+        action: 'EDIT',
+        entity: 'JC Operation',
+        detail:
+          `Machine changed on ${op.jcCode} op ${num(op.opSeq)} ${op.operation} — ` +
+          `${op.oldMachineCode ?? '(none)'} → ${machineRows[0].code}; ` +
+          `${num(op.done)} pcs already completed stay recorded against ${op.oldMachineCode ?? '(none)'}`,
+        refId: op.jcCode,
+      },
+      companyId,
+      user,
+    );
 
     return { ok: true };
   });

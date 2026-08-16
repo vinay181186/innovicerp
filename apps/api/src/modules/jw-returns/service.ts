@@ -52,6 +52,10 @@ async function moveReturnStock(
   date: string,
   itemId: string | null,
   qty: number,
+  // Assembly lines move stock for each COMPONENT, never for the phantom
+  // parent. Keeps one ledger row per child (distinct source_ref) and names the
+  // child in the insufficient-stock error.
+  component?: { code: string },
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
@@ -63,7 +67,8 @@ async function moveReturnStock(
   const before = Number(bal[0]?.on_hand ?? 0);
   if (dir === 'out' && qty > before) {
     throw new ConflictError(
-      `Insufficient stock to return: on-hand ${before}, requested ${qty}. ` +
+      `Insufficient stock to return${component ? ` ${component.code}` : ''}: ` +
+        `on-hand ${before}, requested ${qty}. ` +
         `Complete machining + final QC so the parts are booked in before returning them.`,
     );
   }
@@ -75,7 +80,7 @@ async function moveReturnStock(
     txnType: dir,
     qty,
     sourceType: 'jw_return',
-    sourceRef: `${code}${dir === 'in' ? ' (cancel)' : ''}`,
+    sourceRef: `${code}${component ? ` / ${component.code}` : ''}${dir === 'in' ? ' (cancel)' : ''}`,
     stockBefore: before,
     stockAfter: after,
     remarks:
@@ -104,26 +109,141 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
   return `${prefix}${String(max + 1).padStart(5, '0')}`;
 }
 
-/** Produced = terminal QC-accepted qty summed over the JW line's Job Cards. */
+/**
+ * Produced = terminal QC-accepted qty summed over the JW line's Job Cards.
+ *
+ * ASSEMBLY lines (source_bom_master_id set, migration 0086) roll up
+ * differently, for the same reason customer dispatch does (ADR-109): the BOM
+ * cascade hangs every child JC off the PARENT line, so summing them adds
+ * unrelated components together — 5 of C1 plus 4 of C2 is not 9 of anything,
+ * it is 4 assemblies with one C1 stranded. The parent is a phantom nobody ever
+ * machines. So:
+ *
+ *   produced = MIN over components of FLOOR(componentProduced / qtyPerSet)
+ *
+ * No purchase branch is needed here: a BOM containing bought parts is refused
+ * on a job-work order outright (assertBomUsableForJobWork).
+ */
 async function producedForLine(tx: DbTransaction, lineId: string): Promise<number> {
   const rows = (await tx.execute(sql`
-    SELECT COALESCE(SUM(x.eff), 0) AS produced FROM (
-      SELECT DISTINCT ON (jc.id)
-        CASE
-          WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
-          WHEN vs.op_type = 'outsource' THEN COALESCE((
-            SELECT SUM(grl.qc_accepted_qty) FROM public.goods_receipt_note_lines grl
-            WHERE grl.purchase_order_line_id = jo.outsource_po_line_id AND grl.deleted_at IS NULL), 0)
-          ELSE vs.completed_qty
-        END AS eff
-      FROM public.job_cards jc
-      JOIN public.v_jc_op_status vs ON vs.job_card_id = jc.id
-      LEFT JOIN public.jc_ops jo ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
-      WHERE jc.source_jw_line_id = ${lineId}::uuid AND jc.deleted_at IS NULL
-      ORDER BY jc.id, vs.op_seq DESC
-    ) x
+    SELECT
+      CASE
+        WHEN l.source_bom_master_id IS NOT NULL THEN COALESCE(bom.produced, 0)
+        ELSE COALESCE(own.produced, 0)
+      END AS produced
+    FROM public.job_work_order_lines l
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(x.eff), 0) AS produced FROM (
+        SELECT DISTINCT ON (jc.id)
+          CASE
+            WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
+            WHEN vs.op_type = 'outsource' THEN COALESCE((
+              SELECT SUM(grl.qc_accepted_qty) FROM public.goods_receipt_note_lines grl
+              WHERE grl.purchase_order_line_id = jo.outsource_po_line_id AND grl.deleted_at IS NULL), 0)
+            ELSE vs.completed_qty
+          END AS eff
+        FROM public.job_cards jc
+        JOIN public.v_jc_op_status vs ON vs.job_card_id = jc.id
+        LEFT JOIN public.jc_ops jo ON jo.job_card_id = jc.id AND jo.op_seq = vs.op_seq AND jo.deleted_at IS NULL
+        WHERE jc.source_jw_line_id = l.id AND jc.deleted_at IS NULL
+        ORDER BY jc.id, vs.op_seq DESC
+      ) x
+    ) own ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(MIN(FLOOR(comp.eff / bml.qty_per_set)), 0) AS produced
+      FROM public.bom_master_lines bml
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(y.eff), 0) AS eff FROM (
+          SELECT DISTINCT ON (jc.id)
+            CASE
+              WHEN vs.op_type = 'qc' OR vs.qc_required THEN vs.qc_accepted_qty
+              WHEN vs.op_type = 'outsource' THEN COALESCE((
+                SELECT SUM(grl.qc_accepted_qty) FROM public.goods_receipt_note_lines grl
+                WHERE grl.purchase_order_line_id = jo2.outsource_po_line_id AND grl.deleted_at IS NULL), 0)
+              ELSE vs.completed_qty
+            END AS eff
+          FROM public.job_cards jc
+          JOIN public.v_jc_op_status vs ON vs.job_card_id = jc.id
+          LEFT JOIN public.jc_ops jo2 ON jo2.job_card_id = jc.id AND jo2.op_seq = vs.op_seq AND jo2.deleted_at IS NULL
+          WHERE jc.source_jw_line_id = l.id
+            AND jc.item_id = bml.child_item_id
+            AND jc.deleted_at IS NULL
+          ORDER BY jc.id, vs.op_seq DESC
+        ) y
+      ) comp ON TRUE
+      WHERE bml.bom_master_id = l.source_bom_master_id
+        AND bml.company_id = l.company_id
+        AND bml.deleted_at IS NULL
+        AND bml.qty_per_set > 0
+    ) bom ON TRUE
+    WHERE l.id = ${lineId}::uuid
   `)) as unknown as Array<{ produced: number | string }>;
   return Number(rows[0]?.produced ?? 0);
+}
+
+interface JwBomComponent {
+  childItemId: string;
+  childItemCode: string;
+  qtyPerSet: number;
+}
+
+/**
+ * Components of a JW line's BOM, or [] when the line is an ordinary machining
+ * line. Returning the finished assembly consumes its COMPONENTS — the parent
+ * is a phantom that never had stock to debit.
+ */
+async function bomComponentsForLine(
+  tx: DbTransaction,
+  lineId: string,
+): Promise<JwBomComponent[]> {
+  const rows = (await tx.execute(sql`
+    SELECT bml.child_item_id, i.code AS child_code, bml.qty_per_set
+    FROM public.job_work_order_lines l
+    JOIN public.bom_master_lines bml
+      ON bml.bom_master_id = l.source_bom_master_id
+      AND bml.company_id = l.company_id
+      AND bml.deleted_at IS NULL
+    JOIN public.items i ON i.id = bml.child_item_id AND i.deleted_at IS NULL
+    WHERE l.id = ${lineId}::uuid
+    ORDER BY bml.line_no
+  `)) as unknown as Array<{
+    child_item_id: string;
+    child_code: string | null;
+    qty_per_set: string | number;
+  }>;
+  return rows.map((r) => ({
+    childItemId: r.child_item_id,
+    childItemCode: r.child_code ?? r.child_item_id.slice(0, 8),
+    qtyPerSet: Number(r.qty_per_set) || 0,
+  }));
+}
+
+/**
+ * What a return challan ACTUALLY moved out, replayed from the ledger. Cancel
+ * reverses these exact rows rather than re-exploding the BOM, so a BOM edited
+ * between return and cancel cannot leave the ledger unbalanced.
+ */
+async function returnedComponents(
+  tx: DbTransaction,
+  companyId: string,
+  code: string,
+): Promise<Array<{ itemId: string; itemCode: string; qty: number }>> {
+  const rows = (await tx.execute(sql`
+    SELECT st.item_id, st.qty, i.code AS item_code
+    FROM public.store_transactions st
+    LEFT JOIN public.items i ON i.id = st.item_id
+    WHERE st.company_id = ${companyId}::uuid
+      AND st.source_type = 'jw_return'
+      AND st.txn_type = 'out'
+      AND st.source_ref LIKE ${`${code} / `} || '%'
+  `)) as unknown as Array<{ item_id: string | null; qty: number; item_code: string | null }>;
+  return rows
+    .filter((r): r is { item_id: string; qty: number; item_code: string | null } => Boolean(r.item_id))
+    .map((r) => ({
+      itemId: r.item_id,
+      itemCode: r.item_code ?? r.item_id.slice(0, 8),
+      qty: Number(r.qty) || 0,
+    }));
 }
 
 function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan {
@@ -251,16 +371,35 @@ export async function createJwReturnChallan(
 
     // 4b) ADR-106 — take the goods out of own stock. They were booked in by the
     // Job Card's final QC (qc_accept); shipping them back is what removes them.
-    await moveReturnStock(
-      tx,
-      companyId,
-      userId,
-      'out',
-      code,
-      input.returnDate,
-      line.itemId,
-      input.qty,
-    );
+    // An ASSEMBLY line (0086) explodes: each component leaves at qty x
+    // qtyPerSet. The parent is never debited — nothing ever credited it.
+    const components = await bomComponentsForLine(tx, line.id);
+    if (components.length > 0) {
+      for (const c of components) {
+        await moveReturnStock(
+          tx,
+          companyId,
+          userId,
+          'out',
+          code,
+          input.returnDate,
+          c.childItemId,
+          Math.round(input.qty * c.qtyPerSet),
+          { code: c.childItemCode },
+        );
+      }
+    } else {
+      await moveReturnStock(
+        tx,
+        companyId,
+        userId,
+        'out',
+        code,
+        input.returnDate,
+        line.itemId,
+        input.qty,
+      );
+    }
 
     // 5) Bump line returned_qty
     const newReturned = line.returnedQty + input.qty;
@@ -362,17 +501,36 @@ export async function cancelJwReturnChallan(
 
     // 0) ADR-106 — the goods never left, so put them back in own stock. Written
     // as a compensating 'in' row rather than deleting the 'out', so the ledger
-    // keeps the full history (same as a cancelled customer dispatch).
-    await moveReturnStock(
-      tx,
-      companyId,
-      userId,
-      'in',
-      ret.code,
-      dateLike(ret.returnDate),
-      line.itemId,
-      ret.qty,
-    );
+    // keeps the full history (same as a cancelled customer dispatch). For an
+    // assembly line that is one row per component, replayed from the ledger so
+    // a BOM edited in the meantime cannot unbalance it.
+    const moved = await returnedComponents(tx, companyId, ret.code);
+    if (moved.length > 0) {
+      for (const m of moved) {
+        await moveReturnStock(
+          tx,
+          companyId,
+          userId,
+          'in',
+          ret.code,
+          dateLike(ret.returnDate),
+          m.itemId,
+          m.qty,
+          { code: m.itemCode },
+        );
+      }
+    } else {
+      await moveReturnStock(
+        tx,
+        companyId,
+        userId,
+        'in',
+        ret.code,
+        dateLike(ret.returnDate),
+        line.itemId,
+        ret.qty,
+      );
+    }
 
     // 1) Mark the return cancelled
     const updated = await tx

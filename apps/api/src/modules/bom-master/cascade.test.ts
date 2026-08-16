@@ -1,7 +1,7 @@
 // BOM cascade tests (BOM-8). Verifies cascadeBomToSoLine spawns the
 // right child entities per bom_type + is idempotent on re-run.
 
-import { eq, like } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
@@ -93,9 +93,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // SO cascade-deletes its lines via FK. Child JCs / PRs reference
-  // source_so_line_id; wipe them by code prefix first.
-  await db.delete(purchaseRequests).where(like(purchaseRequests.code, `PR-BOM-%`));
-  await db.delete(jobCards).where(like(jobCards.code, `JC-BOM-%`));
+  // source_so_line_id; wipe them first.
+  //
+  // Scoped by ITEM, not by the `JC-BOM-%` / `PR-BOM-%` code prefix. Every BOM
+  // cascade in the codebase mints those prefixes, so a prefix delete reaches
+  // across into whatever else is running in parallel on the shared dev DB and
+  // silently removes its job cards — which surfaced as an intermittent
+  // `readyQty 0` in the customer-dispatch assembly tests.
+  const mine = [itemA, itemB, itemC, testParentId].filter(Boolean);
+  if (mine.length > 0) {
+    await db.delete(purchaseRequests).where(inArray(purchaseRequests.itemId, mine));
+    await db.delete(jobCards).where(inArray(jobCards.itemId, mine));
+  }
   await db.delete(salesOrders).where(like(salesOrders.code, `${TEST_PREFIX}%`));
   await db.delete(bomMasters).where(like(bomMasters.bomNo, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));

@@ -5,6 +5,7 @@ import {
   generateOspPrInputSchema,
   listJcOpsQuerySchema,
   listOpLogQuerySchema,
+  listOpMachineOutputQuerySchema,
   listRunningOpsQuerySchema,
   startOpInputSchema,
   submitOpLogInputSchema,
@@ -25,6 +26,13 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listOpLogQuerySchema.parse(req.query);
     return service.listOpLog(query, req.user);
+  });
+
+  // Machine-wise output per operation (0095) — "qty wise machine used".
+  app.get('/op-entry/machine-output', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listOpMachineOutputQuerySchema.parse(req.query);
+    return service.listOpMachineOutput(query, req.user);
   });
 
   app.get('/op-entry/running-ops', async (req) => {

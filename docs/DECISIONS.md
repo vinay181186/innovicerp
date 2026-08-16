@@ -5963,6 +5963,103 @@ import cycle. Parent 779 → 624.
   searchable and auto-filling `vendorCodeText` from it would change what gets
   saved, so it needs its own task and user sign-off.
 
+## ADR-125: The machine belongs on the qty, not on the operation
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+User request, traced on IN-JC-26-00093: *"half parts are machined, other half
+pending, I want to change machine — both the records must be maintained, qty
+wise machine used."*
+
+That was impossible, and the reason was where the machine was stored:
+
+| Table | Machine | Qty |
+|---|---|---|
+| `jc_ops` | ONE `machine_id`, overwritable | none |
+| `op_log` | **no machine column at all** | `qty`, `reject_qty` |
+| `running_ops` | `machine_id` per session | **no qty** |
+
+So every machine-wise number attributed qty through the operation's *current*
+machine — `daily-report/service.ts:51`, `so-costing/service.ts:208`,
+`op-log-viewer/service.ts:72`. Change the machine and all past production
+silently re-attributed to the new one; the first machine's output vanished from
+every report, with no history row and (in `changeJcOpMachine`) not even an
+activity-log entry.
+
+`running_ops` could not rescue it: it records machine + start/stop per session
+but carries no qty, and no key joins an `op_log` row to the session that was
+open when it was written. The two cannot be correlated after the fact.
+
+Hence the lock at `jc-ops/service.ts:171-176` — *"only waiting/available
+allowed"* (ADR-083). **That lock was a bandage over the data model, not a
+business rule**: it prevented corruption by preventing the operation entirely.
+`production-schedule/service.ts:273` was a hole in it, guarding only on
+`complete`, so an in-progress op could be silently reassigned there.
+
+Separately audited and found sound-but-misleading: Job Queue "Running" is
+`EXISTS(running_ops WHERE status='running')` (`job-queue/service.ts:76-79`), and
+`stopOp` (`op-entry/service.ts:961`) captures no qty. An op stopped after
+logging qty correctly reads `in_progress`; one stopped *without* logging drops to
+`available` and looks untouched. That second path is a data-entry hazard, not a
+model defect, and is left as-is here.
+
+### Decision
+Migration 0095. `op_log` gains `machine_id` + `machine_code_text`, stamped at log
+time from the OPEN running session (falling back to the op's machine), so each
+quantity permanently carries the machine that produced it. Backfilled from
+`jc_ops` — correct for all existing rows precisely because the lock made a
+change impossible once work was logged.
+
+New view `v_op_machine_output`: one row per (operation × machine), reading only
+`log_type='complete' AND qty > 0`. It is the single source for both the
+"Machine-wise output" panel and the machine-wise reports, so they cannot
+disagree.
+
+The three reports repoint to `COALESCE(op_log.machine_id, jc_ops.machine_id)` —
+the log's machine, with the op as fallback for anything the backfill missed.
+Op Log viewer also gains a `machineId` filter, making "what did CNC-01 produce
+between two dates" answerable for the first time (Daily Report is single-day
+only).
+
+The machine-change lock is then **relaxed on all three write paths** to block
+only what is genuinely unsafe: a `complete` op, or an op with an open running
+session (the ADR-084 rule — stop first so the pieces already made are recorded
+against the old machine, then switch). `in_progress` is now allowed, because it
+no longer rewrites anything. Every swap emits an activity-log entry.
+
+### Alternatives Considered
+- **A separate `jc_op_machine_history` table (from/to/changed_at).** Rejected:
+  it records the *routing decision* but still cannot answer "how many pieces did
+  CNC-01 make" — you would have to interval-join log dates against change
+  timestamps and hope no two happened on the same day. The log rows already are
+  the history once they carry a machine.
+- **Split the operation into two ops, one per machine.** Rejected: it corrupts
+  op_seq (ADR-083's reorder lock), doubles the QC and OSP surface, and makes the
+  route card lie about the process.
+- **Join `op_log` to `running_ops` by time window.** Rejected: no FK, sessions
+  can overlap a log's date, and rows logged with no session open (the normal
+  back-dated entry) would attribute to nothing.
+- **Keep the lock and require a new Job Card for the second machine.** Rejected
+  by the user's requirement — one JC, both records.
+
+### Consequences
+- **Positive:** qty-wise machine history is permanent and self-evident; changing
+  machines mid-job is a normal forward-looking action; the `production-schedule`
+  hole is closed; machine output is finally queryable over a date range.
+- **Negative:** pre-0095 rows carry the *backfilled* machine, not an observed
+  one. That is the best available truth, not a measurement — do not present it
+  as if the machine were recorded at the time.
+- **Risk:** `so-costing` machine-time now has per-machine rates available; if it
+  is repointed, a JC split across machines with different `hour_rate` values will
+  legitimately cost differently than before. Single-machine ops must be
+  bit-identical — verified as a condition of that change.
+- **Not addressed:** `machines.status` (Idle/Running/Down) is still manual-only
+  and read by nothing in the production screens — alert AL-013 exists solely to
+  flag the resulting drift. And the Job Queue machine badge is still hours-only
+  (`pendingHrs > 80 / > 40`), so a Down machine with a light queue still reads
+  "Clear". Both are separate tasks.
+
 ## ADR-126: PO vendor comes from the master — free-text fallback box removed, picker is type-to-search
 
 **Date:** 2026-08-16

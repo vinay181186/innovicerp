@@ -354,7 +354,14 @@ function Row({
           // ADR-081 "Outsource balance" action when there's remaining qty to
           // send out (op_type='process', available > 0, not yet complete).
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            {canWrite && (o.status === 'waiting' || o.status === 'available') ? (
+            {/* ADR-125 — a half-done op CAN now change machine: since 0095 each
+                op_log row carries the machine that made its qty, so the switch
+                only routes the REMAINING pieces and rewrites no history. Only
+                two cases stay blocked, matching changeJcOpMachine exactly:
+                'complete' (nothing left to run) and an open running session
+                (stop first, so the pieces already made are recorded against the
+                current machine). */}
+            {canWrite && o.status !== 'complete' && o.status !== 'running' ? (
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -490,9 +497,22 @@ function ChangeMachineModal({
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
             Operation: <b>{row.operation}</b>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Only the assigned machine can be changed for operations that have not yet started.
-          </div>
+          {/* ADR-125 — this used to read "only ... operations that have not yet
+              started", which 0095 made false. Spell out what actually happens
+              instead: the switch routes the REMAINING qty only, and the pieces
+              already made keep their own machine on every report. */}
+          {row.completed > 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              {row.completed} pcs already made stay recorded against{' '}
+              <b style={{ color: 'var(--text2)' }}>{row.machineCode ?? 'the current machine'}</b>.
+              The new machine takes the remaining <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              Nothing logged yet — the new machine takes all{' '}
+              <b style={{ color: 'var(--amber)' }}>{row.available}</b> pcs.
+            </div>
+          )}
         </div>
         <div>
           <div

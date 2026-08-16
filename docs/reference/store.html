@@ -1,0 +1,1390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Innovic ERP — Sandbox</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{ --ink:#0f172a; --mut:#64748b; --line:#e2e8f0; --bg:#f8fafc; --acc:#0369a1; }
+  body{ font-family: ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  .mono{ font-family: ui-monospace,"Cascadia Mono",Consolas,monospace; }
+  .inp{ width:100%; border:1px solid var(--line); border-radius:6px; padding:6px 8px; font-size:13px; background:#fff; }
+  .inp:focus{ outline:2px solid #bae6fd; border-color:var(--acc); }
+  .lbl{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--mut); margin-bottom:3px; display:block; }
+  .btn{ border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; border:1px solid transparent; cursor:pointer; }
+  .btn-p{ background:var(--acc); color:#fff; } .btn-p:hover{ background:#075985; }
+  .btn-s{ background:#fff; color:var(--ink); border-color:var(--line); } .btn-s:hover{ background:#f1f5f9; }
+  .btn-d{ background:#fff; color:#b91c1c; border-color:#fecaca; } .btn-d:hover{ background:#fef2f2; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut);
+      background:#f1f5f9; padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td{ padding:7px 10px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
+  tbody tr:hover{ background:#f8fafc; }
+  .nav a{ display:block; padding:5px 10px 5px 22px; font-size:12.5px; color:#cbd5e1; border-radius:5px; text-decoration:none; }
+  .nav a:hover{ background:#1e293b; color:#fff; }
+  .nav a.on{ background:var(--acc); color:#fff; font-weight:600; }
+  .grp{ padding:9px 10px 4px; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#64748b; }
+  .sub{ padding:5px 10px 2px 16px; font-size:9.5px; font-weight:700; text-transform:uppercase; color:#475569; }
+  .pill{ display:inline-block; padding:1px 7px; border-radius:999px; font-size:10.5px; font-weight:700; }
+  .scroll{ overflow-x:auto; }
+</style>
+</head>
+<body class="h-screen overflow-hidden">
+
+<div class="flex h-screen">
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <aside class="w-60 shrink-0 bg-slate-900 overflow-y-auto">
+    <div class="px-3 py-3 border-b border-slate-700">
+      <div class="text-white font-bold text-sm">INNOVIC ERP</div>
+      <div class="text-slate-400 text-[10px] mono">SANDBOX · localStorage</div>
+    </div>
+    <nav id="nav" class="nav pb-8"></nav>
+  </aside>
+
+  <!-- ── MAIN ────────────────────────────────────────────────── -->
+  <main class="flex-1 overflow-y-auto">
+    <header class="bg-white border-b border-slate-200 px-5 py-2.5 flex items-center justify-between sticky top-0 z-10">
+      <div>
+        <h1 id="ttl" class="text-base font-bold">Dashboard</h1>
+        <div id="sub" class="text-[11px] text-slate-500"></div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-s" onclick="expJson()">Export</button>
+        <button class="btn btn-s" onclick="impJson()">Import</button>
+        <button class="btn btn-d" onclick="wipe()">Reset</button>
+      </div>
+    </header>
+    <div id="body" class="p-5"></div>
+  </main>
+</div>
+
+<!-- ── MODAL ─────────────────────────────────────────────────── -->
+<div id="modal" class="hidden fixed inset-0 bg-black/40 z-50 overflow-y-auto p-6">
+  <div class="bg-white rounded-lg shadow-xl max-w-4xl mx-auto">
+    <div class="px-5 py-3 border-b border-slate-200 flex justify-between items-center">
+      <h2 id="mttl" class="font-bold"></h2>
+      <button class="text-slate-400 hover:text-slate-700 text-xl leading-none" onclick="closeM()">&times;</button>
+    </div>
+    <form id="mform" onsubmit="event.preventDefault();saveForm()">
+      <div id="mbody" class="p-5"></div>
+      <div class="px-5 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50 rounded-b-lg">
+        <button type="button" class="btn btn-s" onclick="closeM()">Cancel</button>
+        <button type="submit" class="btn btn-p">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   1. STORAGE — every collection is one array in localStorage
+   ════════════════════════════════════════════════════════════════ */
+const KEY = 'innovic_erp_sandbox_v1';
+let DB = {};
+
+function load(){ try{ DB = JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ DB = {}; } }
+function save(){ localStorage.setItem(KEY, JSON.stringify(DB)); }
+function all(c){ return (DB[c] || []).filter(r => !r._del); }
+function put(c, row){
+  DB[c] = DB[c] || [];
+  const i = DB[c].findIndex(r => r.id === row.id);
+  if (i >= 0) DB[c][i] = row; else DB[c].push(row);
+  save();
+}
+function del(c, id){
+  // Soft delete — Rule 8: the real ERP never hard-deletes either.
+  const r = (DB[c]||[]).find(x => x.id === id);
+  if (r){ r._del = new Date().toISOString(); save(); }
+}
+function byId(c, id){ return (DB[c]||[]).find(r => r.id === id); }
+function uid(){ return 'x' + Math.random().toString(36).slice(2, 10); }
+function today(){ return new Date().toISOString().slice(0, 10); }
+
+/** Next document number in a company series, e.g. IN-SO-00007. */
+function nextNo(c, prefix){
+  let max = 0;
+  (DB[c]||[]).forEach(r => {
+    const m = String(r.code||'').startsWith(prefix) && String(r.code).slice(prefix.length).match(/^(\d+)$/);
+    if (m) max = Math.max(max, +m[1]);
+  });
+  return prefix + String(max + 1).padStart(5, '0');
+}
+
+/* ── Stock is DERIVED, never stored. Same as v_item_stock. ── */
+function stockOf(itemId){
+  return all('store_transactions')
+    .filter(t => t.itemId === itemId)
+    .reduce((s, t) => s + (t.txnType === 'in' ? +t.qty : -(+t.qty)), 0);
+}
+function ledger(itemId, type, qty, src, ref, note){
+  if (!itemId || !qty) return;
+  const before = stockOf(itemId);
+  put('store_transactions', {
+    id: uid(), txnDate: today(), itemId, txnType: type, qty: +qty,
+    sourceType: src, sourceRef: ref, stockBefore: before,
+    stockAfter: type === 'in' ? before + (+qty) : before - (+qty),
+    remarks: note || '', _at: new Date().toISOString(),
+  });
+}
+function logAct(action, entity, detail){
+  put('activity_log', { id: uid(), _at: new Date().toISOString(),
+    ts: new Date().toLocaleString(), action, entity, detail, user: 'admin' });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   2. SCHEMA — every screen in the ERP
+      g=group  s=sub  f=fields  c=list columns  lf=line fields
+      field: k=key l=label t=type r=required o=options ref=collection
+   ════════════════════════════════════════════════════════════════ */
+const UOM = ['NOS','KG','MTR','LTR','SET','BOX'];
+const SOST = ['open','in_progress','closed','cancelled'];
+
+const M = {
+
+/* ─────────── PLANNING ─────────── */
+dashboard:      { g:'Planning', label:'Planning Dashboard', icon:'📊', view:vDash },
+so_planning:    { g:'Planning', label:'SO/JWSO Planning', icon:'📋', view:vPlanning },
+so_overview:    { g:'Planning', label:'SO Overview', icon:'📊', view:vSoOverview },
+so_status:      { g:'Planning', label:'SO Status Review', icon:'📊', view:vSoStatus },
+assemblies:     { g:'Planning', label:'Assembly Tracker', icon:'📦', view:vAssembly },
+plans:          { g:'Planning', label:'Plans', icon:'📋', seq:'IN-PLN-',
+  f:[ {k:'code',l:'Plan No.',ro:1},
+      {k:'soLineRef',l:'For (SO / JWSO)',t:'ref',ref:'sales_orders',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'planType',l:'Plan Type',t:'sel',o:['manufacture','direct_purchase','full_outsource'],r:1},
+      {k:'planQty',l:'Plan Qty',t:'n',r:1},
+      {k:'vendorId',l:'Vendor (buy / outsource)',t:'ref',ref:'vendors'},
+      {k:'status',l:'Status',t:'sel',o:['draft','jc_created','pr_created','done']},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  c:['code','soLineRef','itemId','planType','planQty','status'] },
+
+/* ─────────── SALES & CRM ─────────── */
+sales_orders:   { g:'Sales & CRM', s:'Entry', label:'SO Master', icon:'📋', seq:'IN-SO-',
+  f:[ {k:'code',l:'SO No.',ro:1},
+      {k:'soDate',l:'SO Date',t:'d',r:1},
+      {k:'clientId',l:'Client',t:'ref',ref:'clients',r:1},
+      {k:'clientPoNo',l:'Client PO No.'},
+      {k:'type',l:'SO Type',t:'sel',o:['component_manufacturing','equipment','with_material'],r:1},
+      {k:'bomMasterId',l:'BOM (equipment assembly)',t:'ref',ref:'bom_masters',
+       h:'Pick a BOM to make this an assembly order. Assembly Tracker then drives its stock.'},
+      {k:'gstPercent',l:'GST %',t:'n',dv:18},
+      {k:'status',l:'Status',t:'sel',o:SOST},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'partName',l:'Part Name',r:1},
+       {k:'uom',l:'UOM',t:'sel',o:UOM},
+       {k:'orderQty',l:'Qty',t:'n',r:1},
+       {k:'rate',l:'Rate',t:'n'},
+       {k:'dueDate',l:'Due Date',t:'d'} ],
+  c:['code','soDate','clientId','type','status','_lines','_value'] },
+
+job_work_orders:{ g:'Sales & CRM', s:'Entry', label:'JWSO Master', icon:'🔧', seq:'IN-JW-',
+  f:[ {k:'code',l:'JWSO No.',ro:1},
+      {k:'jwDate',l:'JW Date',t:'d',r:1},
+      {k:'clientId',l:'Client',t:'ref',ref:'clients',r:1},
+      {k:'clientPoNo',l:'Client PO No.'},
+      {k:'clientMaterial',l:'Client Material'},
+      {k:'status',l:'Status',t:'sel',o:SOST},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'partName',l:'Part Name',r:1},
+       {k:'orderQty',l:'Qty',t:'n',r:1},
+       {k:'rate',l:'Rate (labour)',t:'n'},
+       {k:'sourceBomMasterId',l:'Assembly BOM',t:'ref',ref:'bom_masters',
+        h:'Only machined / outsourced parts allowed — bought parts are rejected.'} ],
+  c:['code','jwDate','clientId','status','_lines'] },
+
+customer_dispatches:{ g:'Sales & CRM', s:'Entry', label:'Customer Dispatch', icon:'🚚', seq:'DSP-',
+  f:[ {k:'code',l:'Dispatch No.',ro:1},
+      {k:'dispatchDate',l:'Dispatch Date',t:'d',r:1},
+      {k:'salesOrderId',l:'Sales Order',t:'ref',ref:'sales_orders',r:1},
+      {k:'transport',l:'Transport'},
+      {k:'vehicleNo',l:'Vehicle No.'},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'qty',l:'Dispatch Qty',t:'n',r:1} ],
+  c:['code','dispatchDate','salesOrderId','_lines','_qty'],
+  after:(d)=>{ (d._lines||[]).forEach(l =>
+      ledger(l.itemId,'out',l.qty,'dispatch',d.code,'Customer dispatch')); } },
+
+so_documents:   { g:'Sales & CRM', s:'Entry', label:'SO Documents', icon:'📁',
+  f:[ {k:'salesOrderId',l:'Sales Order',t:'ref',ref:'sales_orders',r:1},
+      {k:'docType',l:'Document Type',t:'sel',o:['PO Copy','Drawing','Spec','Other'],r:1},
+      {k:'fileName',l:'File Name',r:1},
+      {k:'uploadedOn',l:'Uploaded On',t:'d'} ],
+  c:['salesOrderId','docType','fileName','uploadedOn'] },
+
+clients:        { g:'Sales & CRM', s:'Master', label:'Client Master', icon:'🏢', seq:'CL-',
+  f:[ {k:'code',l:'Client Code',ro:1},
+      {k:'name',l:'Client Name',r:1},
+      {k:'gstin',l:'GSTIN'}, {k:'contact',l:'Contact Person'},
+      {k:'phone',l:'Phone'}, {k:'email',l:'Email'},
+      {k:'address',l:'Address',t:'ta'} ],
+  c:['code','name','gstin','contact','phone'] },
+
+so_timeline:    { g:'Sales & CRM', s:'Report', label:'SO Timeline', icon:'📅', view:vTimeline },
+pending_so:     { g:'Sales & CRM', s:'Report', label:'Pending SO Value', icon:'💰', view:vPendingSo },
+leads:          { g:'Sales & CRM', s:'CRM', label:'Leads', icon:'🎯',
+  f:[ {k:'name',l:'Lead / Company',r:1}, {k:'contact',l:'Contact'},
+      {k:'phone',l:'Phone'}, {k:'source',l:'Source',t:'sel',o:['Referral','Website','Cold Call','Exhibition']},
+      {k:'stage',l:'Stage',t:'sel',o:['new','contacted','quoted','won','lost']},
+      {k:'value',l:'Est. Value',t:'n'}, {k:'notes',l:'Notes',t:'ta'} ],
+  c:['name','contact','source','stage','value'] },
+communications: { g:'Sales & CRM', s:'CRM', label:'Communications', icon:'💬',
+  f:[ {k:'date',l:'Date',t:'d',r:1}, {k:'clientId',l:'Client',t:'ref',ref:'clients'},
+      {k:'mode',l:'Mode',t:'sel',o:['Call','Email','Visit','WhatsApp']},
+      {k:'summary',l:'Summary',t:'ta',r:1} ],
+  c:['date','clientId','mode','summary'] },
+crm_reminders:  { g:'Sales & CRM', s:'CRM', label:'Reminders', icon:'⏰',
+  f:[ {k:'dueDate',l:'Due Date',t:'d',r:1}, {k:'clientId',l:'Client',t:'ref',ref:'clients'},
+      {k:'note',l:'Reminder',r:1}, {k:'done',l:'Done',t:'chk'} ],
+  c:['dueDate','clientId','note','done'] },
+
+/* ─────────── STORE ─────────── */
+goods_receipt_notes:{ g:'Store', s:'Entry', label:'GRN (Goods Receipt)', icon:'📥', seq:'IN-GRN-',
+  f:[ {k:'code',l:'GRN No.',ro:1}, {k:'grnDate',l:'GRN Date',t:'d',r:1},
+      {k:'vendorId',l:'Vendor',t:'ref',ref:'vendors',r:1},
+      {k:'purchaseOrderId',l:'Against PO',t:'ref',ref:'purchase_orders'},
+      {k:'invoiceNo',l:'Vendor Invoice No.'}, {k:'remarks',l:'Remarks',t:'ta'} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'receivedQty',l:'Received',t:'n',r:1},
+       {k:'qcAcceptedQty',l:'QC Accepted',t:'n',h:'Only accepted qty credits stock'},
+       {k:'qcRejectedQty',l:'QC Rejected',t:'n'},
+       {k:'rate',l:'Rate',t:'n'} ],
+  c:['code','grnDate','vendorId','_lines','_acc'],
+  after:(d)=>{ (d._lines||[]).forEach(l =>
+      ledger(l.itemId,'in',l.qcAcceptedQty,'grn_qc',d.code,'GRN QC accepted')); } },
+
+store_issues:   { g:'Store', s:'Entry', label:'Item Issue Register', icon:'📋', seq:'ISS-',
+  f:[ {k:'code',l:'Issue No.',ro:1}, {k:'issueDate',l:'Issue Date',t:'d',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'qty',l:'Qty Issued',t:'n',r:1},
+      {k:'issuedTo',l:'Issued To'},
+      {k:'jobCardId',l:'Against Job Card',t:'ref',ref:'job_cards'},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  c:['code','issueDate','itemId','qty','issuedTo'],
+  after:(d)=> ledger(d.itemId,'out',d.qty,'manual_adjust',d.code,'Store issue') },
+
+tool_issues:    { g:'Store', s:'Entry', label:'Tool Issue Register', icon:'🔧', seq:'TL-',
+  f:[ {k:'code',l:'Tool Issue No.',ro:1}, {k:'issueDate',l:'Date',t:'d',r:1},
+      {k:'toolName',l:'Tool',r:1}, {k:'qty',l:'Qty',t:'n',r:1},
+      {k:'operatorId',l:'Issued To',t:'ref',ref:'operators'},
+      {k:'returned',l:'Returned',t:'chk'} ],
+  c:['code','issueDate','toolName','qty','operatorId','returned'] },
+
+party_grn:      { g:'Store', s:'Entry', label:'Party Material GRN', icon:'📥', seq:'PM-',
+  f:[ {k:'code',l:'Party GRN No.',ro:1}, {k:'date',l:'Date',t:'d',r:1},
+      {k:'clientId',l:'Client (owner)',t:'ref',ref:'clients',r:1},
+      {k:'jobWorkOrderId',l:'Against JWSO',t:'ref',ref:'job_work_orders'},
+      {k:'material',l:'Material',r:1}, {k:'receivedQty',l:'Received Qty',t:'n',r:1} ],
+  c:['code','date','clientId','material','receivedQty'] },
+
+party_material_issues:{ g:'Store', s:'Entry', label:'Party Material Issue', icon:'📤', seq:'PMI-',
+  f:[ {k:'code',l:'Issue No.',ro:1}, {k:'date',l:'Date',t:'d',r:1},
+      {k:'partyGrnId',l:'From Party GRN',t:'ref',ref:'party_grn',r:1},
+      {k:'jobCardId',l:'To Job Card',t:'ref',ref:'job_cards',r:1},
+      {k:'issuedQty',l:'Issued Qty',t:'n',r:1} ],
+  c:['code','date','partyGrnId','jobCardId','issuedQty'] },
+
+jw_returns:     { g:'Store', s:'Entry', label:'JW Dispatch (Return Challan)', icon:'📦', seq:'IN-JWRC-',
+  f:[ {k:'code',l:'Challan No.',ro:1}, {k:'returnDate',l:'Return Date',t:'d',r:1},
+      {k:'jobWorkOrderId',l:'JWSO',t:'ref',ref:'job_work_orders',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'qty',l:'Return Qty',t:'n',r:1},
+      {k:'transport',l:'Transport'}, {k:'vehicleNo',l:'Vehicle No.'} ],
+  c:['code','returnDate','jobWorkOrderId','itemId','qty'],
+  after:(d)=> ledger(d.itemId,'out',d.qty,'jw_return',d.code,'JW return to client') },
+
+jw_invoices:    { g:'Store', s:'Entry', label:'JW Invoice (Labour)', icon:'🧾', seq:'IN-JWINV-',
+  f:[ {k:'code',l:'Invoice No.',ro:1}, {k:'invDate',l:'Date',t:'d',r:1},
+      {k:'jobWorkOrderId',l:'JWSO',t:'ref',ref:'job_work_orders',r:1},
+      {k:'qty',l:'Billed Qty',t:'n',r:1}, {k:'rate',l:'Labour Rate',t:'n',r:1},
+      {k:'gstPercent',l:'GST %',t:'n',dv:18} ],
+  c:['code','invDate','jobWorkOrderId','qty','rate','_amt'] },
+
+items:          { g:'Store', s:'Master', label:'Item Master', icon:'◉', seq:'ITM-',
+  f:[ {k:'code',l:'Item Code',r:1}, {k:'name',l:'Item Name',r:1},
+      {k:'revision',l:'Revision',dv:'A'},
+      {k:'uom',l:'UOM',t:'sel',o:UOM,r:1},
+      {k:'itemType',l:'Item Type',t:'sel',o:['component','raw_material','consumable','tool','assembly'],r:1},
+      {k:'material',l:'Material'}, {k:'drawingNo',l:'Drawing No.'},
+      {k:'rate',l:'Standard Rate',t:'n'}, {k:'reorderLevel',l:'Reorder Level',t:'n'} ],
+  c:['code','name','uom','itemType','_stock'] },
+
+party_materials:{ g:'Store', s:'Master', label:'Party Material Master', icon:'🏭',
+  f:[ {k:'clientId',l:'Client',t:'ref',ref:'clients',r:1},
+      {k:'material',l:'Material',r:1}, {k:'grade',l:'Grade'}, {k:'uom',l:'UOM',t:'sel',o:UOM} ],
+  c:['clientId','material','grade','uom'] },
+
+store_inventory:{ g:'Store', s:'Report', label:'Store / Inventory', icon:'📦', view:vInventory },
+osp_wip:        { g:'Store', s:'Report', label:'OSP At-Vendor Register', icon:'🚚', view:vOspWip },
+store_transactions:{ g:'Store', s:'Report', label:'Stock Ledger', icon:'📖', view:vLedger },
+
+/* ─────────── PRODUCTION ─────────── */
+op_entry:       { g:'Production', s:'Entry', label:'Op Entry', icon:'✚', view:vOpEntry },
+op_log:         { g:'Production', s:'Entry', label:'Operation Log', icon:'📝',
+  f:[ {k:'jcOpId',l:'Job Card Operation',t:'ref',ref:'jc_ops',r:1},
+      {k:'logType',l:'Log Type',t:'sel',o:['start','complete','qc'],r:1,
+       h:'A "qc" log on the LAST operation credits finished stock.'},
+      {k:'logDate',l:'Date',t:'d',r:1},
+      {k:'shift',l:'Shift',t:'sel',o:['day','night','general']},
+      {k:'qty',l:'Qty',t:'n',r:1},
+      {k:'rejectQty',l:'Reject Qty',t:'n'},
+      {k:'operatorId',l:'Operator',t:'ref',ref:'operators'},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  c:['logDate','jcOpId','logType','qty','rejectQty','operatorId'],
+  after:(d)=>{
+    if (d.logType !== 'qc' || !(+d.qty)) return;
+    const op = byId('jc_ops', d.jcOpId); if (!op) return;
+    const jc = byId('job_cards', op.jobCardId); if (!jc) return;
+    // Only the LAST operation of the job card credits finished stock.
+    const seqs = all('jc_ops').filter(o => o.jobCardId === jc.id).map(o => +o.opSeq || 0);
+    if (Math.max(...seqs, 0) !== (+op.opSeq || 0)) return;
+    ledger(jc.itemId, 'in', d.qty, 'qc_accept', jc.code, 'Final QC accepted');
+  } },
+daily_report:   { g:'Production', s:'Entry', label:'Daily Report', icon:'📊', view:vDaily },
+
+job_cards:      { g:'Production', s:'Master', label:'Job Cards', icon:'▭', seq:'IN-JC-',
+  f:[ {k:'code',l:'JC No.',ro:1}, {k:'jcDate',l:'JC Date',t:'d',r:1},
+      {k:'itemId',l:'Item to make',t:'ref',ref:'items',r:1},
+      {k:'orderQty',l:'Order Qty',t:'n',r:1},
+      {k:'sourceSoId',l:'Against SO',t:'ref',ref:'sales_orders'},
+      {k:'sourceJwId',l:'Against JWSO',t:'ref',ref:'job_work_orders'},
+      {k:'priority',l:'Priority',t:'sel',o:['low','normal','high','urgent']},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  c:['code','jcDate','itemId','orderQty','sourceSoId','_done'] },
+
+jc_ops:         { g:'Production', s:'Entry', label:'JC Operations', icon:'⨯',
+  f:[ {k:'jobCardId',l:'Job Card',t:'ref',ref:'job_cards',r:1},
+      {k:'opSeq',l:'Op Sequence',t:'n',r:1,h:'Highest sequence = final op = the one that credits stock'},
+      {k:'operation',l:'Operation',r:1},
+      {k:'opType',l:'Type',t:'sel',o:['process','qc','outsource'],r:1},
+      {k:'machineId',l:'Machine',t:'ref',ref:'machines'},
+      {k:'qcRequired',l:'QC Required',t:'chk'},
+      {k:'vendorId',l:'Outsource Vendor',t:'ref',ref:'vendors'} ],
+  c:['jobCardId','opSeq','operation','opType','machineId','_opdone'] },
+
+machines:       { g:'Production', s:'Master', label:'Machine Master', icon:'⚙', seq:'MC-',
+  f:[ {k:'code',l:'Machine Code',r:1}, {k:'name',l:'Machine Name',r:1},
+      {k:'machineType',l:'Type',t:'sel',o:['CNC','VMC','Lathe','Milling','Grinding','Drilling','Other']},
+      {k:'hourlyRate',l:'Hourly Rate',t:'n'},
+      {k:'status',l:'Status',t:'sel',o:['available','running','maintenance','idle']} ],
+  c:['code','name','machineType','hourlyRate','status'] },
+
+operators:      { g:'Production', s:'Master', label:'Operator Master', icon:'👷', seq:'OP-',
+  f:[ {k:'code',l:'Operator Code',r:1}, {k:'name',l:'Operator Name',r:1},
+      {k:'skill',l:'Skill',t:'sel',o:['Trainee','Operator','Senior','Supervisor']},
+      {k:'shift',l:'Shift',t:'sel',o:['day','night','general']},
+      {k:'phone',l:'Phone'} ],
+  c:['code','name','skill','shift','phone'] },
+
+prod_dashboard: { g:'Production', s:'Report', label:'Production Dashboard', icon:'📊', view:vProdDash },
+shop_floor:     { g:'Production', s:'Report', label:'Shop Floor', icon:'🏭', view:vShopFloor },
+job_queue:      { g:'Production', s:'Report', label:'Job Queue', icon:'⬛', view:vJobQueue },
+machine_loading:{ g:'Production', s:'Report', label:'Machine Loading', icon:'▣', view:vMachineLoad },
+prod_so_list:   { g:'Production', s:'Report', label:'SO List (production)', icon:'📋', view:vProdSo },
+prod_jw_list:   { g:'Production', s:'Report', label:'JWSO List (production)', icon:'📋', view:vProdJw },
+
+/* ─────────── DESIGN ─────────── */
+bom_masters:    { g:'Design', label:'BOM Master', icon:'📦', seq:'BOM-',
+  f:[ {k:'code',l:'BOM No.',ro:1}, {k:'bomName',l:'BOM Name',r:1},
+      {k:'parentItemId',l:'Parent Item (what it builds)',t:'ref',ref:'items',r:1,
+       h:'Required. Without it, assembling can credit nothing.'},
+      {k:'revision',l:'Revision',t:'n',dv:1},
+      {k:'status',l:'Status',t:'sel',o:['draft','active','obsolete'],dv:'active'} ],
+  lf:[ {k:'childItemId',l:'Child Item',t:'ref',ref:'items',r:1},
+       {k:'qtyPerSet',l:'Qty / Set',t:'n',r:1,dv:1},
+       {k:'bomType',l:'Type',t:'sel',o:['manufacture','purchase','outsource'],r:1} ],
+  c:['code','bomName','parentItemId','status','_lines'] },
+
+design_projects:{ g:'Design', label:'Design Projects', icon:'📋', seq:'DP-',
+  f:[ {k:'code',l:'Project No.',ro:1}, {k:'name',l:'Project Name',r:1},
+      {k:'clientId',l:'Client',t:'ref',ref:'clients'},
+      {k:'startDate',l:'Start',t:'d'}, {k:'targetDate',l:'Target',t:'d'},
+      {k:'status',l:'Status',t:'sel',o:['planned','in_progress','review','done','hold']} ],
+  c:['code','name','clientId','targetDate','status'] },
+design_issues:  { g:'Design', label:'Design Issues', icon:'⚠',
+  f:[ {k:'projectId',l:'Project',t:'ref',ref:'design_projects',r:1},
+      {k:'title',l:'Issue',r:1},
+      {k:'severity',l:'Severity',t:'sel',o:['low','medium','high','critical']},
+      {k:'status',l:'Status',t:'sel',o:['open','fixed','closed']},
+      {k:'detail',l:'Detail',t:'ta'} ],
+  c:['projectId','title','severity','status'] },
+design_work_log:{ g:'Design', label:'Daily Work Log', icon:'⏱',
+  f:[ {k:'date',l:'Date',t:'d',r:1},
+      {k:'projectId',l:'Project',t:'ref',ref:'design_projects',r:1},
+      {k:'person',l:'Designer'}, {k:'hours',l:'Hours',t:'n',r:1},
+      {k:'work',l:'Work Done',t:'ta'} ],
+  c:['date','projectId','person','hours','work'] },
+route_cards:    { g:'Design', label:'Route Cards', icon:'🗒', seq:'RC-',
+  f:[ {k:'code',l:'Route Card No.',ro:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'revision',l:'Revision',dv:'A'} ],
+  lf:[ {k:'opSeq',l:'Seq',t:'n',r:1}, {k:'operation',l:'Operation',r:1},
+       {k:'opType',l:'Type',t:'sel',o:['process','qc','outsource']},
+       {k:'machineId',l:'Machine',t:'ref',ref:'machines'},
+       {k:'cycleTimeMin',l:'Cycle (min)',t:'n'} ],
+  c:['code','itemId','revision','_lines'] },
+
+/* ─────────── QUALITY ─────────── */
+qc_call_register:{ g:'Quality', s:'Entry', label:'QC Call Register', icon:'📋',
+  f:[ {k:'date',l:'Date',t:'d',r:1}, {k:'jobCardId',l:'Job Card',t:'ref',ref:'job_cards',r:1},
+      {k:'calledBy',l:'Called By'}, {k:'stage',l:'Stage',t:'sel',o:['in_process','final','first_piece']},
+      {k:'status',l:'Status',t:'sel',o:['pending','done']} ],
+  c:['date','jobCardId','stage','status'] },
+incoming_qc:    { g:'Quality', s:'Entry', label:'Incoming QC', icon:'🔬',
+  f:[ {k:'date',l:'Date',t:'d',r:1}, {k:'grnId',l:'GRN',t:'ref',ref:'goods_receipt_notes',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'checkedQty',l:'Checked',t:'n'}, {k:'acceptedQty',l:'Accepted',t:'n'},
+      {k:'rejectedQty',l:'Rejected',t:'n'}, {k:'inspector',l:'Inspector'} ],
+  c:['date','grnId','itemId','checkedQty','acceptedQty','rejectedQty'] },
+tpi:            { g:'Quality', s:'Entry', label:'TPI Inspection', icon:'🔍',
+  f:[ {k:'date',l:'Date',t:'d',r:1}, {k:'jobCardId',l:'Job Card',t:'ref',ref:'job_cards'},
+      {k:'inspector',l:'TPI Inspector',r:1}, {k:'organization',l:'Organization'},
+      {k:'certNo',l:'Certificate No.'}, {k:'result',l:'Result',t:'sel',o:['pass','fail','conditional']} ],
+  c:['date','jobCardId','inspector','organization','result'] },
+qc_documents:   { g:'Quality', s:'Entry', label:'QC Documents', icon:'🗃',
+  f:[ {k:'jobCardId',l:'Job Card',t:'ref',ref:'job_cards'},
+      {k:'docType',l:'Doc Type',t:'sel',o:['Inspection Report','Material Cert','Calibration','Other']},
+      {k:'fileName',l:'File Name',r:1}, {k:'date',l:'Date',t:'d'} ],
+  c:['jobCardId','docType','fileName','date'] },
+nc_register:    { g:'Quality', s:'Entry', label:'NC Register', icon:'⚠️', seq:'NC-',
+  f:[ {k:'code',l:'NC No.',ro:1}, {k:'date',l:'Date',t:'d',r:1},
+      {k:'jobCardId',l:'Job Card',t:'ref',ref:'job_cards'},
+      {k:'itemId',l:'Item',t:'ref',ref:'items'},
+      {k:'qty',l:'NC Qty',t:'n'},
+      {k:'reason',l:'Reason Category',t:'sel',o:['dimensional','material','process','handling','vendor','other']},
+      {k:'disposition',l:'Disposition',t:'sel',o:['rework','scrap','use_as_is','return_to_vendor']},
+      {k:'status',l:'Status',t:'sel',o:['open','closed']},
+      {k:'detail',l:'Detail',t:'ta'} ],
+  c:['code','date','jobCardId','qty','reason','disposition','status'] },
+capa:           { g:'Quality', s:'Entry', label:'CAPA', icon:'🛡', seq:'CAPA-',
+  f:[ {k:'code',l:'CAPA No.',ro:1}, {k:'ncId',l:'Against NC',t:'ref',ref:'nc_register'},
+      {k:'rootCause',l:'Root Cause',t:'ta'},
+      {k:'correctiveAction',l:'Corrective Action',t:'ta'},
+      {k:'preventiveAction',l:'Preventive Action',t:'ta'},
+      {k:'owner',l:'Owner'}, {k:'targetDate',l:'Target Date',t:'d'},
+      {k:'status',l:'Status',t:'sel',o:['open','in_progress','verified','closed']} ],
+  c:['code','ncId','owner','targetDate','status'] },
+qc_processes:   { g:'Quality', s:'Master', label:'QC Process Master', icon:'⚙',
+  f:[ {k:'name',l:'QC Process',r:1}, {k:'stage',l:'Stage',t:'sel',o:['incoming','in_process','final','pre_dispatch']},
+      {k:'method',l:'Method'}, {k:'acceptance',l:'Acceptance Criteria',t:'ta'} ],
+  c:['name','stage','method'] },
+so_qc_status:   { g:'Quality', s:'Report', label:'SO QC Status', icon:'📋', view:vSoQc },
+qc_dashboard:   { g:'Quality', s:'Report', label:'QC Command Center', icon:'🔬', view:vQcDash },
+
+/* ─────────── PURCHASE ─────────── */
+purchase_requests:{ g:'Purchase', s:'Entry', label:'Purchase Requests', icon:'📄', seq:'IN-PR-',
+  f:[ {k:'code',l:'PR No.',ro:1}, {k:'prDate',l:'PR Date',t:'d',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'qty',l:'Qty',t:'n',r:1},
+      {k:'vendorId',l:'Suggested Vendor',t:'ref',ref:'vendors'},
+      {k:'prType',l:'PR Type',t:'sel',o:['material','jw_osp','service','tool']},
+      {k:'requiredDate',l:'Required By',t:'d'},
+      {k:'status',l:'Status',t:'sel',o:['open','po_created','closed','cancelled']},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  c:['code','prDate','itemId','qty','vendorId','status'] },
+
+purchase_orders:{ g:'Purchase', s:'Entry', label:'Purchase Orders', icon:'📋', seq:'IN-PO-',
+  f:[ {k:'code',l:'PO No.',ro:1}, {k:'poDate',l:'PO Date',t:'d',r:1},
+      {k:'vendorId',l:'Vendor',t:'ref',ref:'vendors',r:1},
+      {k:'poType',l:'PO Type',t:'sel',o:['standard','job_work','service'],r:1},
+      {k:'gstPercent',l:'GST %',t:'n',dv:18},
+      {k:'deliveryDate',l:'Delivery Date',t:'d'},
+      {k:'status',l:'Status',t:'sel',o:['open','partial','received','closed','cancelled']},
+      {k:'remarks',l:'Remarks',t:'ta'} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'qty',l:'Qty',t:'n',r:1}, {k:'rate',l:'Rate',t:'n',r:1} ],
+  c:['code','poDate','vendorId','poType','status','_lines','_value'] },
+
+outsource_jobs: { g:'Purchase', s:'Entry', label:'Outsource Jobs', icon:'📦',
+  f:[ {k:'jcOpId',l:'Job Card Operation',t:'ref',ref:'jc_ops',r:1},
+      {k:'vendorId',l:'Vendor',t:'ref',ref:'vendors',r:1},
+      {k:'sentQty',l:'Sent Qty',t:'n'}, {k:'returnedQty',l:'Returned Qty',t:'n'},
+      {k:'rate',l:'Rate',t:'n'},
+      {k:'status',l:'Status',t:'sel',o:['pr_raised','po_raised','sent','returned','closed']} ],
+  c:['jcOpId','vendorId','sentQty','returnedQty','status'] },
+
+delivery_challans:{ g:'Purchase', s:'Entry', label:'OSP Outward DC', icon:'🚛', seq:'IN-DC-',
+  f:[ {k:'code',l:'DC No.',ro:1}, {k:'dcDate',l:'DC Date',t:'d',r:1},
+      {k:'vendorId',l:'Vendor',t:'ref',ref:'vendors',r:1},
+      {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+      {k:'qty',l:'Qty Sent',t:'n',r:1},
+      {k:'status',l:'Status',t:'sel',o:['sent','partial','received']} ],
+  c:['code','dcDate','vendorId','itemId','qty','status'] },
+
+service_pos:    { g:'Purchase', s:'Entry', label:'Service PO', icon:'💳', seq:'SPO-',
+  f:[ {k:'code',l:'Service PO No.',ro:1}, {k:'date',l:'Date',t:'d',r:1},
+      {k:'vendorId',l:'Vendor',t:'ref',ref:'vendors',r:1},
+      {k:'service',l:'Service',r:1}, {k:'amount',l:'Amount',t:'n',r:1},
+      {k:'status',l:'Status',t:'sel',o:['open','completed','paid']} ],
+  c:['code','date','vendorId','service','amount','status'] },
+
+vendors:        { g:'Purchase', s:'Master', label:'Vendor Master', icon:'🚚', seq:'VN-',
+  f:[ {k:'code',l:'Vendor Code',ro:1}, {k:'name',l:'Vendor Name',r:1},
+      {k:'gstin',l:'GSTIN'}, {k:'vendorType',l:'Type',t:'sel',o:['material','job_work','service','tool']},
+      {k:'contact',l:'Contact'}, {k:'phone',l:'Phone'}, {k:'email',l:'Email'},
+      {k:'address',l:'Address',t:'ta'} ],
+  c:['code','name','vendorType','gstin','phone'] },
+
+sc_dashboard:   { g:'Purchase', s:'Report', label:'Supply Chain Dashboard', icon:'🔗', view:vScDash },
+
+/* ─────────── TASKS & ALERTS ─────────── */
+tasks:          { g:'Tasks & Alerts', label:'Task Board', icon:'📋',
+  f:[ {k:'title',l:'Task',r:1}, {k:'assignee',l:'Assigned To'},
+      {k:'dueDate',l:'Due Date',t:'d'},
+      {k:'priority',l:'Priority',t:'sel',o:['low','normal','high','urgent']},
+      {k:'status',l:'Status',t:'sel',o:['todo','in_progress','blocked','done']},
+      {k:'detail',l:'Detail',t:'ta'} ],
+  c:['title','assignee','dueDate','priority','status'] },
+daily_task_reports:{ g:'Tasks & Alerts', label:'Daily Task Reports', icon:'📝',
+  f:[ {k:'date',l:'Date',t:'d',r:1}, {k:'person',l:'Person',r:1},
+      {k:'summary',l:'What was done',t:'ta',r:1}, {k:'hours',l:'Hours',t:'n'} ],
+  c:['date','person','hours','summary'] },
+alerts:         { g:'Tasks & Alerts', label:'Alerts', icon:'🔔', view:vAlerts },
+activity_log:   { g:'Tasks & Alerts', label:'Activity Log', icon:'📜', view:vActivity },
+
+/* ─────────── FINANCE ─────────── */
+invoices:       { g:'Finance', s:'Entry', label:'Invoices', icon:'📄', seq:'IN-INV-',
+  f:[ {k:'code',l:'Invoice No.',ro:1}, {k:'invDate',l:'Invoice Date',t:'d',r:1},
+      {k:'clientId',l:'Client',t:'ref',ref:'clients',r:1},
+      {k:'salesOrderId',l:'Against SO',t:'ref',ref:'sales_orders'},
+      {k:'dispatchId',l:'Against Dispatch',t:'ref',ref:'customer_dispatches',
+       h:'You can only bill what was dispatched.'},
+      {k:'gstPercent',l:'GST %',t:'n',dv:18},
+      {k:'status',l:'Status',t:'sel',o:['draft','issued','paid','cancelled']} ],
+  lf:[ {k:'itemId',l:'Item',t:'ref',ref:'items',r:1},
+       {k:'qty',l:'Qty',t:'n',r:1}, {k:'rate',l:'Rate',t:'n',r:1} ],
+  c:['code','invDate','clientId','status','_lines','_value'] },
+cost_centers:   { g:'Finance', s:'Master', label:'Cost Center Master', icon:'🏢',
+  f:[ {k:'code',l:'Code',r:1}, {k:'name',l:'Cost Center',r:1},
+      {k:'head',l:'Head'}, {k:'budget',l:'Budget',t:'n'} ],
+  c:['code','name','head','budget'] },
+so_costing:     { g:'Finance', s:'Report', label:'SO Costing', icon:'💰', view:vSoCosting },
+stock_valuation:{ g:'Finance', s:'Report', label:'Stock Valuation', icon:'📦', view:vStockVal },
+
+/* ─────────── REPORTS ─────────── */
+reports:        { g:'Reports', label:'Reports', icon:'📊', view:vReports },
+stuck_dashboard:{ g:'Reports', label:'Stuck Dashboard', icon:'⚠', view:vStuck },
+so_cycle_time:  { g:'Reports', label:'SO Cycle Time', icon:'⏱', view:vCycle },
+
+/* ─────────── CONFIG ─────────── */
+users:          { g:'Config', label:'Users', icon:'👤',
+  f:[ {k:'name',l:'Name',r:1}, {k:'email',l:'Email',r:1},
+      {k:'role',l:'Role',t:'sel',o:['admin','manager','operator','qc','procurement','dispatch','design','viewer'],r:1},
+      {k:'isActive',l:'Active',t:'chk'} ],
+  c:['name','email','role','isActive'] },
+print_templates:{ g:'Config', label:'Print Templates', icon:'🖨',
+  f:[ {k:'name',l:'Template',r:1},
+      {k:'docType',l:'Document',t:'sel',o:['SO','JWSO','PO','GRN','DC','Invoice','Job Card']},
+      {k:'header',l:'Header Text',t:'ta'}, {k:'footer',l:'Footer Text',t:'ta'} ],
+  c:['name','docType'] },
+alert_config:   { g:'Config', label:'Alert Config', icon:'⚙',
+  f:[ {k:'code',l:'Alert Code',r:1}, {k:'name',l:'Alert',r:1},
+      {k:'active',l:'Active',t:'chk'},
+      {k:'threshold',l:'Threshold',t:'n'} ],
+  c:['code','name','active','threshold'] },
+};
+
+/* ════════════════════════════════════════════════════════════════
+   3. HELPERS
+   ════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inr = n => '₹' + (+n || 0).toLocaleString('en-IN', {maximumFractionDigits:2});
+
+/** Human label for a row of any collection — code + name if both exist. */
+function labelOf(coll, id){
+  const r = byId(coll, id); if (!r) return '—';
+  const a = r.code || r.bomNo || '', b = r.name || r.bomName || r.partName || r.title || r.material || '';
+  return (a && b) ? `${a} — ${b}` : (a || b || id.slice(0,6));
+}
+function pill(v){
+  const s = String(v||'').toLowerCase();
+  const m = { open:'bg-sky-100 text-sky-800', draft:'bg-slate-100 text-slate-700',
+    active:'bg-emerald-100 text-emerald-800', in_progress:'bg-amber-100 text-amber-800',
+    closed:'bg-slate-200 text-slate-700', done:'bg-emerald-100 text-emerald-800',
+    cancelled:'bg-rose-100 text-rose-800', pending:'bg-amber-100 text-amber-800',
+    high:'bg-orange-100 text-orange-800', urgent:'bg-rose-100 text-rose-800',
+    critical:'bg-rose-100 text-rose-800', paid:'bg-emerald-100 text-emerald-800' };
+  return `<span class="pill ${m[s] || 'bg-slate-100 text-slate-700'}">${esc(v)}</span>`;
+}
+function card(label, value, tone){
+  return `<div class="bg-white border border-slate-200 rounded-lg p-3">
+    <div class="text-[10px] uppercase tracking-wide text-slate-500 font-bold">${esc(label)}</div>
+    <div class="text-2xl font-bold ${tone||''}">${value}</div></div>`;
+}
+function empty(msg){
+  return `<div class="text-center text-slate-400 py-12 border border-dashed border-slate-300 rounded-lg">${esc(msg)}</div>`;
+}
+function tbl(heads, rows){
+  if (!rows.length) return empty('No data yet.');
+  return `<div class="bg-white border border-slate-200 rounded-lg scroll"><table>
+    <thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+/* ── Derived values used as list columns (the _ prefixed ones) ── */
+function derive(key, row, mod){
+  switch(key){
+    case '_stock':  return `<b class="${stockOf(row.id)>0?'text-emerald-700':'text-slate-400'}">${stockOf(row.id)}</b>`;
+    case '_lines':  return (row._lines||[]).length;
+    case '_qty':    return (row._lines||[]).reduce((s,l)=>s+(+l.qty||0),0);
+    case '_acc':    return (row._lines||[]).reduce((s,l)=>s+(+l.qcAcceptedQty||0),0);
+    case '_value':  return inr((row._lines||[]).reduce((s,l)=>s+(+l.qty||+l.orderQty||0)*(+l.rate||0),0));
+    case '_amt':    return inr((+row.qty||0)*(+row.rate||0));
+    case '_done':   return jcDone(row.id);
+    case '_opdone': return opDone(row.id);
+    default: return '';
+  }
+}
+/** Finished qty of a job card = QC-accepted on its last operation. */
+function jcDone(jcId){
+  const ops = all('jc_ops').filter(o => o.jobCardId === jcId);
+  if (!ops.length) return 0;
+  const last = ops.reduce((a,b) => (+b.opSeq||0) > (+a.opSeq||0) ? b : a);
+  return opDone(last.id);
+}
+function opDone(opId){
+  return all('op_log').filter(l => l.jcOpId === opId && l.logType === 'qc')
+                      .reduce((s,l) => s + (+l.qty||0), 0);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   4. NAVIGATION
+   ════════════════════════════════════════════════════════════════ */
+let cur = 'dashboard';
+
+function buildNav(){
+  const groups = {};
+  Object.entries(M).forEach(([k, m]) => {
+    groups[m.g] = groups[m.g] || {};
+    const s = m.s || '_';
+    (groups[m.g][s] = groups[m.g][s] || []).push([k, m]);
+  });
+  $('nav').innerHTML = Object.entries(groups).map(([g, subs]) => `
+    <div class="grp">${esc(g)}</div>
+    ${Object.entries(subs).map(([s, list]) => `
+      ${s !== '_' ? `<div class="sub">${esc(s)}</div>` : ''}
+      ${list.map(([k, m]) => `<a href="#${k}" class="${k===cur?'on':''}">${m.icon} ${esc(m.label)}</a>`).join('')}
+    `).join('')}`).join('');
+}
+
+function go(){
+  cur = (location.hash || '#dashboard').slice(1);
+  if (!M[cur]) cur = 'dashboard';
+  const m = M[cur];
+  $('ttl').textContent = m.label;
+  $('sub').textContent = m.s ? `${m.g} › ${m.s}` : m.g;
+  buildNav();
+  $('body').innerHTML = m.view ? m.view() : listView(cur, m);
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange', go);
+
+/* ════════════════════════════════════════════════════════════════
+   5. GENERIC LIST + FORM
+   ════════════════════════════════════════════════════════════════ */
+let search = '';
+
+function listView(key, m){
+  const rows = all(key).slice().reverse();
+  const q = search.toLowerCase();
+  const shown = q ? rows.filter(r => JSON.stringify(r).toLowerCase().includes(q)) : rows;
+  const cols = m.c || m.f.slice(0,5).map(f => f.k);
+
+  const head = cols.map(c => {
+    const f = (m.f||[]).find(x => x.k === c);
+    return f ? f.l : c.replace(/^_/, '').toUpperCase();
+  });
+
+  const body = shown.map(r => {
+    const cells = cols.map(c => {
+      if (c.startsWith('_')) return derive(c, r, m);
+      const f = (m.f||[]).find(x => x.k === c);
+      let v = r[c];
+      if (f && f.t === 'ref') return esc(labelOf(f.ref, v));
+      if (f && f.t === 'chk') return v ? '✔' : '—';
+      if (c === 'status' || c === 'priority' || c === 'severity' || c === 'stage') return v ? pill(v) : '—';
+      if (c === 'code') return `<b class="mono">${esc(v)}</b>`;
+      if (f && f.t === 'n') return esc(v ?? '');
+      return esc(v ?? '—');
+    });
+    cells.push(`<button class="btn btn-s" onclick="openM('${key}','${r.id}')">Edit</button>
+                <button class="btn btn-d" onclick="rm('${key}','${r.id}')">Del</button>`);
+    return cells;
+  });
+
+  return `
+    <div class="flex justify-between items-center mb-3 gap-3">
+      <input class="inp max-w-xs" placeholder="🔍 Search…" value="${esc(search)}"
+             oninput="search=this.value; $('body').innerHTML = listView('${key}', M['${key}'])">
+      <div class="flex gap-2 items-center">
+        <span class="text-xs text-slate-500">${shown.length} record${shown.length===1?'':'s'}</span>
+        <button class="btn btn-p" onclick="openM('${key}')">+ New</button>
+      </div>
+    </div>
+    ${tbl([...head, 'Actions'], body)}`;
+}
+
+/* ── Modal form ── */
+let mKey = null, mId = null, mLines = [];
+
+function openM(key, id){
+  mKey = key; mId = id || null;
+  const m = M[key];
+  const row = id ? byId(key, id) : {};
+  mLines = id ? JSON.parse(JSON.stringify(row._lines || [])) : [];
+  $('mttl').textContent = (id ? 'Edit ' : 'New ') + m.label;
+  $('mbody').innerHTML = `
+    <div class="grid grid-cols-3 gap-3">
+      ${m.f.map(f => fieldHtml(f, row, key)).join('')}
+    </div>
+    ${m.lf ? linesHtml(m) : ''}`;
+  $('modal').classList.remove('hidden');
+}
+function closeM(){ $('modal').classList.add('hidden'); mKey = null; mId = null; mLines = []; }
+
+function fieldHtml(f, row, key){
+  const v = row[f.k] ?? f.dv ?? '';
+  const req = f.r ? '<span class="text-rose-600">★</span>' : '';
+  const hint = f.h ? `<div class="text-[10.5px] text-slate-500 mt-1">${esc(f.h)}</div>` : '';
+  let inp;
+  if (f.ro){
+    const shown = v || (M[key].seq ? nextNo(key, M[key].seq) : '');
+    inp = `<input class="inp bg-slate-100 mono" name="${f.k}" value="${esc(shown)}" readonly>`;
+  } else if (f.t === 'ref'){
+    const opts = all(f.ref).map(r =>
+      `<option value="${r.id}" ${r.id===v?'selected':''}>${esc(labelOf(f.ref, r.id))}</option>`).join('');
+    inp = `<select class="inp" name="${f.k}" ${f.r?'required':''}><option value="">— select —</option>${opts}</select>`;
+  } else if (f.t === 'sel'){
+    inp = `<select class="inp" name="${f.k}" ${f.r?'required':''}><option value="">— select —</option>
+      ${f.o.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  } else if (f.t === 'ta'){
+    inp = `<textarea class="inp" name="${f.k}" rows="2">${esc(v)}</textarea>`;
+  } else if (f.t === 'chk'){
+    inp = `<label class="flex items-center gap-2 h-[32px]"><input type="checkbox" name="${f.k}" ${v?'checked':''}>
+           <span class="text-xs text-slate-600">Yes</span></label>`;
+  } else {
+    const t = f.t === 'n' ? 'number' : f.t === 'd' ? 'date' : 'text';
+    const dv = f.t === 'd' && !v ? today() : v;
+    inp = `<input class="inp" type="${t}" name="${f.k}" value="${esc(dv)}" ${f.r?'required':''} ${f.t==='n'?'step="any"':''}>`;
+  }
+  const wide = (f.t === 'ta') ? 'col-span-3' : '';
+  return `<div class="${wide}"><label class="lbl">${esc(f.l)} ${req}</label>${inp}${hint}</div>`;
+}
+
+function linesHtml(m){
+  return `<div class="mt-5 border-t border-slate-200 pt-4">
+    <div class="flex justify-between items-center mb-2">
+      <div class="font-bold text-sm">Lines</div>
+      <button type="button" class="btn btn-s" onclick="addLine()">+ Add Line</button>
+    </div>
+    <div id="lines">${mLines.map((l,i)=>lineRow(m,l,i)).join('') || empty('No lines yet — click + Add Line.')}</div>
+  </div>`;
+}
+function lineRow(m, l, i){
+  return `<div class="grid gap-2 mb-2 items-end" style="grid-template-columns:24px repeat(${m.lf.length},1fr) 34px">
+    <div class="text-xs text-slate-400 mono pb-2">${i+1}</div>
+    ${m.lf.map(f => {
+      const v = l[f.k] ?? f.dv ?? '';
+      let inp;
+      if (f.t === 'ref'){
+        inp = `<select class="inp" data-i="${i}" data-k="${f.k}" onchange="setLine(this)">
+          <option value="">—</option>${all(f.ref).map(r=>
+          `<option value="${r.id}" ${r.id===v?'selected':''}>${esc(labelOf(f.ref,r.id))}</option>`).join('')}</select>`;
+      } else if (f.t === 'sel'){
+        inp = `<select class="inp" data-i="${i}" data-k="${f.k}" onchange="setLine(this)">
+          <option value="">—</option>${f.o.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+      } else {
+        const t = f.t==='n'?'number':f.t==='d'?'date':'text';
+        inp = `<input class="inp" type="${t}" ${f.t==='n'?'step="any"':''} data-i="${i}" data-k="${f.k}"
+                value="${esc(v)}" oninput="setLine(this)">`;
+      }
+      return `<div><label class="lbl">${esc(f.l)}</label>${inp}</div>`;
+    }).join('')}
+    <button type="button" class="btn btn-d" onclick="rmLine(${i})">✕</button>
+  </div>`;
+}
+function setLine(el){ mLines[+el.dataset.i][el.dataset.k] = el.value; }
+function addLine(){ mLines.push({}); redrawLines(); }
+function rmLine(i){ mLines.splice(i,1); redrawLines(); }
+function redrawLines(){
+  const m = M[mKey];
+  $('lines').innerHTML = mLines.map((l,i)=>lineRow(m,l,i)).join('') || empty('No lines yet — click + Add Line.');
+}
+
+function saveForm(){
+  const m = M[mKey];
+  const fd = new FormData($('mform'));
+  const row = mId ? {...byId(mKey, mId)} : { id: uid(), _at: new Date().toISOString() };
+
+  m.f.forEach(f => {
+    if (f.t === 'chk') row[f.k] = $('mform').elements[f.k].checked;
+    else row[f.k] = fd.get(f.k) ?? '';
+  });
+  if (m.seq && !row.code) row.code = nextNo(mKey, m.seq);
+  if (m.lf) row._lines = mLines.filter(l => Object.values(l).some(v => v !== '' && v != null));
+
+  // ── Business rule: job work runs on client-supplied material. ──
+  if (mKey === 'job_work_orders'){
+    for (const l of (row._lines||[])){
+      if (!l.sourceBomMasterId) continue;
+      const bom = byId('bom_masters', l.sourceBomMasterId);
+      const bad = (bom?._lines || []).filter(b => b.bomType === 'purchase');
+      if (bad.length){
+        alert(`${bom.code} can't be used on a job work order.\n\n` +
+              bad.map(b => '• ' + labelOf('items', b.childItemId)).join('\n') +
+              `\n\nThese are bought parts. Job work runs on material the client supplies — ` +
+              `only Manufacture and Outsource are allowed.\n\nChange them in the BOM, or pick a different BOM.`);
+        return;
+      }
+    }
+  }
+
+  const isNew = !mId;
+  put(mKey, row);
+  if (isNew && m.after) m.after(row);           // cascades fire once, on create
+  logAct(isNew ? 'CREATE' : 'UPDATE', m.label, row.code || row.name || row.title || '');
+  closeM(); go();
+}
+function rm(key, id){
+  if (!confirm('Delete this record? (soft delete — it stays in the data, hidden)')) return;
+  del(key, id); logAct('DELETE', M[key].label, id); go();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   6. THE ASSEMBLY SCREEN — the conversion (parts out, parent in)
+   ════════════════════════════════════════════════════════════════ */
+function vAssembly(){
+  const sos = all('sales_orders').filter(s => s.bomMasterId);
+  if (!sos.length) return `
+    ${empty('No assembly orders yet.')}
+    <div class="mt-4 bg-sky-50 border border-sky-200 rounded-lg p-4 text-sm">
+      <b>To try this:</b> make a BOM (Design › BOM Master) with a parent item and 2 child parts,
+      then create a Sales Order and pick that BOM in the <b>BOM</b> field.
+    </div>`;
+
+  return sos.map(so => {
+    const bom = byId('bom_masters', so.bomMasterId);
+    if (!bom) return '';
+    const orderQty = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0),0);
+    const comps = (bom._lines||[]).map(l => {
+      const st = stockOf(l.childItemId), per = +l.qtyPerSet || 1;
+      return { ...l, per, stock: st, canMake: Math.floor(st / per) };
+    });
+    const built = all('assembly_units').filter(u => u.salesOrderId === so.id).length;
+    // Weakest component decides — 5 and 4 is 4 assemblies, never 9.
+    const canBuild = comps.length ? Math.min(...comps.map(c => c.canMake)) : 0;
+    const headroom = Math.max(0, Math.min(canBuild, orderQty - built));
+    const parentStock = bom.parentItemId ? stockOf(bom.parentItemId) : 0;
+    const weakest = comps.length ? comps.reduce((a,b)=>b.canMake<a.canMake?b:a) : null;
+
+    return `<div class="bg-white border border-slate-200 rounded-lg mb-5">
+      <div class="px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+        <div>
+          <b class="mono">${esc(so.code)}</b> · ${esc(labelOf('clients', so.clientId))}
+          <span class="text-xs text-slate-500 ml-2">BOM ${esc(bom.code)} → builds ${esc(labelOf('items', bom.parentItemId))}</span>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-p" onclick="assemble('${so.id}')" ${headroom<1?'disabled style="opacity:.4;cursor:not-allowed"':''}>
+            Assemble 1 unit</button>
+          <button class="btn btn-s" onclick="undoAssembly('${so.id}')" ${built<1?'disabled style="opacity:.4"':''}>Undo last</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-3 p-4 bg-slate-50">
+        ${card('Order Qty', orderQty)}
+        ${card('Assembled', built, 'text-sky-700')}
+        ${card('Can build now', headroom, headroom>0?'text-emerald-700':'text-rose-600')}
+        ${card('Parent in stock', parentStock, 'text-emerald-700')}
+      </div>
+      ${weakest ? `<div class="px-4 py-2 text-xs bg-amber-50 border-y border-amber-200">
+        Weakest part: <b>${esc(labelOf('items', weakest.childItemId))}</b> —
+        ${weakest.stock} in stock ÷ ${weakest.per} per unit = <b>${weakest.canMake}</b> units.
+        That is the number, not the sum of all parts.</div>` : ''}
+      <div class="scroll"><table>
+        <thead><tr><th>Component</th><th>Qty / Unit</th><th>In Stock</th><th>Enough For</th><th>Status</th></tr></thead>
+        <tbody>${comps.map(c => `<tr>
+          <td>${esc(labelOf('items', c.childItemId))}</td>
+          <td>${c.per}</td><td><b>${c.stock}</b></td><td><b>${c.canMake}</b></td>
+          <td>${c.canMake >= headroom && headroom > 0 ? pill('ok') :
+               c.canMake === 0 ? pill('shortage') : pill('limited')}</td></tr>`).join('')}</tbody>
+      </table></div>
+      ${built ? `<div class="px-4 py-2 text-xs text-slate-500 border-t border-slate-200">
+        Built units: ${all('assembly_units').filter(u=>u.salesOrderId===so.id)
+          .map(u=>`#${u.unitNo}`).join(', ')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function assemble(soId){
+  const so = byId('sales_orders', soId);
+  const bom = byId('bom_masters', so.bomMasterId);
+  if (!bom.parentItemId){
+    alert('This BOM does not say which item it builds, so assembling it cannot credit anything.\n\n' +
+          'Open the BOM and set its Parent Item first.'); return;
+  }
+  // Check every component BEFORE moving anything.
+  for (const l of (bom._lines||[])){
+    const need = +l.qtyPerSet || 1, have = stockOf(l.childItemId);
+    if (have < need){
+      alert(`Not enough ${labelOf('items', l.childItemId)} to assemble:\n` +
+            `on-hand ${have}, needs ${need}.\n\nFinish and QC-accept the missing parts first.`); return;
+    }
+  }
+  const unitNo = all('assembly_units').filter(u => u.salesOrderId === soId).length + 1;
+  const ref = `${so.code} / unit ${unitNo}`;
+  const deductions = [];
+  (bom._lines||[]).forEach(l => {
+    const need = +l.qtyPerSet || 1;
+    ledger(l.childItemId, 'out', need, 'assembly', ref, 'Assembly consumed');
+    deductions.push({ itemId: l.childItemId, qty: need });
+  });
+  ledger(bom.parentItemId, 'in', 1, 'assembly', ref, 'Assembly produced');
+  deductions.push({ itemId: bom.parentItemId, qty: -1 });
+
+  put('assembly_units', { id: uid(), salesOrderId: soId, soCode: so.code, unitNo,
+    assemblyDate: today(), bomMasterId: bom.id, deductions, dispatched: false,
+    _at: new Date().toISOString() });
+  logAct('ASSEMBLED', 'Assembly', ref);
+  go();
+}
+
+function undoAssembly(soId){
+  const units = all('assembly_units').filter(u => u.salesOrderId === soId);
+  if (!units.length) return;
+  const u = units[units.length - 1];
+  if (!confirm(`Undo unit #${u.unitNo}? Parts go back, the assembled unit comes off stock.`)) return;
+  // Reverse the SNAPSHOT, not the BOM — the BOM may have changed since.
+  (u.deductions||[]).forEach(d =>
+    ledger(d.itemId, d.qty > 0 ? 'in' : 'out', Math.abs(d.qty), 'assembly',
+           `${u.soCode} / unit ${u.unitNo} (undo)`, 'Assembly undone'));
+  del('assembly_units', u.id);
+  logAct('UNDO_ASSEMBLY', 'Assembly', `${u.soCode} / unit ${u.unitNo}`);
+  go();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   7. REPORT / DASHBOARD VIEWS
+   ════════════════════════════════════════════════════════════════ */
+function vDash(){
+  const openSo = all('sales_orders').filter(s=>s.status==='open').length;
+  const jcs = all('job_cards').length;
+  const stockVal = all('items').reduce((s,i)=>s+stockOf(i.id)*(+i.rate||0),0);
+  const lowStock = all('items').filter(i => (+i.reorderLevel||0) > 0 && stockOf(i.id) < +i.reorderLevel);
+  return `
+    <div class="grid grid-cols-6 gap-3 mb-5">
+      ${card('Open SOs', openSo, 'text-sky-700')}
+      ${card('JWSOs', all('job_work_orders').length)}
+      ${card('Job Cards', jcs)}
+      ${card('Items', all('items').length)}
+      ${card('Stock Value', inr(stockVal), 'text-emerald-700')}
+      ${card('Low Stock', lowStock.length, lowStock.length?'text-rose-600':'')}
+    </div>
+    <div class="grid grid-cols-2 gap-5">
+      <div><h3 class="font-bold text-sm mb-2">Recent Sales Orders</h3>
+        ${tbl(['SO No.','Client','Type','Status'], all('sales_orders').slice(-8).reverse()
+          .map(s=>[`<b class="mono">${esc(s.code)}</b>`, esc(labelOf('clients',s.clientId)), esc(s.type||'—'), pill(s.status)]))}</div>
+      <div><h3 class="font-bold text-sm mb-2">Latest Stock Movements</h3>
+        ${tbl(['Item','In/Out','Qty','Source'], all('store_transactions').slice(-8).reverse()
+          .map(t=>[esc(labelOf('items',t.itemId)),
+            t.txnType==='in'?'<span class="text-emerald-700 font-bold">IN</span>':'<span class="text-rose-700 font-bold">OUT</span>',
+            t.qty, esc(t.sourceType)]))}</div>
+    </div>
+    ${lowStock.length ? `<h3 class="font-bold text-sm mt-5 mb-2">⚠ Below Reorder Level</h3>
+      ${tbl(['Item','In Stock','Reorder At'], lowStock.map(i=>
+        [esc(labelOf('items',i.id)), `<b class="text-rose-600">${stockOf(i.id)}</b>`, i.reorderLevel]))}` : ''}`;
+}
+
+function vInventory(){
+  const rows = all('items').map(i => {
+    const st = stockOf(i.id);
+    return [ `<b class="mono">${esc(i.code)}</b>`, esc(i.name), esc(i.uom||''), esc(i.itemType||''),
+      `<b class="${st>0?'text-emerald-700':st<0?'text-rose-700':'text-slate-400'}">${st}</b>`,
+      esc(i.reorderLevel||'—'), inr(st*(+i.rate||0)) ];
+  });
+  return tbl(['Code','Item','UOM','Type','On Hand','Reorder','Value'], rows);
+}
+
+function vLedger(){
+  const rows = all('store_transactions').slice().reverse().map(t => [
+    esc(t.txnDate), esc(labelOf('items', t.itemId)),
+    t.txnType === 'in' ? '<span class="text-emerald-700 font-bold">IN</span>'
+                       : '<span class="text-rose-700 font-bold">OUT</span>',
+    `<b>${t.qty}</b>`, esc(t.sourceType), `<span class="mono text-xs">${esc(t.sourceRef||'')}</span>`,
+    t.stockBefore, `<b>${t.stockAfter}</b>`, esc(t.remarks||'') ]);
+  return `<div class="mb-3 text-xs text-slate-500">Every stock movement in the system. Nothing is stored as a
+    balance — on-hand is always the sum of this list.</div>
+    ${tbl(['Date','Item','Type','Qty','Source','Reference','Before','After','Note'], rows)}`;
+}
+
+function vStockVal(){
+  let tot = 0;
+  const rows = all('items').map(i => {
+    const st = stockOf(i.id), v = st * (+i.rate||0); tot += v;
+    return [esc(labelOf('items',i.id)), st, inr(i.rate||0), inr(v)];
+  });
+  return `${card('Total Stock Value', inr(tot), 'text-emerald-700')}
+    <div class="mt-4">${tbl(['Item','Qty','Rate','Value'], rows)}</div>`;
+}
+
+function vPlanning(){
+  const rows = [];
+  all('sales_orders').forEach(so => (so._lines||[]).forEach((l,i) => {
+    const jcs = all('job_cards').filter(j => j.sourceSoId === so.id && j.itemId === l.itemId);
+    const made = jcs.reduce((s,j)=>s+jcDone(j.id),0);
+    rows.push([`<b class="mono">${esc(so.code)}</b>`, i+1, esc(labelOf('items',l.itemId)),
+      l.orderQty, jcs.map(j=>j.code).join(', ')||'<span class="text-rose-600">not planned</span>',
+      made, pill(made >= +l.orderQty ? 'done' : made > 0 ? 'in_progress' : 'open')]);
+  }));
+  all('job_work_orders').forEach(jw => (jw._lines||[]).forEach((l,i) => {
+    const jcs = all('job_cards').filter(j => j.sourceJwId === jw.id && j.itemId === l.itemId);
+    const made = jcs.reduce((s,j)=>s+jcDone(j.id),0);
+    rows.push([`<b class="mono">${esc(jw.code)}</b>`, i+1, esc(labelOf('items',l.itemId)),
+      l.orderQty, jcs.map(j=>j.code).join(', ')||'<span class="text-rose-600">not planned</span>',
+      made, pill(made >= +l.orderQty ? 'done' : made > 0 ? 'in_progress' : 'open')]);
+  }));
+  return tbl(['Order','Ln','Item','Order Qty','Job Cards','Made','Status'], rows);
+}
+
+function vSoOverview(){
+  const rows = all('sales_orders').map(so => {
+    const qty = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0),0);
+    const val = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0)*(+l.rate||0),0);
+    const disp = all('customer_dispatches').filter(d=>d.salesOrderId===so.id)
+      .reduce((s,d)=>s+(d._lines||[]).reduce((a,l)=>a+(+l.qty||0),0),0);
+    const inv = all('invoices').filter(v=>v.salesOrderId===so.id).length;
+    return [`<b class="mono">${esc(so.code)}</b>`, esc(labelOf('clients',so.clientId)), esc(so.soDate),
+      qty, disp, Math.max(0,qty-disp), inv, inr(val), pill(so.status)];
+  });
+  return tbl(['SO No.','Client','Date','Ordered','Dispatched','Pending','Invoices','Value','Status'], rows);
+}
+
+function vSoStatus(){
+  const rows = all('sales_orders').map(so => {
+    const planned = all('job_cards').filter(j=>j.sourceSoId===so.id).length;
+    const made = all('job_cards').filter(j=>j.sourceSoId===so.id).reduce((s,j)=>s+jcDone(j.id),0);
+    const qty = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0),0);
+    const pct = qty ? Math.round(made/qty*100) : 0;
+    return [`<b class="mono">${esc(so.code)}</b>`, qty, planned, made,
+      `<div class="w-32 bg-slate-200 rounded h-2"><div class="bg-sky-600 h-2 rounded" style="width:${Math.min(100,pct)}%"></div></div> ${pct}%`,
+      pill(so.status)];
+  });
+  return tbl(['SO No.','Order Qty','Job Cards','Produced','Progress','Status'], rows);
+}
+
+function vTimeline(){
+  const ev = [];
+  all('sales_orders').forEach(s => ev.push([s.soDate, s.code, 'SO created', labelOf('clients', s.clientId)]));
+  all('job_cards').forEach(j => ev.push([j.jcDate, j.code, 'Job Card', labelOf('items', j.itemId)]));
+  all('customer_dispatches').forEach(d => ev.push([d.dispatchDate, d.code, 'Dispatched', d.transport||'']));
+  all('invoices').forEach(v => ev.push([v.invDate, v.code, 'Invoiced', labelOf('clients', v.clientId)]));
+  ev.sort((a,b) => String(b[0]).localeCompare(String(a[0])));
+  return tbl(['Date','Document','Event','Detail'], ev.map(e =>
+    [esc(e[0]), `<b class="mono">${esc(e[1])}</b>`, esc(e[2]), esc(e[3])]));
+}
+
+function vPendingSo(){
+  let tot = 0;
+  const rows = all('sales_orders').filter(s => s.status !== 'closed' && s.status !== 'cancelled').map(so => {
+    const qty = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0),0);
+    const disp = all('customer_dispatches').filter(d=>d.salesOrderId===so.id)
+      .reduce((s,d)=>s+(d._lines||[]).reduce((a,l)=>a+(+l.qty||0),0),0);
+    const rate = (so._lines||[])[0]?.rate || 0;
+    const pv = Math.max(0, qty-disp) * (+rate); tot += pv;
+    return [`<b class="mono">${esc(so.code)}</b>`, esc(labelOf('clients',so.clientId)),
+      qty, disp, Math.max(0,qty-disp), inr(pv)];
+  });
+  return `${card('Total Pending Value', inr(tot), 'text-amber-700')}
+    <div class="mt-4">${tbl(['SO No.','Client','Ordered','Dispatched','Pending','Pending Value'], rows)}</div>`;
+}
+
+function vOpEntry(){
+  const ops = all('jc_ops');
+  if (!ops.length) return empty('No job card operations yet. Create a Job Card, then add JC Operations.');
+  return `<div class="mb-3 text-xs text-slate-500">Log work against an operation. A <b>qc</b> log on the
+    <b>last</b> operation of a job card credits finished stock — that is the only thing that puts a
+    manufactured item into the store.</div>
+    ${tbl(['Job Card','Seq','Operation','Type','Machine','QC Accepted','Log'],
+      ops.map(o => {
+        const jc = byId('job_cards', o.jobCardId);
+        const seqs = all('jc_ops').filter(x=>x.jobCardId===o.jobCardId).map(x=>+x.opSeq||0);
+        const isLast = Math.max(...seqs,0) === (+o.opSeq||0);
+        return [ `<b class="mono">${esc(jc?.code||'—')}</b>`, o.opSeq,
+          esc(o.operation) + (isLast?' <span class="pill bg-emerald-100 text-emerald-800">final</span>':''),
+          esc(o.opType), esc(labelOf('machines', o.machineId)), `<b>${opDone(o.id)}</b>`,
+          `<button class="btn btn-p" onclick="quickLog('${o.id}')">+ Log</button>` ];
+      }))}`;
+}
+function quickLog(opId){
+  const qty = prompt('QC-accepted quantity for this operation?');
+  if (!qty || !(+qty)) return;
+  const row = { id: uid(), jcOpId: opId, logType: 'qc', logDate: today(), shift: 'day',
+    qty: +qty, rejectQty: 0, _at: new Date().toISOString() };
+  put('op_log', row); M.op_log.after(row);
+  logAct('OP_LOG', 'Op Entry', `qc ${qty}`);
+  go();
+}
+
+function vDaily(){
+  const d = today();
+  const logs = all('op_log').filter(l => l.logDate === d);
+  return `<div class="mb-3 text-sm">Work logged today (${d})</div>
+    ${tbl(['Job Card Op','Type','Qty','Reject','Operator'], logs.map(l =>
+      [esc(labelOf('jc_ops', l.jcOpId)), esc(l.logType), l.qty, l.rejectQty||0,
+       esc(labelOf('operators', l.operatorId))]))}`;
+}
+
+function vProdDash(){
+  const jcs = all('job_cards');
+  const done = jcs.filter(j => jcDone(j.id) >= (+j.orderQty||0) && +j.orderQty > 0).length;
+  return `<div class="grid grid-cols-5 gap-3 mb-5">
+      ${card('Job Cards', jcs.length)}
+      ${card('Completed', done, 'text-emerald-700')}
+      ${card('In Progress', jcs.length - done, 'text-amber-700')}
+      ${card('Operations', all('jc_ops').length)}
+      ${card('Logs Today', all('op_log').filter(l=>l.logDate===today()).length)}
+    </div>
+    ${tbl(['JC No.','Item','Order Qty','Produced','Balance','Progress'], jcs.map(j => {
+      const md = jcDone(j.id), oq = +j.orderQty||0, pct = oq?Math.round(md/oq*100):0;
+      return [`<b class="mono">${esc(j.code)}</b>`, esc(labelOf('items',j.itemId)), oq, md,
+        Math.max(0,oq-md),
+        `<div class="w-28 bg-slate-200 rounded h-2 inline-block align-middle"><div class="bg-emerald-600 h-2 rounded" style="width:${Math.min(100,pct)}%"></div></div> ${pct}%`];
+    }))}`;
+}
+
+function vShopFloor(){
+  return tbl(['Machine','Type','Status','Operations Assigned'], all('machines').map(m =>
+    [`<b class="mono">${esc(m.code)}</b> ${esc(m.name)}`, esc(m.machineType||''), pill(m.status||'available'),
+     all('jc_ops').filter(o=>o.machineId===m.id).length]));
+}
+function vJobQueue(){
+  const rows = all('jc_ops').filter(o => opDone(o.id) === 0).map(o => {
+    const jc = byId('job_cards', o.jobCardId);
+    return [`<b class="mono">${esc(jc?.code||'—')}</b>`, esc(labelOf('items', jc?.itemId)),
+      o.opSeq, esc(o.operation), esc(labelOf('machines', o.machineId)), pill(jc?.priority||'normal')];
+  });
+  return `<div class="mb-3 text-xs text-slate-500">Operations with nothing logged yet.</div>
+    ${tbl(['Job Card','Item','Seq','Operation','Machine','Priority'], rows)}`;
+}
+function vMachineLoad(){
+  return tbl(['Machine','Pending Ops','Done Ops','Load'], all('machines').map(m => {
+    const ops = all('jc_ops').filter(o=>o.machineId===m.id);
+    const pend = ops.filter(o=>opDone(o.id)===0).length;
+    return [esc(labelOf('machines',m.id)), pend, ops.length-pend,
+      `<div class="w-32 bg-slate-200 rounded h-2 inline-block align-middle"><div class="bg-amber-500 h-2 rounded" style="width:${Math.min(100,pend*20)}%"></div></div>`];
+  }));
+}
+function vProdSo(){
+  return tbl(['SO No.','Client','Items','Job Cards','Produced'], all('sales_orders').map(s =>
+    [`<b class="mono">${esc(s.code)}</b>`, esc(labelOf('clients',s.clientId)), (s._lines||[]).length,
+     all('job_cards').filter(j=>j.sourceSoId===s.id).length,
+     all('job_cards').filter(j=>j.sourceSoId===s.id).reduce((a,j)=>a+jcDone(j.id),0)]));
+}
+function vProdJw(){
+  return tbl(['JWSO No.','Client','Items','Job Cards','Produced','Returned'], all('job_work_orders').map(w => {
+    const ret = all('jw_returns').filter(r=>r.jobWorkOrderId===w.id).reduce((a,r)=>a+(+r.qty||0),0);
+    return [`<b class="mono">${esc(w.code)}</b>`, esc(labelOf('clients',w.clientId)), (w._lines||[]).length,
+      all('job_cards').filter(j=>j.sourceJwId===w.id).length,
+      all('job_cards').filter(j=>j.sourceJwId===w.id).reduce((a,j)=>a+jcDone(j.id),0), ret];
+  }));
+}
+
+function vSoQc(){
+  return tbl(['SO No.','Job Cards','QC Accepted','NCs Raised'], all('sales_orders').map(s => {
+    const jcs = all('job_cards').filter(j=>j.sourceSoId===s.id);
+    return [`<b class="mono">${esc(s.code)}</b>`, jcs.length,
+      jcs.reduce((a,j)=>a+jcDone(j.id),0),
+      all('nc_register').filter(n=>jcs.some(j=>j.id===n.jobCardId)).length];
+  }));
+}
+function vQcDash(){
+  const nc = all('nc_register');
+  return `<div class="grid grid-cols-4 gap-3 mb-5">
+      ${card('Open NCs', nc.filter(n=>n.status==='open').length, 'text-rose-600')}
+      ${card('Total NCs', nc.length)}
+      ${card('Open CAPAs', all('capa').filter(c=>c.status!=='closed').length, 'text-amber-700')}
+      ${card('QC Logs', all('op_log').filter(l=>l.logType==='qc').length, 'text-emerald-700')}
+    </div>
+    <h3 class="font-bold text-sm mb-2">Open Non-Conformances</h3>
+    ${tbl(['NC No.','Date','Job Card','Qty','Reason','Disposition'], nc.filter(n=>n.status==='open').map(n =>
+      [`<b class="mono">${esc(n.code)}</b>`, esc(n.date), esc(labelOf('job_cards',n.jobCardId)),
+       n.qty, esc(n.reason||''), esc(n.disposition||'')]))}`;
+}
+
+function vOspWip(){
+  const rows = all('delivery_challans').filter(d => d.status !== 'received').map(d =>
+    [`<b class="mono">${esc(d.code)}</b>`, esc(d.dcDate), esc(labelOf('vendors',d.vendorId)),
+     esc(labelOf('items',d.itemId)), d.qty, pill(d.status||'sent')]);
+  return `<div class="mb-3 text-xs text-slate-500">Material sitting at an outside vendor.</div>
+    ${tbl(['DC No.','Date','Vendor','Item','Qty Out','Status'], rows)}`;
+}
+
+function vScDash(){
+  return `<div class="grid grid-cols-4 gap-3 mb-5">
+      ${card('Open PRs', all('purchase_requests').filter(p=>p.status==='open').length, 'text-amber-700')}
+      ${card('Open POs', all('purchase_orders').filter(p=>p.status==='open').length, 'text-sky-700')}
+      ${card('GRNs', all('goods_receipt_notes').length)}
+      ${card('Vendors', all('vendors').length)}
+    </div>
+    <h3 class="font-bold text-sm mb-2">Purchase Orders</h3>
+    ${tbl(['PO No.','Vendor','Type','Lines','Value','Status'], all('purchase_orders').map(p =>
+      [`<b class="mono">${esc(p.code)}</b>`, esc(labelOf('vendors',p.vendorId)), esc(p.poType||''),
+       (p._lines||[]).length,
+       inr((p._lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.rate||0),0)), pill(p.status)]))}`;
+}
+
+function vSoCosting(){
+  const rows = all('sales_orders').map(so => {
+    const rev = (so._lines||[]).reduce((s,l)=>s+(+l.orderQty||0)*(+l.rate||0),0);
+    const jcs = all('job_cards').filter(j=>j.sourceSoId===so.id);
+    const mat = jcs.reduce((s,j)=>{ const it = byId('items', j.itemId);
+      return s + (+j.orderQty||0)*(+(it?.rate)||0); },0);
+    return [`<b class="mono">${esc(so.code)}</b>`, inr(rev), inr(mat), inr(rev-mat),
+      rev ? Math.round((rev-mat)/rev*100)+'%' : '—'];
+  });
+  return tbl(['SO No.','Revenue','Est. Material Cost','Margin','Margin %'], rows);
+}
+
+function vAlerts(){
+  const a = [];
+  all('items').forEach(i => { const st = stockOf(i.id);
+    if ((+i.reorderLevel||0) > 0 && st < +i.reorderLevel)
+      a.push(['🔴','Low stock', `${labelOf('items',i.id)} — ${st} left, reorder at ${i.reorderLevel}`]);
+    if (st < 0) a.push(['🔴','Negative stock', `${labelOf('items',i.id)} is at ${st}`]); });
+  all('sales_orders').forEach(s => {
+    if (!all('job_cards').some(j=>j.sourceSoId===s.id) && s.status === 'open')
+      a.push(['🟠','SO not planned', `${s.code} has no job cards`]); });
+  all('bom_masters').forEach(b => { if (!b.parentItemId)
+    a.push(['🟠','BOM has no parent', `${b.code} cannot credit anything when assembled`]); });
+  all('nc_register').filter(n=>n.status==='open').forEach(n =>
+    a.push(['🟡','Open NC', `${n.code} — ${n.reason||''}`]));
+  all('tasks').filter(t=>t.status!=='done' && t.dueDate && t.dueDate < today()).forEach(t =>
+    a.push(['🟡','Task overdue', `${t.title} — due ${t.dueDate}`]));
+  if (!a.length) return `<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-6 text-center text-emerald-800">
+    ✅ Nothing needs attention.</div>`;
+  return tbl(['', 'Alert', 'Detail'], a.map(x => [x[0], `<b>${esc(x[1])}</b>`, esc(x[2])]));
+}
+
+function vActivity(){
+  return tbl(['When','Action','Entity','Detail','User'], all('activity_log').slice().reverse().slice(0,300)
+    .map(l => [esc(l.ts), pill(l.action), esc(l.entity), esc(l.detail), esc(l.user)]));
+}
+
+function vStuck(){
+  const s = [];
+  all('job_cards').forEach(j => { if (!all('jc_ops').some(o=>o.jobCardId===j.id))
+    s.push([j.code, 'Job Card', 'No operations defined — nothing can be logged']); });
+  all('jc_ops').forEach(o => { if (opDone(o.id) === 0){ const jc = byId('job_cards', o.jobCardId);
+    s.push([jc?.code||'—', 'Operation ' + o.opSeq, `${o.operation} — nothing logged yet`]); }});
+  all('customer_dispatches').forEach(d => { if (!all('invoices').some(v=>v.dispatchId===d.id))
+    s.push([d.code, 'Dispatch', 'Dispatched but not invoiced']); });
+  return `<div class="mb-3 text-xs text-slate-500">Anything that has stopped moving.</div>
+    ${tbl(['Document','Stage','Why it is stuck'], s.map(x =>
+      [`<b class="mono">${esc(x[0])}</b>`, esc(x[1]), esc(x[2])]))}`;
+}
+
+function vCycle(){
+  const rows = all('sales_orders').map(so => {
+    const d = all('customer_dispatches').filter(x=>x.salesOrderId===so.id)
+      .map(x=>x.dispatchDate).sort().pop();
+    const days = (so.soDate && d) ? Math.round((new Date(d)-new Date(so.soDate))/864e5) : null;
+    return [`<b class="mono">${esc(so.code)}</b>`, esc(so.soDate), esc(d||'—'),
+      days === null ? '<span class="text-slate-400">in progress</span>' : `<b>${days} days</b>`];
+  });
+  return tbl(['SO No.','Ordered','Last Dispatch','Cycle Time'], rows);
+}
+
+function vReports(){
+  const r = [
+    ['Stock on hand', 'store_inventory'], ['Stock ledger', 'store_transactions'],
+    ['Stock valuation', 'stock_valuation'], ['SO overview', 'so_overview'],
+    ['SO status', 'so_status'], ['SO costing', 'so_costing'], ['SO cycle time', 'so_cycle_time'],
+    ['Pending SO value', 'pending_so'], ['Production dashboard', 'prod_dashboard'],
+    ['Job queue', 'job_queue'], ['Machine loading', 'machine_loading'],
+    ['QC command center', 'qc_dashboard'], ['SO QC status', 'so_qc_status'],
+    ['Supply chain', 'sc_dashboard'], ['OSP at vendor', 'osp_wip'],
+    ['Stuck dashboard', 'stuck_dashboard'], ['Activity log', 'activity_log'],
+  ];
+  return `<div class="grid grid-cols-4 gap-3">${r.map(([l,k]) =>
+    `<a href="#${k}" class="block bg-white border border-slate-200 rounded-lg p-4 hover:border-sky-500 hover:shadow-sm">
+      <div class="font-bold text-sm">${esc(l)}</div>
+      <div class="text-[11px] text-slate-500 mt-1">Open report →</div></a>`).join('')}</div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   8. EXPORT / IMPORT / RESET / SEED
+   ════════════════════════════════════════════════════════════════ */
+function expJson(){
+  const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `innovic-sandbox-${today()}.json`;
+  a.click();
+}
+function impJson(){
+  const i = document.createElement('input'); i.type = 'file'; i.accept = '.json';
+  i.onchange = () => { const f = i.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { try { DB = JSON.parse(r.result); save(); go(); alert('Imported.'); }
+                       catch(e){ alert('That file is not valid JSON.'); } };
+    r.readAsText(f); };
+  i.click();
+}
+function wipe(){
+  if (!confirm('Delete everything and load the sample data again?')) return;
+  DB = {}; seed(); save(); location.hash = '#dashboard'; go();
+}
+
+/** Sample data so the chain can be tried immediately. */
+function seed(){
+  const mk = (c, o) => { const row = {id:uid(), _at:new Date().toISOString(), ...o};
+                         DB[c] = DB[c]||[]; DB[c].push(row); return row; };
+
+  const cl  = mk('clients',  {code:'CL-00001', name:'GE Power India Ltd', gstin:'AAICA1334J', contact:'R. Sharma', phone:'9820011223'});
+  mk('clients',  {code:'CL-00002', name:'Thermax Ltd', gstin:'AAACT3705E', contact:'S. Kulkarni'});
+  const vn  = mk('vendors',  {code:'VN-00001', name:'Shree Heat Treatment', vendorType:'job_work', phone:'9822044556'});
+  mk('vendors',  {code:'VN-00002', name:'Bharat Steels', vendorType:'material'});
+
+  const pen = mk('items', {code:'PEN', name:'Pen Assembly', revision:'A', uom:'NOS', itemType:'assembly', rate:250, reorderLevel:0});
+  const i1  = mk('items', {code:'ITEM-1', name:'Pen Body', revision:'A', uom:'NOS', itemType:'component', rate:60, reorderLevel:5});
+  const i2  = mk('items', {code:'ITEM-2', name:'Pen Cap',  revision:'A', uom:'NOS', itemType:'component', rate:40, reorderLevel:5});
+  mk('items', {code:'RM-SS304', name:'SS 304 Round Bar 20mm', uom:'KG', itemType:'raw_material', rate:180, reorderLevel:50});
+
+  const mc = mk('machines', {code:'CNC-1', name:'CNC Turning Centre', machineType:'CNC', hourlyRate:800, status:'available'});
+  mk('machines', {code:'CNC-2', name:'CNC Milling', machineType:'VMC', hourlyRate:950, status:'available'});
+  const op = mk('operators', {code:'OP-001', name:'Ramesh Patil', skill:'Senior', shift:'day'});
+
+  const bom = mk('bom_masters', {code:'BOM-00001', bomName:'Pen Assembly', parentItemId:pen.id,
+    revision:1, status:'active',
+    _lines:[ {childItemId:i1.id, qtyPerSet:1, bomType:'manufacture'},
+             {childItemId:i2.id, qtyPerSet:1, bomType:'manufacture'} ]});
+
+  const so = mk('sales_orders', {code:'IN-SO-00001', soDate:today(), clientId:cl.id,
+    clientPoNo:'PO/2026/771', type:'equipment', bomMasterId:bom.id, gstPercent:18, status:'open',
+    _lines:[ {itemId:pen.id, partName:'Pen Assembly', uom:'NOS', orderQty:10, rate:250, dueDate:today()} ]});
+
+  // Two job cards — one per child part. Each with a single final QC-able op.
+  [[i1,'Pen Body'],[i2,'Pen Cap']].forEach(([it,nm], n) => {
+    const jc = mk('job_cards', {code:`IN-JC-0000${n+1}`, jcDate:today(), itemId:it.id,
+      orderQty:10, sourceSoId:so.id, priority:'normal'});
+    mk('jc_ops', {jobCardId:jc.id, opSeq:1, operation:'Turning', opType:'process', machineId:mc.id});
+    mk('jc_ops', {jobCardId:jc.id, opSeq:2, operation:'Final QC', opType:'qc', qcRequired:true});
+  });
+
+  mk('users', {name:'Vinay Makwana', email:'vinay.makwana24@gmail.com', role:'admin', isActive:true});
+  mk('tasks', {title:'Try the chain: Op Entry → Assembly → Dispatch', assignee:'Vinay',
+    dueDate:today(), priority:'high', status:'todo',
+    detail:'Log QC on both job cards, then assemble, then dispatch.'});
+  logAct('SEED','System','Sample data loaded');
+}
+
+/* ── boot ── */
+load();
+if (!DB.items || !DB.items.length){ seed(); save(); }
+go();
+</script>
+</body>
+</html>

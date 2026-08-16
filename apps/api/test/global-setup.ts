@@ -65,6 +65,18 @@ export default async function setup(): Promise<void> {
     // (jc_created requires jc_id NOT NULL, etc). Drop plans first.
     // plans CASCADE-delete their plan_ops via FK ON DELETE CASCADE.
     await sql`DELETE FROM public.plans WHERE code LIKE 'T%-%'`;
+    // Item-anchored too. A plan created through the real path gets a real code
+    // (PLN-0062) that no prefix matches, but its jc_id points at a test job
+    // card. The item-anchored job_cards sweep below would then SET NULL that
+    // jc_id and trip plans_status_fk_check (jc_created requires jc_id NOT NULL),
+    // aborting the whole run at setup.
+    await sql`
+      DELETE FROM public.plans
+      WHERE item_id IN (SELECT id FROM public.items WHERE code LIKE 'T%-%')
+         OR jc_id IN (
+           SELECT jc.id FROM public.job_cards jc
+           JOIN public.items i ON i.id = jc.item_id
+           WHERE i.code LIKE 'T%-%')`;
     await sql`DELETE FROM public.purchase_orders WHERE code LIKE 'T%-%'`;
     // PL-4 executePlan generates PR codes like PR-DP-<slug>-NN / PR-FO-... / PR-FOMAT-...
     // Sweep those by prefix in case a test crashed before afterAll could clean them.
@@ -102,6 +114,40 @@ export default async function setup(): Promise<void> {
     // BOM masters (bom_master_lines CASCADE from the header). Must run after
     // sales_orders above — sales_order_lines.source_bom_master_id FKs here.
     await sql`DELETE FROM public.bom_masters WHERE bom_no LIKE 'T%-%'`;
+
+    // 1b. Item-anchored sweep — the general form of the JC/PR/GRN cases above.
+    //     Anything created through a REAL creation path gets a real sequential
+    //     code (IN-JW-00009, PLN-0062) that no prefix pattern can match, while
+    //     its LINES still point at a test item. Those rows then pin the items
+    //     wipe below via FK and abort the entire run at setup.
+    //     Delete the HEADER so lines cascade; FK order matters, so this runs
+    //     after the GRN / PO / PR passes above.
+    const testItems = `SELECT id FROM public.items WHERE code LIKE 'T%-%'`;
+    await sql.unsafe(`
+      DELETE FROM public.delivery_challans WHERE id IN (
+        SELECT DISTINCT delivery_challan_id FROM public.delivery_challan_lines
+        WHERE item_id IN (${testItems}))`);
+    await sql.unsafe(`
+      DELETE FROM public.purchase_orders WHERE id IN (
+        SELECT DISTINCT purchase_order_id FROM public.purchase_order_lines
+        WHERE item_id IN (${testItems}))`);
+    await sql.unsafe(`
+      DELETE FROM public.sales_orders WHERE id IN (
+        SELECT DISTINCT sales_order_id FROM public.sales_order_lines
+        WHERE item_id IN (${testItems}))`);
+    await sql.unsafe(`
+      DELETE FROM public.job_work_orders WHERE id IN (
+        SELECT DISTINCT job_work_order_id FROM public.job_work_order_lines
+        WHERE item_id IN (${testItems}))`);
+    // Direct item references — no header to cascade from.
+    // party_material_issues FK into party_materials without cascade, so the
+    // issues go first.
+    await sql.unsafe(`
+      DELETE FROM public.party_material_issues WHERE party_material_id IN (
+        SELECT id FROM public.party_materials WHERE item_id IN (${testItems}))`);
+    await sql.unsafe(`DELETE FROM public.party_materials WHERE item_id IN (${testItems})`);
+    await sql.unsafe(`DELETE FROM public.store_transactions WHERE item_id IN (${testItems})`);
+    await sql.unsafe(`DELETE FROM public.item_stock_balances WHERE item_id IN (${testItems})`);
 
     // 2. Master tables — referenced by transactional tables, so wipe last.
     //    These are also LIKE-matched at SELECT time by tests' notLike()

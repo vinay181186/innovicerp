@@ -23,6 +23,7 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
             <th>Date</th>
             <th>Shift</th>
             <th>Type</th>
+            <th>Machine</th>
             <th style={{ textAlign: 'center' }}>Qty</th>
             <th style={{ textAlign: 'center' }}>Reject</th>
             <th>Operator</th>
@@ -32,14 +33,14 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
         <tbody>
           {isLoading ? (
             <tr>
-              <td colSpan={7} className="empty-state">
+              <td colSpan={8} className="empty-state">
                 <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                 Loading log…
               </td>
             </tr>
           ) : logs.length === 0 ? (
             <tr>
-              <td colSpan={7} className="empty-state">
+              <td colSpan={8} className="empty-state">
                 No log entries yet.
               </td>
             </tr>
@@ -54,6 +55,11 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
                 </td>
                 <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                   {TYPE_LABEL[l.logType]}
+                </td>
+                {/* 0095: the machine stamped on THIS entry — survives a later
+                    machine change on the op, so past qty stays attributed. */}
+                <td className="mono" style={{ fontSize: 11 }}>
+                  {l.machineCode ?? l.machineCodeText ?? '—'}
                 </td>
                 <td className="td-ctr mono">{l.qty}</td>
                 <td className="td-ctr mono" style={{ color: 'var(--red)' }}>

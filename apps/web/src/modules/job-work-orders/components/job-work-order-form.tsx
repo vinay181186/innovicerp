@@ -24,6 +24,7 @@ import { useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { inrFormat } from '@/lib/print/doc-print';
@@ -43,6 +44,8 @@ interface LineFormValue {
   rate: number;
   dueDate?: string | undefined;
   status?: SoStatus | undefined;
+  /** Assembly line: the BOM whose components make up this part (0086). */
+  sourceBomMasterId?: string | undefined;
 }
 
 interface FormValues {
@@ -118,6 +121,13 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   });
   const clients = clientsData?.clients ?? [];
 
+  // Active BOMs, offered per line as "Assembly BOM". Deliberately NOT filtered
+  // to BOMs free of bought parts — the list endpoint doesn't carry line types,
+  // and the server already refuses such a BOM on a job-work order with a
+  // message naming the offending parts. Filtering here would hide the reason.
+  const { data: bomData } = useBomMastersList({ status: 'active', limit: 200, offset: 0 });
+  const jwUsableBoms = bomData?.items ?? [];
+
   const { data: itemsData } = useItemsList({ limit: 200, offset: 0 });
   const items = itemsData?.items ?? [];
   const rmItems = items.filter((it) => it.code.toLowerCase().includes('-rm'));
@@ -152,10 +162,21 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // Per-line memory of the master code we last auto-filled a line from, keyed by
   // the react-hook-form field id (stable as lines are added/removed). This is
   // how we tell an AUTO-FILLED value (safe to refresh or reset) from a value the
-  // user hand-typed on an OFF-MASTER line (must never be wiped). A synchronous
-  // client-side Map drives this fill, so there is no fetch to race — the shared
-  // fetch-oriented use-field-cascade hook would not fit, so the cascade lives
-  // here inline.
+  // user hand-typed on an OFF-MASTER line (must never be wiped).
+  //
+  // Why this stays inline rather than moving to the shared `useFieldCascade`
+  // (which does support a synchronous resolver, so a fetch race is not the
+  // reason): the JWSO line accepts off-master free text, and its reset rule is
+  // LINE-LEVEL — reset the derived fields IFF this line was ever auto-filled,
+  // signalled here by `prevMatchedCodeRef` OR an edit-mode-loaded `itemId`. The
+  // hook's preservation is FIELD-LEVEL (a dependent is reset only while it still
+  // equals what the hook itself last wrote). It never wrote the values an edit
+  // form loaded, so it would PRESERVE a stale saved Part Name when the code is
+  // changed to off-master — losing the documented edit-mode reset — and seeding
+  // it to fix that would then wipe genuinely hand-typed off-master lines. The
+  // hook's model cannot express this signal, so the cascade lives here inline.
+  // (The SO line has no off-master/hand-typed case and DOES route through the
+  // hook — see LineItemCascade in sales-order-form.tsx.)
   const prevMatchedCodeRef = useRef<Record<string, string>>({});
 
   /** Item Code is the unique key for a line; the master-derived fields (Part
@@ -405,6 +426,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         rate: Number(l.rate) || 0,
         dueDate: soDue,
         ...(l.status ? { status: l.status } : {}),
+        ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
       };
     });
 
@@ -692,6 +714,23 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     <label className="form-label" style={{ color: 'var(--green)' }}>Rate ₹</label>
                     <input type="number" step="0.01" min={0} className="innovic-input" {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} />
                   </div>
+                  {/* Assembly (0086). Picking a BOM turns this line into an
+                      assembly: one Job Card is raised per component on save,
+                      and readiness/return then follow the WEAKEST component
+                      rather than this line's own output. Only BOMs made
+                      entirely of machined/outsourced parts are offered — job
+                      work runs on client-supplied material, so a BOM with a
+                      bought part is rejected server-side anyway. */}
+                  <div className="form-grp">
+                    <label className="form-label">Assembly BOM</label>
+                    <select className="innovic-select" {...register(`lines.${idx}.sourceBomMasterId` as const)}>
+                      <option value="">— none (plain machining) —</option>
+                      {jwUsableBoms.map((b) => (
+                        <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName}</option>
+                      ))}
+                    </select>
+                    <div className="form-hint">Leave blank unless the client ships parts for you to assemble.</div>
+                  </div>
                 </div>
               </div>
             );
@@ -851,6 +890,7 @@ function detailToFormValues(detail: JobWorkOrderDetail): FormValues {
             rate: Number(l.rate),
             ...(l.dueDate ? { dueDate: l.dueDate } : {}),
             status: l.status,
+            ...(l.sourceBomMasterId ? { sourceBomMasterId: l.sourceBomMasterId } : {}),
           }))
         : [{ ...NEW_LINE }],
   };

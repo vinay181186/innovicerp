@@ -12,8 +12,10 @@ import type {
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
+  ListOpMachineOutputQuery,
   ListRunningOpsQuery,
   OpLog,
+  OpMachineOutput,
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
@@ -37,6 +39,8 @@ export const opEntryKeys = {
   all: ['op-entry'] as const,
   jcOps: (q: ListJcOpsQuery) => [...opEntryKeys.all, 'jc-ops', q] as const,
   opLog: (q: ListOpLogQuery) => [...opEntryKeys.all, 'op-log', q] as const,
+  machineOutput: (q: ListOpMachineOutputQuery) =>
+    [...opEntryKeys.all, 'machine-output', q] as const,
   running: (q: ListRunningOpsQuery) => [...opEntryKeys.all, 'running', q] as const,
 };
 
@@ -70,6 +74,23 @@ export function useOpLog(
   return useQuery<OpLog[]>({
     queryKey: opEntryKeys.opLog(query),
     queryFn: () => apiFetch<OpLog[]>(`/op-entry/op-log?${params.toString()}`),
+    enabled: Boolean(query.jcOpId || query.jobCardId),
+    ...options,
+  });
+}
+
+// Machine-wise output (0095). One row per (op × machine) so a mid-run machine
+// change shows as two permanent rows instead of re-attributing past production.
+export function useOpMachineOutput(
+  query: ListOpMachineOutputQuery,
+  options?: Omit<UseQueryOptions<OpMachineOutput[]>, 'queryKey' | 'queryFn'>,
+) {
+  const params = new URLSearchParams();
+  if (query.jcOpId) params.set('jcOpId', query.jcOpId);
+  if (query.jobCardId) params.set('jobCardId', query.jobCardId);
+  return useQuery<OpMachineOutput[]>({
+    queryKey: opEntryKeys.machineOutput(query),
+    queryFn: () => apiFetch<OpMachineOutput[]>(`/op-entry/machine-output?${params.toString()}`),
     enabled: Boolean(query.jcOpId || query.jobCardId),
     ...options,
   });
@@ -156,6 +177,7 @@ export function useSubmitOpLog() {
       // Prefix, not the narrow {jcOpId,limit:100} key, so the JC Detail's
       // {jobCardId,limit:300} "Recent Logs" query also refetches.
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
       invalidateProductionViews(qc);
     },
@@ -174,6 +196,7 @@ export function useSubmitQcLog() {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
       invalidateProductionViews(qc);
     },
   });
@@ -233,6 +256,8 @@ export function useRealtimeOpLog(jcOpId: string | undefined): void {
         () => {
           void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
           void qc.invalidateQueries({ queryKey: opEntryKeys.opLog({ jcOpId, limit: 100 }) });
+          // Prefix, so both the per-op and the whole-JC machine breakdowns refresh.
+          void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
         },
       )
       .subscribe();

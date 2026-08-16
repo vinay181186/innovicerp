@@ -45,11 +45,12 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, type UseFormReturn } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { todayLocal } from '@/lib/date';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
+import { cascadeField, useFieldCascade } from '@/lib/use-field-cascade';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
@@ -203,25 +204,22 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     setShowAddClient(false);
   }
 
-  /** Pick a master item into a line — fill name/material/drawing/uom (fill-only
-   *  for the text fields so manual edits survive; UOM mirrors the master). */
+  /** Controller side of the line cascade: Item Code (itemId) is the key. Picking
+   *  sets the master link + its visible code; clearing drops both. The dependent
+   *  fields (Part Name / Material / Drawing No. / UOM) are refilled/reset by the
+   *  shared `useFieldCascade` hook, hosted per line in <LineItemCascade> below —
+   *  so a fresh pick REPLACES them, a clear RESETS them, and Qty / Rate /
+   *  Client PO Ln stay exactly as the user typed. */
   function pickItem(idx: number, id: string | null): void {
-    setValue(`lines.${idx}.itemId`, id ?? undefined);
+    const opt = { shouldDirty: true } as const;
     if (!id) {
-      setValue(`lines.${idx}.itemCodeText`, '');
+      setValue(`lines.${idx}.itemId`, undefined, opt);
+      setValue(`lines.${idx}.itemCodeText`, '', opt);
       return;
     }
+    setValue(`lines.${idx}.itemId`, id, opt);
     const it = itemsById.get(id);
-    if (!it) return;
-    // Always auto-fill Part Name / Material / Drawing No. / UOM from the picked
-    // item's master data (overwrites any prior values so the row matches the
-    // selected part code). shouldDirty so the registered inputs re-render.
-    const opt = { shouldDirty: true } as const;
-    setValue(`lines.${idx}.itemCodeText`, it.code, opt);
-    setValue(`lines.${idx}.partName`, it.name, opt);
-    setValue(`lines.${idx}.material`, it.material ?? '', opt);
-    setValue(`lines.${idx}.drawingNo`, it.drawingNo ?? '', opt);
-    setValue(`lines.${idx}.uom`, it.uom, opt);
+    if (it) setValue(`lines.${idx}.itemCodeText`, it.code, opt);
   }
 
   // Equipment Part No. uses a free datalist (legacy allows off-master parts).
@@ -676,7 +674,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
-                style={{ color: 'var(--blue)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                style={{ color: 'var(--cyan)', fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
               >
                 View
               </button>
@@ -694,7 +692,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       {isEquip ? (
         /* ── Equipment Details (legacy L12258) ── */
         <div>
-          <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', margin: '4px 0 8px' }}>EQUIPMENT DETAILS</div>
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', margin: '4px 0 8px' }}>EQUIPMENT DETAILS</div>
           <div className="form-grid">
             <div className="form-grp">
               {/* "Parent Item" not "Part No.": this is the assembly a BOM
@@ -767,12 +765,24 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       ) : (
         /* ── Component / With-Material line items (legacy L12278) ── */
         <div>
+          {/* One field-cascade host per line (renders nothing): Item Code drives
+              Part Name / Material / Drawing No. / UOM. Kept out of the <table>
+              body so it never lands between rows. */}
+          {fields.map((field, idx) => (
+            <LineItemCascade
+              key={`casc-${field.id}`}
+              form={form}
+              idx={idx}
+              itemId={watchedLines?.[idx]?.itemId ?? null}
+              itemsById={itemsById}
+            />
+          ))}
           {/* Legacy L12279 styles this heading exactly like ▸ EQUIPMENT DETAILS.
               The "items must exist in Item Master" rule sits inline with the
               heading rather than as a separate note under the table. */}
           <div style={{ margin: '4px 0 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>SO LINE ITEMS</span>
+              <span style={{ fontSize: 11, color: 'var(--cyan)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em' }}>SO LINE ITEMS</span>
               <span className="text3" style={{ fontSize: 11 }}>Items must exist in Item Master</span>
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -843,7 +853,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     const amt = (Number(ln?.orderQty) || 0) * (Number(ln?.rate) || 0);
                     return (
                       <tr key={field.id}>
-                        <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{idx + 1}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{idx + 1}</td>
                         <td>
                           <SearchableSelect
                             id={`soln-ic-${idx}`}
@@ -866,7 +876,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.drawingNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
-                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--text)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
+                        <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
                         <td><input type="number" step="0.01" min={0} placeholder="₹ Rate" className="innovic-input" style={{ textAlign: 'right', fontSize: 12, color: 'var(--green)', padding: '4px 4px' }} {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })} /></td>
                         <td className="mono" style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, textAlign: 'right' }}>{amt > 0 ? `₹${inrFormat(amt)}` : '—'}</td>
                         <td><button type="button" className="btn btn-sm" style={{ background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)', padding: '3px 8px' }} onClick={() => remove(idx)} aria-label={`Remove line ${idx + 1}`}>Del</button></td>
@@ -944,7 +954,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       {/* Legacy prints the row index here; ours keeps the editable
                           Lot # the save reads (`lotNo`) — feature retained. */}
                       <td style={{ width: 80 }}><input type="number" min={1} className="innovic-input td-ctr mono fw-700" style={{ color: 'var(--purple)' }} {...register(`milestones.${idx}.lotNo` as const, { valueAsNumber: true })} /></td>
-                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--text)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
+                      <td><input type="number" min={0} placeholder="Qty" className="innovic-input" style={{ width: 80, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }} {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })} /></td>
                       <td><input type="date" className="innovic-input" style={{ fontSize: 11 }} {...register(`milestones.${idx}.dueDate` as const)} /></td>
                       <td><input className="innovic-input" autoComplete="off" placeholder="e.g. 1st lot" style={{ fontSize: 11 }} {...register(`milestones.${idx}.remarks` as const)} /></td>
                       <td><button type="button" className="btn btn-danger btn-sm btn-icon" onClick={() => removeMs(idx)} aria-label={`Remove lot ${idx + 1}`}><Trash2 size={12} /></button></td>
@@ -1053,6 +1063,48 @@ function QuickAddClient({
       </div>
     </div>
   );
+}
+
+/** Hosts the shared field-cascade for one SO line (renders nothing). Item Code
+ *  (itemId) is the controller; on a fresh pick the master's Part Name / Material
+ *  / Drawing No. / UOM REPLACE the row's values, on a clear they RESET. Qty,
+ *  Rate, Client PO Ln, status and the master link itself are user/picker-owned
+ *  and are hard-blocked via `userEntered`. A synchronous Map lookup backs the
+ *  resolve, so nothing is fetched here and no stale reply can land — the hook's
+ *  request-id guard covers it regardless. One instance per line satisfies the
+ *  Rules of Hooks for a react-hook-form field array. */
+function LineItemCascade({
+  form,
+  idx,
+  itemId,
+  itemsById,
+}: {
+  form: UseFormReturn<FormValues>;
+  idx: number;
+  itemId: string | null;
+  itemsById: Map<string, ListItemsResponse['items'][number]>;
+}): null {
+  useFieldCascade<FormValues, ListItemsResponse['items'][number]>({
+    form,
+    value: itemId,
+    resolve: (id) => itemsById.get(id) ?? null,
+    fields: [
+      cascadeField(`lines.${idx}.partName`, (it) => it.name, ''),
+      cascadeField(`lines.${idx}.material`, (it) => it.material ?? '', ''),
+      cascadeField(`lines.${idx}.drawingNo`, (it) => it.drawingNo ?? '', ''),
+      cascadeField(`lines.${idx}.uom`, (it) => it.uom, NEW_LINE.uom),
+    ],
+    userEntered: [
+      `lines.${idx}.orderQty`,
+      `lines.${idx}.rate`,
+      `lines.${idx}.clientPoLineNo`,
+      `lines.${idx}.status`,
+      `lines.${idx}.itemId`,
+      `lines.${idx}.itemCodeText`,
+    ],
+    setValueOptions: { shouldDirty: true },
+  });
+  return null;
 }
 
 function detailToFormValues(detail: SalesOrderDetail): FormValues {

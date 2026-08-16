@@ -51,6 +51,7 @@ export const jobWorkOrderLineSchema = z.object({
   rate: z.string(), // processing charge per unit; numeric stored as string
   dueDate: z.string().nullable(), // ISO date
   status: jwStatusSchema,
+  sourceBomMasterId: z.string().uuid().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -142,6 +143,12 @@ export const jobWorkOrderLineInputSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
       .optional(),
     status: jwStatusSchema.optional(),
+    // BOM-8 for job work (migration 0086): when set, this line is an ASSEMBLY
+    // — the cascade spawns a child Job Card per component and readiness
+    // becomes weakest-component instead of this line's own output. The BOM may
+    // not contain a `purchase` component (client supplies the material); the
+    // service rejects that with a friendly error. See bom-master/cascade.ts.
+    sourceBomMasterId: z.string().uuid().optional(),
   })
   .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
     message: 'itemId or itemCodeText is required (per ADR-012 #10)',

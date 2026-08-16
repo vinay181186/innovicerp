@@ -8,6 +8,11 @@ export const listOpLogQuerySchema = z.object({
   logType: opLogTypeSchema.optional(),
   shift: z.string().optional(),
   operatorId: z.string().uuid().optional(),
+  // Machine that actually produced the entry (op_log.machine_id, migration 0095,
+  // with the op's machine as fallback). Combined with fromDate/toDate this is the
+  // DATE-RANGE machine output report the Daily Report could never give — that one
+  // reports a single day only.
+  machineId: z.string().uuid().optional(),
   fromDate: z.string().optional(), // YYYY-MM-DD
   toDate: z.string().optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),

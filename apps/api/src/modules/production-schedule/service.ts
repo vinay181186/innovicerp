@@ -33,6 +33,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -231,22 +232,61 @@ export async function rescheduleJcOp(
 
   return withUserContext(user, async (tx) => {
     const opRows = (await tx.execute(sql`
-      SELECT op.id, op.planned_start, op.planned_end, COALESCE(s.computed_status, 'waiting') AS status
+      SELECT op.id,
+             op.op_seq AS "opSeq",
+             op.operation,
+             op.machine_id AS "machineId",
+             jc.code AS "jcCode",
+             COALESCE(m.code, op.machine_code_text) AS "oldMachineCode",
+             op.planned_start, op.planned_end,
+             COALESCE(s.computed_status, 'waiting') AS status,
+             COALESCE(s.completed_qty, 0) AS done
       FROM public.jc_ops op
+      JOIN public.job_cards jc ON jc.id = op.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id
       WHERE op.id = ${jcOpId}::uuid
         AND op.company_id = ${companyId}::uuid
         AND op.deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<{
+      opSeq: number;
+      operation: string;
+      machineId: string | null;
+      jcCode: string;
+      oldMachineCode: string | null;
       planned_start: string | null;
       planned_end: string | null;
       status: string;
+      done: number;
     }>;
     const op = opRows[0];
     if (!op) throw new NotFoundError(`JC operation ${jcOpId} not found`);
     if (op.status === 'complete') {
       throw new ConflictError('Cannot reschedule a completed operation.');
+    }
+
+    // Dragging a bar to another machine row IS a machine change. Since migration
+    // 0095 each op_log row keeps the machine that produced its qty, so this only
+    // re-points the REMAINING qty — but it must agree with changeJcOpMachine and
+    // job-card edit: block while an OPEN in-house session is running (ADR-084),
+    // because those pieces only reach op_log, with their machine stamped, when
+    // the session is stopped. Date-only reschedules are unaffected.
+    const machineChanged = (op.machineId ?? '') !== input.machineId;
+    if (machineChanged) {
+      const runningRows = (await tx.execute(sql`
+        SELECT 1 AS one
+        FROM public.running_ops
+        WHERE jc_op_id = ${jcOpId}::uuid
+          AND status = 'running'
+          AND is_osp = false
+        LIMIT 1
+      `)) as unknown as Array<{ one: number }>;
+      if (runningRows.length > 0) {
+        throw new ConflictError(
+          'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
+        );
+      }
     }
 
     // Verify target machine exists in company
@@ -281,6 +321,25 @@ export async function rescheduleJcOp(
       WHERE id = ${jcOpId}::uuid
         AND company_id = ${companyId}::uuid
     `);
+
+    // Audit trail: only when the machine actually moved. A pure date-only
+    // reschedule writes no activity line (same as before).
+    if (machineChanged) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'EDIT',
+          entity: 'JC Operation',
+          detail:
+            `Machine changed on ${op.jcCode} op ${Number(op.opSeq)} ${op.operation} — ` +
+            `${op.oldMachineCode ?? '(none)'} → ${machRows[0].code}; ` +
+            `${Number(op.done)} pcs already completed stay recorded against ${op.oldMachineCode ?? '(none)'}`,
+          refId: op.jcCode,
+        },
+        companyId,
+        user,
+      );
+    }
 
     return { ok: true };
   });

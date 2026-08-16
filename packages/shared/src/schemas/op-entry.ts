@@ -104,12 +104,53 @@ export const opLogSchema = z.object({
   rejectQty: z.number().int().nonnegative(),
   operatorId: z.string().uuid().nullable(),
   operatorName: z.string().nullable(),
+  /** The machine this entry's qty was produced on (0095). Stamped at log time,
+   *  so it survives a later machine change on the operation. Null on QC entries
+   *  and on pre-0095 rows whose op never carried a resolved machine. */
+  machineId: z.string().uuid().nullable(),
+  /** Live machines-master code (LEFT JOIN on machineId); prefer over the
+   *  machineCodeText snapshot, which can drift from the master. */
+  machineCode: z.string().nullable(),
+  machineCodeText: z.string().nullable(),
   startTime: z.string().nullable(), // HH:MM:SS
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
 });
 export type OpLog = z.infer<typeof opLogSchema>;
+
+// ─── Machine-wise output (0095, view v_op_machine_output) ──────────────────
+//
+// THE answer to "qty wise machine used": one row per (operation × machine).
+// Reads only log_type='complete' rows with qty > 0, so 'start' markers and QC
+// inspections never inflate it.
+
+export const opMachineOutputSchema = z.object({
+  jcOpId: z.string().uuid(),
+  jobCardId: z.string().uuid(),
+  opSeq: z.number().int().positive(),
+  machineId: z.string().uuid().nullable(),
+  machineCode: z.string(),
+  machineName: z.string().nullable(),
+  completedQty: z.number().int().nonnegative(),
+  rejectQty: z.number().int().nonnegative(),
+  entryCount: z.number().int().nonnegative(),
+  firstLogDate: z.string(),
+  lastLogDate: z.string(),
+});
+export type OpMachineOutput = z.infer<typeof opMachineOutputSchema>;
+
+export const listOpMachineOutputQuerySchema = z
+  .object({
+    jcOpId: z.string().uuid().optional(),
+    /** Every op of a whole Job Card — drives the JC-level machine breakdown. */
+    jobCardId: z.string().uuid().optional(),
+  })
+  .refine((q) => Boolean(q.jcOpId || q.jobCardId), {
+    message: 'Provide jcOpId or jobCardId',
+    path: ['jcOpId'],
+  });
+export type ListOpMachineOutputQuery = z.infer<typeof listOpMachineOutputQuerySchema>;
 
 export const runningOpSchema = z.object({
   id: z.string().uuid(),

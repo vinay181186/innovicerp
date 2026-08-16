@@ -891,6 +891,14 @@ export const opLog = pgTable(
     rejectQty: integer('reject_qty').notNull().default(0),
     operatorId: uuid('operator_id').references(() => operators.id),
     operatorName: text('operator_name'),
+    // The machine that produced THIS entry's qty, stamped at log time from the
+    // open running session (falling back to the op's machine). Migration 0095.
+    // Before it existed, machine-wise output had to be read off the operation's
+    // single machine_id, so changing that machine silently re-attributed all
+    // past production. Text fallback mirrors jc_ops (ADR-012 #10); both are null
+    // on QC ops, which have no machine.
+    machineId: uuid('machine_id').references(() => machines.id),
+    machineCodeText: text('machine_code_text'),
     startTime: time('start_time'),
     remarks: text('remarks'),
     // TPI (Third Party Inspection) metadata — set on a QC log when it is a TPI
@@ -919,6 +927,9 @@ export const opLog = pgTable(
     index('op_log_operator_date_idx')
       .on(t.operatorId, t.logDate)
       .where(sql`${t.operatorId} is not null`),
+    index('op_log_machine_date_idx')
+      .on(t.machineId, t.logDate)
+      .where(sql`${t.machineId} is not null`),
     check('op_log_qty_nonneg', sql`${t.qty} >= 0`),
     check('op_log_reject_qty_nonneg', sql`${t.rejectQty} >= 0`),
     pgPolicy('op_log_company_read', {
@@ -1261,6 +1272,13 @@ export const jobWorkOrderLines = pgTable(
     invoicedQty: integer('invoiced_qty').notNull().default(0),
     dueDate: date('due_date'),
     status: soStatusEnum('status').notNull().default('open'),
+    // BOM-8 for job work (migration 0086): when set, the BOM cascade spawns a
+    // child Job Card per component and readiness becomes weakest-component
+    // rather than this line's own output. A BOM containing a `purchase`
+    // component is refused at the service — job work uses client material.
+    sourceBomMasterId: uuid('source_bom_master_id').references((): AnyPgColumn => bomMasters.id, {
+      onDelete: 'restrict',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1278,6 +1296,9 @@ export const jobWorkOrderLines = pgTable(
     index('job_work_order_lines_item_idx')
       .on(t.itemId)
       .where(sql`${t.deletedAt} is null`),
+    index('job_work_order_lines_source_bom_idx')
+      .on(t.sourceBomMasterId)
+      .where(sql`${t.sourceBomMasterId} is not null`),
     check('job_work_order_lines_order_qty_positive', sql`${t.orderQty} > 0`),
     pgPolicy('job_work_order_lines_company_read', {
       for: 'select',

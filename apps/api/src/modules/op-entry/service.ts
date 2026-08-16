@@ -38,8 +38,10 @@ import type {
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
+  ListOpMachineOutputQuery,
   ListRunningOpsQuery,
   OpLog,
+  OpMachineOutput,
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
@@ -139,9 +141,30 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
     const scope = input.jobCardId
       ? sql`${opLog.jcOpId} IN (SELECT id FROM public.jc_ops WHERE job_card_id = ${input.jobCardId}::uuid AND deleted_at IS NULL)`
       : sql`${opLog.jcOpId} = ${input.jcOpId!}::uuid`;
+    // machines is LEFT JOINed for the LIVE master code (0095); machineCodeText
+    // is the snapshot taken when the entry was written and can differ from it.
     const rows = await tx
-      .select()
+      .select({
+        id: opLog.id,
+        jcOpId: opLog.jcOpId,
+        logNo: opLog.logNo,
+        logType: opLog.logType,
+        logDate: opLog.logDate,
+        shift: opLog.shift,
+        qty: opLog.qty,
+        rejectQty: opLog.rejectQty,
+        operatorId: opLog.operatorId,
+        operatorName: opLog.operatorName,
+        machineId: opLog.machineId,
+        machineCode: machines.code,
+        machineCodeText: opLog.machineCodeText,
+        startTime: opLog.startTime,
+        remarks: opLog.remarks,
+        createdAt: opLog.createdAt,
+        createdBy: opLog.createdBy,
+      })
       .from(opLog)
+      .leftJoin(machines, eq(machines.id, opLog.machineId))
       .where(and(eq(opLog.companyId, companyId), scope))
       .orderBy(desc(opLog.createdAt))
       .limit(input.limit);
@@ -156,11 +179,57 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
       rejectQty: r.rejectQty,
       operatorId: r.operatorId,
       operatorName: r.operatorName,
+      machineId: r.machineId,
+      machineCode: r.machineCode,
+      machineCodeText: r.machineCodeText,
       startTime: r.startTime,
       remarks: r.remarks,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
       createdBy: r.createdBy,
     })) as OpLog[];
+  });
+}
+
+// Machine-wise output (0095). THE answer to "qty wise machine used": one row
+// per (operation × machine), read straight off v_op_machine_output so the JC
+// screen and the Machine Output report can never disagree. The view already
+// filters to log_type='complete' with qty > 0, so 'start' markers and QC
+// inspections never inflate the numbers.
+export async function listOpMachineOutput(
+  input: ListOpMachineOutputQuery,
+  user: AuthContext,
+): Promise<OpMachineOutput[]> {
+  const companyId = requireCompany(user);
+  if (!input.jcOpId && !input.jobCardId) {
+    throw new ValidationError('Provide jcOpId or jobCardId');
+  }
+  return withUserContext(user, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT
+        jc_op_id             AS "jcOpId",
+        job_card_id          AS "jobCardId",
+        op_seq               AS "opSeq",
+        machine_id           AS "machineId",
+        machine_code         AS "machineCode",
+        machine_name         AS "machineName",
+        completed_qty        AS "completedQty",
+        reject_qty           AS "rejectQty",
+        entry_count          AS "entryCount",
+        first_log_date::text AS "firstLogDate",
+        last_log_date::text  AS "lastLogDate"
+      FROM public.v_op_machine_output
+      WHERE company_id = ${companyId}::uuid
+        ${input.jcOpId ? sql`AND jc_op_id = ${input.jcOpId}::uuid` : sql``}
+        ${input.jobCardId ? sql`AND job_card_id = ${input.jobCardId}::uuid` : sql``}
+      ORDER BY op_seq ASC, machine_code ASC
+    `);
+    return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      ...r,
+      opSeq: Number(r['opSeq']),
+      completedQty: Number(r['completedQty'] ?? 0),
+      rejectQty: Number(r['rejectQty'] ?? 0),
+      entryCount: Number(r['entryCount'] ?? 0),
+    })) as unknown as OpMachineOutput[];
   });
 }
 
@@ -219,6 +288,7 @@ interface JcOpRow {
   opSeq: number;
   opType: 'process' | 'qc' | 'outsource';
   machineId: string | null;
+  machineCodeText: string | null;
 }
 
 interface AvailabilitySnapshot {
@@ -238,6 +308,7 @@ async function loadJcOp(
       opSeq: jcOps.opSeq,
       opType: jcOps.opType,
       machineId: jcOps.machineId,
+      machineCodeText: jcOps.machineCodeText,
     })
     .from(jcOps)
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId)))
@@ -245,6 +316,62 @@ async function loadJcOp(
   const op = rows[0];
   if (!op) throw new NotFoundError(`Op ${jcOpId} not found`);
   return op as JcOpRow;
+}
+
+// ─── Machine stamping (0095) ───────────────────────────────────────────────
+//
+// An op_log row records the machine that made ITS pieces, so changing the
+// operation's machine mid-way never re-attributes past production.
+//
+// Resolution order:
+//   1. The OPEN non-OSP running session on this op — that is the machine
+//      physically doing the work right now, and it is what the operator sees
+//      on the Live Ops board. It wins even when the op's own machine_id was
+//      since edited.
+//   2. The op's own machine_id (no session, e.g. a straight log without start).
+//   3. Text only: jc_ops.machine_code_text, for plan/route-sourced ops that
+//      never resolved an FK (ADR-012 #10). Never the literal 'QC' — that is a
+//      type label written by the route builder, not a machine (ISSUE-010).
+interface StampedMachine {
+  machineId: string | null;
+  /** Live machines-master code for machineId; null when nothing resolved. */
+  machineCode: string | null;
+  /** Snapshot written to op_log.machine_code_text. */
+  machineCodeText: string | null;
+}
+
+async function resolveLogMachine(
+  tx: Parameters<Parameters<typeof withUserContext<unknown>>[1]>[0],
+  op: JcOpRow,
+  companyId: string,
+): Promise<StampedMachine> {
+  const sessions = await tx
+    .select({ machineId: runningOps.machineId })
+    .from(runningOps)
+    .where(
+      and(
+        eq(runningOps.jcOpId, op.id),
+        eq(runningOps.companyId, companyId),
+        eq(runningOps.status, 'running'),
+        eq(runningOps.isOsp, false),
+      ),
+    )
+    .limit(1);
+  const machineId = sessions[0]?.machineId ?? op.machineId ?? null;
+  const textFallback =
+    op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
+
+  if (machineId) {
+    const m = await tx
+      .select({ code: machines.code })
+      .from(machines)
+      .where(eq(machines.id, machineId))
+      .limit(1);
+    const code = m[0]?.code ?? null;
+    return { machineId, machineCode: code, machineCodeText: code ?? textFallback };
+  }
+
+  return { machineId: null, machineCode: null, machineCodeText: textFallback };
 }
 
 async function loadAvailability(
@@ -457,6 +584,10 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       );
     }
 
+    // 0095 — stamp the machine that made THIS qty (open session first, then the
+    // op's own machine), so a later machine change rewrites no history.
+    const stamped = await resolveLogMachine(tx, op, companyId);
+
     const inserted = await tx
       .insert(opLog)
       .values({
@@ -470,6 +601,8 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
         rejectQty: input.rejectQty ?? 0,
         operatorId: input.operatorId ?? null,
         operatorName: input.operatorName ?? null,
+        machineId: stamped.machineId,
+        machineCodeText: stamped.machineCodeText,
         startTime: null,
         remarks: input.remarks ?? null,
         createdBy: user.id,
@@ -555,6 +688,9 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       rejectQty: row.rejectQty,
       operatorId: row.operatorId,
       operatorName: row.operatorName,
+      machineId: row.machineId,
+      machineCode: stamped.machineCode,
+      machineCodeText: row.machineCodeText,
       startTime: row.startTime,
       remarks: row.remarks,
       createdAt:
@@ -686,6 +822,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         rejectQty: input.rejectQty,
         operatorId: input.operatorId ?? null,
         operatorName: input.operatorName ?? null,
+        // 0095 — no machine on QC: inspection is not machining, and jc_ops
+        // carries the literal 'QC' as a type label, not a machine (ISSUE-010).
         startTime: null,
         remarks: input.remarks ?? null,
         isTpi: input.isTpi ?? false,
@@ -783,6 +921,10 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       rejectQty: row.rejectQty,
       operatorId: row.operatorId,
       operatorName: row.operatorName,
+      // Always null on QC entries — see the insert above.
+      machineId: row.machineId,
+      machineCode: null,
+      machineCodeText: row.machineCodeText,
       startTime: row.startTime,
       remarks: row.remarks,
       createdAt:
@@ -835,6 +977,10 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         .limit(1);
       machineCode = m[0]?.code ?? null;
     }
+    // Text snapshot for the op_log marker below when no machine row resolves.
+    // 'QC' is a type label the route builder writes, not a machine (ISSUE-010).
+    const startMachineCodeText =
+      op.machineCodeText && op.machineCodeText !== 'QC' ? op.machineCodeText : null;
 
     let inserted;
     try {
@@ -864,7 +1010,9 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       throw e;
     }
 
-    // Also append a 'start' marker to op_log for history (qty=0).
+    // Also append a 'start' marker to op_log for history (qty=0). It carries the
+    // same machine as the session it opens (0095), so the marker and the
+    // completion logs that follow it read as one continuous run on one machine.
     await tx.insert(opLog).values({
       companyId,
       jcOpId: input.jcOpId,
@@ -876,6 +1024,8 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
       rejectQty: 0,
       operatorId: input.operatorId ?? null,
       operatorName: input.operatorName ?? null,
+      machineId: op.machineId,
+      machineCodeText: machineCode ?? startMachineCodeText,
       startTime: input.startTime,
       remarks: input.remarks ?? null,
       createdBy: user.id,

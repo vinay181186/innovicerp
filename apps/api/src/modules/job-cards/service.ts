@@ -1254,6 +1254,24 @@ async function startedOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<s
   return new Set(rows.map((r) => r.id));
 }
 
+/** ids of this JC's active ops with an OPEN in-house machine session
+ *  (`running_ops.status='running'` and not the OSP lane). Their in-progress
+ *  pieces are not in op_log yet, so the machine they were made on is not
+ *  recorded anywhere until the session is stopped — see ADR-084. */
+async function runningOpIds(tx: DbTransaction, jobCardId: string): Promise<Set<string>> {
+  const rows = (await tx.execute(sql`
+    SELECT o.id::text AS id
+    FROM public.jc_ops o
+    WHERE o.job_card_id = ${jobCardId}::uuid
+      AND o.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1 FROM public.running_ops ro
+        WHERE ro.jc_op_id = o.id AND ro.status = 'running' AND ro.is_osp = false
+      )
+  `)) as unknown as Array<{ id: string }>;
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function updateJobCard(
   id: string,
   input: JobCardWriteInput,
@@ -1315,6 +1333,7 @@ export async function updateJobCard(
       .where(and(eq(jcOps.jobCardId, id), isNull(jcOps.deletedAt)));
     const existingById = new Map(existing.map((o) => [o.id, o]));
     const started = await startedOpIds(tx, id);
+    const running = await runningOpIds(tx, id);
     // Committed = outsource op whose PR/PO/DC paperwork already points at it;
     // removing/retyping/moving it would orphan that paperwork.
     //
@@ -1386,17 +1405,23 @@ export async function updateJobCard(
       if (newSeq !== undefined && newSeq !== ex.opSeq) {
         throw new ValidationError(`Cannot re-sequence ${subject}.`);
       }
-      // A started op's machine is locked — the op board (changeJcOpMachine)
-      // already forbids a machine change once work is logged; the edit form
-      // must match, or the op's recorded machine drifts from where the logged
-      // production was actually done. Only process ops carry a machine.
+      // Machine change on a started op is ALLOWED. Since migration 0095 each
+      // op_log row permanently carries the machine that produced its qty, so
+      // `jc_ops.machine_id` no longer owns the history — it only says which
+      // machine runs the REMAINING qty (50 pcs on CNC-01, balance on CNC-02,
+      // both kept). The one case still blocked matches changeJcOpMachine and
+      // ADR-084: an OPEN in-house session's pieces reach op_log — with their
+      // machine stamped — only when the session is stopped, so the machine must
+      // not move out from under it. Only process ops carry a machine.
       if (
-        isStarted &&
+        running.has(ex.id) &&
         inPayload &&
         inPayload.opType === 'process' &&
         (inPayload.machineCode ?? '') !== (ex.machineCodeText ?? '')
       ) {
-        throw new ValidationError(`Cannot change the machine of ${subject}.`);
+        throw new ValidationError(
+          'Stop the running machine session before changing the machine — the pieces already made are recorded against the current machine, then switch.',
+        );
       }
     }
 

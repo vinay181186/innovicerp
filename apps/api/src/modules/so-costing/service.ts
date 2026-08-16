@@ -2,6 +2,11 @@
 // (L17310). Per SO: Material (PO with-material lines linked to the SO line via
 // source_so_line_id, po_type <> 'job_work'), Outsource (jc_ops.outsource_po_line),
 // Machine-Time ((cycle_min/60) × completed × machine.hour_rate). Read-only.
+//
+// Machine-Time is split per machine as of migration 0095: each machine's own
+// completed qty (v_op_machine_output) is priced at its own hour_rate, instead of
+// pricing the whole operation at whatever machine the op currently points at.
+// An op that only ever ran on one machine costs exactly what it costed before.
 
 import type {
   ListSoCostingResponse,
@@ -58,14 +63,40 @@ export async function listSoCosting(user: AuthContext): Promise<ListSoCostingRes
             AND o.deleted_at IS NULL AND jc.deleted_at IS NULL
           GROUP BY sol.sales_order_id
         ),
+        -- Machine-time is costed per MACHINE, not per operation (migration 0095).
+        -- v_op_machine_output splits an op's completed qty across the machines
+        -- that actually produced it, so each share is priced at ITS OWN hour
+        -- rate. Before this, the whole op was priced at the op's CURRENT machine
+        -- rate, so re-routing an op silently repriced work already done.
+        -- rated_qty = SUM(qty × that machine's hour_rate).
+        mach_split AS (
+          SELECT v.jc_op_id,
+                 SUM(v.completed_qty) AS logged_qty,
+                 SUM(v.completed_qty * COALESCE(mm.hour_rate, 0)) AS rated_qty
+          FROM v_op_machine_output v
+          LEFT JOIN machines mm ON mm.id = v.machine_id
+          WHERE v.company_id = ${cid}
+          GROUP BY v.jc_op_id
+        ),
         machtime AS (
+          -- Residual term: qty counted as completed on the op that has no
+          -- production log behind it (OSP-accepted pieces on a dual-lane
+          -- in-house op, ADR-081) keeps costing at the op's own machine rate,
+          -- exactly as before. A single-machine op therefore returns the
+          -- identical number it always did: rated_qty = qty × that machine's
+          -- rate, logged_qty = qty, residual = the OSP remainder.
           SELECT sol.sales_order_id,
-                 SUM((o.cycle_time_min / 60.0) * COALESCE(vs.completed_qty, 0) * COALESCE(m.hour_rate, 0)) AS mt
+                 SUM((o.cycle_time_min / 60.0) * (
+                   COALESCE(ms.rated_qty, 0)
+                   + GREATEST(COALESCE(vs.completed_qty, 0) - COALESCE(ms.logged_qty, 0), 0)
+                     * COALESCE(m.hour_rate, 0)
+                 )) AS mt
           FROM jc_ops o
           JOIN job_cards jc ON jc.id = o.job_card_id
           JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
           LEFT JOIN v_jc_op_status vs ON vs.jc_op_id = o.id
           LEFT JOIN machines m ON m.id = o.machine_id
+          LEFT JOIN mach_split ms ON ms.jc_op_id = o.id
           WHERE o.company_id = ${cid} AND o.op_type NOT IN ('outsource', 'qc')
             AND o.machine_id IS NOT NULL AND o.deleted_at IS NULL AND jc.deleted_at IS NULL
           GROUP BY sol.sales_order_id
@@ -191,13 +222,26 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
     const opRes = await tx.execute(
       sql.raw(`
         SELECT sol.id AS so_line_id, jc.code AS jc_no, o.op_seq, o.operation,
+          -- machine_code stays the op's CURRENT machine while the cost below is
+          -- the per-machine blend, so on a re-routed op the label names one
+          -- machine and the money spans several.
+          -- TODO(0095): so-costing/service.ts detail op rows — show the machine
+          -- split (one sub-row per machine, qty + rate + cost). Needs a
+          -- machines[] (machineCode, qty, cost) field on SoCostingOpRow in
+          -- packages/shared, which is outside this change's file scope.
           o.op_type::text AS op_type, o.machine_code_text AS machine_code,
           COALESCE((
             SELECT pol.qty * pol.rate FROM purchase_order_lines pol
             WHERE pol.id = o.outsource_po_line_id
           ), 0) AS outsource_cost,
+          -- Same per-machine formula as the list query's machtime CTE, so the
+          -- detail total can never drift from the list total.
           CASE WHEN o.op_type NOT IN ('outsource', 'qc') AND o.machine_id IS NOT NULL
-            THEN (o.cycle_time_min / 60.0) * COALESCE(vs.completed_qty, 0) * COALESCE(m.hour_rate, 0)
+            THEN (o.cycle_time_min / 60.0) * (
+                   COALESCE(ms.rated_qty, 0)
+                   + GREATEST(COALESCE(vs.completed_qty, 0) - COALESCE(ms.logged_qty, 0), 0)
+                     * COALESCE(m.hour_rate, 0)
+                 )
             ELSE 0 END AS machine_time_cost,
           COALESCE(vs.completed_qty, 0) AS qty,
           o.cycle_time_min
@@ -206,6 +250,13 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
         JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
         LEFT JOIN v_jc_op_status vs ON vs.jc_op_id = o.id
         LEFT JOIN machines m ON m.id = o.machine_id
+        LEFT JOIN LATERAL (
+          SELECT SUM(v.completed_qty) AS logged_qty,
+                 SUM(v.completed_qty * COALESCE(mm.hour_rate, 0)) AS rated_qty
+          FROM v_op_machine_output v
+          LEFT JOIN machines mm ON mm.id = v.machine_id
+          WHERE v.jc_op_id = o.id
+        ) ms ON TRUE
         WHERE sol.sales_order_id = ${sid} AND o.deleted_at IS NULL AND jc.deleted_at IS NULL
         ORDER BY sol.line_no, jc.code, o.op_seq
       `),

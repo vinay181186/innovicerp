@@ -6,11 +6,13 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useJcOpsEnriched,
   useOpLog,
+  useOpMachineOutput,
   useRealtimeOpLog,
   useRealtimeRunningOps,
   useRunningOps,
 } from '../api';
 import { JcOpsTable } from '../components/jc-ops-table';
+import { MachineOutputPanel } from '../components/machine-output-panel';
 import { OpEntryForm } from '../components/op-entry-form';
 import { OpLogHistory } from '../components/op-log-history';
 
@@ -62,6 +64,11 @@ function OpEntryPage() {
   );
   const opLog = useOpLog(
     { jcOpId: selectedOp?.id ?? '', limit: 100 },
+    { enabled: Boolean(selectedOp) },
+  );
+  // 0095: qty-wise machine breakdown for the selected op.
+  const machineOutput = useOpMachineOutput(
+    { jcOpId: selectedOp?.id ?? '' },
     { enabled: Boolean(selectedOp) },
   );
 
@@ -183,11 +190,22 @@ function OpEntryPage() {
                   onModeChange={handleModeChange}
                 />
               </div>
-              <div className="panel">
-                <div className="panel-hdr">
-                  <span className="panel-title">Recent log</span>
+              <div>
+                <div className="panel" style={{ marginBottom: 16 }}>
+                  <div className="panel-hdr">
+                    <span className="panel-title">Machine-wise output</span>
+                  </div>
+                  <MachineOutputPanel
+                    rows={machineOutput.data ?? []}
+                    isLoading={machineOutput.isLoading}
+                  />
                 </div>
-                <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+                <div className="panel">
+                  <div className="panel-hdr">
+                    <span className="panel-title">Recent log</span>
+                  </div>
+                  <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+                </div>
               </div>
             </div>
           ) : ops.data && ops.data.length > 0 ? (
