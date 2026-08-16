@@ -29,7 +29,6 @@ import {
   useAssemblyTracker,
   useMarkUnitAssembled,
   useMarkUnitDispatched,
-  useSetReadinessOverride,
   useUndoLastUnit,
 } from '../api';
 
@@ -135,7 +134,11 @@ function AssemblyDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <ComponentsPanel components={data.components} soId={soId} orderQty={data.rollup.orderQty} />
+      <ComponentsPanel
+        components={data.components}
+        orderQty={data.rollup.orderQty}
+        assembledQty={data.rollup.assembledQty}
+      />
 
       <div className="panel">
         <div className="panel-hdr">
@@ -469,17 +472,13 @@ const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color:
 
 function ComponentsPanel({
   components,
-  soId,
   orderQty,
+  assembledQty,
 }: {
   components: AssemblyComponentRow[];
-  soId: string;
   orderQty: number;
+  assembledQty: number;
 }): React.JSX.Element {
-  const setOverride = useSetReadinessOverride(soId);
-  const [editing, setEditing] = useState<{ code: string; value: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   if (components.length === 0) {
     return (
       <div className="panel">
@@ -493,35 +492,11 @@ function ComponentsPanel({
     );
   }
 
-  const onSave = (childCode: string, val: number): void => {
-    setError(null);
-    setOverride.mutate(
-      { childCode, input: { readyQtyOverride: val } },
-      {
-        onSuccess: () => {
-          setEditing(null);
-        },
-        onError: (e) => setError(e instanceof Error ? e.message : 'Override failed'),
-      },
-    );
-  };
-
   return (
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Components ({components.length})</div>
       </div>
-      {error ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            padding: '6px 10px',
-            fontSize: 12,
-          }}
-        >
-          {error}
-        </div>
-      ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
@@ -533,9 +508,8 @@ function ComponentsPanel({
               <th style={{ textAlign: 'center' }}>Qty/Set</th>
               <th style={{ textAlign: 'center' }}>Need</th>
               <th style={{ textAlign: 'center' }}>Stock</th>
-              <th style={{ textAlign: 'center' }}>Auto Ready</th>
-              <th style={{ textAlign: 'center', color: 'var(--amber)' }}>Override</th>
-              <th style={{ textAlign: 'center' }}>Final Ready</th>
+              <th style={{ textAlign: 'center' }}>In Assembly</th>
+              <th style={{ textAlign: 'center' }}>Assembled</th>
               <th style={{ textAlign: 'center', color: 'var(--red)' }}>Short</th>
               <th style={{ textAlign: 'center' }}>Enough For</th>
               <th>Status</th>
@@ -568,58 +542,15 @@ function ComponentsPanel({
                 <td className="td-ctr" style={{ color: 'var(--green2)' }}>
                   {c.stockQty}
                 </td>
-                <td className="td-ctr" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
-                  {c.autoReadyQty}
+                {/* In Assembly = components still headed into the units left to
+                    build (qtyPerSet × remaining units). Assembled = components
+                    already consumed into built units (qtyPerSet × units built).
+                    Both derive from rollup.assembledQty — no fabricated data. */}
+                <td className="td-ctr" style={{ color: 'var(--amber2)', fontWeight: 600 }}>
+                  {Math.max(0, c.totalNeed - c.qtyPerSet * assembledQty)}
                 </td>
-                <td className="td-ctr">
-                  {editing?.code === c.childItemCode ? (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        className="innovic-input"
-                        style={{ width: 64 }}
-                        value={editing.value}
-                        onChange={(e) => setEditing({ code: c.childItemCode, value: e.target.value })}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => onSave(c.childItemCode, Math.max(0, Number(editing.value) || 0))}
-                        disabled={setOverride.isPending}
-                      >
-                        ✓
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setEditing(null)}
-                      >
-                        ✗
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '0 6px' }}
-                      onClick={() =>
-                        setEditing({ code: c.childItemCode, value: String(c.overrideQty) })
-                      }
-                      title="Manual override (planner declares N ready)"
-                    >
-                      {c.overrideQty}
-                    </button>
-                  )}
-                </td>
-                {/* Legacy L28826 suffixes ✏ when a manual override exists.
-                    overrideQty is non-nullable here (0 == "no override"), so the
-                    marker is omitted rather than shown on every zero row. */}
-                <td
-                  className="td-ctr fw-700"
-                  style={{ color: c.finalReadyQty >= c.totalNeed ? 'var(--green)' : 'var(--amber)' }}
-                >
-                  {c.finalReadyQty}
+                <td className="td-ctr fw-700" style={{ color: 'var(--green)' }}>
+                  {c.qtyPerSet * assembledQty}
                 </td>
                 <td
                   className="td-ctr fw-700"
