@@ -4,51 +4,23 @@ import {
   type CreatePurchaseOrderInput,
   PO_STATUSES,
   PO_TYPES,
-  type PoStatus,
-  type PoType,
   type PurchaseOrderDetail,
   type UpdatePurchaseOrderInput,
 } from '@innovic/shared';
 import { todayLocal } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useItemsList } from '@/modules/items/api';
 import { useVendorsList } from '@/modules/vendors/api';
-
-interface LineFormValue {
-  id?: string;
-  itemId?: string;
-  itemCodeText: string;
-  itemName: string;
-  qty: number;
-  rate: number;
-  receivedQty?: number;
-  dueDate?: string;
-  lineRemarks?: string;
-}
-
-interface FormValues {
-  header: {
-    code: string;
-    poDate: string;
-    poType: PoType;
-    status: PoStatus;
-    vendorId?: string;
-    vendorCodeText?: string;
-    dueDate?: string;
-    taxType?: string;
-    sgstPct: number;
-    cgstPct: number;
-    igstPct: number;
-    prCodeText?: string;
-    approvalRemarks?: string;
-    remarks?: string;
-  };
-  lines: LineFormValue[];
-}
+import {
+  PO_ITEM_DATALIST_ID,
+  type PoFormValues as FormValues,
+  type PoLineFormValue as LineFormValue,
+} from './po-form-values';
+import { type PoItemMaster, PoLineRow } from './po-line-row';
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
@@ -100,7 +72,8 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   const { register, control, handleSubmit, formState, setValue, watch } = form;
   const isCreate = !isEdit;
   const [docNoValid, setDocNoValid] = useState(true);
-  const errors = formState.errors;
+  // Line-level errors are rendered by <PoLineRow>, which reads them off the same
+  // `form` — the formState proxy subscribes wherever it is read.
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
@@ -110,8 +83,11 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   // accepts off-master free text, so a non-matching code is left untouched.
   const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
+  // Until this has actually arrived, every code looks off-master — so the line
+  // cascade stays inert rather than resetting names against a master it can't see.
+  const itemsLoaded = itemsData !== undefined;
   const itemsByCode = useMemo(() => {
-    const m = new Map<string, (typeof items)[number]>();
+    const m = new Map<string, PoItemMaster>();
     for (const it of items) m.set(it.code.toUpperCase(), it);
     return m;
   }, [items]);
@@ -371,155 +347,24 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
                     </td>
                   </tr>
                 ) : (
-                  fields.map((field, idx) => {
-                    const rowBg = idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)';
-                    const line = watchedLines?.[idx];
-                    const matchedItem = itemsByCode.get(
-                      (line?.itemCodeText ?? '').trim().toUpperCase(),
-                    );
-                    const lineAmt = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
-                    const lineCodeReg = register(`lines.${idx}.itemCodeText` as const);
-                    return (
-                      <Fragment key={field.id}>
-                        <tr style={{ background: rowBg }}>
-                          <td
-                            className="td-ctr mono fw-700 cyan"
-                            style={{ width: 32 }}
-                            rowSpan={2}
-                          >
-                            {idx + 1}
-                          </td>
-                          <td style={{ minWidth: 140 }}>
-                            <input
-                              className="innovic-input"
-                              list="dlPoItems"
-                              autoComplete="off"
-                              placeholder="🔍 Item code…"
-                              {...lineCodeReg}
-                              onChange={(e) => {
-                                void lineCodeReg.onChange(e);
-                                const match = itemsByCode.get(e.target.value.trim().toUpperCase());
-                                if (match) {
-                                  setValue(`lines.${idx}.itemId` as const, match.id, {
-                                    shouldDirty: true,
-                                  });
-                                  setValue(`lines.${idx}.itemName` as const, match.name, {
-                                    shouldDirty: true,
-                                    shouldValidate: true,
-                                  });
-                                } else {
-                                  setValue(`lines.${idx}.itemId` as const, undefined, {
-                                    shouldDirty: true,
-                                  });
-                                }
-                              }}
-                            />
-                          </td>
-                          {/* Rule: item code is the unique key. When the code is on
-                              the Item Master the name is derived + read-only; PO still
-                              accepts off-master free text, so the name stays editable
-                              only when there is no master match. */}
-                          <td style={{ minWidth: 90 }}>
-                            <input
-                              className="innovic-input"
-                              autoComplete="off"
-                              readOnly={Boolean(matchedItem)}
-                              title={
-                                matchedItem
-                                  ? 'Auto-filled from Item Master (item code is the key)'
-                                  : undefined
-                              }
-                              style={
-                                matchedItem
-                                  ? { background: 'var(--bg4)', color: 'var(--text3)' }
-                                  : undefined
-                              }
-                              {...register(`lines.${idx}.itemName` as const, {
-                                required: 'Item name is required',
-                              })}
-                            />
-                            {errors.lines?.[idx]?.itemName?.message ? (
-                              <div className="form-error">{errors.lines[idx]?.itemName?.message}</div>
-                            ) : null}
-                          </td>
-                          <td className="text3" style={{ minWidth: 50, fontSize: 11 }}>
-                            {matchedItem?.material ?? ''}
-                          </td>
-                          <td style={{ width: 80 }}>
-                            <input
-                              type="number"
-                              min={1}
-                              className="innovic-input"
-                              style={{ textAlign: 'center', fontWeight: 800, color: 'var(--cyan)' }}
-                              placeholder="Qty ★"
-                              {...register(`lines.${idx}.qty` as const, {
-                                valueAsNumber: true,
-                                min: { value: 1, message: 'Min 1' },
-                              })}
-                            />
-                          </td>
-                          <td style={{ width: 90 }}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min={0}
-                              className="innovic-input"
-                              style={{ textAlign: 'right' }}
-                              placeholder="₹ Rate"
-                              {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
-                            />
-                          </td>
-                          <td className="td-right" style={{ width: 85 }}>
-                            <span
-                              className={lineAmt > 0 ? 'mono fw-700 green' : 'mono fw-700 text3'}
-                              style={{ fontSize: 13 }}
-                            >
-                              {lineAmt > 0 ? `₹${inrFormat(lineAmt)}` : '—'}
-                            </span>
-                          </td>
-                          <td style={{ width: 85 }}>
-                            <input
-                              type="date"
-                              className="innovic-input"
-                              {...register(`lines.${idx}.dueDate` as const)}
-                            />
-                          </td>
-                          {isEdit ? (
-                            <td style={{ width: 80 }}>
-                              <input
-                                type="number"
-                                className="innovic-input"
-                                readOnly
-                                title="Received qty is mutated only by GRN cascade (T-036c)"
-                                value={field.receivedQty ?? 0}
-                              />
-                            </td>
-                          ) : null}
-                          <td style={{ width: 28 }} rowSpan={2}>
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm btn-icon"
-                              onClick={() => remove(idx)}
-                              title="Remove"
-                              aria-label={`Remove line ${idx + 1}`}
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                        <tr style={{ background: rowBg }}>
-                          <td colSpan={remarksSpan} style={{ padding: '0 6px 6px' }}>
-                            <input
-                              className="innovic-input"
-                              autoComplete="off"
-                              placeholder="Remarks for this line…"
-                              {...register(`lines.${idx}.lineRemarks` as const)}
-                            />
-                          </td>
-                        </tr>
-                      </Fragment>
-                    );
-                  })
+                  fields.map((field, idx) => (
+                    // Keyed by the field-array id, not the index: a row keeps its
+                    // React identity — and with it the cascade's memory of what it
+                    // auto-filled — when a line above it is removed.
+                    <PoLineRow
+                      key={field.id}
+                      form={form}
+                      idx={idx}
+                      line={watchedLines?.[idx]}
+                      isEdit={isEdit}
+                      receivedQty={field.receivedQty}
+                      itemsByCode={itemsByCode}
+                      itemsLoaded={itemsLoaded}
+                      remarksSpan={remarksSpan}
+                      rowBg={idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)'}
+                      onRemove={() => remove(idx)}
+                    />
+                  ))
                 )}
               </tbody>
             </table>
@@ -694,7 +539,7 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             enforces (ISSUE-100). */}
       </div>
 
-      <datalist id="dlPoItems">
+      <datalist id={PO_ITEM_DATALIST_ID}>
         {items.map((it) => (
           <option key={it.id} value={it.code}>
             {it.code} — {it.name}

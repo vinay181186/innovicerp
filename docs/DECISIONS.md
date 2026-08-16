@@ -5889,3 +5889,76 @@ Rejected, having checked the code first:
   so a mistake is only visible before submit, not after. `incoming-qc` has no test
   file at all (pre-existing) — this change is covered by typecheck and a live
   query check, not by a test.
+
+## ADR-124: One shared field-cascade hook; PO line Name now resets with its code
+
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+
+"+ New PO" (`/purchase-orders/new` → `purchase-order-form.tsx`) filled a line's
+Item Name from the Item Master inside the code box's own `onChange`. That handler
+was half a reset: on a master match it wrote both `itemId` and `itemName`, but on
+a miss it cleared `itemId` ONLY. Edit a code that used to match and the
+previously auto-filled name stayed on screen under a code it no longer belonged
+to — and that name is what `onValid` sends, so a wrong part name could be saved.
+
+The same fill-on-match/reset-on-miss shape is hand-rolled in several forms
+(`job-work-order-form.tsx:162-168` carries its own copy, plus its own
+auto-filled-vs-user-typed bookkeeping), each with its own version of the bug.
+
+### Decision
+
+Add `apps/web/src/lib/use-field-cascade.ts` — one generic controller → dependents
+hook — and route the PO line's Item Code cascade through it. Behaviour only: no
+change to `onValid`, the submit payload, value types, the totals maths or any Zod
+schema. The hook owns the four failure modes: partial reset, wiping the user's
+own typing, stale async replies, and clobbering saved data on an edit form's
+first render (`runOnMount` defaults to false).
+
+Ownership rule: a dependent marked `userEditable` is replaced on any fresh match,
+but on a miss it is cleared only while it still holds exactly what the hook last
+auto-filled. A PO may legitimately be raised for an off-master part, so a name
+the user typed themselves is never wiped. `userEntered` is a hard block-list
+(`qty`, `rate`, `dueDate`, `lineRemarks`) so no later edit can start writing them.
+
+`purchase-order-form.tsx` was 779 lines and the cascade is per-line, so it cannot
+live inside the parent's `fields.map(...)`. The line row was extracted to
+`po-line-row.tsx`, with the form-value types in `po-form-values.ts` to break the
+import cycle. Parent 779 → 624.
+
+### Alternatives Considered
+
+- Patch the inline handler to also clear `itemName` — rejected: it would wipe a
+  name the user typed for an off-master part, and leaves the same bug in every
+  other form.
+- Swap the code box to `SearchableSelect` (what the `form-behaviour` agent spec
+  normally requires) — rejected: `SearchableSelect` can only return a picked
+  row's id, never free text. `onValid` sends `itemCodeText` whenever it is
+  non-empty precisely so a PO can be raised for a part the Item Master has never
+  heard of. Swapping the widget would silently kill off-master PO lines, which is
+  a save-behaviour change and out of bounds here.
+- Make the hook fetch its own data — rejected: one fetch layer per module. The
+  caller passes `resolve`, backed by the module's existing list/detail hook;
+  sync (a cached master map, as PO uses) and async are both accepted.
+
+### Consequences
+
+- Positive: the Name can no longer sit stale under a changed code; off-master
+  free text still works; opening an existing PO for edit no longer risks having
+  saved line names overwritten by today's master data.
+- Negative: the fill now lands one render after the keystroke instead of inside
+  the handler (invisible in practice). `purchase-order-form.tsx` is still 624
+  lines, over the 400 rule — the TAX/totals panel is the next extraction.
+- Known gap (pre-existing, unchanged): a code typed before the items list
+  finishes downloading will not auto-fill until the code is edited again.
+- Known minor: if a line ABOVE a row is removed, the field paths shift and the
+  hook forgets what it auto-filled in the surviving row, so a later miss leaves
+  that name in place rather than clearing it. Fails in the safe direction (never
+  destroys data) and was not worth index-independent bookkeeping.
+- Follow-on not done: `job-work-order-form.tsx` duplicates this logic and is a
+  clean candidate to fold onto the shared hook, but it is another session's open
+  file. The header Vendor `<select>` is still a plain 200-row select; making it
+  searchable and auto-filling `vendorCodeText` from it would change what gets
+  saved, so it needs its own task and user sign-off.
