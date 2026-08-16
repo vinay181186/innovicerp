@@ -1,8 +1,15 @@
-import type { JcOpEnriched, RunningOp } from '@innovic/shared';
+import {
+  type JcOpEnriched,
+  type RunningOp,
+  SHIFTS,
+  SHIFT_LABELS,
+  type Shift,
+} from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { todayLocal } from '@/lib/date';
 import { useMachinesList } from '@/modules/machines/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
@@ -239,13 +246,17 @@ interface PendingOpsSectionProps {
 
 function PendingOpsSection({ machineCode, machineName, ops, isLoading }: PendingOpsSectionProps) {
   const start = useStartOp();
+  // This quick-start board used to hard-code all three of date, time and shift,
+  // so every job started from here was stamped "today, now, day shift" whether
+  // or not that was true — and the date came from toISOString(), which is UTC:
+  // between 00:00 and 05:30 IST that recorded YESTERDAY. The API has always
+  // accepted all three from the client, so they are simply asked for now.
+  // One shared set of values for the section: pick once, then start any row.
+  const [startDate, setStartDate] = useState(todayLocal());
+  const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
+  const [shift, setShift] = useState<Shift>('day');
   function handleStart(opId: string) {
-    void start.mutateAsync({
-      jcOpId: opId,
-      startDate: new Date().toISOString().slice(0, 10),
-      startTime: new Date().toTimeString().slice(0, 5),
-      shift: 'day',
-    });
+    void start.mutateAsync({ jcOpId: opId, startDate, startTime, shift });
   }
   return (
     <div
@@ -270,6 +281,59 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
         <>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
             Pending Jobs for this Machine ({ops.length})
+          </div>
+          {/* Applies to whichever row you press Start on. Seeded to now, so the
+              normal case is still a single click. */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-end',
+              flexWrap: 'wrap',
+              marginBottom: 10,
+            }}
+          >
+            <div className="form-grp" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="mach-start-date">
+                Start Date
+              </label>
+              <input
+                id="mach-start-date"
+                className="innovic-input"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="mach-start-time">
+                Start Time
+              </label>
+              <input
+                id="mach-start-time"
+                className="innovic-input"
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="mach-start-shift">
+                Shift
+              </label>
+              <select
+                id="mach-start-shift"
+                className="innovic-select"
+                value={shift}
+                onChange={(e) => setShift(e.target.value as Shift)}
+              >
+                {SHIFTS.map((s) => (
+                  <option key={s} value={s}>
+                    {SHIFT_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table">
