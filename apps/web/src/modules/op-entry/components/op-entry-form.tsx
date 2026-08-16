@@ -63,14 +63,13 @@ export function OpEntryForm({
   const canWrite = session.data?.role === 'admin' || session.data?.role === 'manager';
 
   const [logDate, setLogDate] = useState(todayIso());
-  // Start time. The API has always accepted a client-chosen time
-  // (startOpInputSchema.startTime) and stores it verbatim — there is no
-  // server-side clock stamping — but this form used to hard-code nowHHMM(), so
-  // an operator logging a shift late could never record when the run actually
-  // began. Seeded to "now" so the common case is still one click.
-  // Start-only: submitOpLog / submitQcLog carry no time field at all, and
-  // op_log.start_time is populated exclusively by the 'start' marker.
-  const [startTime, setStartTime] = useState(nowHHMM());
+  // Clock time of the entry, editable on BOTH tabs. Start already accepted a
+  // client time (startOpInputSchema) but the form hard-coded nowHHMM();
+  // completion and QC logs had no time field at all and the service wrote
+  // start_time: null, so an operator logging a shift late could never record
+  // when the work actually happened. Seeded to "now" so the common case is
+  // still one click.
+  const [entryTime, setEntryTime] = useState(nowHHMM());
   const [shift, setShift] = useState<Shift>('day');
   const [qty, setQty] = useState<string>('');
   const [rejectQty, setRejectQty] = useState<string>('0');
@@ -147,6 +146,7 @@ export function OpEntryForm({
       qty: qtyNum,
       rejectQty: Number.isFinite(rejNum) && rejNum >= 0 ? rejNum : 0,
       logDate,
+      ...(entryTime ? { logTime: entryTime } : {}),
       shift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
@@ -186,6 +186,7 @@ export function OpEntryForm({
       qty: qtyNum,
       rejectQty: rejNum,
       logDate,
+      ...(entryTime ? { logTime: entryTime } : {}),
       shift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
@@ -209,7 +210,7 @@ export function OpEntryForm({
     const input: StartOpInput = {
       jcOpId: op.id,
       startDate: logDate,
-      startTime,
+      startTime: entryTime,
       shift,
       ...(operatorId ? { operatorId } : {}),
       ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
@@ -268,6 +269,18 @@ export function OpEntryForm({
           type="date"
           value={logDate}
           onChange={(e) => setLogDate(e.target.value)}
+        />
+      </div>
+      <div className="form-grp">
+        <label className="form-label" htmlFor="opf-time">
+          Time
+        </label>
+        <input
+          id="opf-time"
+          className="innovic-input"
+          type="time"
+          value={entryTime}
+          onChange={(e) => setEntryTime(e.target.value)}
         />
       </div>
       <div className="form-grp">
@@ -578,23 +591,6 @@ export function OpEntryForm({
           {blockedBanner}
           <div className="form-grid">
             {commonFields}
-            {isStart ? (
-              // Start time. Deliberately NOT in commonFields: a completion log
-              // has no time field on the API at all, so showing one there would
-              // promise something that is silently discarded.
-              <div className="form-grp">
-                <label className="form-label" htmlFor="opf-start-time">
-                  Start Time
-                </label>
-                <input
-                  id="opf-start-time"
-                  className="innovic-input"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                />
-              </div>
-            ) : null}
             {isStart ? (
               // Legacy "Mark Operation as Running" panel (L5303-5307).
               <div

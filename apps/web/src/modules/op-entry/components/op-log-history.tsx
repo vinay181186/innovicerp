@@ -21,6 +21,7 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
         <thead>
           <tr>
             <th>Date</th>
+            <th>Time</th>
             <th>Shift</th>
             <th>Type</th>
             <th>Machine</th>
@@ -33,14 +34,14 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
         <tbody>
           {isLoading ? (
             <tr>
-              <td colSpan={8} className="empty-state">
+              <td colSpan={9} className="empty-state">
                 <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                 Loading log…
               </td>
             </tr>
           ) : logs.length === 0 ? (
             <tr>
-              <td colSpan={8} className="empty-state">
+              <td colSpan={9} className="empty-state">
                 No log entries yet.
               </td>
             </tr>
@@ -49,6 +50,12 @@ export function OpLogHistory({ logs, isLoading }: Props): React.JSX.Element {
               <tr key={l.id}>
                 <td className="mono" style={{ fontSize: 11 }}>
                   {l.logDate}
+                </td>
+                {/* op_log.start_time. Historically only the 'start' marker
+                    carried one — completion and QC rows were written with
+                    null — so older rows legitimately show a dash. */}
+                <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                  {l.startTime ? l.startTime.slice(0, 5) : '—'}
                 </td>
                 <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
                   {l.shift}

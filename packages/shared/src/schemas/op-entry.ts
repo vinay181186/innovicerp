@@ -184,6 +184,13 @@ export const submitOpLogInputSchema = z.object({
   qty: z.number().int().positive(), // submit must be > 0; 'start' uses startOp
   rejectQty: z.number().int().nonnegative().default(0),
   logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Time of this entry (HH:MM). Optional — omitted rows keep the historical
+   *  null. Stored in op_log.start_time, which despite its name is simply "the
+   *  clock time of this log row": it was only ever populated by the 'start'
+   *  marker, so completion rows carried no time at all and the JC completion
+   *  feed (job-cards/service.ts:739, which already reads it for every log type)
+   *  could only ever show a time against a start. */
+  logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
   shift: shiftSchema,
   operatorId: z.string().uuid().optional(),
   operatorName: z.string().min(1).max(120).optional(),
@@ -218,6 +225,8 @@ export const submitQcLogInputSchema = z
     qty: z.number().int().nonnegative(),
     rejectQty: z.number().int().nonnegative(),
     logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /** Time of this inspection (HH:MM). Optional; see submitOpLogInputSchema. */
+    logTime: z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/).optional(),
     shift: shiftSchema,
     operatorId: z.string().uuid().optional(),
     operatorName: z.string().min(1).max(120).optional(),

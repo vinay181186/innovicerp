@@ -619,7 +619,11 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
         operatorName: input.operatorName ?? null,
         machineId: stamped.machineId,
         machineCodeText: stamped.machineCodeText,
-        startTime: null,
+        // The clock time of this completion, when the operator supplied one.
+        // Was hard-coded null, so a completion log carried no time at all and
+        // the JC completion feed (which already reads start_time for every log
+        // type) could only ever show a time against a 'start' marker.
+        startTime: input.logTime ?? null,
         remarks: input.remarks ?? null,
         createdBy: user.id,
       })
@@ -840,7 +844,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         operatorName: input.operatorName ?? null,
         // 0095 — no machine on QC: inspection is not machining, and jc_ops
         // carries the literal 'QC' as a type label, not a machine (ISSUE-010).
-        startTime: null,
+        // Time of the inspection, when supplied (was hard-coded null).
+        startTime: input.logTime ?? null,
         remarks: input.remarks ?? null,
         isTpi: input.isTpi ?? false,
         tpiInspector: input.tpiInspector ?? null,
