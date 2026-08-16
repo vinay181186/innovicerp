@@ -6129,3 +6129,87 @@ list hook. Parent 624 → 611 — down despite gaining the feature.
   does not use this form and is unaffected.
 - `purchase-order-form.tsx` is still 611 lines, over the 400 rule. The TAX/totals
   panel remains the next extraction.
+
+## ADR-127: PR vendor comes from the master too; one shared <VendorPicker> for every form
+
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+
+The PR header carried the same two-control vendor pattern ADR-126 removed from
+the PO header: a `<select>` loading every vendor (`limit: 200`, no search) whose
+empty option read "— Free-text vendor below —", plus a "Vendor Code (fallback)"
+text input. User asked for the fallback box to go and for the `form-behaviour`
+agent to be applied to the same form.
+
+`purchase-request-form.tsx:82-91` also carried the ADR-124 defect verbatim: the
+Item Code `onChange` set `itemId` + `itemName` on a master match but cleared
+`itemId` ONLY on a miss, leaving a stale auto-filled name under a code it no
+longer belonged to.
+
+### Decision
+
+**Vendor.** Remove the "Vendor Code (fallback)" input; Vendor is required (★).
+As in ADR-126, `vendorCodeText` is removed from the UI but NOT from the payload —
+`onValid` and `detailToFormValues` are untouched and re-send it unchanged, and
+the required-rule mirrors the server rule (`vendorId || carriedVendorText`)
+rather than demanding a vendor unconditionally. This matters more here than on
+PO: besides older hand-typed PRs, **every OSP-generated PR carries a
+`(vendor TBD)` sentinel** in `vendorCodeText` (see `purchase-request.ts:59-64`
+and `bom-master/cascade.ts:199`). An unconditional rule would have made every one
+of them permanently uneditable.
+
+**One dropdown, not two copies.** The `dropdown` skill's non-negotiable is "don't
+hand-roll another dropdown — one component, one behavior, fixes land everywhere".
+So rather than copy `po-vendor-field.tsx`, the picker was extracted to
+`apps/web/src/components/shared/vendor-picker.tsx` (111) — presentational, owning
+only its search state and `useVendorsList`, deliberately NOT coupled to
+react-hook-form because the field path (`vendorId` vs `header.vendorId`) and the
+required-rule differ per module. Each form passes its own hidden RHF registration
+as `children`. `po-vendor-field.tsx` was rebuilt on it (104 → 67) with its prop
+shape, field path, validate string, width, `valueLabel` fallback and DOM order
+preserved; `purchase-order-form.tsx` was not modified at all.
+
+**Cascade.** Item Code → `itemId` (always resets) + `itemName` (`userEditable`,
+cleared on a miss only while it still holds exactly what was auto-filled) routed
+through the existing `useFieldCascade`, reused as-is with no extension. PR is a
+single-row entity (ADR-015 #2), so this is one direct hook call rather than one
+per line. `enabled: itemsLoaded` keeps it inert until the master arrives.
+User-entered fields are a named block-list, `PR_USER_ENTERED_FIELDS`.
+
+Item Code stays a free-text `<input list>` for the ADR-124 reason: a picker can
+only return a master row's id, and `purchase_requests_item_check`
+(`num_nonnulls(item_id, item_code_text) >= 1`) makes an off-master item legitimate.
+
+### Alternatives Considered
+
+- Copy `po-vendor-field.tsx` into the PR module — rejected: two dropdowns to fix
+  forever, against the skill's explicit rule.
+- Make `<VendorPicker>` RHF-aware (take `form` + a path) — rejected: the required
+  rule genuinely differs per module, so the coupling would buy nothing and force
+  a generic-over-form-shape signature on a presentational component.
+- Delete `vendorCodeText` from the payload — rejected, and more sharply than on
+  PO: it would break every OSP-generated PR.
+
+### Consequences
+
+- Positive: new PRs can only name a vendor in the master; the picker is typeable,
+  substring-matches anywhere, and is server-searched so it scales past the 200-row
+  cap. The stale-item-name defect is closed on the last form that carried it.
+- Negative: Vendor is now mandatory on create — a PR can no longer be raised for
+  an unregistered vendor without adding it to the vendor master first. Workflow
+  change, not just UI.
+- `PurchaseRequestFormProps['detail']` widened `PurchaseRequest` →
+  `PurchaseRequestDetail` so the picker can read `vendorCode`/`vendorName` for its
+  initial label; the only caller (`routes/edit.tsx`) already passed a detail. No
+  payload, value-type or schema change.
+- Known, carried over from ADR-126: picking a real vendor on an older free-text PR
+  leaves the old `vendorCodeText` stored rather than clearing it. Harmless to the
+  CHECK and to display, and not silently destroying stored data was the
+  deliberate choice.
+- Deviation from the `form-behaviour` spec, same as ADR-124: the controller field
+  is NOT a `SearchableSelect`, because free text is load-bearing here.
+- All touched files are under the 400-line rule: `purchase-request-form.tsx` 371 →
+  389, `vendor-picker.tsx` 111, `pr-vendor-field.tsx` 61, `pr-form-values.ts` 56,
+  `po-vendor-field.tsx` 104 → 67.

@@ -1,28 +1,21 @@
-// The PO header's Vendor picker — the shared type-to-search dropdown, plus the
-// one rule that makes it safe to have removed the old free-text fallback box.
+// The PO header's Vendor picker: the shared <VendorPicker> plus the one rule
+// that makes it safe to have removed the old free-text fallback box.
 //
-// WAS: a plain `<select>` holding every vendor (`limit: 200`, no search — you
-// scrolled or you gave up) sitting next to a "Vendor code (fallback)" text input,
-// with a "— Free-text vendor below —" option wiring the two together.
+// The picker itself (search state, vendor list hook, the dropdown, the
+// carried-text note) lives in `@/components/shared/vendor-picker` — one
+// component, one behaviour, so a fix lands on every vendor field at once. What
+// stays here is the part that is specific to THIS form: the react-hook-form
+// field path (`header.vendorId`) and the required-rule.
 //
-// NOW: `<SearchableSelect>`, server-searched via `?search=`, storing the vendor's
-// ID — the exact same value the `<select>` stored, so nothing about the save
-// payload's shape or types changed.
-//
-// The fallback input is gone, but `vendorCodeText` is NOT: a PO raised before this
-// change may hold free text and no `vendorId`, and BOTH the Zod refine and the DB
-// CHECK (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) require one of
-// the two. So the stored text is carried through untouched and the required-rule
-// below mirrors the server's rule rather than demanding a vendor unconditionally —
-// otherwise those older POs could never be saved again.
-//
-// Owns its own search state and list hook, which is why it is its own file: the
-// parent form neither knows nor cares how the picker finds a vendor.
+// The fallback input is gone, but `vendorCodeText` is NOT: a PO raised before
+// this change may hold free text and no `vendorId`, and BOTH the Zod refine and
+// the DB CHECK (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015)
+// require one of the two. So the stored text is carried through untouched and
+// the required-rule below mirrors the server's rule rather than demanding a
+// vendor unconditionally — otherwise those older POs could never be saved again.
 
-import { useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
-import { SearchableSelect } from '@/components/shared/searchable-select';
-import { useVendorsList } from '@/modules/vendors/api';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 import type { PoFormValues } from './po-form-values';
 
 export interface PoVendorFieldProps {
@@ -42,44 +35,22 @@ export function PoVendorField({
 }: PoVendorFieldProps): React.JSX.Element {
   const { register, setValue, watch, formState } = form;
 
-  const [search, setSearch] = useState('');
-  const { data, isFetching } = useVendorsList({
-    ...(search.trim() ? { search: search.trim() } : {}),
-    limit: 50,
-    offset: 0,
-  });
-  const vendors = data?.vendors ?? [];
-
-  // Held separately so the picked vendor still reads correctly once it scrolls
-  // out of the current search page.
-  const [label, setLabel] = useState(initialLabel);
-
   const selectedId = watch('header.vendorId') ?? null;
-  const selected = vendors.find((v) => v.id === selectedId);
   const errorMessage = formState.errors.header?.vendorId?.message;
 
   return (
     // Two columns: the picker inherits the width the old Vendor `<select>` +
     // "Vendor code (fallback)" pair occupied, so the header row still runs
     // 4 across (Vendor ×2 · Due date · PR ref).
-    <div className="form-grp form-span-2">
-      <label className="form-label" htmlFor="vendorId">
-        Vendor<span className="req">★</span>
-      </label>
-      <SearchableSelect
-        id="vendorId"
-        value={selectedId}
-        onChange={(id) => {
-          setValue('header.vendorId', id ?? undefined, { shouldValidate: true });
-          const v = vendors.find((x) => x.id === id);
-          setLabel(v ? `${v.code} — ${v.name}` : '');
-        }}
-        onSearch={setSearch}
-        loading={isFetching}
-        options={vendors.map((v) => ({ id: v.id, code: v.code, name: v.name }))}
-        placeholder="🔍 Type vendor code or name…"
-        valueLabel={selected ? `${selected.code} — ${selected.name}` : label || undefined}
-      />
+    <VendorPicker
+      id="vendorId"
+      className="form-grp form-span-2"
+      value={selectedId}
+      onChange={(id) => setValue('header.vendorId', id ?? undefined, { shouldValidate: true })}
+      initialLabel={initialLabel}
+      carriedText={carriedVendorText}
+      error={errorMessage}
+    >
       <input
         type="hidden"
         {...register('header.vendorId', {
@@ -91,14 +62,6 @@ export function PoVendorField({
             Boolean(v) || Boolean(carriedVendorText) || 'Pick a vendor from the master',
         })}
       />
-      {errorMessage ? <div className="form-error">{errorMessage}</div> : null}
-      {/* An older PO whose vendor was only ever free text: show what is stored so
-          the empty picker does not read as "no vendor at all". */}
-      {!selectedId && carriedVendorText ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-          Saved as free text: <b>{carriedVendorText}</b> — pick a vendor to link it.
-        </div>
-      ) : null}
-    </div>
+    </VendorPicker>
   );
 }

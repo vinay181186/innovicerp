@@ -1,42 +1,53 @@
-// Purchase Request form (UI-003-04) — single-row entity per ADR-015 #2.
+// Purchase Request form (UI-003-04) — single-row entity per ADR-015 #2, so the
+// Item Code → Item cascade is one direct hook call, not one per line.
+//
+// Vendor is <PrVendorField> — the shared type-to-search picker. The free-text
+// "Vendor Code (fallback)" input it replaced is gone, but `vendorCodeText` is
+// NOT: it stays in form state and `onValid` re-sends it unchanged, because an
+// older PR (and every OSP-generated one, which carries a `(vendor TBD)`
+// sentinel) may hold free text and no `vendorId`, and the DB CHECK
+// (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) demands one of the
+// two. Dropping it would make those PRs unsaveable.
 
 import {
   type CreatePurchaseRequestInput,
+  type ListItemsResponse,
   PR_STATUSES,
-  type PrStatus,
   type PurchaseRequest,
+  type PurchaseRequestDetail,
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
-import { todayLocal } from '@/lib/date';
+import { type Path, type PathValue, useForm } from 'react-hook-form';
+import {
+  type CascadeField,
+  type CascadeFieldOptions,
+  cascadeField,
+  useFieldCascade,
+} from '@/lib/use-field-cascade';
 import { useItemsList } from '@/modules/items/api';
-import { useVendorsList } from '@/modules/vendors/api';
+import {
+  PR_FORM_DEFAULTS,
+  PR_ITEM_DATALIST_ID,
+  PR_USER_ENTERED_FIELDS,
+  type PrFormValues,
+} from './pr-form-values';
+import { PrVendorField } from './pr-vendor-field';
 
-interface FormValues {
-  code: string;
-  prDate: string;
-  status: PrStatus;
-  vendorId?: string;
-  vendorCodeText?: string;
-  itemId?: string;
-  itemCodeText?: string;
-  itemName?: string;
-  qty: number;
-  estCost: number;
-  requiredDate?: string;
-  operation?: string;
-  remarks?: string;
+type FormValues = PrFormValues;
+type PrItemMaster = ListItemsResponse['items'][number];
+
+/** `cascadeField` with this form and this source record pinned, so each dependent
+ *  below reads as just "path, where it comes from, what empty means". */
+function prField<TName extends Path<FormValues>>(
+  name: TName,
+  from: (item: PrItemMaster) => PathValue<FormValues, TName>,
+  empty: PathValue<FormValues, TName>,
+  options?: CascadeFieldOptions,
+): CascadeField<FormValues, PrItemMaster> {
+  return cascadeField<FormValues, PrItemMaster, TName>(name, from, empty, options);
 }
-
-const DEFAULTS: FormValues = {
-  code: '',
-  prDate: todayLocal(),
-  status: 'open',
-  qty: 1,
-  estCost: 0,
-};
 
 type CreateMode = {
   mode: 'create';
@@ -48,7 +59,7 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
-  detail: PurchaseRequest;
+  detail: PurchaseRequestDetail;
   onSubmit: (values: UpdatePurchaseRequestInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
@@ -59,36 +70,53 @@ export type PurchaseRequestFormProps = CreateMode | EditMode;
 
 export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
+  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : PR_FORM_DEFAULTS;
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, handleSubmit, formState, setValue, watch } = form;
+  const { register, handleSubmit, formState, watch } = form;
   const errors = formState.errors;
 
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
-  const vendors = vendorsData?.vendors ?? [];
+  // Free text already stored on this PR. Its presence is what lets the vendor
+  // picker be left empty — see the rule in <PrVendorField>.
+  const carriedVendorText = isEdit ? (props.detail.vendorCodeText?.trim() ?? '') : '';
+  const vendorInitialLabel = isEdit ? joinVendorLabel(props.detail) : '';
 
   // Item master drives the code autosuggest + name auto-fill. PR still accepts
   // off-master free text, so a non-matching code is left as-is.
   const { data: itemsData } = useItemsList({ limit: 1000, offset: 0 });
   const items = itemsData?.items ?? [];
+  // Until this has actually arrived, every code looks off-master — so the
+  // cascade stays inert rather than resetting the name against a master it
+  // cannot see yet.
+  const itemsLoaded = itemsData !== undefined;
   const itemsByCode = useMemo(() => {
-    const m = new Map<string, (typeof items)[number]>();
+    const m = new Map<string, PrItemMaster>();
     for (const it of items) m.set(it.code.toUpperCase(), it);
     return m;
   }, [items]);
 
-  const itemCodeReg = register('itemCodeText');
-  const onItemCodeChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    void itemCodeReg.onChange(e);
-    const match = itemsByCode.get(e.target.value.trim().toUpperCase());
-    if (match) {
-      setValue('itemId', match.id, { shouldDirty: true });
-      setValue('itemName', match.name, { shouldDirty: true });
-    } else {
-      setValue('itemId', undefined, { shouldDirty: true });
-    }
-  };
+  // Item Code is the controller; Item Id + Item Name are its dependents.
+  //
+  // Name is `userEditable`: a PR may be raised for an off-master part (the DB
+  // CHECK `num_nonnulls(item_id, item_code_text) >= 1` accepts a bare code), and
+  // the name the user typed for such a part is theirs to keep. So it is replaced
+  // whenever the code matches a master item, but on a miss it is only cleared
+  // while it still holds exactly what we auto-filled — which is what stops a
+  // stale name from sitting under a code that no longer matches.
+  //
+  // Id is not: nothing but a master match can ever put a value there, so a miss
+  // always clears it (as the old inline handler did).
+  useFieldCascade<FormValues, PrItemMaster>({
+    form,
+    value: watch('itemCodeText'),
+    enabled: itemsLoaded,
+    resolve: (code) => itemsByCode.get(code.toUpperCase()) ?? null,
+    fields: [
+      prField('itemId', (it) => it.id, undefined),
+      prField('itemName', (it) => it.name, '', { userEditable: true }),
+    ],
+    userEntered: PR_USER_ENTERED_FIELDS,
+  });
 
   const onValid = async (values: FormValues): Promise<void> => {
     const trimmedItemCode = values.itemCodeText?.trim();
@@ -172,31 +200,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             {...register('operation')}
           />
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorId">
-            Vendor
-          </label>
-          <select id="vendorId" className="innovic-select" {...register('vendorId')}>
-            <option value="">— Free-text vendor below —</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.code} — {v.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorCodeText">
-            Vendor Code (fallback)
-          </label>
-          <input
-            id="vendorCodeText"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Required if no vendor picked"
-            {...register('vendorCodeText')}
-          />
-        </div>
+        <PrVendorField
+          form={form}
+          carriedVendorText={carriedVendorText}
+          initialLabel={vendorInitialLabel}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="requiredDate">
             Required Date
@@ -240,14 +248,16 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             Item Code
             {isEdit ? null : <span className="req">★</span>}
           </label>
+          {/* Stays a free-text box over a <datalist>, not a picker: a picker can
+              only return a master row's id, and an off-master item is legitimate
+              on a PR (ADR-124). */}
           <input
             id="itemCodeText"
             className="innovic-input"
-            list="dlPrItems"
+            list={PR_ITEM_DATALIST_ID}
             autoComplete="off"
             placeholder="🔍 ITM-001"
-            {...itemCodeReg}
-            onChange={onItemCodeChange}
+            {...register('itemCodeText')}
           />
         </div>
         <div className="form-grp form-span-2">
@@ -312,7 +322,7 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
         </div>
       </div>
 
-      <datalist id="dlPrItems">
+      <datalist id={PR_ITEM_DATALIST_ID}>
         {items.map((it) => (
           <option key={it.id} value={it.code}>
             {it.name}
@@ -350,6 +360,14 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       </div>
     </form>
   );
+}
+
+/** "CODE — Name" for the vendor already linked to this PR, so the picker reads
+ *  correctly on edit before its own search page has loaded. */
+function joinVendorLabel(detail: PurchaseRequestDetail): string {
+  if (!detail.vendorId) return '';
+  const name = detail.vendorName ?? '';
+  return detail.vendorCode ? `${detail.vendorCode} — ${name}`.trim() : name;
 }
 
 function detailToFormValues(detail: PurchaseRequest): FormValues {
