@@ -14,13 +14,13 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useItemsList } from '@/modules/items/api';
-import { useVendorsList } from '@/modules/vendors/api';
 import {
   PO_ITEM_DATALIST_ID,
   type PoFormValues as FormValues,
   type PoLineFormValue as LineFormValue,
 } from './po-form-values';
 import { type PoItemMaster, PoLineRow } from './po-line-row';
+import { PoVendorField } from './po-vendor-field';
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
@@ -76,8 +76,14 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   // `form` — the formState proxy subscribes wherever it is read.
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
-  const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
-  const vendors = vendorsData?.vendors ?? [];
+  // Vendor is <PoVendorField> — the shared type-to-search picker, which owns its
+  // own search state and vendor list. The free-text "Vendor code (fallback)" input
+  // it replaced is gone, but `vendorCodeText` is NOT: it stays in form state and
+  // `onValid` re-sends it unchanged, because a PO raised before this change may
+  // hold free text and no `vendorId`, and both the Zod refine and the DB CHECK
+  // (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) demand one of the
+  // two. Dropping it would make those POs unsaveable.
+  const carriedVendorText = isEdit ? (props.detail.vendorCodeText?.trim() ?? '') : '';
 
   // Item master drives the per-line code autosuggest + name auto-fill. PO still
   // accepts off-master free text, so a non-matching code is left untouched.
@@ -161,8 +167,9 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
   return (
     <form onSubmit={handleSubmit(onValid)}>
       {/* Header — packed to the SO-Master 4-up grid (was legacy's 2-col
-          `.form-grid`, L25605): 8 short fields fit two 4-across rows above the
-          fold; Vendor drops to one column and Remarks spans the bottom row. */}
+          `.form-grid`, L25605): 7 short fields fit two 4-across rows above the
+          fold; Vendor spans two columns (it replaced the old Vendor `<select>` +
+          free-text fallback pair) and Remarks spans the bottom row. */}
       <div className="form-grid-4">
         <DocNumberInput
           type="purchase_order"
@@ -228,31 +235,11 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
           )}
         </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorId">
-            Vendor
-          </label>
-          <select id="vendorId" className="innovic-select" {...register('header.vendorId')}>
-            <option value="">— Free-text vendor below —</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.code} — {v.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="vendorCodeText">
-            Vendor code (fallback)
-          </label>
-          <input
-            id="vendorCodeText"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="Required if no vendor picked"
-            {...register('header.vendorCodeText')}
-          />
-        </div>
+        <PoVendorField
+          form={form}
+          carriedVendorText={carriedVendorText}
+          initialLabel={props.mode === 'edit' ? (props.detail.vendorName ?? '') : ''}
+        />
         <div className="form-grp">
           <label className="form-label" htmlFor="dueDate">
             Due date

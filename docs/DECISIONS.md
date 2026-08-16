@@ -5962,3 +5962,73 @@ import cycle. Parent 779 → 624.
   file. The header Vendor `<select>` is still a plain 200-row select; making it
   searchable and auto-filling `vendorCodeText` from it would change what gets
   saved, so it needs its own task and user sign-off.
+
+## ADR-126: PO vendor comes from the master — free-text fallback box removed, picker is type-to-search
+
+**Date:** 2026-08-16
+**Status:** Accepted
+
+### Context
+
+The PO header had TWO vendor controls: a `<select>` loading every vendor
+(`limit: 200`, no search — you scrolled or gave up) whose empty option read
+"— Free-text vendor below —", and a "Vendor code (fallback)" text input beside
+it. The pair let a PO be raised against a vendor name that exists nowhere in the
+master, which is the same uncontrolled-text problem the item picker already
+solved. User asked for the fallback box to go and the picker to become the shared
+type-to-search dropdown.
+
+### Decision
+
+Remove the "Vendor code (fallback)" input. Replace the `<select>` with the shared
+`<SearchableSelect>` (the `dropdown` skill's component), server-searched via
+`?search=` with `limit: 50`, storing the vendor's **id** — the same value the
+`<select>` stored, so neither the payload shape nor the value type changed.
+Vendor is now marked required (★).
+
+`vendorCodeText` is REMOVED FROM THE UI BUT NOT FROM THE PAYLOAD. It stays in
+form state via `detailToFormValues` and `onValid` re-sends it unchanged. This is
+load-bearing: both the Zod refine (`purchase-order.ts:173-175`) and the DB CHECK
+`num_nonnulls(vendor_id, vendor_code_text) >= 1` (ADR-015) require one of the
+two, and POs raised before this change may hold free text and no `vendorId`.
+
+The required-rule therefore mirrors the SERVER's rule rather than demanding a
+vendor unconditionally: `vendorId || carriedVendorText`. On create there is never
+carried text, so it reads as a plain "Pick a vendor from the master"; on an older
+free-text PO it lets the record still be saved. Such a PO also shows a read-only
+note under the empty picker ("Saved as free text: X — pick a vendor to link it")
+so the blank box does not read as "no vendor at all".
+
+Extracted to `po-vendor-field.tsx` (104), which owns its own search state and
+list hook. Parent 624 → 611 — down despite gaining the feature.
+
+### Alternatives Considered
+
+- Keep the fallback input but hide it behind a toggle — rejected: the user asked
+  for it gone, and a hidden escape hatch keeps the off-master data flowing.
+- Delete `vendorCodeText` from the payload entirely — rejected: it would trip the
+  Zod refine and the DB CHECK on every legacy free-text PO, making them
+  permanently unsaveable.
+- Make Vendor unconditionally required — rejected for the same reason: it would
+  force a vendor to be re-picked before an old PO could be edited at all.
+- Clear `vendorCodeText` when a vendor is picked — NOT done. It is stored data
+  and destroying it was not asked for. See the consequence below.
+
+### Consequences
+
+- Positive: new POs can only name a vendor that exists in the master; the picker
+  is typeable and substring-matches anywhere, and being server-searched it scales
+  past the old 200-row cap instead of loading every vendor into the browser.
+- Negative: Vendor is now mandatory on create — a PO can no longer be raised for
+  an unregistered vendor without adding it to the vendor master first. This is
+  the intended effect, but it is a workflow change, not just a UI one.
+- Known: if an older free-text PO is edited and a real vendor picked, the old
+  `vendorCodeText` is carried through rather than cleared, so both are stored.
+  Harmless to the CHECK and to display (`vendorName` wins), but
+  `delivery-challans/routes/create.tsx:166` copies `po.vendorCodeText ?? po.code`
+  and would take the stale text. Pre-existing (the old form also allowed both to
+  be set) and left alone rather than silently destroying stored data.
+- `from-pr.tsx` is a separate flow that only displays the PR's vendor code; it
+  does not use this form and is unaffected.
+- `purchase-order-form.tsx` is still 611 lines, over the 400 rule. The TAX/totals
+  panel remains the next extraction.
