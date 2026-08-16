@@ -44,6 +44,8 @@ export function describeMachineSplit(split: MachineSplitRow[]): string {
     const only = split[0]!;
     return `${only.qty} pcs already completed stay recorded against ${only.machineCode}`;
   }
-  const parts = split.map((s) => `${s.machineCode} ${s.qty}`).join(' · ');
+  // "CNC-01: 5 pcs" — never "CNC-01 5", which reads as one blob with no way to
+  // tell where the machine name ends and the number begins.
+  const parts = split.map((s) => `${s.machineCode}: ${s.qty} pcs`).join(' · ');
   return `${parts} stay recorded against their own machines`;
 }

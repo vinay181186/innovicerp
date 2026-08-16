@@ -521,7 +521,7 @@ function ChangeMachineModal({
               {row.machines.map((m, i) => (
                 <span key={m.machineCode}>
                   {i > 0 ? ' · ' : ''}
-                  <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b> {m.qty}
+                  <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
                 </span>
               ))}
               . Each stays recorded against its own machine. The new machine takes the

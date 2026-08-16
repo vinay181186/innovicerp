@@ -20,7 +20,8 @@ const machineSplit = (o: JcOpEnriched): MachineSplit => o.machines ?? [];
 const machineSplitCell = (o: JcOpEnriched): string => {
   const split = machineSplit(o);
   if (split.length <= 1) return '';
-  return split.map((m) => `${m.machineCode} ${m.qty}`).join(' · ');
+  // "CNC-01: 5 pcs" — never "CNC-01 5", which reads as one blob in a cell.
+  return split.map((m) => `${m.machineCode}: ${m.qty} pcs`).join(' · ');
 };
 
 // Per-log machine (0095): the machine stamped on THIS entry at log time, so it

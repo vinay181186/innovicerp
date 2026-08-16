@@ -12,10 +12,18 @@
 
 import type { MachineSplit } from '@innovic/shared';
 
+// Formatting rule: ALWAYS separate the machine code from its qty and name the
+// unit. "CNC-01 5" reads as one blob — the eye cannot tell where the machine
+// name ends and the number begins, which is worse than no breakdown at all.
+// Every surface (screen, tooltip, print, Excel, activity log) uses this shape.
+export function formatMachineQty(machineCode: string, qty: number): string {
+  return `${machineCode}: ${qty} pcs`;
+}
+
 /** Describes the split in one line, for a `title` tooltip. */
 export function machineSplitTitle(machines: MachineSplit): string {
   return `Produced on ${machines.length} machines — ${machines
-    .map((m) => `${m.machineCode} ${m.qty}`)
+    .map((m) => formatMachineQty(m.machineCode, m.qty))
     .join(' · ')}`;
 }
 
@@ -49,8 +57,11 @@ export function MachineSplitLines({
   return (
     <>
       {machines.map((m) => (
-        <div key={m.machineCode} style={{ fontSize: 9, fontWeight: 400, color: 'var(--text3)' }}>
-          {m.machineCode} {m.qty}
+        <div
+          key={m.machineCode}
+          style={{ fontSize: 9, fontWeight: 400, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+        >
+          {m.machineCode}: <b style={{ fontWeight: 700 }}>{m.qty}</b> pcs
         </div>
       ))}
     </>

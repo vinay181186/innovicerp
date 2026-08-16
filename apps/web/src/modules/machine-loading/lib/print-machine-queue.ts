@@ -44,7 +44,8 @@ function machineSplit(op: MachineLoadOp): MachineSplit {
 function doneCell(op: MachineLoadOp): string {
   const split = machineSplit(op);
   if (split.length <= 1) return String(op.completedQty);
-  const parts = split.map((m) => `${esc(m.machineCode)} ${m.qty}`).join(' · ');
+  // "CNC-01: 5 pcs" — never "CNC-01 5", which reads as one blob on paper.
+  const parts = split.map((m) => `${esc(m.machineCode)}: ${m.qty} pcs`).join(' · ');
   return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
 }
 
