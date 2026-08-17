@@ -125,7 +125,18 @@ export function DispatchLineTable(props: {
                     </td>
                     <td className="td-ctr mono">{line ? line.orderQty : '—'}</td>
                     <td className="td-ctr mono" style={{ color: 'var(--green)' }}>
-                      {line ? line.readyQty : '—'}
+                      {line ? (
+                        <>
+                          {line.readyQty}
+                          {line.reservedQty > 0 ? (
+                            <div style={{ fontSize: 10, color: 'var(--purple)' }}>
+                              +{line.reservedQty} resv
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="td-ctr mono text3">{line ? line.dispatchedQty : '—'}</td>
                     <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>

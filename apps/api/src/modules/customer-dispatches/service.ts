@@ -21,6 +21,7 @@ import {
   items,
   salesOrderLines,
   salesOrders,
+  soStockReservations,
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -92,6 +93,94 @@ async function moveDispatchStock(
     remarks: dir === 'out' ? `Customer dispatch · ${qty} pcs` : `Dispatch cancel reversal · ${qty} pcs`,
     createdBy: userId,
   });
+}
+
+// Ship reserved stock (Stage 3). Stage 1 reservations hard-moved stock OUT of
+// on-hand; here we release the reserved portion (up to maxQty) back to on-hand
+// and mark those reservations 'dispatched', so the caller's normal dispatch
+// debit ships the full qty. Net ledger stays balanced and cancel needs no
+// special handling — it just credits the full dispatched qty back. Consumes
+// reservations FIFO; a partially-used reservation is split. Returns qty released.
+async function releaseReservedForDispatch(
+  tx: DbTransaction,
+  companyId: string,
+  userId: string,
+  soLineId: string,
+  maxQty: number,
+  date: string,
+  dispatchCode: string,
+): Promise<number> {
+  if (maxQty <= 0) return 0;
+  const active = await tx
+    .select()
+    .from(soStockReservations)
+    .where(
+      and(
+        eq(soStockReservations.companyId, companyId),
+        eq(soStockReservations.soLineId, soLineId),
+        eq(soStockReservations.status, 'active'),
+        isNull(soStockReservations.deletedAt),
+      ),
+    )
+    .orderBy(asc(soStockReservations.createdAt));
+
+  let remaining = maxQty;
+  let released = 0;
+  for (const r of active) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, r.qty);
+
+    // Credit the taken part back to on-hand so the dispatch debit can ship it.
+    await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${r.itemId}::uuid FOR UPDATE`);
+    const bal = (await tx.execute(sql`
+      SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+      FROM public.v_item_stock
+      WHERE company_id = ${companyId}::uuid AND item_id = ${r.itemId}::uuid
+    `)) as unknown as Array<{ on_hand: number }>;
+    const before = Number(bal[0]?.on_hand ?? 0);
+    await tx.insert(storeTransactions).values({
+      companyId,
+      txnDate: date,
+      itemId: r.itemId,
+      txnType: 'in',
+      qty: take,
+      sourceType: 'reservation',
+      sourceRef: `${r.soCodeText} / ln ${r.lineNo} (dispatch ${dispatchCode})`,
+      stockBefore: before,
+      stockAfter: before + take,
+      remarks: `Reserved ${take} shipped via ${dispatchCode}`,
+      createdBy: userId,
+    });
+
+    if (take === r.qty) {
+      await tx
+        .update(soStockReservations)
+        .set({ status: 'dispatched', updatedBy: userId, updatedAt: new Date() })
+        .where(eq(soStockReservations.id, r.id));
+    } else {
+      // Partial: shrink the active reservation, record the shipped part.
+      await tx
+        .update(soStockReservations)
+        .set({ qty: r.qty - take, updatedBy: userId, updatedAt: new Date() })
+        .where(eq(soStockReservations.id, r.id));
+      await tx.insert(soStockReservations).values({
+        companyId,
+        soLineId: r.soLineId,
+        soCodeText: r.soCodeText,
+        lineNo: r.lineNo,
+        itemId: r.itemId,
+        itemCodeText: r.itemCodeText,
+        qty: take,
+        status: 'dispatched',
+        remarks: `Shipped via ${dispatchCode}`,
+        createdBy: userId,
+        updatedBy: userId,
+      });
+    }
+    remaining -= take;
+    released += take;
+  }
+  return released;
 }
 
 type DispatchableRow = {
@@ -231,8 +320,32 @@ async function loadDispatchable(
       ORDER BY sol.line_no
     `),
   );
-  return (res as unknown as DispatchableRow[]).map((r) => {
+  // Active reservations per line (Stage 1) — booked stock that ships on top of
+  // produced qty. Scoped to this SO's lines.
+  const rows = res as unknown as DispatchableRow[];
+  const lineIds = rows.map((r) => r.so_line_id);
+  const resvRows =
+    lineIds.length === 0
+      ? []
+      : await tx
+          .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
+          .from(soStockReservations)
+          .where(
+            and(
+              eq(soStockReservations.companyId, companyId),
+              eq(soStockReservations.status, 'active'),
+              isNull(soStockReservations.deletedAt),
+              inArray(soStockReservations.soLineId, lineIds),
+            ),
+          );
+  const reservedByLine = new Map<string, number>();
+  for (const rr of resvRows) {
+    reservedByLine.set(rr.soLineId, (reservedByLine.get(rr.soLineId) ?? 0) + Number(rr.qty));
+  }
+
+  return rows.map((r) => {
     const ready = Math.max(0, Math.round(n(r.ready_qty)));
+    const reserved = reservedByLine.get(r.so_line_id) ?? 0;
     const dispatched = Math.round(n(r.dispatched_qty));
     const orderQty = Math.round(n(r.order_qty));
     return {
@@ -242,10 +355,11 @@ async function loadDispatchable(
       itemName: r.item_name,
       orderQty,
       readyQty: ready,
+      reservedQty: reserved,
       dispatchedQty: dispatched,
-      // Cap dispatchable at the ORDER qty — never let over-production make it
-      // possible to ship more than the customer ordered.
-      availableQty: Math.max(0, Math.min(ready, orderQty) - dispatched),
+      // Dispatchable = produced ready + reserved-from-stock, capped at the ORDER
+      // qty (never ship more than ordered), minus what already went out.
+      availableQty: Math.max(0, Math.min(ready + reserved, orderQty) - dispatched),
       rate: n(r.rate),
     };
   });
@@ -657,6 +771,19 @@ export async function createDispatch(
         .update(salesOrderLines)
         .set({ dispatchedQty: sql`${salesOrderLines.dispatchedQty} + ${l.qty}`, updatedBy: user.id })
         .where(eq(salesOrderLines.id, l.salesOrderLineId));
+      // Ship reserved stock first: release the reserved portion of this qty back
+      // to on-hand (Stage 1 hard-moved it out) and mark those reservations
+      // dispatched — so the debit below ships the full qty cleanly. Reserved or
+      // not, the finished good then leaves stock at the dispatched qty.
+      await releaseReservedForDispatch(
+        tx,
+        companyId,
+        user.id,
+        l.salesOrderLineId,
+        l.qty,
+        input.dispatchDate,
+        code,
+      );
       // Reduce on-hand stock (finished goods out). The line's own item leaves
       // stock at the dispatched qty. For assembly / equipment lines that item is
       // the parent finished good the Assembly Tracker built and credited into

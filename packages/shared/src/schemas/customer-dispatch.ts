@@ -13,8 +13,11 @@ export const dispatchableLineSchema = z.object({
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
   readyQty: z.number().int().nonnegative(), // produced + QC-accepted (final op)
+  /** Qty reserved to this SO line from stock (Stage 1) — also dispatchable now,
+   *  on top of produced qty. Released back to stock as it ships. */
+  reservedQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
-  availableQty: z.number().int().nonnegative(), // ready − dispatched
+  availableQty: z.number().int().nonnegative(), // min(ready + reserved, order) − dispatched
   rate: z.number().nonnegative(),
 });
 export type DispatchableLine = z.infer<typeof dispatchableLineSchema>;
