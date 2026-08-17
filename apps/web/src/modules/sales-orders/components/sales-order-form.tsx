@@ -168,7 +168,19 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   });
   const clients = clientsData?.clients ?? [];
 
-  const [itemSearch, setItemSearch] = useState('');
+  // Seeded on an EDIT form from the SO's own first-line item code. `items` is
+  // one 50-row page, so a saved equipment parent outside it never landed in
+  // `itemsById`: `equipItem` stayed null and the whole section quietly
+  // misbehaved — Description unlocked (it is a master snapshot and must stay
+  // locked) and the BOM note went silent on an SO that plainly has a parent.
+  // Asking the server for that code puts the row on the first page. Harmless
+  // for the line table: SearchableSelect re-issues onSearch with its OWN text
+  // every time a picker opens, so an empty picker still gets page 1.
+  const [itemSearch, setItemSearch] = useState(
+    props.mode === 'edit' && props.detail.type === 'equipment'
+      ? (props.detail.lines[0]?.itemCode ?? props.detail.lines[0]?.itemCodeText ?? '')
+      : '',
+  );
   const { data: itemsData, isFetching: itemsFetching } = useItemsList({
     ...(itemSearch.trim() ? { search: itemSearch.trim() } : {}),
     limit: 50,
@@ -233,7 +245,14 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // sitting under the new code.
   function pickEquipItem(id: string | null): void {
     pickItem(0, id);
-    if (!id) return;
+    // Clearing the code (typing over a pick clears it too) drops the
+    // description with it — the same RESET <LineItemCascade> gives a component
+    // line, which this branch does not render. Leaving the old master's name
+    // sitting under an empty code let a stale description ride into the save.
+    if (!id) {
+      setValue('lines.0.partName', '', { shouldDirty: true });
+      return;
+    }
     const it = itemsById.get(id);
     if (it) setValue('lines.0.partName', it.name, { shouldDirty: true });
   }
@@ -256,20 +275,32 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // it fires once per real change, not once per keystroke. On an EDIT form the
   // first resolution is skipped — the saved SO already carries a BOM choice and
   // silently overwriting it would lose a deliberate manual pick.
+  // The BOM list must have ANSWERED before this may write. While its query is
+  // in flight `boms` is empty, so an early run reads "this parent has no BOM",
+  // writes '' — and the "already handled this id" guard below then blocks the
+  // re-run, so the real BOM never attached once the list arrived.
+  const bomsLoaded = Boolean(bomsData);
   const lastEquipItemId = useRef<string | null>(isEdit ? '__initial__' : null);
   useEffect(() => {
-    if (!isEquip) return;
+    if (!isEquip || !bomsLoaded) return;
     const id = equipItem?.id ?? null;
     if (lastEquipItemId.current === '__initial__') {
+      // Stay armed until the saved parent actually RESOLVES. Disarming on the
+      // first run — when the items page is still loading and id is null — made
+      // the resolution that followed look like a fresh user pick, and it
+      // overwrote the BOM the SO was saved with (detaching it outright
+      // whenever the auto-match came up empty).
+      if (!id) return;
       lastEquipItemId.current = id;
       return;
     }
     if (lastEquipItemId.current === id) return;
     lastEquipItemId.current = id;
-    if (!id) return;
-    // Never leave the previous parent's BOM attached to a different item.
-    setValue('header.bomMasterId', equipBom?.id ?? '', { shouldDirty: true });
-  }, [isEquip, equipItem, equipBom, setValue]);
+    // Never leave the previous parent's BOM attached to a different item — and
+    // that includes clearing the parent outright, which used to keep the old
+    // BOM (and so a "BOM Assigned" status) on an SO with no equipment on it.
+    setValue('header.bomMasterId', id ? (equipBom?.id ?? '') : '', { shouldDirty: true });
+  }, [isEquip, bomsLoaded, equipItem, equipBom, setValue]);
 
   // What the (read-only) BOM field shows. Read off the attached id rather than
   // off equipBom: an edit form keeps whatever BOM was saved, which may not be
@@ -709,7 +740,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               {/* "Parent Item" not "Part No.": this is the assembly a BOM
                   builds (ADR-108), and naming it the same on both screens is
                   what makes the auto-attach below make sense. */}
-              <label className="form-label">Equipment / Parent Item<span className="req">★</span></label>
+              <label className="form-label" htmlFor="so-equip-item">Equipment / Parent Item<span className="req">★</span></label>
               {/* The same master-only picker the line table below uses, not a
                   hand-rolled <datalist>. The datalist read as free text: a
                   typo'd or off-master code sat in the box looking accepted,
@@ -737,24 +768,50 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label">Description<span className="req">★</span></label>
+              <label className="form-label" htmlFor="so-equip-desc">Description<span className="req">★</span></label>
               {/* Auto-filled from the master and locked once a parent resolves
                   (CONVENTIONS "Item pickers"): it is a snapshot of that code's
                   master name, so hand-editing it only lets it drift. Editable
                   while nothing resolves — an edit form holding an off-master
                   legacy row still needs its description typed. */}
-              <input className="innovic-input" autoComplete="off" readOnly={!!equipItem} placeholder="Equipment description" {...register('lines.0.partName', { required: isEquip ? 'Description is required' : false })} />
+              <input id="so-equip-desc" className="innovic-input" autoComplete="off" readOnly={!!equipItem} placeholder="Equipment description" {...register('lines.0.partName', { required: isEquip ? 'Description is required' : false })} />
+              {/* Without this the ★ was a lie: the rule blocked the save and
+                  printed nothing, so "Save SO" simply did nothing. Every other
+                  ★ field on this form reports through .form-error — so does
+                  this one now. */}
+              {errors.lines?.[0]?.partName?.message ? (
+                <div className="form-error">{errors.lines[0]?.partName?.message}</div>
+              ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label">Order Qty<span className="req">★</span></label>
-              <input type="number" min={1} className="innovic-input" {...register('lines.0.orderQty', { valueAsNumber: true, min: { value: 1, message: 'Min 1' } })} />
+              <label className="form-label" htmlFor="so-equip-qty">Order Qty<span className="req">★</span></label>
+              {/* A whole number ≥ 1 — that is exactly what the server stores.
+                  The old `min: 1` rule never fired on an EMPTY box (it reads as
+                  NaN, and NaN < 1 is false), so a blank qty sailed through the
+                  form and came back as a raw schema rejection from the server;
+                  a decimal did the same. Both are caught and named here now.
+                  Guarded on isEquip like the required rules — a component SO
+                  must never be blocked by an equipment-only rule. */}
+              <input id="so-equip-qty" type="number" min={1} step={1} className="innovic-input" {...register('lines.0.orderQty', { valueAsNumber: true, validate: (v) => !isEquip || (Number.isInteger(v) && v >= 1) || 'Order Qty must be a whole number, 1 or more' })} />
+              {errors.lines?.[0]?.orderQty?.message ? (
+                <div className="form-error">{errors.lines[0]?.orderQty?.message}</div>
+              ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ color: 'var(--green)' }}>SO Value (₹ / unit)</label>
-              <input type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { valueAsNumber: true })} />
+              <label className="form-label" htmlFor="so-equip-rate" style={{ color: 'var(--green)' }}>SO Value (₹ / unit)</label>
+              {/* No ★ — the server defaults this to 0. `setValueAs` is what
+                  makes that actually true: with valueAsNumber a cleared box
+                  became NaN, which goes over the wire as null. The `min={0}`
+                  attribute only ever raised a native browser bubble, which is
+                  not how this form reports anything else — so the rule is a
+                  real one now and lands in .form-error like its neighbours. */}
+              <input id="so-equip-rate" type="number" step="0.01" min={0} className="innovic-input" style={{ fontWeight: 700, color: 'var(--green)' }} {...register('lines.0.rate', { setValueAs: (v: string | number | null | undefined) => (v === '' || v === null || v === undefined ? 0 : Number(v)), validate: (v) => !isEquip || (Number.isFinite(v) && v >= 0) || 'SO Value cannot be negative' })} />
+              {errors.lines?.[0]?.rate?.message ? (
+                <div className="form-error">{errors.lines[0]?.rate?.message}</div>
+              ) : null}
             </div>
             <div className="form-grp">
-              <label className="form-label">BOM (Bill of Materials)</label>
+              <label className="form-label" htmlFor="so-equip-bom">BOM (Bill of Materials)</label>
               {/* Read-only, not a picker. The parent item decides the BOM
                   (ADR-108), so the auto-attach above is the only correct
                   answer — offering the whole BOM list here only invited a
@@ -762,6 +819,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   form through the hidden input, so submit and edit-load are
                   unchanged. */}
               <input
+                id="so-equip-bom"
                 className="innovic-input"
                 readOnly
                 tabIndex={-1}
