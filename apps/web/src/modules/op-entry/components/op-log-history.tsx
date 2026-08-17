@@ -1,4 +1,6 @@
-// Op-log history — legacy chrome (.innovic-table).
+// Op-log history — CARD layout (no horizontal scroll). One card per log entry
+// so it fits the narrow Recent-log sidebar; the old .innovic-table version ran
+// 10 columns wide and scrolled sideways.
 //
 // Date and time are editable in place (ADR-127). Nothing else is: qty, reject,
 // machine and operator are frozen by a DB trigger, not merely by this UI.
@@ -7,7 +9,7 @@
 // request and the row keeps showing its ORIGINAL date/time with a ⏳ marker
 // until a manager decides. A manager/admin editing here still applies
 // immediately (they are the approver), and can decide a pending request from
-// this row without walking to Settings → Approvals.
+// this card without walking to Settings → Approvals.
 
 import type { OpLog, OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
@@ -19,7 +21,7 @@ interface Props {
   logs: OpLog[];
   isLoading: boolean;
   /** Scopes the pending-change lookup to this operation. Omit and no ⏳
-   *  markers are fetched — the table still edits normally. */
+   *  markers are fetched — the cards still edit normally. */
   jcOpId?: string;
 }
 
@@ -27,6 +29,13 @@ const TYPE_LABEL: Record<OpLog['logType'], string> = {
   start: 'Start',
   complete: 'Complete',
   qc: 'QC',
+};
+
+// Card type-badge palette — tokens only (no hard-coded hex).
+const TYPE_STYLE: Record<OpLog['logType'], { bg: string; fg: string }> = {
+  start: { bg: 'var(--amber3)', fg: 'var(--amber)' },
+  complete: { bg: 'var(--green3)', fg: 'var(--green)' },
+  qc: { bg: 'var(--bg4)', fg: 'var(--cyan)' },
 };
 
 const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '');
@@ -87,7 +96,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
   const busy = retime.isPending || decide.isPending;
 
   return (
-    <div className="tbl-wrap">
+    <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {notice ? (
         <div
           style={{
@@ -97,49 +106,73 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
             padding: '6px 10px',
             fontSize: 11,
             color: 'var(--amber)',
-            marginBottom: 8,
           }}
         >
           ⏳ {notice}
         </div>
       ) : null}
-      <table className="innovic-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Shift</th>
-            <th>Type</th>
-            <th>Machine</th>
-            <th style={{ textAlign: 'center' }}>Qty</th>
-            <th style={{ textAlign: 'center' }}>Reject</th>
-            <th>Operator</th>
-            <th>Remarks</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr>
-              <td colSpan={10} className="empty-state">
-                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                Loading log…
-              </td>
-            </tr>
-          ) : logs.length === 0 ? (
-            <tr>
-              <td colSpan={10} className="empty-state">
-                No log entries yet.
-              </td>
-            </tr>
-          ) : (
-            logs.map((l) => {
-              const editing = editingId === l.id;
-              const req = pendingByLog.get(l.id) ?? null;
-              return (
-                <tr key={l.id}>
-                  <td className="mono" style={{ fontSize: 11 }}>
-                    {editing ? (
+
+      {isLoading ? (
+        <div className="empty-state">
+          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+          Loading log…
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="empty-state">No log entries yet.</div>
+      ) : (
+        logs.map((l) => {
+          const editing = editingId === l.id;
+          const req = pendingByLog.get(l.id) ?? null;
+          const ts = TYPE_STYLE[l.logType];
+          return (
+            <div
+              key={l.id}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius2)',
+                background: 'var(--bg2)',
+                padding: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              {/* Header: type badge + when (left) · qty/reject + row action (right) */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                    minWidth: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      background: ts.bg,
+                      color: ts.fg,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      padding: '2px 7px',
+                      borderRadius: 999,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {TYPE_LABEL[l.logType]}
+                  </span>
+                  {editing ? (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       <input
                         className="innovic-input"
                         type="date"
@@ -148,15 +181,6 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         onChange={(e) => setDraftDate(e.target.value)}
                         style={{ fontSize: 11, padding: '2px 4px', width: 130 }}
                       />
-                    ) : (
-                      l.logDate
-                    )}
-                  </td>
-                  {/* op_log.start_time. Historically only the 'start' marker
-                      carried one — completion and QC rows were written with
-                      null — so older rows legitimately show a dash. */}
-                  <td className="mono" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                    {editing ? (
                       <input
                         className="innovic-input"
                         type="time"
@@ -165,78 +189,36 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         onChange={(e) => setDraftTime(e.target.value)}
                         style={{ fontSize: 11, padding: '2px 4px', width: 100 }}
                       />
-                    ) : (
-                      hhmm(l.startTime) || '—'
-                    )}
-                  </td>
-                  <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {l.shift}
-                  </td>
-                  <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    {TYPE_LABEL[l.logType]}
-                  </td>
-                  {/* 0095: the machine stamped on THIS entry — survives a later
-                      machine change on the op, so past qty stays attributed. */}
-                  <td className="mono" style={{ fontSize: 11 }}>
-                    {l.machineCode ?? l.machineCodeText ?? '—'}
-                  </td>
-                  <td className="td-ctr mono">{l.qty}</td>
-                  <td className="td-ctr mono" style={{ color: 'var(--red)' }}>
-                    {l.rejectQty || ''}
-                  </td>
-                  <td style={{ fontSize: 12 }}>{l.operatorName ?? '—'}</td>
-                  <td className="text3" style={{ fontSize: 11 }}>
-                    {editing ? (
-                      <input
-                        className="innovic-input"
-                        type="text"
-                        aria-label="Reason for the change"
-                        placeholder={canApprove ? 'Reason (optional)' : 'Why? (shown to approver)'}
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        style={{ fontSize: 11, padding: '2px 4px', width: 180 }}
-                      />
-                    ) : (
-                      <>
-                        {l.remarks ?? ''}
-                        {l.timingEditedAt ? (
-                          <span
-                            className="text3"
-                            style={{ fontSize: 10, marginLeft: 4 }}
-                            title={`Date/time corrected on ${new Date(
-                              l.timingEditedAt,
-                            ).toLocaleString()}. Qty unchanged.`}
-                          >
-                            (retimed)
-                          </span>
-                        ) : null}
-                        {req ? (
-                          <div
-                            style={{ fontSize: 10, color: 'var(--amber)', marginTop: 2 }}
-                            title={req.reason ?? ''}
-                          >
-                            <Clock className="mr-1 inline h-3 w-3" />
-                            change pending →{' '}
-                            <span className="mono">
-                              {whenLabel(req.requestedLogDate, req.requestedStartTime)}
-                            </span>
-                            {req.requestedByName ? ` · asked by ${req.requestedByName}` : ''}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    {editing ? (
-                      <>
+                    </div>
+                  ) : (
+                    <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
+                      {l.logDate}
+                      {hhmm(l.startTime) ? ` · ${hhmm(l.startTime)}` : ''}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 12 }} title="Qty done / rejected">
+                    {l.qty}
+                    {l.rejectQty ? <span style={{ color: 'var(--red)' }}> · rej {l.rejectQty}</span> : null}
+                  </span>
+                  {/* Row action — edit / approve / reject. Logic preserved from
+                      the table version. */}
+                  {editing ? null : req && canApprove ? (
+                    rejectingId === req.id ? null : (
+                      <span style={{ display: 'inline-flex', gap: 4 }}>
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => save(l.id)}
-                          disabled={busy || !draftDate}
-                          title={canApprove ? 'Save date/time' : 'Send for approval'}
+                          disabled={busy}
+                          title={`Approve change to ${whenLabel(
+                            req.requestedLogDate,
+                            req.requestedStartTime,
+                          )}`}
+                          onClick={() => decide.mutate({ id: req.id, decision: 'approve' })}
                         >
-                          {retime.isPending ? (
+                          {decide.isPending ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <Check className="h-3 w-3" />
@@ -245,113 +227,164 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          onClick={() => setEditingId(null)}
                           disabled={busy}
-                          title="Cancel"
-                          style={{ marginLeft: 4 }}
+                          title="Reject change"
+                          onClick={() => {
+                            setRejectingId(req.id);
+                            setRejectReason('');
+                          }}
                         >
                           <X className="h-3 w-3" />
                         </button>
-                      </>
-                    ) : req && canApprove ? (
-                      rejectingId === req.id ? (
-                        <>
-                          <input
-                            className="innovic-input"
-                            type="text"
-                            aria-label="Reason for rejecting"
-                            placeholder="Reason (required)"
-                            value={rejectReason}
-                            onChange={(e) => setRejectReason(e.target.value)}
-                            style={{ fontSize: 11, padding: '2px 4px', width: 140 }}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            style={{ marginLeft: 4 }}
-                            disabled={busy || !rejectReason.trim()}
-                            onClick={() =>
-                              decide.mutate(
-                                {
-                                  id: req.id,
-                                  decision: 'reject',
-                                  decisionReason: rejectReason.trim(),
-                                },
-                                {
-                                  onSuccess: () => {
-                                    setRejectingId(null);
-                                    setRejectReason('');
-                                  },
-                                },
-                              )
-                            }
-                          >
-                            Reject
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ marginLeft: 4 }}
-                            disabled={busy}
-                            onClick={() => setRejectingId(null)}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            disabled={busy}
-                            title={`Approve change to ${whenLabel(
-                              req.requestedLogDate,
-                              req.requestedStartTime,
-                            )}`}
-                            onClick={() => decide.mutate({ id: req.id, decision: 'approve' })}
-                          >
-                            {decide.isPending ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Check className="h-3 w-3" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ marginLeft: 4 }}
-                            disabled={busy}
-                            title="Reject change"
-                            onClick={() => {
-                              setRejectingId(req.id);
-                              setRejectReason('');
-                            }}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </>
-                      )
-                    ) : req ? (
-                      <span className="text3" style={{ fontSize: 10 }}>
-                        awaiting approval
                       </span>
+                    )
+                  ) : req ? (
+                    <span className="text3" style={{ fontSize: 10 }}>
+                      awaiting approval
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => beginEdit(l)}
+                      title="Edit date/time (qty cannot be changed)"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Meta: machine · operator · shift */}
+              <div
+                className="text3"
+                style={{ fontSize: 11, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
+              >
+                <span className="mono">{l.machineCode ?? l.machineCodeText ?? '—'}</span>
+                <span>·</span>
+                <span style={{ color: 'var(--text2)' }}>{l.operatorName ?? '—'}</span>
+                <span>·</span>
+                <span style={{ textTransform: 'uppercase' }}>{l.shift}</span>
+              </div>
+
+              {/* Remarks + retimed marker (display only, not while editing) */}
+              {!editing && (l.remarks || l.timingEditedAt) ? (
+                <div
+                  className="text3"
+                  style={{ fontSize: 11, whiteSpace: 'normal', wordBreak: 'break-word' }}
+                >
+                  {l.remarks ?? ''}
+                  {l.timingEditedAt ? (
+                    <span
+                      className="text3"
+                      style={{ fontSize: 10, marginLeft: 4 }}
+                      title={`Date/time corrected on ${new Date(
+                        l.timingEditedAt,
+                      ).toLocaleString()}. Qty unchanged.`}
+                    >
+                      (retimed)
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* Pending-change line */}
+              {!editing && req ? (
+                <div
+                  style={{ fontSize: 10, color: 'var(--amber)', wordBreak: 'break-word' }}
+                  title={req.reason ?? ''}
+                >
+                  <Clock className="mr-1 inline h-3 w-3" />
+                  change pending →{' '}
+                  <span className="mono">
+                    {whenLabel(req.requestedLogDate, req.requestedStartTime)}
+                  </span>
+                  {req.requestedByName ? ` · asked by ${req.requestedByName}` : ''}
+                </div>
+              ) : null}
+
+              {/* Edit panel: reason + save / cancel */}
+              {editing ? (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    className="innovic-input"
+                    type="text"
+                    aria-label="Reason for the change"
+                    placeholder={canApprove ? 'Reason (optional)' : 'Why? (shown to approver)'}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    style={{ fontSize: 11, padding: '2px 6px', flex: '1 1 160px', minWidth: 120 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => save(l.id)}
+                    disabled={busy || !draftDate}
+                    title={canApprove ? 'Save date/time' : 'Send for approval'}
+                  >
+                    {retime.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => beginEdit(l)}
-                        title="Edit date/time (qty cannot be changed)"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
+                      <Check className="h-3 w-3" />
                     )}
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setEditingId(null)}
+                    disabled={busy}
+                    title="Cancel"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+
+              {/* Reject panel: reason + reject / cancel (manager rejecting a request) */}
+              {!editing && req && canApprove && rejectingId === req.id ? (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    className="innovic-input"
+                    type="text"
+                    aria-label="Reason for rejecting"
+                    placeholder="Reason (required)"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    style={{ fontSize: 11, padding: '2px 6px', flex: '1 1 140px', minWidth: 120 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    disabled={busy || !rejectReason.trim()}
+                    onClick={() =>
+                      decide.mutate(
+                        { id: req.id, decision: 'reject', decisionReason: rejectReason.trim() },
+                        {
+                          onSuccess: () => {
+                            setRejectingId(null);
+                            setRejectReason('');
+                          },
+                        },
+                      )
+                    }
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy}
+                    onClick={() => setRejectingId(null)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })
+      )}
+
       {retime.isError || decide.isError ? (
         <div style={{ color: 'var(--red)', fontSize: 11, padding: '6px 4px' }}>
           {(retime.error ?? decide.error)?.message}
