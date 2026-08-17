@@ -589,39 +589,56 @@ export function OpEntryForm({
         </div>
         <div className="panel-body">
           {blockedBanner}
-          <div className="form-grid">
-            {commonFields}
-            {isStart ? (
-              // Legacy "Mark Operation as Running" panel (L5303-5307).
-              <div
-                className="form-grp form-full"
-                style={{
-                  background: 'var(--amber3)',
-                  border: '1px solid var(--amber2)',
-                  borderRadius: 8,
-                  padding: 10,
-                }}
+          {/* Minimized single-row field strip (see reference UI): Date · Time ·
+              Shift · [Qty · Reject] · Operator all on ONE wrapping row, with
+              Remarks full-width below. Each field's form-grp carries an explicit
+              width because .innovic-input is width:100% and would otherwise
+              collapse in a flex row. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+            <div className="form-grp" style={{ width: 140 }}>
+              <label className="form-label" htmlFor="opf-date">
+                Date
+              </label>
+              <input
+                id="opf-date"
+                className="innovic-input"
+                type="date"
+                value={logDate}
+                onChange={(e) => setLogDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ width: 110 }}>
+              <label className="form-label" htmlFor="opf-time">
+                Time
+              </label>
+              <input
+                id="opf-time"
+                className="innovic-input"
+                type="time"
+                value={entryTime}
+                onChange={(e) => setEntryTime(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ width: 120 }}>
+              <label className="form-label" htmlFor="opf-shift">
+                Shift
+              </label>
+              <select
+                id="opf-shift"
+                className="innovic-select"
+                value={shift}
+                onChange={(e) => setShift(e.target.value as Shift)}
               >
-                <div
-                  style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}
-                >
-                  ▶ Mark Operation as Running
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text2)' }}>
-                  This will mark{' '}
-                  <b className="mono">
-                    {op.jobCardCode} Op{op.opSeq}
-                  </b>{' '}
-                  as Running on <b>{op.machineCode ?? op.machineCodeText ?? '—'}</b>.
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
-                  Available qty to process:{' '}
-                  <b style={{ color: 'var(--cyan)' }}>{op.available} pcs</b>
-                </div>
-              </div>
-            ) : (
+                {SHIFTS.map((s) => (
+                  <option key={s} value={s}>
+                    {SHIFT_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {!isStart ? (
               <>
-                <div className="form-grp">
+                <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-qty">
                     Qty done
                   </label>
@@ -638,9 +655,9 @@ export function OpEntryForm({
                     disabled={blockedReason !== null}
                   />
                 </div>
-                <div className="form-grp">
+                <div className="form-grp" style={{ width: 100 }}>
                   <label className="form-label" htmlFor="opf-rej">
-                    Reject qty
+                    Reject
                   </label>
                   <input
                     id="opf-rej"
@@ -654,8 +671,69 @@ export function OpEntryForm({
                   />
                 </div>
               </>
-            )}
-            {operatorAndRemarks}
+            ) : null}
+            <div className="form-grp" style={{ flex: '1 1 200px', minWidth: 180 }}>
+              <label className="form-label" htmlFor="opf-op">
+                Operator
+              </label>
+              <input
+                id="opf-op"
+                className="innovic-input"
+                list="opf-op-list"
+                value={operatorName}
+                onChange={(e) => handleOperatorNameChange(e.target.value)}
+                placeholder="Operator name"
+                autoComplete="off"
+              />
+              <datalist id="opf-op-list">
+                {operators.map((o) => (
+                  <option key={o.id} value={o.name}>
+                    {o.code}
+                    {o.department ? ` · ${o.department}` : ''}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          {isStart ? (
+            // "Mark Operation as Running" info panel — full width below the strip.
+            <div
+              style={{
+                background: 'var(--amber3)',
+                border: '1px solid var(--amber2)',
+                borderRadius: 8,
+                padding: 10,
+                marginTop: 12,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}>
+                ▶ Mark Operation as Running
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text2)' }}>
+                This will mark{' '}
+                <b className="mono">
+                  {op.jobCardCode} Op{op.opSeq}
+                </b>{' '}
+                as Running on <b>{op.machineCode ?? op.machineCodeText ?? '—'}</b>.
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                Available qty to process: <b style={{ color: 'var(--cyan)' }}>{op.available} pcs</b>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="form-grp" style={{ marginTop: 12 }}>
+            <label className="form-label" htmlFor="opf-rem">
+              Remarks
+            </label>
+            <input
+              id="opf-rem"
+              className="innovic-input"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Optional notes…"
+            />
           </div>
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
@@ -713,6 +791,17 @@ export function OpEntryForm({
                 )}
               </>
             )}
+            <span
+              style={{
+                marginLeft: 'auto',
+                alignSelf: 'center',
+                fontSize: 12,
+                color: 'var(--text2)',
+              }}
+            >
+              Pending on this op:{' '}
+              <b style={{ color: 'var(--amber)' }}>{op.pendingQty}</b>
+            </span>
           </div>
         </div>
       </div>

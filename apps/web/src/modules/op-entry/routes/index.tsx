@@ -214,13 +214,9 @@ function OpEntryPage() {
           </div>
 
           {selectedOp ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
-                gap: 16,
-              }}
-            >
+            // Log Entry form on top, then the Machine-wise output / Recent log
+            // tabs BELOW it (full width) — stacked, not side-by-side.
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <OpEntryForm
                   op={selectedOp}
