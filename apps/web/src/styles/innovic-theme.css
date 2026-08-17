@@ -413,8 +413,19 @@
     background 0.15s,
     border-color 0.15s;
 }
+/* A .dash-link with no bordered child — the StatStrip navigation cell — takes
+   the hover fill on itself. Kept as a separate class so the card case above is
+   untouched (there, filling the <a> would sit invisibly behind the card). */
+.dash-link.dash-cell {
+  border-radius: 0;
+  transition: background 0.15s;
+}
+.dash-link.dash-cell:hover {
+  background: var(--bg4);
+}
 @media (prefers-reduced-motion: reduce) {
-  .dash-surface {
+  .dash-surface,
+  .dash-link.dash-cell {
     transition: none;
   }
 }

@@ -6757,3 +6757,47 @@ Same failure mode as the ADR-101 duplication already recorded in TASKS.md. Not
 renumbered — the code comments and migration files of both sets cite their own
 numbers, so renumbering would break more references than it fixes. Numbers cited in
 code should be read together with the date.
+
+### ADR-131 addendum (same day) — the KPI strip WAS done; `<StatStrip>` gained a link cell
+
+The decision above deferred the KPI-card → `<StatStrip>` conversion to the user
+because it visibly changes the top of the dashboard. **The user chose to do it**
+("a"), so it is now built, and extended to all three role homes rather than just
+the admin one — leaving operator and specialist on the old cards would have made
+the inconsistency worse, not better.
+
+- `home-admin.tsx` — 4 cards → one strip
+- `home-operator.tsx` — 3 cards → one strip
+- `home-specialist.tsx` — N dept cards → one strip
+- `components/kpi-card.tsx` — **deleted**, no remaining consumer
+
+`<StatStrip>` was widened twice, both times because the dashboard exposed a real
+gap rather than because it was convenient:
+
+1. **`sub` is now `React.ReactNode`, was `string`.** The KPI cards render "3
+   overdue" in red inside the caption. A string-only `sub` would have silently
+   dropped the one piece of colour on that line that carries meaning.
+2. **New `to?: string` → the cell renders a real `<Link>`.** These stats navigate;
+   the strip previously only knew how to filter (`onClick` → `<button>`). Routing a
+   navigation through `onClick` + `navigate()` would have broken middle-click,
+   ctrl-click and "open in new tab" — three things users of a dashboard do
+   constantly. The link cell also deliberately omits `aria-pressed`: that attribute
+   claims the control is a toggle, which would misdescribe where the click goes.
+
+Existing consumers (purchase-requests, customer-dispatches, delivery-challans,
+goods-receipt-notes, party-grn) pass neither `to` nor a non-string `sub`, so their
+rendered output is unchanged.
+
+New CSS class `.dash-link.dash-cell` — a `.dash-link` with no bordered child takes
+the hover fill on itself. Kept separate from the card case, where filling the `<a>`
+would paint invisibly behind the card.
+
+Also fixed while in the file: `home-specialist.tsx` had the same hard
+`gridTemplateColumns: '1fr 1fr'` defect ADR-131 fixed in `home-admin.tsx`, and its
+panels hold tables — so a fixed half-width column made every one of them scroll
+sideways on a laptop. Now `repeat(auto-fit, minmax(340px, 1fr))`.
+
+**Consequence worth stating:** the dashboard's headline numbers are now visually
+quieter — a single strip instead of four bordered cards. That is the intended
+result of Rule 3 and it frees roughly 60-80px at the top of every role's home
+page, but it IS a real change in emphasis, unlike the rest of ADR-131.

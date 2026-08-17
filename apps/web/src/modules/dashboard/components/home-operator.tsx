@@ -4,7 +4,7 @@
 
 import type { HomeResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { KpiCard } from './kpi-card';
+import { StatStrip } from '@/components/shared/stat-strip';
 
 function elapsedStr(min: number): string {
   return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
@@ -35,11 +35,36 @@ export function HomeOperator({ home }: { home: HomeResponse }): React.JSX.Elemen
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <KpiCard label="My Output Today" value={`${o.myOutputQty} pcs`} color="var(--sig-ok)" navPage="/op-entry" sub={`Across ${o.myEntries} entries`} />
-        <KpiCard label="Ready to Work" value={o.readyCount} color="var(--dept-production)" navPage="/op-entry" sub={o.readyCount > 0 ? 'Pick an op below to start' : 'All ops waiting on material'} />
-        <KpiCard label="Running Now" value={`(${o.allRunningCount} in factory)`} color="var(--sig-warn)" navPage="/production-dashboard" sub="All running operations" />
-      </div>
+      {/* One strip, same as the admin and specialist homes (styling Rule 3). */}
+      <StatStrip
+        items={[
+          {
+            key: 'output',
+            label: 'My Output Today',
+            count: `${o.myOutputQty} pcs`,
+            color: 'var(--sig-ok)',
+            to: '/op-entry',
+            sub: `Across ${o.myEntries} entries`,
+          },
+          {
+            key: 'ready',
+            label: 'Ready to Work',
+            count: o.readyCount,
+            color: 'var(--dept-production)',
+            to: '/op-entry',
+            sub:
+              o.readyCount > 0 ? 'Pick an op below to start' : 'All ops waiting on material',
+          },
+          {
+            key: 'running',
+            label: 'Running Now',
+            count: `${o.allRunningCount} in factory`,
+            color: 'var(--sig-warn)',
+            to: '/production-dashboard',
+            sub: 'All running operations',
+          },
+        ]}
+      />
 
       <div className="panel" style={{ padding: 0 }}>
         <div className="panel-hdr">

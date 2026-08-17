@@ -3,7 +3,7 @@
 
 import type { HomeResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { KpiCard } from './kpi-card';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { QuickLinks } from './quick-links';
 
 function StatRow({
@@ -53,57 +53,62 @@ export function HomeAdmin({ home }: { home: HomeResponse }): React.JSX.Element {
   const attn = home.needsAttention ?? [];
   return (
     <div>
-      {/* Headline KPIs */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <KpiCard
-          label="Active SOs"
-          value={k.activeSOs}
-          color="var(--sig-info)"
-          navPage="/so-overview"
-          sub={
-            k.overdueSOs > 0 ? (
-              <span style={{ color: 'var(--sig-critical)' }}>
-                <b>{k.overdueSOs} overdue</b>
-              </span>
-            ) : (
-              'All on track'
-            )
-          }
-        />
-        <KpiCard
-          label="Open Job Cards"
-          value={k.openJCs}
-          color="var(--dept-production)"
-          navPage="/job-cards"
-          sub={
-            k.overdueJCs > 0 ? (
-              <span style={{ color: 'var(--sig-critical)' }}>
-                <b>{k.overdueJCs} overdue</b>
-              </span>
-            ) : (
-              'Healthy'
-            )
-          }
-        />
-        <KpiCard
-          label="Machines Running"
-          value={`${k.machsRunning}/${k.machsTotal}`}
-          color="var(--dept-production)"
-          navPage="/production-dashboard"
-          sub={
-            k.machsTotal > 0
-              ? `${Math.round((k.machsRunning / k.machsTotal) * 100)}% utilization`
-              : 'No machines'
-          }
-        />
-        <KpiCard
-          label="Today's Output"
-          value={`${k.todayOutputQty} pcs`}
-          color="var(--sig-ok)"
-          navPage="/op-entry"
-          sub="Completed across all ops"
-        />
-      </div>
+      {/* Headline KPIs — ONE strip, per the `styling` skill Rule 3. These were
+          four floating cards, each with its own border, radius and 4px coloured
+          left edge, in a flex row ~90px tall. */}
+      <StatStrip
+        items={[
+          {
+            key: 'so',
+            label: 'Active SOs',
+            count: k.activeSOs,
+            color: 'var(--sig-info)',
+            to: '/so-overview',
+            sub:
+              k.overdueSOs > 0 ? (
+                <span style={{ color: 'var(--sig-critical)', fontWeight: 700 }}>
+                  {k.overdueSOs} overdue
+                </span>
+              ) : (
+                'All on track'
+              ),
+          },
+          {
+            key: 'jc',
+            label: 'Open Job Cards',
+            count: k.openJCs,
+            color: 'var(--dept-production)',
+            to: '/job-cards',
+            sub:
+              k.overdueJCs > 0 ? (
+                <span style={{ color: 'var(--sig-critical)', fontWeight: 700 }}>
+                  {k.overdueJCs} overdue
+                </span>
+              ) : (
+                'Healthy'
+              ),
+          },
+          {
+            key: 'mach',
+            label: 'Machines Running',
+            count: `${k.machsRunning}/${k.machsTotal}`,
+            color: 'var(--dept-production)',
+            to: '/production-dashboard',
+            sub:
+              k.machsTotal > 0
+                ? `${Math.round((k.machsRunning / k.machsTotal) * 100)}% utilization`
+                : 'No machines',
+          },
+          {
+            key: 'output',
+            label: "Today's Output",
+            count: `${k.todayOutputQty} pcs`,
+            color: 'var(--sig-ok)',
+            to: '/op-entry',
+            sub: 'Completed across all ops',
+          },
+        ]}
+      />
 
       {/* Today + Needs Attention. auto-fit, not a hard '1fr 1fr': at 900px the
           fixed pair gave each panel ~440px, and the nested Today grid inside it

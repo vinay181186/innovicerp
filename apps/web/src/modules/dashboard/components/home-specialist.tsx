@@ -3,19 +3,34 @@
 
 import type { HomeResponse } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { KpiCard } from './kpi-card';
+import { StatStrip } from '@/components/shared/stat-strip';
 
 export function HomeSpecialist({ home }: { home: HomeResponse }): React.JSX.Element {
   const s = home.specialist!;
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        {s.kpis.map((k, i) => (
-          <KpiCard key={i} label={k.label} value={k.value} color={k.color} navPage={k.navPage} sub={k.sub} />
-        ))}
-      </div>
+      {/* One strip, same as the admin and operator homes (styling Rule 3). */}
+      <StatStrip
+        items={s.kpis.map((k, i) => ({
+          key: `${k.label}-${i}`,
+          label: k.label,
+          count: k.value,
+          color: k.color,
+          to: k.navPage,
+          sub: k.sub,
+        }))}
+      />
 
-      <div style={{ display: 'grid', gridTemplateColumns: s.panels.length > 1 ? '1fr 1fr' : '1fr', gap: 14 }}>
+      {/* auto-fit rather than a hard '1fr 1fr': these panels hold tables, and a
+          fixed half-width column made every table scroll sideways on a laptop. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns:
+            s.panels.length > 1 ? 'repeat(auto-fit, minmax(340px, 1fr))' : '1fr',
+          gap: 14,
+        }}
+      >
         {s.panels.map((p, pi) => (
           <div key={pi} className="panel" style={{ padding: 0 }}>
             <div className="panel-hdr">
