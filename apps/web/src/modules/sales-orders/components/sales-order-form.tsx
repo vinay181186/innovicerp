@@ -273,6 +273,19 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     setValue('header.bomMasterId', equipBom?.id ?? '', { shouldDirty: true });
   }, [isEquip, equipItem, equipBom, setValue]);
 
+  // What the (read-only) BOM field shows. Read off the attached id rather than
+  // off equipBom: an edit form keeps whatever BOM was saved, which may not be
+  // the one the parent item resolves to today. A saved id we can't look up
+  // (inactive BOM, or past the list page) still reports as attached — claiming
+  // "BOM Pending" for an SO that has one would be the worse lie.
+  const attachedBomId = watch('header.bomMasterId') ?? '';
+  const attachedBom = attachedBomId ? (boms.find((b) => b.id === attachedBomId) ?? null) : null;
+  const attachedBomLabel = attachedBom
+    ? `${attachedBom.bomNo} — ${attachedBom.bomName} (Rev ${attachedBom.revision}, ${attachedBom.lineCount} items)`
+    : attachedBomId
+      ? 'BOM attached'
+      : '— No BOM (BOM Pending) —';
+
   const [lineError, setLineError] = useState<string | null>(null);
   // At least one of Client PO No. / Email Ref must be provided (create form).
   const [poEmailError, setPoEmailError] = useState<string | null>(null);
@@ -718,10 +731,19 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label">BOM (Bill of Materials)</label>
-              <select className="innovic-select" {...register('header.bomMasterId')}>
-                <option value="">— No BOM (BOM Pending) —</option>
-                {boms.map((b) => <option key={b.id} value={b.id}>{b.bomNo} — {b.bomName} (Rev {b.revision}, {b.lineCount} items)</option>)}
-              </select>
+              {/* Read-only, not a picker. The parent item decides the BOM
+                  (ADR-108), so the auto-attach above is the only correct
+                  answer — offering the whole BOM list here only invited a
+                  pick that contradicts it. The value still travels with the
+                  form through the hidden input, so submit and edit-load are
+                  unchanged. */}
+              <input
+                className="innovic-input"
+                readOnly
+                tabIndex={-1}
+                value={attachedBomLabel}
+              />
+              <input type="hidden" {...register('header.bomMasterId')} />
               {/* Say which BOM was attached, or that none exists — and in that
                   case hand the user the way out rather than leaving them to
                   find BOM Master themselves. Silent while the code is still
