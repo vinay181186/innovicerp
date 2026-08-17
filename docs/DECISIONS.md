@@ -6656,3 +6656,104 @@ one day old and has exactly one caller.
   not blocked — blocking would strand the request with no way to clear it.
 - Additive migration only (`0098_op_log_time_change_approval.sql`): one enum,
   one table, one column on `approval_config`. No data written, no backfill.
+
+## ADR-131: Dashboard clickable surfaces get hover + focus states; two shared CSS classes, not per-card styling
+
+**Date:** 2026-08-17
+**Status:** Accepted
+
+### Context
+
+First use of the newly installed `frontend-design` and `ui-ux-pro-max` Claude Code
+plugins (user scope, both skills-only — no hooks, no MCP servers). The user asked
+for them to be applied to the dashboard.
+
+Running the plugin's rule set against `apps/web/src/modules/dashboard/**` and
+`apps/web/src/routes/index.tsx` surfaced five defects that are facts about the
+code, not matters of taste:
+
+1. **No hover, no focus state on ~20 interactive surfaces.** Every KPI card, Today
+   stat row, Needs-Attention row and widget card is a `<Link>`; each carried
+   `cursor: pointer` and nothing else. Keyboard users tabbing the page saw it not
+   move. (Plugin rule 1, Accessibility, CRITICAL — "removing focus rings" is
+   listed as the canonical anti-pattern; here they were never drawn.)
+2. **`KpiCard` split its affordance across two elements** — `cursor: pointer` on
+   the inner `<div>`, focus on the outer `<a>`, and `flex: 1; minWidth: 150`
+   declared on both.
+3. **Two unreachable hex fallbacks** — `var(--blue, #2563EB)` and
+   `var(--bg5, var(--bg4))`. Verified against `tokens.css`: **both tokens exist**,
+   so the hex was dead code that still violated the project's no-raw-hex rule.
+4. **`gridTemplateColumns: '1fr 1fr'` with a second hard grid nested inside it.**
+   Today/Needs-Attention split fixed 50/50, and Today's four stat rows split that
+   again — ~200px per stat on a laptop, ~80px on a phone. (Plugin rule 5, Layout &
+   Responsive, HIGH.)
+5. **No `<h1>` anywhere on the page**; the greeting was a bold `<div>` and both
+   panel titles were `<span>`. (Plugin rule "Heading Hierarchy", Medium.)
+
+### Decision
+
+Fix all five. Two new shared CSS classes in `innovic-theme.css` rather than
+per-component style objects:
+
+- `.dash-link` on the `<a>`/`<Link>` — the element that actually receives focus.
+  Carries `:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px }`.
+  An **outline**, not a border-colour change: it cannot be swallowed by the child's
+  own border, and it never suppresses a ring the browser would otherwise draw.
+- `.dash-surface` on the bordered box inside it. Hover/focus fills `var(--bg4)` and
+  turns the border cyan, with a `prefers-reduced-motion` guard on the transition.
+
+`var(--bg4)` is **not a new choice** — `.innovic-table tbody tr:hover td` already
+established it as this app's hover fill. Inventing a second hover colour for the
+dashboard was the alternative and was rejected.
+
+`.panel-title` gained `margin: 0` so the class can be worn by an `<h2>` as well as
+a `<span>`, which is what makes the heading fix a one-word change per title
+instead of a new class.
+
+Also: `aria-hidden` on decorative emoji sitting beside their own visible text
+label, `aria-label` on the icon-only refresh button, `aria-pressed` on the
+Widgets/Customize toggles (their active state was colour-only), and the My Work age
+chip now speaks its severity, which was previously conveyed by colour alone.
+
+### Alternatives Considered
+
+- **Per-component inline hover/focus styles** — rejected: React inline styles
+  cannot express `:hover`/`:focus-visible` at all without JS state, which is how
+  the dashboard ended up with none in the first place.
+- **Convert the four headline KPI cards to `<StatStrip>`** — the project's own
+  `styling` skill Rule 3 forbids "separate cards" for counts and a shared
+  `StatStrip` component already exists. **Deliberately NOT done and raised with the
+  user instead:** that rule is written for filter tiles above a list, whereas these
+  are the dashboard's primary content, and converting them visibly shrinks the top
+  of the page. That is a product decision, not a lint fix.
+- **Normalise the font scale** (the dashboard uses 10/11/12/13/14/16/18/19/22/24px
+  against the plugin's "consistent modular scale" rule) — rejected for now: touches
+  every line for no visible gain.
+- **Replacing emoji with an SVG icon set** — the plugin lists "emoji as icons" as a
+  rule-4 anti-pattern, and it is right, but emoji are a legacy-parity convention
+  across all ~90 screens of this app. Out of scope for a dashboard pass.
+
+### Consequences
+
+- Positive: the dashboard is keyboard-navigable with visible focus for the first
+  time; it reflows instead of crushing its columns on a narrow window; zero raw hex.
+- Positive: `.dash-link` / `.dash-surface` are generic — any other screen with
+  clickable cards can adopt them without new CSS.
+- Neutral: **no visible change on a normal desktop at rest.** Same colours, spacing
+  and layout; only interaction and narrow-window behaviour differ.
+- Negative: one more pair of global classes to know about, and the dashboard now
+  has hover/focus behaviour that the ~40 other card-based screens still lack — a
+  visible inconsistency until they adopt it.
+- Note on plugin trust: `ui-ux-pro-max` is third-party (`nextlevelbuilder`, MIT).
+  Its output is treated as **recommendation only**; where it conflicts with this
+  repo's rules, the repo wins. Its searches were run and quoted, not assumed.
+
+### Bookkeeping problem found
+
+`docs/DECISIONS.md` now contains **duplicate ADR numbers**: ADR-126 and ADR-127 each
+appear twice (a parallel session used 126/127 for PO/PR vendor-picker decisions
+while this session used them for the machine-label and op-entry-timing decisions).
+Same failure mode as the ADR-101 duplication already recorded in TASKS.md. Not
+renumbered — the code comments and migration files of both sets cite their own
+numbers, so renumbering would break more references than it fixes. Numbers cited in
+code should be read together with the date.

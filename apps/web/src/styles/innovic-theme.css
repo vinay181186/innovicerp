@@ -372,10 +372,51 @@
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.03em;
+  /* Zero so the class can be worn by an <h2> as well as a <span>. Panel titles
+     ARE the section headings of a page; screen readers navigate by heading, and
+     a page whose every heading is a <span> is a page with no outline. */
+  margin: 0;
 }
 .panel-body {
   /* 16 -> 11. Biggest single contributor: 32px of vertical padding per panel. */
   padding: 11px;
+}
+
+/* ═══ CLICKABLE SURFACES (dashboard cards + rows) ═══
+   Every card and row on the home page navigates somewhere, and before this they
+   carried `cursor: pointer` and nothing else: no hover, no focus ring. A mouse
+   user got a hand cursor; a keyboard user tabbing through ~20 links saw the page
+   sit perfectly still. `.innovic-table tbody tr:hover` already establishes
+   var(--bg4) as this app's hover fill, so these reuse it rather than inventing a
+   second hover language.
+   Put .dash-link on the <a>/<Link> (that is what receives focus) and
+   .dash-surface on the bordered box inside it. */
+.dash-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius2);
+}
+.dash-link:focus-visible {
+  /* outline, not border-color: it cannot be swallowed by the child's own border
+     and it never removes the ring the browser would otherwise draw. */
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.dash-link:hover .dash-surface,
+.dash-link:focus-visible .dash-surface {
+  background: var(--bg4);
+  border-color: var(--cyan);
+}
+.dash-surface {
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-surface {
+    transition: none;
+  }
 }
 
 /* ═══ STAT CARDS (dashboard KPI tiles) ═══ */

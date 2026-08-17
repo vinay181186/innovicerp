@@ -9,14 +9,24 @@ import { useAlerts } from '@/modules/alerts/api';
 import { useWidgets } from '../api';
 import { QuickLinks } from './quick-links';
 
+// Every branch is a token. `blue` previously read `var(--blue, #2563EB)` — but
+// --blue IS defined in tokens.css, so the hex was unreachable dead code that
+// still broke the "no raw hex in components" rule and implied the token might
+// not exist. Same story for --bg5 on the bar track below.
 function toneColor(t: string | null): string {
   switch (t) {
-    case 'red': return 'var(--red)';
-    case 'green': return 'var(--green)';
-    case 'amber': return 'var(--amber)';
-    case 'cyan': return 'var(--cyan)';
-    case 'blue': return 'var(--blue, #2563EB)';
-    default: return 'var(--text)';
+    case 'red':
+      return 'var(--red)';
+    case 'green':
+      return 'var(--green)';
+    case 'amber':
+      return 'var(--amber)';
+    case 'cyan':
+      return 'var(--cyan)';
+    case 'blue':
+      return 'var(--blue)';
+    default:
+      return 'var(--text)';
   }
 }
 
@@ -40,8 +50,15 @@ function WidgetBody({ w }: { w: WidgetData }): React.JSX.Element {
           {w.bars.map((b, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <span style={{ fontSize: 10, width: 70, color: 'var(--cyan)', fontWeight: 600 }}>{b.label}</span>
-              <div style={{ flex: 1, height: 8, background: 'var(--bg5, var(--bg4))', borderRadius: 4 }}>
-                <div style={{ width: `${b.pct}%`, height: '100%', background: toneColor(b.tone), borderRadius: 4 }} />
+              <div style={{ flex: 1, height: 8, background: 'var(--bg5)', borderRadius: 4 }}>
+                <div
+                  style={{
+                    width: `${b.pct}%`,
+                    height: '100%',
+                    background: toneColor(b.tone),
+                    borderRadius: 4,
+                  }}
+                />
               </div>
               <span className="mono" style={{ fontSize: 10, width: 30, textAlign: 'right' }}>{b.pct}%</span>
             </div>
@@ -96,17 +113,35 @@ export function HomeWidgets({ quickLinkPages }: { quickLinkPages: string[] }): R
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
       {data.widgets.map((w) => {
         const cardStyle: React.CSSProperties = {
-          background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: 16, borderTop: `3px solid ${w.color}`,
+          background: 'var(--bg3)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius2)',
+          padding: 16,
+          borderTop: `3px solid ${w.color}`,
+          height: '100%',
         };
         if (w.key === 'quick_links') {
-          return <div key={w.key} style={{ ...cardStyle, gridColumn: '1 / -1' }}><QuickLinks pages={quickLinkPages} /></div>;
+          return (
+            <div key={w.key} style={{ ...cardStyle, gridColumn: '1 / -1' }}>
+              <QuickLinks pages={quickLinkPages} />
+            </div>
+          );
         }
         if (w.key === 'my_alerts') {
-          return <div key={w.key} style={cardStyle}><AlertsWidget /></div>;
+          return (
+            <div key={w.key} style={cardStyle}>
+              <AlertsWidget />
+            </div>
+          );
         }
+        // The card is the link's child so hover/focus can be styled on the <a>
+        // that actually receives focus — previously the Link WAS the card and
+        // carried cursor:pointer with no hover or focus-visible state at all.
         return (
-          <Link key={w.key} to={w.navPage} style={{ ...cardStyle, cursor: 'pointer', textDecoration: 'none', color: 'var(--text)' }}>
-            <WidgetBody w={w} />
+          <Link key={w.key} to={w.navPage} className="dash-link">
+            <div className="dash-surface" style={cardStyle}>
+              <WidgetBody w={w} />
+            </div>
           </Link>
         );
       })}

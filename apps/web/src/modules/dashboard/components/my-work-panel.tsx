@@ -23,14 +23,28 @@ function Row({ it }: { it: WorkListItem }): React.JSX.Element {
         borderLeft: `3px solid ${sevColor(it.severity)}`,
       }}
     >
-      <span style={{ fontSize: 14 }}>{it.icon}</span>
+      <span aria-hidden="true" style={{ fontSize: 14 }}>
+        {it.icon}
+      </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{it.title}</div>
         <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {it.detail}
         </div>
       </div>
-      <span style={{ fontSize: 11, color: it.severity === 'critical' ? 'var(--sig-critical)' : 'var(--text3)', fontWeight: 700, width: 36, textAlign: 'right' }}>
+      {/* "5d" is meaningless read aloud on its own, and the severity is conveyed
+          by colour alone — both fixed by naming it. */}
+      <span
+        title={it.age > 0 ? `${it.age} days old` : 'Today'}
+        style={{
+          fontSize: 11,
+          color: it.severity === 'critical' ? 'var(--sig-critical)' : 'var(--text3)',
+          fontWeight: 700,
+          width: 36,
+          textAlign: 'right',
+        }}
+      >
+        <span className="sr-only">{it.severity}, </span>
         {it.age > 0 ? `${it.age}d` : '·'}
       </span>
       <Link to={it.navPage} className={`btn ${btnCls} btn-sm`} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>

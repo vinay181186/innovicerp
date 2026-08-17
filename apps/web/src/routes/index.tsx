@@ -55,18 +55,67 @@ function IndexPage(): React.JSX.Element {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <div style={{ fontSize: 19, fontWeight: 700 }}>Good {greetCap}, {home.userName}</div>
-          <div style={{ fontSize: 12, color: 'var(--text3)' }}>{home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{home.role}</b></div>
+          {/* The page had no <h1> at all — the greeting was a 19px bold <div>, so
+              the dashboard presented no heading outline to a screen reader. */}
+          <h1 style={{ fontSize: 19, fontWeight: 700, margin: 0 }}>
+            Good {greetCap}, {home.userName}
+          </h1>
+          <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {home.dateLabel} · <b style={{ color: 'var(--text2)' }}>{home.role}</b>
+          </div>
         </div>
+        {/* These four switch the page's whole content, so they are a tab set in
+            behaviour if not in markup. aria-pressed says which one is on —
+            previously the active state was colour only (the `active` class). */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {mode === 'alerts' ? (
-            <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => setMode('home')}>📊 Overview</button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ fontSize: 11 }}
+              onClick={() => setMode('home')}
+            >
+              📊 Overview
+            </button>
           ) : (
-            <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => setMode('alerts')}>🔔 Alerts</button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ fontSize: 11 }}
+              onClick={() => setMode('alerts')}
+            >
+              🔔 Alerts
+            </button>
           )}
-          <button type="button" className={`btn btn-ghost ${mode === 'widgets' ? 'active' : ''}`} style={{ fontSize: 11 }} onClick={() => setMode(mode === 'widgets' ? 'home' : 'widgets')}>📦 Widgets</button>
-          <button type="button" className={`btn btn-ghost ${mode === 'customize' ? 'active' : ''}`} style={{ fontSize: 11 }} onClick={() => setMode(mode === 'customize' ? 'home' : 'customize')}>⚙ Customize</button>
-          <button type="button" className="btn btn-ghost" style={{ fontSize: 11 }} title="Refresh" onClick={() => void qc.invalidateQueries({ queryKey: dashboardKeys.all })}>🔄</button>
+          <button
+            type="button"
+            className={`btn btn-ghost ${mode === 'widgets' ? 'active' : ''}`}
+            style={{ fontSize: 11 }}
+            aria-pressed={mode === 'widgets'}
+            onClick={() => setMode(mode === 'widgets' ? 'home' : 'widgets')}
+          >
+            📦 Widgets
+          </button>
+          <button
+            type="button"
+            className={`btn btn-ghost ${mode === 'customize' ? 'active' : ''}`}
+            style={{ fontSize: 11 }}
+            aria-pressed={mode === 'customize'}
+            onClick={() => setMode(mode === 'customize' ? 'home' : 'customize')}
+          >
+            ⚙ Customize
+          </button>
+          {/* Icon-only: the emoji is the whole label, so it needs a real name. */}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ fontSize: 11 }}
+            title="Refresh"
+            aria-label="Refresh dashboard"
+            onClick={() => void qc.invalidateQueries({ queryKey: dashboardKeys.all })}
+          >
+            <span aria-hidden="true">🔄</span>
+          </button>
         </div>
       </div>
 
