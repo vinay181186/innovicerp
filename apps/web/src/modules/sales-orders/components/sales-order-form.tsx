@@ -222,35 +222,33 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     if (it) setValue(`lines.${idx}.itemCodeText`, it.code, opt);
   }
 
-  // Equipment Part No. uses a free datalist (legacy allows off-master parts).
+  // Still needed to resolve an EDIT form's saved line, which carries only the
+  // code text when the SO predates the master-only picker.
   const itemsByCode = new Map(items.map((it) => [it.code.trim().toUpperCase(), it]));
 
-  // The equipment datalist is fed by the same 50-row page as the line-item
-  // picker. Without pushing the typed code into the search term, an item past
-  // that page would never resolve — and the BOM note below would stay silent
-  // instead of saying anything. Debounced so a 12-character code is one fetch.
-  const equipSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function queueEquipSearch(term: string): void {
-    if (equipSearchTimer.current) clearTimeout(equipSearchTimer.current);
-    equipSearchTimer.current = setTimeout(() => setItemSearch(term.trim()), 250);
-  }
-
-  function fillEquipFromItem(codeValue: string): void {
-    queueEquipSearch(codeValue);
-    const it = itemsByCode.get(codeValue.trim().toUpperCase());
-    if (!it) return;
-    if (!getValues('lines.0.partName')) setValue('lines.0.partName', it.name);
+  // Equipment parent: same pick path as a component line, plus the master name
+  // snapshot. CONVENTIONS "Item pickers" — a picked code ALWAYS overwrites the
+  // description from the master. The old handler filled it only when blank, so
+  // re-picking a different parent left the previous equipment's description
+  // sitting under the new code.
+  function pickEquipItem(id: string | null): void {
+    pickItem(0, id);
+    if (!id) return;
+    const it = itemsById.get(id);
+    if (it) setValue('lines.0.partName', it.name, { shouldDirty: true });
   }
 
   // ── Equipment → its BOM ──────────────────────────────────────────────────
   // A BOM now names the parent item it builds (ADR-108), so picking the
-  // equipment is enough to find its BOM. Derived from render state rather than
-  // computed inside the keystroke handler: the item often resolves only AFTER
-  // the debounced search lands, and an imperative handler would already have
-  // run and left the note blank.
+  // equipment is enough to find its BOM. Prefer the picked id; fall back to the
+  // code text so an SO saved before this field became a master-only picker
+  // still resolves on the edit form.
   const equipCodeText = watch('lines.0.itemCodeText') ?? '';
+  const equipItemId = watch('lines.0.itemId') ?? null;
   const equipItem = isEquip
-    ? (itemsByCode.get(equipCodeText.trim().toUpperCase()) ?? null)
+    ? ((equipItemId ? itemsById.get(equipItemId) : undefined) ??
+      itemsByCode.get(equipCodeText.trim().toUpperCase()) ??
+      null)
     : null;
   const equipBom = equipItem ? (boms.find((b) => b.parentItemId === equipItem.id) ?? null) : null;
 
@@ -712,14 +710,40 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   builds (ADR-108), and naming it the same on both screens is
                   what makes the auto-attach below make sense. */}
               <label className="form-label">Equipment / Parent Item<span className="req">★</span></label>
-              <input className="innovic-input" autoComplete="off" list="dlSoEquipItems" placeholder="Parent item code" {...register('lines.0.itemCodeText', { required: isEquip ? 'Parent item is required' : false, onChange: (e) => fillEquipFromItem(e.target.value) })} />
-              <datalist id="dlSoEquipItems">
-                {items.map((it) => <option key={it.id} value={it.code}>{it.name}</option>)}
-              </datalist>
+              {/* The same master-only picker the line table below uses, not a
+                  hand-rolled <datalist>. The datalist read as free text: a
+                  typo'd or off-master code sat in the box looking accepted,
+                  matched no item, and the BOM then silently never attached —
+                  which is exactly the failure the note underneath exists to
+                  report. Picking from the master is what makes it resolvable. */}
+              <SearchableSelect
+                id="so-equip-item"
+                value={equipItemId}
+                onChange={pickEquipItem}
+                onSearch={setItemSearch}
+                loading={itemsFetching}
+                options={items.map((it) => ({ id: it.id, code: it.code, name: it.name }))}
+                placeholder="🔍 Search item code or name..."
+                valueLabel={equipCodeText || undefined}
+                // Show only the code in the field once picked; the dropdown
+                // still lists "CODE — Name".
+                selectedLabel={(o) => o.code ?? o.name}
+              />
+              {/* The picker writes through setValue, so RHF needs the field
+                  registered somewhere to keep enforcing `required`. */}
+              <input type="hidden" {...register('lines.0.itemCodeText', { required: isEquip ? 'Parent item is required' : false })} />
+              {errors.lines?.[0]?.itemCodeText?.message ? (
+                <div className="form-error">{errors.lines[0]?.itemCodeText?.message}</div>
+              ) : null}
             </div>
             <div className="form-grp">
               <label className="form-label">Description<span className="req">★</span></label>
-              <input className="innovic-input" autoComplete="off" placeholder="Equipment description" {...register('lines.0.partName', { required: isEquip ? 'Description is required' : false })} />
+              {/* Auto-filled from the master and locked once a parent resolves
+                  (CONVENTIONS "Item pickers"): it is a snapshot of that code's
+                  master name, so hand-editing it only lets it drift. Editable
+                  while nothing resolves — an edit form holding an off-master
+                  legacy row still needs its description typed. */}
+              <input className="innovic-input" autoComplete="off" readOnly={!!equipItem} placeholder="Equipment description" {...register('lines.0.partName', { required: isEquip ? 'Description is required' : false })} />
             </div>
             <div className="form-grp">
               <label className="form-label">Order Qty<span className="req">★</span></label>
