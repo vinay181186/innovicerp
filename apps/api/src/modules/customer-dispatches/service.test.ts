@@ -1,13 +1,17 @@
-// Customer Dispatch service tests — BOM (assembly) readiness + stock legs.
+// Customer Dispatch service tests — assembly finished-good readiness + stock legs.
 //
-// A BOM parent item is a phantom: it is sold but never produced, so nothing
-// ever credits its stock. The BOM-8 cascade spawns one child JC per component,
-// ALL carrying source_so_line_id = the parent SO line. Two things follow, and
-// both are asserted here:
+// The Assembly Tracker BUILDS the finished good: completing a batch debits the
+// components and CREDITS the parent item into finished-goods stock (ADR-115
+// assembly output). So for an assembly / equipment SO line dispatch:
 //
-//   1. Readiness is MIN over components of FLOOR(componentReady / qtyPerSet),
-//      not SUM. 5 of C1 + 4 of C2 is 4 assemblies, never 9.
-//   2. Dispatch debits the COMPONENTS (qty x qtyPerSet), never the parent.
+//   1. Readiness is the parent's ON-HAND finished-goods stock (gross of what
+//      this line already dispatched), NOT a parts / child-JC rollup.
+//   2. Dispatch debits the PARENT finished good (the units in stock), never the
+//      components — they were already consumed when the batch was assembled.
+//
+// This replaced the old "phantom parent" model (weakest-component MIN readiness,
+// component-by-component debits), which read 0 for tracker-built equipment SOs
+// that have no child JCs and blocked dispatch of physically-assembled units.
 
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -19,27 +23,18 @@ import {
   customerDispatches,
   itemStockBalances,
   items,
-  jcOps,
-  jobCards,
-  opLog,
   salesOrderLines,
   salesOrders,
   storeTransactions,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { withUserContext } from '../../db/with-user-context';
-import { cascadeBomToSoLine } from '../bom-master/cascade';
-import * as bomService from '../bom-master/service';
 import { cancelDispatch, createDispatch, getDispatchableSo } from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const TEST_PREFIX = 'TDSPB-';
 
 let admin: AuthContext;
-let penId: string;
-let c1Id: string;
-let c2Id: string;
 let itemIds: string[] = [];
 
 async function makeItem(code: string, name: string): Promise<string> {
@@ -56,29 +51,45 @@ async function makeItem(code: string, name: string): Promise<string> {
       updatedBy: admin.id,
     })
     .returning();
+  itemIds.push(r[0]!.id);
   return r[0]!.id;
 }
 
-/** Build a BOM (parent PEN) + an SO line for `orderQty`, then run the cascade. */
+/**
+ * Build a BOM (its own PEN parent + one component) and an SO line for
+ * `orderQty` that points at that BOM. Readiness reads the parent's stock, so
+ * every fixture gets a FRESH parent to keep tests from sharing a stock pool.
+ * No child JCs are needed — the Tracker credits the parent directly.
+ */
 async function makeAssemblyFixture(opts: {
   tag: string;
   orderQty: number;
-  components: Array<{ itemId: string; qtyPerSet: number }>;
-}): Promise<{ soId: string; soLineId: string }> {
-  const bom = await bomService.createBomMaster(
-    {
+}): Promise<{ soId: string; soLineId: string; parentId: string }> {
+  const parentId = await makeItem(`PEN-${opts.tag}`, `Pen assembly ${opts.tag}`);
+  const compId = await makeItem(`C-${opts.tag}`, `Component ${opts.tag}`);
+
+  const bom = await db
+    .insert(bomMasters)
+    .values({
+      companyId: admin.companyId!,
       bomNo: `${TEST_PREFIX}${opts.tag}`,
       bomName: `assembly ${opts.tag}`,
-      parentItemId: penId,
+      parentItemId: parentId,
       status: 'active',
-      lines: opts.components.map((c) => ({
-        childItemId: c.itemId,
-        qtyPerSet: c.qtyPerSet,
-        bomType: 'manufacture' as const,
-      })),
-    },
-    admin,
-  );
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    })
+    .returning();
+  await db.insert(bomMasterLines).values({
+    companyId: admin.companyId!,
+    bomMasterId: bom[0]!.id,
+    lineNo: 1,
+    childItemId: compId,
+    qtyPerSet: '1.00',
+    bomType: 'manufacture',
+    createdBy: admin.id,
+    updatedBy: admin.id,
+  });
 
   const so = await db
     .insert(salesOrders)
@@ -99,64 +110,21 @@ async function makeAssemblyFixture(opts: {
       companyId: admin.companyId!,
       salesOrderId: so[0]!.id,
       lineNo: 1,
-      itemId: penId,
+      itemId: parentId,
       partName: 'PEN',
       orderQty: opts.orderQty,
       rate: '100',
       status: 'open',
-      sourceBomMasterId: bom.id,
+      sourceBomMasterId: bom[0]!.id,
       createdBy: admin.id,
       updatedBy: admin.id,
     })
     .returning();
 
-  await withUserContext(admin, async (tx) => cascadeBomToSoLine(tx, soLine[0]!.id, admin));
-  return { soId: so[0]!.id, soLineId: soLine[0]!.id };
+  return { soId: so[0]!.id, soLineId: soLine[0]!.id, parentId };
 }
 
-/** Give the child JC for `itemId` a single process op and complete `qty` on it. */
-async function completeChild(soLineId: string, itemId: string, qty: number): Promise<void> {
-  const jcs = await db
-    .select()
-    .from(jobCards)
-    .where(eq(jobCards.sourceSoLineId, soLineId));
-  const jc = jcs.find((j) => j.itemId === itemId);
-  if (!jc) throw new Error(`No cascade JC for item ${itemId}`);
-
-  const op = await db
-    .insert(jcOps)
-    .values({
-      companyId: admin.companyId!,
-      jobCardId: jc.id,
-      opSeq: 1,
-      machineCodeText: 'TDSPB-M',
-      operation: 'turning',
-      opType: 'process',
-      cycleTimeMin: '0.00',
-      qcRequired: false,
-      reworkQty: 0,
-      outsourceCost: '0.00',
-      outsourceSentQty: 0,
-      outsourceReturnedQty: 0,
-      createdBy: admin.id,
-      updatedBy: admin.id,
-    })
-    .returning();
-
-  await db.insert(opLog).values({
-    companyId: admin.companyId!,
-    jcOpId: op[0]!.id,
-    logNo: `${TEST_PREFIX}${jc.code}-1`,
-    logType: 'complete',
-    logDate: '2026-08-02',
-    shift: 'day',
-    qty,
-    rejectQty: 0,
-    createdBy: admin.id,
-  });
-}
-
-/** Credit physical stock so the dispatch on-hand floor is satisfied. */
+/** Credit physical finished-goods stock for the parent (Tracker output stand-in). */
 async function creditStock(itemId: string, qty: number): Promise<void> {
   await db.insert(storeTransactions).values({
     companyId: admin.companyId!,
@@ -164,8 +132,8 @@ async function creditStock(itemId: string, qty: number): Promise<void> {
     itemId,
     txnType: 'in',
     qty,
-    sourceType: 'manual_adjust',
-    sourceRef: `${TEST_PREFIX}seed`,
+    sourceType: 'assembly',
+    sourceRef: `${TEST_PREFIX}seed (output)`,
     stockBefore: 0,
     stockAfter: qty,
     remarks: 'test seed',
@@ -173,18 +141,16 @@ async function creditStock(itemId: string, qty: number): Promise<void> {
   });
 }
 
+async function onHand(itemId: string): Promise<number> {
+  const rows = await db
+    .select({ q: itemStockBalances.onHandQty })
+    .from(itemStockBalances)
+    .where(eq(itemStockBalances.itemId, itemId));
+  return Number(rows[0]?.q ?? 0);
+}
+
 async function cleanup(): Promise<void> {
   const ids = itemIds.filter(Boolean);
-  const jcs =
-    ids.length > 0 ? await db.select({ id: jobCards.id }).from(jobCards).where(inArray(jobCards.itemId, ids)) : [];
-  const jcIds = jcs.map((j) => j.id);
-  if (jcIds.length > 0) {
-    const ops = await db.select({ id: jcOps.id }).from(jcOps).where(inArray(jcOps.jobCardId, jcIds));
-    const opIds = ops.map((o) => o.id);
-    if (opIds.length > 0) await db.delete(opLog).where(inArray(opLog.jcOpId, opIds));
-    await db.delete(jcOps).where(inArray(jcOps.jobCardId, jcIds));
-    await db.delete(jobCards).where(inArray(jobCards.id, jcIds));
-  }
   await db.delete(customerDispatchLines).where(like(customerDispatchLines.itemCodeText, `${TEST_PREFIX}%`));
   await db.delete(customerDispatches).where(like(customerDispatches.soCodeText, `${TEST_PREFIX}%`));
   if (ids.length > 0) {
@@ -211,147 +177,81 @@ beforeAll(async () => {
 
   itemIds = [];
   await cleanup();
-  penId = await makeItem('PEN', 'Pen assembly');
-  c1Id = await makeItem('C1', 'Component one');
-  c2Id = await makeItem('C2', 'Component two');
-  itemIds = [penId, c1Id, c2Id];
 });
 
 afterAll(async () => {
   await cleanup();
 });
 
-describe('customer dispatch — BOM assembly readiness', () => {
-  it('takes the WEAKEST component, not the sum (5 + 4 => 4, never 9)', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'MIN',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 1 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 5);
-    await completeChild(soLineId, c2Id, 4);
+describe('customer dispatch — assembly finished-good readiness', () => {
+  it('reads Ready from the parent on-hand stock, capped at the order qty', async () => {
+    const { soId, soLineId, parentId } = await makeAssemblyFixture({ tag: 'STOCK', orderQty: 10 });
+    await creditStock(parentId, 7);
 
     const res = await getDispatchableSo(soId, admin);
     const line = res.lines.find((l) => l.salesOrderLineId === soLineId)!;
-    expect(line.readyQty).toBe(4);
-    expect(line.availableQty).toBe(4);
+    // 7 assembled units in stock, nothing dispatched, order has room for 10.
+    expect(line.readyQty).toBe(7);
+    expect(line.availableQty).toBe(7);
   });
 
-  it('is ready in full when every component covers the order', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'FULL',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 1 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 10);
-    await completeChild(soLineId, c2Id, 10);
+  it('caps available at the order qty when more is in stock than ordered', async () => {
+    const { soId, soLineId, parentId } = await makeAssemblyFixture({ tag: 'CAP', orderQty: 3 });
+    await creditStock(parentId, 10);
 
     const res = await getDispatchableSo(soId, admin);
     const line = res.lines.find((l) => l.salesOrderLineId === soLineId)!;
     expect(line.readyQty).toBe(10);
+    expect(line.availableQty).toBe(3);
   });
 
-  it('divides by qtyPerSet — 4 of a 2-per-set component covers only 2 assemblies', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'PERSET',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 2 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 10);
-    await completeChild(soLineId, c2Id, 4);
-
-    const res = await getDispatchableSo(soId, admin);
-    const line = res.lines.find((l) => l.salesOrderLineId === soLineId)!;
-    expect(line.readyQty).toBe(2);
-  });
-
-  it('reports 0 ready while any component has produced nothing', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'ZERO',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 1 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 7);
+  it('reports 0 ready while nothing has been assembled into stock', async () => {
+    const { soId, soLineId } = await makeAssemblyFixture({ tag: 'ZERO', orderQty: 10 });
 
     const res = await getDispatchableSo(soId, admin);
     const line = res.lines.find((l) => l.salesOrderLineId === soLineId)!;
     expect(line.readyQty).toBe(0);
+    expect(line.availableQty).toBe(0);
   });
 });
 
-describe('customer dispatch — BOM assembly stock legs', () => {
-  it('debits the components and never the phantom parent, then reverses on cancel', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'STOCK',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 2 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 5);
-    await completeChild(soLineId, c2Id, 8);
-    // ready = min(floor(5/1), floor(8/2)) = 4
-    await creditStock(c1Id, 5);
-    await creditStock(c2Id, 8);
+describe('customer dispatch — assembly finished-good stock legs', () => {
+  it('debits the parent finished good (not the components), then reverses on cancel', async () => {
+    const { soId, soLineId, parentId } = await makeAssemblyFixture({ tag: 'LEG', orderQty: 10 });
+    await creditStock(parentId, 10);
 
     const dispatch = await createDispatch(
       { salesOrderId: soId, dispatchDate: '2026-08-03', lines: [{ salesOrderLineId: soLineId, qty: 4 }] },
       admin,
     );
 
-    const outRows = await db
-      .select()
-      .from(storeTransactions)
-      .where(eq(storeTransactions.sourceType, 'dispatch'));
-    const mine = outRows.filter((r) => (r.sourceRef ?? '').startsWith(dispatch.code));
+    const mine = (
+      await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'dispatch'))
+    ).filter((r) => (r.sourceRef ?? '').startsWith(dispatch.code));
     const outs = mine.filter((r) => r.txnType === 'out');
 
-    // One ledger row per component, at qty x qtyPerSet. Parent absent entirely.
-    expect(outs).toHaveLength(2);
-    expect(outs.find((r) => r.itemId === c1Id)!.qty).toBe(4);
-    expect(outs.find((r) => r.itemId === c2Id)!.qty).toBe(8);
-    expect(outs.some((r) => r.itemId === penId)).toBe(false);
+    // Exactly ONE out row, on the PARENT, at the dispatched qty. No components.
+    expect(outs).toHaveLength(1);
+    expect(outs[0]!.itemId).toBe(parentId);
+    expect(outs[0]!.qty).toBe(4);
+    expect(await onHand(parentId)).toBe(6);
 
-    // Cancel puts back exactly what went out.
+    // Cancel puts the 4 back on the parent.
     await cancelDispatch(dispatch.id, admin);
-    const afterRows = await db
-      .select()
-      .from(storeTransactions)
-      .where(eq(storeTransactions.sourceType, 'dispatch'));
-    const ins = afterRows
+    const ins = (
+      await db.select().from(storeTransactions).where(eq(storeTransactions.sourceType, 'dispatch'))
+    )
       .filter((r) => (r.sourceRef ?? '').startsWith(dispatch.code))
       .filter((r) => r.txnType === 'in');
-    expect(ins).toHaveLength(2);
-    expect(ins.find((r) => r.itemId === c1Id)!.qty).toBe(4);
-    expect(ins.find((r) => r.itemId === c2Id)!.qty).toBe(8);
+    expect(ins).toHaveLength(1);
+    expect(ins[0]!.itemId).toBe(parentId);
+    expect(ins[0]!.qty).toBe(4);
+    expect(await onHand(parentId)).toBe(10);
   });
 
-  it('refuses to dispatch more assemblies than the weakest component allows', async () => {
-    const { soId, soLineId } = await makeAssemblyFixture({
-      tag: 'GUARD',
-      orderQty: 10,
-      components: [
-        { itemId: c1Id, qtyPerSet: 1 },
-        { itemId: c2Id, qtyPerSet: 1 },
-      ],
-    });
-    await completeChild(soLineId, c1Id, 9);
-    await completeChild(soLineId, c2Id, 3);
-    await creditStock(c1Id, 9);
-    await creditStock(c2Id, 3);
+  it('refuses to dispatch more than the parent stock (capped by order) allows', async () => {
+    const { soId, soLineId, parentId } = await makeAssemblyFixture({ tag: 'GUARD', orderQty: 10 });
+    await creditStock(parentId, 3);
 
     await expect(
       createDispatch(
