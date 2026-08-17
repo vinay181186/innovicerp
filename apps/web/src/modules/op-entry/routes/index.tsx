@@ -192,40 +192,55 @@ function OpEntryPage() {
             ) : null}
           </div>
 
-          <div className="panel" style={{ marginBottom: 16 }}>
-            <div className="panel-hdr">
-              <span className="panel-title">Operations — click a row to log entries</span>
-            </div>
-            {ops.isError ? (
-              <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
-                {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+          {/* Two columns: LEFT = Operations table + Log Entry (stacked); RIGHT =
+              Machine-wise output / Recent log tabs sidebar (once an op is
+              selected). Applies to production AND QC inspection ops. */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
+              gap: 16,
+              alignItems: 'start',
+            }}
+          >
+            <div>
+              <div className="panel" style={{ marginBottom: 16 }}>
+                <div className="panel-hdr">
+                  <span className="panel-title">Operations — click a row to log entries</span>
+                </div>
+                {ops.isError ? (
+                  <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                    {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+                  </div>
+                ) : ops.isLoading ? (
+                  <div className="empty-state">
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
+                  </div>
+                ) : (
+                  <JcOpsTable
+                    ops={ops.data ?? []}
+                    selectedOpId={search.op ?? null}
+                    onSelect={handleSelectOp}
+                  />
+                )}
               </div>
-            ) : ops.isLoading ? (
-              <div className="empty-state">
-                <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
-              </div>
-            ) : (
-              <JcOpsTable
-                ops={ops.data ?? []}
-                selectedOpId={search.op ?? null}
-                onSelect={handleSelectOp}
-              />
-            )}
-          </div>
 
-          {selectedOp ? (
-            // Log Entry form on top, then the Machine-wise output / Recent log
-            // tabs BELOW it (full width) — stacked, not side-by-side.
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
+              {selectedOp ? (
                 <OpEntryForm
                   op={selectedOp}
                   activeRunningId={activeRunningId}
                   mode={mode}
                   onModeChange={handleModeChange}
                 />
-              </div>
-              <div>
+              ) : ops.data && ops.data.length > 0 ? (
+                <div className="text3" style={{ fontSize: 13 }}>
+                  Select an op above to log entries.
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              {selectedOp ? (
                 <div className="panel">
                   <div
                     className="panel-hdr"
@@ -242,14 +257,11 @@ function OpEntryPage() {
                         <button
                           key={t.key}
                           type="button"
-                          className="btn btn-sm"
+                          // Active tab = solid filled pill (btn-primary), inactive
+                          // = outline (btn-ghost) — clear highlight on click.
+                          className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
                           onClick={() => setRightTab(t.key)}
-                          style={{
-                            borderColor: active ? 'var(--cyan)' : 'var(--border2)',
-                            background: active ? 'var(--bg4)' : 'transparent',
-                            color: active ? 'var(--cyan)' : 'var(--text2)',
-                            fontWeight: 700,
-                          }}
+                          style={{ fontWeight: 700 }}
                         >
                           {t.label}
                         </button>
@@ -269,13 +281,9 @@ function OpEntryPage() {
                     />
                   )}
                 </div>
-              </div>
+              ) : null}
             </div>
-          ) : ops.data && ops.data.length > 0 ? (
-            <div className="text3" style={{ fontSize: 13 }}>
-              Select an op above to log entries.
-            </div>
-          ) : null}
+          </div>
         </div>
       ) : (
         <div className="panel">

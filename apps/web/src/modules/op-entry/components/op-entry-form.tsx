@@ -259,92 +259,6 @@ export function OpEntryForm({
     }
   }
 
-  // Shared common fields (Date, Shift) — used by both forms.
-  const commonFields = (
-    <>
-      <div className="form-grp">
-        <label className="form-label" htmlFor="opf-date">
-          Date
-        </label>
-        <input
-          id="opf-date"
-          className="innovic-input"
-          type="date"
-          value={logDate}
-          onChange={(e) => setLogDate(e.target.value)}
-        />
-      </div>
-      <div className="form-grp">
-        <label className="form-label" htmlFor="opf-time">
-          Time
-        </label>
-        <input
-          id="opf-time"
-          className="innovic-input"
-          type="time"
-          value={entryTime}
-          onChange={(e) => setEntryTime(e.target.value)}
-        />
-      </div>
-      <div className="form-grp">
-        <label className="form-label" htmlFor="opf-shift">
-          Shift
-        </label>
-        <select
-          id="opf-shift"
-          className="innovic-select"
-          value={shift}
-          onChange={(e) => setShift(e.target.value as Shift)}
-        >
-          {SHIFTS.map((s) => (
-            <option key={s} value={s}>
-              {SHIFT_LABELS[s]}
-            </option>
-          ))}
-        </select>
-      </div>
-    </>
-  );
-
-  const operatorAndRemarks = (
-    <>
-      <div className="form-grp form-full">
-        <label className="form-label" htmlFor="opf-op">
-          {isQcBearing ? 'Inspector' : 'Operator'}
-        </label>
-        <input
-          id="opf-op"
-          className="innovic-input"
-          list="opf-op-list"
-          value={operatorName}
-          onChange={(e) => handleOperatorNameChange(e.target.value)}
-          placeholder={isQcBearing ? 'QC inspector name' : 'Operator name'}
-          autoComplete="off"
-        />
-        <datalist id="opf-op-list">
-          {operators.map((o) => (
-            <option key={o.id} value={o.name}>
-              {o.code}
-              {o.department ? ` · ${o.department}` : ''}
-            </option>
-          ))}
-        </datalist>
-      </div>
-      <div className="form-grp form-full">
-        <label className="form-label" htmlFor="opf-rem">
-          Remarks
-        </label>
-        <input
-          id="opf-rem"
-          className="innovic-input"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Optional notes…"
-        />
-      </div>
-    </>
-  );
-
   const blockedBanner = blockedReason ? (
     <div
       style={{
@@ -471,11 +385,54 @@ export function OpEntryForm({
           </div>
           <div className="panel-body">
             {blockedBanner}
-            <div className="form-grid">
-              {commonFields}
-              <div className="form-grp">
+            {/* Compact single-row field strip (matches the production Log Entry
+                form): Date · Time · Shift · Accepted · Reject · Inspector on one
+                wrapping row, Remarks beside it with show more/less. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+              <div className="form-grp" style={{ width: 140 }}>
+                <label className="form-label" htmlFor="opf-date">
+                  Date
+                </label>
+                <input
+                  id="opf-date"
+                  className="innovic-input"
+                  type="date"
+                  value={logDate}
+                  onChange={(e) => setLogDate(e.target.value)}
+                />
+              </div>
+              <div className="form-grp" style={{ width: 110 }}>
+                <label className="form-label" htmlFor="opf-time">
+                  Time
+                </label>
+                <input
+                  id="opf-time"
+                  className="innovic-input"
+                  type="time"
+                  value={entryTime}
+                  onChange={(e) => setEntryTime(e.target.value)}
+                />
+              </div>
+              <div className="form-grp" style={{ width: 120 }}>
+                <label className="form-label" htmlFor="opf-shift">
+                  Shift
+                </label>
+                <select
+                  id="opf-shift"
+                  className="innovic-select"
+                  value={shift}
+                  onChange={(e) => setShift(e.target.value as Shift)}
+                >
+                  {SHIFTS.map((s) => (
+                    <option key={s} value={s}>
+                      {SHIFT_LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-grp" style={{ width: 100 }}>
                 <label className="form-label" htmlFor="opf-qty">
-                  Accepted qty
+                  Accepted
                 </label>
                 <input
                   id="opf-qty"
@@ -490,9 +447,9 @@ export function OpEntryForm({
                   disabled={blockedReason !== null}
                 />
               </div>
-              <div className="form-grp">
+              <div className="form-grp" style={{ width: 100 }}>
                 <label className="form-label" htmlFor="opf-rej">
-                  Reject qty
+                  Reject
                 </label>
                 <input
                   id="opf-rej"
@@ -507,7 +464,80 @@ export function OpEntryForm({
                   disabled={blockedReason !== null}
                 />
               </div>
-              {operatorAndRemarks}
+              <div className="form-grp" style={{ flex: '1 1 180px', minWidth: 160 }}>
+                <label className="form-label" htmlFor="opf-op">
+                  Inspector
+                </label>
+                <input
+                  id="opf-op"
+                  className="innovic-input"
+                  list="opf-op-list"
+                  value={operatorName}
+                  onChange={(e) => handleOperatorNameChange(e.target.value)}
+                  placeholder="QC inspector name"
+                  autoComplete="off"
+                />
+                <datalist id="opf-op-list">
+                  {operators.map((o) => (
+                    <option key={o.id} value={o.name}>
+                      {o.code}
+                      {o.department ? ` · ${o.department}` : ''}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
+              <div
+                className="form-grp"
+                style={remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 180px', minWidth: 160 }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  }}
+                >
+                  <label className="form-label" htmlFor="opf-rem">
+                    Remarks
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setRemarksExpanded((v) => !v)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--cyan)',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {remarksExpanded ? 'show less' : 'show more'}
+                  </button>
+                </div>
+                {remarksExpanded ? (
+                  <textarea
+                    id="opf-rem"
+                    className="innovic-textarea"
+                    rows={3}
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Optional notes…"
+                    style={{ resize: 'vertical' }}
+                  />
+                ) : (
+                  <input
+                    id="opf-rem"
+                    className="innovic-input"
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Optional notes…"
+                    title={remarks || undefined}
+                  />
+                )}
+              </div>
             </div>
             <div style={{ marginTop: 10 }}>
               <QcReportAttach
@@ -638,6 +668,17 @@ export function OpEntryForm({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="form-grp" style={{ width: 130 }}>
+              <label className="form-label" htmlFor="opf-machine">
+                Machine
+              </label>
+              <input
+                id="opf-machine"
+                className="innovic-input"
+                readOnly
+                value={op.machineCode ?? op.machineCodeText ?? '—'}
+              />
             </div>
             {!isStart ? (
               <>
