@@ -20,6 +20,10 @@ export const STORE_TXN_SOURCE_TYPES = [
   // wrote no ledger row at all — so components already inside finished
   // machines still counted as available to build more.
   'assembly',
+  // Stage 1 SO stock reservation: 'out' hard-moves on-hand stock into a
+  // reservation booked to a specific SO line; the matching 'in' releases it
+  // back to general stock. See so_stock_reservations (migration 0099).
+  'reservation',
   'other',
 ] as const;
 export type StoreTxnSourceType = (typeof STORE_TXN_SOURCE_TYPES)[number];

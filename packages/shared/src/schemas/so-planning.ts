@@ -83,9 +83,14 @@ export const planningLineSchema = z.object({
   directJcCodes: z.array(z.string()),
   /** max(0, orderQty - totalPlanned - directJcQty). */
   remaining: z.number().int().nonnegative(),
-  /** Current on-hand finished-goods stock for this line item (0 if none / free-text).
-   *  Lets the planner see how much is already in stock and plan only the shortfall. */
+  /** Current FREE on-hand finished-goods stock for this line item (0 if none /
+   *  free-text). Free = physical on-hand minus anything already reserved (a
+   *  reservation hard-moves stock out of general on-hand). Lets the planner see
+   *  how much is available to plan only the shortfall against. */
   stockQty: z.number().int().nonnegative(),
+  /** Qty currently RESERVED (booked) to THIS SO line from stock — held out of
+   *  general stock until it is dispatched or released. */
+  reservedQty: z.number().int().nonnegative(),
   /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */
@@ -148,3 +153,38 @@ export const planningBomResponseSchema = z.object({
   children: z.array(planningBomChildSchema),
 });
 export type PlanningBomResponse = z.infer<typeof planningBomResponseSchema>;
+
+// ─── Stock reservation (Stage 1) ─────────────────────────────────────────
+
+export const reserveStockInputSchema = z.object({
+  /** SO line id (or JW line id for a JW plan) to book the stock against. */
+  soLineId: z.string().uuid(),
+  itemId: z.string().uuid(),
+  qty: z.number().int().positive(),
+  soCodeText: z.string(),
+  lineNo: z.number().int().positive(),
+});
+export type ReserveStockInput = z.infer<typeof reserveStockInputSchema>;
+
+export const releaseReservationInputSchema = z.object({
+  /** Releases ALL active reservations on this line back to general stock. */
+  soLineId: z.string().uuid(),
+});
+export type ReleaseReservationInput = z.infer<typeof releaseReservationInputSchema>;
+
+export const soStockReservationSchema = z.object({
+  id: z.string().uuid(),
+  soLineId: z.string().uuid(),
+  itemId: z.string().uuid(),
+  itemCode: z.string().nullable(),
+  qty: z.number().int().nonnegative(),
+  status: z.enum(['active', 'released', 'dispatched']),
+});
+export type SoStockReservation = z.infer<typeof soStockReservationSchema>;
+
+/** Result of a reserve/release action: the affected reservations + qty moved. */
+export const reservationActionResultSchema = z.object({
+  reservations: z.array(soStockReservationSchema),
+  qtyMoved: z.number().int().nonnegative(),
+});
+export type ReservationActionResult = z.infer<typeof reservationActionResultSchema>;

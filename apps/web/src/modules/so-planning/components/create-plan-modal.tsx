@@ -10,7 +10,7 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { todayLocal } from '@/lib/date';
-import { useCreatePlan } from '@/modules/plans/api';
+import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
 import { Modal } from './modal';
 
 interface Props {
@@ -24,11 +24,50 @@ interface Props {
 export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.Element {
   const remaining = line.remaining;
   const stock = line.stockQty;
+  const reserved = line.reservedQty;
   // What still needs to be MADE after counting what's already in stock.
   const suggested = Math.max(0, remaining - stock);
+  // Reservable = free stock, capped by the order qty still uncovered by
+  // plans/direct JCs/existing reservations.
+  const uncovered = Math.max(0, remaining - reserved);
+  const reservable = Math.min(stock, uncovered);
   const [planQty, setPlanQty] = useState<number>(suggested);
   const [err, setErr] = useState<string | null>(null);
   const createPlan = useCreatePlan();
+  const reserve = useReserveStock();
+  const release = useReleaseReservations();
+
+  const doReserve = async () => {
+    if (!line.itemId) {
+      setErr('This line has no stock-tracked item to reserve.');
+      return;
+    }
+    if (reservable <= 0) {
+      setErr('Nothing available to reserve.');
+      return;
+    }
+    setErr(null);
+    try {
+      await reserve.mutateAsync({
+        soLineId: line.soLineId,
+        itemId: line.itemId,
+        qty: reservable,
+        soCodeText: so.soCode,
+        lineNo: line.lineNo,
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to reserve');
+    }
+  };
+
+  const doRelease = async () => {
+    setErr(null);
+    try {
+      await release.mutateAsync({ soLineId: line.soLineId });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to release');
+    }
+  };
 
   const submit = async () => {
     if (planQty <= 0) {
@@ -69,6 +108,22 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     <>
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
+      </button>
+      <button
+        type="button"
+        className="btn"
+        style={{ background: 'var(--amber)', borderColor: 'var(--amber)', color: 'var(--bg)' }}
+        onClick={() => void doReserve()}
+        disabled={reserve.isPending || !line.itemId || reservable <= 0}
+        title={
+          !line.itemId
+            ? 'This line has no stock-tracked item'
+            : reservable <= 0
+              ? 'Nothing available to reserve'
+              : `Reserve ${reservable} pcs from stock to ${so.soCode}`
+        }
+      >
+        {reserve.isPending ? 'Reserving…' : `Reserve ${reservable}`}
       </button>
       <button
         type="button"
@@ -169,6 +224,41 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
             >
               {stock}
             </div>
+          </div>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '8px 16px',
+              background: 'var(--bg)',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>RESERVED</div>
+            <div
+              className="mono fw-700"
+              style={{ fontSize: 20, color: reserved > 0 ? 'var(--purple)' : 'var(--text3)' }}
+            >
+              {reserved}
+            </div>
+            {reserved > 0 ? (
+              <button
+                type="button"
+                onClick={() => void doRelease()}
+                disabled={release.isPending}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  marginTop: 2,
+                  color: 'var(--cyan)',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                }}
+              >
+                {release.isPending ? '…' : 'release'}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

@@ -36,6 +36,7 @@ import {
   purchaseRequests,
   salesOrderLines,
   salesOrders,
+  soStockReservations,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -532,6 +533,26 @@ export async function getPlanningSoDetail(
     const stockByItem = new Map<string, number>();
     for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
 
+    // 7d. Active reservations per line — qty booked to this SO from stock.
+    const resvRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
+            .from(soStockReservations)
+            .where(
+              and(
+                eq(soStockReservations.companyId, companyId),
+                eq(soStockReservations.status, 'active'),
+                isNull(soStockReservations.deletedAt),
+                inArray(soStockReservations.soLineId, lineIds),
+              ),
+            );
+    const reservedByLine = new Map<string, number>();
+    for (const r of resvRows) {
+      reservedByLine.set(r.soLineId, (reservedByLine.get(r.soLineId) ?? 0) + Number(r.qty));
+    }
+
     // 8. Compose lines.
     const lines: PlanningLine[] = lineRows.map((r) => {
       const linePlans = plansByLine.get(r.line.id) ?? [];
@@ -543,6 +564,7 @@ export async function getPlanningSoDetail(
       const coveredQty = totalPlanned + directJcQty;
       const remaining = Math.max(0, orderQty - coveredQty);
       const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
+      const reservedQty = reservedByLine.get(r.line.id) ?? 0;
       const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
@@ -574,6 +596,7 @@ export async function getPlanningSoDetail(
         directJcCodes,
         remaining,
         stockQty,
+        reservedQty,
         lineStatus: classifyPlanningPct(pct),
         hasEquipmentBom,
         hasAssemblyBom,
@@ -774,6 +797,26 @@ async function getJwPlanningDetail(
   const stockByItem = new Map<string, number>();
   for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
 
+  // 6c. Active reservations per line.
+  const resvRows =
+    lineIds.length === 0
+      ? []
+      : await tx
+          .select({ soLineId: soStockReservations.soLineId, qty: soStockReservations.qty })
+          .from(soStockReservations)
+          .where(
+            and(
+              eq(soStockReservations.companyId, companyId),
+              eq(soStockReservations.status, 'active'),
+              isNull(soStockReservations.deletedAt),
+              inArray(soStockReservations.soLineId, lineIds),
+            ),
+          );
+  const reservedByLine = new Map<string, number>();
+  for (const r of resvRows) {
+    reservedByLine.set(r.soLineId, (reservedByLine.get(r.soLineId) ?? 0) + Number(r.qty));
+  }
+
   // 7. Compose lines. JW lines have no BOM master → BOM branches always off.
   const lines: PlanningLine[] = lineRows.map((r) => {
     const linePlans = plansByLine.get(r.line.id) ?? [];
@@ -785,6 +828,7 @@ async function getJwPlanningDetail(
     const coveredQty = totalPlanned + directJcQty;
     const remaining = Math.max(0, orderQty - coveredQty);
     const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
+    const reservedQty = reservedByLine.get(r.line.id) ?? 0;
     const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
     return {
@@ -802,6 +846,7 @@ async function getJwPlanningDetail(
       directJcCodes,
       remaining,
       stockQty,
+      reservedQty,
       lineStatus: classifyPlanningPct(pct),
       hasEquipmentBom: false,
       hasAssemblyBom: false,

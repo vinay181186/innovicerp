@@ -28,6 +28,10 @@ import type {
   PlanningDashboardResponse,
   RelatedDoc,
   PlanStatus,
+  ReleaseReservationInput,
+  ReservationActionResult,
+  ReserveStockInput,
+  SoStockReservation,
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
@@ -46,6 +50,8 @@ import {
   routeCards,
   salesOrderLines,
   salesOrders,
+  soStockReservations,
+  storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
@@ -1764,5 +1770,181 @@ export async function getPlanRelated(
         [...upstream, ...downstream],
       ),
     };
+  });
+}
+
+// ─── SO stock reservation (Stage 1) ──────────────────────────────────────
+// Hard-move model: reserving posts a store_transactions 'out' (source
+// 'reservation') that debits general on-hand and records a so_stock_reservations
+// row; releasing posts the matching 'in' and flips the row to 'released'. The
+// ledger stays the single source of truth — "free stock" is on-hand, which
+// already excludes reserved qty — and every reservation leaves a dated trail.
+
+async function readOnHandLocked(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+): Promise<number> {
+  // Lock the item row so concurrent reserve/release on the same item serialize.
+  await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(on_hand_qty, 0)::int AS on_hand
+    FROM public.v_item_stock
+    WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+  `)) as unknown as Array<{ on_hand: number }>;
+  return Number(rows[0]?.on_hand ?? 0);
+}
+
+export async function reserveStock(
+  input: ReserveStockInput,
+  user: AuthContext,
+): Promise<ReservationActionResult> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+  if (input.qty <= 0) throw new ValidationError('Reserve qty must be greater than 0');
+
+  return withUserContext(user, async (tx) => {
+    const before = await readOnHandLocked(tx, companyId, input.itemId);
+    if (input.qty > before) {
+      throw new ConflictError(`Only ${before} in free stock to reserve (requested ${input.qty}).`);
+    }
+    const after = before - input.qty;
+
+    const itemRow = await tx
+      .select({ code: items.code })
+      .from(items)
+      .where(eq(items.id, input.itemId))
+      .limit(1);
+    const itemCode = itemRow[0]?.code ?? null;
+
+    const txnDate = new Date().toISOString().slice(0, 10);
+    await tx.insert(storeTransactions).values({
+      companyId,
+      txnDate,
+      itemId: input.itemId,
+      txnType: 'out',
+      qty: input.qty,
+      sourceType: 'reservation',
+      sourceRef: `${input.soCodeText} / ln ${input.lineNo}`,
+      stockBefore: before,
+      stockAfter: after,
+      remarks: `Reserved ${input.qty} to ${input.soCodeText} L${input.lineNo}`,
+      createdBy: user.id,
+    });
+
+    const inserted = await tx
+      .insert(soStockReservations)
+      .values({
+        companyId,
+        soLineId: input.soLineId,
+        soCodeText: input.soCodeText,
+        lineNo: input.lineNo,
+        itemId: input.itemId,
+        itemCodeText: itemCode,
+        qty: input.qty,
+        status: 'active',
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning();
+    const row = inserted[0]!;
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'CREATE',
+        entity: 'Reservation',
+        detail: `${input.soCodeText} L${input.lineNo} — reserved ${input.qty} ${itemCode ?? ''}`.trim(),
+        refId: input.soCodeText,
+      },
+      companyId,
+      user,
+    );
+
+    return {
+      reservations: [
+        {
+          id: row.id,
+          soLineId: row.soLineId,
+          itemId: row.itemId,
+          itemCode,
+          qty: row.qty,
+          status: 'active',
+        },
+      ],
+      qtyMoved: input.qty,
+    };
+  });
+}
+
+export async function releaseReservationsForLine(
+  input: ReleaseReservationInput,
+  user: AuthContext,
+): Promise<ReservationActionResult> {
+  requireWriteRole(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const active = await tx
+      .select()
+      .from(soStockReservations)
+      .where(
+        and(
+          eq(soStockReservations.companyId, companyId),
+          eq(soStockReservations.soLineId, input.soLineId),
+          eq(soStockReservations.status, 'active'),
+          isNull(soStockReservations.deletedAt),
+        ),
+      );
+    if (active.length === 0) return { reservations: [], qtyMoved: 0 };
+
+    const txnDate = new Date().toISOString().slice(0, 10);
+    const released: SoStockReservation[] = [];
+    let qtyMoved = 0;
+
+    for (const r of active) {
+      const before = await readOnHandLocked(tx, companyId, r.itemId);
+      const after = before + r.qty;
+      await tx.insert(storeTransactions).values({
+        companyId,
+        txnDate,
+        itemId: r.itemId,
+        txnType: 'in',
+        qty: r.qty,
+        sourceType: 'reservation',
+        sourceRef: `${r.soCodeText} / ln ${r.lineNo} (release)`,
+        stockBefore: before,
+        stockAfter: after,
+        remarks: `Released ${r.qty} from ${r.soCodeText} L${r.lineNo}`,
+        createdBy: user.id,
+      });
+      await tx
+        .update(soStockReservations)
+        .set({ status: 'released', updatedBy: user.id, updatedAt: new Date() })
+        .where(eq(soStockReservations.id, r.id));
+      released.push({
+        id: r.id,
+        soLineId: r.soLineId,
+        itemId: r.itemId,
+        itemCode: r.itemCodeText,
+        qty: r.qty,
+        status: 'released',
+      });
+      qtyMoved += r.qty;
+    }
+
+    await emitActivityLog(
+      tx,
+      {
+        action: 'UPDATE',
+        entity: 'Reservation',
+        detail: `${active[0]!.soCodeText} L${active[0]!.lineNo} — released ${qtyMoved}`,
+        refId: active[0]!.soCodeText,
+      },
+      companyId,
+      user,
+    );
+
+    return { reservations: released, qtyMoved };
   });
 }

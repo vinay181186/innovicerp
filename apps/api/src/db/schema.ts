@@ -1819,6 +1819,61 @@ export const storeTransactions = pgTable(
   ],
 ).enableRLS();
 
+// ─── SO stock reservation (migration 0099) ───────────────────────────────
+// Books on-hand stock to a specific SO line ("hard move"): reserving debits
+// general stock via a store_transactions 'reservation' out row and records a
+// row here; releasing writes the matching 'in' and flips status to 'released'.
+export const soStockReservations = pgTable(
+  'so_stock_reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // SO line id for an SO plan, JW line id for a JW plan (mirrors plans.soLineId).
+    soLineId: uuid('so_line_id').notNull(),
+    soCodeText: text('so_code_text').notNull(),
+    lineNo: integer('line_no').notNull(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemCodeText: text('item_code_text'),
+    qty: integer('qty').notNull(),
+    // 'active' | 'released' | 'dispatched'
+    status: text('status').notNull().default('active'),
+    remarks: text('remarks'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('so_stock_reservations_company_line_idx').on(t.companyId, t.soLineId),
+    index('so_stock_reservations_company_item_idx').on(t.companyId, t.itemId),
+    check('so_stock_reservations_qty_positive', sql`${t.qty} > 0`),
+    check(
+      'so_stock_reservations_status_valid',
+      sql`${t.status} IN ('active', 'released', 'dispatched')`,
+    ),
+    pgPolicy('so_stock_reservations_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('so_stock_reservations_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── T-042: item stock balance cache ─────────────────────────────────────
 // Incrementally-maintained materialization of v_item_stock (which is now
 // a view over this table). Updated by an AFTER INSERT trigger on

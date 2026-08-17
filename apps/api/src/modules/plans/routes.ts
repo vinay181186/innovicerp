@@ -2,6 +2,8 @@ import {
   createPlanInputSchema,
   defaultRouteOpsQuerySchema,
   listPlansQuerySchema,
+  releaseReservationInputSchema,
+  reserveStockInputSchema,
   updatePlanInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
@@ -84,5 +86,21 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
   app.get('/planning-dashboard/unplanned', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getUnplannedOrders(req.user);
+  });
+
+  // Stage 1 SO stock reservation — book in-stock qty to an SO line, or release
+  // all active reservations on the line back to general stock.
+  app.post('/so-reservations', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = reserveStockInputSchema.parse(req.body);
+    const result = await service.reserveStock(input, req.user);
+    reply.code(201);
+    return result;
+  });
+
+  app.post('/so-reservations/release', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = releaseReservationInputSchema.parse(req.body);
+    return service.releaseReservationsForLine(input, req.user);
   });
 }

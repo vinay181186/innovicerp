@@ -6,6 +6,9 @@ import type {
   PlanDetail,
   PlanOpInput,
   PlanningDashboardResponse,
+  ReleaseReservationInput,
+  ReservationActionResult,
+  ReserveStockInput,
   UnplannedOrdersResponse,
   UpdatePlanInput,
 } from '@innovic/shared';
@@ -80,6 +83,32 @@ export function useCreatePlan() {
         json: input,
       }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: plansKeys.all });
+    },
+  });
+}
+
+// Stage 1 SO stock reservation — book in-stock qty to an SO line. Invalidates
+// so-planning (so the modal's In Stock / Reserved tiles refresh) and plans.
+export function useReserveStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReserveStockInput) =>
+      apiFetch<ReservationActionResult>('/so-reservations', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      void qc.invalidateQueries({ queryKey: plansKeys.all });
+    },
+  });
+}
+
+export function useReleaseReservations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReleaseReservationInput) =>
+      apiFetch<ReservationActionResult>('/so-reservations/release', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
       void qc.invalidateQueries({ queryKey: plansKeys.all });
     },
   });
