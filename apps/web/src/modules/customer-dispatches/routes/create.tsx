@@ -12,14 +12,20 @@ import type { DispatchableLine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
 import { DispatchLineTable, type LineCard } from '../components/dispatch-line-table';
 
+// Optional ?so=<salesOrderId> preselects the SO (e.g. arriving from the
+// Assembly Tracker's batch Dispatch button).
+const newDispatchSearchSchema = z.object({ so: z.string().uuid().optional() });
+
 export const customerDispatchNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'customer-dispatches/new',
+  validateSearch: newDispatchSearchSchema,
   component: CustomerDispatchNewPage,
 });
 
@@ -29,11 +35,12 @@ function todayStr(): string {
 
 function CustomerDispatchNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const { so: preselectSo } = customerDispatchNewRoute.useSearch();
   const { data: soOpts } = useFinanceSoOptions();
   const { data: next } = useNextDispatchCode();
   const create = useCreateDispatch();
 
-  const [soId, setSoId] = useState('');
+  const [soId, setSoId] = useState(preselectSo ?? '');
   const [dispatchDate, setDispatchDate] = useState(todayStr());
   const [transport, setTransport] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');

@@ -27,7 +27,6 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAssemblyTracker,
-  useMarkUnitDispatched,
   useStartAssembly,
   useStopAssembly,
   useUndoLastUnit,
@@ -284,7 +283,7 @@ function AssemblyDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <UnitsPanel units={data.units} />
+      <UnitsPanel units={data.units} soId={soId} />
 
       <RelatedDocsPanel module="assembly" id={soId} />
     </div>
@@ -603,8 +602,13 @@ function ComponentStatusBadge({
   return <span className={`badge ${m.cls}`}>{m.label}</span>;
 }
 
-function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element {
-  const dispatch = useMarkUnitDispatched();
+function UnitsPanel({
+  units,
+  soId,
+}: {
+  units: AssemblyUnitRow[];
+  soId: string;
+}): React.JSX.Element {
   const stop = useStopAssembly();
   const [error, setError] = useState<string | null>(null);
   // Per in-progress row: how many of the batch to complete now (default = all
@@ -623,16 +627,6 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
       </div>
     );
   }
-
-  const onDispatch = (unitId: string): void => {
-    setError(null);
-    dispatch.mutate(
-      { unitId, input: {} },
-      {
-        onError: (e) => setError(e instanceof Error ? e.message : 'Dispatch failed'),
-      },
-    );
-  };
 
   const onStop = (u: AssemblyUnitRow): void => {
     setError(null);
@@ -754,20 +748,17 @@ function UnitsPanel({ units }: { units: AssemblyUnitRow[] }): React.JSX.Element 
                         </button>
                       </div>
                     ) : !u.dispatched ? (
-                      <button
-                        type="button"
+                      // Opens Customer Dispatch (create) preselected to this SO —
+                      // the real dispatch (stock move + SO dispatched qty) happens
+                      // there, not as an internal flag on the batch.
+                      <Link
+                        to="/customer-dispatches/new"
+                        search={{ so: soId }}
                         className="btn btn-sm btn-success"
-                        onClick={() => onDispatch(u.id)}
-                        disabled={dispatch.isPending}
-                        title="Mark dispatched"
+                        title="Create a customer dispatch for this order"
                       >
-                        {dispatch.isPending ? (
-                          <Loader2 size={13} className="animate-spin" />
-                        ) : (
-                          <Truck size={13} />
-                        )}
-                        Dispatch
-                      </button>
+                        <Truck size={13} /> Dispatch
+                      </Link>
                     ) : (
                       <span className="text3" style={{ fontSize: 11 }}>—</span>
                     )}
