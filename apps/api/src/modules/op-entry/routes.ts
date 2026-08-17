@@ -2,9 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  decideOpLogTimeChangeInputSchema,
   generateOspPrInputSchema,
   listJcOpsQuerySchema,
   listOpLogQuerySchema,
+  listOpLogTimeChangeRequestsQuerySchema,
   listOpMachineOutputQuerySchema,
   listRunningOpsQuerySchema,
   startOpInputSchema,
@@ -60,11 +62,30 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
 
   // Correct an entry's date/time only (ADR-127). PATCH, not PUT: this is the
   // one narrow mutation op_log accepts — qty is refused by a DB trigger.
+  // Returns { applied, opLog, request }: when the ADR-130 approval gate is on
+  // and the caller cannot approve, applied is false, opLog is UNCHANGED and
+  // request holds what is now waiting for a manager.
   app.patch('/op-entry/op-log/:id/timing', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = updateOpLogTimingInputSchema.parse({ ...(req.body as object), id });
     return service.updateOpLogTiming(body, req.user);
+  });
+
+  // The approvals inbox (Settings → Approvals → Log Entry tab) and the ⏳
+  // marker on the log history read the same list.
+  app.get('/op-entry/time-changes', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listOpLogTimeChangeRequestsQuerySchema.parse(req.query);
+    return service.listOpLogTimeChangeRequests(query, req.user);
+  });
+
+  // Approve / reject. Manager+admin only (enforced in the service and by RLS).
+  app.post('/op-entry/time-changes/:id/decide', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = decideOpLogTimeChangeInputSchema.parse({ ...(req.body as object), id });
+    return service.decideOpLogTimeChange(body, req.user);
   });
 
   app.post('/op-entry/start', async (req, reply) => {

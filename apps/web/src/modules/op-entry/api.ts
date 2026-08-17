@@ -7,20 +7,24 @@
 // reconciling any drift.
 
 import type {
+  DecideOpLogTimeChangeInput,
   GenerateOspPrInput,
   GenerateOspPrResult,
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
+  ListOpLogTimeChangeRequestsQuery,
   ListOpMachineOutputQuery,
   ListRunningOpsQuery,
   OpLog,
+  OpLogTimeChangeRequest,
   OpMachineOutput,
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
   UpdateOpLogTimingInput,
+  UpdateOpLogTimingResult,
 } from '@innovic/shared';
 import {
   type QueryClient,
@@ -42,6 +46,8 @@ export const opEntryKeys = {
   opLog: (q: ListOpLogQuery) => [...opEntryKeys.all, 'op-log', q] as const,
   machineOutput: (q: ListOpMachineOutputQuery) =>
     [...opEntryKeys.all, 'machine-output', q] as const,
+  timeChanges: (q: ListOpLogTimeChangeRequestsQuery) =>
+    [...opEntryKeys.all, 'time-changes', q] as const,
   running: (q: ListRunningOpsQuery) => [...opEntryKeys.all, 'running', q] as const,
 };
 
@@ -207,12 +213,63 @@ export function useSubmitQcLog() {
 // submit because the JC completion feed and the Daily Report are both ordered
 // and filtered by log_date — a retimed entry moves in them. Machine-output is
 // NOT invalidated: qty cannot change here, only when it happened.
+//
+// Under ADR-130 the result may come back `applied: false` — the entry is
+// untouched and the change is queued for a manager. The extra invalidations
+// are harmless in that case and necessary in the other.
 export function useUpdateOpLogTiming() {
   const qc = useQueryClient();
-  return useMutation<OpLog, Error, UpdateOpLogTimingInput>({
+  return useMutation<UpdateOpLogTimingResult, Error, UpdateOpLogTimingInput>({
     mutationFn: ({ id, ...body }) =>
-      apiFetch<OpLog>(`/op-entry/op-log/${id}/timing`, { method: 'PATCH', json: body }),
+      apiFetch<UpdateOpLogTimingResult>(`/op-entry/op-log/${id}/timing`, {
+        method: 'PATCH',
+        json: body,
+      }),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'time-changes'] });
+      invalidateProductionViews(qc);
+    },
+  });
+}
+
+// ─── Timing-change approvals (ADR-130) ─────────────────────────────────────
+
+export function useOpLogTimeChangeRequests(
+  query: ListOpLogTimeChangeRequestsQuery,
+  options?: { enabled?: boolean },
+) {
+  return useQuery<OpLogTimeChangeRequest[]>({
+    queryKey: opEntryKeys.timeChanges(query),
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (query.status) p.set('status', query.status);
+      if (query.jcOpId) p.set('jcOpId', query.jcOpId);
+      p.set('limit', String(query.limit));
+      return apiFetch<OpLogTimeChangeRequest[]>(`/op-entry/time-changes?${p.toString()}`);
+    },
+    ...(options?.enabled === undefined ? {} : { enabled: options.enabled }),
+  });
+}
+
+/** Count for the sidebar badge. Cheap enough to poll: the inbox is normally
+ *  empty and the row cap is 200. */
+export function usePendingTimeChangeCount(enabled: boolean): number {
+  const q = useOpLogTimeChangeRequests({ status: 'pending', limit: 200 }, { enabled });
+  return q.data?.length ?? 0;
+}
+
+export function useDecideOpLogTimeChange() {
+  const qc = useQueryClient();
+  return useMutation<OpLogTimeChangeRequest, Error, DecideOpLogTimeChangeInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<OpLogTimeChangeRequest>(`/op-entry/time-changes/${id}/decide`, {
+        method: 'POST',
+        json: body,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'time-changes'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
       invalidateProductionViews(qc);

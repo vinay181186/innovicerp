@@ -262,7 +262,11 @@ function OpEntryPage() {
                       isLoading={machineOutput.isLoading}
                     />
                   ) : (
-                    <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+                    <OpLogHistory
+                      logs={opLog.data ?? []}
+                      isLoading={opLog.isLoading}
+                      {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
+                    />
                   )}
                 </div>
               </div>

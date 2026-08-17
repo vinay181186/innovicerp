@@ -2,6 +2,7 @@ export * from './enums/user-role';
 export * from './enums/uom';
 export * from './enums/item-type';
 export * from './enums/op-type';
+export * from './enums/op-log-change-status';
 export * from './enums/op-log-type';
 export * from './enums/outsource-status';
 export * from './enums/running-op-status';

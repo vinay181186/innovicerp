@@ -27,6 +27,7 @@ function toConfig(row: {
   poManagerLimit: string;
   prApproval: boolean;
   invoiceApproval: boolean;
+  opEntryEditApproval: boolean;
   poApprovers: unknown;
 }): ApprovalConfig {
   const approvers = Array.isArray(row.poApprovers) ? (row.poApprovers as string[]) : [];
@@ -35,6 +36,7 @@ function toConfig(row: {
     poManagerLimit: Number(row.poManagerLimit),
     prApproval: row.prApproval,
     invoiceApproval: row.invoiceApproval,
+    opEntryEditApproval: row.opEntryEditApproval,
     poApprovers: approvers.filter((s) => typeof s === 'string'),
   };
 }
@@ -96,6 +98,7 @@ export async function saveApprovalConfig(
           poManagerLimit: String(input.poManagerLimit),
           prApproval: input.prApproval,
           invoiceApproval: input.invoiceApproval,
+          opEntryEditApproval: input.opEntryEditApproval,
           poApprovers: validApproverIds,
           updatedBy: user.id,
           updatedAt: new Date(),
@@ -112,6 +115,7 @@ export async function saveApprovalConfig(
           poManagerLimit: String(input.poManagerLimit),
           prApproval: input.prApproval,
           invoiceApproval: input.invoiceApproval,
+          opEntryEditApproval: input.opEntryEditApproval,
           poApprovers: validApproverIds,
           createdBy: user.id,
           updatedBy: user.id,
@@ -125,7 +129,7 @@ export async function saveApprovalConfig(
       {
         action: 'CONFIG',
         entity: 'Approval Configuration',
-        detail: `PO approval: ${input.poApproval ? 'ON' : 'OFF'} · limit ₹${input.poManagerLimit} · invoice approval: ${input.invoiceApproval ? 'ON' : 'OFF'} · approvers: ${validApproverIds.length}`,
+        detail: `PO approval: ${input.poApproval ? 'ON' : 'OFF'} · limit ₹${input.poManagerLimit} · invoice approval: ${input.invoiceApproval ? 'ON' : 'OFF'} · op-entry edit approval: ${input.opEntryEditApproval ? 'ON' : 'OFF'} · approvers: ${validApproverIds.length}`,
         refId: null,
       },
       companyId,

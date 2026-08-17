@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { hasDeptAccess, useMyAccess, type AccessDeptKey } from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { useSession } from '@/lib/session';
+import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
 
 interface NavItem {
   to: string;
@@ -340,6 +341,9 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/users', label: 'User Management', icon: '👥' },
           { to: '/access-control', label: 'Access Control', icon: '🔒' },
           { to: '/approval-config', label: 'Approval Configuration', icon: '⚖' },
+          // The rules live next door in Approval Configuration; this is the
+          // queue of things waiting on a manager (ADR-130).
+          { to: '/approvals', label: 'Approvals', icon: '✅' },
           { to: '/print-templates', label: 'Print Templates', icon: '📄' },
           { to: '/op-log', label: 'Operation Log', icon: '☰' },
           { to: '/trash', label: 'Trash', icon: '🗑' },
@@ -405,6 +409,9 @@ export function Sidebar(): React.JSX.Element {
   const { pathname } = useLocation();
   const { data: eff } = useMyAccess();
   const isAdmin = me?.role === 'admin';
+  // Badge on System Settings → Approvals (ADR-130). Only fetched for someone
+  // who can actually decide; everyone else gets 0 and no request.
+  const pendingApprovals = usePendingTimeChangeCount(isAdmin || me?.role === 'manager');
 
   // Sections collapsed by default per legacy UX — but the section
   // containing the current route auto-opens so the active item is
@@ -490,6 +497,14 @@ export function Sidebar(): React.JSX.Element {
                       >
                         <span className="sb-icon">{it.icon}</span>
                         <span>{it.label}</span>
+                        {/* Only the Approvals item carries a count today. It is
+                            0 (and the query disabled) for anyone who cannot
+                            approve, so it never nags an operator. */}
+                        {it.to === '/approvals' && pendingApprovals > 0 ? (
+                          <span className="badge b-amber" style={{ marginLeft: 'auto' }}>
+                            {pendingApprovals}
+                          </span>
+                        ) : null}
                       </Link>
                     ))}
                   </div>

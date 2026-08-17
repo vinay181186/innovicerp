@@ -6557,3 +6557,102 @@ insert policies make.
   is traced.
 - Additive migration only (`0097_op_log_timing_edit.sql`): two nullable columns, a
   trigger, one RLS policy. No data written, no backfill.
+
+## ADR-130: A date/time correction on an op entry waits for a manager
+
+**Date:** 2026-08-17
+**Status:** Accepted — extends ADR-127; the direct inverse of ADR-087 for this one field pair
+
+### Context
+
+The user's original ask, 2026-08-17: *"after click on start op entry must be
+editable. but that goes for approval. first click it is approved entry. when
+entry edit it goes for approval."*
+
+ADR-127 delivered the first half — date and time became editable, qty stayed
+frozen — but applied the edit immediately. Asked to choose between "apply now,
+review after" and "hold until approved", the user chose **hold**: *"for update
+in time update until approval."*
+
+That is the stronger reading and the safer one. `log_date` drives the Daily
+Report, the JC completion feed and every date-ranged production query, so an
+edit that applies on save can move a number in a report before anyone has looked
+at it. Holding means the shop floor's numbers are exactly as recorded until a
+manager accepts the change.
+
+Note this is the opposite direction from ADR-087 ("no status-via-edit"), which
+exists to stop side effects reaching production data through an edit form. The
+same instinct applies here and points the same way: an edit that changes a
+production date should not take effect unreviewed.
+
+### Decision
+
+New table `op_log_time_change_requests`. An operator's edit inserts a `pending`
+row and **does not touch `op_log`**. Approving performs the ADR-127 update;
+rejecting performs nothing. Either decision moves the request out of `pending`,
+freeing the partial unique index so a fresh correction can be asked for.
+
+- **Not a status column on `op_log`.** That table's whole guarantee is that
+  almost nothing about it is writable (ADR-127 narrowed the surface to two
+  columns with a trigger). Parking a pending value on it would widen the one
+  table every production number derives from. A separate table means a pending
+  request provably cannot move a number.
+- **A manager/admin's own edit applies immediately.** They are the approver;
+  routing them through their own inbox is a round trip with no reviewer.
+- **Rejection requires a reason** — otherwise the requester just asks again.
+- **One pending request per entry** (`op_log_time_change_pending_uq`). Two
+  queued values against one row would mean the last approval silently wins.
+- **`prev_log_date` / `prev_start_time` are snapshotted** on the request so the
+  approval screen can show "was → asked for", and so a request whose entry was
+  retimed in between is flagged `isStale` rather than quietly misleading.
+- **Switchable**: `approval_config.op_entry_edit_approval`, default ON. Off
+  restores ADR-127 behaviour exactly. Unlike `pr_approval` and
+  `invoice_approval` — which are rendered in the UI but read by **no code** —
+  this flag is actually consumed, in `updateOpLogTiming`.
+
+**Screen**, per the user's instruction ("in setting add one screen approvals.
+click on it. use tab for log entry approval"): System Settings → **Approvals**,
+sitting beside Approval Configuration. Configuration holds the rules; Approvals
+holds the queue. Tabbed, with **Log Entry** wired and Purchase Orders / Purchase
+Requests present but disabled — those approvals live on their own document
+screens today. A manager can also approve straight from the log row on Op Entry
+without walking to Settings; same action, two places.
+
+`PATCH /op-entry/op-log/:id/timing` now returns `{ applied, opLog, request }`
+rather than a bare `OpLog` — a breaking response-shape change, but the route is
+one day old and has exactly one caller.
+
+### Alternatives Considered
+
+- **Apply immediately, review afterwards** — rejected by the user. It is less
+  work, but approval becomes decoration: the changed date is already in the
+  Daily Report by the time anyone sees the request.
+- **A `pending_log_date` pair of columns on `op_log`** — rejected: widens the
+  writable surface of the table ADR-127 just locked down, and the trigger would
+  have to permit writes to columns that are not the audited ones.
+- **Approvals as a new API module** — rejected: the entity is `op_log`'s own
+  lifecycle and the apply step is `updateOpLogTiming`'s internals. Splitting it
+  would need op-entry → approvals → op-entry, a module cycle. The web side does
+  get its own `approvals` module, because the screen is a cross-module inbox
+  that will host other document types.
+- **Email/Resend notification** — deliberately deferred. Shop-floor corrections
+  will be frequent and daily mail gets ignored; the sidebar count and the ⏳ on
+  the entry are the notification for now.
+
+### Consequences
+
+- Positive: a wrong timestamp is fixable by the person who made it, and no
+  production date moves without a manager's decision. Both halves of the
+  original request are now true.
+- Positive: the audit trail is complete —
+  `OP_LOG_TIME_CHANGE_REQUESTED` → `OP_LOG_TIME_CHANGE_APPROVED` / `_REJECTED`
+  → `OP_LOG_TIME_EDIT`, plus `timing_edited_at`/`_by` on the row.
+- Negative: a correction is no longer instant for operators. If the manager is
+  slow, the wrong time stays visible — which is the trade the user chose.
+- Negative: one more screen and one more table to maintain, and the Approvals
+  screen ships with two visibly disabled tabs.
+- Risk: `isStale` covers the case of an admin retiming a row under a pending
+  request, but approving still writes the requested value. Flagged on screen,
+  not blocked — blocking would strand the request with no way to clear it.
+- Additive migration only (`0098_op_log_time_change_approval.sql`): one enum,
+  one table, one column on `approval_config`. No data written, no backfill.

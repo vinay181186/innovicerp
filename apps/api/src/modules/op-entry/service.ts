@@ -18,8 +18,16 @@
 // (machine_id) where status='running' and is_osp=false. The service catches
 // the resulting unique-violation and returns a typed ConflictError.
 
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { jcOps, jobCards, machines, opLog, runningOps } from '../../db/schema';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import {
+  approvalConfig,
+  jcOps,
+  jobCards,
+  machines,
+  opLog,
+  opLogTimeChangeRequests,
+  runningOps,
+} from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
@@ -34,20 +42,25 @@ import { generateOspPrForOp } from './osp-cascade';
 import { tryApplyQcStockCascade } from './qc-stock-cascade';
 import { tryCascadeJcComplete } from './sales-cascade';
 import type {
+  DecideOpLogTimeChangeInput,
   GenerateOspPrInput,
   GenerateOspPrResult,
   JcOpEnriched,
   ListJcOpsQuery,
   ListOpLogQuery,
+  ListOpLogTimeChangeRequestsQuery,
   ListOpMachineOutputQuery,
   ListRunningOpsQuery,
   OpLog,
+  OpLogChangeStatus,
+  OpLogTimeChangeRequest,
   OpMachineOutput,
   RunningOp,
   StartOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
   UpdateOpLogTimingInput,
+  UpdateOpLogTimingResult,
 } from './schema';
 
 const requireCompany = (user: AuthContext): string => {
@@ -1038,28 +1051,126 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
 // A 'start' marker also owns the open running session's clock, so the session
 // is moved with it — otherwise the Live Operations board would keep showing the
 // wrong start time after the marker was corrected.
+// ADR-130 puts a queue in front of this: an operator's edit becomes a request
+// and NOTHING moves until a manager approves. Approving calls straight back
+// into applyTimingChange below, so the write itself is identical either way.
+
+type TimingTargetRow = {
+  id: string;
+  jcOpId: string;
+  logNo: string;
+  logType: OpLog['logType'];
+  logDate: string;
+  startTime: string | null;
+  qty: number;
+};
+
+async function loadTimingTarget(
+  tx: DbTransaction,
+  opLogId: string,
+  companyId: string,
+): Promise<TimingTargetRow> {
+  const rows = await tx
+    .select({
+      id: opLog.id,
+      jcOpId: opLog.jcOpId,
+      logNo: opLog.logNo,
+      logType: opLog.logType,
+      logDate: opLog.logDate,
+      startTime: opLog.startTime,
+      qty: opLog.qty,
+    })
+    .from(opLog)
+    .where(and(eq(opLog.id, opLogId), eq(opLog.companyId, companyId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new NotFoundError('Op log entry not found');
+  return row;
+}
+
+// The actual write. Only ever reached by someone entitled to make the change
+// stick: a manager/admin editing directly, an approver accepting a request, or
+// anyone when the approval flag is off.
+async function applyTimingChange(
+  tx: DbTransaction,
+  row: TimingTargetRow,
+  nextDate: string,
+  nextTime: string | null,
+  companyId: string,
+  user: AuthContext,
+  via: string,
+): Promise<OpLog> {
+  await tx
+    .update(opLog)
+    .set({ logDate: nextDate, startTime: nextTime, timingEditedBy: user.id })
+    .where(and(eq(opLog.id, row.id), eq(opLog.companyId, companyId)));
+
+  // Keep the live session's clock in step with the marker that opened it.
+  if (row.logType === 'start') {
+    await tx
+      .update(runningOps)
+      .set({
+        startDate: nextDate,
+        ...(nextTime ? { startTime: nextTime } : {}),
+        updatedBy: user.id,
+      })
+      .where(
+        and(
+          eq(runningOps.companyId, companyId),
+          eq(runningOps.jcOpId, row.jcOpId),
+          eq(runningOps.status, 'running'),
+        ),
+      );
+  }
+
+  const meta = await tx
+    .select({ code: jobCards.code, opSeq: jcOps.opSeq })
+    .from(jcOps)
+    .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+    .where(eq(jcOps.id, row.jcOpId))
+    .limit(1);
+  const jc = meta[0];
+  const was = `${row.logDate}${row.startTime ? ` ${row.startTime.slice(0, 5)}` : ''}`;
+  const now = `${nextDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
+  await emitActivityLog(
+    tx,
+    {
+      action: 'OP_LOG_TIME_EDIT',
+      entity: 'Op',
+      detail:
+        `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — ${row.logType} entry ${row.logNo} ` +
+        `retimed ${was} → ${now} (qty ${row.qty} unchanged)${via}`,
+      refId: jc?.code ?? row.logNo,
+    },
+    companyId,
+    user,
+  );
+
+  const updated = await selectOpLogById(tx, row.id, companyId);
+  if (!updated) throw new NotFoundError('Op log entry not found');
+  return updated;
+}
+
+/** Is the op-entry edit approval gate switched on for this company? Reads the
+ *  single approval_config row; a company with no row yet takes the schema
+ *  default (on), matching APPROVAL_CONFIG_DEFAULTS. */
+async function isEditApprovalOn(tx: DbTransaction, companyId: string): Promise<boolean> {
+  const rows = await tx
+    .select({ flag: approvalConfig.opEntryEditApproval })
+    .from(approvalConfig)
+    .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
+    .limit(1);
+  return rows[0]?.flag ?? true;
+}
+
 export async function updateOpLogTiming(
   input: UpdateOpLogTimingInput,
   user: AuthContext,
-): Promise<OpLog> {
+): Promise<UpdateOpLogTimingResult> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
-    const existing = await tx
-      .select({
-        id: opLog.id,
-        jcOpId: opLog.jcOpId,
-        logNo: opLog.logNo,
-        logType: opLog.logType,
-        logDate: opLog.logDate,
-        startTime: opLog.startTime,
-        qty: opLog.qty,
-      })
-      .from(opLog)
-      .where(and(eq(opLog.id, input.id), eq(opLog.companyId, companyId)))
-      .limit(1);
-    const row = existing[0];
-    if (!row) throw new NotFoundError('Op log entry not found');
+    const row = await loadTimingTarget(tx, input.id, companyId);
 
     // Who may correct an entry = who may record that kind of entry (the same
     // split the three RLS insert policies make): QC rows are QC's, production
@@ -1071,30 +1182,56 @@ export async function updateOpLogTiming(
       input.logTime === undefined ? row.startTime : input.logTime === null ? null : input.logTime;
     if (input.logDate === row.logDate && nextTime === row.startTime) {
       const unchanged = await selectOpLogById(tx, input.id, companyId);
-      return unchanged!;
+      return { applied: true, opLog: unchanged!, request: null };
     }
 
-    await tx
-      .update(opLog)
-      .set({ logDate: input.logDate, startTime: nextTime, timingEditedBy: user.id })
-      .where(and(eq(opLog.id, input.id), eq(opLog.companyId, companyId)));
+    // A manager/admin is the approver, so their own edit applies immediately —
+    // asking them to approve themselves is a round trip with no reviewer.
+    const isApprover = user.role === 'admin' || user.role === 'manager';
+    if (isApprover || !(await isEditApprovalOn(tx, companyId))) {
+      const updated = await applyTimingChange(
+        tx,
+        row,
+        input.logDate,
+        nextTime,
+        companyId,
+        user,
+        '',
+      );
+      return { applied: true, opLog: updated, request: null };
+    }
 
-    // Keep the live session's clock in step with the marker that opened it.
-    if (row.logType === 'start') {
-      await tx
-        .update(runningOps)
-        .set({
-          startDate: input.logDate,
-          ...(nextTime ? { startTime: nextTime } : {}),
+    // Gate is on and the requester cannot approve: queue it. The op_log row is
+    // deliberately not touched — the entry, the JC feed and every report keep
+    // reading the ORIGINAL values until a manager decides.
+    let requestId: string;
+    try {
+      const inserted = await tx
+        .insert(opLogTimeChangeRequests)
+        .values({
+          companyId,
+          opLogId: row.id,
+          jcOpId: row.jcOpId,
+          prevLogDate: row.logDate,
+          prevStartTime: row.startTime,
+          requestedLogDate: input.logDate,
+          requestedStartTime: nextTime,
+          reason: input.reason?.trim() || null,
+          status: 'pending',
+          requestedBy: user.id,
+          createdBy: user.id,
           updatedBy: user.id,
         })
-        .where(
-          and(
-            eq(runningOps.companyId, companyId),
-            eq(runningOps.jcOpId, row.jcOpId),
-            eq(runningOps.status, 'running'),
-          ),
+        .returning({ id: opLogTimeChangeRequests.id });
+      requestId = inserted[0]!.id;
+    } catch (e) {
+      // Partial unique index op_log_time_change_pending_uq.
+      if ((e as { code?: string }).code === '23505') {
+        throw new ConflictError(
+          'This entry already has a change waiting for approval. Ask a manager to decide it first.',
         );
+      }
+      throw e;
     }
 
     const meta = await tx
@@ -1105,24 +1242,193 @@ export async function updateOpLogTiming(
       .limit(1);
     const jc = meta[0];
     const was = `${row.logDate}${row.startTime ? ` ${row.startTime.slice(0, 5)}` : ''}`;
-    const now = `${input.logDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
+    const asked = `${input.logDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
     await emitActivityLog(
       tx,
       {
-        action: 'OP_LOG_TIME_EDIT',
+        action: 'OP_LOG_TIME_CHANGE_REQUESTED',
         entity: 'Op',
         detail:
-          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — ${row.logType} entry ${row.logNo} ` +
-          `retimed ${was} → ${now} (qty ${row.qty} unchanged)`,
+          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — entry ${row.logNo}, ` +
+          `${was} → ${asked} requested (entry unchanged until approved)`,
         refId: jc?.code ?? row.logNo,
       },
       companyId,
       user,
     );
 
-    const updated = await selectOpLogById(tx, input.id, companyId);
-    if (!updated) throw new NotFoundError('Op log entry not found');
-    return updated;
+    const [request] = await selectTimeChangeRequests(tx, companyId, { id: requestId, limit: 1 });
+    const unchanged = await selectOpLogById(tx, input.id, companyId);
+    return { applied: false, opLog: unchanged!, request: request ?? null };
+  });
+}
+
+// ─── Timing-change approvals (ADR-130) ─────────────────────────────────────
+
+// One projection for both the inbox and the ⏳ marker in the log history, so
+// the two can never describe the same request differently. Everything except
+// the request's own columns is joined live — nothing about the entry is
+// duplicated onto the request beyond the prev_* snapshot, which exists to make
+// a stale request visible.
+async function selectTimeChangeRequests(
+  tx: DbTransaction,
+  companyId: string,
+  filter: { id?: string; status?: OpLogChangeStatus; jcOpId?: string; limit: number },
+): Promise<OpLogTimeChangeRequest[]> {
+  const result = await tx.execute(sql`
+    SELECT
+      r.id                              AS "id",
+      r.op_log_id                       AS "opLogId",
+      r.jc_op_id                        AS "jcOpId",
+      jc.code                           AS "jobCardCode",
+      o.op_seq                          AS "opSeq",
+      o.operation                       AS "operation",
+      l.log_type::text                  AS "logType",
+      COALESCE(m.code, l.machine_code_text) AS "machineCode",
+      l.qty                             AS "qty",
+      l.reject_qty                      AS "rejectQty",
+      r.prev_log_date::text             AS "prevLogDate",
+      r.prev_start_time::text           AS "prevStartTime",
+      r.requested_log_date::text        AS "requestedLogDate",
+      r.requested_start_time::text      AS "requestedStartTime",
+      r.reason                          AS "reason",
+      r.status::text                    AS "status",
+      r.requested_by                    AS "requestedBy",
+      COALESCE(ru.full_name, ru.email)  AS "requestedByName",
+      r.requested_at                    AS "requestedAt",
+      r.decided_by                      AS "decidedBy",
+      COALESCE(du.full_name, du.email)  AS "decidedByName",
+      r.decided_at                      AS "decidedAt",
+      r.decision_reason                 AS "decisionReason",
+      (l.log_date IS DISTINCT FROM r.prev_log_date
+        OR l.start_time IS DISTINCT FROM r.prev_start_time) AS "isStale"
+    FROM public.op_log_time_change_requests r
+    JOIN public.op_log l ON l.id = r.op_log_id
+    JOIN public.jc_ops o ON o.id = r.jc_op_id AND o.deleted_at IS NULL
+    JOIN public.job_cards jc ON jc.id = o.job_card_id
+    LEFT JOIN public.machines m ON m.id = l.machine_id AND m.deleted_at IS NULL
+    LEFT JOIN public.users ru ON ru.id = r.requested_by
+    LEFT JOIN public.users du ON du.id = r.decided_by
+    WHERE r.company_id = ${companyId}::uuid
+      AND r.deleted_at IS NULL
+      ${filter.id ? sql`AND r.id = ${filter.id}::uuid` : sql``}
+      ${filter.status ? sql`AND r.status = ${filter.status}::public.op_log_change_status` : sql``}
+      ${filter.jcOpId ? sql`AND r.jc_op_id = ${filter.jcOpId}::uuid` : sql``}
+    ORDER BY r.requested_at ASC
+    LIMIT ${filter.limit}
+  `);
+  return (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+    ...r,
+    opSeq: Number(r['opSeq']),
+    qty: Number(r['qty'] ?? 0),
+    rejectQty: Number(r['rejectQty'] ?? 0),
+    prevStartTime: r['prevStartTime'] ? String(r['prevStartTime']).slice(0, 8) : null,
+    requestedStartTime: r['requestedStartTime']
+      ? String(r['requestedStartTime']).slice(0, 8)
+      : null,
+    requestedAt: asIso(r['requestedAt'] as Date | string | null)!,
+    decidedAt: asIso(r['decidedAt'] as Date | string | null),
+    isStale: Boolean(r['isStale']),
+  })) as unknown as OpLogTimeChangeRequest[];
+}
+
+export async function listOpLogTimeChangeRequests(
+  input: ListOpLogTimeChangeRequestsQuery,
+  user: AuthContext,
+): Promise<OpLogTimeChangeRequest[]> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) =>
+    selectTimeChangeRequests(tx, companyId, {
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.jcOpId ? { jcOpId: input.jcOpId } : {}),
+      limit: input.limit,
+    }),
+  );
+}
+
+// Approve = perform the change the requester asked for. Reject = perform
+// nothing and say why. Either way the request leaves 'pending', which frees the
+// partial unique index so a fresh correction can be asked for.
+export async function decideOpLogTimeChange(
+  input: DecideOpLogTimeChangeInput,
+  user: AuthContext,
+): Promise<OpLogTimeChangeRequest> {
+  requireWriteRole(user); // manager/admin only — the whole point of ADR-130
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(opLogTimeChangeRequests)
+      .where(
+        and(
+          eq(opLogTimeChangeRequests.id, input.id),
+          eq(opLogTimeChangeRequests.companyId, companyId),
+          isNull(opLogTimeChangeRequests.deletedAt),
+        ),
+      )
+      .limit(1);
+    const req = rows[0];
+    if (!req) throw new NotFoundError('Change request not found');
+    if (req.status !== 'pending') {
+      throw new ValidationError(`This request was already ${req.status}`);
+    }
+
+    if (input.decision === 'approve') {
+      const target = await loadTimingTarget(tx, req.opLogId, companyId);
+      await applyTimingChange(
+        tx,
+        target,
+        req.requestedLogDate,
+        req.requestedStartTime,
+        companyId,
+        user,
+        ' — approved change',
+      );
+    }
+
+    await tx
+      .update(opLogTimeChangeRequests)
+      .set({
+        status: input.decision === 'approve' ? 'approved' : 'rejected',
+        decidedBy: user.id,
+        decidedAt: new Date(),
+        decisionReason: input.decisionReason?.trim() || null,
+        updatedBy: user.id,
+      })
+      .where(eq(opLogTimeChangeRequests.id, req.id));
+
+    const meta = await tx
+      .select({ code: jobCards.code, opSeq: jcOps.opSeq })
+      .from(jcOps)
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .where(eq(jcOps.id, req.jcOpId))
+      .limit(1);
+    const jc = meta[0];
+    const asked = `${req.requestedLogDate}${
+      req.requestedStartTime ? ` ${req.requestedStartTime.slice(0, 5)}` : ''
+    }`;
+    await emitActivityLog(
+      tx,
+      {
+        action:
+          input.decision === 'approve'
+            ? 'OP_LOG_TIME_CHANGE_APPROVED'
+            : 'OP_LOG_TIME_CHANGE_REJECTED',
+        entity: 'Op',
+        detail:
+          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — time change to ${asked} ` +
+          `${input.decision === 'approve' ? 'approved' : 'rejected'}` +
+          `${input.decisionReason?.trim() ? `: ${input.decisionReason.trim()}` : ''}`,
+        refId: jc?.code ?? req.id,
+      },
+      companyId,
+      user,
+    );
+
+    const [decided] = await selectTimeChangeRequests(tx, companyId, { id: req.id, limit: 1 });
+    if (!decided) throw new NotFoundError('Change request not found');
+    return decided;
   });
 }
 

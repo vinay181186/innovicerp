@@ -10,6 +10,11 @@ export const approvalConfigSchema = z.object({
   poManagerLimit: z.number().nonnegative(),
   prApproval: z.boolean(),
   invoiceApproval: z.boolean(),
+  /** ADR-130. On: an operator's op-entry date/time correction waits for a
+   *  manager. Off: it applies on save (ADR-127 behaviour). Unlike prApproval
+   *  and invoiceApproval, this flag is actually consumed — see
+   *  op-entry/service.ts updateOpLogTiming. */
+  opEntryEditApproval: z.boolean(),
   poApprovers: z.array(z.string().uuid()),
 });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
@@ -22,6 +27,7 @@ export const APPROVAL_CONFIG_DEFAULTS: ApprovalConfig = {
   poManagerLimit: 100000,
   prApproval: true,
   invoiceApproval: false,
+  opEntryEditApproval: true,
   poApprovers: [],
 };
 

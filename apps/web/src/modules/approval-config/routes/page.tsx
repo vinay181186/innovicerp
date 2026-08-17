@@ -84,6 +84,7 @@ function ApprovalConfigPage(): React.JSX.Element {
     (cfg.poApproval !== draft.poApproval ||
       cfg.poManagerLimit !== draft.poManagerLimit ||
       cfg.invoiceApproval !== draft.invoiceApproval ||
+      cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
       cfg.poApprovers.join(',') !== draft.poApprovers.join(','));
 
   function toggleApprover(userId: string, role: UserRole): void {
@@ -430,6 +431,38 @@ function ApprovalConfigPage(): React.JSX.Element {
             />
             <span style={{ fontWeight: 700, color: draft.invoiceApproval ? 'var(--green)' : 'var(--text3)' }}>
               {draft.invoiceApproval ? 'ENABLED' : 'DISABLED'}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Op Entry date/time edit approval (ADR-130). Unlike the two panels
+          above, this switch is actually read by the server — it decides
+          whether an operator's correction applies on save or waits here. */}
+      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>⏱ Op Entry date/time changes</span>
+            <div className="text3" style={{ fontSize: 11 }}>
+              Require a manager to approve when an operator corrects the date or time of a log
+              entry. The entry keeps its original values until approved. Quantities can never be
+              edited either way.
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={draft.opEntryEditApproval}
+              onChange={(e) => setDraft({ ...draft, opEntryEditApproval: e.target.checked })}
+              style={{ width: 20, height: 20 }}
+            />
+            <span
+              style={{
+                fontWeight: 700,
+                color: draft.opEntryEditApproval ? 'var(--green)' : 'var(--text3)',
+              }}
+            >
+              {draft.opEntryEditApproval ? 'ENABLED' : 'DISABLED'}
             </span>
           </label>
         </div>

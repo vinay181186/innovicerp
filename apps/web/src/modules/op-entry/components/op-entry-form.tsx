@@ -79,6 +79,8 @@ export function OpEntryForm({
   // logging is never blocked by an operator missing from the master.
   const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
   const [remarks, setRemarks] = useState<string>('');
+  // Remarks starts compact (inline next to Operator); "show more" expands it.
+  const [remarksExpanded, setRemarksExpanded] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // QC report attachment (migration 0043) — only used on the QC sub-form.
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export function OpEntryForm({
     setQty('');
     setRejectQty('0');
     setRemarks('');
+    setRemarksExpanded(false);
     setErrorMessage(null);
     setQcReportPath(null);
     setQcReportName(null);
@@ -694,6 +697,61 @@ export function OpEntryForm({
                 ))}
               </datalist>
             </div>
+            {/* Remarks sits next to Operator. Collapsed it is a compact single
+                line (full text on hover); "show more" expands it to a full-width
+                textarea for long notes, "show less" collapses it back. */}
+            <div
+              className="form-grp"
+              style={remarksExpanded ? { flexBasis: '100%' } : { flex: '1 1 200px', minWidth: 180 }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <label className="form-label" htmlFor="opf-rem">
+                  Remarks
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setRemarksExpanded((v) => !v)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: 'var(--cyan)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {remarksExpanded ? 'show less' : 'show more'}
+                </button>
+              </div>
+              {remarksExpanded ? (
+                <textarea
+                  id="opf-rem"
+                  className="innovic-textarea"
+                  rows={3}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Optional notes…"
+                  style={{ resize: 'vertical' }}
+                />
+              ) : (
+                <input
+                  id="opf-rem"
+                  className="innovic-input"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Optional notes…"
+                  title={remarks || undefined}
+                />
+              )}
+            </div>
           </div>
 
           {isStart ? (
@@ -723,18 +781,6 @@ export function OpEntryForm({
             </div>
           ) : null}
 
-          <div className="form-grp" style={{ marginTop: 12 }}>
-            <label className="form-label" htmlFor="opf-rem">
-              Remarks
-            </label>
-            <input
-              id="opf-rem"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional notes…"
-            />
-          </div>
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
             {isStart ? (

@@ -11,6 +11,7 @@ import {
   NC_DISPOSITIONS,
   NC_REASON_CATEGORIES,
   NC_STATUSES,
+  OP_LOG_CHANGE_STATUSES,
   OP_LOG_TYPES,
   OP_TYPES,
   OUTSOURCE_STATUSES,
@@ -59,6 +60,7 @@ export const itemTypeEnum = pgEnum('item_type', ITEM_TYPES);
 // ─── Phase 3 enums (T-024b) ───────────────────────────────────────────────
 export const opTypeEnum = pgEnum('op_type', OP_TYPES);
 export const opLogTypeEnum = pgEnum('op_log_type', OP_LOG_TYPES);
+export const opLogChangeStatusEnum = pgEnum('op_log_change_status', OP_LOG_CHANGE_STATUSES);
 export const outsourceStatusEnum = pgEnum('outsource_status', OUTSOURCE_STATUSES);
 export const runningOpStatusEnum = pgEnum('running_op_status', RUNNING_OP_STATUSES);
 export const shiftEnum = pgEnum('shift', SHIFTS);
@@ -957,6 +959,83 @@ export const opLog = pgTable(
       for: 'insert',
       to: 'authenticated',
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// A requested date/time correction on an op entry, waiting for a manager
+// (0098 / ADR-130). While a request is 'pending' the op_log row is UNTOUCHED —
+// the entry, every report and every derived view still read the original
+// values. Approving is what performs the 0097 update; rejecting performs
+// nothing. Kept off op_log deliberately: that table's whole guarantee is that
+// almost nothing about it can be written, and parking a pending value on it
+// would widen the one surface every production number is derived from.
+export const opLogTimeChangeRequests = pgTable(
+  'op_log_time_change_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    opLogId: uuid('op_log_id')
+      .notNull()
+      .references(() => opLog.id, { onDelete: 'cascade' }),
+    jcOpId: uuid('jc_op_id')
+      .notNull()
+      .references(() => jcOps.id, { onDelete: 'cascade' }),
+    // Snapshot of what the entry read when the change was asked for, so the
+    // approval screen can show "was → asked for" and a stale request is
+    // visibly stale if an admin retimes the row in between.
+    prevLogDate: date('prev_log_date').notNull(),
+    prevStartTime: time('prev_start_time'),
+    requestedLogDate: date('requested_log_date').notNull(),
+    requestedStartTime: time('requested_start_time'),
+    reason: text('reason'),
+    status: opLogChangeStatusEnum('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    // One open request per entry — a second edit before the first is decided
+    // would queue two conflicting values and the last approval would win.
+    uniqueIndex('op_log_time_change_pending_uq')
+      .on(t.opLogId)
+      .where(sql`${t.status} = 'pending' and ${t.deletedAt} is null`),
+    index('op_log_time_change_company_status_idx')
+      .on(t.companyId, t.status, t.requestedAt)
+      .where(sql`${t.deletedAt} is null`),
+    index('op_log_time_change_op_log_idx')
+      .on(t.opLogId)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('op_log_time_change_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('op_log_time_change_request_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager', 'operator', 'qc')`,
+    }),
+    pgPolicy('op_log_time_change_decide', {
+      for: 'update',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND current_user_role() IN ('admin', 'manager')`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();
@@ -5045,6 +5124,11 @@ export const approvalConfig = pgTable(
       .default('100000'),
     prApproval: boolean('pr_approval').notNull().default(true),
     invoiceApproval: boolean('invoice_approval').notNull().default(false),
+    // 0098 / ADR-130. On: an operator's date/time correction waits for a
+    // manager. Off: it applies on save, exactly as ADR-127 shipped it.
+    // Unlike prApproval / invoiceApproval, this flag is actually read — see
+    // op-entry/service.ts updateOpLogTiming.
+    opEntryEditApproval: boolean('op_entry_edit_approval').notNull().default(true),
     poApprovers: jsonb('po_approvers').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

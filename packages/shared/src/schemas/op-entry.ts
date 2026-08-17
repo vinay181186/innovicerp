@@ -12,6 +12,7 @@
 //   - query: filter params for the lists.
 
 import { z } from 'zod';
+import { OP_LOG_CHANGE_STATUSES } from '../enums/op-log-change-status';
 import { OP_LOG_TYPES } from '../enums/op-log-type';
 import { OP_TYPES } from '../enums/op-type';
 import { OUTSOURCE_STATUSES } from '../enums/outsource-status';
@@ -141,8 +142,84 @@ export const updateOpLogTimingInputSchema = z.object({
     .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
     .nullable()
     .optional(),
+  /** Why the correction is needed. Shown to the approver (ADR-130). */
+  reason: z.string().max(500).optional(),
 });
 export type UpdateOpLogTimingInput = z.infer<typeof updateOpLogTimingInputSchema>;
+
+// ─── Timing-change approval (ADR-130, table op_log_time_change_requests) ────
+//
+// The operator's edit does NOT apply on save. It becomes a request; the entry
+// and every number derived from it keep their original values until a manager
+// approves. Approving performs the ADR-127 update; rejecting performs nothing.
+
+export const opLogChangeStatusSchema = z.enum(OP_LOG_CHANGE_STATUSES);
+
+export const opLogTimeChangeRequestSchema = z.object({
+  id: z.string().uuid(),
+  opLogId: z.string().uuid(),
+  jcOpId: z.string().uuid(),
+  /** Context for the approver, joined from the entry and its operation — none
+   *  of it is stored on the request row. */
+  jobCardCode: z.string(),
+  opSeq: z.number().int().positive(),
+  operation: z.string(),
+  logType: opLogTypeSchema,
+  machineCode: z.string().nullable(),
+  /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
+  qty: z.number().int().nonnegative(),
+  rejectQty: z.number().int().nonnegative(),
+  prevLogDate: z.string(),
+  prevStartTime: z.string().nullable(),
+  requestedLogDate: z.string(),
+  requestedStartTime: z.string().nullable(),
+  reason: z.string().nullable(),
+  status: opLogChangeStatusSchema,
+  requestedBy: z.string().uuid(),
+  requestedByName: z.string().nullable(),
+  requestedAt: z.string(),
+  decidedBy: z.string().uuid().nullable(),
+  decidedByName: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  decisionReason: z.string().nullable(),
+  /** True when the entry has been retimed since this request was raised, so the
+   *  "was" value on screen no longer matches the row. Approving is still safe
+   *  (it writes the requested value) but the approver should see it. */
+  isStale: z.boolean(),
+});
+export type OpLogTimeChangeRequest = z.infer<typeof opLogTimeChangeRequestSchema>;
+
+export const listOpLogTimeChangeRequestsQuerySchema = z.object({
+  status: opLogChangeStatusSchema.optional(),
+  /** All requests against one entry — drives the ⏳ marker in the log history. */
+  jcOpId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+});
+export type ListOpLogTimeChangeRequestsQuery = z.infer<
+  typeof listOpLogTimeChangeRequestsQuerySchema
+>;
+
+export const decideOpLogTimeChangeInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    decision: z.enum(['approve', 'reject']),
+    /** Required on a reject — without one the requester just asks again. */
+    decisionReason: z.string().max(500).optional(),
+  })
+  .refine((i) => i.decision === 'approve' || Boolean(i.decisionReason?.trim()), {
+    message: 'A reason is required when rejecting a change',
+    path: ['decisionReason'],
+  });
+export type DecideOpLogTimeChangeInput = z.infer<typeof decideOpLogTimeChangeInputSchema>;
+
+/** What `PATCH /op-entry/op-log/:id/timing` returns. `applied: false` means the
+ *  entry is unchanged and `request` holds what is now waiting for a manager. */
+export const updateOpLogTimingResultSchema = z.object({
+  applied: z.boolean(),
+  opLog: opLogSchema,
+  request: opLogTimeChangeRequestSchema.nullable(),
+});
+export type UpdateOpLogTimingResult = z.infer<typeof updateOpLogTimingResultSchema>;
 
 // ─── Machine-wise output (0095, view v_op_machine_output) ──────────────────
 //

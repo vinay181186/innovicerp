@@ -26,6 +26,7 @@ import { settingsRoute } from './modules/settings/routes';
 import { printTemplatesRoute } from './modules/print-templates/routes/editor';
 import { accessControlListRoute } from './modules/access-control/routes/list';
 import { approvalConfigRoute } from './modules/approval-config/routes/page';
+import { approvalsRoute } from './modules/approvals/routes/page';
 import { backupRoute } from './modules/backup/routes/page';
 import { opLogListRoute } from './modules/op-log/routes/list';
 import { outsourceJobsRoute } from './modules/outsource-jobs/routes/list';
@@ -318,6 +319,7 @@ const routeTree = rootRoute.addChildren([
     printTemplatesRoute,
     accessControlListRoute,
     approvalConfigRoute,
+    approvalsRoute,
     backupRoute,
     opLogListRoute,
     outsourceJobsRoute,
