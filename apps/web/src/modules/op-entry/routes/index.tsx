@@ -61,6 +61,10 @@ function OpEntryPage() {
     [jcList.data],
   );
 
+  // Right column tabs: Machine-wise output ↔ Recent log (one panel, one active
+  // at a time) instead of two stacked panels.
+  const [rightTab, setRightTab] = useState<'machine' | 'log'>('machine');
+
   function handlePickJc(id: string | null): void {
     setJcId(id);
     if (!id) return;
@@ -226,20 +230,44 @@ function OpEntryPage() {
                 />
               </div>
               <div>
-                <div className="panel" style={{ marginBottom: 16 }}>
-                  <div className="panel-hdr">
-                    <span className="panel-title">Machine-wise output</span>
-                  </div>
-                  <MachineOutputPanel
-                    rows={machineOutput.data ?? []}
-                    isLoading={machineOutput.isLoading}
-                  />
-                </div>
                 <div className="panel">
-                  <div className="panel-hdr">
-                    <span className="panel-title">Recent log</span>
+                  <div
+                    className="panel-hdr"
+                    style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+                  >
+                    {(
+                      [
+                        { key: 'machine', label: 'Machine-wise output' },
+                        { key: 'log', label: 'Recent log' },
+                      ] as const
+                    ).map((t) => {
+                      const active = rightTab === t.key;
+                      return (
+                        <button
+                          key={t.key}
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => setRightTab(t.key)}
+                          style={{
+                            borderColor: active ? 'var(--cyan)' : 'var(--border2)',
+                            background: active ? 'var(--bg4)' : 'transparent',
+                            color: active ? 'var(--cyan)' : 'var(--text2)',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+                  {rightTab === 'machine' ? (
+                    <MachineOutputPanel
+                      rows={machineOutput.data ?? []}
+                      isLoading={machineOutput.isLoading}
+                    />
+                  ) : (
+                    <OpLogHistory logs={opLog.data ?? []} isLoading={opLog.isLoading} />
+                  )}
                 </div>
               </div>
             </div>
