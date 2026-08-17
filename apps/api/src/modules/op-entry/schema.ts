@@ -15,6 +15,7 @@ export {
   startOpInputSchema,
   submitOpLogInputSchema,
   submitQcLogInputSchema,
+  updateOpLogTimingInputSchema,
 } from '@innovic/shared';
 export type {
   ComputedJcOpStatus,
@@ -31,4 +32,5 @@ export type {
   StartOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
+  UpdateOpLogTimingInput,
 } from '@innovic/shared';

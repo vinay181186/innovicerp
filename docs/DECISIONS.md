@@ -6474,3 +6474,86 @@ Dispatch is blocked on an in-progress batch.
   Unit numbers are per-batch and no longer strictly sequential with meaning.
 - Additive migration only (`0096_assembly_wip_status.sql`): new `status` column
   with a safe default + a check + a WIP lookup index. No data migration.
+
+## ADR-127: An op entry's DATE and TIME are correctable; its QTY is not
+
+**Date:** 2026-08-17
+**Status:** Accepted — amends ADR-011 #4 (`op_log` is append-only)
+
+### Context
+
+User, 2026-08-17: *"after click on Start the op entry must be editable … i want
+date and time only user can edit. not qty."*
+
+The audit that preceded this found `op_log` is editable **nowhere**:
+
+- no `PATCH` route anywhere in the API, and no `updateOpLog` in the service;
+- no `updated_at` / `updated_by` / `deleted_at` columns on the table;
+- no UPDATE or DELETE RLS policy (0004 grants SELECT + three INSERTs, nothing else);
+- and the escape hatch ADR-011 #4 itself names — "append a reversing entry" —
+  does not work either, because `CHECK op_log_qty_nonneg` forbids a negative qty.
+
+So a mistyped date or time was **uncorrectable by any route in the system**. The
+only remedy was an admin editing the production database by hand, which is worse
+than any edit feature: no audit trail, no role check, no column restriction.
+
+Separately, migration 0097's sibling change made `start_time` meaningful on every
+log type (it had only ever been written on a `'start'` marker), which makes a
+wrong time visible on far more rows than before.
+
+### Decision
+
+Open exactly two columns for UPDATE — `log_date` and `start_time` — and nothing else.
+
+Enforcement is a **BEFORE UPDATE trigger**, `op_log_timing_only_update`, not the
+RLS policy: Postgres RLS cannot express "these columns only", and column-level
+GRANTs do not bind the owner role the API connects as. The trigger compares
+`to_jsonb(new)` against `to_jsonb(old)` with the four permitted keys stripped and
+raises `23514` if anything else moved — so a column added to `op_log` next year is
+frozen by default with no edit to the function.
+
+Because qty, reject_qty, log_type, machine_id and operator stay immutable, every
+number ADR-125 made trustworthy is untouched by an edit: `v_op_machine_output`,
+`v_jc_op_status.completed_qty`, the Daily Report and SO costing cannot be moved
+by retiming a row. Only *when* it happened moves.
+
+Audit trail is two-layered: `timing_edited_at` / `timing_edited_by` on the row
+(the trigger stamps the timestamp), plus an `OP_LOG_TIME_EDIT` activity_log entry
+carrying `was → now` and the unchanged qty.
+
+Editing a `'start'` marker also moves its open `running_ops` session, or the Live
+Operations board would keep showing the original clock after the correction.
+
+Who may correct = who may record: `'qc'` rows require the QC role, production rows
+require the op-entry role, manager/admin can do either — the same split the three
+insert policies make.
+
+### Alternatives Considered
+
+- **A. Edit `running_ops` only, leave `op_log` alone** — rejected: the JC status
+  feed, the log history and the Daily Report all read `op_log`, so the wrong time
+  would stay visible everywhere the operator actually looks.
+- **C. Append a *correcting* start marker and take the latest** — rejected: needs
+  no policy change, but leaves two start lines in a feed operators read as
+  history, and does nothing for a `complete` or `qc` row (the common case).
+- **Open the whole row to admins** — rejected: that is the ADR-011 #4 guarantee,
+  and it is the one protecting every production number in the system.
+- **A qty-correction workflow (reversing entries, approval)** — deliberately NOT
+  in scope. The user narrowed the ask to date/time. Changing a qty still needs its
+  own ADR, and the `op_log_qty_nonneg` check would have to be revisited first.
+
+### Consequences
+
+- Positive: a wrong timestamp is fixable in the UI by the person who entered it,
+  with an audit trail — instead of by hand in the database with none.
+- Positive: `op_log` remains append-only where it counts. Quantities are still
+  provably immutable, now by a trigger rather than by the absence of a route.
+- Negative: `op_log` is no longer *literally* insert-only; anyone reasoning about
+  the table must know the trigger exists. Recorded here and in `docs/SCHEMA.md`.
+- Risk: an operator retiming an entry into a different shift/day moves it in the
+  Daily Report. That is the intended behaviour (the report is date-driven), but it
+  means a report exported before the correction will differ from one after it.
+  The `(retimed)` marker in the log history and the activity-log line are how that
+  is traced.
+- Additive migration only (`0097_op_log_timing_edit.sql`): two nullable columns, a
+  trigger, one RLS policy. No data written, no backfill.

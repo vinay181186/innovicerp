@@ -20,6 +20,7 @@ import type {
   StartOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
+  UpdateOpLogTimingInput,
 } from '@innovic/shared';
 import {
   type QueryClient,
@@ -197,6 +198,23 @@ export function useSubmitQcLog() {
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
       void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'machine-output'] });
+      invalidateProductionViews(qc);
+    },
+  });
+}
+
+// Correct an entry's date/time (ADR-127). Invalidates the same views as a
+// submit because the JC completion feed and the Daily Report are both ordered
+// and filtered by log_date — a retimed entry moves in them. Machine-output is
+// NOT invalidated: qty cannot change here, only when it happened.
+export function useUpdateOpLogTiming() {
+  const qc = useQueryClient();
+  return useMutation<OpLog, Error, UpdateOpLogTimingInput>({
+    mutationFn: ({ id, ...body }) =>
+      apiFetch<OpLog>(`/op-entry/op-log/${id}/timing`, { method: 'PATCH', json: body }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'op-log'] });
+      void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
       invalidateProductionViews(qc);
     },
   });

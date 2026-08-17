@@ -8,9 +8,10 @@
 //   - "qty <= available" uses v_jc_op_status.available
 //   - "no submit when qc_pending" uses v_jc_op_status.computed_status
 //
-// ADR-011 #4 makes op_log immutable — corrections happen via a reversing
-// entry (e.g. negative-qty record), never an UPDATE. This service has
-// listOpLog + createOpLog only; no updateOpLog or deleteOpLog.
+// ADR-011 #4 makes op_log immutable. ADR-127 narrows that to the numbers: a
+// wrong log_date / start_time can be corrected via updateOpLogTiming, and the
+// DB trigger op_log_timing_only_update (0097) refuses the write if any other
+// column moved. There is still no way to change a qty and no deleteOpLog.
 //
 // Running-ops uniqueness is enforced at the DB layer via the partial unique
 // indexes on (company_id, jc_op_id) where status='running' and on
@@ -20,7 +21,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { jcOps, jobCards, machines, opLog, runningOps } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireOpEntryRole, requireWriteRole } from '../../lib/auth';
+import { requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -46,6 +47,7 @@ import type {
   StartOpInput,
   SubmitOpLogInput,
   SubmitQcLogInput,
+  UpdateOpLogTimingInput,
 } from './schema';
 
 const requireCompany = (user: AuthContext): string => {
@@ -176,6 +178,7 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
         machineCodeText: opLog.machineCodeText,
         startTime: opLog.startTime,
         remarks: opLog.remarks,
+        timingEditedAt: opLog.timingEditedAt,
         createdAt: opLog.createdAt,
         createdBy: opLog.createdBy,
       })
@@ -184,26 +187,91 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
       .where(and(eq(opLog.companyId, companyId), scope))
       .orderBy(desc(opLog.createdAt))
       .limit(input.limit);
-    return rows.map((r) => ({
-      id: r.id,
-      jcOpId: r.jcOpId,
-      logNo: r.logNo,
-      logType: r.logType,
-      logDate: r.logDate,
-      shift: r.shift,
-      qty: r.qty,
-      rejectQty: r.rejectQty,
-      operatorId: r.operatorId,
-      operatorName: r.operatorName,
-      machineId: r.machineId,
-      machineCode: r.machineCode,
-      machineCodeText: r.machineCodeText,
-      startTime: r.startTime,
-      remarks: r.remarks,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-      createdBy: r.createdBy,
-    })) as OpLog[];
+    return rows.map(toOpLog) as OpLog[];
   });
+}
+
+type OpLogRow = {
+  id: string;
+  jcOpId: string;
+  logNo: string;
+  logType: OpLog['logType'];
+  logDate: string;
+  shift: OpLog['shift'];
+  qty: number;
+  rejectQty: number;
+  operatorId: string | null;
+  operatorName: string | null;
+  machineId: string | null;
+  machineCode: string | null;
+  machineCodeText: string | null;
+  startTime: string | null;
+  remarks: string | null;
+  timingEditedAt: Date | string | null;
+  createdAt: Date | string;
+  createdBy: string;
+};
+
+const asIso = (v: Date | string | null): string | null =>
+  v === null ? null : v instanceof Date ? v.toISOString() : String(v);
+
+function toOpLog(r: OpLogRow): OpLog {
+  return {
+    id: r.id,
+    jcOpId: r.jcOpId,
+    logNo: r.logNo,
+    logType: r.logType,
+    logDate: r.logDate,
+    shift: r.shift,
+    qty: r.qty,
+    rejectQty: r.rejectQty,
+    operatorId: r.operatorId,
+    operatorName: r.operatorName,
+    machineId: r.machineId,
+    machineCode: r.machineCode,
+    machineCodeText: r.machineCodeText,
+    startTime: r.startTime,
+    remarks: r.remarks,
+    timingEditedAt: asIso(r.timingEditedAt),
+    createdAt: asIso(r.createdAt)!,
+    createdBy: r.createdBy,
+  };
+}
+
+// Same projection as listOpLog, for one row. Used to return the fresh entry
+// after a timing correction so the UI never has to guess what the DB stored.
+async function selectOpLogById(
+  tx: DbTransaction,
+  id: string,
+  companyId: string,
+): Promise<OpLog | null> {
+  const rows = await tx
+    .select({
+      id: opLog.id,
+      jcOpId: opLog.jcOpId,
+      logNo: opLog.logNo,
+      logType: opLog.logType,
+      logDate: opLog.logDate,
+      shift: opLog.shift,
+      qty: opLog.qty,
+      rejectQty: opLog.rejectQty,
+      operatorId: opLog.operatorId,
+      operatorName: opLog.operatorName,
+      machineId: opLog.machineId,
+      machineCode: machines.code,
+      machineCodeText: opLog.machineCodeText,
+      startTime: opLog.startTime,
+      remarks: opLog.remarks,
+      timingEditedAt: opLog.timingEditedAt,
+      createdAt: opLog.createdAt,
+      createdBy: opLog.createdBy,
+    })
+    .from(opLog)
+    .leftJoin(machines, eq(machines.id, opLog.machineId))
+    .where(and(eq(opLog.id, id), eq(opLog.companyId, companyId)))
+    .limit(1);
+  const row = rows[0];
+  return row ? toOpLog(row) : null;
 }
 
 // Machine-wise output (0095). THE answer to "qty wise machine used": one row
@@ -713,6 +781,7 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       machineCodeText: row.machineCodeText,
       startTime: row.startTime,
       remarks: row.remarks,
+      timingEditedAt: null, // just inserted
       createdAt:
         row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       createdBy: row.createdBy,
@@ -948,10 +1017,112 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       machineCodeText: row.machineCodeText,
       startTime: row.startTime,
       remarks: row.remarks,
+      timingEditedAt: null, // just inserted
       createdAt:
         row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
       createdBy: row.createdBy,
     } as OpLog;
+  });
+}
+
+// Correct WHEN an entry happened. Never WHAT it recorded (ADR-127, 0097).
+//
+// op_log stays append-only in every sense that matters: qty, reject_qty,
+// log_type, machine and operator are untouchable, so v_op_machine_output,
+// v_jc_op_status and the Daily Report cannot be moved by an edit. Only the two
+// timestamp columns open, and the DB trigger op_log_timing_only_update — not
+// this function — is what guarantees that. Before 0097 a mistyped date was
+// uncorrectable by any route: there was no UPDATE policy, and the reversing
+// entry ADR-011 #4 points to is itself blocked by check op_log_qty_nonneg.
+//
+// A 'start' marker also owns the open running session's clock, so the session
+// is moved with it — otherwise the Live Operations board would keep showing the
+// wrong start time after the marker was corrected.
+export async function updateOpLogTiming(
+  input: UpdateOpLogTimingInput,
+  user: AuthContext,
+): Promise<OpLog> {
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const existing = await tx
+      .select({
+        id: opLog.id,
+        jcOpId: opLog.jcOpId,
+        logNo: opLog.logNo,
+        logType: opLog.logType,
+        logDate: opLog.logDate,
+        startTime: opLog.startTime,
+        qty: opLog.qty,
+      })
+      .from(opLog)
+      .where(and(eq(opLog.id, input.id), eq(opLog.companyId, companyId)))
+      .limit(1);
+    const row = existing[0];
+    if (!row) throw new NotFoundError('Op log entry not found');
+
+    // Who may correct an entry = who may record that kind of entry (the same
+    // split the three RLS insert policies make): QC rows are QC's, production
+    // rows are the operator's, manager/admin can do either.
+    if (row.logType === 'qc') requireQcRole(user);
+    else requireOpEntryRole(user);
+
+    const nextTime =
+      input.logTime === undefined ? row.startTime : input.logTime === null ? null : input.logTime;
+    if (input.logDate === row.logDate && nextTime === row.startTime) {
+      const unchanged = await selectOpLogById(tx, input.id, companyId);
+      return unchanged!;
+    }
+
+    await tx
+      .update(opLog)
+      .set({ logDate: input.logDate, startTime: nextTime, timingEditedBy: user.id })
+      .where(and(eq(opLog.id, input.id), eq(opLog.companyId, companyId)));
+
+    // Keep the live session's clock in step with the marker that opened it.
+    if (row.logType === 'start') {
+      await tx
+        .update(runningOps)
+        .set({
+          startDate: input.logDate,
+          ...(nextTime ? { startTime: nextTime } : {}),
+          updatedBy: user.id,
+        })
+        .where(
+          and(
+            eq(runningOps.companyId, companyId),
+            eq(runningOps.jcOpId, row.jcOpId),
+            eq(runningOps.status, 'running'),
+          ),
+        );
+    }
+
+    const meta = await tx
+      .select({ code: jobCards.code, opSeq: jcOps.opSeq })
+      .from(jcOps)
+      .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
+      .where(eq(jcOps.id, row.jcOpId))
+      .limit(1);
+    const jc = meta[0];
+    const was = `${row.logDate}${row.startTime ? ` ${row.startTime.slice(0, 5)}` : ''}`;
+    const now = `${input.logDate}${nextTime ? ` ${nextTime.slice(0, 5)}` : ''}`;
+    await emitActivityLog(
+      tx,
+      {
+        action: 'OP_LOG_TIME_EDIT',
+        entity: 'Op',
+        detail:
+          `${jc?.code ?? ''} Op #${jc?.opSeq ?? ''} — ${row.logType} entry ${row.logNo} ` +
+          `retimed ${was} → ${now} (qty ${row.qty} unchanged)`,
+        refId: jc?.code ?? row.logNo,
+      },
+      companyId,
+      user,
+    );
+
+    const updated = await selectOpLogById(tx, input.id, companyId);
+    if (!updated) throw new NotFoundError('Op log entry not found');
+    return updated;
   });
 }
 

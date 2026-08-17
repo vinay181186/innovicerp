@@ -10,6 +10,7 @@ import {
   startOpInputSchema,
   submitOpLogInputSchema,
   submitQcLogInputSchema,
+  updateOpLogTimingInputSchema,
 } from './schema';
 import * as service from './service';
 
@@ -55,6 +56,15 @@ export async function opEntryRoutes(app: FastifyInstance): Promise<void> {
     const row = await service.submitQcLog(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Correct an entry's date/time only (ADR-127). PATCH, not PUT: this is the
+  // one narrow mutation op_log accepts — qty is refused by a DB trigger.
+  app.patch('/op-entry/op-log/:id/timing', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const body = updateOpLogTimingInputSchema.parse({ ...(req.body as object), id });
+    return service.updateOpLogTiming(body, req.user);
   });
 
   app.post('/op-entry/start', async (req, reply) => {

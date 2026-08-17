@@ -911,6 +911,12 @@ export const opLog = pgTable(
     // file name for a report attached to this QC/TPI entry. Migration 0043.
     qcReportPath: text('qc_report_path'),
     qcReportName: text('qc_report_name'),
+    // The one permitted mutation on an append-only table (0097 / ADR-127): a
+    // wrong log_date or start_time can be corrected. Stamped by the BEFORE
+    // UPDATE trigger op_log_timing_only_update, which refuses the write if any
+    // other column moved — qty stays immutable. Null = never edited.
+    timingEditedAt: timestamp('timing_edited_at', { withTimezone: true }),
+    timingEditedBy: uuid('timing_edited_by').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

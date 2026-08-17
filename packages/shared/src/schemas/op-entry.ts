@@ -120,10 +120,29 @@ export const opLogSchema = z.object({
   machineCodeText: z.string().nullable(),
   startTime: z.string().nullable(), // HH:MM:SS
   remarks: z.string().nullable(),
+  /** When this entry's date/time was last corrected (0097). Null = as recorded.
+   *  Only the timestamp is ever editable — qty is immutable, so an edited row's
+   *  numbers still match what the operator originally submitted. */
+  timingEditedAt: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
 });
 export type OpLog = z.infer<typeof opLogSchema>;
+
+/** Correct WHEN an entry happened — never WHAT it recorded (ADR-127).
+ *  The only mutation op_log accepts; enforced column-by-column by the DB
+ *  trigger op_log_timing_only_update, not just by this schema. */
+export const updateOpLogTimingInputSchema = z.object({
+  id: z.string().uuid(),
+  logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** HH:MM. Omit to leave the recorded time alone; null to clear it. */
+  logTime: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}(:\d{2})?$/)
+    .nullable()
+    .optional(),
+});
+export type UpdateOpLogTimingInput = z.infer<typeof updateOpLogTimingInputSchema>;
 
 // ─── Machine-wise output (0095, view v_op_machine_output) ──────────────────
 //
