@@ -23,7 +23,10 @@ interface Props {
 
 export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.Element {
   const remaining = line.remaining;
-  const [planQty, setPlanQty] = useState<number>(remaining);
+  const stock = line.stockQty;
+  // What still needs to be MADE after counting what's already in stock.
+  const suggested = Math.max(0, remaining - stock);
+  const [planQty, setPlanQty] = useState<number>(suggested);
   const [err, setErr] = useState<string | null>(null);
   const createPlan = useCreatePlan();
 
@@ -150,6 +153,23 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
               {remaining}
             </div>
           </div>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '8px 16px',
+              background: 'var(--bg)',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontSize: 10, color: 'var(--text3)' }}>IN STOCK</div>
+            <div
+              className="mono fw-700"
+              style={{ fontSize: 20, color: stock > 0 ? 'var(--amber)' : 'var(--text3)' }}
+            >
+              {stock}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -179,6 +199,12 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
           Max: {remaining} pcs (SO: {line.orderQty} − Already Planned: {line.totalPlanned})
         </div>
+        {stock > 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
+            💡 {suggested} pcs to make — {remaining} remaining − {stock} already in stock
+            {suggested === 0 ? ' (fully covered by stock)' : ''}.
+          </div>
+        ) : null}
       </div>
 
       {err ? (

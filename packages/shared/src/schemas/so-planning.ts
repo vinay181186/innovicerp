@@ -83,6 +83,9 @@ export const planningLineSchema = z.object({
   directJcCodes: z.array(z.string()),
   /** max(0, orderQty - totalPlanned - directJcQty). */
   remaining: z.number().int().nonnegative(),
+  /** Current on-hand finished-goods stock for this line item (0 if none / free-text).
+   *  Lets the planner see how much is already in stock and plan only the shortfall. */
+  stockQty: z.number().int().nonnegative(),
   /** 'fully_planned' / 'partial' / 'unplanned' — covers plans AND direct JCs. */
   lineStatus: z.enum(['fully_planned', 'partial', 'unplanned']),
   /** Equipment SO with a linked BOM master → show §8 Equipment BOM Planning button. */

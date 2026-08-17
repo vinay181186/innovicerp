@@ -511,6 +511,27 @@ export async function getPlanningSoDetail(
       directJcByLine.set(jc.soLineId, entry);
     }
 
+    // 7c. On-hand finished-goods stock per line item — lets the planner see how
+    // much is already in stock and plan only the shortfall (mirrors the BOM-
+    // child stock lookup in getPlanningBom).
+    const lineItemIds = [
+      ...new Set(lineRows.map((r) => r.line.itemId).filter((id): id is string => id !== null)),
+    ];
+    const lineStockRows =
+      lineItemIds.length === 0
+        ? []
+        : await tx
+            .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
+            .from(itemStockBalances)
+            .where(
+              and(
+                eq(itemStockBalances.companyId, companyId),
+                inArray(itemStockBalances.itemId, lineItemIds),
+              ),
+            );
+    const stockByItem = new Map<string, number>();
+    for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
+
     // 8. Compose lines.
     const lines: PlanningLine[] = lineRows.map((r) => {
       const linePlans = plansByLine.get(r.line.id) ?? [];
@@ -521,6 +542,7 @@ export async function getPlanningSoDetail(
       const directJcCodes = direct?.codes ?? [];
       const coveredQty = totalPlanned + directJcQty;
       const remaining = Math.max(0, orderQty - coveredQty);
+      const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
       const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
       const hasEquipmentBom = isEquipmentSo && equipBomId !== null;
@@ -551,6 +573,7 @@ export async function getPlanningSoDetail(
         directJcQty,
         directJcCodes,
         remaining,
+        stockQty,
         lineStatus: classifyPlanningPct(pct),
         hasEquipmentBom,
         hasAssemblyBom,
@@ -732,6 +755,25 @@ async function getJwPlanningDetail(
     directJcByLine.set(jc.jwLineId, entry);
   }
 
+  // 6b. On-hand finished-goods stock per line item — see the SO branch (7c).
+  const lineItemIds = [
+    ...new Set(lineRows.map((r) => r.line.itemId).filter((id): id is string => id !== null)),
+  ];
+  const lineStockRows =
+    lineItemIds.length === 0
+      ? []
+      : await tx
+          .select({ itemId: itemStockBalances.itemId, qty: itemStockBalances.onHandQty })
+          .from(itemStockBalances)
+          .where(
+            and(
+              eq(itemStockBalances.companyId, companyId),
+              inArray(itemStockBalances.itemId, lineItemIds),
+            ),
+          );
+  const stockByItem = new Map<string, number>();
+  for (const s of lineStockRows) stockByItem.set(s.itemId, Number(s.qty));
+
   // 7. Compose lines. JW lines have no BOM master → BOM branches always off.
   const lines: PlanningLine[] = lineRows.map((r) => {
     const linePlans = plansByLine.get(r.line.id) ?? [];
@@ -742,6 +784,7 @@ async function getJwPlanningDetail(
     const directJcCodes = direct?.codes ?? [];
     const coveredQty = totalPlanned + directJcQty;
     const remaining = Math.max(0, orderQty - coveredQty);
+    const stockQty = r.line.itemId ? (stockByItem.get(r.line.itemId) ?? 0) : 0;
     const pct = orderQty > 0 ? Math.round((coveredQty / orderQty) * 100) : 0;
 
     return {
@@ -758,6 +801,7 @@ async function getJwPlanningDetail(
       directJcQty,
       directJcCodes,
       remaining,
+      stockQty,
       lineStatus: classifyPlanningPct(pct),
       hasEquipmentBom: false,
       hasAssemblyBom: false,
