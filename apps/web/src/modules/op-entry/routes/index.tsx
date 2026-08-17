@@ -2,6 +2,8 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useJobCardsList } from '@/modules/job-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useJcOpsEnriched,
@@ -41,6 +43,32 @@ function OpEntryPage() {
   useEffect(() => {
     setJcInput(search.jc ?? '');
   }, [search.jc]);
+
+  // Job Card No. is the shared type-to-search dropdown (see /dropdown skill),
+  // backed server-side by the job-cards list `?search=` (matches jc code, item
+  // code/name, and source SO/JW). Picking a JC loads it immediately; the typed
+  // term also feeds jcInput so the Load button / Enter still work for an exact
+  // code the user knows.
+  const [jcId, setJcId] = useState<string | null>(null);
+  const [jcSearch, setJcSearch] = useState('');
+  const jcList = useJobCardsList({
+    ...(jcSearch.trim() ? { search: jcSearch.trim() } : {}),
+    limit: 20,
+    offset: 0,
+  });
+  const jcOptions = useMemo(
+    () => (jcList.data?.items ?? []).map((j) => ({ id: j.id, code: j.code, name: j.itemName })),
+    [jcList.data],
+  );
+
+  function handlePickJc(id: string | null): void {
+    setJcId(id);
+    if (!id) return;
+    const opt = jcList.data?.items.find((j) => j.id === id);
+    if (!opt) return;
+    setJcInput(opt.code);
+    void navigate({ search: () => ({ jc: opt.code }), replace: true });
+  }
 
   // Realtime: refresh running_ops list everywhere; for the per-op view, sub
   // is created once an op is selected. Both subs invalidate jc_ops cache.
@@ -112,17 +140,24 @@ function OpEntryPage() {
             onSubmit={handleJcSubmit}
             style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
           >
-            <div className="form-grp" style={{ marginBottom: 0, minWidth: 260 }}>
+            <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
               <label className="form-label" htmlFor="jc-input">
                 Job Card No.
               </label>
-              <input
+              <SearchableSelect
                 id="jc-input"
-                className="innovic-input"
-                value={jcInput}
-                onChange={(e) => setJcInput(e.target.value)}
-                placeholder="🔍 e.g. IN-JC-00002"
-                autoFocus
+                value={jcId}
+                onChange={handlePickJc}
+                onSearch={(term) => {
+                  setJcSearch(term);
+                  if (term) setJcInput(term);
+                }}
+                loading={jcList.isFetching}
+                options={jcOptions}
+                placeholder="🔍 Job card no, item, or SO…"
+                emptyText="No job cards"
+                valueLabel={search.jc ?? undefined}
+                selectedLabel={(o) => o.code ?? o.name}
               />
             </div>
             <button type="submit" className="btn btn-primary">
