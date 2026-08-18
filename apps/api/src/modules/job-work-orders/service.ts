@@ -239,6 +239,7 @@ export async function listJobWorkOrders(
         jw.client_po_no AS "clientPoNo",
         COALESCE(agg.line_count, 0)::int AS "lineCount",
         COALESCE(agg.total_qty, 0)::int AS "totalQty",
+        COALESCE(agg.dispatched_qty, 0)::int AS "dispatchedQty",
         COALESCE(jca.jc_qty, 0)::int AS "jcQty",
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.remarks,
@@ -247,7 +248,8 @@ export async function listJobWorkOrders(
       FROM public.job_work_orders jw
       LEFT JOIN (
         SELECT job_work_order_id,
-          COUNT(*) AS line_count, SUM(order_qty) AS total_qty, MIN(due_date) AS earliest_due
+          COUNT(*) AS line_count, SUM(order_qty) AS total_qty,
+          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due
         FROM public.job_work_order_lines
         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
         GROUP BY job_work_order_id
@@ -295,6 +297,7 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     clientPoNo: (r['clientPoNo'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
+    dispatchedQty: Number(r['dispatchedQty'] ?? 0),
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     status: r['status'] as JobWorkOrder['status'],
@@ -614,6 +617,7 @@ function toJobWorkOrderLine(
     drawingNo: row.drawingNo,
     uom: row.uom,
     orderQty: row.orderQty,
+    returnedQty: row.returnedQty,
     rate: row.rate,
     dueDate: row.dueDate,
     status: row.status,

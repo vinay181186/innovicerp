@@ -48,6 +48,9 @@ export const jobWorkOrderLineSchema = z.object({
   drawingNo: z.string().nullable(),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
+  /** Σ finished parts delivered back to the client (job_work_order_lines.returned_qty).
+   *  Shown on the list as "Dispatched" — Balance = orderQty − returnedQty. */
+  returnedQty: z.number().int().nonnegative().default(0),
   rate: z.string(), // processing charge per unit; numeric stored as string
   dueDate: z.string().nullable(), // ISO date
   status: jwStatusSchema,
@@ -109,6 +112,9 @@ export const jobWorkOrderListItemSchema = z.object({
   lineCount: z.number().int().nonnegative(),
   /** Σ line order_qty across the JWSO. */
   totalQty: z.number().int().nonnegative(),
+  /** Σ finished parts dispatched (delivered) back to the client across all lines
+   *  (Σ job_work_order_lines.returned_qty). Balance = totalQty − dispatchedQty. */
+  dispatchedQty: z.number().int().nonnegative().default(0),
   /** Σ job_cards.order_qty linked to any line of this JWSO. */
   jcQty: z.number().int().nonnegative(),
   /** MIN(line.due_date) across non-deleted lines; null when none set. */

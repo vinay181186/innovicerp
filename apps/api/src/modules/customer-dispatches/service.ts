@@ -39,6 +39,82 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
+/**
+ * Fix A — keep the SO header's `dispatched` state a function of real shipping.
+ *
+ * Dispatch used to touch only sales_order_lines.dispatched_qty, never the
+ * header, so a fully-shipped SO stayed `open`/`closed` forever and the cyan
+ * `dispatched` badge was unreachable. Now: once every non-cancelled line is
+ * fully shipped (dispatched_qty >= order_qty) the header flips to `dispatched`;
+ * if a later cancel drops a line back below its order qty the header reverts —
+ * to `closed` when production is still complete (all active lines closed), else
+ * `open`. `draft` and `cancelled` are the user's explicit call and are left
+ * alone. Mirrors the JWSO return→dispatched flip (jw-returns/service.ts).
+ */
+async function syncSoDispatchStatus(
+  tx: DbTransaction,
+  companyId: string,
+  soId: string,
+  soCode: string,
+  user: AuthContext,
+): Promise<void> {
+  const lines = await tx
+    .select({
+      orderQty: salesOrderLines.orderQty,
+      dispatchedQty: salesOrderLines.dispatchedQty,
+      status: salesOrderLines.status,
+    })
+    .from(salesOrderLines)
+    .where(and(eq(salesOrderLines.salesOrderId, soId), isNull(salesOrderLines.deletedAt)));
+  const active = lines.filter((l) => l.status !== 'cancelled');
+  if (active.length === 0) return;
+
+  const fullyShipped = active.every((l) => Number(l.dispatchedQty) >= Number(l.orderQty));
+
+  const hdr = await tx
+    .select({ status: salesOrders.status })
+    .from(salesOrders)
+    .where(and(eq(salesOrders.id, soId), eq(salesOrders.companyId, companyId)))
+    .limit(1);
+  const current = hdr[0]?.status;
+  // Only ever move between open/closed/dispatched.
+  if (current !== 'open' && current !== 'closed' && current !== 'dispatched') return;
+
+  let next: 'open' | 'closed' | 'dispatched';
+  if (fullyShipped) {
+    next = 'dispatched';
+  } else if (current === 'dispatched') {
+    // A cancel pulled shipping back below full: production is unchanged, so fall
+    // back to closed when every active line is closed, else open.
+    next = active.every((l) => l.status === 'closed') ? 'closed' : 'open';
+  } else {
+    return; // not fully shipped and not currently dispatched — nothing to do.
+  }
+  if (next === current) return;
+
+  await tx
+    .update(salesOrders)
+    .set({ status: next, updatedBy: user.id })
+    .where(eq(salesOrders.id, soId));
+
+  if (user.companyId) {
+    await emitActivityLog(
+      tx,
+      {
+        action: next === 'dispatched' ? 'SO_DISPATCHED' : 'SO_REOPENED',
+        entity: 'SalesOrder',
+        detail:
+          next === 'dispatched'
+            ? `${soCode} — All lines fully dispatched`
+            : `${soCode} — Dispatch reversed → ${next}`,
+        refId: soCode,
+      },
+      companyId,
+      user,
+    );
+  }
+}
+
 const n = (s: string | number | null): number => Number(s ?? 0) || 0;
 
 // Move finished-goods stock on dispatch (out) / cancel (in). Inserts a
@@ -793,6 +869,9 @@ export async function createDispatch(
       await moveDispatchStock(tx, companyId, user.id, 'out', code, input.dispatchDate, lineNo, itemId, l.qty);
     }
 
+    // Fix A — flip the SO header to `dispatched` once every line is fully shipped.
+    await syncSoDispatchStatus(tx, companyId, so.id, so.code, user);
+
     const totalQty = input.lines.reduce((s, l) => s + l.qty, 0);
     await emitActivityLog(
       tx,
@@ -903,6 +982,10 @@ export async function cancelDispatch(
         await moveDispatchStock(tx, companyId, user.id, 'in', h.code, h.dispatchDate, l.lineNo, l.itemId, l.qty);
       }
     }
+
+    // Fix A — a cancel may drop the SO below fully-shipped; revert the header
+    // from `dispatched` back to closed/open to match.
+    await syncSoDispatchStatus(tx, companyId, h.salesOrderId, h.soCodeText ?? h.code, user);
 
     await tx
       .update(customerDispatches)

@@ -223,6 +223,20 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                   <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
                     <QtyBox label="Total Qty" value={jw.totalQty} />
                     <QtyBox label="JC Qty" value={jw.jcQty} color={jcColor} bordered />
+                    {/* Dispatched = finished parts delivered back to the client
+                        (Σ line returned_qty). Balance = still owed on the order. */}
+                    <QtyBox
+                      label="Dispatched"
+                      value={jw.dispatchedQty}
+                      color={jw.dispatchedQty > 0 ? 'var(--green)' : 'var(--text3)'}
+                      bordered
+                    />
+                    <QtyBox
+                      label="Balance"
+                      value={Math.max(0, jw.totalQty - jw.dispatchedQty)}
+                      color={jw.totalQty - jw.dispatchedQty > 0 ? 'var(--red)' : 'var(--green)'}
+                      bordered
+                    />
                     <QtyBox label="Lines" value={jw.lineCount} bordered />
                   </div>
                   <div
@@ -297,15 +311,20 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
             <th style={{ width: 36 }}>Ln</th><th>Item Code</th><th>Part Name</th><th>Material</th><th>Drawing No</th>
-            <th className="td-ctr">Qty</th><th>UOM</th><th className="td-ctr">Rate</th><th>Due Date</th><th>Status</th>
+            <th className="td-ctr">Qty</th>
+            <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
+            <th className="td-ctr">Balance</th>
+            <th>UOM</th><th className="td-ctr">Rate</th><th>Due Date</th><th>Status</th>
             {canWrite ? <th /> : null}
           </tr>
         </thead>
         <tbody>
           {jw.lines.length === 0 ? (
-            <tr><td colSpan={canWrite ? 11 : 10} className="empty-state">No lines yet</td></tr>
+            <tr><td colSpan={canWrite ? 13 : 12} className="empty-state">No lines yet</td></tr>
           ) : (
-            jw.lines.map((l) => (
+            jw.lines.map((l) => {
+              const balance = Math.max(0, l.orderQty - l.returnedQty);
+              return (
               <tr key={l.id} style={{ background: 'var(--bg)' }}>
                 <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
                 <td className="td-code" style={{ color: 'var(--text)' }}>{l.itemCodeText ?? '—'}</td>
@@ -313,6 +332,8 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
                 <td className="text2" style={{ fontSize: 11 }}>{l.material ?? '—'}</td>
                 <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>{l.drawingNo ?? '—'}</td>
                 <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>{l.orderQty}</td>
+                <td className="td-ctr mono fw-700" style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.returnedQty}</td>
+                <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance}</td>
                 <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{l.uom}</td>
                 <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>
                 <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
@@ -323,7 +344,8 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
                   </td>
                 ) : null}
               </tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </table>
