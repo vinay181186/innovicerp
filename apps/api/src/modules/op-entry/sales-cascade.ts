@@ -132,7 +132,15 @@ export async function tryCascadeJcComplete(
   // Emit JC_COMPLETE only when the inner cascade actually closed a line
   // (not on idempotent re-runs against an already-terminal line). Pairs
   // with the SO_LINE_CLOSED / JW_LINE_CLOSED row for the same tx.
-  if ((result.closedSoLineId || result.closedJwLineId) && user.companyId) {
+  //
+  // ADR-132 — an equipment SO's line deliberately stays open until the units
+  // are assembled, so its job cards would otherwise never reach `closed`
+  // (v_jc_status reads closed_at). "This job card is finished" and "this order
+  // is finished" are separate facts; the JC still closes on its own ops.
+  const jcFinished =
+    Boolean(result.closedSoLineId || result.closedJwLineId) ||
+    result.skipped === 'so_equipment_closes_on_assembly';
+  if (jcFinished && user.companyId) {
     // ISSUE-007 — set closed_at when the JC transitions complete → closed.
     // Idempotent via the closedAt IS NULL guard so re-runs are no-ops.
     // Done in the SAME tx as the audit row so a rollback unwinds both.

@@ -6895,6 +6895,20 @@ Only `status = 'completed'` batches count toward the close. An `in_progress`
 batch is still on the bench (ADR-129), so a Start alone can never close an
 order — the Stop that finishes it can.
 
+### The job card still closes on its own ops
+
+Caught immediately after the first deploy of this ADR. `tryCascadeJcComplete`
+stamped `job_cards.closed_at` only inside `if (result.closedSoLineId || ...)`,
+so skipping the SO close for equipment orders also stopped the JC closing — it
+would have sat at `computed_status = 'complete'` forever, since `v_jc_status`
+reads `closed` straight off `closed_at` (migration 0006, L143).
+
+"This job card is finished" and "this order is finished" are separate facts, and
+only the second one waits for assembly. The condition now also fires on
+`skipped: 'so_equipment_closes_on_assembly'`, so an equipment SO's job cards
+close exactly when they always did — when their last op completes — while the
+order stays open until its units are built.
+
 ### Not covered here
 
 The 7 orders already wrongly closed stay closed. Repairing them is a separate,
