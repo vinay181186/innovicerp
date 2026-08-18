@@ -358,7 +358,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       }
 
       const parts: string[] = [];
-      if (added) parts.push(`Added ${added} line(s).`);
+      // Say where the names came from — the sheet no longer has a Part Name
+      // column, so it should be obvious the master filled them in.
+      if (added) parts.push(`Added ${added} line(s) — Part Name filled from Item Master.`);
       if (missing.length) {
         const uniq = Array.from(new Set(missing));
         parts.push(
