@@ -6801,3 +6801,101 @@ sideways on a laptop. Now `repeat(auto-fit, minmax(340px, 1fr))`.
 quieter — a single strip instead of four bordered cards. That is the intended
 result of Rule 3 and it frees roughly 60-80px at the top of every role's home
 page, but it IS a real change in emphasis, unlike the rest of ADR-131.
+
+---
+
+## ADR-132: An Equipment SO closes when its units are ASSEMBLED, not when a component job card finishes
+
+**Date:** 2026-08-18
+**Status:** Accepted
+**Supersedes (in part):** ADR-033's sales-chain auto-close, for `type = 'equipment'` only.
+
+### What went wrong
+
+`IN-SO-00028` disappeared from the Assembly Tracker minutes after someone
+started assembling it. Its activity log, on the live DB:
+
+```
+04:40:41  CREATE          IN-SO-00028 — Cosmos Engitech Pvt Ltd
+04:41:43  ASSEMBLY_START  IN-SO-00028 — started batch #1 x1
+04:42:26  UNDO_ASSEMBLY   IN-SO-00028 — undo unit #1
+04:51:06  SO_LINE_CLOSED  IN-SO-00028 — Line auto-closed (JC IN-JC-26-00096)
+04:51:06  SO_CLOSED       IN-SO-00028 — All lines closed
+```
+
+Nobody closed it. `closeSoLineIfComplete` (sales-cascade.ts) fires when a job
+card completes and compares **what that JC produced** against the **SO line's
+order qty**. On an equipment order those are not the same unit:
+
+| | |
+|---|---|
+| SO line qty | 5 (finished equipment) |
+| Attached job card | `IN-JC-26-00096` — item 554117186000 AUTOMATIC FIRE CHECK LEVER, qty 49 |
+| That item | a child line of `BOM-0016`, the BOM on this SO |
+| Its final op accepted | 49 |
+
+49 >= 5, so the line closed, then the header, then `listAssemblies` dropped it
+(`ne(status, 'closed')`) — with **0 of 5 assembled**.
+
+Not a one-off. All 9 closed equipment SOs on the live DB were closed by this
+cascade, and 7 of them closed with the assembly unfinished:
+
+```
+SO             ordered  assembled
+IN-SO-00007        3        0
+IN-SO-00008        1        0
+IN-SO-00010       10        0
+IN-SO-00012        3        3   (correct)
+IN-SO-00014        1        0
+IN-SO-00015        1        0
+IN-SO-00019      100        3
+IN-SO-00020        1        1   (correct)
+IN-SO-00028        5        0
+```
+
+122 units of ordered equipment were being reported as finished. The damage
+reaches past the tracker: Pending SO Value treats `closed` as settled
+(`pending-so-value/service.ts:140`) and the Stuck dashboard excludes it
+(`stuck-dashboard/service.ts:53`), so the backlog vanished from the money
+numbers too.
+
+### Decision
+
+**A component job card may not close an equipment order.** Two halves:
+
+1. `cascadeSo` resolves the SO header up-front and returns
+   `skipped: 'so_equipment_closes_on_assembly'` when `type = 'equipment'`.
+   Component-manufacturing and with-material SOs keep the produced-vs-ordered
+   rule byte-for-byte — this narrows the rule, it does not replace it.
+
+2. `syncEquipmentSoClosure` in the assembly service owns the status instead. It
+   runs after every write that can change the completed count
+   (`markUnitAssembled`, `stopAssembly`, `undoLastUnit`) and makes the header a
+   pure function of assembly progress: closed when
+   `assembled >= ordered`, reopened when a later undo drops it back below.
+
+### Why closure lives on the assembly side
+
+The alternative was to teach the cascade about assembly — read
+`assembly_units` from `sales-cascade.ts` before deciding. Rejected: the cascade
+already reaches across three modules, and the assembled count is only meaningful
+for one SO type. Putting it where the count is written keeps one owner per rule.
+
+### Why reopen on undo
+
+Without it, undoing a unit after the close leaves the order `closed`, which
+removes it from the Assembly Tracker — the one screen the undo button lives on.
+You would have to reopen the SO by hand to fix a mistake the app just let you
+make. Reopen only ever flips `closed -> open`; `draft`, `dispatched` and
+`cancelled` are somebody's explicit decision, never touched.
+
+### Counting rule
+
+Only `status = 'completed'` batches count toward the close. An `in_progress`
+batch is still on the bench (ADR-129), so a Start alone can never close an
+order — the Stop that finishes it can.
+
+### Not covered here
+
+The 7 orders already wrongly closed stay closed. Repairing them is a separate,
+reversible data migration, deliberately not bundled with a behaviour change.

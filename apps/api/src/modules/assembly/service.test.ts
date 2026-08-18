@@ -441,6 +441,11 @@ describe('assembly service — listAssemblies', () => {
       .update(itemStockBalances)
       .set({ onHandQty: 10 })
       .where(eq(itemStockBalances.itemId, childBId));
+    // ADR-132 — the lifecycle describe above fills the fixture to 5 of 5, which
+    // now auto-closes the SO, and a closed SO is dropped from this list. Reopen
+    // it so these cases test the list maths; the drop-when-closed rule has its
+    // own case below.
+    await db.update(salesOrders).set({ status: 'open' }).where(eq(salesOrders.id, soId));
   });
 
   it('returns the fixture Equipment SO with the correct counters', async () => {

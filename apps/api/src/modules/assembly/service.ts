@@ -53,7 +53,7 @@ import {
   salesOrderLines,
   salesOrders,
 } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -581,6 +581,9 @@ export async function markUnitAssembled(
       user,
     );
 
+    // ADR-132 — close the order once every unit is built.
+    await syncEquipmentSoClosure(tx, companyId, soId, so.code, user);
+
     return toUnitRow(row);
   });
 }
@@ -819,6 +822,10 @@ export async function stopAssembly(
       user,
     );
 
+    // ADR-132 — a Stop is what turns WIP into finished units, so it can be the
+    // one that completes the order.
+    await syncEquipmentSoClosure(tx, companyId, soId, batch.soCodeText, user);
+
     return toUnitRow(completedRow);
   });
 }
@@ -951,6 +958,10 @@ export async function undoLastUnit(
       user,
     );
 
+    // ADR-132 — undoing a unit can drop the order back under its ordered qty;
+    // reopen it so it returns to the tracker instead of staying closed.
+    await syncEquipmentSoClosure(tx, companyId, soId, so.code, user);
+
     return { ok: true, removedUnitNo: row.unitNo };
   });
 }
@@ -1053,6 +1064,87 @@ async function sumEquipmentLineQty(
     WHERE sales_order_id = ${soId}::uuid AND deleted_at IS NULL
   `);
   return Number((r as unknown as Array<{ q: number }>)[0]?.q ?? 0);
+}
+
+/**
+ * Keep an Equipment SO's status a function of ASSEMBLY progress (ADR-132).
+ *
+ * Equipment SOs used to be closed by the op-entry sales cascade, which compares
+ * what a job card PRODUCED against the SO line qty. On an equipment order those
+ * are different units — the JC makes a BOM component, the line counts finished
+ * equipment — so one component finishing closed the whole order and dropped it
+ * off this tracker. The cascade now skips equipment SOs; closing happens here,
+ * where the assembled count actually lives.
+ *
+ * Runs after every write that changes the completed count. Closes once assembled
+ * covers ordered; reopens if an undo drops it back below — otherwise an undone
+ * unit would leave the order closed and invisible on the very screen you undid
+ * it from.
+ *
+ * Only ever flips open ⇄ closed. `draft`, `dispatched` and `cancelled` are
+ * somebody's explicit decision, not an assembly state, so they're left alone.
+ */
+async function syncEquipmentSoClosure(
+  tx: DbTransaction,
+  companyId: string,
+  soId: string,
+  soCode: string,
+  user: AuthContext,
+): Promise<void> {
+  const unitsRequired = await sumEquipmentLineQty(tx, soId);
+  // No lines / zero qty — nothing to measure against, so never auto-close.
+  if (unitsRequired <= 0) return;
+
+  // Completed batches only: an in-progress batch is still on the bench.
+  const aggRows = await tx
+    .select({
+      assembled: sql<number>`COALESCE(SUM(${assemblyUnits.qty}) FILTER (WHERE ${assemblyUnits.status} = 'completed'), 0)::int`,
+    })
+    .from(assemblyUnits)
+    .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
+  const assembled = Number(aggRows[0]?.assembled ?? 0);
+
+  const headerRows = await tx
+    .select({ status: salesOrders.status })
+    .from(salesOrders)
+    .where(and(eq(salesOrders.id, soId), eq(salesOrders.companyId, companyId)))
+    .limit(1);
+  const current = headerRows[0]?.status;
+  if (current !== 'open' && current !== 'closed') return;
+
+  const shouldClose = assembled >= unitsRequired;
+  // Already where it belongs — no update, no audit row, no updated_at thrash.
+  if (shouldClose === (current === 'closed')) return;
+
+  const nextStatus = shouldClose ? 'closed' : 'open';
+  await tx
+    .update(salesOrderLines)
+    .set({ status: nextStatus, updatedBy: user.id })
+    .where(
+      and(
+        eq(salesOrderLines.salesOrderId, soId),
+        isNull(salesOrderLines.deletedAt),
+        ne(salesOrderLines.status, 'cancelled'),
+      ),
+    );
+  await tx
+    .update(salesOrders)
+    .set({ status: nextStatus, updatedBy: user.id })
+    .where(eq(salesOrders.id, soId));
+
+  await emitActivityLog(
+    tx,
+    {
+      action: shouldClose ? 'SO_CLOSED' : 'SO_REOPENED',
+      entity: 'SalesOrder',
+      detail: shouldClose
+        ? `${soCode} — All ${unitsRequired} unit(s) assembled`
+        : `${soCode} — Reopened: ${assembled} of ${unitsRequired} unit(s) assembled`,
+      refId: soCode,
+    },
+    companyId,
+    user,
+  );
 }
 
 /**

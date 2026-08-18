@@ -44,6 +44,7 @@ export interface CascadeResult {
     | 'so_line_already_terminal'
     | 'jw_line_already_terminal'
     | 'so_line_qty_incomplete'
+    | 'so_equipment_closes_on_assembly'
     | 'jw_line_qty_incomplete';
 }
 
@@ -177,6 +178,26 @@ async function cascadeSo(
     return { skipped: 'so_line_already_terminal' };
   }
 
+  // Resolve the SO header once — needed for the equipment check below and for
+  // the emit refId/detail + header-close path further down.
+  const soRows = await tx
+    .select({ code: salesOrders.code, status: salesOrders.status, type: salesOrders.type })
+    .from(salesOrders)
+    .where(eq(salesOrders.id, line.salesOrderId))
+    .limit(1);
+  const soHeader = soRows[0];
+
+  // ADR-132 — an EQUIPMENT SO line counts finished equipment, but the JCs
+  // hanging off that line make BOM COMPONENTS. Comparing the two closed real
+  // orders wrongly: IN-SO-00028 (5 equipment) was closed by IN-JC-26-00096
+  // producing 49 levers, and vanished from the Assembly Tracker with 0 of 5
+  // assembled. Equipment SOs close from the assembly side instead — see
+  // syncEquipmentSoClosure in modules/assembly/service.ts. Component and
+  // with-material SOs keep the produced-vs-ordered rule unchanged.
+  if (soHeader?.type === 'equipment') {
+    return { skipped: 'so_equipment_closes_on_assembly' };
+  }
+
   // Only close when the WHOLE order-line qty is produced across its JCs — a
   // partial JC must not close a bigger line and strand the balance.
   const produced = await producedForLine(tx, 'source_so_line_id', soLineId);
@@ -189,15 +210,6 @@ async function cascadeSo(
     .update(salesOrderLines)
     .set({ status: 'closed', updatedBy: user.id })
     .where(eq(salesOrderLines.id, soLineId));
-
-  // Resolve SO header code once for emit refId/detail (also used below for
-  // the header-close path). One SELECT covers both emissions.
-  const soRows = await tx
-    .select({ code: salesOrders.code, status: salesOrders.status })
-    .from(salesOrders)
-    .where(eq(salesOrders.id, line.salesOrderId))
-    .limit(1);
-  const soHeader = soRows[0];
 
   if (soHeader && user.companyId) {
     await emitActivityLog(
