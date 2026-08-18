@@ -13,6 +13,16 @@ import { todayLocal } from '@/lib/date';
 import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
 import { Modal } from './modal';
 
+// −/+ stepper buttons: same .btn .btn-ghost shape as the ▲▼ movers elsewhere,
+// just squared off so they sit flush against the qty box.
+const stepBtnStyle: React.CSSProperties = {
+  padding: '0 12px',
+  fontSize: 18,
+  lineHeight: 1,
+  minWidth: 38,
+  height: 38,
+};
+
 interface Props {
   so: PlanningDetailResponse;
   line: PlanningLine;
@@ -32,6 +42,13 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const uncovered = Math.max(0, remaining - reserved);
   const reservable = Math.min(stock, uncovered);
   const [planQty, setPlanQty] = useState<number>(suggested);
+  // Reserve qty is adjustable — it starts at everything that's free to book,
+  // but the planner can dial it down (or back up) before pressing Reserve.
+  // Clamped on render instead of via an effect: after a reserve succeeds the
+  // line refetches, `reservable` shrinks, and the typed value follows it down.
+  const [reserveQty, setReserveQty] = useState<number>(reservable);
+  const qtyToReserve = Math.min(Math.max(Math.trunc(reserveQty) || 0, 0), reservable);
+  const canReserve = Boolean(line.itemId) && reservable > 0 && qtyToReserve > 0;
   const [err, setErr] = useState<string | null>(null);
   const createPlan = useCreatePlan();
   const reserve = useReserveStock();
@@ -46,12 +63,16 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       setErr('Nothing available to reserve.');
       return;
     }
+    if (qtyToReserve <= 0) {
+      setErr('Reserve qty must be greater than 0.');
+      return;
+    }
     setErr(null);
     try {
       await reserve.mutateAsync({
         soLineId: line.soLineId,
         itemId: line.itemId,
-        qty: reservable,
+        qty: qtyToReserve,
         soCodeText: so.soCode,
         lineNo: line.lineNo,
       });
@@ -114,16 +135,16 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         className="btn"
         style={{ background: 'var(--amber)', borderColor: 'var(--amber)', color: 'var(--bg)' }}
         onClick={() => void doReserve()}
-        disabled={reserve.isPending || !line.itemId || reservable <= 0}
+        disabled={reserve.isPending || !canReserve}
         title={
           !line.itemId
             ? 'This line has no stock-tracked item'
             : reservable <= 0
               ? 'Nothing available to reserve'
-              : `Reserve ${reservable} pcs from stock to ${so.soCode}`
+              : `Reserve ${qtyToReserve} pcs from stock to ${so.soCode}`
         }
       >
-        {reserve.isPending ? 'Reserving…' : `Reserve ${reservable}`}
+        {reserve.isPending ? 'Reserving…' : `Reserve ${qtyToReserve}`}
       </button>
       <button
         type="button"
@@ -262,6 +283,83 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           </div>
         </div>
       </div>
+
+      {/* Reserve from stock — the qty is adjustable, and the Reserve button in
+          the footer books exactly what's set here. Reserving again adds to the
+          line (the max recomputes); "release" on the RESERVED tile gives the
+          whole booking back. */}
+      {line.itemId ? (
+        <div className="form-grp" style={{ marginBottom: 14 }}>
+          <label
+            className="form-label"
+            htmlFor="reserve-qty"
+            style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 14 }}
+          >
+            Reserve Qty (from stock)
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={stepBtnStyle}
+              onClick={() => setReserveQty(Math.max(0, qtyToReserve - 1))}
+              disabled={qtyToReserve <= 0}
+              aria-label="Decrease reserve qty"
+              title="Decrease by 1"
+            >
+              −
+            </button>
+            <input
+              id="reserve-qty"
+              type="number"
+              min={0}
+              max={reservable}
+              step={1}
+              value={qtyToReserve}
+              onChange={(e) => setReserveQty(Number(e.target.value))}
+              disabled={reservable <= 0}
+              style={{
+                fontSize: 18,
+                fontWeight: 800,
+                textAlign: 'center',
+                border: '2px solid var(--amber)',
+                color: 'var(--amber)',
+                padding: 6,
+                width: 120,
+                height: 38,
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={stepBtnStyle}
+              onClick={() => setReserveQty(Math.min(reservable, qtyToReserve + 1))}
+              disabled={qtyToReserve >= reservable}
+              aria-label="Increase reserve qty"
+              title="Increase by 1"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setReserveQty(reservable)}
+              disabled={reservable <= 0 || qtyToReserve === reservable}
+              title={`Set to the full ${reservable} pcs free to reserve`}
+            >
+              Max
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+            {reservable > 0
+              ? `Max: ${reservable} pcs (In Stock: ${stock}, still uncovered: ${uncovered})`
+              : stock <= 0
+                ? 'Nothing in stock to reserve.'
+                : 'This line is already fully covered — nothing left to reserve.'}
+            {reserved > 0 ? ` · Already reserved: ${reserved} — use “release” above to give it back.` : ''}
+          </div>
+        </div>
+      ) : null}
 
       <div className="form-grp">
         <label
