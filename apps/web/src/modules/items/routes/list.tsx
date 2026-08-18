@@ -6,15 +6,22 @@
 // defs (preserved per user direction 2026-05-20) but renders via plain
 // <table className="innovic-table"> so the legacy CSS lights up.
 //
+// Styled to the `styling` skill, same as the SO Master list:
+//  - Counts are ONE <StatStrip> (Rule 3) — All / Component / Assembly, each a
+//    click-to-filter. It replaces the "All types" dropdown, which set exactly
+//    the same query param but showed no numbers.
+//  - The whole <tr> opens the item (Rule 2). The Item Code stays a <Link> so
+//    middle-click and open-in-new-tab keep working — the row handler is added
+//    on top of it, not instead of it, which is how the SO list does it.
+//  - Description / Material are free text, so they truncate with an ellipsis
+//    and carry the full value in `title` (Rule 1's long-text exception) instead
+//    of stretching the table sideways.
+//
 // Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-017):
-//  - Item Code cell is a <Link>; legacy makes the whole <tr> clickable via
-//    onclick=viewItemDetail. Same destination, but the link keeps real
-//    navigation (middle-click / open-in-new-tab) that a row handler loses.
 //  - UOM uses .badge.b-grey; legacy's .tag class has no port in
 //    innovic-theme.css and inventing one is not allowed.
-//  - Type filter, fetching indicator, import banners and pagination are
-//    React-only additions with no legacy counterpart; removing them would
-//    drop working behaviour and orphan the itemType query param.
+//  - Fetching indicator, import banners and pagination are React-only additions
+//    with no legacy counterpart; removing them would drop working behaviour.
 
 import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -28,6 +35,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
@@ -40,6 +48,13 @@ import { printItemDrawing } from '../lib/print-drawing';
 // on the block-level cell. Carry that class through the column def so the
 // flexRender loop can put it where legacy has it.
 const PAGE_SIZE = 25;
+
+// One count query per stat. Module-level constants keep the query keys stable so
+// these are fetched once and served from cache, and the counts stay whole-master
+// totals — they don't shrink as you type in the search box.
+const COUNT_ALL: ListItemsQuery = { limit: 1, offset: 0 };
+const COUNT_COMPONENT: ListItemsQuery = { itemType: 'component', limit: 1, offset: 0 };
+const COUNT_ASSEMBLY: ListItemsQuery = { itemType: 'assembly', limit: 1, offset: 0 };
 
 /** Outcome of an Excel import, bucketed so each group is shown on its own. */
 interface ImportResult {
@@ -102,6 +117,18 @@ function ItemsListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
+
+  // Strip counts — whole-master totals, independent of the search box.
+  const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
+  const componentCount = useItemsList(COUNT_COMPONENT).data?.total ?? 0;
+  const assemblyCount = useItemsList(COUNT_ASSEMBLY).data?.total ?? 0;
+
+  const setTypeFilter = useCallback(
+    (next: ItemType | undefined): void => {
+      void navigate({ search: (prev) => ({ ...prev, itemType: next, page: 1 }), replace: true });
+    },
+    [navigate],
+  );
 
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
@@ -211,8 +238,22 @@ function ItemsListPage(): React.JSX.Element {
       {
         header: 'Description',
         accessorKey: 'description',
+        // Free text — clip it rather than let one long description stretch the
+        // table sideways. Full value on hover (styling skill Rule 1).
         cell: ({ row }) => (
-          <span className="text2" style={{ fontSize: 11 }}>
+          <span
+            className="text2"
+            style={{
+              fontSize: 11,
+              maxWidth: 220,
+              display: 'inline-block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'bottom',
+            }}
+            title={row.original.description ?? ''}
+          >
             {row.original.description ?? '—'}
           </span>
         ),
@@ -232,7 +273,25 @@ function ItemsListPage(): React.JSX.Element {
         meta: { tdClass: 'td-ctr' },
         cell: ({ row }) => row.original.revision,
       },
-      { header: 'Material', accessorKey: 'material', cell: ({ row }) => row.original.material ?? '—' },
+      {
+        header: 'Material',
+        accessorKey: 'material',
+        cell: ({ row }) => (
+          <span
+            style={{
+              maxWidth: 140,
+              display: 'inline-block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'bottom',
+            }}
+            title={row.original.material ?? ''}
+          >
+            {row.original.material ?? '—'}
+          </span>
+        ),
+      },
       {
         header: 'UOM',
         accessorKey: 'uom',
@@ -249,7 +308,10 @@ function ItemsListPage(): React.JSX.Element {
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 11 }}
               title="View/Print Drawing"
-              onClick={() => void printDrawing(row.original)}
+              onClick={(e) => {
+                e.stopPropagation();
+                void printDrawing(row.original);
+              }}
             >
               🖨 Print
             </button>
@@ -262,7 +324,12 @@ function ItemsListPage(): React.JSX.Element {
       {
         header: 'Actions',
         cell: ({ row }) => (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          // One stopPropagation on the wrapper covers Edit and Del; View goes to
+          // the same page the row does, so it needs nothing.
+          <div
+            style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <Link to="/items/$id" params={{ id: row.original.id }} className="btn btn-ghost btn-sm">
               View
             </Link>
@@ -328,25 +395,6 @@ function ItemsListPage(): React.JSX.Element {
             onChange={(e) => setSearchInput(e.target.value)}
             style={{ width: 240, fontSize: 12 }}
           />
-          <select
-            className="innovic-select"
-            value={search.itemType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as ItemType | '';
-              void navigate({
-                search: (prev) => ({ ...prev, itemType: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 140, fontSize: 12 }}
-          >
-            <option value="">All types</option>
-            {ITEM_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
           {isFetching && !isLoading ? (
             <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
@@ -388,6 +436,38 @@ function ItemsListPage(): React.JSX.Element {
             </>
           ) : null}
         </div>
+      </div>
+
+      {/* Counts + type filter in one strip (styling skill Rule 3). */}
+      <div style={{ marginBottom: 12 }}>
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'All Items',
+              count: allCount,
+              color: 'var(--cyan)',
+              active: search.itemType === undefined,
+              onClick: () => setTypeFilter(undefined),
+            },
+            {
+              key: 'component',
+              label: 'Component',
+              count: componentCount,
+              color: 'var(--blue)',
+              active: search.itemType === 'component',
+              onClick: () => setTypeFilter('component'),
+            },
+            {
+              key: 'assembly',
+              label: 'Assembly',
+              count: assemblyCount,
+              color: 'var(--purple)',
+              active: search.itemType === 'assembly',
+              onClick: () => setTypeFilter('assembly'),
+            },
+          ]}
+        />
       </div>
 
       {importError ? (
@@ -450,7 +530,13 @@ function ItemsListPage(): React.JSX.Element {
                 </tr>
               ) : (
                 table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
+                  <tr
+                    key={row.id}
+                    onClick={() =>
+                      void navigate({ to: '/items/$id', params: { id: row.original.id } })
+                    }
+                    style={{ cursor: 'pointer' }}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -465,8 +551,8 @@ function ItemsListPage(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, padding: '0 4px' }}>
-        ★ Item Master is for defining items only. Stock / Inventory is managed in{' '}
-        <b>Store → Store / Inventory</b>.
+        💡 Click a row to open the item. · ★ Item Master is for defining items only.
+        Stock / Inventory is managed in <b>Store → Store / Inventory</b>.
       </div>
 
       <PaginationFooter
