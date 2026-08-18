@@ -195,11 +195,12 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             PO Type
           </label>
           <select id="poType" className="innovic-select" {...register('header.poType')}>
-            {/* Only the two types that actually mean something: standard (a buy)
-                and job work (send material out to a vendor). 'outsource' is dead
-                (behaves like standard) and 'service' belongs in the Service PO
-                module, so both are hidden here to prevent mis-filing. */}
-            {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work').map((t) => (
+            {/* Meaningful types on this form: standard (a buy), job work (send
+                material out to a vendor), and service (a service purchase).
+                'outsource' is dead (behaves like standard), so it stays hidden
+                to prevent mis-filing. */}
+            {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work' || t === 'service').map(
+              (t) => (
               <option key={t} value={t}>
                 {t.replaceAll('_', ' ')}
               </option>
