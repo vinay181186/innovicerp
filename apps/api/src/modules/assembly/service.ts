@@ -48,6 +48,8 @@ import {
   assemblyUnits,
   bomMasterLines,
   bomMasters,
+  customerDispatchLines,
+  customerDispatches,
   itemStockBalances,
   items,
   salesOrderLines,
@@ -156,7 +158,47 @@ export async function getAssemblyTracker(
         ),
       )
       .orderBy(asc(assemblyUnits.unitNo));
-    const units = unitRows.map(toUnitRow);
+    const rawUnits = unitRows.map(toUnitRow);
+
+    // Reconcile dispatch status with the REAL Customer Dispatch register.
+    // assembly_units.dispatched is only ever set by the legacy in-app "mark
+    // dispatched" action; dispatch now runs through Customer Dispatch, which
+    // records customer_dispatch_lines and never touches that flag. So a batch
+    // dispatched via the register would otherwise read "Pending" forever. Pull
+    // the register's dispatched qty for this SO and attribute it (FIFO by batch
+    // no.) to completed batches that aren't already flagged, stamping the
+    // covering dispatch date. Legacy-flagged units are kept as-is (and excluded
+    // from the FIFO) so historical data does not regress.
+    const dispEvents = (await tx.execute(sql`
+      SELECT cd.dispatch_date::text AS dispatch_date, cdl.qty::int AS qty
+      FROM public.customer_dispatch_lines cdl
+      JOIN public.customer_dispatches cd ON cd.id = cdl.customer_dispatch_id
+      WHERE cd.sales_order_id = ${soId}::uuid
+        AND cd.company_id = ${companyId}::uuid
+        AND cd.deleted_at IS NULL AND cdl.deleted_at IS NULL
+      ORDER BY cd.dispatch_date ASC, cd.created_at ASC
+    `)) as unknown as Array<{ dispatch_date: string; qty: number }>;
+    const queue = dispEvents.map((e) => ({ date: e.dispatch_date, qty: Number(e.qty) }));
+
+    const units = rawUnits.map((u) => {
+      if (u.status !== 'completed' || u.dispatched) return u;
+      // A batch flips to dispatched only when the register can cover its WHOLE
+      // qty; a partial leaves it Pending (it still has undispatched pieces).
+      const avail = queue.reduce((s, ev) => s + ev.qty, 0);
+      if (avail < u.qty) return u;
+      let need = u.qty;
+      let coverDate: string | null = null;
+      for (const ev of queue) {
+        if (need <= 0) break;
+        if (ev.qty <= 0) continue;
+        const take = Math.min(ev.qty, need);
+        ev.qty -= take;
+        need -= take;
+        coverDate = ev.date;
+      }
+      return { ...u, dispatched: true, dispatchDate: coverDate };
+    });
+
     // Assembled = completed batches only; in-progress (WIP) batches are started
     // but not yet built, so they debit no stock and don't count as assembled
     // until stopped (ADR-129).
@@ -386,6 +428,34 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
             .where(and(inArray(bomMasters.id, bomIds), isNull(bomMasters.deletedAt))),
     ]);
 
+    // Real dispatched qty per SO from the Customer Dispatch register (not the
+    // legacy assembly_units.dispatched flag) — the list's Dispatched count must
+    // agree with the detail page's reconciled rollup.
+    const registerDispatchRows =
+      soIds.length === 0
+        ? []
+        : await tx
+            .select({
+              soId: customerDispatches.salesOrderId,
+              qty: sql<number>`COALESCE(SUM(${customerDispatchLines.qty}), 0)::int`,
+            })
+            .from(customerDispatchLines)
+            .innerJoin(
+              customerDispatches,
+              eq(customerDispatches.id, customerDispatchLines.customerDispatchId),
+            )
+            .where(
+              and(
+                eq(customerDispatches.companyId, companyId),
+                inArray(customerDispatches.salesOrderId, soIds),
+                isNull(customerDispatches.deletedAt),
+                isNull(customerDispatchLines.deletedAt),
+              ),
+            )
+            .groupBy(customerDispatches.salesOrderId);
+    const registerDispatchMap = new Map<string, number>();
+    for (const r of registerDispatchRows) registerDispatchMap.set(r.soId, Number(r.qty));
+
     const orderQtyMap = new Map<string, number>();
     const dueDateMap = new Map<string, string | null>();
     for (const r of orderQtyRows) {
@@ -425,7 +495,13 @@ export async function listAssemblies(user: AuthContext): Promise<AssemblyListRes
       const agg = assembledMap.get(r.soId);
       const assembledQty = agg?.assembled ?? 0;
       const inProgressQty = agg?.inProgress ?? 0;
-      const dispatchedQty = agg?.dispatched ?? 0;
+      // Reconciled dispatched = legacy-flagged units + register dispatches
+      // attributed to the remaining (un-flagged) completed units, capped at
+      // assembled. Matches the detail page's FIFO reconciliation.
+      const flaggedDispatched = agg?.dispatched ?? 0;
+      const registerDispatched = registerDispatchMap.get(r.soId) ?? 0;
+      const dispatchedQty =
+        flaggedDispatched + Math.min(registerDispatched, Math.max(0, assembledQty - flaggedDispatched));
       const bom = r.bomMasterId ? bomCodeMap.get(r.bomMasterId) ?? null : null;
       const ready = readiness.get(r.soId) ?? { canAssemble: 0, readyCount: 0, totalCount: 0 };
       return {
