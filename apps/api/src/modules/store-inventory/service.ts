@@ -45,10 +45,18 @@ export async function listStoreInventory(
         FROM public.job_cards jc
         LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
         LEFT JOIN LATERAL (
-          SELECT SUM(qty)::int AS completed
-          FROM public.op_log ol
-          JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
-          WHERE jo.job_card_id = jc.id
+          -- "Completed" for a job card = output of its LAST operation, NOT the sum
+          -- across every op. A JC is the SAME pieces flowing op → op; summing each
+          -- op's logged output multi-counts them and wildly understates (often to
+          -- 0) Mfg Pending on multi-op routes. Mirror the canonical
+          -- lastOpCompletedQty (job-cards/service.ts:141-147): a QC / qc-required
+          -- final op credits accepted qty, else completed qty — from the highest
+          -- op_seq.
+          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
+                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END AS completed
+          FROM public.v_jc_op_status vos
+          WHERE vos.job_card_id = jc.id
+          ORDER BY vos.op_seq DESC LIMIT 1
         ) comp ON TRUE
         WHERE jc.company_id = ${companyId}::uuid
           AND jc.deleted_at IS NULL
