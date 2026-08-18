@@ -163,6 +163,57 @@ Non-negotiables for the strip:
   rule (first-in-row loses the left border only if you compute it — simplest is to
   let it wrap and accept the divider).
 
+## Rule 4 — Document lists scroll; high-volume registers still page
+
+The SO/WO Master list does NOT paginate: one fetch at offset 0, everything in a
+single scrolling list, no Prev/Next (user decision). Three sibling document lists
+already mirror it — JWSO, Job Cards, Purchase Orders.
+
+```tsx
+// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next).
+const LIST_LIMIT = 1000;   // SO list; the sibling document lists use 200
+
+const query = useMemo(() => ({ ...filters, limit: LIST_LIMIT, offset: 0 }), [filters]);
+```
+
+The count line under the list says which of the two things happened, so a
+truncated list can never look complete:
+
+```tsx
+{total > LIST_LIMIT
+  ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+  : `Showing all ${total} sales order${total === 1 ? '' : 's'}`}
+```
+
+**Which lists scroll:** the ones a person works through daily and needs to scan
+end to end — the document lists (SO, JWSO, JC, PO) and the master data behind
+them (Items, Vendors, Clients, Machines, Operators, Cost Centers, QC Processes,
+Users). These are hundreds of rows at most, and the API caps `limit` at 1000
+anyway, so one fetch covers the whole table.
+
+**Which lists keep Prev/Next:** append-only registers that grow without bound —
+Store Transactions, Op Log, Activity Log, Trash, and the dated transaction
+registers (GRN, Delivery Challans, Party GRN, Store Issues, Tool Issues). Pulling
+1000 of those every visit is the wrong trade, and nobody scans them end to end;
+they get searched and filtered.
+
+When you page, keep `page` in the URL search params (so a refresh or a shared
+link lands on the same page) and reuse the Prev/Next footer shape the other
+paged lists already have — don't invent a second one.
+
+**Do not mix.** A list has either the scroll footer or the Prev/Next footer,
+never both, and never an inner `overflow-y` scroller nested inside the page's own
+scroller (two scrollbars — the defect ADR-121 closed on the OSP DC list).
+
+**State of the codebase as of 2026-08-18 — this rule is not yet met everywhere.**
+Only the four document lists scroll (SO 1000, JWSO / JC / PO 200). Every master
+list named above still has Prev/Next and has simply never been converted: Items
+(25/page), Vendors, Clients, Machines, Operators, Cost Centers, QC Processes,
+Users. Converting one is a small change — swap `PAGE_SIZE` for `LIST_LIMIT`, drop
+the Prev/Next footer and the `page` search param, switch the count line to the
+two-branch form above. Do it when you next touch one of those pages; don't treat
+their current paging as the pattern to copy.
+
 ## Checklist before finishing a table
 
 - [ ] Table uses `<div className="tbl-wrap"><table className="innovic-table">` (gives no-wrap + side-scroll for free).
@@ -172,3 +223,4 @@ Non-negotiables for the strip:
 - [ ] The "click a row to open it" hint is present under the table.
 - [ ] Counts above the list are ONE single-row strip (`var(--border)` dividers, left-aligned label over number) — not separate `.panel` cards.
 - [ ] Strip stats still filter on click, active state shown by colour + bottom border, and every colour is a `var(--*)` token.
+- [ ] Loading matches the list's kind: document + master lists scroll in one fetch (`LIST_LIMIT`, `offset: 0`, no Prev/Next); unbounded registers keep Prev/Next with `page` in the URL. Never both footers, never a nested vertical scroller.

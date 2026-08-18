@@ -16,12 +16,14 @@
 //  - Description / Material are free text, so they truncate with an ellipsis
 //    and carry the full value in `title` (Rule 1's long-text exception) instead
 //    of stretching the table sideways.
+//  - One fetch, one scrolling list, no Prev/Next (Rule 4) — 25-per-page turned
+//    44 items into two pages on a list you scan end to end.
 //
 // Legacy deltas kept deliberately (see docs/ISSUES.md ISSUE-017):
 //  - UOM uses .badge.b-grey; legacy's .tag class has no port in
 //    innovic-theme.css and inventing one is not allowed.
-//  - Fetching indicator, import banners and pagination are React-only additions
-//    with no legacy counterpart; removing them would drop working behaviour.
+//  - Fetching indicator and import banners are React-only additions with no
+//    legacy counterpart; removing them would drop working behaviour.
 
 import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -31,7 +33,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
@@ -47,7 +49,12 @@ import { printItemDrawing } from '../lib/print-drawing';
 // not on a wrapper span — td-ctr is text-align:center, which only takes effect
 // on the block-level cell. Carry that class through the column def so the
 // flexRender loop can put it where legacy has it.
-const PAGE_SIZE = 25;
+// No pagination — mirror the SO/WO list: one fetch, scroll (no Prev/Next),
+// per the `styling` skill Rule 4. Item Master is a master list you scan end to
+// end; 25-at-a-time made 44 items into two pages. The API caps `limit` at 1000
+// (raised from 200 so item pickers could pull the whole master), and the count
+// line below flags the rare case of a larger set.
+const LIST_LIMIT = 1000;
 
 // One count query per stat. Module-level constants keep the query keys stable so
 // these are fetched once and served from cache, and the counts stay whole-master
@@ -74,7 +81,6 @@ const listSearchSchema = z.object({
   itemType: z.enum(ITEM_TYPES).optional(),
   sortBy: z.enum(['code', 'name']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
-  page: z.coerce.number().int().positive().default(1),
 });
 
 export const itemsListRoute = createRoute({
@@ -99,7 +105,7 @@ function ItemsListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
@@ -110,10 +116,10 @@ function ItemsListPage(): React.JSX.Element {
       itemType: search.itemType,
       sortBy: search.sortBy,
       sortDir: search.sortDir,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
-    [search.search, search.itemType, search.sortBy, search.sortDir, search.page],
+    [search.search, search.itemType, search.sortBy, search.sortDir],
   );
 
   const { data, isLoading, isFetching, isError, error } = useItemsList(query);
@@ -125,7 +131,7 @@ function ItemsListPage(): React.JSX.Element {
 
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {
-      void navigate({ search: (prev) => ({ ...prev, itemType: next, page: 1 }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, itemType: next }), replace: true });
     },
     [navigate],
   );
@@ -135,7 +141,7 @@ function ItemsListPage(): React.JSX.Element {
   const toggleSort = useCallback(
     (field: 'code' | 'name') => {
       const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
-      void navigate({ search: (prev) => ({ ...prev, ...next, page: 1 }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
     },
     [navigate, search.sortBy, search.sortDir],
   );
@@ -370,8 +376,6 @@ function ItemsListPage(): React.JSX.Element {
   });
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
 
   return (
     <div>
@@ -555,64 +559,25 @@ function ItemsListPage(): React.JSX.Element {
         Stock / Inventory is managed in <b>Store → Store / Inventory</b>.
       </div>
 
-      <PaginationFooter
-        total={total}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        pageSize={PAGE_SIZE}
-        emptyLabel="No items"
-        onPage={(p) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true })}
-      />
-    </div>
-  );
-}
-
-// Local PaginationFooter — same shape used across all UI-003 list pages.
-function PaginationFooter(props: {
-  total: number;
-  currentPage: number;
-  totalPages: number;
-  pageSize: number;
-  emptyLabel: string;
-  onPage: (page: number) => void;
-}): React.JSX.Element {
-  const { total, currentPage, totalPages, pageSize, emptyLabel, onPage } = props;
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 8,
-        fontSize: 12,
-        color: 'var(--text3)',
-      }}
-    >
-      <span>
-        {total === 0
-          ? emptyLabel
-          : `Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, total)} of ${total}`}
-      </span>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={currentPage <= 1}
-          onClick={() => onPage(Math.max(1, currentPage - 1))}
-        >
-          <ChevronLeft size={14} /> Prev
-        </button>
-        <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-          Page {currentPage} / {totalPages}
+      {/* Scroll footer (Rule 4): says whether you are seeing everything, so a
+          truncated list can never look complete. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
+        <span>
+          {total === 0
+            ? 'No items'
+            : total > LIST_LIMIT
+              ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+              : `Showing all ${total} item${total === 1 ? '' : 's'}`}
         </span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={currentPage >= totalPages}
-          onClick={() => onPage(Math.min(totalPages, currentPage + 1))}
-        >
-          Next <ChevronRight size={14} />
-        </button>
       </div>
     </div>
   );
