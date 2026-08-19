@@ -615,18 +615,19 @@ function JcStatusEditForm({
       return next;
     });
   };
-  const addOp = (qc = false): void => {
+  const addOp = (kind: 'process' | 'qc' | 'outsource' = 'process'): void => {
     setOps((prev) => [
       ...prev,
       {
+        // OSP ops carry no machine (T32b); QC parks on the QC lane.
         machineCode: '',
         operation: '',
-        opType: qc ? 'qc' : 'process',
+        opType: kind,
         cycleTimeMin: 0,
         program: '',
         toolNo: '',
         toolDetails: '',
-        qcRequired: qc,
+        qcRequired: kind === 'qc',
         outsourceVendorCode: '',
         outsourceCost: 0,
         hasStarted: false,
@@ -803,16 +804,24 @@ function JcStatusEditForm({
             {opCount} op{opCount !== 1 ? 's' : ''}
             {qcCount > 0 ? ` + ${qcCount} QC` : ''}
           </span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp(false)}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
             + Add Op
           </button>
           <button
             type="button"
             className="btn btn-sm"
             style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
-            onClick={() => addOp(true)}
+            onClick={() => addOp('qc')}
           >
             + Add QC Op
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+            onClick={() => addOp('outsource')}
+          >
+            + Add OSP Op
           </button>
         </div>
       </div>
@@ -821,7 +830,7 @@ function JcStatusEditForm({
           {ops.length === 0 ? (
             <div className="panel">
               <div className="empty-state">
-                No operations — click “+ Add Op” or “+ Add QC Op”.
+                No operations — click “+ Add Op”, “+ Add QC Op”, or “+ Add OSP Op”.
               </div>
             </div>
           ) : (
