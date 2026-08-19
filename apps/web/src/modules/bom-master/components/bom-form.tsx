@@ -26,7 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
-import { getCol, readSheetRows } from '@/lib/xlsx-import';
+import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { useItemsList } from '@/modules/items/api';
 import { useNextBomNo } from '../api';
 
@@ -230,6 +230,19 @@ const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = [
 
 const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
 
+// The three columns the importer reads, with every header spelling accepted for
+// each. ONE list, used for both the up-front template check and the per-row
+// reads — so a column can never be validated under one name and then read under
+// another.
+const CODE_ALIASES = ['item_code', 'Item Code', 'code'];
+const QTY_ALIASES = ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set'];
+const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
+const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
+  { label: 'item_code', aliases: CODE_ALIASES },
+  { label: 'qty_per_set', aliases: QTY_ALIASES },
+  { label: 'bom_type', aliases: TYPE_ALIASES },
+];
+
 // listItemsQuerySchema (packages/shared/src/schemas/item.ts) caps `limit` at
 // 1000. Asking for more is a 400, not a bigger page — keep these in step.
 const ITEM_PAGE_MAX = 1000;
@@ -251,12 +264,18 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
    *  83 unknown codes is a dead end, since this form can only match items and
    *  never create them. */
   const [missingCodes, setMissingCodes] = useState<string[]>([]);
+  /** The file was rejected outright — wrong template, wrong tab, unreadable —
+   *  so nothing was imported. Distinct from per-row errors: it paints the box
+   *  red (it used to come up GREEN, the colour of success) and offers the
+   *  template download, which is what the user needs next. */
+  const [importFatal, setImportFatal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearImportReport = (): void => {
     setImportSummary(null);
     setImportErrors([]);
     setMissingCodes([]);
+    setImportFatal(false);
   };
 
   // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
@@ -473,16 +492,35 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       const { rows, sheetError, sheetName, sheetNames } = await readSheetRows(file);
       if (sheetError) throw new Error(sheetError);
 
+      // The template check, BEFORE any row work. A sheet built from somebody
+      // else's template used to fail one row at a time — 83 lines of "not found
+      // in master" when the real fault was a missing column — so name the fault
+      // once, at the top, with the right template one click away.
+      if (rows.length === 0) {
+        throw new Error(
+          `Sheet "${sheetName}" has no data rows. Put your rows under the header row of the template.`,
+        );
+      }
+      const headerKeys = new Set(Object.keys(rows[0] ?? {}));
+      const missingColumns = REQUIRED_COLUMNS.filter(
+        (c) => !c.aliases.some((a) => headerKeys.has(normalizeHeaderKey(a))),
+      );
+      if (missingColumns.length > 0) {
+        throw new Error(
+          `Import template is not valid — missing column${missingColumns.length === 1 ? '' : 's'}: ` +
+            `${missingColumns.map((c) => c.label).join(', ')}. ` +
+            `Sheet "${sheetName}" has: ${Array.from(headerKeys).join(', ') || '(no columns)'}. ` +
+            `Download the template, put your rows into it, and import that.`,
+        );
+      }
+
       // Only the FIRST sheet is read. A user who adds their rows on a later tab
       // gets whatever sheet 1 holds — in practice the untouched template — and
       // the errors then name EXAMPLE-001/002, which looks like the item master
       // is wrong when the real problem is the wrong tab. Say both things out
       // loud instead of importing the samples silently.
       const onlySampleRows =
-        rows.length > 0 &&
-        rows.every((r) =>
-          /^EXAMPLE-\d+$/i.test(getCol(r, ['item_code', 'Item Code', 'code']).trim()),
-        );
+        rows.length > 0 && rows.every((r) => /^EXAMPLE-\d+$/i.test(getCol(r, CODE_ALIASES).trim()));
       if (onlySampleRows) {
         throw new Error(
           `Sheet "${sheetName}" still contains only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
@@ -501,11 +539,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // preloaded page missed gets one targeted ?search= each. Without this a
       // large item master reads as "not found" for perfectly valid codes.
       const fileCodes = Array.from(
-        new Set(
-          rows
-            .map((r) => getCol(r, ['item_code', 'Item Code', 'code']).trim().toUpperCase())
-            .filter(Boolean),
-        ),
+        new Set(rows.map((r) => getCol(r, CODE_ALIASES).trim().toUpperCase()).filter(Boolean)),
       );
       const unknownCodes = fileCodes.filter((c) => !itemsByCode.has(c));
       const { found: lateFound, failed: lookupFailed } =
@@ -531,11 +565,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       const notInMaster: string[] = [];
       const notInMasterSeen = new Set<string>();
       rows.forEach((row, idx) => {
-        const itemCode = getCol(row, ['item_code', 'Item Code', 'code']).trim();
-        const qtyRaw = getCol(row, ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set']);
-        const bomType = getCol(row, ['bom_type', 'BOM Type', 'Type'])
-          .trim()
-          .toLowerCase() as BomLineType;
+        const itemCode = getCol(row, CODE_ALIASES).trim();
+        const qtyRaw = getCol(row, QTY_ALIASES);
+        const bomType = getCol(row, TYPE_ALIASES).trim().toLowerCase() as BomLineType;
         if (!itemCode) {
           errors.push({
             rowIndex: idx,
@@ -638,6 +670,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
       );
     } catch (err) {
+      setImportFatal(true);
       setImportSummary(err instanceof Error ? err.message : 'Failed to parse Excel file');
     } finally {
       // Clear the input so re-uploading the same file fires onChange again.
@@ -898,7 +931,13 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         <div className="bomx-body">
           {importSummary ? (
             <div
-              className={`bomx-alert bomx-alert-col ${importErrors.length > 0 ? 'bomx-alert-amber' : 'bomx-alert-green'}`}
+              className={`bomx-alert bomx-alert-col ${
+                importFatal
+                  ? 'bomx-alert-red'
+                  : importErrors.length > 0
+                    ? 'bomx-alert-amber'
+                    : 'bomx-alert-green'
+              }`}
             >
               <div className="bomx-alert-hd">
                 <div>
@@ -914,6 +953,15 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   ) : null}
                 </div>
                 <div className="bomx-alert-acts">
+                  {importFatal ? (
+                    <button
+                      type="button"
+                      className="bomx-alert-act"
+                      onClick={() => void downloadTemplate()}
+                    >
+                      <Download size={12} /> Download template
+                    </button>
+                  ) : null}
                   {importErrors.length > 0 ? (
                     <>
                       <button
