@@ -11,7 +11,18 @@ import type {
   Item,
   ListItemsResponse,
 } from '@innovic/shared';
-import { Boxes, Download, FileText, Package, Plus, Search, Trash2, Upload } from 'lucide-react';
+import {
+  Boxes,
+  Copy,
+  Download,
+  FileText,
+  Package,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
@@ -123,6 +134,24 @@ const BOMX_CSS = `
 .bomx-alert-amber { background:#fdf6ea; border:1px solid #f5e0bb; color:#92400e; }
 .bomx-alert-green { background:#eaf7ef; border:1px solid #c6e9d3; color:#15803d; }
 .bomx-alert ul { margin:6px 0 0; padding-left:18px; }
+/* Import report. An 83-row failure used to print 10 lines and "… and 73 more"
+   with no way to see, keep or clear them — so the list scrolls in full, the
+   repeated reasons are counted once at the top, and the box can be dismissed. */
+.bomx-alert-col { flex-direction:column; gap:6px; }
+.bomx-alert-hd { display:flex; align-items:flex-start; gap:8px; }
+.bomx-alert-hd > :first-child { flex:1; min-width:0; }
+.bomx-alert-acts { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.bomx-alert-act { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  border:1px solid currentColor; background:transparent; color:inherit;
+  border-radius:6px; padding:3px 8px; font-size:11px; font-weight:600;
+  font-family:inherit; opacity:.85; }
+.bomx-alert-act:hover { opacity:1; }
+.bomx-alert-x { padding:3px 5px; border-color:transparent; }
+.bomx-alert-rollup { margin:0; padding-left:18px; font-weight:600; }
+.bomx-alert-rows { max-height:220px; overflow-y:auto; margin:0; padding:6px 10px;
+  border-radius:6px; background:var(--bg2); border:1px solid currentColor;
+  list-style:none; }
+.bomx-alert-rows li { margin:1px 0; }
 .bomx-ta { border-radius:8px; border:1px solid #cfd8e6; padding:10px; font-size:13px;
   font-family:inherit; width:100%; resize:vertical; outline:none; }
 .bomx-ta:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
@@ -146,9 +175,32 @@ export interface BomFormHeaderDraft {
   status: 'draft' | 'active' | 'obsolete';
 }
 
+/** Why a row was rejected. Kept separate from `reason` (which names the item
+ *  and the offending row) so the report can count identical problems once —
+ *  "79 rows: item_code not found in master" instead of 79 near-identical lines. */
+type ExcelRowErrorKind =
+  | 'blank_code'
+  | 'not_found'
+  | 'lookup_failed'
+  | 'parent_as_child'
+  | 'duplicate'
+  | 'bad_qty'
+  | 'bad_type';
+
+const ERROR_KIND_LABEL: Record<ExcelRowErrorKind, string> = {
+  blank_code: 'Item Code is blank',
+  not_found: 'item code not in Item Master',
+  lookup_failed: 'could not be checked — server did not answer',
+  parent_as_child: 'the parent item cannot be its own part',
+  duplicate: 'the same item appears more than once',
+  bad_qty: 'qty must be a number greater than 0',
+  bad_type: 'bom_type must be manufacture | purchase | outsource',
+};
+
 interface ExcelRowError {
   rowIndex: number;
   itemCode: string;
+  kind: ExcelRowErrorKind;
   reason: string;
 }
 
@@ -194,7 +246,18 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const [revisionNote, setRevisionNote] = useState('');
   const [importErrors, setImportErrors] = useState<ExcelRowError[]>([]);
   const [importSummary, setImportSummary] = useState<string | null>(null);
+  /** Codes the last import could not find in Item Master. Drives the "download
+   *  these as an Item Master import sheet" escape hatch — without it a file of
+   *  83 unknown codes is a dead end, since this form can only match items and
+   *  never create them. */
+  const [missingCodes, setMissingCodes] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const clearImportReport = (): void => {
+    setImportSummary(null);
+    setImportErrors([]);
+    setMissingCodes([]);
+  };
 
   // Legacy editBOMMaster L8610: newRev = current revision + 1. Drives the
   // header suffix, the revision-note indicator and the save-button label.
@@ -231,12 +294,25 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     return m;
   }, [itemsList]);
 
+  // True once the loaded page holds the ENTIRE master. Then a code the map does
+  // not have is genuinely absent, and the per-code lookups below are pure waste
+  // — an 83-row file used to fire 83 requests that could not possibly succeed.
+  const masterFullyLoaded = itemsList ? itemsList.items.length >= itemsList.total : false;
+
   // A code the first page did not cover is not proof the item is missing — the
   // master may simply be larger than one page. Ask the server for each such
   // code before declaring it unknown. An import file holds a handful of rows,
   // so this stays a handful of small requests.
-  const lookupMissingCodes = async (codes: string[]): Promise<Map<string, Item>> => {
+  //
+  // `failed` carries the codes whose lookup ERRORED. They are not the same as
+  // "not in the master" and must not be reported as such: the old empty catch
+  // turned every network/500 blip into "item_code not found in master", which
+  // sends the user hunting through a master where the item is sitting fine.
+  const lookupMissingCodes = async (
+    codes: string[],
+  ): Promise<{ found: Map<string, Item>; failed: Set<string> }> => {
     const found = new Map<string, Item>();
+    const failed = new Set<string>();
     await Promise.all(
       codes.map(async (code) => {
         try {
@@ -246,11 +322,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           const hit = page.items.find((i) => i.code.toUpperCase() === code);
           if (hit) found.set(code, hit);
         } catch {
-          // Leave it unresolved — the row error below reports it as not found.
+          failed.add(code);
         }
       }),
     );
-    return found;
+    return { found, failed };
   };
 
   // Item picker — server-side search, as the dropdown skill requires. One
@@ -311,8 +387,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const typed = l.childItemCodeText.trim().toUpperCase();
     if (!typed) return l;
     const match =
-      itemsByCode.get(typed) ??
-      (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
+      itemsByCode.get(typed) ?? (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
     return match ? { ...l, childItemId: match.id, childItemCodeText: match.code } : l;
   };
   const resolvedLines = useMemo(() => lines.map(resolveLine), [lines, itemsByCode, itemPage]);
@@ -325,8 +400,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const typed = header.parentItemCodeText.trim().toUpperCase();
     if (!typed) return '';
     const match =
-      itemsByCode.get(typed) ??
-      (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
+      itemsByCode.get(typed) ?? (itemPage?.items ?? []).find((i) => i.code.toUpperCase() === typed);
     return match?.id ?? '';
   }, [header.parentItemId, header.parentItemCodeText, itemsByCode, itemPage]);
 
@@ -390,8 +464,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImportErrors([]);
-    setImportSummary(null);
+    clearImportReport();
     try {
       // Shared reader parses .xlsx/.xls AND real .csv via SheetJS, and matches
       // headers normalized (case/spacing/`*` tolerant) — so `item_code` and
@@ -407,7 +480,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // loud instead of importing the samples silently.
       const onlySampleRows =
         rows.length > 0 &&
-        rows.every((r) => /^EXAMPLE-\d+$/i.test(getCol(r, ['item_code', 'Item Code', 'code']).trim()));
+        rows.every((r) =>
+          /^EXAMPLE-\d+$/i.test(getCol(r, ['item_code', 'Item Code', 'code']).trim()),
+        );
       if (onlySampleRows) {
         throw new Error(
           `Sheet "${sheetName}" still contains only the sample rows (EXAMPLE-001 / EXAMPLE-002). ` +
@@ -432,19 +507,29 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             .filter(Boolean),
         ),
       );
-      const lateFound = await lookupMissingCodes(fileCodes.filter((c) => !itemsByCode.has(c)));
+      const unknownCodes = fileCodes.filter((c) => !itemsByCode.has(c));
+      const { found: lateFound, failed: lookupFailed } =
+        masterFullyLoaded || unknownCodes.length === 0
+          ? { found: new Map<string, Item>(), failed: new Set<string>() }
+          : await lookupMissingCodes(unknownCodes);
 
       // What is already on the form, and what THIS file has already claimed.
       // A BOM cannot list the same part twice — one line, one qty/set — so both
       // kinds of repeat are reported by name rather than silently dropped.
       const existingByItemId = new Map<string, number>();
       lines.forEach((l, i) => {
-        if (l.childItemId && !existingByItemId.has(l.childItemId)) existingByItemId.set(l.childItemId, i);
+        if (l.childItemId && !existingByItemId.has(l.childItemId))
+          existingByItemId.set(l.childItemId, i);
       });
       const seenInFile = new Map<string, number>();
 
       const added: BomFormLineDraft[] = [];
       const errors: ExcelRowError[] = [];
+      // Codes that are simply absent from the master, in file order and without
+      // repeats. Lookup FAILURES are deliberately left out — those items may
+      // well exist, and offering to create them would make duplicates.
+      const notInMaster: string[] = [];
+      const notInMasterSeen = new Set<string>();
       rows.forEach((row, idx) => {
         const itemCode = getCol(row, ['item_code', 'Item Code', 'code']).trim();
         const qtyRaw = getCol(row, ['qty_per_set', 'Qty Per Set', 'qty', 'qty/set']);
@@ -452,13 +537,48 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           .trim()
           .toLowerCase() as BomLineType;
         if (!itemCode) {
-          errors.push({ rowIndex: idx, itemCode: '(blank)', reason: 'item_code is required' });
+          errors.push({
+            rowIndex: idx,
+            itemCode: '(blank)',
+            kind: 'blank_code',
+            reason: 'item_code is required',
+          });
           return;
         }
         const key = itemCode.toUpperCase();
         const item = itemsByCode.get(key) ?? lateFound.get(key);
         if (!item) {
-          errors.push({ rowIndex: idx, itemCode, reason: 'item_code not found in master' });
+          if (lookupFailed.has(key)) {
+            errors.push({
+              rowIndex: idx,
+              itemCode,
+              kind: 'lookup_failed',
+              reason: 'could not be checked — the server did not answer. Try the import again.',
+            });
+            return;
+          }
+          if (!notInMasterSeen.has(key)) {
+            notInMasterSeen.add(key);
+            notInMaster.push(itemCode);
+          }
+          errors.push({
+            rowIndex: idx,
+            itemCode,
+            kind: 'not_found',
+            reason: 'item_code not found in master',
+          });
+          return;
+        }
+        // The parent cannot be one of its own parts. The server refuses it, but
+        // only at Save — on an 80-row file that means importing, reviewing and
+        // then hunting for the one bad line. Say it here, with the others.
+        if (resolvedParentId && item.id === resolvedParentId) {
+          errors.push({
+            rowIndex: idx,
+            itemCode,
+            kind: 'parent_as_child',
+            reason: `${item.code} (${item.name}) is the parent item of this BOM, so it cannot also be one of its own parts. Remove this row, or pick a different parent.`,
+          });
           return;
         }
         const firstRow = seenInFile.get(item.id);
@@ -466,6 +586,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           errors.push({
             rowIndex: idx,
             itemCode,
+            kind: 'duplicate',
             reason: `duplicate item code — ${item.code} (${item.name}) is already on row ${firstRow + 2} of this file. A BOM can list a part only once; delete one row or add the two quantities together.`,
           });
           return;
@@ -475,19 +596,26 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           errors.push({
             rowIndex: idx,
             itemCode,
+            kind: 'duplicate',
             reason: `duplicate item code — ${item.code} (${item.name}) is already part ${onFormAt + 1} in the list below. Remove that part first, or drop this row from the file.`,
           });
           return;
         }
         const qty = Number(qtyRaw);
         if (!Number.isFinite(qty) || qty <= 0) {
-          errors.push({ rowIndex: idx, itemCode, reason: 'qty_per_set must be > 0' });
+          errors.push({
+            rowIndex: idx,
+            itemCode,
+            kind: 'bad_qty',
+            reason: 'qty_per_set must be > 0',
+          });
           return;
         }
         if (!VALID_BOM_TYPES.has(bomType)) {
           errors.push({
             rowIndex: idx,
             itemCode,
+            kind: 'bad_type',
             reason: 'bom_type must be manufacture | purchase | outsource',
           });
           return;
@@ -505,6 +633,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         prev.length === 1 && prev[0]!.childItemId === '' ? added : [...prev, ...added],
       );
       setImportErrors(errors);
+      setMissingCodes(notInMaster);
       setImportSummary(
         `Imported ${added.length} row(s)${errors.length > 0 ? `, ${errors.length} row(s) had errors` : ''}.${sheetNote}`,
       );
@@ -514,6 +643,87 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // Clear the input so re-uploading the same file fires onChange again.
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  // ── Import report helpers ───────────────────────────────────────────────
+  // 83 rows failing for the same reason is one fact, not 83. Count the reasons
+  // so the headline says "79 rows: item_code not found in master" and the row
+  // list underneath is detail, not the message.
+  const errorRollup = useMemo(() => {
+    const byKind = new Map<ExcelRowErrorKind, number>();
+    for (const e of importErrors) byKind.set(e.kind, (byKind.get(e.kind) ?? 0) + 1);
+    return Array.from(byKind.entries()).sort((a, b) => b[1] - a[1]);
+  }, [importErrors]);
+
+  const errorLines = (): string[] =>
+    importErrors.map((e) => `Row ${e.rowIndex + 2}: ${e.itemCode} — ${e.reason}`);
+
+  const [copiedErrors, setCopiedErrors] = useState(false);
+  const copyErrors = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(errorLines().join('\n'));
+      setCopiedErrors(true);
+      window.setTimeout(() => setCopiedErrors(false), 1500);
+    } catch {
+      // Clipboard blocked (insecure context / permission). The download button
+      // next to this one is the fallback, so stay silent rather than alarm.
+    }
+  };
+
+  const saveFile = (blob: Blob, filename: string): void => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadErrors = (): void => {
+    const esc = (s: string): string => `"${s.replace(/"/g, '""')}"`;
+    const csv = [
+      'Row,Item Code,Reason',
+      ...importErrors.map((e) =>
+        [String(e.rowIndex + 2), esc(e.itemCode), esc(e.reason)].join(','),
+      ),
+    ].join('\r\n');
+    // BOM so Excel opens it as UTF-8 instead of mangling non-ASCII codes.
+    saveFile(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), 'bom-import-errors.csv');
+  };
+
+  // The way OUT of "not found in master". This form can only match items, so a
+  // file of unknown codes is otherwise a dead end. Hand back exactly those codes
+  // in the Item Master importer's own column layout: fill Name and import there,
+  // then re-run this BOM import.
+  const downloadMissingItemsSheet = async (): Promise<void> => {
+    const { utils: xlsxUtils, write: xlsxWrite } = await loadXlsx();
+    const aoa: (string | number)[][] = [
+      [
+        'Item Code*',
+        'Name*',
+        'Description',
+        'Drawing No.',
+        'Revision',
+        'Material',
+        'UOM',
+        'Item Type',
+      ],
+      // Name is REQUIRED by the Item Master importer, so it is pre-filled with
+      // the code — the sheet imports as-is, and the names can be corrected in
+      // the sheet before importing or in Item Master afterwards.
+      ...missingCodes.map((code) => [code, code, '', '', 'A', '', 'NOS', 'component']),
+    ];
+    const sheet = xlsxUtils.aoa_to_sheet(aoa);
+    sheet['!cols'] = [22, 22, 28, 16, 10, 18, 8, 12].map((wch) => ({ wch }));
+    const wb = xlsxUtils.book_new();
+    xlsxUtils.book_append_sheet(wb, sheet, 'Items');
+    const buf = xlsxWrite(wb, { type: 'array', bookType: 'xlsx' });
+    saveFile(
+      new Blob([buf], { type: 'application/octet-stream' }),
+      'missing-items-for-item-master.xlsx',
+    );
   };
 
   const validationError = useMemo(() => {
@@ -688,23 +898,77 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         <div className="bomx-body">
           {importSummary ? (
             <div
-              className={`bomx-alert ${importErrors.length > 0 ? 'bomx-alert-amber' : 'bomx-alert-green'}`}
+              className={`bomx-alert bomx-alert-col ${importErrors.length > 0 ? 'bomx-alert-amber' : 'bomx-alert-green'}`}
             >
-              <div>
-                {importSummary}
-                {importErrors.length > 0 ? (
-                  <ul>
-                    {importErrors.slice(0, 10).map((err, i) => (
-                      <li key={i}>
-                        Row {err.rowIndex + 2}: {err.itemCode} — {err.reason}
-                      </li>
-                    ))}
-                    {importErrors.length > 10 ? (
-                      <li>… and {importErrors.length - 10} more</li>
-                    ) : null}
-                  </ul>
-                ) : null}
+              <div className="bomx-alert-hd">
+                <div>
+                  {importSummary}
+                  {errorRollup.length > 0 ? (
+                    <ul className="bomx-alert-rollup">
+                      {errorRollup.map(([kind, count]) => (
+                        <li key={kind}>
+                          {count} row{count === 1 ? '' : 's'}: {ERROR_KIND_LABEL[kind]}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+                <div className="bomx-alert-acts">
+                  {importErrors.length > 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        className="bomx-alert-act"
+                        onClick={() => void copyErrors()}
+                      >
+                        <Copy size={12} /> {copiedErrors ? 'Copied' : 'Copy'}
+                      </button>
+                      <button type="button" className="bomx-alert-act" onClick={downloadErrors}>
+                        <Download size={12} /> CSV
+                      </button>
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="bomx-alert-act bomx-alert-x"
+                    aria-label="Dismiss import report"
+                    title="Dismiss"
+                    onClick={clearImportReport}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
+
+              {/* The way out of "not found in master": this form can only match
+                  items, so hand the unknown codes back in the Item Master
+                  importer's own layout instead of leaving a dead end. */}
+              {missingCodes.length > 0 ? (
+                <div>
+                  <button
+                    type="button"
+                    className="bomx-alert-act"
+                    onClick={() => void downloadMissingItemsSheet()}
+                  >
+                    <Download size={12} /> Download {missingCodes.length} missing code
+                    {missingCodes.length === 1 ? '' : 's'} as an Item Master import sheet
+                  </button>
+                  <div style={{ marginTop: 4 }}>
+                    Fill in the Name column, import it on Item Master, then run this BOM import
+                    again.
+                  </div>
+                </div>
+              ) : null}
+
+              {importErrors.length > 0 ? (
+                <ol className="bomx-alert-rows">
+                  {importErrors.map((err, i) => (
+                    <li key={i}>
+                      Row {err.rowIndex + 2}: {err.itemCode} — {err.reason}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </div>
           ) : null}
 
@@ -821,9 +1085,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                       key={idx}
                       className="bomx-row"
                       aria-disabled={parentLocked}
-                      style={
-                        parentLocked ? { opacity: 0.45, pointerEvents: 'none' } : undefined
-                      }
+                      style={parentLocked ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
                     >
                       <span className="bomx-num">{idx + 1}</span>
                       <div className="bomx-search">
@@ -849,7 +1111,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         readOnly
                         placeholder="auto-filled"
                         value={
-                          item ? (item.material ? `${item.name} [${item.material}]` : item.name) : ''
+                          item
+                            ? item.material
+                              ? `${item.name} [${item.material}]`
+                              : item.name
+                            : ''
                         }
                       />
                       <input
@@ -900,11 +1166,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 </button>
                 {/* Template stays open even while locked — you may well want the
                     empty sheet before you have decided the parent. */}
-                <button
-                  type="button"
-                  className="bomx-btn"
-                  onClick={() => void downloadTemplate()}
-                >
+                <button type="button" className="bomx-btn" onClick={() => void downloadTemplate()}>
                   <Download size={14} /> Template
                 </button>
                 <button
