@@ -12,7 +12,7 @@ import type {
 } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, Loader2, Printer } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { signedUrl } from '@/lib/storage';
 import { useItemsList } from '@/modules/items/api';
@@ -577,6 +577,27 @@ function JcStatusEditForm({
   const [detailOpen, setDetailOpen] = useState(true);
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
   const [balanceNote, setBalanceNote] = useState<string | null>(null);
+  // Friendly "op line added — fill it in" feedback. addNote is the green
+  // banner text; flashIdx briefly rings the freshly-added card; opsEndRef is
+  // the scroll target so the new line is never left below the fold.
+  const [addNote, setAddNote] = useState<string | null>(null);
+  const [flashIdx, setFlashIdx] = useState<number | null>(null);
+  const opsEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollToNewOp = useRef(false);
+  // After a new op is appended and the section is open, scroll it into view.
+  // Runs post-render so the new card exists in the DOM. Timers auto-clear the
+  // banner + highlight; the effect cleans them up on unmount / re-fire.
+  useEffect(() => {
+    if (!scrollToNewOp.current) return;
+    scrollToNewOp.current = false;
+    opsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t1 = setTimeout(() => setFlashIdx(null), 2500);
+    const t2 = setTimeout(() => setAddNote(null), 5000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [addNote]);
 
   // Read-only enriched columns + recent logs (from the JC Status view) keyed by
   // op id, so each editable row shows the SAME live progress the view shows.
@@ -616,24 +637,40 @@ function JcStatusEditForm({
     });
   };
   const addOp = (kind: 'process' | 'qc' | 'outsource' = 'process'): void => {
-    setOps((prev) => [
-      ...prev,
-      {
-        // OSP ops carry no machine (T32b); QC parks on the QC lane.
-        machineCode: '',
-        operation: '',
-        opType: kind,
-        cycleTimeMin: 0,
-        program: '',
-        toolNo: '',
-        toolDetails: '',
-        qcRequired: kind === 'qc',
-        outsourceVendorCode: '',
-        outsourceCost: 0,
-        hasStarted: false,
-        available: 0,
-      },
-    ]);
+    let newPos = 0;
+    setOps((prev) => {
+      newPos = prev.length + 1;
+      return [
+        ...prev,
+        {
+          // OSP ops carry no machine (T32b); QC parks on the QC lane.
+          machineCode: '',
+          operation: '',
+          opType: kind,
+          cycleTimeMin: 0,
+          program: '',
+          toolNo: '',
+          toolDetails: '',
+          qcRequired: kind === 'qc',
+          outsourceVendorCode: '',
+          outsourceCost: 0,
+          hasStarted: false,
+          available: 0,
+        },
+      ];
+    });
+    // Never leave the new line hidden behind a collapsed section.
+    setDetailOpen(true);
+    const kindLabel = kind === 'qc' ? 'QC' : kind === 'outsource' ? 'OSP' : 'machining';
+    const need =
+      kind === 'qc'
+        ? 'pick the QC process'
+        : kind === 'outsource'
+          ? 'pick a vendor (and operation name)'
+          : 'pick a machine and operation name';
+    setFlashIdx(newPos - 1);
+    scrollToNewOp.current = true;
+    setAddNote(`✅ Op line #${newPos} (${kindLabel}) added below — now ${need}, then Save.`);
   };
 
   const submitting = update.isPending;
@@ -825,6 +862,23 @@ function JcStatusEditForm({
           </button>
         </div>
       </div>
+      {addNote ? (
+        <div
+          role="status"
+          style={{
+            color: 'var(--green)',
+            background: 'rgba(34,197,94,0.08)',
+            border: '1px solid rgba(34,197,94,0.3)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            marginBottom: 10,
+          }}
+        >
+          {addNote}
+        </div>
+      ) : null}
       {detailOpen ? (
         <div style={{ marginBottom: 16 }}>
           {ops.length === 0 ? (
@@ -837,32 +891,46 @@ function JcStatusEditForm({
             ops.map((o, i) => {
               const en = o.id ? enrichedById.get(o.id) : undefined;
               return (
-                <JcOpEditCard
+                <div
                   key={o.id ?? `new-${i}`}
-                  jc={jc}
-                  op={o}
-                  index={i}
-                  seqLabel={en ? en.opSeq : i + 1}
-                  enriched={en}
-                  machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
-                  machines={machines}
-                  machineOptions={machineOptions}
-                  onMachineSearch={setMachineSearch}
-                  vendorListId="dlJcEditVendor"
-                  logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
-                  isFirst={i === 0}
-                  isLast={i === ops.length - 1}
-                  onChange={(patch) => setOp(i, patch)}
-                  onMove={(dir) => moveOp(i, dir)}
-                  onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
-                  onOutsourceBalance={() => {
-                    setBalanceNote(null);
-                    setBalanceOpIdx(i);
-                  }}
-                />
+                  style={
+                    flashIdx === i
+                      ? {
+                          borderRadius: 12,
+                          boxShadow: '0 0 0 2px var(--amber)',
+                          transition: 'box-shadow .3s',
+                        }
+                      : { transition: 'box-shadow .3s' }
+                  }
+                >
+                  <JcOpEditCard
+                    jc={jc}
+                    op={o}
+                    index={i}
+                    seqLabel={en ? en.opSeq : i + 1}
+                    enriched={en}
+                    machineName={machines.find((m) => m.code === o.machineCode)?.name ?? ''}
+                    machines={machines}
+                    machineOptions={machineOptions}
+                    onMachineSearch={setMachineSearch}
+                    vendorListId="dlJcEditVendor"
+                    logs={o.id ? (logsByOp.get(o.id) ?? []).slice(0, 3) : []}
+                    isFirst={i === 0}
+                    isLast={i === ops.length - 1}
+                    onChange={(patch) => setOp(i, patch)}
+                    onMove={(dir) => moveOp(i, dir)}
+                    onRemove={() => setOps((prev) => prev.filter((_, idx) => idx !== i))}
+                    onOutsourceBalance={() => {
+                      setBalanceNote(null);
+                      setBalanceOpIdx(i);
+                    }}
+                  />
+                </div>
               );
             })
           )}
+          {/* Scroll target: the effect scrolls here after a new op is added. */}
+          <div ref={opsEndRef} />
         </div>
       ) : null}
 
