@@ -149,6 +149,10 @@ function QcProcessesListPage(): React.JSX.Element {
                 disabled={softDelete.isPending}
                 onClick={() => {
                   if (confirm(`Delete QC process "${row.original.code}"?`)) {
+                    // The server refuses a process that job cards, plans or
+                    // route cards still name (qc-processes/service.ts). Reset
+                    // first so a second attempt clears the previous banner.
+                    softDelete.reset();
                     softDelete.mutate(row.original.id);
                   }
                 }}
@@ -241,6 +245,27 @@ function QcProcessesListPage(): React.JSX.Element {
           </span>
         </div>
       </div>
+
+      {/* Why a banner and not a toast: the delete is refused for a reason the
+          user has to act on (retire it as Inactive instead), and that sentence
+          names the documents holding it. It stays on screen until the next
+          attempt. */}
+      {softDelete.error ? (
+        <div className="panel" style={{ marginBottom: 12 }}>
+          <div
+            className="panel-body"
+            style={{
+              padding: '10px 14px',
+              background: 'var(--red3)',
+              color: 'var(--red)',
+              fontSize: 12,
+            }}
+            role="alert"
+          >
+            ⚠ {softDelete.error.message}
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel">
         <div className="tbl-wrap">

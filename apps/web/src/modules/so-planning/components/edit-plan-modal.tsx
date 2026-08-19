@@ -152,7 +152,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   // Datalists
   const costCenters = useCostCentersList({ limit: 200, offset: 0 });
-  const qcProcesses = useQcProcessesList({ limit: 200, offset: 0 });
+  // Active only. Inactive is how a QC stage is retired without breaking the
+  // documents that already name it (deleting one that is in use is refused by
+  // the server), so an inactive process must not remain pickable for new work.
+  const qcProcesses = useQcProcessesList({ isActive: true, limit: 200, offset: 0 });
   const docPresets = useMemo(() => DOC_PRESETS_FALLBACK, []);
   const defaultOpsQuery = useDefaultRouteOps(plan.itemId);
 

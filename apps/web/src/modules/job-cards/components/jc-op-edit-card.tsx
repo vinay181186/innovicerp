@@ -20,6 +20,7 @@
 // footer either. No logic, no calculation and no API call changed.
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
 import { useState } from 'react';
+import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { OP_STATUS, opAccentColor } from '../lib/jc-op-labels';
 import { QtyTile, SetupField, secLabel } from './jc-op-card-parts';
@@ -193,13 +194,28 @@ export function JcOpEditCard({
             )}
           </div>
 
-          <input
-            className="innovic-input"
-            value={op.operation}
-            placeholder={isQc ? 'QC process name ★' : 'Operation name ★'}
-            onChange={(e) => onChange({ operation: e.target.value })}
-            style={{ fontSize: 12, flex: '1 1 180px', minWidth: 160 }}
-          />
+          {/* A QC step's name is no longer free text — it comes from the QC
+              Process master, the same way the Machine beside it comes from the
+              machine master. Both write the same plain string columns they
+              always did; only the way the value is chosen changed. An in-house
+              operation name stays free text: there is no master for it. */}
+          {isQc ? (
+            <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+              <QcProcessPicker
+                id={`jc-edit-qcproc-${op.id ?? index}`}
+                value={op.operation}
+                onChange={(code) => onChange({ operation: code })}
+              />
+            </div>
+          ) : (
+            <input
+              className="innovic-input"
+              value={op.operation}
+              placeholder="Operation name ★"
+              onChange={(e) => onChange({ operation: e.target.value })}
+              style={{ fontSize: 12, flex: '1 1 180px', minWidth: 160 }}
+            />
+          )}
 
           {isOut ? (
             <span className="tag" style={{ background: 'var(--amber3)', color: 'var(--amber2)' }}>OSP</span>

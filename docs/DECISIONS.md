@@ -6913,3 +6913,59 @@ order stays open until its units are built.
 
 The 7 orders already wrongly closed stay closed. Repairing them is a separate,
 reversible data migration, deliberately not bundled with a behaviour change.
+
+## ADR-133: A QC step is chosen from the QC Process master, and a master row in use cannot be deleted
+
+**Date:** 2026-08-19
+**Status:** Accepted
+
+### Context
+
+Traced from the user's question: *"in editing jc there is qc process, change process is simply input type field"*, then *"my concern is if I want to edit process, there is no link between qc process master."*
+
+There was no link, at any layer:
+
+- **DB** — `jc_ops.operation` is plain `text`. There is **no `qc_process_id` column anywhere** in `schema.ts`; the same holds for `plan_ops` and `route_card_ops`.
+- **API** — `apps/api/src/modules/job-cards/` never referenced `qc_processes`. The only check was non-empty (`service.ts:1118`).
+- **Web** — `jc-op-edit-card.tsx:195` was one plain `<input>` shared by all three op types; for a QC op it only swapped the placeholder to "QC process name ★". `job-cards` never imported `useQcProcessesList`.
+
+The master was built for exactly this. `packages/shared/src/schemas/qc-process.ts` opens with *"Used by Route Cards + Job Cards to populate the QC op dropdowns (legacy `_selQCProcesses` L23516)"* — and the only consumer in the whole web app was `so-planning/components/edit-plan-modal.tsx:155`.
+
+Three findings made this worth closing now rather than later:
+
+1. **The name is already immutable.** `updateQcProcessInputSchema` omits `code`, `updateQcProcess` never writes it, and the form renders the field `readOnly` on edit with the help line "Name cannot be changed after creation." So renaming is impossible and **delete-and-recreate is the only path a name can take** — and delete was completely unguarded (`softDeleteQcProcess` stamped `deleted_at` with no in-use check of any kind).
+2. **The server writes this name itself.** `lib/jc-default-qc.ts` exports `DEFAULT_FINAL_QC_OP = 'DIR'`, appended as a terminal QC op by both `plans/service.ts:895` and `job-cards/service.ts:1107` under ADR-069 Rule B so finished goods credit to stock. Deleting the master's DIR row would leave the system permanently generating a QC step no master row defines.
+3. **One report keys off the raw string.** QC Command's First-Pass Yield groups by `g.operation` (`qc-command/service.ts:229-237`), so "DIR" / "dir" / "D.I.R" would have read as three separate QC stages with three separate yield percentages. `qc-dashboard`, `qc-history` and `so-qc-status` only display the name, so they were never at risk.
+
+Everything else was already safe: all QC quantity logic keys off the `op_type = 'qc'` / `qc_required` **columns**, not the name — accepted/rejected/pending qty, stock credit, QC call flow and dispatch are all unaffected by a wrong name.
+
+**Live data at the time of the change** (queried, not assumed): master held DIR (used by 2 jc_ops + 2 plan_ops), MCR (0), MIR (0); **no stored QC name anywhere was absent from the master**, and **zero QC logs** existed against any QC op. Nothing was orphaned — the cheapest possible moment to close it.
+
+### Decision
+
+**1. The JC QC field is a picker over the master.** New shared `apps/web/src/components/shared/qc-process-picker.tsx` wraps `<SearchableSelect>` over `useQcProcessesList`, offering **active processes only**. Rendered by `jc-op-edit-card.tsx` when `isQc`; the non-QC branch keeps its free-text input, since there is no master for an in-house operation name. One component change covers **both** JC screens — `job-card-form.tsx:653` (New JC) and `jc-status-content.tsx:831` (JC Status edit).
+
+**2. It still stores the NAME, not an id.** The picker resolves name → id to drive the dropdown and maps the picked id back to `code` on the way out. **No schema migration, no payload-shape change** — the saved value is byte-for-byte what the text box produced.
+
+**3. Deleting a QC process in use is refused.** `softDeleteQcProcess` now counts `jc_ops` + `plan_ops` + `route_card_ops` where `op_type = 'qc'` and `operation = code`, scoped by `company_id`, and throws `ConflictError` naming the counts. `DEFAULT_FINAL_QC_OP` is refused unconditionally, because the server keeps writing it regardless of the master.
+
+**4. Inactive actually hides it.** `edit-plan-modal.tsx` now passes `isActive: true`. Inactive is the documented retirement path: it stops the process appearing in pickers while existing documents keep working.
+
+**5. The refusal is visible.** The QC Process master list renders a `role="alert"` banner from `softDelete.error` rather than failing silently.
+
+### Alternatives Considered
+
+- **Add a real `qc_process_id` FK column** — rejected *for now*. It is the only change that removes the problem permanently and lets the database enforce it, but it is a schema migration plus a backfill across three tables, and at 3 master rows and 2 ops in use the guard above buys the same safety today. Revisit when QC processes multiply.
+- **Unlock renaming the process name** — rejected. Without the FK, a rename must also rewrite `jc_ops` / `plan_ops` / `route_card_ops` **and** the hardcoded `DEFAULT_FINAL_QC_OP`. Unlocking it alone is precisely what would split QC history. The immutability stays until the FK exists.
+- **A plain `<select>`, matching `edit-plan-modal`** — rejected. `SearchableSelect` is this repo's one dropdown (`dropdown` skill: one component, one behaviour), and it sits directly beside the Machine picker in the same card, which is already a `SearchableSelect`.
+- **Blocking free text with a hard `<select>`** — rejected as the *display* rule. `valueLabel` keeps an unrecognised stored name on screen, so a document holding an older or now-inactive name never silently reads as blank. It cannot be typed over: `SearchableSelect` only clears a selection it actually resolved.
+- **Extending the in-use guard to every master** — deliberately out of scope. **No master in this repo guards delete by usage** — Machines, Cost Centers, Vendors, Items and Operators were all checked and all only block duplicate codes on create. That is a house-wide gap and its own task.
+
+### Consequences
+
+- **Positive:** a QC step on a Job Card can no longer be a typo or a spelling variant; FPY-by-operation cannot silently split; a master row that documents depend on cannot vanish; the master finally does the job its own schema comment claimed.
+- **Positive:** no migration, no payload change, no change to any QC quantity, stock or dispatch path.
+- **Negative / workflow change:** a QC op can no longer be given an ad-hoc name — the process must exist in the master first. This is the intent, but it is a real change for whoever creates job cards.
+- **Negative:** `jc-op-edit-card.tsx` grows 498 → 512 lines, further over the 400-line rule. Not split here; the branch added is small and splitting the card is its own task.
+- **Risk:** a document holding a QC name that is inactive or absent from the master keeps that text and shows it, but the picker cannot resolve it — the user must pick a replacement to change it. Live data shows **zero such rows** today.
+- **Not addressed:** Route Cards (`route-card-form.tsx:527`) still has the identical free-text QC box, and `DEFAULT_FINAL_QC_OP` remains a hardcoded string rather than a master lookup.

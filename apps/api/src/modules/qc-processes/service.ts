@@ -1,8 +1,9 @@
-import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { qcProcesses } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
+import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
 import type {
   CreateQcProcessInput,
   ListQcProcessesQuery,
@@ -142,16 +143,74 @@ export async function updateQcProcess(
   });
 }
 
+// Deleting a QC process is guarded, because nothing else links the master to the
+// documents that use it. A QC step is stored as the free-text `operation` column
+// on jc_ops / plan_ops / route_card_ops — there is no `qc_process_id` FK, so the
+// database cannot refuse the delete on our behalf. Removing a row that is in use
+// leaves those documents holding a name the master can no longer explain, and
+// makes the name unpickable for anything new.
+//
+// The name itself is already immutable (updateQcProcess never writes `code`), so
+// delete-and-recreate is the only way a name can change — which is exactly the
+// path this guard has to cover.
 export async function softDeleteQcProcess(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
-      .select({ id: qcProcesses.id })
+      .select({ id: qcProcesses.id, code: qcProcesses.code })
       .from(qcProcesses)
       .where(and(eq(qcProcesses.id, id), isNull(qcProcesses.deletedAt)))
       .limit(1);
-    if (existing.length === 0) throw new NotFoundError(`QC process ${id} not found`);
+    const row = existing[0];
+    if (!row) throw new NotFoundError(`QC process ${id} not found`);
+
+    // The server itself writes this name. ADR-069 Rule B appends a terminal QC
+    // op called DIR to every JC that would otherwise never credit finished
+    // stock (lib/jc-default-qc.ts). That happens whether or not the master
+    // still has the row, so deleting it would put the system in the permanent
+    // position of generating a QC step whose name nothing defines.
+    if (row.code === DEFAULT_FINAL_QC_OP) {
+      throw new ConflictError(
+        `"${row.code}" cannot be deleted — the system adds it automatically as the final QC step on job cards that need one (ADR-069). Set it to Inactive instead.`,
+      );
+    }
+
+    // Counted per company. All three tables carry company_id, and a QC process
+    // name is unique per company, so a same-named row in another company must
+    // not hold this one hostage.
+    const used = await tx.execute(sql`
+      SELECT
+        (SELECT count(*) FROM jc_ops
+          WHERE company_id = ${companyId}::uuid AND op_type = 'qc' AND operation = ${row.code})::int
+          AS "jcOps",
+        (SELECT count(*) FROM plan_ops
+          WHERE company_id = ${companyId}::uuid AND op_type = 'qc' AND operation = ${row.code})::int
+          AS "planOps",
+        (SELECT count(*) FROM route_card_ops
+          WHERE company_id = ${companyId}::uuid AND op_type = 'qc' AND operation = ${row.code})::int
+          AS "routeCardOps"
+    `);
+    const counts = (used as unknown as Record<string, number>[])[0];
+    const jcOpsUsed = Number(counts?.['jcOps'] ?? 0);
+    const planOpsUsed = Number(counts?.['planOps'] ?? 0);
+    const routeCardOpsUsed = Number(counts?.['routeCardOps'] ?? 0);
+    const total = jcOpsUsed + planOpsUsed + routeCardOpsUsed;
+    if (total > 0) {
+      const where = [
+        jcOpsUsed > 0 ? `${jcOpsUsed} job card op${jcOpsUsed === 1 ? '' : 's'}` : null,
+        planOpsUsed > 0 ? `${planOpsUsed} plan op${planOpsUsed === 1 ? '' : 's'}` : null,
+        routeCardOpsUsed > 0
+          ? `${routeCardOpsUsed} route card op${routeCardOpsUsed === 1 ? '' : 's'}`
+          : null,
+      ]
+        .filter((s): s is string => s !== null)
+        .join(', ');
+      throw new ConflictError(
+        `QC process "${row.code}" is in use by ${where} and cannot be deleted. Set it to Inactive instead — it will stop appearing in the pickers while the existing documents keep working.`,
+      );
+    }
+
     await tx
       .update(qcProcesses)
       .set({ deletedAt: new Date(), updatedBy: user.id })
