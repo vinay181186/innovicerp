@@ -295,18 +295,19 @@ export function JobCardForm({
       return next;
     });
   };
-  const addOp = (qc = false): void => {
+  const addOp = (kind: 'process' | 'qc' | 'outsource' = 'process'): void => {
     setOps((prev) => [
       ...prev,
       {
+        // OSP ops have no machine (T32b); a QC op parks on the QC lane.
         machineCode: '',
         operation: '',
-        opType: qc ? 'qc' : 'process',
+        opType: kind,
         cycleTimeMin: 0,
         program: '',
         toolNo: '',
         toolDetails: '',
-        qcRequired: qc,
+        qcRequired: kind === 'qc',
         outsourceVendorCode: '',
         outsourceCost: 0,
         hasStarted: false,
@@ -629,24 +630,32 @@ export function JobCardForm({
               {opCount} op{opCount !== 1 ? 's' : ''}
               {qcCount > 0 ? ` + ${qcCount} QC` : ''}
             </span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp(false)}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => addOp('process')}>
               + Add Op
             </button>
             <button
               type="button"
               className="btn btn-sm"
               style={{ color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)' }}
-              onClick={() => addOp(true)}
+              onClick={() => addOp('qc')}
             >
               + Add QC Op
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              style={{ color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.4)' }}
+              onClick={() => addOp('outsource')}
+            >
+              + Add OSP Op
             </button>
           </div>
         </div>
         <div className="panel-body">
           {ops.length === 0 ? (
             <div className="empty-state">
-              No operations yet — click “+ Add Op” for machining steps or “+ Add QC Op” for QC
-              inspection steps.
+              No operations yet — click “+ Add Op” for machining steps, “+ Add QC Op” for QC
+              inspection steps, or “+ Add OSP Op” for outsourced (vendor) steps.
             </div>
           ) : (
             ops.map((o, i) => (
