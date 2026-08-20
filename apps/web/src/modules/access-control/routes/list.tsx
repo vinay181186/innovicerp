@@ -1,28 +1,41 @@
 // Access Control matrix list — admin-only.
 //
 // Mirror of legacy `renderAccessControl` (HTML L13861): one row per user
-// with role select + Departments count + Forms count + Configure button.
-// Inline role-change → PATCH /users/:id (legacy `_changeUserRole`).
+// with Tiers + Departments count + Forms count + Configure button.
 // Configure → modal (ConfigureAccessModal) → PUT /access-control/users/:id.
 //
-// 0100 adds the "Tiers by department" column — the row's headline. The
+// 0100 added the "Tiers by department" column — the row's headline. The
 // counts alone ("3/9 departments") never said what the person could DO in
 // those departments, which was the whole complaint the tier model answers.
+//
+// The inline role dropdown that used to sit on each row is gone. Role now
+// lives in exactly ONE control, inside Configure, next to the tiers it caps
+// and next to the warning that fires when a tier outruns it. Two controls for
+// one value on the same screen is the duplication this screen was cleaning up
+// in User Management; keeping it here would have been the same mistake.
+//
+// `?configure=<userId>` opens that user's box straight away, so creating a
+// user in User Management lands here mid-flow instead of asking the admin to
+// find the row again.
 
-import type { UserAccessListItem, UserRole } from '@innovic/shared';
-import { USER_ROLES } from '@innovic/shared';
+import type { UserAccessListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Lock } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useUpdateUser } from '@/modules/users/api';
 import { useUserAccessList } from '../api';
 import { ConfigureAccessModal } from '../components/configure-modal';
+
+const accessControlSearchSchema = z.object({
+  configure: z.string().uuid().optional(),
+});
 
 export const accessControlListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'access-control',
+  validateSearch: accessControlSearchSchema,
   component: AccessControlListPage,
 });
 
@@ -36,9 +49,28 @@ function roleBadgeClass(role: string): string {
 
 function AccessControlListPage(): React.JSX.Element {
   const { data: me } = useSession();
+  const navigate = accessControlListRoute.useNavigate();
+  const { configure } = accessControlListRoute.useSearch();
   const isAdmin = me?.role === 'admin';
   const { data, isLoading, isError, error } = useUserAccessList();
   const [editing, setEditing] = useState<UserAccessListItem | null>(null);
+
+  // Arriving from "create user" with ?configure=<id>: open that row's box as
+  // soon as the list resolves, so the two screens read as one action. The
+  // param is cleared on close so a back-navigation doesn't reopen it.
+  const items = data?.items;
+  useEffect(() => {
+    if (!configure || !items) return;
+    const hit = items.find((u) => u.userId === configure);
+    if (hit) setEditing(hit);
+  }, [configure, items]);
+
+  const closeModal = (): void => {
+    setEditing(null);
+    if (configure) {
+      void navigate({ search: () => ({}), replace: true });
+    }
+  };
 
   if (!isAdmin) {
     return (
@@ -67,8 +99,8 @@ function AccessControlListPage(): React.JSX.Element {
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
             A tier (L1–L5) per department, plus form-level View / Entry / Edit / Approve extras.
-            L6 Super Admin and L7 Auditor are whole-account levels. New users start unconfigured
-            (the matrix is opt-in until you save).
+            L6 Super Admin and L7 Auditor are whole-account levels. This is also where a user's
+            role and PO approval limit are set — User Management only handles who they are.
           </div>
         </div>
       </div>
@@ -125,6 +157,11 @@ function AccessControlListPage(): React.JSX.Element {
         accept at all; the tier decides how much of that this person actually gets. A tier above
         what the role allows is flagged in the Configure box and simply has no effect.
         <br />
+        <b>An empty matrix now denies.</b> A user with no tier saved sees nothing at all —
+        it used to mean "allow everything until configured", which left the person nobody had
+        set up with more access than the person you had. Admins always bypass, so you can never
+        lock yourself out.
+        <br />
         Server-side enforcement is live for <b>Approve</b> (Purchase Orders and Purchase
         Requests). The other modules still gate writes on the role alone — extending the matrix to
         them is the follow-up sweep (ADR-035).
@@ -134,8 +171,7 @@ function AccessControlListPage(): React.JSX.Element {
         <ConfigureAccessModal
           userId={editing.userId}
           userName={editing.userName ?? editing.userEmail}
-          userRole={editing.role as UserRole}
-          onClose={() => setEditing(null)}
+          onClose={closeModal}
         />
       ) : null}
     </div>
@@ -149,33 +185,11 @@ function UserAccessRow({
   u: UserAccessListItem;
   onConfigure: () => void;
 }): React.JSX.Element {
-  const updateUser = useUpdateUser(u.userId);
-  const [role, setRole] = useState<UserRole>(u.role as UserRole);
-
-  function onRoleChange(next: UserRole): void {
-    if (next === role) return;
-    setRole(next);
-    updateUser.mutate({ role: next });
-  }
-
   return (
     <tr>
       <td className="fw-700">{u.userName ?? u.userEmail}</td>
       <td>
-        <select
-          className="innovic-select"
-          value={role}
-          onChange={(e) => onRoleChange(e.target.value as UserRole)}
-          disabled={updateUser.isPending}
-          style={{ fontSize: 11, fontWeight: 700, padding: '3px 6px' }}
-        >
-          {USER_ROLES.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>{' '}
-        <span className={`badge ${roleBadgeClass(role)}`}>{role}</span>
+        <span className={`badge ${roleBadgeClass(u.role)}`}>{u.role}</span>
       </td>
       <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (
@@ -187,8 +201,8 @@ function UserAccessRow({
         ) : u.tierSummary ? (
           u.tierSummary
         ) : (
-          <span className="text3">
-            Unconfigured — sees every menu until you save a tier
+          <span style={{ color: 'var(--red)', fontWeight: 600 }}>
+            Not configured — this person can see nothing. Click Configure.
           </span>
         )}
       </td>

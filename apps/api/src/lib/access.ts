@@ -26,6 +26,7 @@ import {
   type AccessFormKey,
   ACCESS_FORMS,
   effectiveFormPerms,
+  isUnconfigured,
 } from '@innovic/shared';
 import type { AuthContext } from '../db/with-user-context';
 import { getMyAccess } from '../modules/access-control/service';
@@ -49,9 +50,10 @@ function formLabel(formKey: AccessFormKey): string {
  * dashboard already apply, so the matrix can never lock the one role that
  * has to be able to repair it.
  *
- * A user with no matrix row (or an entirely empty one) also passes: that is
- * the documented day-one rollout state, and it is the shared
- * `isUnconfigured` rule, applied here rather than re-implemented.
+ * A user with no matrix row (or an entirely empty one) is DENIED. That flipped
+ * with the User Management split: an unconfigured account used to be allowed
+ * through as a rollout convenience, which meant the person nobody had set up
+ * yet had more access than the person who had been given two departments.
  */
 export async function requireFormAccess(
   user: AuthContext,
@@ -62,6 +64,16 @@ export async function requireFormAccess(
 
   const eff = await getMyAccess(user);
   if (effectiveFormPerms(eff, formKey)[action]) return;
+
+  // An account with nothing configured at all gets the reason, not a
+  // per-form riddle — "you can't approve POs" reads like a missing tick when
+  // the truth is that no one has set this person up yet.
+  if (isUnconfigured(eff)) {
+    throw new AuthorizationError(
+      'Your account has no access configured yet. Ask an admin to set your ' +
+        'department tiers in Access Control.',
+    );
+  }
 
   throw new AuthorizationError(
     `Your access does not let you ${ACTION_VERB[action]} ${formLabel(formKey)}. ` +

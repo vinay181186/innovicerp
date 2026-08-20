@@ -1,9 +1,15 @@
 // Add User — admin-only. Creates the Supabase Auth account (admin sets the
 // initial password) and provisions the public.users row into the admin's
-// company. Mirror of legacy renderUsers "+ Add User" (_addUserFull). Access
-// matrix + PO-approver flag stay on their own screens, same split as legacy.
+// company. Mirror of legacy renderUsers "+ Add User" (_addUserFull).
+//
+// This screen is IDENTITY only: who they are, how they sign in, whether the
+// account is live. Role, department tiers and the PO approval limit all moved
+// to Access Control — they are the same decision and were being asked in two
+// places. Every new user is created as `viewer`, which can save nothing, and
+// the admin is taken straight to that user's Access Control box to grant what
+// they actually need.
 
-import { USER_ROLES, type CreateUserInput, type UserRole } from '@innovic/shared';
+import type { CreateUserInput } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -11,7 +17,6 @@ import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateUser } from '../api';
-import { RoleCeilingHelp } from '../components/role-ceiling-help';
 
 export const userCreateRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,10 +28,8 @@ interface FormValues {
   email: string;
   password: string;
   fullName: string;
-  role: UserRole;
   phone: string;
   isActive: boolean;
-  approvalLimit: string;
 }
 
 function UserCreatePage(): React.JSX.Element {
@@ -36,18 +39,15 @@ function UserCreatePage(): React.JSX.Element {
   const create = useCreateUser();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, watch, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     defaultValues: {
       email: '',
       password: '',
       fullName: '',
-      role: 'viewer',
       phone: '',
       isActive: true,
-      approvalLimit: '',
     },
   });
-  const role = watch('role');
 
   if (!isAdmin) {
     return (
@@ -61,20 +61,24 @@ function UserCreatePage(): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    const trimmedLimit = values.approvalLimit.trim();
-    const approvalLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
     const payload: CreateUserInput = {
       email: values.email.trim().toLowerCase(),
       password: values.password,
       fullName: values.fullName.trim(),
-      role: values.role,
+      // Always the lowest role. It grants nothing anywhere, so a user who is
+      // created and then forgotten cannot save a thing — the safe direction to
+      // fail. Access Control is where they get real rights.
+      role: 'viewer',
       phone: values.phone.trim() || undefined,
       isActive: values.isActive,
-      approvalLimit: Number.isNaN(approvalLimit) ? null : approvalLimit,
+      approvalLimit: null,
     };
     try {
       const created = await create.mutateAsync(payload);
-      void navigate({ to: '/users/$id/edit', params: { id: created.id } });
+      // Straight into that user's Access Control box. Creating an account and
+      // granting it access is one job; making the admin navigate and find the
+      // row again is how people end up with unconfigured users.
+      void navigate({ to: '/access-control', search: { configure: created.id } });
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Failed to create user.');
     }
@@ -100,16 +104,17 @@ function UserCreatePage(): React.JSX.Element {
                 so the tip must not promise them here (ISSUE-021, same rewording as the list). */}
             <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
               Creates the login + the app account in one step. Hand the email and password to the
-              user — they can sign in immediately. Department / form access is set on{' '}
-              <b>Access Control</b>.
+              user — they can sign in immediately. The account starts with <b>no access at all</b>;
+              you'll land on <b>Access Control</b> next to set their role and department tiers.
             </div>
           </div>
         </div>
         <div className="panel-body">
           <form onSubmit={handleSubmit(onValid)}>
-            {/* Field order mirrors legacy BASIC INFO (L13484-13495): Name, Role, Email —
-                then this port's own fields (password, phone, status), then legacy's
-                APPROVAL RIGHTS limit (L13538) last. Legacy's PIN (backup) has no port. */}
+            {/* Legacy BASIC INFO (L13484-13495) put Role between Name and Email and the
+                APPROVAL RIGHTS limit (L13538) last. Both are gone from this form — they are
+                access decisions and live on Access Control. What is left is identity:
+                Name, Email, password, phone, status. Legacy's PIN (backup) has no port. */}
             <div className="form-grid">
               <div className="form-grp">
                 <label className="form-label" htmlFor="fullName">
@@ -128,23 +133,6 @@ function UserCreatePage(): React.JSX.Element {
                 {formState.errors.fullName ? (
                   <div className="form-error">{formState.errors.fullName.message}</div>
                 ) : null}
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="role">
-                  Role<span className="req">★</span>
-                </label>
-                {/* Legacy's own <select> (L13486-13492) lists admin/manager/sr_engineer/
-                    engineer/jn_engineer/operator/viewer — a set that does not map to ours.
-                    Porting it would drop qc/procurement/dispatch/design and silently rewrite
-                    those users' roles on save (ISSUE-104). Our USER_ROLES stays. */}
-                <select id="role" className="innovic-select fw-700" {...register('role')}>
-                  {USER_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-                <RoleCeilingHelp role={role} />
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="email">
@@ -216,27 +204,6 @@ function UserCreatePage(): React.JSX.Element {
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="approvalLimit">
-                  Approval Limit (₹)
-                </label>
-                <input
-                  id="approvalLimit"
-                  className="innovic-input"
-                  type="number"
-                  min={0}
-                  step={1000}
-                  autoComplete="off"
-                  placeholder="e.g. 100000"
-                  disabled={role === 'admin'}
-                  {...register('approvalLimit')}
-                />
-                <div className="form-help">
-                  {role === 'admin'
-                    ? 'Admin has unlimited approval.'
-                    : 'PO above this amount will need higher authority approval. Blank = use company manager limit.'}
-                </div>
               </div>
             </div>
 

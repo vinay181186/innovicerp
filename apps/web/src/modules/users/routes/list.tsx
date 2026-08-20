@@ -6,6 +6,11 @@
 // not be answered from either one alone: the role says what the database
 // will accept, the tier says how much of that they are given. Both belong
 // on the row.
+//
+// Role is shown here but NOT editable — it moved to Access Control along with
+// the department tiers and the approval limit. Showing it still earns its
+// place ("who are my managers?" without leaving the screen); editing it here
+// is what made the same decision answerable in two contradictory places.
 
 import { USER_ROLES, maxTierForRole, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -167,10 +172,10 @@ function UsersListPage(): React.JSX.Element {
             <span style={{ fontSize: 10 }}>{a.tierSummary}</span>
           ) : (
             <span
-              style={{ color: 'var(--amber)', fontSize: 10 }}
-              title="No tier set — this person currently sees every menu."
+              style={{ color: 'var(--red)', fontSize: 10, fontWeight: 600 }}
+              title="No tier set — this person can see nothing until you configure them."
             >
-              Unconfigured
+              No access
             </span>
           );
         },
@@ -240,9 +245,10 @@ function UsersListPage(): React.JSX.Element {
             </Link>
             <Link
               to="/access-control"
+              search={{ configure: row.original.id }}
               className="btn btn-ghost btn-sm"
               style={{ fontSize: 11 }}
-              title="Set this person's tier per department"
+              title="Set this person's role, tiers and approval limit"
             >
               <Lock size={13} /> Access
             </Link>

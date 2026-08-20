@@ -192,18 +192,22 @@ export function pruneFormsMap(m: AccessFormsMap): AccessFormsMap {
 // Behavior on the load states:
 //   - `eff` null/undefined         ⇒ deny (still loading, fail closed)
 //   - `eff.fullAccess === true`    ⇒ allow (L6)
-//   - `eff` unconfigured           ⇒ allow (smooth day-one rollout — see note)
+//   - `eff` unconfigured           ⇒ DENY (see note)
 //   - otherwise                    ⇒ tier for the form's dept, plus any
 //                                    explicit per-form grants, plus the
 //                                    L7 auditor read-everything flag
 //
 // "Unconfigured" = no full_access, no auditor, no dept grants and no form
-// grants. That is the backfill state for every non-admin user the day the
-// matrix ships. We allow them through so the matrix is opt-in for the admin
-// to start using. As soon as the admin saves ANY change for a user (even
-// granting one dept), that user moves into strict-mode gating. See
-// docs/PARITY/access-control.md §10 DELTA #6 + the build-first-audit-later
-// rollout discipline.
+// grants. It used to mean ALLOW-ALL: the matrix shipped as opt-in, so every
+// non-admin backfilled with an empty row had to keep working until an admin
+// got round to configuring them (docs/PARITY/access-control.md §10 DELTA #6).
+//
+// That rollout is over, and the rule had inverted itself. Once role moved out
+// of User Management, a newly created user was active immediately with no
+// access row — so the person nobody had configured yet saw MORE of the ERP
+// than the person who had been given two departments. An empty matrix now
+// denies. Admins still bypass everything (both in the sidebar and in
+// requireFormAccess), so an admin can always configure their way out.
 export function isUnconfigured(eff: EffectiveAccess): boolean {
   return (
     !eff.fullAccess &&
@@ -230,7 +234,7 @@ export function effectiveFormPerms(
   formKey: AccessFormKey,
 ): AccessFormPerms {
   if (!eff) return { ...NO_PERMS };
-  if (eff.fullAccess || isUnconfigured(eff)) return { ...ALL_PERMS };
+  if (eff.fullAccess) return { ...ALL_PERMS };
 
   const form = ACCESS_FORMS.find((f) => f.key === formKey);
   const tierKey = form ? normalizeDeptsMap(eff.departments)[form.dept] : undefined;
@@ -278,6 +282,6 @@ export function hasDeptAccess(
   dept: AccessDeptKey,
 ): boolean {
   if (!eff) return false;
-  if (eff.fullAccess || eff.auditor || isUnconfigured(eff)) return true;
+  if (eff.fullAccess || eff.auditor) return true;
   return normalizeDeptsMap(eff.departments)[dept] !== undefined;
 }

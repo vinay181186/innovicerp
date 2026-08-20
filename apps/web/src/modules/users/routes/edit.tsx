@@ -1,16 +1,29 @@
-// User edit — admin-only. Rename / change role / phone / activate-deactivate /
-// soft-delete. Self-demote + self-deactivate + self-delete are blocked client
+// User edit — admin-only. Rename / phone / activate-deactivate / reset
+// password / soft-delete. Self-deactivate + self-delete are blocked client
 // + server.
+//
+// Role and the PO approval limit are NOT here any more — both moved to Access
+// Control, which is where department tiers already lived. They are one
+// decision ("what may this person do?") and asking it on two screens meant
+// neither screen could answer it. The row still SHOWS the role on the user
+// list; it just isn't editable from this side.
 
-import { USER_ROLES, type UpdateUserInput, type UserRole } from '@innovic/shared';
+import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, KeyRound, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Lock, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
-import { RoleCeilingHelp } from '../components/role-ceiling-help';
+
+function roleBadgeClass(role: string): string {
+  if (role === 'admin') return 'b-red';
+  if (role === 'manager') return 'b-blue';
+  if (role === 'operator') return 'b-amber';
+  if (role === 'qc') return 'b-cyan';
+  return 'b-grey';
+}
 
 export const userEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -20,10 +33,8 @@ export const userEditRoute = createRoute({
 
 interface FormValues {
   fullName: string;
-  role: UserRole;
   phone: string;
   isActive: boolean;
-  approvalLimit: string;
 }
 
 function UserEditPage(): React.JSX.Element {
@@ -40,16 +51,14 @@ function UserEditPage(): React.JSX.Element {
   const [newPassword, setNewPassword] = useState('');
   const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  const { register, handleSubmit, formState, watch } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     values: detail
       ? {
           fullName: detail.fullName ?? '',
-          role: detail.role,
           phone: detail.phone ?? '',
           isActive: detail.isActive,
-          approvalLimit: detail.approvalLimit ?? '',
         }
-      : { fullName: '', role: 'viewer', phone: '', isActive: true, approvalLimit: '' },
+      : { fullName: '', phone: '', isActive: true },
   });
 
   if (!isAdmin) {
@@ -87,20 +96,18 @@ function UserEditPage(): React.JSX.Element {
   }
 
   const isSelf = me?.id === detail.id;
-  const role = watch('role');
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    // Empty field clears the personal limit (→ null); otherwise parse the
-    // number. A blank-after-set is meaningful, so we always send the key.
-    const trimmedLimit = values.approvalLimit.trim();
-    const approvalLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
+    // `role` and `approvalLimit` are deliberately absent from the payload, not
+    // sent as their current values: both keys are optional on the API, so
+    // omitting them leaves whatever Access Control last set. Sending a stale
+    // copy from this form would let the identity screen silently overwrite an
+    // access decision made elsewhere.
     const payload: UpdateUserInput = {
       fullName: values.fullName.trim() || undefined,
-      role: values.role,
       phone: values.phone.trim() || undefined,
       isActive: values.isActive,
-      approvalLimit: Number.isNaN(approvalLimit) ? null : approvalLimit,
     };
     try {
       await update.mutateAsync(payload);
@@ -234,24 +241,6 @@ function UserEditPage(): React.JSX.Element {
                 />
               </div>
               <div className="form-grp">
-                <label className="form-label" htmlFor="role">
-                  Role<span className="req">★</span>
-                </label>
-                {/* Legacy's own <select> (L13486-13492) lists admin/manager/sr_engineer/
-                    engineer/jn_engineer/operator/viewer — a set that does not map to ours.
-                    Porting it would drop qc/procurement/dispatch/design and silently rewrite
-                    those users' roles on save (ISSUE-104). Our USER_ROLES stays. */}
-                <select id="role" className="innovic-select fw-700" {...register('role')}>
-                  {USER_ROLES.map((r) => (
-                    <option key={r} value={r} disabled={isSelf && r !== 'admin'}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-                {isSelf ? <div className="form-help">Cannot demote yourself.</div> : null}
-                <RoleCeilingHelp role={role} />
-              </div>
-              <div className="form-grp">
                 <label className="form-label" htmlFor="email">
                   Email
                 </label>
@@ -286,24 +275,15 @@ function UserEditPage(): React.JSX.Element {
                 {isSelf ? <div className="form-help">Cannot deactivate yourself.</div> : null}
               </div>
               <div className="form-grp">
-                <label className="form-label" htmlFor="approvalLimit">
-                  Approval Limit (₹)
-                </label>
-                <input
-                  id="approvalLimit"
-                  className="innovic-input"
-                  type="number"
-                  min={0}
-                  step={1000}
-                  autoComplete="off"
-                  placeholder="e.g. 100000"
-                  disabled={detail.role === 'admin'}
-                  {...register('approvalLimit')}
-                />
+                <label className="form-label">Role &amp; access</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                  <span className={`badge ${roleBadgeClass(detail.role)}`}>{detail.role}</span>
+                  <Link to="/access-control" search={{ configure: detail.id }} className="btn btn-ghost btn-sm">
+                    <Lock size={13} /> Change in Access Control
+                  </Link>
+                </div>
                 <div className="form-help">
-                  {detail.role === 'admin'
-                    ? 'Admin has unlimited approval.'
-                    : 'PO above this amount will need higher authority approval. Blank = use company manager limit.'}
+                  Role, department tiers and the PO approval limit are all set there.
                 </div>
               </div>
             </div>

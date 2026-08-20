@@ -1,7 +1,13 @@
 // Configure-access modal — per-user permissions editor.
 //
+// This is now the ONLY place a user's role and PO approval limit are set.
+// Both left User Management, which handles identity (name, email, password,
+// phone, active) and nothing else. Role and limit are access decisions, and
+// splitting them across two screens meant "what can this person do?" had two
+// half-answers and no whole one.
+//
 // Rebuilt for the (Tier + Department) model (0100). Structure:
-//  - Header strip: user name + role select (inline edit)
+//  - Header strip: user name + role select + PO approval limit
 //  - Access level: Standard / L6 Super Admin / L7 Auditor
 //  - Department tiers: one tier dropdown per department (L1…L5, or none)
 //  - Form/Feature table (39 rows × View/Entry/Edit/Approve) — EXTRAS on top
@@ -32,13 +38,13 @@ import {
 } from '@innovic/shared';
 import { ClipboardPaste, Copy, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useUpdateUser } from '@/modules/users/api';
+import { useUpdateUser, useUser } from '@/modules/users/api';
+import { RoleCeilingHelp } from '@/modules/users/components/role-ceiling-help';
 import { useSaveUserAccess, useUserAccess } from '../api';
 
 interface Props {
   userId: string;
   userName: string;
-  userRole: UserRole;
   onClose: () => void;
 }
 
@@ -55,17 +61,17 @@ const ACTION_COLOR: Record<Action, string> = {
   approve: 'var(--purple)',
 };
 
-export function ConfigureAccessModal({
-  userId,
-  userName,
-  userRole: initialRole,
-  onClose,
-}: Props): React.JSX.Element {
+export function ConfigureAccessModal({ userId, userName, onClose }: Props): React.JSX.Element {
   const { data, isLoading, isError, error } = useUserAccess(userId);
+  // Role + approval limit live on the user record, not the matrix row, so the
+  // box loads both and saves both. Reading them here rather than taking them
+  // as props keeps the modal correct after an inline edit elsewhere.
+  const { data: userDetail } = useUser(userId);
   const save = useSaveUserAccess();
   const updateUser = useUpdateUser(userId);
 
-  const [role, setRole] = useState<UserRole>(initialRole);
+  const [role, setRole] = useState<UserRole>('viewer');
+  const [approvalLimit, setApprovalLimit] = useState('');
   const [fullAccess, setFullAccess] = useState(false);
   const [auditor, setAuditor] = useState(false);
   const [departments, setDepartments] = useState<DeptTiers>({});
@@ -78,6 +84,13 @@ export function ConfigureAccessModal({
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [copyFlash, setCopyFlash] = useState(false);
+
+  // Seed role + limit once the user record resolves.
+  useEffect(() => {
+    if (!userDetail) return;
+    setRole(userDetail.role);
+    setApprovalLimit(userDetail.approvalLimit ?? '');
+  }, [userDetail]);
 
   // Seed once when the matrix loads. The server already normalises pre-0100
   // boolean dept values to a tier key, so nothing legacy reaches this state.
@@ -191,8 +204,18 @@ export function ConfigureAccessModal({
   async function onSave(): Promise<void> {
     setSubmitError(null);
     try {
-      if (role !== initialRole) {
-        await updateUser.mutateAsync({ role });
+      // Role + limit go FIRST (legacy L13996 ordering). If the role change is
+      // refused — self-demotion is — the matrix is left untouched rather than
+      // saved against a role that never moved.
+      const trimmedLimit = approvalLimit.trim();
+      const parsedLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
+      const roleChanged = userDetail ? role !== userDetail.role : false;
+      const limitChanged = userDetail ? trimmedLimit !== (userDetail.approvalLimit ?? '') : false;
+      if (roleChanged || limitChanged) {
+        await updateUser.mutateAsync({
+          role,
+          approvalLimit: parsedLimit !== null && Number.isNaN(parsedLimit) ? null : parsedLimit,
+        });
       }
       await save.mutateAsync({
         userId,
@@ -274,31 +297,61 @@ export function ConfigureAccessModal({
                 flexWrap: 'wrap',
               }}
             >
-              <div>
-                <b style={{ fontSize: 14 }}>{userName}</b>{' '}
-                <span className="text3">({initialRole})</span>
+              <div style={{ minWidth: 220, flex: 1 }}>
+                <b style={{ fontSize: 14 }}>{userName}</b>
                 <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
                   Role is the ceiling — it decides what the database will accept. Tier decides
                   how much of that ceiling this person actually gets. Highest tier this role can
                   deliver: <b>{maxTierForRole(role)}</b>.
                 </div>
+                <RoleCeilingHelp role={role} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="text3" style={{ fontSize: 11 }}>
-                  Role:
-                </span>
-                <select
-                  className="innovic-select"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  style={{ fontSize: 12, fontWeight: 700 }}
-                >
-                  {USER_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                <div className="form-grp" style={{ margin: 0 }}>
+                  <label className="form-label" htmlFor="cfg-role" style={{ fontSize: 11 }}>
+                    Role
+                  </label>
+                  <select
+                    id="cfg-role"
+                    className="innovic-select"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as UserRole)}
+                    style={{ fontSize: 12, fontWeight: 700 }}
+                  >
+                    {USER_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* Moved here from User Management: the PO approval ceiling is
+                    an approval right, and approval is an Access Control action
+                    now. Leaving it on the identity screen split one decision
+                    across two places. */}
+                <div className="form-grp" style={{ margin: 0, width: 170 }}>
+                  <label className="form-label" htmlFor="cfg-limit" style={{ fontSize: 11 }}>
+                    PO approval limit (₹)
+                  </label>
+                  <input
+                    id="cfg-limit"
+                    className="innovic-input"
+                    type="number"
+                    min={0}
+                    step={1000}
+                    autoComplete="off"
+                    placeholder="e.g. 100000"
+                    disabled={role === 'admin'}
+                    value={approvalLimit}
+                    onChange={(e) => setApprovalLimit(e.target.value)}
+                    style={{ fontSize: 12 }}
+                  />
+                  <div className="form-help" style={{ fontSize: 10 }}>
+                    {role === 'admin'
+                      ? 'Admin approves any amount.'
+                      : 'Blank = use the company limit from System Settings → Approvals.'}
+                  </div>
+                </div>
               </div>
             </div>
 

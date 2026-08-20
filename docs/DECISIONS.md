@@ -7046,3 +7046,53 @@ Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 opera
 - **Negative:** editing an approved PO's rates now requires rejecting it back to draft — a real workflow change for whoever raises POs, and the intended one.
 - **Risk:** the migration must land **before** the API deploy — the service selects `user_access.auditor`. Both backfill expressions were dry-run as SELECTs against production first.
 - **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are now *labelled* read-only in the UI but still exist in the dropdown. Retiring or wiring them is a separate decision. Price access is still not a flag anywhere — that is its own piece of work.
+
+## ADR-135: Role leaves User Management; an unconfigured account is denied, not allowed
+
+**Date:** 2026-08-20
+**Status:** Accepted
+
+### Context
+
+ADR-134 made Access Control the place where a person's rights are described — a tier per department, an Approve action, L6/L7 whole-account levels. It did not remove the *other* places the same question was being answered, and an audit of the Role field found four:
+
+- Access Control → list, inline role dropdown (`list.tsx:167`)
+- Access Control → Configure, role select (`configure-modal.tsx:296`)
+- User Management → Edit (`edit.tsx:245`)
+- User Management → Create (`create.tsx:140`)
+
+So role already had two homes in Access Control and two more in User Management. The **PO approval limit** — read by `purchase-orders/service.ts:1099` as the per-user approval ceiling — sat on the User Management forms as well, which meant "who can approve a PO, and up to how much?" was spread across three screens: the approvers list (System Settings → Approvals), the ceiling (User Management), and the Approve tier (Access Control).
+
+Removing the field from User Management exposed a second problem, and it is the more serious one. `createUserInputSchema.role` is required, so a create form without the field has to send something; `viewer` is the obvious answer — it is already the form default, the column default and what the Supabase signup trigger seeds. But a newly created user is **active immediately** and has **no `user_access` row**, and an empty matrix meant *unconfigured ⇒ allow everything* (docs/PARITY/access-control.md §10 DELTA #6). The person nobody had set up yet would therefore see **more** of the ERP than the person who had deliberately been given two departments. The rule had inverted itself.
+
+That allow-all was a deliberate day-one rollout choice: the matrix shipped opt-in so the non-admins backfilled with empty rows kept working. That rollout is over — ADR-134 gave admins a real model to configure people with, and this change routes them into it at the moment of creation.
+
+### Decision
+
+**1. Role and the PO approval limit leave User Management entirely.** Create and Edit no longer render either field. Edit shows the role as a read-only badge next to a link into that user's Access Control box. The users list keeps the Role **column** and the Role **filter** — read-only information that answers "who are my managers?" without leaving the screen; it was the editable control that made one decision answerable in two contradictory places.
+
+**2. `updateUser` payloads from User Management omit `role` and `approvalLimit` rather than echoing them.** Both keys are optional on the API, so omitting them leaves whatever Access Control last set. Sending a stale copy read at form-load would let the identity screen silently overwrite an access decision made elsewhere.
+
+**3. Every user is created as `viewer` with a null approval limit,** and the admin is redirected to `/access-control?configure=<newUserId>`, which opens that user's box on arrival. Creating an account and granting it access is one job; making the admin navigate back and find the row is how unconfigured users happen.
+
+**4. An unconfigured matrix now DENIES.** `effectiveFormPerms` and `hasDeptAccess` no longer treat `isUnconfigured` as allow-all. Admins still bypass everything in both the sidebar and `requireFormAccess`, so an admin can always configure their way out. `isUnconfigured` survives as the predicate behind a distinct error message — "your account has no access configured yet" rather than a per-form riddle.
+
+**5. Access Control keeps exactly one role control** — the select inside Configure, beside the tiers it caps and beside the ⚠ that fires when a tier outruns it. The inline dropdown on the list row is gone; two controls for one value on the screen that was cleaning up exactly that duplication would have been the same mistake.
+
+### Alternatives Considered
+
+- **Leave role editable in User Management and drop it from Access Control instead** — rejected. Role only means something next to the tiers it caps; the ceiling warning (`tierExceedsRole`) has nowhere to render on an identity form.
+- **Keep allow-all for unconfigured accounts and just remember to configure new users** — rejected. That is the behaviour that produced the inversion, and it fails in the unsafe direction: the forgotten account is the over-permissive one.
+- **Deny unconfigured accounts only for non-`viewer` roles** — rejected as a fudge. "Empty means nothing" is a rule anyone can hold in their head; "empty means nothing unless you are a viewer" is not.
+- **Keep the approval limit on User Management** — rejected. Approval is an Access Control action as of ADR-134, and the ceiling is the size of that right. Leaving it behind would have moved the split rather than closed it.
+- **Remove the Role column and filter from the users list too** — rejected. They are read-only and genuinely useful; the ask was to stop *setting* role there.
+
+### Consequences
+
+- **Positive:** one screen answers "what may this person do?" — role, tiers, form extras and approval ceiling in one box. User Management is identity and nothing else.
+- **Positive:** a created-and-forgotten account is now the *least* privileged thing in the system rather than the most.
+- **Positive:** the create → configure redirect makes the two-screen flow a single action.
+- **Negative / operational, and this one bites on deploy:** **every account with an empty matrix loses its UI on the next page load.** In production that is exactly two: `haresh.innovic@gmail.com` (manager, no access row) and `viewer@innovic.test` (viewer, empty maps). Both would see only the ungated Tasks and Reports sections until an admin gives them tiers. The three admin accounts are unaffected — two carry `full_access`, and the third bypasses as admin even with no row. **Configure those two before or immediately after the deploy.**
+- **Negative:** the dashboard's own `hasDept` still bypasses for managers (`dashboard/access.ts`), so a manager with no matrix would see a full dashboard beside an empty sidebar until configured. Pre-existing divergence, deliberately not changed here; noted as a follow-up.
+- **Risk:** none to data. No migration, no schema change — the flip is a pure read-side rule.
+- **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are still assignable from the Configure box; retiring them is its own decision. The `qc` role still does not gate submitting a QC inspection (`submitQcLog` calls `requireOpEntryRole`), and RLS remains inert for the API — both are separate open items from the same audit.
