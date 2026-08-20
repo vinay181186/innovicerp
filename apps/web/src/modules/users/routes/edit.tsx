@@ -10,6 +10,7 @@ import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import { RoleCeilingHelp } from '../components/role-ceiling-help';
 
 export const userEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -39,7 +40,7 @@ function UserEditPage(): React.JSX.Element {
   const [newPassword, setNewPassword] = useState('');
   const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  const { register, handleSubmit, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState, watch } = useForm<FormValues>({
     values: detail
       ? {
           fullName: detail.fullName ?? '',
@@ -86,6 +87,7 @@ function UserEditPage(): React.JSX.Element {
   }
 
   const isSelf = me?.id === detail.id;
+  const role = watch('role');
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
@@ -247,6 +249,7 @@ function UserEditPage(): React.JSX.Element {
                   ))}
                 </select>
                 {isSelf ? <div className="form-help">Cannot demote yourself.</div> : null}
+                <RoleCeilingHelp role={role} />
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="email">

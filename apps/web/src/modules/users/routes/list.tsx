@@ -1,7 +1,13 @@
 // User Management list — Phase A item 5a. Mirrors legacy renderUsers L13435.
 // Admin-only. Insert is intentionally absent (Supabase Auth owns invites).
+//
+// 0100 adds an Access column. Role and access used to live on two screens
+// with no link between them, so "what can this person actually do?" could
+// not be answered from either one alone: the role says what the database
+// will accept, the tier says how much of that they are given. Both belong
+// on the row.
 
-import { USER_ROLES, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
+import { USER_ROLES, maxTierForRole, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import {
   type ColumnDef,
@@ -11,13 +17,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Lock, Pencil, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovalConfig } from '@/modules/approval-config/api';
+import { useUserAccessList } from '@/modules/access-control/api';
 import { useUsersList } from '../api';
 
 const PAGE_SIZE = 25;
@@ -85,6 +92,15 @@ function UsersListPage(): React.JSX.Element {
     [approvalCfg],
   );
 
+  // Access matrix summary per user, so the Access column can answer "what do
+  // they get?" without a second trip to the Access Control screen. Same
+  // admin-only endpoint that screen uses, so it costs one cached query.
+  const { data: accessList } = useUserAccessList();
+  const accessByUser = useMemo(
+    () => new Map((accessList?.items ?? []).map((a) => [a.userId, a])),
+    [accessList],
+  );
+
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
       {
@@ -104,9 +120,60 @@ function UsersListPage(): React.JSX.Element {
       {
         header: 'Role',
         accessorKey: 'role',
-        cell: ({ row }) => (
-          <span className={`badge ${roleBadgeClass(row.original.role)}`}>{row.original.role}</span>
-        ),
+        cell: ({ row }) => {
+          // procurement / dispatch / design / viewer appear in no write rule
+          // anywhere — assign one and the person silently cannot save. Say so
+          // on the row rather than letting it be discovered in use.
+          const readOnly = maxTierForRole(row.original.role) === 'L1';
+          return (
+            <>
+              <span className={`badge ${roleBadgeClass(row.original.role)}`}>
+                {row.original.role}
+              </span>
+              {readOnly ? (
+                <span
+                  title="This role cannot save anything, in any module. Raise it before assigning a tier above L1."
+                  style={{ color: 'var(--amber)', fontSize: 10, marginLeft: 4 }}
+                >
+                  read-only
+                </span>
+              ) : null}
+            </>
+          );
+        },
+      },
+      {
+        header: 'Access',
+        id: 'access',
+        enableSorting: false,
+        cell: ({ row }) => {
+          const a = accessByUser.get(row.original.id);
+          if (!a) return <span className="text3" style={{ fontSize: 10 }}>—</span>;
+          if (a.fullAccess) {
+            return (
+              <span style={{ color: 'var(--green)', fontWeight: 700, fontSize: 10 }}>
+                L6 Super Admin
+              </span>
+            );
+          }
+          if (a.auditor) {
+            return (
+              <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 10 }}>
+                L7 Auditor
+              </span>
+            );
+          }
+          return a.tierSummary ? (
+            <span style={{ fontSize: 10 }}>{a.tierSummary}</span>
+          ) : (
+            <span
+              style={{ color: 'var(--amber)', fontSize: 10 }}
+              title="No tier set — this person currently sees every menu."
+            >
+              Unconfigured
+            </span>
+          );
+        },
       },
       {
         header: 'Email',
@@ -171,11 +238,19 @@ function UsersListPage(): React.JSX.Element {
             >
               <Pencil size={13} /> Edit
             </Link>
+            <Link
+              to="/access-control"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11 }}
+              title="Set this person's tier per department"
+            >
+              <Lock size={13} /> Access
+            </Link>
           </div>
         ),
       },
     ],
-    [approverSet],
+    [approverSet, accessByUser],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);

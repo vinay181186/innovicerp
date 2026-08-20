@@ -5123,8 +5123,16 @@ export const userAccess = pgTable(
     companyId: uuid('company_id')
       .notNull()
       .references(() => companies.id),
+    // L6 Super Admin — everything, everywhere, bypasses the maps below.
     fullAccess: boolean('full_access').notNull().default(false),
+    // L7 Auditor (0100) — read EVERY department, write nothing. Distinct
+    // from full_access, which also grants write.
+    auditor: boolean('auditor').notNull().default(false),
+    // dept key → tier key (L1…L5) since 0100. Pre-0100 rows hold `true`,
+    // which the shared normaliser reads as L1.
     departments: jsonb('departments').notNull().default({}),
+    // form key → { view, entry, edit, approve }. Additive extras on top of
+    // the department tier — see packages/shared/src/schemas/access-control.ts.
     forms: jsonb('forms').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

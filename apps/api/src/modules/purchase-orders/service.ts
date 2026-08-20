@@ -32,6 +32,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { assertNotSelfApproval, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -593,6 +594,45 @@ export async function updatePurchaseOrder(
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError(`Purchase order ${id} not found`);
 
+    // ── Status lock (0100) ──────────────────────────────────────────
+    // Once a PO leaves draft it has been approved (or rejected/cancelled),
+    // and the figures on it are what somebody signed for. Editing the lines
+    // afterwards defeated the whole approval ceiling: approve a small PO,
+    // then raise the rates. Structural check #5 of the Generic Role Audit
+    // Checklist.
+    //
+    // Not a freeze of the whole record — the paperwork fields (due date,
+    // remarks, PR reference) stay open, because chasing a delivery date is
+    // not a change to what was approved. To change the money, reject the PO
+    // back to draft and raise it again.
+    if (existingHdr.status !== 'draft') {
+      const h0 = input.header;
+      const lockedChanges: string[] = [];
+      if (input.lines !== undefined) lockedChanges.push('lines / rates');
+      if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
+        lockedChanges.push('vendor');
+      }
+      if (h0.poType !== undefined && h0.poType !== existingHdr.poType) lockedChanges.push('PO type');
+      if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate) lockedChanges.push('PO date');
+      if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
+        lockedChanges.push('tax type');
+      }
+      for (const [label, next, current] of [
+        ['SGST %', h0.sgstPct, existingHdr.sgstPct],
+        ['CGST %', h0.cgstPct, existingHdr.cgstPct],
+        ['IGST %', h0.igstPct, existingHdr.igstPct],
+      ] as const) {
+        if (next !== undefined && Number(next) !== Number(current)) lockedChanges.push(label);
+      }
+      if (lockedChanges.length > 0) {
+        throw new ValidationError(
+          `PO ${existingHdr.code} is ${existingHdr.status}, so ${lockedChanges.join(', ')} ` +
+            `can no longer be changed. Reject it back to draft first, or raise a new PO. ` +
+            `Due date, remarks and the PR reference can still be edited.`,
+        );
+      }
+    }
+
     if (input.header.vendorId !== undefined && input.header.vendorId !== null) {
       await assertVendorExists(tx, input.header.vendorId, companyId);
     }
@@ -1125,6 +1165,9 @@ export async function approvePurchaseOrder(
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
   requireWriteRole(user);
+  // The Access Control matrix must also grant Approve on Purchase Orders —
+  // an L3 Editor can raise a PO but cannot sign it off (0100).
+  await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1156,6 +1199,9 @@ export async function approvePurchaseOrder(
     if (po.status !== 'draft') {
       throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be approved`);
     }
+
+    // Segregation of duty (0100): the raiser cannot sign off their own PO.
+    assertNotSelfApproval(user, po.createdBy, `PO ${po.code}`);
 
     // Amount-limit gate (legacy _approvePO L21731). Admins bypass.
     if (!isAdmin) {
@@ -1202,6 +1248,8 @@ export async function rejectPurchaseOrder(
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
   requireWriteRole(user);
+  // Rejecting is the other half of approving — same permission (0100).
+  await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {

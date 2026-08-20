@@ -22,6 +22,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { assertNotSelfApproval, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -619,6 +620,9 @@ export async function approvePurchaseRequest(
   user: AuthContext,
 ): Promise<PurchaseRequest> {
   requireWriteRole(user);
+  // Approving a PR is now a distinct permission, not a side effect of being
+  // a manager (0100). An L3 Editor raises PRs; an L4/L5 signs them off.
+  await requireFormAccess(user, 'pr_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -641,6 +645,9 @@ export async function approvePurchaseRequest(
         `PR ${pr.code} is ${pr.status}; only open purchase requests can be approved`,
       );
     }
+
+    // Segregation of duty (0100): the raiser cannot sign off their own PR.
+    assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
 
     const now = new Date();
     await tx
@@ -681,6 +688,8 @@ export async function rejectPurchaseRequest(
   user: AuthContext,
 ): Promise<PurchaseRequest> {
   requireWriteRole(user);
+  // Rejecting is the other half of approving — same permission (0100).
+  await requireFormAccess(user, 'pr_create', 'approve');
   const companyId = requireCompany(user);
 
   if (!reason || !reason.trim()) {

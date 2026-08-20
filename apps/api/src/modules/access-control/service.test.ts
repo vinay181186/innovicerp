@@ -3,6 +3,7 @@
 // Cleanup discipline per feedback_test_activity_log_cleanup: scope removes
 // to the target user (viewer) only, never entity-wide.
 
+import type { AccessFormPerms, AccessTierKey } from '@innovic/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
@@ -14,12 +15,22 @@ import * as service from './service';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const VIEWER_EMAIL = 'viewer@innovic.test';
 
+// Shorthand for the four-action perms literal the tests pass in.
+const perms = (p: Partial<AccessFormPerms>): AccessFormPerms => ({
+  view: false,
+  entry: false,
+  edit: false,
+  approve: false,
+  ...p,
+});
+
 let admin: AuthContext;
 let viewer: AuthContext;
 let viewerOriginalAccess: {
   fullAccess: boolean;
-  departments: Record<string, boolean>;
-  forms: Record<string, { view: boolean; entry: boolean; edit: boolean }>;
+  auditor: boolean;
+  departments: Record<string, boolean | AccessTierKey>;
+  forms: Record<string, AccessFormPerms>;
 } | null = null;
 
 beforeAll(async () => {
@@ -50,9 +61,9 @@ beforeAll(async () => {
   if (ac) {
     viewerOriginalAccess = {
       fullAccess: ac.fullAccess,
-      departments: (ac.departments as Record<string, boolean>) ?? {},
-      forms:
-        (ac.forms as Record<string, { view: boolean; entry: boolean; edit: boolean }>) ?? {},
+      auditor: ac.auditor,
+      departments: (ac.departments as Record<string, boolean | AccessTierKey>) ?? {},
+      forms: (ac.forms as Record<string, AccessFormPerms>) ?? {},
     };
   }
 });
@@ -65,6 +76,7 @@ afterAll(async () => {
       .update(userAccess)
       .set({
         fullAccess: viewerOriginalAccess.fullAccess,
+        auditor: viewerOriginalAccess.auditor,
         departments: viewerOriginalAccess.departments,
         forms: viewerOriginalAccess.forms,
         updatedBy: admin.id,
@@ -106,26 +118,46 @@ describe('access-control service', () => {
     );
   });
 
-  it('saveUserAccess upserts and applies View/Entry/Edit cascade', async () => {
+  it('saveUserAccess stores a tier per department and applies the action cascade', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
       {
         fullAccess: false,
-        departments: { sales: true, qc: true, design: false },
+        auditor: false,
+        departments: { sales: 'L3', qc: 'L2' },
         forms: {
-          so_create: { view: false, entry: false, edit: true }, // edit ⇒ all three
-          qc_submit: { view: false, entry: true, edit: false }, // entry ⇒ view+entry
-          item_create: { view: true, entry: false, edit: false }, // view only
+          so_create: perms({ edit: true }), // edit ⇒ view+entry+edit
+          qc_submit: perms({ entry: true }), // entry ⇒ view+entry
+          item_create: perms({ view: true }), // view only
+          po_create: perms({ approve: true }), // approve ⇒ view+approve, NOT edit
         },
       },
       admin,
     );
     expect(saved.fullAccess).toBe(false);
-    expect(saved.departments.sales).toBe(true);
-    expect(saved.departments.design).toBeFalsy();
-    expect(saved.forms.so_create).toEqual({ view: true, entry: true, edit: true });
-    expect(saved.forms.qc_submit).toEqual({ view: true, entry: true, edit: false });
-    expect(saved.forms.item_create).toEqual({ view: true, entry: false, edit: false });
+    expect(saved.departments.sales).toBe('L3');
+    expect(saved.departments.qc).toBe('L2');
+    expect(saved.departments.design).toBeUndefined();
+    expect(saved.forms.so_create).toEqual(perms({ view: true, entry: true, edit: true }));
+    expect(saved.forms.qc_submit).toEqual(perms({ view: true, entry: true }));
+    expect(saved.forms.item_create).toEqual(perms({ view: true }));
+    // Approve must NOT drag entry/edit along — that split is the whole
+    // point of an L4 Approver.
+    expect(saved.forms.po_create).toEqual(perms({ view: true, approve: true }));
+  });
+
+  it('saveUserAccess accepts the pre-0100 boolean dept shape as L1', async () => {
+    const saved = await service.saveUserAccess(
+      viewer.id,
+      {
+        fullAccess: false,
+        auditor: false,
+        departments: { sales: true },
+        forms: {},
+      },
+      admin,
+    );
+    expect(saved.departments.sales).toBe('L1');
   });
 
   it('saveUserAccess drops unknown dept/form keys silently', async () => {
@@ -133,47 +165,61 @@ describe('access-control service', () => {
       viewer.id,
       {
         fullAccess: false,
-        departments: { sales: true, fictional_dept: true },
+        auditor: false,
+        departments: { sales: 'L3', fictional_dept: 'L3' },
         forms: {
-          so_create: { view: true, entry: false, edit: false },
-          fictional_form_key: { view: true, entry: false, edit: false },
+          so_create: perms({ view: true }),
+          fictional_form_key: perms({ view: true }),
         },
       },
       admin,
     );
     expect(saved.departments.fictional_dept).toBeUndefined();
     expect(saved.forms.fictional_form_key).toBeUndefined();
-    expect(saved.departments.sales).toBe(true);
+    expect(saved.departments.sales).toBe('L3');
     expect(saved.forms.so_create).toBeDefined();
   });
 
-  it('saveUserAccess fullAccess=true overrides cleanly', async () => {
+  it('saveUserAccess fullAccess=true overrides cleanly and clears auditor', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: true, departments: {}, forms: {} },
+      { fullAccess: true, auditor: true, departments: {}, forms: {} },
       admin,
     );
     expect(saved.fullAccess).toBe(true);
+    // L6 and L7 are mutually exclusive — Super Admin wins.
+    expect(saved.auditor).toBe(false);
     expect(saved.departments).toEqual({});
     expect(saved.forms).toEqual({});
+  });
+
+  it('saveUserAccess stores the L7 auditor flag on its own', async () => {
+    const saved = await service.saveUserAccess(
+      viewer.id,
+      { fullAccess: false, auditor: true, departments: {}, forms: {} },
+      admin,
+    );
+    expect(saved.auditor).toBe(true);
+    expect(saved.fullAccess).toBe(false);
   });
 
   it('saveUserAccess rejects non-admin', async () => {
     await expect(
       service.saveUserAccess(
         viewer.id,
-        { fullAccess: false, departments: {}, forms: {} },
+        { fullAccess: false, auditor: false, departments: {}, forms: {} },
         viewer,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
   });
 
-  it('saveUserAccess emits ACCESS activity log row', async () => {
+  it('saveUserAccess emits ACCESS activity log row naming the tiers', async () => {
     await service.saveUserAccess(
       viewer.id,
       {
         fullAccess: false,
-        departments: { sales: true },
+        auditor: false,
+        departments: { sales: 'L3' },
         forms: {},
       },
       admin,
@@ -185,6 +231,7 @@ describe('access-control service', () => {
       .limit(5);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]!.action).toBe('ACCESS');
+    expect(rows.some((r) => (r.detail ?? '').includes('Sales L3'))).toBe(true);
   });
 
   it('getMyAccess returns caller-effective access (post-cascade)', async () => {
@@ -192,17 +239,17 @@ describe('access-control service', () => {
       viewer.id,
       {
         fullAccess: false,
-        departments: { sales: true },
-        // Edit-only on purchase line should cascade to all three at read time.
-        forms: { po_create: { view: false, entry: false, edit: true } },
-        // Plus an entry-only on qc.
+        auditor: false,
+        departments: { sales: 'L3' },
+        // Edit-only on purchase line should cascade to view+entry+edit at read time.
+        forms: { po_create: perms({ edit: true }) },
       },
       admin,
     );
     const my = await service.getMyAccess(viewer);
     expect(my.fullAccess).toBe(false);
-    expect(my.departments.sales).toBe(true);
-    expect(my.forms.po_create).toEqual({ view: true, entry: true, edit: true });
+    expect(my.departments.sales).toBe('L3');
+    expect(my.forms.po_create).toEqual(perms({ view: true, entry: true, edit: true }));
   });
 
   it('getMyAccess fails closed (deny everything) when no row exists', async () => {
@@ -217,6 +264,7 @@ describe('access-control service', () => {
     };
     const my = await service.getMyAccess(ghost);
     expect(my.fullAccess).toBe(false);
+    expect(my.auditor).toBe(false);
     expect(my.departments).toEqual({});
     expect(my.forms).toEqual({});
   });

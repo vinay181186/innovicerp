@@ -6,10 +6,14 @@
 //   shell uses it to gate buttons + sidebar)
 // - `listUserAccess` / `getUserAccess` are admin-only
 //
-// ADR-035 option A: matrix is UI-only enforcement; per-form gating on
-// other modules' write endpoints is a deferred audit task.
+// ADR-035 option A was "matrix is UI-only enforcement". 0100 starts
+// closing that: `requireFormAccess` (../../lib/access) enforces the matrix
+// server-side, and is wired into the approve/reject paths first because
+// the `approve` action is new and has no legacy behaviour to preserve.
+// The remaining modules' write endpoints are still role-gated only.
 
 import {
+  ACCESS_DEPTS,
   ACCESS_DEPT_KEYS,
   ACCESS_FORM_KEYS,
   type AccessDeptsMap,
@@ -17,6 +21,7 @@ import {
   cascadeFormsMap,
   type EffectiveAccess,
   type ListUserAccessResponse,
+  normalizeDeptsMap,
   pruneDeptsMap,
   pruneFormsMap,
   type SaveUserAccessInput,
@@ -49,6 +54,7 @@ function rowToUserAccess(r: {
   userId: string;
   companyId: string;
   fullAccess: boolean;
+  auditor: boolean;
   departments: unknown;
   forms: unknown;
   createdAt: Date;
@@ -58,6 +64,7 @@ function rowToUserAccess(r: {
     id: r.id,
     userId: r.userId,
     companyId: r.companyId,
+    auditor: r.auditor,
     fullAccess: r.fullAccess,
     departments: asDeptsMap(r.departments),
     forms: asFormsMap(r.forms),
@@ -67,15 +74,28 @@ function rowToUserAccess(r: {
 }
 
 // Count granted depts / forms for the list-row summary. A form counts as
-// granted if any of view/entry/edit is true.
+// granted if any of view/entry/edit/approve is true.
 function countDepts(m: AccessDeptsMap): number {
-  return ACCESS_DEPT_KEYS.reduce((n, k) => (m[k] ? n + 1 : n), 0);
+  const tiers = normalizeDeptsMap(m);
+  return ACCESS_DEPT_KEYS.reduce((n, k) => (tiers[k] ? n + 1 : n), 0);
 }
 function countForms(m: AccessFormsMap): number {
   return ACCESS_FORM_KEYS.reduce((n, k) => {
     const p = m[k];
-    return p && (p.view || p.entry || p.edit) ? n + 1 : n;
+    return p && (p.view || p.entry || p.edit || p.approve) ? n + 1 : n;
   }, 0);
+}
+
+// "Sales L3 · Store L1" — the headline for one matrix row. Precomputed
+// server-side so the list page does not have to pull every user's full
+// matrix just to render a column.
+function tierSummary(m: AccessDeptsMap): string {
+  const tiers = normalizeDeptsMap(m);
+  const parts = ACCESS_DEPTS.flatMap((d) => {
+    const t = tiers[d.key];
+    return t ? [`${d.label} ${t}`] : [];
+  });
+  return parts.join(' · ');
 }
 
 // Caller's own effective access — fail-closed: if no row exists, deny
@@ -96,11 +116,12 @@ export async function getMyAccess(user: AuthContext): Promise<EffectiveAccess> {
       .limit(1);
     const row = rows[0];
     if (!row) {
-      return { fullAccess: false, departments: {}, forms: {} };
+      return { fullAccess: false, auditor: false, departments: {}, forms: {} };
     }
     return {
       fullAccess: row.fullAccess,
-      departments: asDeptsMap(row.departments),
+      auditor: row.auditor,
+      departments: normalizeDeptsMap(asDeptsMap(row.departments)),
       forms: cascadeFormsMap(asFormsMap(row.forms)),
     };
   });
@@ -120,6 +141,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         role: users.role,
         isActive: users.isActive,
         acFullAccess: userAccess.fullAccess,
+        acAuditor: userAccess.auditor,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
       })
@@ -133,6 +155,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
 
     const items: UserAccessListItem[] = rows.map((r) => {
       const fullAccess = r.acFullAccess ?? false;
+      const auditor = r.acAuditor ?? false;
       const depts = asDeptsMap(r.acDepartments);
       const forms = asFormsMap(r.acForms);
       const totalDepts = ACCESS_DEPT_KEYS.length;
@@ -144,10 +167,16 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         role: r.role,
         isActive: r.isActive,
         fullAccess,
-        deptCount: fullAccess ? totalDepts : countDepts(depts),
+        auditor,
+        deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
         totalDepts,
         formCount: fullAccess ? totalForms : countForms(forms),
         totalForms,
+        tierSummary: fullAccess
+          ? 'L6 Super Admin — every department'
+          : auditor
+            ? 'L7 Auditor — reads every department'
+            : tierSummary(depts),
       };
     });
 
@@ -193,6 +222,7 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       userId,
       companyId,
       fullAccess: false,
+      auditor: false,
       departments: {},
       forms: {},
       createdAt: new Date().toISOString(),
@@ -213,6 +243,10 @@ export async function saveUserAccess(
 
   const cleanDepts = pruneDeptsMap(input.departments);
   const cleanForms = cascadeFormsMap(pruneFormsMap(input.forms));
+  // L6 and L7 are mutually exclusive: Super Admin already reads everything
+  // AND writes, so an account marked both is really just a Super Admin.
+  // Resolving it here means the stored row can never say two things at once.
+  const auditor = input.fullAccess ? false : input.auditor;
 
   return withUserContext(user, async (tx) => {
     // Confirm target user in caller's company.
@@ -245,6 +279,7 @@ export async function saveUserAccess(
         .update(userAccess)
         .set({
           fullAccess: input.fullAccess,
+          auditor,
           departments: cleanDepts,
           forms: cleanForms,
           updatedBy: user.id,
@@ -260,6 +295,7 @@ export async function saveUserAccess(
           userId,
           companyId,
           fullAccess: input.fullAccess,
+          auditor,
           departments: cleanDepts,
           forms: cleanForms,
           createdBy: user.id,
@@ -274,7 +310,16 @@ export async function saveUserAccess(
       {
         action: 'ACCESS',
         entity: 'Access Control',
-        detail: `Updated access for ${targetUser.fullName ?? targetUser.email}`,
+        // Record WHAT the access became, not just that it changed — a bare
+        // "updated access" line is useless to the person auditing it later.
+        detail:
+          `Updated access for ${targetUser.fullName ?? targetUser.email} — ` +
+          (input.fullAccess
+            ? 'L6 Super Admin (full access)'
+            : auditor
+              ? 'L7 Auditor (reads every department, writes nothing)'
+              : (tierSummary(cleanDepts) || 'no departments') +
+                `; ${countForms(cleanForms)} form override(s)`),
         refId: userId,
       },
       companyId,

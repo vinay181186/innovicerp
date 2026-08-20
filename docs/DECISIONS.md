@@ -6969,3 +6969,80 @@ Everything else was already safe: all QC quantity logic keys off the `op_type = 
 - **Negative:** `jc-op-edit-card.tsx` grows 498 → 512 lines, further over the 400-line rule. Not split here; the branch added is small and splitting the card is its own task.
 - **Risk:** a document holding a QC name that is inactive or absent from the master keeps that text and shows it, but the picker cannot resolve it — the user must pick a replacement to change it. Live data shows **zero such rows** today.
 - **Not addressed:** Route Cards (`route-card-form.tsx:527`) still has the identical free-text QC box, and `DEFAULT_FINAL_QC_OP` remains a hardcoded string rather than a master lookup.
+
+## ADR-134: Access Control becomes (Tier + Department); Approve is a first-class action; approving your own document is refused
+
+**Date:** 2026-08-20
+**Status:** Accepted
+
+### Context
+
+An audit of the live ERP against the user's *ERP Generic Role Audit Checklist* (L1–L7 tier structure, department tagging, price-access flag, 7 structural checks) produced `Innovic-ERP-Generic-Role-Audit.pdf`. Its findings, all verified against production data and the current source:
+
+**The system was role-based, not tier-plus-department based.** Every user carries exactly one global `users.role` out of eight, and that single value decides what they may save — in every department, on every screen. Of the seven tiers in the checklist, **one existed** (L6 Super Admin = `admin`), four existed partially, and **two could not be expressed at all**:
+
+- **L2 Data Entry** — no role anywhere is create-but-not-edit.
+- **L5 Department Admin** — rights were never scoped to a department.
+
+**The Access Control matrix was decoration.** It had 9 departments × 39 forms × view/entry/edit, but:
+
+- `canViewForm` / `canEntryForm` / `canEditForm` were exported and had **zero call sites in the whole web app**. Only `hasDeptAccess` was consumed (sidebar sections + dashboard widgets).
+- Real button-level gating was **128 hard-coded `role === 'admin' | 'manager'` checks** across roughly 50 screen files.
+- ADR-035 option A had parked server-side enforcement as "a deferred audit task".
+
+**There was no `approve` action to grant.** The matrix had three. So even if it had been enforced, it could express L1–L3 and never L4 — and therefore never L5 either.
+
+**Three structural checks failed outright:**
+
+1. *Approver cannot approve their own record* — **FAIL.** `approvePurchaseOrder` checked the approver list, the draft status and the rupee ceiling, and never compared the approver against `created_by`. `approvePurchaseRequest` checked less still: any manager approved any PR, including their own.
+2. *L3 loses edit rights once the record crosses approval* — **FAIL.** `updatePurchaseOrder` deliberately preserved the *status* (so an edit could not sneak draft→open) but re-merged the lines and recalculated the totals at any status. **The approval ceiling was therefore defeatable: approve a cheap PO, then edit the rates upward.**
+3. *No role name is tied to a job title* — **FAIL.** `procurement`, `dispatch` and `design` are department names, and all three are **dead values** — they appear in no permission rule anywhere, so a user assigned one silently cannot save anything.
+
+Live state at the time of the decision: 6 users — 3 admins, 1 manager, 1 operator, 1 viewer; **2 users with no `user_access` row at all** and 1 with an empty one (all three fall through the "unconfigured ⇒ allow-all" rollout rule and see every menu); **exactly one user genuinely configured**; no `approval_config` row, so the defaults are in force and, with an empty approvers list, only an admin can approve any PO; 0 purchase orders, so zero historic self-approvals to clean up.
+
+### Decision
+
+**1. A tier is granted per department.** `user_access.departments` changes from `dept → true` to `dept → tier key`. Five tiers live there:
+
+| Tier | Name | view | entry | edit | approve |
+| --- | --- | --- | --- | --- | --- |
+| L1 | Viewer | ✓ | | | |
+| L2 | Data Entry | ✓ | ✓ | | |
+| L3 | Editor / Executor | ✓ | ✓ | ✓ | |
+| L4 | Approver | ✓ | | | ✓ |
+| L5 | Department Admin | ✓ | ✓ | ✓ | ✓ |
+
+"L3 in Sales, L1 in Store" is now one user, not two roles. The remaining two tiers are whole-account flags, because neither is per-department by nature: **L6 Super Admin** = the existing `full_access`; **L7 Auditor** = the new `auditor` column (reads every department, writes nothing). The two are mutually exclusive and the service resolves the conflict on save rather than storing a row that says both.
+
+**2. `approve` becomes the fourth action**, and it is deliberately **not** implied by `edit`. Edit ⇒ view+entry+edit; approve ⇒ view+approve. An L3 Editor raises documents and cannot sign them; an L4 Approver signs and cannot raise. That split is the only thing that makes segregation of duty expressible.
+
+**3. Form ticks are additive, never subtractive.** `effectiveFormPerms` = department tier ∪ explicit form grants ∪ the auditor read flag. A tick can add a right the tier did not give; it can never remove one. To reduce someone's rights, lower their tier. This keeps "why can this person do this?" answerable from two places instead of a subtraction chain, and means an admin cannot strand a user by unticking one row. The Configure screen shows tier-granted ticks as checked-and-locked, naming the tier that granted them.
+
+**4. The matrix is now enforced on the server** — `requireFormAccess(user, formKey, action)` in `apps/api/src/lib/access.ts` — but **wired only into the approve/reject paths of Purchase Orders and Purchase Requests** in this change. Those went first precisely because `approve` is a brand-new action with no legacy behaviour to preserve: nobody can be locked out of something they could do yesterday.
+
+**5. `users.role` is untouched, and stays the outer wall.** The 176 RLS policies keyed to it are unchanged. Both layers must pass, so **a tier can only ever narrow what the role already allows** — never widen it. `maxTierForRole()` exposes the ceiling (admin/manager → L5, qc → L3, operator → L2, everyone else → L1) and the UI *warns* when a chosen tier exceeds it rather than blocking, since an admin may legitimately set the tier first and fix the role after.
+
+**6. Self-approval is refused** — `assertNotSelfApproval` on both PO and PR approval. **It applies to admins too.** An approval the raiser signed themselves is not an approval, and "the admin did it" is exactly the case an auditor cares about. Rejecting your own document stays allowed: that is just cancelling your own request.
+
+**7. Money is frozen once a PO leaves draft.** Lines/rates, vendor, PO type, PO date, tax type and the three tax percentages are refused on a non-draft PO; due date, remarks and the PR reference stay open, because chasing a delivery date is not a change to what was approved. To change the money, reject back to draft.
+
+### Alternatives Considered
+
+- **Replace `users.role` with the (department, tier) pairs outright** — rejected *for this change*. It is the end state, but it means re-auditing all 176 RLS policies and rewriting the 128 hard-coded role checks in the screens. Layering the tier as a *restriction* on top of the role delivers the model now, cannot over-grant by construction, and leaves the sweep as its own task.
+- **Four loose checkboxes per department instead of a tier dropdown** — rejected. It would let an admin build "edit but not view", which is not a tier and cannot be enforced coherently downstream. A level is a single choice.
+- **Subtractive form ticks (a tick can revoke what the tier gave)** — rejected. It makes the effective permission the result of a chain, and one stray untick silently strands a user. Additive keeps the two inputs independently readable.
+- **An `allow_self_approval` escape hatch on `approval_config`** — rejected. It is the one switch that would undo the control the checklist is asking for. Where a company genuinely has one person, the answer is a second approver account. Noted as reversible if it blocks live operation.
+- **Backfilling every `true` department to L3** — rejected. It would hand write rights to users who had none. The migration maps each existing tick to the tier matching that user's *current* role, and the shared normaliser reads any un-migrated `true` as **L1**, so a missed migration degrades to read-only rather than to over-granted.
+- **A second `dept_tiers` column beside `departments`** — rejected. Two columns describing one thing invites them to disagree.
+
+### Consequences
+
+- **Positive:** L1–L5 are now expressible per department and L7 exists as a real flag, so 6 of the checklist's 7 tiers are configurable (L6 already was). Structural checks 4 and 5 move from FAIL to PASS.
+- **Positive:** the access matrix stops being decoration for at least one action — Approve is genuinely enforced server-side on POs and PRs.
+- **Positive:** the ACCESS activity-log line now records *what the access became* ("Sales L3 · Store L1"), not just that it changed.
+- **Positive:** User Management and Access Control are finally linked — the user list shows each person's tier summary and flags the read-only roles, so "what can this person actually do?" is answerable from one screen.
+- **Negative / not addressed:** the other ~30 modules with form keys still gate writes on the role alone. The matrix's view/entry/edit ticks remain unenforced outside the approve paths. That sweep is the next task and is deliberately separate.
+- **Negative:** an approver who is the only person able to approve must now find a second person. With 3 admins live this is not currently blocking.
+- **Negative:** editing an approved PO's rates now requires rejecting it back to draft — a real workflow change for whoever raises POs, and the intended one.
+- **Risk:** the migration must land **before** the API deploy — the service selects `user_access.auditor`. Both backfill expressions were dry-run as SELECTs against production first.
+- **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are now *labelled* read-only in the UI but still exist in the dropdown. Retiring or wiring them is a separate decision. Price access is still not a flag anywhere — that is its own piece of work.

@@ -1,5 +1,6 @@
 export {
   accessFormPermsSchema,
+  accessTierKeySchema,
   accessDeptsMapSchema,
   accessFormsMapSchema,
   effectiveAccessSchema,
@@ -15,6 +16,8 @@ export type {
   AccessForm,
   AccessFormKey,
   AccessFormPerms,
+  AccessTier,
+  AccessTierKey,
   AccessDeptsMap,
   AccessFormsMap,
   EffectiveAccess,

@@ -4,6 +4,10 @@
 // with role select + Departments count + Forms count + Configure button.
 // Inline role-change → PATCH /users/:id (legacy `_changeUserRole`).
 // Configure → modal (ConfigureAccessModal) → PUT /access-control/users/:id.
+//
+// 0100 adds the "Tiers by department" column — the row's headline. The
+// counts alone ("3/9 departments") never said what the person could DO in
+// those departments, which was the whole complaint the tier model answers.
 
 import type { UserAccessListItem, UserRole } from '@innovic/shared';
 import { USER_ROLES } from '@innovic/shared';
@@ -62,8 +66,9 @@ function AccessControlListPage(): React.JSX.Element {
             🔒 Access Control
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Per-user departments + form-level View / Entry / Edit permissions. New users start
-            unconfigured (the matrix is opt-in until you save).
+            A tier (L1–L5) per department, plus form-level View / Entry / Edit / Approve extras.
+            L6 Super Admin and L7 Auditor are whole-account levels. New users start unconfigured
+            (the matrix is opt-in until you save).
           </div>
         </div>
       </div>
@@ -75,11 +80,12 @@ function AccessControlListPage(): React.JSX.Element {
               <tr>
                 <th>User</th>
                 <th style={{ width: 160 }}>Role</th>
-                <th className="td-ctr" style={{ width: 130 }}>
+                <th>Tiers by department</th>
+                <th className="td-ctr" style={{ width: 100 }}>
                   Departments
                 </th>
-                <th className="td-ctr" style={{ width: 100 }}>
-                  Forms
+                <th className="td-ctr" style={{ width: 90 }}>
+                  Extras
                 </th>
                 <th style={{ width: 130 }}>Actions</th>
               </tr>
@@ -87,20 +93,20 @@ function AccessControlListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="empty-state">
+                  <td colSpan={6} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={5} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td colSpan={6} className="empty-state" style={{ color: 'var(--red)' }}>
                     {error instanceof Error ? error.message : 'Failed to load matrix'}
                   </td>
                 </tr>
               ) : (data?.items ?? []).length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty-state">
+                  <td colSpan={6} className="empty-state">
                     No users. Create users in User Management first.
                   </td>
                 </tr>
@@ -112,9 +118,16 @@ function AccessControlListPage(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-        💡 Click Configure to set department access and form-level View / Entry / Edit permissions per user.
-        Server-side write-gating is a follow-up audit task (see ADR-035) — the matrix gates UI visibility today.
+      <div className="text3" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+        💡 Click Configure to set a tier per department and any form-level extras.
+        <br />
+        <b>Role is the ceiling, tier is the grant.</b> The role decides what the database will
+        accept at all; the tier decides how much of that this person actually gets. A tier above
+        what the role allows is flagged in the Configure box and simply has no effect.
+        <br />
+        Server-side enforcement is live for <b>Approve</b> (Purchase Orders and Purchase
+        Requests). The other modules still gate writes on the role alone — extending the matrix to
+        them is the follow-up sweep (ADR-035).
       </div>
 
       {editing ? (
@@ -164,12 +177,23 @@ function UserAccessRow({
         </select>{' '}
         <span className={`badge ${roleBadgeClass(role)}`}>{role}</span>
       </td>
-      <td className="td-ctr">
+      <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (
-          <span style={{ color: 'var(--green)', fontWeight: 700 }}>✅ Full Access</span>
+          <span style={{ color: 'var(--green)', fontWeight: 700 }}>L6 Super Admin — everything</span>
+        ) : u.auditor ? (
+          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+            L7 Auditor — reads everything, writes nothing
+          </span>
+        ) : u.tierSummary ? (
+          u.tierSummary
         ) : (
-          `${u.deptCount}/${u.totalDepts}`
+          <span className="text3">
+            Unconfigured — sees every menu until you save a tier
+          </span>
         )}
+      </td>
+      <td className="td-ctr">
+        {u.fullAccess || u.auditor ? <>✅ All</> : `${u.deptCount}/${u.totalDepts}`}
       </td>
       <td className="td-ctr">
         {u.fullAccess ? <>✅ All</> : `${u.formCount}/${u.totalForms}`}

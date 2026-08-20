@@ -268,7 +268,9 @@ describe('purchase-orders service', () => {
       admin,
     );
     expect(updated.remarks).toBe('changed');
-    expect(updated.status).toBe('open');
+    // Status is immutable on a plain edit — it moves only through
+    // approve / reject / cancel, so the payload's status is ignored.
+    expect(updated.status).toBe('draft');
     expect(updated.lines).toHaveLength(1);
     expect(updated.lines[0]?.id).toBe(created.lines[0]?.id);
     expect(updated.lines[0]?.itemName).toBe('Stay');
@@ -283,7 +285,7 @@ describe('purchase-orders service', () => {
           poDate: '2026-05-03',
           poType: 'standard',
           vendorId: firstVendorId,
-          status: 'open',
+          status: 'draft',
           sgstPct: 0,
           cgstPct: 0,
           igstPct: 0,
@@ -325,7 +327,7 @@ describe('purchase-orders service', () => {
           poDate: '2026-05-03',
           poType: 'standard',
           vendorId: firstVendorId,
-          status: 'open',
+          status: 'draft',
           sgstPct: 0,
           cgstPct: 0,
           igstPct: 0,
@@ -347,6 +349,51 @@ describe('purchase-orders service', () => {
     );
     expect(updated.lines[0]?.qty).toBe(12);
     expect(updated.lines[0]?.receivedQty).toBe(0); // ignored
+  });
+
+  // ── 0100: money is frozen once the PO leaves draft ────────────────
+  // Without this, the approval ceiling is defeatable: approve a cheap PO,
+  // then edit the rates upward. Structural check #5 of the Generic Role
+  // Audit Checklist.
+  it('updatePurchaseOrder refuses line/rate edits once the PO is out of draft', async () => {
+    const code = `${TEST_PREFIX}LCK`;
+    const created = await service.createPurchaseOrder(
+      {
+        header: {
+          code,
+          poDate: '2026-05-03',
+          poType: 'standard',
+          vendorId: firstVendorId,
+          status: 'open',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+        lines: [{ itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 100 }],
+      },
+      admin,
+    );
+    await expect(
+      service.updatePurchaseOrder(
+        created.id,
+        {
+          header: {},
+          lines: [
+            { id: created.lines[0]!.id, itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 9999 },
+          ],
+        },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    // Paperwork fields stay open — chasing a delivery date is not a change
+    // to what was approved.
+    const updated = await service.updatePurchaseOrder(
+      created.id,
+      { header: { remarks: 'vendor confirmed dispatch' } },
+      admin,
+    );
+    expect(updated.remarks).toBe('vendor confirmed dispatch');
   });
 
   it('createPurchaseOrderFromPr creates PO + line and stamps PR with poId/poCreatedAt/status', async () => {

@@ -4,30 +4,65 @@
 // frontend infers types from these schemas for the matrix editor and
 // `useMyAccess()` hook. Mirror of legacy db.userAccess record shape
 // (renderAccessControl L13861; _editAccess L13917).
+//
+// ── Tier upgrade (0100) ──────────────────────────────────────────
+// The matrix used to be two independent things: a dept map of booleans
+// that only decided sidebar visibility, and a per-form view/entry/edit
+// triple that nothing read. It now expresses the (Tier + Department)
+// model:
+//
+//   departments : dept → tier key (L1…L5)   — the baseline in that dept
+//   forms       : form → per-action grants  — EXTRAS on top of the tier
+//   fullAccess  : L6 Super Admin            — everything, everywhere
+//   auditor     : L7 Auditor                — read everything, write nothing
+//
+// Form grants are ADDITIVE. A tick can only add a right the tier did not
+// give; it can never take one away. That keeps "why can this person do
+// this?" answerable from two places instead of a subtraction chain, and
+// means an admin cannot accidentally strand a user by unticking one row.
+// To reduce someone's rights, lower their tier.
+//
+// Legacy shape is still accepted on read: a `true` dept value (what every
+// pre-0100 row holds) normalises to L1 — the safest reading, since before
+// this change a dept tick granted no write rights at all. Migration 0100
+// rewrites the stored rows to the tier that matches each user's role.
 
 import { z } from 'zod';
 import {
   ACCESS_DEPT_KEYS,
   ACCESS_FORM_KEYS,
+  ACCESS_FORMS,
+  ACCESS_TIER_KEYS,
+  accessTier,
   type AccessDeptKey,
   type AccessFormKey,
+  type AccessTierKey,
+  isAccessTierKey,
 } from '../enums/access-control';
 
-// Per-form action triple. Cascade (Edit ⇒ Entry ⇒ View) is enforced by
-// the service on save; reads receive whatever was last stored.
+// Per-form action set. Cascade (Edit ⇒ Entry ⇒ View, Approve ⇒ View) is
+// enforced by the service on save; reads receive whatever was last stored.
+// `approve` defaults so pre-0100 rows — which only ever stored the three
+// original actions — parse without a backfill.
 export const accessFormPermsSchema = z.object({
   view: z.boolean(),
   entry: z.boolean(),
   edit: z.boolean(),
+  approve: z.boolean().default(false),
 });
 export type AccessFormPerms = z.infer<typeof accessFormPermsSchema>;
+
+export const accessTierKeySchema = z.enum(
+  ACCESS_TIER_KEYS as unknown as [AccessTierKey, ...AccessTierKey[]],
+);
 
 // JSONB maps. Use plain `Record` types so jsonb columns store cleanly.
 // Keys are validated to be members of the registry but unknown keys
 // are dropped silently on save (so renamed/deleted form keys don't
-// block writes).
-export const accessDeptsMapSchema = z.record(z.boolean());
-export type AccessDeptsMap = Record<string, boolean>;
+// block writes). The dept map accepts the legacy boolean shape as well
+// as a tier key — see the normaliser below.
+export const accessDeptsMapSchema = z.record(z.union([z.boolean(), accessTierKeySchema]));
+export type AccessDeptsMap = Record<string, boolean | AccessTierKey>;
 
 export const accessFormsMapSchema = z.record(accessFormPermsSchema);
 export type AccessFormsMap = Record<string, AccessFormPerms>;
@@ -38,6 +73,7 @@ export const userAccessSchema = z.object({
   userId: z.string().uuid(),
   companyId: z.string().uuid(),
   fullAccess: z.boolean(),
+  auditor: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
   createdAt: z.string(),
@@ -48,6 +84,7 @@ export type UserAccess = z.infer<typeof userAccessSchema>;
 // Save input — admin updates one user's matrix.
 export const saveUserAccessInputSchema = z.object({
   fullAccess: z.boolean(),
+  auditor: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -61,11 +98,15 @@ export const userAccessListItemSchema = z.object({
   role: z.string(),
   isActive: z.boolean(),
   fullAccess: z.boolean(),
+  auditor: z.boolean().default(false),
   // Pre-computed counts so the table doesn't need the full forms map per row.
   deptCount: z.number().int().nonnegative(),
   totalDepts: z.number().int().nonnegative(),
   formCount: z.number().int().nonnegative(),
   totalForms: z.number().int().nonnegative(),
+  // "Sales L3 · Store L1" — the row's headline, precomputed so the list
+  // does not have to fetch every user's full matrix to render it.
+  tierSummary: z.string().default(''),
 });
 export type UserAccessListItem = z.infer<typeof userAccessListItemSchema>;
 
@@ -75,20 +116,31 @@ export const listUserAccessResponseSchema = z.object({
 export type ListUserAccessResponse = z.infer<typeof listUserAccessResponseSchema>;
 
 // "Effective" access for /me — applies fullAccess + cascade so the web
-// shell can answer canView/canEdit/canEntry without re-deriving the logic.
+// shell can answer canView/canEdit/canEntry/canApprove without re-deriving
+// the logic.
 export const effectiveAccessSchema = z.object({
   fullAccess: z.boolean(),
+  auditor: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
 export type EffectiveAccess = z.infer<typeof effectiveAccessSchema>;
 
-// Apply the View ⊆ Entry ⊆ Edit cascade to a single perms triple.
-// Edit ⇒ View+Entry+Edit; Entry ⇒ View+Entry; View ⇒ View.
+const NO_PERMS: AccessFormPerms = { view: false, entry: false, edit: false, approve: false };
+const ALL_PERMS: AccessFormPerms = { view: true, entry: true, edit: true, approve: true };
+
+export function emptyFormPerms(): AccessFormPerms {
+  return { ...NO_PERMS };
+}
+
+// Apply the cascade to a single perms set. Edit ⇒ View+Entry+Edit;
+// Entry ⇒ View+Entry; Approve ⇒ View+Approve (approve is deliberately
+// NOT implied by edit — an Editor who cannot approve is the point of L3).
 export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
-  if (p.edit) return { view: true, entry: true, edit: true };
-  if (p.entry) return { view: true, entry: true, edit: false };
-  return { view: p.view, entry: false, edit: false };
+  const approve = p.approve;
+  if (p.edit) return { view: true, entry: true, edit: true, approve };
+  if (p.entry) return { view: true, entry: true, edit: false, approve };
+  return { view: p.view || approve, entry: false, edit: false, approve };
 }
 
 // Apply the cascade across every form. Used on save and when computing
@@ -96,16 +148,32 @@ export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
 export function cascadeFormsMap(forms: AccessFormsMap): AccessFormsMap {
   const out: AccessFormsMap = {};
   for (const [k, v] of Object.entries(forms)) {
-    out[k] = cascadeFormPerms(v);
+    out[k] = cascadeFormPerms({ ...NO_PERMS, ...v });
   }
   return out;
 }
 
-// Strip unknown keys from a dept map. Server-side defensive sanitation.
-export function pruneDeptsMap(m: AccessDeptsMap): AccessDeptsMap {
-  const out: AccessDeptsMap = {};
+// Collapse the stored dept map — legacy booleans and tier keys alike —
+// into dept → tier. A `true` becomes L1: before the tier model a dept
+// tick carried no write rights, so reading it as anything higher would
+// silently promote every existing user.
+export function normalizeDeptsMap(m: AccessDeptsMap): Record<string, AccessTierKey> {
+  const out: Record<string, AccessTierKey> = {};
+  for (const [k, v] of Object.entries(m)) {
+    if (isAccessTierKey(v)) out[k] = v;
+    else if (v === true) out[k] = 'L1';
+  }
+  return out;
+}
+
+// Strip unknown keys from a dept map, preserving each tier. Server-side
+// defensive sanitation.
+export function pruneDeptsMap(m: AccessDeptsMap): Record<string, AccessTierKey> {
+  const normalized = normalizeDeptsMap(m);
+  const out: Record<string, AccessTierKey> = {};
   for (const k of ACCESS_DEPT_KEYS) {
-    if (m[k]) out[k] = true;
+    const tier = normalized[k];
+    if (tier) out[k] = tier;
   }
   return out;
 }
@@ -115,56 +183,101 @@ export function pruneDeptsMap(m: AccessDeptsMap): AccessDeptsMap {
 export function pruneFormsMap(m: AccessFormsMap): AccessFormsMap {
   const out: AccessFormsMap = {};
   for (const k of ACCESS_FORM_KEYS) {
-    if (m[k]) out[k] = m[k];
+    if (m[k]) out[k] = m[k]!;
   }
   return out;
 }
 
-// ── Frontend helpers (the canView/canEdit/canEntry trio) ─────
-// Behavior on the three load states:
+// ── Frontend + server gate helpers ───────────────────────────
+// Behavior on the load states:
 //   - `eff` null/undefined         ⇒ deny (still loading, fail closed)
-//   - `eff.fullAccess === true`    ⇒ allow
+//   - `eff.fullAccess === true`    ⇒ allow (L6)
 //   - `eff` unconfigured           ⇒ allow (smooth day-one rollout — see note)
-//   - otherwise                    ⇒ check forms/departments map
+//   - otherwise                    ⇒ tier for the form's dept, plus any
+//                                    explicit per-form grants, plus the
+//                                    L7 auditor read-everything flag
 //
-// "Unconfigured" = no full_access AND no dept grants AND no form grants.
-// That's the backfill state for every non-admin user the day the matrix
-// ships. We allow them through so the matrix is opt-in for the admin to
-// start using. As soon as the admin saves ANY change for a user (even
+// "Unconfigured" = no full_access, no auditor, no dept grants and no form
+// grants. That is the backfill state for every non-admin user the day the
+// matrix ships. We allow them through so the matrix is opt-in for the admin
+// to start using. As soon as the admin saves ANY change for a user (even
 // granting one dept), that user moves into strict-mode gating. See
 // docs/PARITY/access-control.md §10 DELTA #6 + the build-first-audit-later
 // rollout discipline.
-function isUnconfigured(eff: EffectiveAccess): boolean {
+export function isUnconfigured(eff: EffectiveAccess): boolean {
   return (
     !eff.fullAccess &&
+    !eff.auditor &&
     Object.keys(eff.departments).length === 0 &&
     Object.keys(eff.forms).length === 0
   );
 }
 
-export function canViewForm(eff: EffectiveAccess | null | undefined, formKey: AccessFormKey): boolean {
-  if (!eff) return false;
-  if (eff.fullAccess || isUnconfigured(eff)) return true;
-  const p = eff.forms[formKey];
-  return !!(p && (p.view || p.entry || p.edit));
+// Which tier does this user hold in this department? Null = none.
+export function deptTier(
+  eff: EffectiveAccess | null | undefined,
+  dept: AccessDeptKey,
+): AccessTierKey | null {
+  if (!eff) return null;
+  return normalizeDeptsMap(eff.departments)[dept] ?? null;
 }
 
-export function canEntryForm(eff: EffectiveAccess | null | undefined, formKey: AccessFormKey): boolean {
-  if (!eff) return false;
-  if (eff.fullAccess || isUnconfigured(eff)) return true;
-  const p = eff.forms[formKey];
-  return !!(p && (p.entry || p.edit));
+// The single source of truth for "what may this user do on this form".
+// Grants are unioned, never subtracted: department tier ∪ explicit form
+// ticks ∪ the auditor read flag.
+export function effectiveFormPerms(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): AccessFormPerms {
+  if (!eff) return { ...NO_PERMS };
+  if (eff.fullAccess || isUnconfigured(eff)) return { ...ALL_PERMS };
+
+  const form = ACCESS_FORMS.find((f) => f.key === formKey);
+  const tierKey = form ? normalizeDeptsMap(eff.departments)[form.dept] : undefined;
+  const fromTier = tierKey ? accessTier(tierKey).perms : NO_PERMS;
+  const fromForm = cascadeFormPerms({ ...NO_PERMS, ...(eff.forms[formKey] ?? NO_PERMS) });
+
+  return {
+    view: eff.auditor || fromTier.view || fromForm.view,
+    entry: fromTier.entry || fromForm.entry,
+    edit: fromTier.edit || fromForm.edit,
+    approve: fromTier.approve || fromForm.approve,
+  };
 }
 
-export function canEditForm(eff: EffectiveAccess | null | undefined, formKey: AccessFormKey): boolean {
-  if (!eff) return false;
-  if (eff.fullAccess || isUnconfigured(eff)) return true;
-  const p = eff.forms[formKey];
-  return !!(p && p.edit);
+export function canViewForm(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).view;
 }
 
-export function hasDeptAccess(eff: EffectiveAccess | null | undefined, dept: AccessDeptKey): boolean {
+export function canEntryForm(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).entry;
+}
+
+export function canEditForm(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).edit;
+}
+
+export function canApproveForm(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).approve;
+}
+
+export function hasDeptAccess(
+  eff: EffectiveAccess | null | undefined,
+  dept: AccessDeptKey,
+): boolean {
   if (!eff) return false;
-  if (eff.fullAccess || isUnconfigured(eff)) return true;
-  return !!eff.departments[dept];
+  if (eff.fullAccess || eff.auditor || isUnconfigured(eff)) return true;
+  return normalizeDeptsMap(eff.departments)[dept] !== undefined;
 }

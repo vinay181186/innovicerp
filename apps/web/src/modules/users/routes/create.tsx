@@ -11,6 +11,7 @@ import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateUser } from '../api';
+import { RoleCeilingHelp } from '../components/role-ceiling-help';
 
 export const userCreateRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -143,6 +144,7 @@ function UserCreatePage(): React.JSX.Element {
                     </option>
                   ))}
                 </select>
+                <RoleCeilingHelp role={role} />
               </div>
               <div className="form-grp">
                 <label className="form-label" htmlFor="email">
