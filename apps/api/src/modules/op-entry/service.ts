@@ -1186,7 +1186,8 @@ export async function updateOpLogTiming(
     }
 
     // A manager/admin is the approver, so their own edit applies immediately —
-    // asking them to approve themselves is a round trip with no reviewer.
+    // asking them to approve themselves is a round trip with no reviewer. The
+    // gate being off makes any role's edit apply immediately too.
     const isApprover = user.role === 'admin' || user.role === 'manager';
     if (isApprover || !(await isEditApprovalOn(tx, companyId))) {
       const updated = await applyTimingChange(
@@ -1198,6 +1199,28 @@ export async function updateOpLogTiming(
         user,
         '',
       );
+      // ADR-130 (Option B): a direct edit skips the queue, but we still record
+      // it as an already-approved change so Approvals → Approved holds EVERY
+      // time correction — not only the operator requests that had to wait.
+      // decided_by = the editor: an approver approving their own change, or an
+      // auto-apply when the gate is off. The partial unique index guards only
+      // 'pending' rows, so an approved row never conflicts.
+      await tx.insert(opLogTimeChangeRequests).values({
+        companyId,
+        opLogId: row.id,
+        jcOpId: row.jcOpId,
+        prevLogDate: row.logDate,
+        prevStartTime: row.startTime,
+        requestedLogDate: input.logDate,
+        requestedStartTime: nextTime,
+        reason: input.reason?.trim() || null,
+        status: 'approved',
+        requestedBy: user.id,
+        decidedBy: user.id,
+        decidedAt: new Date(),
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
       return { applied: true, opLog: updated, request: null };
     }
 
