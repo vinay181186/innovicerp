@@ -7,12 +7,13 @@
 // will accept, the tier says how much of that they are given. Both belong
 // on the row.
 //
-// Role is shown here but NOT editable — it moved to Access Control along with
-// the department tiers and the approval limit. Showing it still earns its
-// place ("who are my managers?" without leaving the screen); editing it here
-// is what made the same decision answerable in two contradictory places.
+// The Role column became a DEPARTMENT column (ADR-136). "Which department is
+// Rajesh in?" is the question this list is actually asked; "is Rajesh a
+// manager?" was an implementation detail leaking onto a people screen. The
+// derived role still shows underneath in small text, because it is what the
+// server checks on every save and a refusal has to be explainable.
 
-import { USER_ROLES, maxTierForRole, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
+import { ACCESS_DEPTS, USER_ROLES, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import {
   type ColumnDef,
@@ -123,26 +124,29 @@ function UsersListPage(): React.JSX.Element {
         ),
       },
       {
-        header: 'Role',
-        accessorKey: 'role',
+        header: 'Department',
+        id: 'department',
+        accessorFn: (r) => accessByUser.get(r.id)?.mainDept ?? '',
         cell: ({ row }) => {
-          // procurement / dispatch / design / viewer appear in no write rule
-          // anywhere — assign one and the person silently cannot save. Say so
-          // on the row rather than letting it be discovered in use.
-          const readOnly = maxTierForRole(row.original.role) === 'L1';
+          const key = accessByUser.get(row.original.id)?.mainDept ?? null;
+          const dept = key ? ACCESS_DEPTS.find((d) => d.key === key) : undefined;
           return (
             <>
-              <span className={`badge ${roleBadgeClass(row.original.role)}`}>
-                {row.original.role}
-              </span>
-              {readOnly ? (
-                <span
-                  title="This role cannot save anything, in any module. Raise it before assigning a tier above L1."
-                  style={{ color: 'var(--amber)', fontSize: 10, marginLeft: 4 }}
-                >
-                  read-only
+              {dept ? (
+                <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>
+                  {dept.label}
                 </span>
-              ) : null}
+              ) : (
+                <span className="text3" style={{ fontSize: 11 }}>
+                  —
+                </span>
+              )}
+              <div className="text3" style={{ fontSize: 9, marginTop: 1 }}>
+                saved as{' '}
+                <span className={`badge ${roleBadgeClass(row.original.role)}`}>
+                  {row.original.role}
+                </span>
+              </div>
             </>
           );
         },

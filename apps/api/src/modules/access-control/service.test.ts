@@ -26,9 +26,13 @@ const perms = (p: Partial<AccessFormPerms>): AccessFormPerms => ({
 
 let admin: AuthContext;
 let viewer: AuthContext;
+// saveUserAccess derives users.role from the access it saves (ADR-136), so the
+// suite has to restore the role as well as the matrix row.
+let viewerOriginalRole: string | null = null;
 let viewerOriginalAccess: {
   fullAccess: boolean;
   auditor: boolean;
+  mainDept: string | null;
   departments: Record<string, boolean | AccessTierKey>;
   forms: Record<string, AccessFormPerms>;
 } | null = null;
@@ -57,11 +61,13 @@ beforeAll(async () => {
     .from(userAccess)
     .where(and(eq(userAccess.userId, viewer.id), eq(userAccess.companyId, viewer.companyId!)))
     .limit(1);
+  viewerOriginalRole = v.role;
   const ac = acRows[0];
   if (ac) {
     viewerOriginalAccess = {
       fullAccess: ac.fullAccess,
       auditor: ac.auditor,
+      mainDept: ac.mainDept,
       departments: (ac.departments as Record<string, boolean | AccessTierKey>) ?? {},
       forms: (ac.forms as Record<string, AccessFormPerms>) ?? {},
     };
@@ -77,11 +83,18 @@ afterAll(async () => {
       .set({
         fullAccess: viewerOriginalAccess.fullAccess,
         auditor: viewerOriginalAccess.auditor,
+        mainDept: viewerOriginalAccess.mainDept,
         departments: viewerOriginalAccess.departments,
         forms: viewerOriginalAccess.forms,
         updatedBy: admin.id,
       })
       .where(eq(userAccess.userId, viewer.id));
+  }
+  if (viewerOriginalRole) {
+    await db
+      .update(users)
+      .set({ role: viewerOriginalRole as typeof users.$inferSelect.role, updatedBy: admin.id })
+      .where(eq(users.id, viewer.id));
   }
   await db
     .delete(activityLog)
@@ -124,6 +137,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        mainDept: null,
         departments: { sales: 'L3', qc: 'L2' },
         forms: {
           so_create: perms({ edit: true }), // edit ⇒ view+entry+edit
@@ -152,6 +166,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        mainDept: null,
         departments: { sales: true },
         forms: {},
       },
@@ -160,12 +175,86 @@ describe('access-control service', () => {
     expect(saved.departments.sales).toBe('L1');
   });
 
+  // ── ADR-136: main department + derived role ───────────────────────
+  const roleOf = async (): Promise<string> =>
+    (await db.select({ role: users.role }).from(users).where(eq(users.id, viewer.id)).limit(1))[0]!
+      .role;
+
+  it('saveUserAccess stores the main department when the user holds a tier in it', async () => {
+    const saved = await service.saveUserAccess(
+      viewer.id,
+      {
+        fullAccess: false,
+        auditor: false,
+        mainDept: 'design',
+        departments: { design: 'L3', sales: 'L1' },
+        forms: {},
+      },
+      admin,
+    );
+    expect(saved.mainDept).toBe('design');
+    // Design L3 is a write tier outside Quality, so the derived role is manager.
+    expect(await roleOf()).toBe('manager');
+  });
+
+  it('saveUserAccess drops a main department the user holds no tier in', async () => {
+    // The admin picked Design, then cleared the Design row by hand. Keeping
+    // the stale value would leave the screen claiming a department the access
+    // no longer backs.
+    const saved = await service.saveUserAccess(
+      viewer.id,
+      { fullAccess: false, auditor: false, mainDept: 'design', departments: { sales: 'L1' }, forms: {} },
+      admin,
+    );
+    expect(saved.mainDept).toBeNull();
+  });
+
+  it('derives the narrowest role that covers the access granted', async () => {
+    const save = (departments: Record<string, 'L1' | 'L2' | 'L3' | 'L4' | 'L5'>) =>
+      service.saveUserAccess(
+        viewer.id,
+        { fullAccess: false, auditor: false, mainDept: null, departments, forms: {} },
+        admin,
+      );
+
+    await save({ sales: 'L1', store: 'L1' });
+    expect(await roleOf()).toBe('viewer');
+
+    await save({ production: 'L2' });
+    expect(await roleOf()).toBe('operator');
+
+    // Quality is the only place they can write, so `qc` covers it — and `qc`
+    // cannot write Sales or Purchase records, where `manager` could.
+    await save({ qc: 'L3', sales: 'L1' });
+    expect(await roleOf()).toBe('qc');
+
+    await save({ qc: 'L3', purchase: 'L3' });
+    expect(await roleOf()).toBe('manager');
+  });
+
+  it('derives admin only from Full Access, and viewer from Auditor', async () => {
+    await service.saveUserAccess(
+      viewer.id,
+      { fullAccess: true, auditor: false, mainDept: null, departments: {}, forms: {} },
+      admin,
+    );
+    expect(await roleOf()).toBe('admin');
+
+    await service.saveUserAccess(
+      viewer.id,
+      { fullAccess: false, auditor: true, mainDept: null, departments: {}, forms: {} },
+      admin,
+    );
+    expect(await roleOf()).toBe('viewer');
+  });
+
   it('saveUserAccess drops unknown dept/form keys silently', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
       {
         fullAccess: false,
         auditor: false,
+        mainDept: null,
         departments: { sales: 'L3', fictional_dept: 'L3' },
         forms: {
           so_create: perms({ view: true }),
@@ -183,7 +272,7 @@ describe('access-control service', () => {
   it('saveUserAccess fullAccess=true overrides cleanly and clears auditor', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: true, auditor: true, departments: {}, forms: {} },
+      { fullAccess: true, auditor: true, mainDept: null, departments: {}, forms: {} },
       admin,
     );
     expect(saved.fullAccess).toBe(true);
@@ -196,7 +285,7 @@ describe('access-control service', () => {
   it('saveUserAccess stores the L7 auditor flag on its own', async () => {
     const saved = await service.saveUserAccess(
       viewer.id,
-      { fullAccess: false, auditor: true, departments: {}, forms: {} },
+      { fullAccess: false, auditor: true, mainDept: null, departments: {}, forms: {} },
       admin,
     );
     expect(saved.auditor).toBe(true);
@@ -207,7 +296,7 @@ describe('access-control service', () => {
     await expect(
       service.saveUserAccess(
         viewer.id,
-        { fullAccess: false, auditor: false, departments: {}, forms: {} },
+        { fullAccess: false, auditor: false, mainDept: null, departments: {}, forms: {} },
         viewer,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
@@ -219,6 +308,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        mainDept: null,
         departments: { sales: 'L3' },
         forms: {},
       },
@@ -240,6 +330,7 @@ describe('access-control service', () => {
       {
         fullAccess: false,
         auditor: false,
+        mainDept: null,
         departments: { sales: 'L3' },
         // Edit-only on purchase line should cascade to view+entry+edit at read time.
         forms: { po_create: perms({ edit: true }) },

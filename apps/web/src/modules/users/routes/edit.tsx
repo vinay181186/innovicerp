@@ -5,8 +5,9 @@
 // Role and the PO approval limit are NOT here any more — both moved to Access
 // Control, which is where department tiers already lived. They are one
 // decision ("what may this person do?") and asking it on two screens meant
-// neither screen could answer it. The row still SHOWS the role on the user
-// list; it just isn't editable from this side.
+// neither screen could answer it. Since ADR-136 the role isn't even chosen
+// there — an admin picks a DEPARTMENT and the role follows — so this screen
+// shows the department, with the derived role underneath it.
 
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -15,6 +16,8 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { ACCESS_DEPTS } from '@innovic/shared';
+import { useUserAccessList } from '@/modules/access-control/api';
 import { useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
 
 function roleBadgeClass(role: string): string {
@@ -50,6 +53,8 @@ function UserEditPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Their department lives on the access row, not the user record.
+  const { data: accessList } = useUserAccessList();
 
   const { register, handleSubmit, formState } = useForm<FormValues>({
     values: detail
@@ -96,6 +101,8 @@ function UserEditPage(): React.JSX.Element {
   }
 
   const isSelf = me?.id === detail.id;
+  const mainDept = (accessList?.items ?? []).find((a) => a.userId === detail.id)?.mainDept ?? null;
+  const dept = mainDept ? ACCESS_DEPTS.find((d) => d.key === mainDept) : undefined;
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
@@ -275,15 +282,21 @@ function UserEditPage(): React.JSX.Element {
                 {isSelf ? <div className="form-help">Cannot deactivate yourself.</div> : null}
               </div>
               <div className="form-grp">
-                <label className="form-label">Role &amp; access</label>
+                <label className="form-label">Department &amp; access</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                  {dept ? (
+                    <span style={{ color: dept.color, fontWeight: 700 }}>{dept.label}</span>
+                  ) : (
+                    <span className="text3">Not set</span>
+                  )}
                   <span className={`badge ${roleBadgeClass(detail.role)}`}>{detail.role}</span>
                   <Link to="/access-control" search={{ configure: detail.id }} className="btn btn-ghost btn-sm">
                     <Lock size={13} /> Change in Access Control
                   </Link>
                 </div>
                 <div className="form-help">
-                  Role, department tiers and the PO approval limit are all set there.
+                  Department, levels and the PO approval limit are all set there. The role is
+                  worked out from them.
                 </div>
               </div>
             </div>

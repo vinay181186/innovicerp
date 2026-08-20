@@ -18,7 +18,7 @@
 // user in User Management lands here mid-flow instead of asking the admin to
 // find the row again.
 
-import type { UserAccessListItem } from '@innovic/shared';
+import { ACCESS_DEPTS, type UserAccessListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -38,6 +38,12 @@ export const accessControlListRoute = createRoute({
   validateSearch: accessControlSearchSchema,
   component: AccessControlListPage,
 });
+
+function deptLabel(key: string | null): { label: string; color: string } | null {
+  if (!key) return null;
+  const d = ACCESS_DEPTS.find((x) => x.key === key);
+  return d ? { label: d.label, color: d.color } : null;
+}
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -98,9 +104,9 @@ function AccessControlListPage(): React.JSX.Element {
             🔒 Access Control
           </div>
           <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            A tier (L1–L5) per department, plus form-level View / Entry / Edit / Approve extras.
-            L6 Super Admin and L7 Auditor are whole-account levels. This is also where a user's
-            role and PO approval limit are set — User Management only handles who they are.
+            Pick the department someone works in and their level follows; add other departments
+            below it as needed. L6 Super Admin and L7 Auditor are whole-account levels. This is
+            also where the PO approval limit is set — User Management only handles who they are.
           </div>
         </div>
       </div>
@@ -111,7 +117,7 @@ function AccessControlListPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>User</th>
-                <th style={{ width: 160 }}>Role</th>
+                <th style={{ width: 150 }}>Department</th>
                 <th>Tiers by department</th>
                 <th className="td-ctr" style={{ width: 100 }}>
                   Departments
@@ -151,11 +157,12 @@ function AccessControlListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
-        💡 Click Configure to set a tier per department and any form-level extras.
+        💡 Click Configure to set someone's department, their level in it, and any form-level
+        extras.
         <br />
-        <b>Role is the ceiling, tier is the grant.</b> The role decides what the database will
-        accept at all; the tier decides how much of that this person actually gets. A tier above
-        what the role allows is flagged in the Configure box and simply has no effect.
+        <b>The role is worked out for you.</b> It is no longer something you pick — it follows
+        from the departments and levels you grant, so the two can never disagree. It is still what
+        the server checks on every save, which is why the row shows it.
         <br />
         <b>An empty matrix now denies.</b> A user with no tier saved sees nothing at all —
         it used to mean "allow everything until configured", which left the person nobody had
@@ -185,11 +192,22 @@ function UserAccessRow({
   u: UserAccessListItem;
   onConfigure: () => void;
 }): React.JSX.Element {
+  const dept = deptLabel(u.mainDept);
   return (
     <tr>
       <td className="fw-700">{u.userName ?? u.userEmail}</td>
       <td>
-        <span className={`badge ${roleBadgeClass(u.role)}`}>{u.role}</span>
+        {dept ? (
+          <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>{dept.label}</span>
+        ) : (
+          <span className="text3" style={{ fontSize: 11 }}>—</span>
+        )}
+        {/* The derived role, shown small. It is not chosen any more, but it is
+            still what the server checks on every save, so hiding it entirely
+            would make a refusal impossible to explain. */}
+        <div className="text3" style={{ fontSize: 9, marginTop: 1 }}>
+          saved as <span className={`badge ${roleBadgeClass(u.role)}`}>{u.role}</span>
+        </div>
       </td>
       <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (

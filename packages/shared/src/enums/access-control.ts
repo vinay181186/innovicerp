@@ -116,53 +116,50 @@ export const ACCESS_FORM_KEYS: readonly AccessFormKey[] = ACCESS_FORMS.map((f) =
 //   L6 Super Admin — `full_access` (already existed)
 //   L7 Auditor     — `auditor` (new): read EVERY department, write nothing
 //
-// A tier can only ever RESTRICT what `users.role` already permits — the
-// row-level-security policies keyed to the role remain the outer wall,
-// so a tier can never hand out more than the role allows. `recommendedRole`
-// is what the role must be for the tier to be fully usable; the UI warns
-// when the two disagree rather than silently granting nothing.
+// Since ADR-136 the relationship runs the other way: `users.role` is
+// DERIVED from the tiers granted here (see `roleForAccess`), not a ceiling
+// they have to fit under. An earlier version of this comment claimed the
+// row-level-security policies keyed to the role were the outer wall beneath
+// the tiers — they are not. The API connects as a role that bypasses RLS, so
+// those policies never run, and the `require*Role` guards in the services are
+// the only enforcement there is. That is precisely why the role must follow
+// the access instead of being chosen next to it.
 export const ACCESS_TIERS = [
   {
     key: 'L1',
     label: 'Viewer',
     perms: { view: true, entry: false, edit: false, approve: false },
     hint: 'Can open and read. Cannot save anything.',
-    recommendedRole: 'viewer',
   },
   {
     key: 'L2',
     label: 'Data Entry',
     perms: { view: true, entry: true, edit: false, approve: false },
     hint: 'Can create new records. Cannot change one after it is saved.',
-    recommendedRole: 'operator',
   },
   {
     key: 'L3',
     label: 'Editor / Executor',
     perms: { view: true, entry: true, edit: true, approve: false },
     hint: 'Can create and change records. Cannot approve.',
-    recommendedRole: 'manager',
   },
   {
     key: 'L4',
     label: 'Approver',
     perms: { view: true, entry: false, edit: false, approve: true },
     hint: 'Can approve or reject. Cannot create or change — and never their own record.',
-    recommendedRole: 'manager',
   },
   {
     key: 'L5',
     label: 'Department Admin',
     perms: { view: true, entry: true, edit: true, approve: true },
     hint: 'Full rights inside this department only.',
-    recommendedRole: 'manager',
   },
 ] as const satisfies readonly {
   key: string;
   label: string;
   perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean };
   hint: string;
-  recommendedRole: string;
 }[];
 
 export type AccessTier = (typeof ACCESS_TIERS)[number];
@@ -179,30 +176,58 @@ export function accessTier(key: AccessTierKey): AccessTier {
   return ACCESS_TIERS.find((t) => t.key === key)!;
 }
 
-// The highest tier a given `users.role` can actually deliver.
-//
-// Row-level security is still keyed to the role, so a tier above this
-// ceiling silently does nothing — the matrix would say yes and the database
-// would say no. Rather than let an admin configure a user who then cannot
-// work, the UI compares the two and says so.
-//
-//   admin / manager → L5  (write everywhere the RLS policies allow)
-//   qc              → L3  (records and amends inspections)
-//   operator        → L2  (records entries; cannot amend after submit)
-//   everyone else   → L1  (procurement / dispatch / design / viewer carry no
-//                          write rights in any policy — read-only in practice)
-export function maxTierForRole(role: string): AccessTierKey {
-  if (role === 'admin' || role === 'manager') return 'L5';
-  if (role === 'qc') return 'L3';
-  if (role === 'operator') return 'L2';
-  return 'L1';
-}
+// What a department gets the moment it is picked as someone's MAIN
+// department. Editor / Executor is the working level — create and change
+// records in your own department, but not approve them. An admin can drop it
+// afterwards (a Design viewer is L1) or raise it; this is only the seed.
+export const MAIN_DEPT_DEFAULT_TIER: AccessTierKey = 'L3';
 
-// Is `tier` beyond what `role` can deliver? Used to warn, never to block —
-// an admin may legitimately set the tier first and fix the role after.
-export function tierExceedsRole(tier: AccessTierKey, role: string): boolean {
+// Derive `users.role` from the access someone was granted.
+//
+// The role dropdown is gone: an admin picks a department, not a job title.
+// But 120 places in the API still gate writes on `users.role` — it is what
+// actually blocks a save — so a role still has to be written. It is now a
+// CONSEQUENCE of the access, never a separate choice, which is what stops the
+// two from ever disagreeing.
+//
+// The rule is "the narrowest role that still covers everything they were
+// given":
+//   full access        → admin   (the only path to admin — never derived)
+//   auditor            → viewer  (reads everything, writes nothing)
+//   nothing granted    → viewer
+//   top tier is L1     → viewer  (view-only everywhere they have anything)
+//   top tier is L2     → qc if that is Quality's alone, else operator
+//   top tier is L3+    → qc if Quality is the only place they can write,
+//                        else manager
+//
+// `qc` and `operator` are genuinely narrower than `manager`, so preferring
+// them is not cosmetic — a Quality lead derived as `qc` cannot write Sales
+// or Purchase records, where `manager` could.
+export function roleForAccess(input: {
+  fullAccess: boolean;
+  auditor: boolean;
+  departments: Record<string, AccessTierKey>;
+}): string {
+  if (input.fullAccess) return 'admin';
+  if (input.auditor) return 'viewer';
+
   const order = ACCESS_TIER_KEYS as readonly string[];
-  return order.indexOf(tier) > order.indexOf(maxTierForRole(role));
+  const entries = Object.entries(input.departments).filter(([, t]) => isAccessTierKey(t));
+  if (entries.length === 0) return 'viewer';
+
+  const rank = (t: string): number => order.indexOf(t);
+  const top = entries.reduce((best, e) => (rank(e[1]) > rank(best[1]) ? e : best));
+  const topTier = top[1];
+
+  if (topTier === 'L1') return 'viewer';
+
+  // Departments where this person can actually write (L2 and above).
+  const writeDepts = entries.filter(([, t]) => rank(t) >= rank('L2')).map(([d]) => d);
+  const qcOnly = writeDepts.length > 0 && writeDepts.every((d) => d === 'qc');
+  if (qcOnly) return 'qc';
+
+  if (topTier === 'L2') return 'operator';
+  return 'manager';
 }
 
 // ── Helpers ────────────────────────────────────────────────────

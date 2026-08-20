@@ -15,6 +15,8 @@
 import {
   ACCESS_DEPTS,
   ACCESS_DEPT_KEYS,
+  isAccessDeptKey,
+  roleForAccess,
   ACCESS_FORM_KEYS,
   type AccessDeptsMap,
   type AccessFormsMap,
@@ -32,7 +34,7 @@ import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { userAccess, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
 const requireCompany = (user: AuthContext): string => {
@@ -55,6 +57,7 @@ function rowToUserAccess(r: {
   companyId: string;
   fullAccess: boolean;
   auditor: boolean;
+  mainDept: string | null;
   departments: unknown;
   forms: unknown;
   createdAt: Date;
@@ -65,6 +68,7 @@ function rowToUserAccess(r: {
     userId: r.userId,
     companyId: r.companyId,
     auditor: r.auditor,
+    mainDept: r.mainDept,
     fullAccess: r.fullAccess,
     departments: asDeptsMap(r.departments),
     forms: asFormsMap(r.forms),
@@ -142,6 +146,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         isActive: users.isActive,
         acFullAccess: userAccess.fullAccess,
         acAuditor: userAccess.auditor,
+        acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
       })
@@ -168,6 +173,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         isActive: r.isActive,
         fullAccess,
         auditor,
+        mainDept: r.acMainDept ?? null,
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
         totalDepts,
         formCount: fullAccess ? totalForms : countForms(forms),
@@ -223,6 +229,7 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       companyId,
       fullAccess: false,
       auditor: false,
+      mainDept: null,
       departments: {},
       forms: {},
       createdAt: new Date().toISOString(),
@@ -247,11 +254,31 @@ export async function saveUserAccess(
   // AND writes, so an account marked both is really just a Super Admin.
   // Resolving it here means the stored row can never say two things at once.
   const auditor = input.fullAccess ? false : input.auditor;
+  // The main department has to be a real department that this person actually
+  // holds a tier in. A stale value — the admin picked Design, then cleared the
+  // Design row by hand — would leave the screen claiming a department the
+  // access no longer backs. Neither whole-account level is departmental.
+  const mainDept =
+    input.fullAccess || auditor
+      ? null
+      : input.mainDept && isAccessDeptKey(input.mainDept) && cleanDepts[input.mainDept]
+        ? input.mainDept
+        : null;
+  // `users.role` is DERIVED, never chosen (ADR-136). It is still what gates
+  // 120 write paths, so it has to be written — but making it a consequence of
+  // the access is what stops the role and the matrix ever contradicting.
+  const derivedRole = roleForAccess({ fullAccess: input.fullAccess, auditor, departments: cleanDepts });
 
   return withUserContext(user, async (tx) => {
     // Confirm target user in caller's company.
     const target = await tx
-      .select({ id: users.id, fullName: users.fullName, email: users.email, companyId: users.companyId })
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        companyId: users.companyId,
+        role: users.role,
+      })
       .from(users)
       .where(and(eq(users.id, userId), isNull(users.deletedAt)))
       .limit(1);
@@ -259,6 +286,21 @@ export async function saveUserAccess(
       throw new NotFoundError(`User ${userId} not found`);
     }
     const targetUser = target[0]!;
+
+    // Same guard `updateUser` applies: an admin cannot strip their own admin
+    // rights in one click and lock themselves out. Here it bites when an admin
+    // unticks their own Full Access, which would derive them down to manager.
+    if (userId === user.id && derivedRole !== 'admin' && targetUser.role === 'admin') {
+      throw new ValidationError(
+        'This would remove your own admin access — ask another admin to do it.',
+      );
+    }
+    if (targetUser.role !== derivedRole) {
+      await tx
+        .update(users)
+        .set({ role: derivedRole as typeof users.$inferSelect.role, updatedBy: user.id, updatedAt: new Date() })
+        .where(eq(users.id, userId));
+    }
 
     const existingRows = await tx
       .select()
@@ -280,6 +322,7 @@ export async function saveUserAccess(
         .set({
           fullAccess: input.fullAccess,
           auditor,
+          mainDept,
           departments: cleanDepts,
           forms: cleanForms,
           updatedBy: user.id,
@@ -296,6 +339,7 @@ export async function saveUserAccess(
           companyId,
           fullAccess: input.fullAccess,
           auditor,
+          mainDept,
           departments: cleanDepts,
           forms: cleanForms,
           createdBy: user.id,
@@ -318,8 +362,10 @@ export async function saveUserAccess(
             ? 'L6 Super Admin (full access)'
             : auditor
               ? 'L7 Auditor (reads every department, writes nothing)'
-              : (tierSummary(cleanDepts) || 'no departments') +
-                `; ${countForms(cleanForms)} form override(s)`),
+              : `main dept ${mainDept ?? 'none'}; ` +
+                (tierSummary(cleanDepts) || 'no departments') +
+                `; ${countForms(cleanForms)} form override(s)`) +
+          ` [role → ${derivedRole}]`,
         refId: userId,
       },
       companyId,

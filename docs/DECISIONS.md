@@ -7096,3 +7096,65 @@ That allow-all was a deliberate day-one rollout choice: the matrix shipped opt-i
 - **Negative:** the dashboard's own `hasDept` still bypasses for managers (`dashboard/access.ts`), so a manager with no matrix would see a full dashboard beside an empty sidebar until configured. Pre-existing divergence, deliberately not changed here; noted as a follow-up.
 - **Risk:** none to data. No migration, no schema change — the flip is a pure read-side rule.
 - **Not addressed:** the three dead roles (`procurement`, `dispatch`, `design`) are still assignable from the Configure box; retiring them is its own decision. The `qc` role still does not gate submitting a QC inspection (`submitQcLog` calls `requireOpEntryRole`), and RLS remains inert for the API — both are separate open items from the same audit.
+
+## ADR-136: An admin picks a department, not a role — and `users.role` is derived from the access
+
+**Date:** 2026-08-20
+**Status:** Accepted
+
+### Context
+
+ADR-134 built the (Tier + Department) model; ADR-135 moved role out of User Management and into the Access Control Configure box. Role was still a **choice**, sitting next to the tiers, and the two could disagree — which is why ADR-134 shipped a `tierExceedsRole` warning: pick Sales L4 for an operator and the box told you it would not take effect.
+
+That warning was the symptom. The real problem is that the role dropdown asks a question nobody in the business can answer. *"Is Rajesh a manager?"* is an implementation detail about which `require*Role` guard passes. *"Is Rajesh in Design?"* is the fact the admin actually knows. Asking for the second and computing the first removes the contradiction rather than warning about it.
+
+Two further facts made the old framing untenable:
+
+- The justification for keeping role as a **ceiling** was that the 176 row-level-security policies keyed to it were the outer wall. **They are not.** The API connects as `postgres`, which bypasses RLS, so none of those policies run — established while tracing why an operator with Quality L1 could accept a QC quantity. The `require*Role` calls in the services are the only enforcement in the system.
+- Three of the eight roles (`procurement`, `dispatch`, `design`) appear in no permission rule at all, so choosing one produced a user who silently could not save anything. A derived role cannot produce that state.
+
+### Decision
+
+**1. The role dropdown becomes a Department dropdown.** One field, nine departments. Picking one seeds that department's tier at **L3 Editor / Executor** (`MAIN_DEPT_DEFAULT_TIER`). The admin can change that level, and can add any other department at any level underneath — a Design person who also needs to see Sales gets Sales L1 by hand, and it stays.
+
+**2. Changing the main department moves the seed with it.** Design → Production clears the Design row and seeds Production at L3. **Departments the admin set by hand are left alone** — only the seeded one moves. Clearing the main department's own row by hand also clears it as "main", matching what the server would store anyway.
+
+**3. `main_dept` is stored, not derived** (migration 0101). A main department and a hand-added extra are indistinguishable in the `departments` map, so without the column, reopening the box could not tell "Design L3 because that is their department" from "Sales L1 because the admin granted it" — and changing the main department would clear the wrong row.
+
+**4. `users.role` is derived on save, in the same transaction as the matrix.** `roleForAccess()` returns the *narrowest* role that still covers what was granted:
+
+| Access granted | Derived role |
+|---|---|
+| Full Access (L6) | `admin` — the only path to admin |
+| Auditor (L7) | `viewer` |
+| nothing, or every department at L1 | `viewer` |
+| top tier L2, Quality only | `qc` |
+| top tier L2 otherwise | `operator` |
+| top tier L3+, Quality the only place they can write | `qc` |
+| top tier L3+ otherwise | `manager` |
+
+Preferring `qc` and `operator` is not cosmetic — both are genuinely narrower than `manager`, so a Quality lead derived as `qc` cannot write Sales or Purchase records where `manager` could.
+
+**5. The modal no longer sends a role.** `saveUserAccess` computes and writes it alongside the matrix, so the two cannot drift. The self-demotion guard is repeated there: an admin unticking their own Full Access would derive down to manager, and that is refused with the same wording `updateUser` uses.
+
+**6. `tierExceedsRole` and `maxTierForRole` are deleted,** along with the `RoleCeilingHelp` component and the `recommendedRole` field. The contradiction they described can no longer occur.
+
+**7. The role is still shown**, small, on both list rows and in the Configure header — as *"saved as `manager`"*. It is no longer chosen, but it is still what the server checks on every save, so hiding it entirely would make a refusal impossible to explain.
+
+### Alternatives Considered
+
+- **Keep the role dropdown and just default it from the department** — rejected. Two controls that usually agree are worse than one, because the times they disagree are exactly the times it matters.
+- **Multi-select for the main department** — rejected for now. The tiers grid below already holds all nine, so multi-department people are expressible; a single "which department are they in" is the question that has one answer.
+- **Derive the main department from the highest tier instead of storing it** — rejected. Ties are ambiguous (two departments at L3) and it cannot distinguish a seeded tier from a hand-granted one, which is what makes "change the main department" safe.
+- **Derive `manager` for every L3+ regardless of department** — rejected. It would hand a Quality lead write access across Sales, Purchase and Store, which is the over-granting the department model exists to stop.
+- **Drop `users.role` entirely now** — rejected, and this is the important one. 120 API call sites gate writes on the role; `requireFormAccess` currently guards 4. Removing the role today would delete 120 of the 124 enforcement points and replace them with nothing. The role can only go after the matrix is enforced across the modules.
+
+### Consequences
+
+- **Positive:** the admin answers one question they actually know the answer to, and the role/tier contradiction is structurally impossible rather than warned about.
+- **Positive:** the three dead roles can no longer be assigned at all — `roleForAccess` never returns `procurement`, `dispatch` or `design`. That closes half of structural check #1 of the Generic Role Audit Checklist without touching the enum.
+- **Positive:** `admin` is now reachable only through Full Access, so nobody is made an admin by picking a word from a list.
+- **Negative:** the screen now says "Rajesh is Design" much more emphatically than before, and the system still cannot keep that promise outside PO/PR approval — `manager` remains global. **The department picker makes the existing enforcement gap louder, and the enforcement sweep is the fix.**
+- **Negative:** an existing user's role can change the first time an admin saves their access, if the stored role does not match what their tiers derive to. That is the intended correction, but it is a silent one on first save.
+- **Risk:** migration 0101 must land before the API deploy — the service selects `user_access.main_dept`. The backfill was dry-run as a SELECT first: of four access rows, only `dummy@gmail.com` has departments, and it resolves to `production` (its L2), leaving `qc` L1 as an extra.
+- **Not addressed:** the User Management role **filter** still filters by role rather than department; `submitQcLog` still calls `requireOpEntryRole`; RLS is still inert; and the enforcement sweep across the remaining ~30 modules is still the outstanding piece of work.

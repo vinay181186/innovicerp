@@ -6,8 +6,16 @@
 // splitting them across two screens meant "what can this person do?" had two
 // half-answers and no whole one.
 //
+// ADR-136: the role dropdown is gone. An admin picks a DEPARTMENT — "is this
+// person in Design?" is a question the business can answer; "is this person a
+// manager?" is not. Picking one seeds that department's tier at L3 Editor /
+// Executor, and `users.role` is derived from the resulting access rather than
+// chosen beside it, which is what stops the two contradicting each other.
+// Changing the main department clears the old one and seeds the new; anything
+// the admin added by hand below is left alone.
+//
 // Rebuilt for the (Tier + Department) model (0100). Structure:
-//  - Header strip: user name + role select + PO approval limit
+//  - Header strip: user name + main department + PO approval limit
 //  - Access level: Standard / L6 Super Admin / L7 Auditor
 //  - Department tiers: one tier dropdown per department (L1…L5, or none)
 //  - Form/Feature table (39 rows × View/Entry/Edit/Approve) — EXTRAS on top
@@ -26,20 +34,17 @@ import {
   ACCESS_DEPTS,
   ACCESS_FORMS,
   ACCESS_TIERS,
-  USER_ROLES,
+  MAIN_DEPT_DEFAULT_TIER,
   accessTier,
   emptyFormPerms,
-  maxTierForRole,
+  roleForAccess,
   saveUserAccessInputSchema,
-  tierExceedsRole,
   type AccessFormPerms,
   type AccessTierKey,
-  type UserRole,
 } from '@innovic/shared';
 import { ClipboardPaste, Copy, Loader2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
-import { RoleCeilingHelp } from '@/modules/users/components/role-ceiling-help';
 import { useSaveUserAccess, useUserAccess } from '../api';
 
 interface Props {
@@ -53,6 +58,14 @@ type DeptTiers = Record<string, AccessTierKey>;
 type Action = 'view' | 'entry' | 'edit' | 'approve';
 
 const NO_PERMS: FormPerms = { view: false, entry: false, edit: false, approve: false };
+
+function roleBadgeClass(role: string): string {
+  if (role === 'admin') return 'b-red';
+  if (role === 'manager') return 'b-blue';
+  if (role === 'operator') return 'b-amber';
+  if (role === 'qc') return 'b-cyan';
+  return 'b-grey';
+}
 
 const ACTION_COLOR: Record<Action, string> = {
   view: 'var(--blue)',
@@ -70,7 +83,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const save = useSaveUserAccess();
   const updateUser = useUpdateUser(userId);
 
-  const [role, setRole] = useState<UserRole>('viewer');
+  const [mainDept, setMainDept] = useState('');
   const [approvalLimit, setApprovalLimit] = useState('');
   const [fullAccess, setFullAccess] = useState(false);
   const [auditor, setAuditor] = useState(false);
@@ -85,10 +98,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [importError, setImportError] = useState<string | null>(null);
   const [copyFlash, setCopyFlash] = useState(false);
 
-  // Seed role + limit once the user record resolves.
+  // Only the approval limit comes from the user record now — the role is
+  // derived on save, never read back into an input.
   useEffect(() => {
     if (!userDetail) return;
-    setRole(userDetail.role);
     setApprovalLimit(userDetail.approvalLimit ?? '');
   }, [userDetail]);
 
@@ -98,6 +111,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     if (!data) return;
     setFullAccess(data.fullAccess);
     setAuditor(data.auditor);
+    setMainDept(data.mainDept ?? '');
     setDepartments(loadDeptTiers(data.departments));
     setForms(fillForms(data.forms));
   }, [data]);
@@ -112,6 +126,20 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setAuditor(level === 'auditor');
   }
 
+  // Changing the main department moves the seeded tier with it: the old main
+  // department is cleared, the new one is seeded at L3. Extras the admin set
+  // by hand on OTHER departments are untouched — a Design person given Sales
+  // view keeps that Sales view when they move to Production.
+  function changeMainDept(next: string): void {
+    setDepartments((prev) => {
+      const out = { ...prev };
+      if (mainDept) delete out[mainDept];
+      if (next) out[next] = MAIN_DEPT_DEFAULT_TIER;
+      return out;
+    });
+    setMainDept(next);
+  }
+
   function setDeptTier(key: string, tier: AccessTierKey | ''): void {
     setDepartments((prev) => {
       const next = { ...prev };
@@ -119,6 +147,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       else next[key] = tier;
       return next;
     });
+    // Clearing the main department's own row by hand means it is no longer
+    // their department. The server drops a main dept it holds no tier in
+    // anyway; matching that here keeps the screen honest before Save.
+    if (tier === '' && key === mainDept) setMainDept('');
   }
 
   // What the department tier alone already grants for a form.
@@ -155,7 +187,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
 
   // Export the current matrix as a pretty JSON string + copy to clipboard.
   function handleCopyJson(): void {
-    const payload = { fullAccess, auditor, departments, forms };
+    const payload = { fullAccess, auditor, mainDept: mainDept || null, departments, forms };
     const text = JSON.stringify(payload, null, 2);
     void navigator.clipboard?.writeText(text).then(
       () => {
@@ -195,6 +227,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     const m = result.data;
     setFullAccess(m.fullAccess);
     setAuditor(m.auditor);
+    setMainDept(m.mainDept ?? '');
     setDepartments(loadDeptTiers(m.departments));
     setForms(fillForms(m.forms));
     setShowImport(false);
@@ -204,22 +237,21 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   async function onSave(): Promise<void> {
     setSubmitError(null);
     try {
-      // Role + limit go FIRST (legacy L13996 ordering). If the role change is
-      // refused — self-demotion is — the matrix is left untouched rather than
-      // saved against a role that never moved.
+      // The approval limit is a user-record field, so it still goes through
+      // updateUser; the matrix save follows and derives the role itself.
       const trimmedLimit = approvalLimit.trim();
       const parsedLimit = trimmedLimit === '' ? null : Number(trimmedLimit);
-      const roleChanged = userDetail ? role !== userDetail.role : false;
       const limitChanged = userDetail ? trimmedLimit !== (userDetail.approvalLimit ?? '') : false;
-      if (roleChanged || limitChanged) {
+      if (limitChanged) {
         await updateUser.mutateAsync({
-          role,
           approvalLimit: parsedLimit !== null && Number.isNaN(parsedLimit) ? null : parsedLimit,
         });
       }
+      // The role is NOT sent — saveUserAccess derives it from this same
+      // access, in one transaction, so the two can never drift apart.
       await save.mutateAsync({
         userId,
-        input: { fullAccess, auditor, departments, forms },
+        input: { fullAccess, auditor, mainDept: mainDept || null, departments, forms },
       });
       onClose();
     } catch (e) {
@@ -227,14 +259,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     }
   }
 
-  // Tiers the chosen role cannot actually deliver — the matrix would say yes
-  // and the database would still say no. Warn, never block: an admin may set
-  // the tier first and fix the role after.
-  const overreaching = Object.entries(departments).flatMap(([deptKey, tier]) => {
-    if (!tierExceedsRole(tier, role)) return [];
-    const label = ACCESS_DEPTS.find((d) => d.key === deptKey)?.label ?? deptKey;
-    return [`${label} ${tier}`];
-  });
+  // What role this access will be saved as. Shown, not chosen — the old
+  // "tier exceeds role" warning is gone because that contradiction can no
+  // longer occur: the role now follows the tiers instead of capping them.
+  const derivedRole = roleForAccess({ fullAccess, auditor, departments });
 
   return (
     <div
@@ -300,27 +328,34 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               <div style={{ minWidth: 220, flex: 1 }}>
                 <b style={{ fontSize: 14 }}>{userName}</b>
                 <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
-                  Role is the ceiling — it decides what the database will accept. Tier decides
-                  how much of that ceiling this person actually gets. Highest tier this role can
-                  deliver: <b>{maxTierForRole(role)}</b>.
+                  Pick the department this person works in — it sets that department to{' '}
+                  <b>{MAIN_DEPT_DEFAULT_TIER} Editor / Executor</b> below. Change the level, or
+                  add other departments, as much as you like afterwards.
                 </div>
-                <RoleCeilingHelp role={role} />
+                <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
+                  Saved role:{' '}
+                  <span className={`badge ${roleBadgeClass(derivedRole)}`}>{derivedRole}</span>{' '}
+                  — worked out from the access below, not chosen. It is what the server checks on
+                  every save.
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                 <div className="form-grp" style={{ margin: 0 }}>
-                  <label className="form-label" htmlFor="cfg-role" style={{ fontSize: 11 }}>
-                    Role
+                  <label className="form-label" htmlFor="cfg-dept" style={{ fontSize: 11 }}>
+                    Department
                   </label>
                   <select
-                    id="cfg-role"
+                    id="cfg-dept"
                     className="innovic-select"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as UserRole)}
+                    value={mainDept}
+                    disabled={disabled}
+                    onChange={(e) => changeMainDept(e.target.value)}
                     style={{ fontSize: 12, fontWeight: 700 }}
                   >
-                    {USER_ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
+                    <option value="">— none —</option>
+                    {ACCESS_DEPTS.map((d) => (
+                      <option key={d.key} value={d.key}>
+                        {d.label}
                       </option>
                     ))}
                   </select>
@@ -341,14 +376,14 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     step={1000}
                     autoComplete="off"
                     placeholder="e.g. 100000"
-                    disabled={role === 'admin'}
+                    disabled={fullAccess}
                     value={approvalLimit}
                     onChange={(e) => setApprovalLimit(e.target.value)}
                     style={{ fontSize: 12 }}
                   />
                   <div className="form-help" style={{ fontSize: 10 }}>
-                    {role === 'admin'
-                      ? 'Admin approves any amount.'
+                    {fullAccess
+                      ? 'Super Admin approves any amount.'
                       : 'Blank = use the company limit from System Settings → Approvals.'}
                   </div>
                 </div>
@@ -397,7 +432,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   className="innovic-input"
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
-                  placeholder='{"fullAccess":false,"auditor":false,"departments":{"sales":"L3"},"forms":{...}}'
+                  placeholder='{"fullAccess":false,"auditor":false,"mainDept":"design","departments":{"design":"L3"},"forms":{...}}'
                   rows={5}
                   style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
                 />
@@ -481,7 +516,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               >
                 {ACCESS_DEPTS.map((d) => {
                   const tier = departments[d.key] ?? '';
-                  const over = tier ? tierExceedsRole(tier, role) : false;
+                  const isMain = d.key === mainDept;
                   return (
                     <div
                       key={d.key}
@@ -499,6 +534,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         style={{ color: d.color, fontWeight: 600, fontSize: 12, minWidth: 84 }}
                       >
                         {d.label}
+                        {isMain ? (
+                          <span className="text3" style={{ fontSize: 9, display: 'block' }}>
+                            their department
+                          </span>
+                        ) : null}
                       </span>
                       <select
                         className="innovic-select"
@@ -514,14 +554,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           </option>
                         ))}
                       </select>
-                      {over ? (
-                        <span
-                          title={`Role "${role}" tops out at ${maxTierForRole(role)}`}
-                          style={{ color: 'var(--amber)', fontSize: 13 }}
-                        >
-                          ⚠
-                        </span>
-                      ) : null}
+
                     </div>
                   );
                 })}
@@ -538,23 +571,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </div>
             </div>
 
-            {overreaching.length > 0 ? (
-              <div
-                style={{
-                  marginBottom: 14,
-                  padding: '8px 12px',
-                  background: 'var(--bg3)',
-                  border: '1px solid var(--amber)',
-                  borderRadius: 6,
-                  color: 'var(--amber)',
-                  fontSize: 11,
-                }}
-              >
-                ⚠ The role <b>{role}</b> tops out at <b>{maxTierForRole(role)}</b>, so{' '}
-                <b>{overreaching.join(', ')}</b> will not take effect until the role is raised.
-                The tier still saves — change the role above when you are ready.
-              </div>
-            ) : null}
 
             {/* Form / Feature table */}
             <div>

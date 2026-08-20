@@ -74,6 +74,10 @@ export const userAccessSchema = z.object({
   companyId: z.string().uuid(),
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  // Which department this person belongs to. Seeds that department's tier and
+  // is what the screens show in place of the old role dropdown. Null for L6 /
+  // L7 accounts, which are not departmental, and for anyone not set up yet.
+  mainDept: z.string().nullable().default(null),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
   createdAt: z.string(),
@@ -85,6 +89,7 @@ export type UserAccess = z.infer<typeof userAccessSchema>;
 export const saveUserAccessInputSchema = z.object({
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  mainDept: z.string().nullable().default(null),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -99,6 +104,7 @@ export const userAccessListItemSchema = z.object({
   isActive: z.boolean(),
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
+  mainDept: z.string().nullable().default(null),
   // Pre-computed counts so the table doesn't need the full forms map per row.
   deptCount: z.number().int().nonnegative(),
   totalDepts: z.number().int().nonnegative(),

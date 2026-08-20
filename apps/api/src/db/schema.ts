@@ -5128,6 +5128,11 @@ export const userAccess = pgTable(
     // L7 Auditor (0100) — read EVERY department, write nothing. Distinct
     // from full_access, which also grants write.
     auditor: boolean('auditor').notNull().default(false),
+    // Which department this person belongs to (0101). Picking it seeds that
+    // department's tier; changing it clears the old one and seeds the new.
+    // Stored rather than derived because "main" and "extra" departments look
+    // identical in the map, and reopening the box has to tell them apart.
+    mainDept: text('main_dept'),
     // dept key → tier key (L1…L5) since 0100. Pre-0100 rows hold `true`,
     // which the shared normaliser reads as L1.
     departments: jsonb('departments').notNull().default({}),
