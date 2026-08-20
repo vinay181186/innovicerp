@@ -10,8 +10,10 @@
 // The Role column became a DEPARTMENT column (ADR-136). "Which department is
 // Rajesh in?" is the question this list is actually asked; "is Rajesh a
 // manager?" was an implementation detail leaking onto a people screen. The
-// derived role still shows underneath in small text, because it is what the
-// server checks on every save and a refusal has to be explainable.
+// derived role is not shown here at all — a department name and a role word
+// side by side read as two answers to one question. It lives in the Access
+// Control Configure box and on the user Edit page, the two screens where you
+// are actually deciding or investigating.
 
 import { ACCESS_DEPTS, USER_ROLES, type ListUsersQuery, type User, type UserRole } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -48,14 +50,6 @@ export const usersListRoute = createRoute({
   validateSearch: listSearchSchema,
   component: UsersListPage,
 });
-
-function roleBadgeClass(role: UserRole): string {
-  if (role === 'admin') return 'b-red';
-  if (role === 'manager') return 'b-blue';
-  if (role === 'operator') return 'b-amber';
-  if (role === 'qc') return 'b-cyan';
-  return 'b-grey';
-}
 
 function UsersListPage(): React.JSX.Element {
   const search = usersListRoute.useSearch();
@@ -130,24 +124,12 @@ function UsersListPage(): React.JSX.Element {
         cell: ({ row }) => {
           const key = accessByUser.get(row.original.id)?.mainDept ?? null;
           const dept = key ? ACCESS_DEPTS.find((d) => d.key === key) : undefined;
-          return (
-            <>
-              {dept ? (
-                <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>
-                  {dept.label}
-                </span>
-              ) : (
-                <span className="text3" style={{ fontSize: 11 }}>
-                  —
-                </span>
-              )}
-              <div className="text3" style={{ fontSize: 9, marginTop: 1 }}>
-                saved as{' '}
-                <span className={`badge ${roleBadgeClass(row.original.role)}`}>
-                  {row.original.role}
-                </span>
-              </div>
-            </>
+          return dept ? (
+            <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>{dept.label}</span>
+          ) : (
+            <span className="text3" style={{ fontSize: 11 }}>
+              —
+            </span>
           );
         },
       },

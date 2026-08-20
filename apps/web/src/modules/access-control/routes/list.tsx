@@ -45,14 +45,6 @@ function deptLabel(key: string | null): { label: string; color: string } | null 
   return d ? { label: d.label, color: d.color } : null;
 }
 
-function roleBadgeClass(role: string): string {
-  if (role === 'admin') return 'b-red';
-  if (role === 'manager') return 'b-blue';
-  if (role === 'operator') return 'b-amber';
-  if (role === 'qc') return 'b-cyan';
-  return 'b-grey';
-}
-
 function AccessControlListPage(): React.JSX.Element {
   const { data: me } = useSession();
   const navigate = accessControlListRoute.useNavigate();
@@ -149,7 +141,7 @@ function AccessControlListPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                (data?.items ?? []).map((u) => <UserAccessRow key={u.userId} u={u} onConfigure={() => setEditing(u)} />)
+                (data?.items ?? []).map((u, i) => <UserAccessRow key={u.userId} u={u} index={i} onConfigure={() => setEditing(u)} />)
               )}
             </tbody>
           </table>
@@ -160,9 +152,10 @@ function AccessControlListPage(): React.JSX.Element {
         💡 Click Configure to set someone's department, their level in it, and any form-level
         extras.
         <br />
-        <b>The role is worked out for you.</b> It is no longer something you pick — it follows
-        from the departments and levels you grant, so the two can never disagree. It is still what
-        the server checks on every save, which is why the row shows it.
+        <b>The role is worked out for you</b> from the departments and levels you grant — it is
+        not something you pick any more, and you will only see it inside Configure. A row warns in
+        amber when the role the server is still enforcing has fallen behind what the row shows;
+        opening Configure and saving clears it.
         <br />
         <b>An empty matrix now denies.</b> A user with no tier saved sees nothing at all —
         it used to mean "allow everything until configured", which left the person nobody had
@@ -187,14 +180,21 @@ function AccessControlListPage(): React.JSX.Element {
 
 function UserAccessRow({
   u,
+  index,
   onConfigure,
 }: {
   u: UserAccessListItem;
+  index: number;
   onConfigure: () => void;
 }): React.JSX.Element {
   const dept = deptLabel(u.mainDept);
+  // The stored role only catches up when someone presses Save Access. Until
+  // then the row can show departments while the server still enforces an older
+  // word — invisible unless we say so. Admins bypass the matrix entirely, so
+  // the mismatch is meaningless for them.
+  const stale = u.role !== 'admin' && u.derivedRole !== '' && u.role !== u.derivedRole;
   return (
-    <tr>
+    <tr style={{ background: index % 2 ? 'var(--bg3)' : 'var(--bg2)' }}>
       <td className="fw-700">{u.userName ?? u.userEmail}</td>
       <td>
         {dept ? (
@@ -202,12 +202,6 @@ function UserAccessRow({
         ) : (
           <span className="text3" style={{ fontSize: 11 }}>—</span>
         )}
-        {/* The derived role, shown small. It is not chosen any more, but it is
-            still what the server checks on every save, so hiding it entirely
-            would make a refusal impossible to explain. */}
-        <div className="text3" style={{ fontSize: 9, marginTop: 1 }}>
-          saved as <span className={`badge ${roleBadgeClass(u.role)}`}>{u.role}</span>
-        </div>
       </td>
       <td style={{ fontSize: 11 }}>
         {u.fullAccess ? (
@@ -217,10 +211,19 @@ function UserAccessRow({
             L7 Auditor — reads everything, writes nothing
           </span>
         ) : u.tierSummary ? (
-          u.tierSummary
+          <>
+            {u.tierSummary}
+            {stale ? (
+              <div style={{ color: 'var(--amber)', fontSize: 10, marginTop: 2 }}>
+                ⚠ still enforced as <b>{u.role}</b> — open Configure and Save to apply
+              </div>
+            ) : null}
+          </>
         ) : (
           <span style={{ color: 'var(--red)', fontWeight: 600 }}>
-            Not configured — this person can see nothing. Click Configure.
+            {u.role === 'admin'
+              ? 'No departments set — but they are an admin, so they bypass this entirely.'
+              : 'Not configured — this person can see nothing. Click Configure.'}
           </span>
         )}
       </td>

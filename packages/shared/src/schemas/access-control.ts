@@ -90,6 +90,11 @@ export const saveUserAccessInputSchema = z.object({
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
+  // Explicit intent to drop someone out of admin. The derived role makes it
+  // possible to demote an admin by saving an empty box, which is a one-click
+  // accident with no undo — so the server refuses unless the caller says they
+  // meant it, and the modal asks first.
+  confirmAdminChange: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -105,6 +110,10 @@ export const userAccessListItemSchema = z.object({
   fullAccess: z.boolean(),
   auditor: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
+  // What the access below WOULD derive to. `role` above is what is stored and
+  // enforced right now; they differ for anyone whose access has never been
+  // saved, and the row says so rather than leaving it invisible.
+  derivedRole: z.string().default(''),
   // Pre-computed counts so the table doesn't need the full forms map per row.
   deptCount: z.number().int().nonnegative(),
   totalDepts: z.number().int().nonnegative(),

@@ -7158,3 +7158,43 @@ Preferring `qc` and `operator` is not cosmetic — both are genuinely narrower t
 - **Negative:** an existing user's role can change the first time an admin saves their access, if the stored role does not match what their tiers derive to. That is the intended correction, but it is a silent one on first save.
 - **Risk:** migration 0101 must land before the API deploy — the service selects `user_access.main_dept`. The backfill was dry-run as a SELECT first: of four access rows, only `dummy@gmail.com` has departments, and it resolves to `production` (its L2), leaving `qc` L1 as an extra.
 - **Not addressed:** the User Management role **filter** still filters by role rather than department; `submitQcLog` still calls `requireOpEntryRole`; RLS is still inert; and the enforcement sweep across the remaining ~30 modules is still the outstanding piece of work.
+
+## ADR-137: The derived role leaves the list rows; demoting an admin needs saying so
+
+**Date:** 2026-08-20
+**Status:** Accepted
+
+### Context
+
+ADR-136 derived `users.role` from the access and printed it on every list row as *"saved as manager"*, so a refusal would stay explainable. Reading it back on the real screens, two problems:
+
+**It was confusing.** A row showing **Department: Design** and **saved as manager** reads as two answers to one question. The label also said the wrong thing — "saved as" sounds like the outcome of a save; it means "this is the word the server checks".
+
+**It could be silently stale.** The label reads `users.role`, which only changes when someone presses Save Access. Of seven production users, two had never been saved: `haresh.innovic@gmail.com` showed no departments while the server still enforced `manager`, and `it.innovic@gmail.com` showed no departments while still enforcing `admin`. Nothing said so.
+
+Auditing that turned up a worse thing. An admin with **no access row** loads an EMPTY Configure box. Pressing Save without touching anything derives them to `viewer` and locks them out, with no undo. The ADR-136 guard only fired for `userId === user.id`, so one admin could do this to another in one click, unwarned.
+
+### Decision
+
+**1. The derived role comes off both list rows.** It lives in the Configure box, relabelled **"System role"**, and on the user Edit page — the two screens where you are deciding or investigating. The lists answer "who is in which department?" and nothing else.
+
+**2. Silent when right, loud when wrong.** `userAccessListItem` now carries `derivedRole` beside the stored `role`. When they disagree the row shows an amber line — *"still enforced as manager — open Configure and Save to apply"*. Suppressed for admins, who bypass the matrix so the comparison is meaningless.
+
+**3. Demoting an admin requires explicit intent.** `saveUserAccessInput` gains `confirmAdminChange`. Demoting *yourself* stays refused outright — if it is wrong there is nobody left to reverse it. Demoting *someone else* is refused **once**, with the reason and the resulting role named; the modal turns that refusal into a question and resends with the flag if the admin confirms.
+
+**4. The "can see nothing" line is corrected for admins** — they bypass the matrix, so an admin with no departments is told exactly that instead of being described as locked out.
+
+### Alternatives Considered
+
+- **Keep the role on the rows under a better name ("System role", "Enforced as")** — rejected. Any second word next to Department competes with it. It is only needed when configuring or debugging, and both happen elsewhere.
+- **Auto-correct stale roles on read** — rejected. A read path that silently rewrites `users.role` would change what people can do without anyone pressing anything, and would hide the very drift the amber line makes visible.
+- **Refuse admin demotion outright** — rejected. It would leave no way to demote an admin at all.
+- **Send `confirmAdminChange: true` whenever the modal notices the case** — rejected. Pre-confirming is not confirming; the server refuses first and the human answers.
+
+### Consequences
+
+- **Positive:** the lists read as one idea per column; the technical word appears only where it is being decided.
+- **Positive:** the two stale accounts are now visibly stale rather than quietly wrong.
+- **Positive:** the three-admins-to-two accident is closed in both directions.
+- **Negative:** the stale warning only clears when an admin opens the box and saves — the drift is surfaced, not repaired.
+- **No migration.** `derivedRole` is computed per request; `confirmAdminChange` is input-only.

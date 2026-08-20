@@ -90,6 +90,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Set when the server refuses because this save would drop an admin. The
+  // box asks, then resends with the flag; it is never sent speculatively.
+  const [adminWarning, setAdminWarning] = useState<string | null>(null);
   // JSON matrix clone (AC-1 follow-up): export the current matrix / paste one
   // copied from another user. Replaces the legacy CSV user-import, which does
   // not fit the multi-tenant Supabase Auth model (see docs/PARITY/access-control.md).
@@ -188,6 +191,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // Export the current matrix as a pretty JSON string + copy to clipboard.
   function handleCopyJson(): void {
     const payload = { fullAccess, auditor, mainDept: mainDept || null, departments, forms };
+    // confirmAdminChange is an action, not part of a matrix — never cloned.
     const text = JSON.stringify(payload, null, 2);
     void navigator.clipboard?.writeText(text).then(
       () => {
@@ -234,8 +238,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setImportText('');
   }
 
-  async function onSave(): Promise<void> {
+  async function onSave(confirmAdminChange = false): Promise<void> {
     setSubmitError(null);
+    if (!confirmAdminChange) setAdminWarning(null);
     try {
       // The approval limit is a user-record field, so it still goes through
       // updateUser; the matrix save follows and derives the role itself.
@@ -251,11 +256,22 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       // access, in one transaction, so the two can never drift apart.
       await save.mutateAsync({
         userId,
-        input: { fullAccess, auditor, mainDept: mainDept || null, departments, forms },
+        input: {
+          fullAccess,
+          auditor,
+          mainDept: mainDept || null,
+          confirmAdminChange,
+          departments,
+          forms,
+        },
       });
       onClose();
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'Save failed');
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      // The server refuses an admin demotion once, with the reason. Surface it
+      // as a question rather than an error — the admin may well have meant it.
+      if (msg.includes('is an admin')) setAdminWarning(msg);
+      else setSubmitError(msg);
     }
   }
 
@@ -333,10 +349,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   add other departments, as much as you like afterwards.
                 </div>
                 <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-                  Saved role:{' '}
+                  System role:{' '}
                   <span className={`badge ${roleBadgeClass(derivedRole)}`}>{derivedRole}</span>{' '}
-                  — worked out from the access below, not chosen. It is what the server checks on
-                  every save.
+                  — worked out from the departments below, not chosen. This is the word the server
+                  checks on every save.
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
@@ -589,7 +605,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 <thead>
                   <tr>
                     <th>Form / Feature</th>
-                    <th style={{ width: 130 }}>Department</th>
                     <th className="td-ctr" style={{ width: 56 }}>
                       View
                     </th>
@@ -605,71 +620,133 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   </tr>
                 </thead>
                 <tbody>
-                  {ACCESS_FORMS.map((f) => {
-                    const cur = forms[f.key] ?? { ...NO_PERMS };
-                    const base = tierPermsFor(f.dept);
-                    const deptTierKey = departments[f.dept];
-                    // Displayed state = own ticks after cascade, unioned with
-                    // whatever the department tier already gives.
-                    const own: FormPerms = {
-                      view: cur.view || cur.entry || cur.edit || cur.approve,
-                      entry: cur.entry || cur.edit,
-                      edit: cur.edit,
-                      approve: cur.approve,
-                    };
-                    return (
-                      <tr key={f.key}>
-                        <td style={{ fontSize: 12 }}>{f.label}</td>
-                        <td style={{ fontSize: 11 }}>
-                          <span className="text3">{f.dept}</span>
-                          {deptTierKey ? (
+                  {ACCESS_DEPTS.flatMap((d) => {
+                    // Cluster the 39 forms under a coloured department header so
+                    // the checklist scans as named groups, not one long wall.
+                    const deptForms = ACCESS_FORMS.filter((f) => f.dept === d.key);
+                    if (deptForms.length === 0) return [];
+                    const groupTier = departments[d.key];
+                    const rows: React.JSX.Element[] = [
+                      <tr key={`grp-${d.key}`}>
+                        <td
+                          colSpan={5}
+                          style={{
+                            background: 'var(--bg4)',
+                            borderTop: '1px solid var(--border)',
+                            padding: '5px 10px',
+                          }}
+                        >
+                          <span
+                            className="mono fw-700"
+                            style={{
+                              color: d.color,
+                              fontSize: 10,
+                              letterSpacing: '0.08em',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            ▸ {d.label}
+                          </span>
+                          {groupTier ? (
                             <span
                               className="badge b-grey"
-                              style={{ marginLeft: 5, fontSize: 9 }}
-                              title={accessTier(deptTierKey).hint}
+                              style={{ marginLeft: 8, fontSize: 9 }}
+                              title={accessTier(groupTier).hint}
                             >
-                              {deptTierKey}
+                              {groupTier}
                             </span>
                           ) : null}
                         </td>
-                        {(['view', 'entry', 'edit', 'approve'] as const).map((action) => {
-                          const fromTier =
-                            fullAccess || (auditor && action === 'view') || base[action];
-                          return (
-                            <td key={action} className="td-ctr">
-                              <input
-                                type="checkbox"
-                                disabled={disabled || fromTier}
-                                checked={fromTier || own[action]}
-                                onChange={() => toggleAction(f.key, action)}
-                                title={
-                                  fromTier && deptTierKey && !disabled
-                                    ? `Granted by the ${f.dept} tier (${deptTierKey})`
-                                    : undefined
-                                }
-                                style={{
-                                  width: 16,
-                                  height: 16,
-                                  accentColor: ACTION_COLOR[action],
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
+                      </tr>,
+                    ];
+                    deptForms.forEach((f, i) => {
+                      const cur = forms[f.key] ?? { ...NO_PERMS };
+                      const base = tierPermsFor(f.dept);
+                      const deptTierKey = departments[f.dept];
+                      // Displayed state = own ticks after cascade, unioned with
+                      // whatever the department tier already gives.
+                      const own: FormPerms = {
+                        view: cur.view || cur.entry || cur.edit || cur.approve,
+                        entry: cur.entry || cur.edit,
+                        edit: cur.edit,
+                        approve: cur.approve,
+                      };
+                      rows.push(
+                        <tr key={f.key} style={{ background: i % 2 ? 'var(--bg3)' : 'var(--bg2)' }}>
+                          <td style={{ fontSize: 12, paddingLeft: 18 }}>{f.label}</td>
+                          {(['view', 'entry', 'edit', 'approve'] as const).map((action) => {
+                            const fromTier =
+                              fullAccess || (auditor && action === 'view') || base[action];
+                            return (
+                              <td key={action} className="td-ctr">
+                                <input
+                                  type="checkbox"
+                                  disabled={disabled || fromTier}
+                                  checked={fromTier || own[action]}
+                                  onChange={() => toggleAction(f.key, action)}
+                                  title={
+                                    fromTier && deptTierKey && !disabled
+                                      ? `Granted by the ${f.dept} tier (${deptTierKey})`
+                                      : undefined
+                                  }
+                                  style={{
+                                    width: 16,
+                                    height: 16,
+                                    accentColor: ACTION_COLOR[action],
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>,
+                      );
+                    });
+                    return rows;
                   })}
                 </tbody>
               </table>
             </div>
+
+            {adminWarning ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: '10px 12px',
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--amber)',
+                  borderRadius: 6,
+                  color: 'var(--amber)',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ marginBottom: 8 }}>⚠ {adminWarning}</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setAdminWarning(null)}
+                  >
+                    Cancel — keep them an admin
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    onClick={() => void onSave(true)}
+                    disabled={save.isPending}
+                  >
+                    Yes, remove their admin rights
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {submitError ? (
               <div
                 style={{
                   marginTop: 12,
                   padding: '8px 12px',
-                  background: 'rgba(239,68,68,0.06)',
-                  border: '1px solid rgba(239,68,68,0.3)',
+                  background: 'var(--red3)',
+                  border: '1px solid var(--red)',
                   borderRadius: 6,
                   color: 'var(--red)',
                   fontSize: 12,
@@ -694,7 +771,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 type="button"
                 className="btn btn-primary btn-sm"
                 disabled={save.isPending || updateUser.isPending}
-                onClick={() => void onSave()}
+                onClick={() => void onSave(false)}
               >
                 {save.isPending || updateUser.isPending ? (
                   <>

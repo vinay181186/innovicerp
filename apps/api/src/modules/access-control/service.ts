@@ -174,6 +174,7 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
         fullAccess,
         auditor,
         mainDept: r.acMainDept ?? null,
+        derivedRole: roleForAccess({ fullAccess, auditor, departments: normalizeDeptsMap(depts) }),
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
         totalDepts,
         formCount: fullAccess ? totalForms : countForms(forms),
@@ -287,12 +288,30 @@ export async function saveUserAccess(
     }
     const targetUser = target[0]!;
 
-    // Same guard `updateUser` applies: an admin cannot strip their own admin
-    // rights in one click and lock themselves out. Here it bites when an admin
-    // unticks their own Full Access, which would derive them down to manager.
+    // Dropping someone out of admin is now a one-click accident waiting to
+    // happen: an admin with no access row loads an EMPTY box, so pressing Save
+    // without touching anything derives them to viewer and locks them out with
+    // no undo. Two guards.
+    //
+    // Yourself: always refused, whatever you tick. You cannot confirm your own
+    // demotion, because if it is wrong there is nobody left to reverse it.
     if (userId === user.id && derivedRole !== 'admin' && targetUser.role === 'admin') {
       throw new ValidationError(
         'This would remove your own admin access — ask another admin to do it.',
+      );
+    }
+    // Someone else: allowed, but only on purpose. The modal asks first and
+    // resends with the flag set.
+    if (
+      userId !== user.id &&
+      targetUser.role === 'admin' &&
+      derivedRole !== 'admin' &&
+      !input.confirmAdminChange
+    ) {
+      throw new ValidationError(
+        `${targetUser.fullName ?? targetUser.email} is an admin. Saving this access would ` +
+          `change them to "${derivedRole}" and they would lose admin rights. Tick Full Access ` +
+          `to keep them an admin, or confirm the change.`,
       );
     }
     if (targetUser.role !== derivedRole) {
