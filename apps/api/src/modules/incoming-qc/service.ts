@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { goodsReceiptNoteLines, jcOps, jobCards, purchaseOrderLines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -264,6 +264,10 @@ export async function submitIncomingQc(
   user: AuthContext,
 ): Promise<{ ok: true; grnId: string }> {
   requireWriteRole(user);
+  // ADR-035: enforce the per-department QC tier, not just the role — a user
+  // with Incoming QC view-only (L1) must not accept/reject received goods even
+  // if their global role is manager. Admins bypass.
+  await requireFormAccess(user, 'qc_incoming', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx

@@ -29,6 +29,7 @@ import {
   runningOps,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireOpEntryRole, requireQcRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -820,6 +821,11 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
 //   - QC report file attachment (deferred per ADR-022 — qcDocUploads doc_missing)
 export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): Promise<OpLog> {
   requireOpEntryRole(user);
+  // ADR-035: the role guard alone let a manager record QC even when their QC
+  // department tier is L1 (view-only). Enforce the per-department QC tier too —
+  // a user must have `entry` on the QC Call Register form to accept/reject qty.
+  // Admins bypass; the matrix can only narrow what the role already allows.
+  await requireFormAccess(user, 'qc_submit', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
