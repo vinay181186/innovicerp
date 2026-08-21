@@ -122,6 +122,10 @@ export interface DocPrintModel {
   meta: DocMetaCell[];
   lines: DocLine[];
   totals?: DocTotals; // PO only
+  // When true, a priced doc (PO / Service PO) is rendered WITHOUT the Rate,
+  // Amount and totals columns — for viewers whose access hides prices. The
+  // table falls back to the qty-only layout the delivery challans use.
+  hideMoney?: boolean;
   opts?: { testBanner?: boolean };
 }
 
@@ -162,6 +166,8 @@ export function buildDocHtml(model: DocPrintModel): string {
   // PO + Service PO both render the priced goods table, totals, and amount in
   // words. The two DC docs render a qty-only table without amounts.
   const isPo = doc === 'PO' || doc === 'SERVICE PO';
+  // A priced doc drops to the qty-only table when the viewer may not see money.
+  const priced = isPo && !model.hideMoney;
   const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
 
   const headerNote = sub('header_note');
@@ -175,7 +181,7 @@ export function buildDocHtml(model: DocPrintModel): string {
     .map((l) => `<div>${esc(l)}</div>`)
     .join('');
 
-  const itemHead = isPo
+  const itemHead = priced
     ? '<th>#</th><th>Description of Goods</th><th style="text-align:right">Qty</th><th>UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
     : '<th>#</th><th>Item</th><th style="text-align:right">Qty</th><th>UOM</th>';
 
@@ -184,14 +190,14 @@ export function buildDocHtml(model: DocPrintModel): string {
       const name = l.itemName
         ? `<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span>`
         : '';
-      return isPo
+      return priced
         ? `<tr><td style="text-align:center">${i + 1}</td><td>${esc(l.itemCode)}${name}</td><td style="text-align:right">${esc(l.qty)}</td><td style="text-align:center">${esc(l.uom ?? 'NOS')}</td><td style="text-align:right">${esc(l.rate ?? '')}</td><td style="text-align:right;font-weight:600">${esc(l.amount ?? '')}</td></tr>`
         : `<tr><td style="text-align:center">${i + 1}</td><td>${esc(l.itemCode)}${name}</td><td style="text-align:right">${esc(l.qty)}</td><td style="text-align:center">${esc(l.uom ?? 'NOS')}</td></tr>`;
     })
     .join('');
 
   let totalsHtml = '';
-  if (isPo && totals) {
+  if (priced && totals) {
     const span = 5; // columns left of Amount
     const taxRows = totals.taxRows
       .map(
@@ -206,7 +212,7 @@ export function buildDocHtml(model: DocPrintModel): string {
   }
 
   const amtWordsHtml =
-    isPo && totals
+    priced && totals
       ? `<div class="amt-words"><b>Amount Chargeable (in words)</b><br><i>${esc(totals.amountInWords)}</i></div>`
       : '';
 

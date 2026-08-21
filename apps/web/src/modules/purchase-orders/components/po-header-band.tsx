@@ -189,48 +189,40 @@ export function PoHeaderBand({
             }
             align="right"
           />
-          <Row
-            label="Subtotal"
-            value={
-              <span className="mono">
-                {detail.subtotal == null ? 'Hidden' : `₹${detail.subtotal.toFixed(2)}`}
-              </span>
-            }
-            align="right"
-          />
-          <Row
-            label="Tax"
-            value={
-              <span className="mono">
-                {detail.taxAmount == null ? 'Hidden' : `₹${detail.taxAmount.toFixed(2)}`}
-              </span>
-            }
-            align="right"
-          />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              gap: 10,
-              // Matches the column dividers' weight so the Total rule doesn't
-              // read lighter than the lines crossing beside it.
-              borderTop: '1px solid var(--border3)',
-              paddingTop: 6,
-              marginTop: 2,
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
-            <span
-              className="mono fw-700"
-              style={{
-                fontSize: 16,
-                color: detail.totalAmount == null ? 'var(--text3)' : 'var(--green)',
-              }}
-            >
-              {detail.totalAmount == null ? 'Hidden' : `₹${detail.totalAmount.toFixed(2)}`}
-            </span>
-          </div>
+          {/* Money rows are dropped entirely for viewers who may not see
+              prices — the API returns null for these amounts. */}
+          {detail.totalAmount == null ? null : (
+            <>
+              <Row
+                label="Subtotal"
+                value={<span className="mono">₹{(detail.subtotal ?? 0).toFixed(2)}</span>}
+                align="right"
+              />
+              <Row
+                label="Tax"
+                value={<span className="mono">₹{(detail.taxAmount ?? 0).toFixed(2)}</span>}
+                align="right"
+              />
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  gap: 10,
+                  // Matches the column dividers' weight so the Total rule doesn't
+                  // read lighter than the lines crossing beside it.
+                  borderTop: '1px solid var(--border3)',
+                  paddingTop: 6,
+                  marginTop: 2,
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
+                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+                  ₹{detail.totalAmount.toFixed(2)}
+                </span>
+              </div>
+            </>
+          )}
         </Col>
 
         {/* ── Tax & approval ── */}

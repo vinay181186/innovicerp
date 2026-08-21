@@ -336,8 +336,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <th>Item Name</th>
                 <th>Source</th>
                 <th>Qty</th>
-                <th>Rate</th>
-                <th style={{ color: 'var(--green)' }}>Amount</th>
+                {priceHidden ? null : (
+                  <>
+                    <th>Rate</th>
+                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                  </>
+                )}
                 <th style={{ color: 'var(--green)' }}>Received</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>Due</th>
@@ -347,12 +351,14 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="empty-state">
+                  <td colSpan={priceHidden ? 9 : 11} className="empty-state">
                     No lines on this PO yet.
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
+                detail.lines.map((l) => (
+                  <LineRow key={l.id} line={l} priceHidden={priceHidden} />
+                ))
               )}
             </tbody>
           </table>
@@ -429,13 +435,15 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   <br />
                   <b>{detail.lines.length}</b>
                 </div>
-                <div>
-                  <span className="text3" style={{ fontSize: 10 }}>VALUE</span>
-                  <br />
-                  <b style={{ color: priceHidden ? 'var(--text3)' : 'var(--green)' }}>
-                    {priceHidden ? 'Hidden' : `₹${Math.round(totalValue).toLocaleString('en-IN')}`}
-                  </b>
-                </div>
+                {priceHidden ? null : (
+                  <div>
+                    <span className="text3" style={{ fontSize: 10 }}>VALUE</span>
+                    <br />
+                    <b style={{ color: 'var(--green)' }}>
+                      ₹{Math.round(totalValue).toLocaleString('en-IN')}
+                    </b>
+                  </div>
+                )}
               </div>
               <div className="form-grp">
                 <label className="form-label">Approval Remarks</label>
@@ -606,10 +614,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 // not parity), Item Code is `td-code` on the <td> in var(--purple) (a real
 // token with no utility class), Received is always green and Pending flips
 // red/green on >0.
-function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
-  const { line: l } = props;
-  // rate is null when the viewer may not see prices → hide rate + amount.
-  const priceHidden = l.rate == null;
+function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): React.JSX.Element {
+  const { line: l, priceHidden } = props;
+  // When the viewer may not see prices the Rate + Amount columns are dropped
+  // from the table entirely (header + cells), not blanked.
   const amount = l.qty * Number(l.rate ?? 0);
   const pending = Math.max(0, l.qty - l.receivedQty);
   return (
@@ -623,12 +631,14 @@ function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
         {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
       </td>
       <td className="mono fw-700">{l.qty}</td>
-      <td className="mono" style={{ fontSize: 11 }}>
-        {priceHidden ? 'Hidden' : Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
-      </td>
-      <td className="mono green">
-        {priceHidden ? 'Hidden' : amount > 0 ? `₹${amount.toFixed(2)}` : '—'}
-      </td>
+      {priceHidden ? null : (
+        <>
+          <td className="mono" style={{ fontSize: 11 }}>
+            {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
+          </td>
+          <td className="mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+        </>
+      )}
       <td className="mono green fw-700">{l.receivedQty}</td>
       <td
         className="mono"

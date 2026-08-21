@@ -90,6 +90,9 @@ export function printPurchaseOrder(args: {
 
   const model: DocPrintModel = {
     doc: 'PO',
+    // Viewers who may not see prices get the qty-only PO — no Rate/Amount
+    // columns, no totals, no amount-in-words.
+    hideMoney: priceHidden,
     blocks: templatesToBlocks('PO', templates),
     data,
     company: buildDocCompany(company),
