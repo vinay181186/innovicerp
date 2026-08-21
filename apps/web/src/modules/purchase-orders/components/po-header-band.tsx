@@ -229,16 +229,18 @@ export function PoHeaderBand({
         <Col caption="Tax & Approval">
           <Row label="Tax type" value={detail.taxType ?? '—'} />
           <Row label="Due date" value={<span className="mono">{detail.dueDate ?? '—'}</span>} />
-          <div style={{ fontSize: 11, marginBottom: 6 }}>
-            <div className="text3" style={{ marginBottom: 2 }}>
-              GST split
+          {detail.totalAmount == null ? null : (
+            <div style={{ fontSize: 11, marginBottom: 6 }}>
+              <div className="text3" style={{ marginBottom: 2 }}>
+                GST split
+              </div>
+              <div className="mono">
+                <span className="text2">SGST</span> {detail.sgstPct}% ·{' '}
+                <span className="text2">CGST</span> {detail.cgstPct}% ·{' '}
+                <span className="text2">IGST</span> {detail.igstPct}%
+              </div>
             </div>
-            <div className="mono">
-              <span className="text2">SGST</span> {detail.sgstPct}% ·{' '}
-              <span className="text2">CGST</span> {detail.cgstPct}% ·{' '}
-              <span className="text2">IGST</span> {detail.igstPct}%
-            </div>
-          </div>
+          )}
           {detail.approvedAt ? (
             <Row label="Approved at" value={<span className="mono">{detail.approvedAt}</span>} />
           ) : null}

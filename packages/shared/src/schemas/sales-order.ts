@@ -60,7 +60,9 @@ export const salesOrderLineSchema = z.object({
   // Σ job_cards.order_qty whose source_so_line_id = this line (SO detail read,
   // 0 elsewhere). Drives the JC-Qty / Balance columns on the SO Master expand.
   jcQty: z.number().int().nonnegative().default(0),
-  rate: z.string(), // numeric stored as string
+  // numeric stored as string; NULL when the viewer's access hides prices
+  // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
+  rate: z.string().nullable(),
   dueDate: z.string().nullable(), // ISO date
   clientPoLineNo: z.string().nullable(),
   status: soStatusSchema,
@@ -95,7 +97,8 @@ export const salesOrderSchema = z.object({
   clientPoNo: z.string().nullable(),
   type: soTypeSchema,
   status: soStatusSchema,
-  gstPercent: z.string(), // numeric stored as string
+  // numeric stored as string; NULL when the viewer's access hides prices.
+  gstPercent: z.string().nullable(),
   bomMasterId: z.string().nullable(),
   bomStatus: z.string().nullable(),
   costCenter: z.string().nullable(),

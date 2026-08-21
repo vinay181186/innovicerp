@@ -33,6 +33,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
@@ -206,11 +207,24 @@ function gstToString(g: number): string {
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// Money-hiding for L1 Viewers ("Can See Price"). When the caller may not see
+// prices on Sales Orders, the line rate and the GST percentage are nulled
+// before they leave the server — list, detail, print and export all read from
+// these, so nulling here hides money everywhere at once.
+function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
+  return { ...h, gstPercent: null };
+}
+
+function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {
+  return { ...l, rate: null };
+}
+
 export async function listSalesOrders(
   input: ListSalesOrdersQuery,
   user: AuthContext,
 ): Promise<ListSalesOrdersResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
     // Build conditional WHERE fragments inline. Mirrors legacy
     // `renderSOmaster` filter set (line 19308 status / line 19542 search).
@@ -305,7 +319,8 @@ export async function listSalesOrders(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
-    const items = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const items = showMoney ? mapped : mapped.map(hideSoHeaderMoney);
     return { items, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -362,6 +377,7 @@ async function resolveUserName(tx: DbTransaction, userId: string): Promise<strin
 
 export async function getSalesOrder(id: string, user: AuthContext): Promise<SalesOrderDetail> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
     const headers = await tx
       .select()
@@ -445,15 +461,19 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
       bomMasterCode = bomRows[0]?.bomNo ?? null;
     }
 
+    const headerOut = toSalesOrder(header);
     return {
-      ...toSalesOrder(header),
+      ...(showMoney ? headerOut : hideSoHeaderMoney(headerOut)),
       createdByName,
       bomMasterCode,
-      lines: lineRows.map((r) => ({
-        ...toSalesOrderLine(r.row, r.itemCode),
-        billedQty: billedByLine.get(r.row.id) ?? 0,
-        jcQty: jcByLine.get(r.row.id) ?? 0,
-      })),
+      lines: lineRows.map((r) => {
+        const line = {
+          ...toSalesOrderLine(r.row, r.itemCode),
+          billedQty: billedByLine.get(r.row.id) ?? 0,
+          jcQty: jcByLine.get(r.row.id) ?? 0,
+        };
+        return showMoney ? line : hideSoLineMoney(line);
+      }),
       milestones,
       clientPoFilePath,
     };

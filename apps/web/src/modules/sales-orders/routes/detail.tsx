@@ -75,7 +75,10 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
-  const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate), 0);
+  // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line
+  // rate together, so a null GST % is the single signal to drop ₹ here.
+  const priceHidden = detail.gstPercent == null;
+  const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (
     <div>
@@ -193,7 +196,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
-            {totalValue > 0 ? (
+            {!priceHidden && totalValue > 0 ? (
               <>
                 {' '}
                 · value <b style={{ color: 'var(--text)' }}>₹{totalValue.toFixed(2)}</b>
@@ -215,7 +218,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <th style={{ color: 'var(--green)' }}>Billed</th>
                 <th style={{ color: 'var(--red)' }}>Pending</th>
                 <th>UOM</th>
-                <th>Rate</th>
+                {priceHidden ? null : <th>Rate</th>}
                 <th>Due date</th>
                 <th>Status</th>
               </tr>
@@ -223,12 +226,14 @@ function SalesOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="empty-state">
+                  <td colSpan={priceHidden ? 12 : 13} className="empty-state">
                     No lines on this SO yet.
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
+                detail.lines.map((l) => (
+                  <LineRow key={l.id} line={l} priceHidden={priceHidden} />
+                ))
               )}
             </tbody>
           </table>
@@ -401,8 +406,8 @@ function ClientPoFileBar({
   );
 }
 
-function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
-  const { line: l } = props;
+function LineRow(props: { line: SalesOrderLine; priceHidden: boolean }): React.JSX.Element {
+  const { line: l, priceHidden } = props;
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
@@ -426,9 +431,11 @@ function LineRow(props: { line: SalesOrderLine }): React.JSX.Element {
         {l.orderQty - l.billedQty}
       </td>
       <td>{l.uom}</td>
-      <td className="mono">
-        {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
-      </td>
+      {priceHidden ? null : (
+        <td className="mono">
+          {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
+        </td>
+      )}
       <td className="text2" style={{ fontSize: 11 }}>
         {l.dueDate ?? '—'}
       </td>
@@ -472,10 +479,14 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
           )
         }
       />
-      <StripItem
-        label="GST %"
-        value={<span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>}
-      />
+      {detail.gstPercent == null ? null : (
+        <StripItem
+          label="GST %"
+          value={
+            <span style={{ color: 'var(--green)', fontWeight: 700 }}>{detail.gstPercent}%</span>
+          }
+        />
+      )}
       <StripItem label="Cost center" value={detail.costCenter ?? '—'} />
       {detail.type !== 'component_manufacturing' ? (
         <StripItem

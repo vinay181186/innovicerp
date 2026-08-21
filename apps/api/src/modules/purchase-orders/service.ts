@@ -217,9 +217,24 @@ function maybeDateLike(v: unknown): string | null {
 // so nulling here hides money everywhere at once. GST percentages are kept:
 // they are not the confidential figures and revealing them alone is harmless.
 function hidePoHeaderMoney<
-  T extends { subtotal: number | null; taxAmount: number | null; totalAmount: number | null },
+  T extends {
+    subtotal: number | null;
+    taxAmount: number | null;
+    totalAmount: number | null;
+    sgstPct: string | null;
+    cgstPct: string | null;
+    igstPct: string | null;
+  },
 >(h: T): T {
-  return { ...h, subtotal: null, taxAmount: null, totalAmount: null };
+  return {
+    ...h,
+    subtotal: null,
+    taxAmount: null,
+    totalAmount: null,
+    sgstPct: null,
+    cgstPct: null,
+    igstPct: null,
+  };
 }
 
 function hidePoLineMoney<T extends { rate: string | null }>(l: T): T {

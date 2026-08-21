@@ -74,9 +74,11 @@ export const purchaseOrderSchema = z.object({
   status: poStatusSchema,
   dueDate: z.string().nullable(),
   taxType: z.string().nullable(),
-  sgstPct: z.string(),
-  cgstPct: z.string(),
-  igstPct: z.string(),
+  // GST percentages — NULL when the viewer's access hides prices (they reveal
+  // the money structure, so they are hidden with the amounts).
+  sgstPct: z.string().nullable(),
+  cgstPct: z.string().nullable(),
+  igstPct: z.string().nullable(),
   // Stored computed totals (migration 0078), mirror of the invoice header.
   // subtotal = Σ(qty×rate); taxAmount = subtotal×(sgst+cgst+igst)/100;
   // totalAmount = subtotal + taxAmount. Numbers (service converts the numeric
