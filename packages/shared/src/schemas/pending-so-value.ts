@@ -30,12 +30,13 @@ export const pendingSoValueRowSchema = z.object({
   soDate: z.string(),
   dueDate: z.string().nullable(),
   status: z.string(),
-  orderValue: z.string(),
-  dispatchedValue: z.string(),
-  pendingValue: z.string(),
-  invoicedValue: z.string(),
-  receivedValue: z.string(),
-  outstandingValue: z.string(),
+  // Money — NULL when the viewer's access hides prices.
+  orderValue: z.string().nullable(),
+  dispatchedValue: z.string().nullable(),
+  pendingValue: z.string().nullable(),
+  invoicedValue: z.string().nullable(),
+  receivedValue: z.string().nullable(),
+  outstandingValue: z.string().nullable(),
 });
 export type PendingSoValueRow = z.infer<typeof pendingSoValueRowSchema>;
 
@@ -43,12 +44,13 @@ export type PendingSoValueRow = z.infer<typeof pendingSoValueRowSchema>;
  *  (legacy L19333–19340). */
 export const pendingSoValueTotalsSchema = z.object({
   soCount: z.number().int().nonnegative(),
-  orderValue: z.string(),
-  dispatchedValue: z.string(),
-  pendingValue: z.string(),
-  invoicedValue: z.string(),
-  receivedValue: z.string(),
-  outstandingValue: z.string(),
+  // Money — NULL when the viewer's access hides prices.
+  orderValue: z.string().nullable(),
+  dispatchedValue: z.string().nullable(),
+  pendingValue: z.string().nullable(),
+  invoicedValue: z.string().nullable(),
+  receivedValue: z.string().nullable(),
+  outstandingValue: z.string().nullable(),
 });
 export type PendingSoValueTotals = z.infer<typeof pendingSoValueTotalsSchema>;
 

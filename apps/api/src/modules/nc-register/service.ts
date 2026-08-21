@@ -11,6 +11,7 @@ import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import { capaRecords, items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -212,11 +213,18 @@ async function lookupLinkedCapaCode(
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// Money-hiding for L1 Viewers ("Can See Price"). An NC's only money is its
+// scrap cost, nulled for price-restricted viewers on list + detail.
+function hideNcMoney<T extends { scrapCost: string | null }>(r: T): T {
+  return { ...r, scrapCost: null };
+}
+
 export async function listNcRegister(
   input: ListNcRegisterQuery,
   user: AuthContext,
 ): Promise<ListNcRegisterResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'nc_dispose');
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
     const searchFrag = term
@@ -300,7 +308,8 @@ export async function listNcRegister(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
-    const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const rowsList = showMoney ? mapped : mapped.map(hideNcMoney);
     return { items: rowsList, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -352,6 +361,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
 
 export async function getNcRegister(id: string, user: AuthContext): Promise<NcRegister> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'nc_dispose');
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select({
@@ -375,7 +385,8 @@ export async function getNcRegister(id: string, user: AuthContext): Promise<NcRe
     if (!found) throw new NotFoundError(`NC ${id} not found`);
     const row = found.nc;
     const linkedCapaCode = await lookupLinkedCapaCode(tx, companyId, row.code);
-    return toNcRegister(row, linkedCapaCode, found.itemCode, found.itemName);
+    const nc = toNcRegister(row, linkedCapaCode, found.itemCode, found.itemName);
+    return showMoney ? nc : hideNcMoney(nc);
   });
 }
 

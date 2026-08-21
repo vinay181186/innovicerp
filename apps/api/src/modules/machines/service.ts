@@ -1,6 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { machines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
@@ -28,11 +29,18 @@ function toMachine(row: unknown): Machine {
   return { ...(row as object), hourRate: Number(r.hourRate) || 0 } as Machine;
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). The machine's only money is
+// its ₹/hr rate, nulled for price-restricted viewers.
+function hideMachineMoney(m: Machine): Machine {
+  return { ...m, hourRate: null };
+}
+
 export async function listMachines(
   input: ListMachinesQuery,
   user: AuthContext,
 ): Promise<ListMachinesResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'machine_create');
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(machines.companyId, companyId), isNull(machines.deletedAt)];
     if (input.search) {
@@ -57,8 +65,9 @@ export async function listMachines(
       tx.select({ value: count() }).from(machines).where(where),
     ]);
 
+    const mapped = rows.map(toMachine);
     return {
-      machines: rows.map(toMachine),
+      machines: showMoney ? mapped : mapped.map(hideMachineMoney),
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,
@@ -68,6 +77,7 @@ export async function listMachines(
 
 export async function getMachine(id: string, user: AuthContext): Promise<Machine> {
   requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'machine_create');
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()
@@ -76,7 +86,8 @@ export async function getMachine(id: string, user: AuthContext): Promise<Machine
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError(`Machine ${id} not found`);
-    return toMachine(row);
+    const m = toMachine(row);
+    return showMoney ? m : hideMachineMoney(m);
   });
 }
 

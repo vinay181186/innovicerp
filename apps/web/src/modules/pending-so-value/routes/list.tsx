@@ -42,6 +42,10 @@ function PendingSoValuePage(): React.JSX.Element {
     );
   }, [data, search]);
 
+  // Money hidden for L1 Viewers: the API nulls every value on this report, so
+  // the KPI strip and the six value columns are dropped.
+  const priceHidden = !!data && data.totals.orderValue == null;
+
   return (
     <div>
       <div className="section-hdr" style={{ marginBottom: 12 }}>
@@ -84,7 +88,7 @@ function PendingSoValuePage(): React.JSX.Element {
         </div>
       ) : data ? (
         <>
-          <KpiStrip totals={data.totals} />
+          {priceHidden ? null : <KpiStrip totals={data.totals} />}
 
           <input
             type="text"
@@ -116,22 +120,26 @@ function PendingSoValuePage(): React.JSX.Element {
                       <th>Customer</th>
                       <th>SO Date</th>
                       <th>Due Date</th>
-                      <th style={{ textAlign: 'right' }}>Order Value</th>
-                      <th style={{ textAlign: 'right' }}>Dispatched</th>
-                      <th style={{ textAlign: 'right', color: 'var(--amber)' }}>
-                        Pending Value
-                      </th>
-                      <th style={{ textAlign: 'right' }}>Invoiced</th>
-                      <th style={{ textAlign: 'right' }}>Received</th>
-                      <th style={{ textAlign: 'right' }}>Outstanding</th>
+                      {priceHidden ? null : (
+                        <>
+                          <th style={{ textAlign: 'right' }}>Order Value</th>
+                          <th style={{ textAlign: 'right' }}>Dispatched</th>
+                          <th style={{ textAlign: 'right', color: 'var(--amber)' }}>
+                            Pending Value
+                          </th>
+                          <th style={{ textAlign: 'right' }}>Invoiced</th>
+                          <th style={{ textAlign: 'right' }}>Received</th>
+                          <th style={{ textAlign: 'right' }}>Outstanding</th>
+                        </>
+                      )}
                       <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((row) => (
-                      <PsvRow key={row.soId} row={row} />
+                      <PsvRow key={row.soId} row={row} priceHidden={priceHidden} />
                     ))}
-                    <TotalsRow totals={data.totals} />
+                    <TotalsRow totals={data.totals} priceHidden={priceHidden} />
                   </tbody>
                 </table>
               </div>
@@ -154,7 +162,8 @@ function PendingSoValuePage(): React.JSX.Element {
 // fallback — this ports that literal, fallback included.
 const TEAL = 'var(--teal, #0d9488)';
 
-const inr = (v: string | number): string => {
+const inr = (v: string | number | null): string => {
+  if (v == null) return '';
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
   return `₹ ${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -250,10 +259,16 @@ function KpiStrip({
   );
 }
 
-function PsvRow({ row }: { row: PendingSoValueRow }): React.JSX.Element {
+function PsvRow({
+  row,
+  priceHidden,
+}: {
+  row: PendingSoValueRow;
+  priceHidden: boolean;
+}): React.JSX.Element {
   const today = new Date().toISOString().slice(0, 10);
-  const pending = Number(row.pendingValue);
-  const outstanding = Number(row.outstandingValue);
+  const pending = Number(row.pendingValue ?? 0);
+  const outstanding = Number(row.outstandingValue ?? 0);
   const overdue = row.dueDate !== null && row.dueDate < today && pending > 0;
   return (
     <tr>
@@ -282,28 +297,32 @@ function PsvRow({ row }: { row: PendingSoValueRow }): React.JSX.Element {
         {row.dueDate ?? '—'}
         {overdue ? ' ⚠' : ''}
       </td>
-      <td className="td-right mono">{inr(row.orderValue)}</td>
-      <td className="td-right mono" style={{ color: 'var(--green)' }}>
-        {inr(row.dispatchedValue)}
-      </td>
-      <td
-        className="td-right mono fw-700"
-        style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
-      >
-        {inr(row.pendingValue)}
-      </td>
-      <td className="td-right mono" style={{ color: TEAL }}>
-        {inr(row.invoicedValue)}
-      </td>
-      <td className="td-right mono" style={{ color: 'var(--green)' }}>
-        {inr(row.receivedValue)}
-      </td>
-      <td
-        className="td-right mono"
-        style={{ color: outstanding > 0 ? 'var(--red)' : 'var(--green)' }}
-      >
-        {inr(row.outstandingValue)}
-      </td>
+      {priceHidden ? null : (
+        <>
+          <td className="td-right mono">{inr(row.orderValue)}</td>
+          <td className="td-right mono" style={{ color: 'var(--green)' }}>
+            {inr(row.dispatchedValue)}
+          </td>
+          <td
+            className="td-right mono fw-700"
+            style={{ color: pending > 0 ? 'var(--amber)' : 'var(--green)' }}
+          >
+            {inr(row.pendingValue)}
+          </td>
+          <td className="td-right mono" style={{ color: TEAL }}>
+            {inr(row.invoicedValue)}
+          </td>
+          <td className="td-right mono" style={{ color: 'var(--green)' }}>
+            {inr(row.receivedValue)}
+          </td>
+          <td
+            className="td-right mono"
+            style={{ color: outstanding > 0 ? 'var(--red)' : 'var(--green)' }}
+          >
+            {inr(row.outstandingValue)}
+          </td>
+        </>
+      )}
       <td>
         <span className={`badge b-${badgeColor(row.status)}`}>{row.status}</span>
       </td>
@@ -313,8 +332,10 @@ function PsvRow({ row }: { row: PendingSoValueRow }): React.JSX.Element {
 
 function TotalsRow({
   totals,
+  priceHidden,
 }: {
   totals: PendingSoValueResponse['totals'];
+  priceHidden: boolean;
 }): React.JSX.Element {
   // Legacy puts background:var(--bg4) on the <tr> (L19366). Our
   // `.innovic-table tbody tr:nth-child(even) td` paints the cells on top of the
@@ -326,24 +347,28 @@ function TotalsRow({
       <td colSpan={4} className="td-right text2" style={{ ...cell, fontSize: 12 }}>
         TOTAL
       </td>
-      <td className="td-right mono" style={cell}>
-        {inr(totals.orderValue)}
-      </td>
-      <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
-        {inr(totals.dispatchedValue)}
-      </td>
-      <td className="td-right mono" style={{ ...cell, color: 'var(--amber)' }}>
-        {inr(totals.pendingValue)}
-      </td>
-      <td className="td-right mono" style={{ ...cell, color: TEAL }}>
-        {inr(totals.invoicedValue)}
-      </td>
-      <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
-        {inr(totals.receivedValue)}
-      </td>
-      <td className="td-right mono" style={{ ...cell, color: 'var(--red)' }}>
-        {inr(totals.outstandingValue)}
-      </td>
+      {priceHidden ? null : (
+        <>
+          <td className="td-right mono" style={cell}>
+            {inr(totals.orderValue)}
+          </td>
+          <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
+            {inr(totals.dispatchedValue)}
+          </td>
+          <td className="td-right mono" style={{ ...cell, color: 'var(--amber)' }}>
+            {inr(totals.pendingValue)}
+          </td>
+          <td className="td-right mono" style={{ ...cell, color: TEAL }}>
+            {inr(totals.invoicedValue)}
+          </td>
+          <td className="td-right mono" style={{ ...cell, color: 'var(--green)' }}>
+            {inr(totals.receivedValue)}
+          </td>
+          <td className="td-right mono" style={{ ...cell, color: 'var(--red)' }}>
+            {inr(totals.outstandingValue)}
+          </td>
+        </>
+      )}
       <td style={cell} />
     </tr>
   );

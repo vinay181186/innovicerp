@@ -36,18 +36,21 @@ export function printServicePo(args: {
   const { spo, vendor, company, templates } = args;
   const lines = spo.lines;
 
-  const subtotal = spo.subtotal;
+  // Money hidden for L1 Viewers: the API nulls SPO totals + line rates, so the
+  // printed SPO drops to the qty-only layout (no Rate/Amount, no totals).
+  const priceHidden = spo.total == null;
+  const subtotal = spo.subtotal ?? 0;
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const isIgst = spo.taxType === 'igst';
   const taxRows: DocMetaCell[] = [];
-  if (spo.taxAmount > 0) {
+  if ((spo.taxAmount ?? 0) > 0) {
     taxRows.push({
       label: `${isIgst ? 'IGST' : 'SGST+CGST'} @ ${spo.gstPct}%`,
-      value: inrFormat(spo.taxAmount),
+      value: inrFormat(spo.taxAmount ?? 0),
     });
   }
-  const grand = spo.total;
+  const grand = spo.total ?? 0;
 
   const vendorName = vendor?.name ?? spo.vendorName ?? spo.vendorCodeText ?? '';
   const vendorAddress = vendor?.addressLine1 ?? '';
@@ -71,7 +74,7 @@ export function printServicePo(args: {
     vendorAddress,
     vendorGSTIN: vendorGstin,
     vendorContact,
-    totalValue: inrFormat(grand),
+    totalValue: priceHidden ? '' : inrFormat(grand),
     totalQty: String(totalQty),
   };
 
@@ -90,6 +93,7 @@ export function printServicePo(args: {
 
   const model: DocPrintModel = {
     doc: 'SERVICE PO',
+    hideMoney: priceHidden,
     blocks: templatesToBlocks('SERVICE PO', templates),
     data,
     company: buildDocCompany(company),
@@ -109,8 +113,8 @@ export function printServicePo(args: {
       itemName: l.itemName,
       qty: String(l.qty),
       uom: 'NOS',
-      rate: inrFormat(l.rate),
-      amount: inrFormat(l.amount),
+      rate: inrFormat(l.rate ?? 0),
+      amount: inrFormat(l.amount ?? 0),
     })),
     totals: {
       subtotal: inrFormat(subtotal),

@@ -47,19 +47,26 @@ function InvoiceListPage(): React.JSX.Element {
   }
 
   const s = data.summary;
+  // Money hidden for L1 Viewers: the API nulls the summary + row amounts, so the
+  // money tiles and the Amount/Paid/Balance columns are dropped (counts stay).
+  const priceHidden = s.totalInvoiced == null;
   // Legacy L21139-21145: money tiles 18px, count tiles 20px, OVERDUE carries an
   // "N inv" sub-line (server-supplied count — never computed here).
   const cards: { label: string; value: string; color: string; size: number; sub?: string }[] = [
-    { label: 'TOTAL INVOICED', value: inr(s.totalInvoiced), color: 'var(--green)', size: 18 },
-    { label: 'TOTAL RECEIVED', value: inr(s.totalReceived), color: 'var(--cyan)', size: 18 },
-    { label: 'OUTSTANDING', value: inr(s.outstanding), color: 'var(--amber)', size: 18 },
-    {
-      label: 'OVERDUE',
-      value: inr(s.overdueAmount),
-      color: 'var(--red)',
-      size: 18,
-      sub: `${s.overdueCount} inv`,
-    },
+    ...(priceHidden
+      ? []
+      : [
+          { label: 'TOTAL INVOICED', value: inr(s.totalInvoiced ?? 0), color: 'var(--green)', size: 18 },
+          { label: 'TOTAL RECEIVED', value: inr(s.totalReceived ?? 0), color: 'var(--cyan)', size: 18 },
+          { label: 'OUTSTANDING', value: inr(s.outstanding ?? 0), color: 'var(--amber)', size: 18 },
+          {
+            label: 'OVERDUE',
+            value: inr(s.overdueAmount ?? 0),
+            color: 'var(--red)',
+            size: 18,
+            sub: `${s.overdueCount} inv`,
+          },
+        ]),
     { label: 'UNPAID', value: String(s.unpaidCount), color: 'var(--red)', size: 20 },
     { label: 'PARTIAL', value: String(s.partialCount), color: 'var(--amber)', size: 20 },
     { label: 'PAID', value: String(s.paidCount), color: 'var(--green)', size: 20 },
@@ -102,9 +109,13 @@ function InvoiceListPage(): React.JSX.Element {
                 <th>Date</th>
                 <th>SO</th>
                 <th>Client</th>
-                <th>Amount</th>
-                <th>Paid</th>
-                <th>Balance</th>
+                {priceHidden ? null : (
+                  <>
+                    <th>Amount</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                  </>
+                )}
                 <th>Status</th>
                 <th>Due Date</th>
                 <th>Actions</th>
@@ -113,7 +124,7 @@ function InvoiceListPage(): React.JSX.Element {
             <tbody>
               {data.invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="empty-state">No invoices yet. Click + New Invoice.</td>
+                  <td colSpan={priceHidden ? 7 : 10} className="empty-state">No invoices yet. Click + New Invoice.</td>
                 </tr>
               ) : (
                 data.invoices.map((inv) => (
@@ -131,11 +142,15 @@ function InvoiceListPage(): React.JSX.Element {
                     <td style={{ fontSize: 11 }}>{fmt(inv.invoiceDate)}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>{inv.soCode ?? ''}</td>
                     <td className="fw-700">{inv.clientName ?? ''}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{inr(inv.grandTotal)}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid)}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: inv.balance > 0 ? 'var(--red)' : 'var(--green)' }}>
-                      {inr(inv.balance)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>{inr(inv.grandTotal ?? 0)}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                          {inr(inv.balance ?? 0)}
+                        </td>
+                      </>
+                    )}
                     <td>
                       <span className={`badge ${inv.status === 'paid' ? 'b-green' : inv.status === 'partial' ? 'b-amber' : 'b-red'}`}>
                         {inv.status}

@@ -79,7 +79,11 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
   const gst = inv.clientGst ?? '';
   const stateCode = gst ? gst.substring(0, 2) : '24';
   const isIGST = stateCode !== '24';
-  const amtWords = `Indian Rupees ${numWords(Math.floor(inv.grandTotal))} Only`;
+  // Money hidden for L1 Viewers: drop Rate/Amount columns, tax rows, totals and
+  // amount-in-words from the printed invoice.
+  const priceHidden = inv.grandTotal == null;
+  const gstPct = inv.gstPercent ?? 0;
+  const amtWords = `Indian Rupees ${numWords(Math.floor(inv.grandTotal ?? 0))} Only`;
   const coName = company?.name ?? 'Innovic Technology';
   const coAddr = companyAddressLines(company);
 
@@ -90,15 +94,18 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         `<td style="${TD}">${esc(l.itemCode ?? l.itemCodeText ?? l.itemName)}<br><span style="font-size:10px;color:#666">${esc(l.itemName)}</span></td>` +
         `<td style="${TD};text-align:right">${l.qty.toFixed(1)}</td>` +
         `<td style="${TD};text-align:center;font-size:10px">NOS</td>` +
-        `<td style="${TD};text-align:right">${inrFormat(l.rate)}</td>` +
-        `<td style="${TD};text-align:right;font-weight:700">${inrFormat(l.lineAmount)}</td></tr>`,
+        (priceHidden
+          ? ''
+          : `<td style="${TD};text-align:right">${inrFormat(l.rate ?? 0)}</td>` +
+            `<td style="${TD};text-align:right;font-weight:700">${inrFormat(l.lineAmount ?? 0)}</td>`) +
+        `</tr>`,
     )
     .join('');
 
   const taxRows = isIGST
-    ? `<tr><td colspan="5" style="${TD};text-align:right">IGST @ ${inv.gstPercent}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount)}</td></tr>`
-    : `<tr><td colspan="5" style="${TD};text-align:right">SGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount / 2)}</td></tr>` +
-      `<tr><td colspan="5" style="${TD};text-align:right">CGST @ ${inv.gstPercent / 2}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount / 2)}</td></tr>`;
+    ? `<tr><td colspan="5" style="${TD};text-align:right">IGST @ ${gstPct}%</td><td style="${TD};text-align:right">${inrFormat(inv.gstAmount ?? 0)}</td></tr>`
+    : `<tr><td colspan="5" style="${TD};text-align:right">SGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>` +
+      `<tr><td colspan="5" style="${TD};text-align:right">CGST @ ${gstPct / 2}%</td><td style="${TD};text-align:right">${inrFormat((inv.gstAmount ?? 0) / 2)}</td></tr>`;
 
   return `<div style="background:#fff;color:#1e293b;font-family:Arial,sans-serif;font-size:11px;line-height:1.35;padding:18px">
     <div style="border:2px solid #333">
@@ -121,14 +128,18 @@ export function invoiceDocHtml(inv: InvoiceDetail, company: Company | null | und
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${TH}">Sl</th><th style="${TH};text-align:left">Description</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th><th style="${TH}">Rate</th><th style="${TH}">Amount</th></tr></thead>
+        <thead><tr><th style="${TH}">Sl</th><th style="${TH};text-align:left">Description</th><th style="${TH}">Qty</th><th style="${TH}">UOM</th>${priceHidden ? '' : `<th style="${TH}">Rate</th><th style="${TH}">Amount</th>`}</tr></thead>
         <tbody>${lineRows}
-          <tr style="font-weight:700;background:#f5f5f5"><td colspan="5" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal)}</td></tr>
-          ${taxRows}
-          <tr><td colspan="5" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal)}</td></tr>
+          ${
+            priceHidden
+              ? ''
+              : `<tr style="font-weight:700;background:#f5f5f5"><td colspan="5" style="${TD};text-align:right">Subtotal</td><td style="${TD};text-align:right">${inrFormat(inv.subtotal ?? 0)}</td></tr>` +
+                taxRows +
+                `<tr><td colspan="5" style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">Total</td><td style="border:2px solid #333;padding:5px 6px;font-weight:900;font-size:12px;background:#f5f5f5;text-align:right">₹ ${inrFormat(inv.grandTotal ?? 0)}</td></tr>`
+          }
         </tbody>
       </table>
-      <div style="padding:8px 10px;border-top:1px solid #999;font-size:10px"><b>Amount in Words:</b> <i>${esc(amtWords)}</i></div>
+      ${priceHidden ? '' : `<div style="padding:8px 10px;border-top:1px solid #999;font-size:10px"><b>Amount in Words:</b> <i>${esc(amtWords)}</i></div>`}
       <div style="padding:15px 10px;display:flex;justify-content:flex-end;border-top:1px solid #999">
         <div style="text-align:right">
           <div style="font-weight:700">for ${esc(coName)}</div>

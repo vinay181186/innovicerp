@@ -107,18 +107,24 @@ function InvoiceDetailPage(): React.JSX.Element {
   // Legacy _viewInvoice L21296-21300: five separate .panel cards, 16px for
   // SUBTOTAL/GST and 18px for TOTAL/PAID/BALANCE. `balance` is server-owned
   // (service.ts rowToInvoice L64) — never re-derived here.
-  const stats: { label: string; value: string; size: number; color?: string }[] = [
-    { label: 'SUBTOTAL', value: inr(inv.subtotal), size: 16 },
-    { label: `GST ${inv.gstPercent}%`, value: inr(inv.gstAmount), size: 16, color: 'var(--amber)' },
-    { label: 'TOTAL', value: inr(inv.grandTotal), size: 18, color: 'var(--green)' },
-    { label: 'PAID', value: inr(inv.totalPaid), size: 18, color: 'var(--cyan)' },
-    {
-      label: 'BALANCE',
-      value: inr(inv.balance),
-      size: 18,
-      color: inv.balance > 0 ? 'var(--red)' : 'var(--green)',
-    },
-  ];
+  // Money hidden for L1 Viewers: the API nulls the amounts, so the whole
+  // money stat strip, the line rate/amount columns, and the payment amounts
+  // are dropped.
+  const priceHidden = inv.grandTotal == null;
+  const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
+    ? []
+    : [
+        { label: 'SUBTOTAL', value: inr(inv.subtotal ?? 0), size: 16 },
+        { label: `GST ${inv.gstPercent}%`, value: inr(inv.gstAmount ?? 0), size: 16, color: 'var(--amber)' },
+        { label: 'TOTAL', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green)' },
+        { label: 'PAID', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
+        {
+          label: 'BALANCE',
+          value: inr(inv.balance ?? 0),
+          size: 18,
+          color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
+        },
+      ];
 
   return (
     <div>
@@ -177,7 +183,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                   min="0"
                   step="0.01"
                   value={payAmt}
-                  placeholder={String(Math.round(inv.balance))}
+                  placeholder={String(Math.round(inv.balance ?? 0))}
                   onChange={(e) => setPayAmt(e.target.value)}
                 />
               </div>
@@ -234,7 +240,7 @@ function InvoiceDetailPage(): React.JSX.Element {
         dangerouslySetInnerHTML={{ __html: docHtml }}
       />
 
-      {inv.payments.length > 0 ? (
+      {inv.payments.length > 0 && !priceHidden ? (
         <div className="panel">
           <div className="panel-hdr">
             <span className="panel-title">💳 PAYMENTS ({inv.payments.length})</span>
@@ -254,7 +260,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{p.paymentDate}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>{inr(p.amount)}</td>
+                    <td className="mono fw-700" style={{ color: 'var(--green)' }}>{inr(p.amount ?? 0)}</td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
                     <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>
                     <td style={{ fontSize: 11 }} className="text3">{p.notes ?? ''}</td>

@@ -71,6 +71,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Actual client-material received = Σ Party GRN receipts (source of truth for
   // the badge and the client-material summary).
   const partyReceivedTotal = detail.partyReceivedQty;
+  // Money hidden for L1 Viewers: the API nulls the JWSO's GST % and line rates
+  // together, so a null GST % is the single signal to drop ₹ here.
+  const priceHidden = detail.gstPercent == null;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (
@@ -171,7 +174,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>Line items ({detail.lines.length})</div>
           <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
             total qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
-            {lineValueTotal > 0 ? (
+            {!priceHidden && lineValueTotal > 0 ? (
               <>
                 {' '}· value <b style={{ color: 'var(--green2, var(--green))' }}>₹{lineValueTotal.toFixed(2)}</b>
               </>
@@ -198,8 +201,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <th>Drawing</th>
                 <th>Qty</th>
                 <th>UOM</th>
-                <th style={{ color: 'var(--green)' }}>Rate ₹</th>
-                <th style={{ color: 'var(--green)' }}>Amount</th>
+                {priceHidden ? null : (
+                  <>
+                    <th style={{ color: 'var(--green)' }}>Rate ₹</th>
+                    <th style={{ color: 'var(--green)' }}>Amount</th>
+                  </>
+                )}
                 <th>Due</th>
                 <th>Status</th>
               </tr>
@@ -207,12 +214,12 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="empty-state">
+                  <td colSpan={priceHidden ? 9 : 11} className="empty-state">
                     No lines on this JW yet.
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => <LineRow key={l.id} line={l} />)
+                detail.lines.map((l) => <LineRow key={l.id} line={l} priceHidden={priceHidden} />)
               )}
             </tbody>
           </table>
@@ -329,8 +336,8 @@ function DocRow(props: {
   );
 }
 
-function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
-  const { line: l } = props;
+function LineRow(props: { line: JobWorkOrderLine; priceHidden: boolean }): React.JSX.Element {
+  const { line: l, priceHidden } = props;
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
@@ -346,10 +353,14 @@ function LineRow(props: { line: JobWorkOrderLine }): React.JSX.Element {
       </td>
       <td className="mono">{l.orderQty}</td>
       <td>{l.uom}</td>
-      <td className="mono" style={{ color: 'var(--green)' }}>{Number(l.rate).toFixed(2)}</td>
-      <td className="mono fw-700" style={{ color: 'var(--green)' }}>
-        {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
-      </td>
+      {priceHidden ? null : (
+        <>
+          <td className="mono" style={{ color: 'var(--green)' }}>{Number(l.rate ?? 0).toFixed(2)}</td>
+          <td className="mono fw-700" style={{ color: 'var(--green)' }}>
+            {(l.orderQty * Number(l.rate ?? 0)).toFixed(2)}
+          </td>
+        </>
+      )}
       <td className="text2" style={{ fontSize: 11 }}>
         {l.dueDate ?? '—'}
       </td>

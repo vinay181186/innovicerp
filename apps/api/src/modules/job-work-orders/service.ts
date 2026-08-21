@@ -22,6 +22,7 @@ import {
   plans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
@@ -312,8 +313,20 @@ function dateLike(v: unknown): string {
   return String(v);
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). The JWSO list carries no
+// money (header aggregates only), so only the detail's line rate + header GST %
+// need nulling.
+function hideJwHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
+  return { ...h, gstPercent: null };
+}
+
+function hideJwLineMoney<T extends { rate: string | null }>(l: T): T {
+  return { ...l, rate: null };
+}
+
 export async function getJobWorkOrder(id: string, user: AuthContext): Promise<JobWorkOrderDetail> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'jw_create');
   return withUserContext(user, async (tx) => {
     const headers = await tx
       .select()
@@ -341,10 +354,14 @@ export async function getJobWorkOrder(id: string, user: AuthContext): Promise<Jo
       companyId,
     );
     const partyReceivedQty = await sumPartyReceivedQty(tx, id);
+    const headerOut = toJobWorkOrder(header);
     return {
-      ...toJobWorkOrder(header),
+      ...(showMoney ? headerOut : hideJwHeaderMoney(headerOut)),
       partyReceivedQty,
-      lines: lineRows.map((l) => toJobWorkOrderLine(l, codeMap)),
+      lines: lineRows.map((l) => {
+        const line = toJobWorkOrderLine(l, codeMap);
+        return showMoney ? line : hideJwLineMoney(line);
+      }),
     };
   });
 }

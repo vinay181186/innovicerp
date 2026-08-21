@@ -104,7 +104,9 @@ export function PrCard({
   onReject: (pr: PurchaseRequestListItem) => void;
 }): React.JSX.Element {
   const navigate = useNavigate();
-  const estCost = Number(pr.estCost);
+  // Money hidden for L1 Viewers: estCost comes back null → drop the field.
+  const priceHidden = pr.estCost == null;
+  const estCost = Number(pr.estCost ?? 0);
   const openDetail = (): void => {
     void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } });
   };
@@ -241,11 +243,13 @@ export function PrCard({
         >
           <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
             <QtyBox label="Qty" value={pr.qty} />
-            <QtyBox
-              label="Est. Cost"
-              value={estCost > 0 ? `₹${estCost.toFixed(2)}` : '—'}
-              bordered
-            />
+            {priceHidden ? null : (
+              <QtyBox
+                label="Est. Cost"
+                value={estCost > 0 ? `₹${estCost.toFixed(2)}` : '—'}
+                bordered
+              />
+            )}
           </div>
           <div
             className="mono"

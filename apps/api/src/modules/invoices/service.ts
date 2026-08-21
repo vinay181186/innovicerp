@@ -23,6 +23,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -70,8 +71,41 @@ function rowToInvoice(r: typeof invoices.$inferSelect): InvoiceRow {
   };
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). Invoices ride the Sales
+// department's price permission (so_create): a viewer who can't see SO prices
+// can't see the money on the invoices raised from them.
+function hideInvoiceRowMoney<
+  T extends {
+    subtotal: number | null;
+    gstPercent: number | null;
+    gstAmount: number | null;
+    grandTotal: number | null;
+    totalPaid: number | null;
+    balance: number | null;
+  },
+>(r: T): T {
+  return {
+    ...r,
+    subtotal: null,
+    gstPercent: null,
+    gstAmount: null,
+    grandTotal: null,
+    totalPaid: null,
+    balance: null,
+  };
+}
+
+function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
+  return {
+    ...hideInvoiceRowMoney(d),
+    lines: d.lines.map((l) => ({ ...l, rate: null, lineAmount: null })),
+    payments: d.payments.map((p) => ({ ...p, amount: null })),
+  };
+}
+
 export async function listInvoices(user: AuthContext): Promise<ListInvoicesResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()
@@ -91,10 +125,10 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
       paidCount: 0,
     };
     for (const inv of list) {
-      summary.totalInvoiced += inv.grandTotal;
-      summary.totalReceived += inv.totalPaid;
+      summary.totalInvoiced += inv.grandTotal ?? 0;
+      summary.totalReceived += inv.totalPaid ?? 0;
       if (inv.overdue) {
-        summary.overdueAmount += inv.balance;
+        summary.overdueAmount += inv.balance ?? 0;
         summary.overdueCount += 1;
       }
       if (inv.status === 'unpaid') summary.unpaidCount += 1;
@@ -103,6 +137,18 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
     }
     summary.outstanding = summary.totalInvoiced - summary.totalReceived;
 
+    if (!showMoney) {
+      return {
+        invoices: list.map(hideInvoiceRowMoney),
+        summary: {
+          ...summary,
+          totalInvoiced: null,
+          totalReceived: null,
+          outstanding: null,
+          overdueAmount: null,
+        },
+      };
+    }
     return { invoices: list, summary };
   });
 }
@@ -175,7 +221,11 @@ async function getInvoiceInternal(
 
 export async function getInvoice(id: string, user: AuthContext): Promise<InvoiceDetail> {
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => getInvoiceInternal(tx, id, companyId));
+  const showMoney = await canSeeFormPrice(user, 'so_create');
+  return withUserContext(user, async (tx) => {
+    const detail = await getInvoiceInternal(tx, id, companyId);
+    return showMoney ? detail : hideInvoiceDetailMoney(detail);
+  });
 }
 
 /**

@@ -67,7 +67,10 @@ function ServicePosListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const totalValue = items.reduce((s, p) => s + p.total, 0);
+  // Money hidden for L1 Viewers: the API nulls SPO totals, so a null total is
+  // the signal to drop the value KPI and the Total column.
+  const priceHidden = items.some((p) => p.total == null);
+  const totalValue = items.reduce((s, p) => s + (p.total ?? 0), 0);
   const openCount = items.filter(
     (p) => p.status === 'draft' || p.status === 'pending' || p.status === 'approved',
   ).length;
@@ -103,12 +106,14 @@ function ServicePosListPage(): React.JSX.Element {
           <div className="text3" style={{ fontSize: 10 }}>Total SPOs</div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--cyan)' }}>{total}</div>
         </div>
-        <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
-          <div className="text3" style={{ fontSize: 10 }}>Total Value (page)</div>
-          <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--green)' }}>
-            ₹{inr(totalValue)}
+        {priceHidden ? null : (
+          <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
+            <div className="text3" style={{ fontSize: 10 }}>Total Value (page)</div>
+            <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--green)' }}>
+              ₹{inr(totalValue)}
+            </div>
           </div>
-        </div>
+        )}
         <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
           <div className="text3" style={{ fontSize: 10 }}>Open</div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>{openCount}</div>
@@ -169,7 +174,9 @@ function ServicePosListPage(): React.JSX.Element {
                 <th>SO / Cost Center</th>
                 <th style={{ color: '#7c3aed' }}>Expense</th>
                 <th>Lines</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Total</th>
+                {priceHidden ? null : (
+                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Total</th>
+                )}
                 <th>Status</th>
                 <th>Terms</th>
               </tr>
@@ -194,7 +201,7 @@ function ServicePosListPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                items.map((p) => <Row key={p.id} po={p} />)
+                items.map((p) => <Row key={p.id} po={p} priceHidden={priceHidden} />)
               )}
             </tbody>
           </table>
@@ -278,7 +285,7 @@ function VendorLabel({
   return <>{shownName || shownCode}</>;
 }
 
-function Row({ po }: { po: ServicePoListItem }): React.JSX.Element {
+function Row({ po, priceHidden }: { po: ServicePoListItem; priceHidden: boolean }): React.JSX.Element {
   return (
     <tr>
       <td>
@@ -300,9 +307,11 @@ function Row({ po }: { po: ServicePoListItem }): React.JSX.Element {
       </td>
       <td style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>{po.expenseHead}</td>
       <td style={{ fontSize: 11 }}>{po.lineCount}</td>
-      <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-        ₹{Math.round(po.total).toLocaleString('en-IN')}
-      </td>
+      {priceHidden ? null : (
+        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+          ₹{Math.round(po.total ?? 0).toLocaleString('en-IN')}
+        </td>
+      )}
       <td>
         <span style={{ fontWeight: 700, color: statusColor(po.status) }}>
           {STATUS_LABEL[po.status] ?? po.status}

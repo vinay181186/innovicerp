@@ -25,6 +25,7 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -512,10 +513,15 @@ export async function getDispatchableSo(
   user: AuthContext,
 ): Promise<DispatchableSoResponse> {
   const companyId = requireCompany(user);
+  // Money-hiding for L1 Viewers ("Can See Price"): the SO-line rate shown on the
+  // dispatch-create form rides the Sales price permission. Masked only on this
+  // read — loadDispatchable also feeds createDispatch, which needs the rate.
+  const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
     const so = await loadSo(tx, companyId, soId);
     const lines = await loadDispatchable(tx, companyId, soId);
-    return { salesOrderId: so.id, soCode: so.code, customer: so.customer, lines };
+    const out = showMoney ? lines : lines.map((l) => ({ ...l, rate: null }));
+    return { salesOrderId: so.id, soCode: so.code, customer: so.customer, lines: out };
   });
 }
 

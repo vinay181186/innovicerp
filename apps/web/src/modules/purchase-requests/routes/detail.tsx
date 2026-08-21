@@ -284,15 +284,22 @@ function canWrite(role: string | undefined): boolean {
 
 function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Element {
   const { detail } = props;
-  const estCostNum = Number(detail.estCost);
+  // Money hidden for L1 Viewers: the API nulls estCost, so the cost fields are
+  // dropped entirely (not shown as '—').
+  const priceHidden = detail.estCost == null;
+  const estCostNum = Number(detail.estCost ?? 0);
   const qtyNum = Number(detail.qty);
   const total = estCostNum * qtyNum;
   return (
     <>
       <div className="prd-grid">
         <Pair label="Qty" value={String(detail.qty)} mono />
-        <Pair label="Est. Cost / pc" value={estCostNum > 0 ? inr(estCostNum) : '—'} mono />
-        <Pair label="Total Est." value={total > 0 ? inr(total) : '—'} mono />
+        {priceHidden ? null : (
+          <>
+            <Pair label="Est. Cost / pc" value={estCostNum > 0 ? inr(estCostNum) : '—'} mono />
+            <Pair label="Total Est." value={total > 0 ? inr(total) : '—'} mono />
+          </>
+        )}
         <Pair label="Required Date" value={detail.requiredDate ?? '—'} mono />
         <Pair label="Operation" value={detail.operation ?? '—'} />
         <Pair label="PR Type" value={detail.prType ?? '—'} />

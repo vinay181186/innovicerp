@@ -91,6 +91,9 @@ function MachinesListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useMachinesList(query);
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Money hidden for L1 Viewers: the API nulls hourRate, so the ₹/hr column is
+  // dropped entirely for them.
+  const priceHidden = (data?.machines ?? []).some((m) => m.hourRate == null);
 
   // Header/sort config only — rows are rendered as plain <tr>/<td> below so
   // legacy's cell classes (td-ctr, td-code, mono…) land on the <td> itself.
@@ -102,18 +105,22 @@ function MachinesListPage(): React.JSX.Element {
       { header: 'Name', accessorKey: 'name' },
       { header: 'Type', accessorKey: 'machineType' },
       { header: 'Cap/Shift', accessorKey: 'capacityPerShift' },
-      {
-        // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). The colour
-        // must be inline on the text — .innovic-table th sets color:var(--text3)
-        // and outranks the .green utility class.
-        header: () => <span style={{ color: 'var(--green)' }}>₹/hr</span>,
-        accessorKey: 'hourRate',
-        enableSorting: false,
-      },
+      ...(priceHidden
+        ? []
+        : [
+            {
+              // Legacy: <th style="color:var(--green)">₹/hr</th> (L13107). The colour
+              // must be inline on the text — .innovic-table th sets color:var(--text3)
+              // and outranks the .green utility class.
+              header: () => <span style={{ color: 'var(--green)' }}>₹/hr</span>,
+              accessorKey: 'hourRate',
+              enableSorting: false,
+            } as ColumnDef<Machine>,
+          ]),
       { header: 'Status', accessorKey: 'status' },
       { header: 'Actions', enableSorting: false },
     ],
-    [],
+    [priceHidden],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -245,9 +252,11 @@ function MachinesListPage(): React.JSX.Element {
                       <td className="td-ctr mono">
                         {m.capacityPerShift != null ? `${m.capacityPerShift}h` : '—'}
                       </td>
-                      <td className="td-ctr mono green">
-                        {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
-                      </td>
+                      {priceHidden ? null : (
+                        <td className="td-ctr mono green">
+                          {m.hourRate ? `₹${m.hourRate.toFixed(0)}` : '—'}
+                        </td>
+                      )}
                       <td>
                         <span className={`badge ${statusBadgeClass(m.status)}`}>{m.status}</span>
                       </td>

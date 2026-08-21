@@ -11,7 +11,8 @@ export const machineSchema = z.object({
   capacityPerShift: z.number().int().nullable(),
   shiftsPerDay: z.number().int().positive(),
   status: z.string().min(1).max(32),
-  hourRate: z.number().nonnegative(),
+  // ₹/hr machine rate — NULL when the viewer's access hides prices.
+  hourRate: z.number().nonnegative().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),

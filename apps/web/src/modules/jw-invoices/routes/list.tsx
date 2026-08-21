@@ -44,6 +44,10 @@ function JwInvoicesListPage(): React.JSX.Element {
     );
   }, [data, search]);
 
+  // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
+  // Taxable / GST% / GST Amt / Total columns are dropped for them.
+  const priceHidden = items.some((r) => r.totalAmount == null);
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -93,17 +97,21 @@ function JwInvoicesListPage(): React.JSX.Element {
                   <th>Client</th>
                   <th>Part</th>
                   <th style={{ textAlign: 'right' }}>Qty</th>
-                  <th style={{ textAlign: 'right' }}>Rate</th>
-                  <th style={{ textAlign: 'right' }}>Taxable</th>
-                  <th style={{ textAlign: 'right' }}>GST%</th>
-                  <th style={{ textAlign: 'right' }}>GST Amt</th>
-                  <th style={{ textAlign: 'right', color: 'var(--green)' }}>Total</th>
+                  {priceHidden ? null : (
+                    <>
+                      <th style={{ textAlign: 'right' }}>Rate</th>
+                      <th style={{ textAlign: 'right' }}>Taxable</th>
+                      <th style={{ textAlign: 'right' }}>GST%</th>
+                      <th style={{ textAlign: 'right' }}>GST Amt</th>
+                      <th style={{ textAlign: 'right', color: 'var(--green)' }}>Total</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="empty-state">
+                    <td colSpan={priceHidden ? 6 : 11} className="empty-state">
                       No JW invoices — click + New Invoice
                     </td>
                   </tr>
@@ -131,24 +139,28 @@ function JwInvoicesListPage(): React.JSX.Element {
                     <td className="mono" style={{ textAlign: 'right' }}>
                       {r.qty}
                     </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
-                      {money(r.rate)}
-                    </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
-                      {money(r.taxableAmount)}
-                    </td>
-                    <td className="mono text3" style={{ textAlign: 'right', fontSize: 11 }}>
-                      {r.gstPercent}%
-                    </td>
-                    <td className="mono" style={{ textAlign: 'right' }}>
-                      {money(r.gstAmount)}
-                    </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ textAlign: 'right', fontSize: 14, color: 'var(--green)' }}
-                    >
-                      {money(r.totalAmount)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="mono" style={{ textAlign: 'right' }}>
+                          {money(r.rate ?? 0)}
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right' }}>
+                          {money(r.taxableAmount ?? 0)}
+                        </td>
+                        <td className="mono text3" style={{ textAlign: 'right', fontSize: 11 }}>
+                          {r.gstPercent}%
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right' }}>
+                          {money(r.gstAmount ?? 0)}
+                        </td>
+                        <td
+                          className="mono fw-700"
+                          style={{ textAlign: 'right', fontSize: 14, color: 'var(--green)' }}
+                        >
+                          {money(r.totalAmount ?? 0)}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -199,8 +211,10 @@ function NewJwInvoiceModal({ onClose }: { onClose: () => void }): React.JSX.Elem
   const onPickLine = (id: string): void => {
     setLineId(id || null);
     const line = jwLines.find((l) => l.id === id);
-    // Prefill the (editable) rate from the JW line's processing charge.
-    if (line) setRate(line.rate);
+    // Prefill the (editable) rate from the JW line's processing charge. Null
+    // only when the picker can't see prices (they can't reach this create flow),
+    // so fall back to blank.
+    if (line) setRate(line.rate ?? '');
   };
 
   const qtyNum = Number(qty);

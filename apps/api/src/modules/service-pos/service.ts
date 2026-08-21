@@ -18,6 +18,7 @@ import type {
 import { and, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
 import { items, salesOrders, servicePoLines, servicePos, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -117,11 +118,32 @@ function computeTotals(input: { lines: { qty: number; rate: number }[]; gstPct: 
   return { subtotal, taxAmount, total: subtotal + taxAmount, lineAmounts };
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). Nulls the Service PO's header
+// totals + GST % and every line rate/amount for price-restricted viewers.
+function hideSpoHeaderMoney<
+  T extends {
+    subtotal: number | null;
+    gstPct: number | null;
+    taxAmount: number | null;
+    total: number | null;
+  },
+>(h: T): T {
+  return { ...h, subtotal: null, gstPct: null, taxAmount: null, total: null };
+}
+
+function hideSpoDetailMoney(d: ServicePoDetail): ServicePoDetail {
+  return {
+    ...hideSpoHeaderMoney(d),
+    lines: d.lines.map((l) => ({ ...l, rate: null, amount: null })),
+  };
+}
+
 export async function listServicePos(
   input: ListServicePosQuery,
   user: AuthContext,
 ): Promise<ListServicePosResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'servicepo_create');
   return withUserContext(user, async (tx) => {
     const conditions: SQL[] = [eq(servicePos.companyId, companyId), isNull(servicePos.deletedAt)];
     if (input.status) conditions.push(eq(servicePos.status, input.status));
@@ -171,12 +193,13 @@ export async function listServicePos(
     }
 
     return {
-      items: rows.map((r) => ({
-        ...toServicePo(r.header),
-        vendorName: r.vendorName,
-        soCode: r.soCode,
-        lineCount: lineCounts[r.header.id] ?? 0,
-      })),
+      items: rows.map((r) => {
+        const header = { ...toServicePo(r.header), vendorName: r.vendorName, soCode: r.soCode };
+        return {
+          ...(showMoney ? header : hideSpoHeaderMoney(header)),
+          lineCount: lineCounts[r.header.id] ?? 0,
+        };
+      }),
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,
@@ -186,7 +209,11 @@ export async function listServicePos(
 
 export async function getServicePo(id: string, user: AuthContext): Promise<ServicePoDetail> {
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => getServicePoInternal(tx, id, companyId));
+  const showMoney = await canSeeFormPrice(user, 'servicepo_create');
+  return withUserContext(user, async (tx) => {
+    const detail = await getServicePoInternal(tx, id, companyId);
+    return showMoney ? detail : hideSpoDetailMoney(detail);
+  });
 }
 
 async function getServicePoInternal(

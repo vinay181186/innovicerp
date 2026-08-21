@@ -6,6 +6,7 @@
 import type { StockValuationResponse, StockValuationRow } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 
 const requireCompany = (user: AuthContext): string => {
@@ -29,6 +30,9 @@ type Row = {
 export async function getStockValuation(user: AuthContext): Promise<StockValuationResponse> {
   const companyId = requireCompany(user);
   const cid = `'${companyId}'::uuid`;
+  // Money-hiding for L1 Viewers ("Can See Price"). Stock value rides the Store
+  // price permission (item_create).
+  const showMoney = await canSeeFormPrice(user, 'item_create');
 
   return withUserContext(user, async (tx) => {
     const res = await tx.execute(
@@ -98,14 +102,26 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
         c.stockCount += 1;
         grandStockItems += 1;
       }
-      c.value += r.value;
+      c.value += r.value ?? 0;
       catMap.set(r.category, c);
-      grandTotal += r.value;
+      grandTotal += r.value ?? 0;
+    }
+
+    const categories = [...catMap.entries()].map(([category, v]) => ({ category, ...v }));
+
+    if (!showMoney) {
+      return {
+        rows: rows.map((r) => ({ ...r, rate: null, value: null })),
+        categories: categories.map((c) => ({ ...c, value: null })),
+        grandTotal: null,
+        grandItems: rows.length,
+        grandStockItems,
+      };
     }
 
     return {
       rows,
-      categories: [...catMap.entries()].map(([category, v]) => ({ category, ...v })),
+      categories,
       grandTotal,
       grandItems: rows.length,
       grandStockItems,

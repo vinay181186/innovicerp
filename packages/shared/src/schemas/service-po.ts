@@ -46,8 +46,9 @@ export const servicePoLineSchema = z.object({
   itemCode: z.string().nullable(),
   itemName: z.string(),
   qty: z.number().nonnegative(),
-  rate: z.number().nonnegative(),
-  amount: z.number().nonnegative(),
+  // NULL when the viewer's access hides prices (L1 Viewer without "see price").
+  rate: z.number().nonnegative().nullable(),
+  amount: z.number().nonnegative().nullable(),
 });
 export type ServicePoLine = z.infer<typeof servicePoLineSchema>;
 
@@ -62,11 +63,12 @@ export const servicePoSchema = z.object({
   costCenter: servicePoCostCenterSchema,
   soRefId: z.string().uuid().nullable(),
   soNoText: z.string().nullable(),
-  subtotal: z.number().nonnegative(),
+  // Money — NULL when the viewer's access hides prices.
+  subtotal: z.number().nonnegative().nullable(),
   taxType: servicePoTaxTypeSchema,
-  gstPct: z.number().nonnegative(),
-  taxAmount: z.number().nonnegative(),
-  total: z.number().nonnegative(),
+  gstPct: z.number().nonnegative().nullable(),
+  taxAmount: z.number().nonnegative().nullable(),
+  total: z.number().nonnegative().nullable(),
   paymentTerms: z.string(),
   remarks: z.string().nullable(),
   status: servicePoStatusSchema,

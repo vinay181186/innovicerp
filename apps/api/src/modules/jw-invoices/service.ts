@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { clients, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -175,8 +176,23 @@ export async function createJwInvoice(
   });
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). JW invoices ride the JW
+// department's price permission (jw_create).
+function hideJwInvoiceMoney<
+  T extends {
+    rate: number | null;
+    taxableAmount: number | null;
+    gstPercent: number | null;
+    gstAmount: number | null;
+    totalAmount: number | null;
+  },
+>(r: T): T {
+  return { ...r, rate: null, taxableAmount: null, gstPercent: null, gstAmount: null, totalAmount: null };
+}
+
 export async function listJwInvoices(user: AuthContext): Promise<ListJwInvoicesResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'jw_create');
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select({
@@ -191,11 +207,14 @@ export async function listJwInvoices(user: AuthContext): Promise<ListJwInvoicesR
       .orderBy(desc(jwInvoices.invoiceDate), desc(jwInvoices.code))
       .limit(500);
     return {
-      items: rows.map((r) => ({
-        ...rowToInvoice(r.inv),
-        clientName: r.clientName ?? null,
-        partName: r.partName ?? null,
-      })),
+      items: rows.map((r) => {
+        const item = {
+          ...rowToInvoice(r.inv),
+          clientName: r.clientName ?? null,
+          partName: r.partName ?? null,
+        };
+        return showMoney ? item : hideJwInvoiceMoney(item);
+      }),
       total: rows.length,
     };
   });

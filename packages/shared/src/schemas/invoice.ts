@@ -64,15 +64,16 @@ export const invoiceLineRowSchema = z.object({
   itemCodeText: z.string().nullable(),
   itemName: z.string(),
   qty: z.number().int(),
-  rate: z.number().nonnegative(),
-  lineAmount: z.number().nonnegative(),
+  // Money — NULL when the viewer's access hides prices.
+  rate: z.number().nonnegative().nullable(),
+  lineAmount: z.number().nonnegative().nullable(),
 });
 export type InvoiceLineRow = z.infer<typeof invoiceLineRowSchema>;
 
 export const invoicePaymentRowSchema = z.object({
   id: z.string().uuid(),
   paymentDate: z.string(),
-  amount: z.number().nonnegative(),
+  amount: z.number().nonnegative().nullable(), // NULL when prices hidden
   mode: z.string(),
   refNo: z.string().nullable(),
   notes: z.string().nullable(),
@@ -86,12 +87,13 @@ export const invoiceRowSchema = z.object({
   salesOrderId: z.string().uuid(),
   soCode: z.string().nullable(),
   clientName: z.string().nullable(),
-  subtotal: z.number().nonnegative(),
-  gstPercent: z.number().nonnegative(),
-  gstAmount: z.number().nonnegative(),
-  grandTotal: z.number().nonnegative(),
-  totalPaid: z.number().nonnegative(),
-  balance: z.number(),
+  // Money — NULL when the viewer's access hides prices.
+  subtotal: z.number().nonnegative().nullable(),
+  gstPercent: z.number().nonnegative().nullable(),
+  gstAmount: z.number().nonnegative().nullable(),
+  grandTotal: z.number().nonnegative().nullable(),
+  totalPaid: z.number().nonnegative().nullable(),
+  balance: z.number().nullable(),
   status: z.enum(INVOICE_STATUSES),
   dueDate: z.string().nullable(),
   overdue: z.boolean(),
@@ -111,10 +113,11 @@ export type InvoiceDetail = z.infer<typeof invoiceDetailSchema>;
 export const listInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceRowSchema),
   summary: z.object({
-    totalInvoiced: z.number(),
-    totalReceived: z.number(),
-    outstanding: z.number(),
-    overdueAmount: z.number(),
+    // Money — NULL when the viewer's access hides prices (counts stay).
+    totalInvoiced: z.number().nullable(),
+    totalReceived: z.number().nullable(),
+    outstanding: z.number().nullable(),
+    overdueAmount: z.number().nullable(),
     overdueCount: z.number().int().nonnegative(),
     unpaidCount: z.number().int().nonnegative(),
     partialCount: z.number().int().nonnegative(),

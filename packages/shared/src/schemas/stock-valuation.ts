@@ -12,9 +12,10 @@ export const stockValuationRowSchema = z.object({
   uom: z.string(),
   category: z.string(), // itemType: component | assembly
   stockQty: z.number().int(),
-  rate: z.number().nonnegative(),
+  // Money — NULL when the viewer's access hides prices.
+  rate: z.number().nonnegative().nullable(),
   hasRate: z.boolean(),
-  value: z.number().nonnegative(),
+  value: z.number().nonnegative().nullable(),
   lastGrnDate: z.string().nullable(),
   minStock: z.number().int().nonnegative(),
   lowStock: z.boolean(),
@@ -25,14 +26,15 @@ export const stockValuationCategorySchema = z.object({
   category: z.string(),
   count: z.number().int().nonnegative(),
   stockCount: z.number().int().nonnegative(),
-  value: z.number().nonnegative(),
+  value: z.number().nonnegative().nullable(), // NULL when prices hidden
 });
 export type StockValuationCategory = z.infer<typeof stockValuationCategorySchema>;
 
 export const stockValuationResponseSchema = z.object({
   rows: z.array(stockValuationRowSchema),
   categories: z.array(stockValuationCategorySchema),
-  grandTotal: z.number().nonnegative(),
+  grandTotal: z.number().nonnegative().nullable(), // NULL when prices hidden
+
   grandItems: z.number().int().nonnegative(),
   grandStockItems: z.number().int().nonnegative(),
 });

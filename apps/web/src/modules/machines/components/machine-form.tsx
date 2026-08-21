@@ -69,7 +69,7 @@ function machineToUpdateDefaults(m: Machine): UpdateMachineInput {
     capacityPerShift: m.capacityPerShift ?? undefined,
     shiftsPerDay: m.shiftsPerDay,
     status: m.status,
-    hourRate: m.hourRate,
+    hourRate: m.hourRate ?? undefined,
   };
 }
 

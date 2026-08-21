@@ -24,6 +24,7 @@ import type {
 } from '@innovic/shared';
 import { salesOrders } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
@@ -31,11 +32,26 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). This whole report is money;
+// it rides the Sales price permission (so_create).
+function hidePsvRowMoney<T extends Record<string, unknown>>(r: T): T {
+  return {
+    ...r,
+    orderValue: null,
+    dispatchedValue: null,
+    pendingValue: null,
+    invoicedValue: null,
+    receivedValue: null,
+    outstandingValue: null,
+  };
+}
+
 export async function getPendingSoValue(
   filter: PendingSoValueFilter,
   user: AuthContext,
 ): Promise<PendingSoValueResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'so_create');
 
   return withUserContext(user, async (tx) => {
     // One aggregating query: per-SO sums of order / dispatched / invoiced /
@@ -172,8 +188,8 @@ export async function getPendingSoValue(
     return {
       generatedAt: new Date().toISOString(),
       filter,
-      rows: mapped,
-      totals,
+      rows: showMoney ? mapped : mapped.map(hidePsvRowMoney),
+      totals: showMoney ? totals : hidePsvRowMoney(totals),
     };
   });
 }

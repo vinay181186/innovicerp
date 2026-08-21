@@ -269,7 +269,7 @@ function ServicePosDetailPage(): React.JSX.Element {
             <Pair label="Expense Head" value={po.expenseHead} />
             <Pair label="Payment Terms" value={po.paymentTerms} />
             <Pair label="Tax Type" value={po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} />
-            <Pair label="GST %" value={`${po.gstPct}%`} />
+            {po.total == null ? null : <Pair label="GST %" value={`${po.gstPct}%`} />}
             <Pair
               label="Approved"
               value={po.approvedAt ? po.approvedAt.slice(0, 16).replace('T', ' ') : '—'}
@@ -291,8 +291,12 @@ function ServicePosDetailPage(): React.JSX.Element {
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th className="td-ctr">Qty</th>
-                  <th className="td-ctr">Rate</th>
-                  <th className="td-ctr">Amount</th>
+                  {po.total == null ? null : (
+                    <>
+                      <th className="td-ctr">Rate</th>
+                      <th className="td-ctr">Amount</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -302,31 +306,37 @@ function ServicePosDetailPage(): React.JSX.Element {
                     <td className="mono">{l.itemCode ?? '—'}</td>
                     <td>{l.itemName}</td>
                     <td className="td-ctr mono">{l.qty}</td>
-                    <td className="td-ctr mono">₹{l.rate.toFixed(2)}</td>
-                    <td className="td-ctr mono fw-700">₹{l.amount.toFixed(2)}</td>
+                    {po.total == null ? null : (
+                      <>
+                        <td className="td-ctr mono">₹{(l.rate ?? 0).toFixed(2)}</td>
+                        <td className="td-ctr mono fw-700">₹{(l.amount ?? 0).toFixed(2)}</td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>Subtotal</td>
-                  <td className="td-ctr mono fw-700">₹{po.subtotal.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'right' }}>
-                    {po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} @ {po.gstPct}%
-                  </td>
-                  <td className="td-ctr mono">₹{po.taxAmount.toFixed(2)}</td>
-                </tr>
-                <tr style={{ background: 'var(--bg4)' }}>
-                  <td colSpan={5} style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
-                    TOTAL
-                  </td>
-                  <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
-                    ₹{po.total.toFixed(2)}
-                  </td>
-                </tr>
-              </tfoot>
+              {po.total == null ? null : (
+                <tfoot>
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right', fontWeight: 700 }}>Subtotal</td>
+                    <td className="td-ctr mono fw-700">₹{(po.subtotal ?? 0).toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right' }}>
+                      {po.taxType === 'igst' ? 'IGST' : 'SGST+CGST'} @ {po.gstPct}%
+                    </td>
+                    <td className="td-ctr mono">₹{(po.taxAmount ?? 0).toFixed(2)}</td>
+                  </tr>
+                  <tr style={{ background: 'var(--bg4)' }}>
+                    <td colSpan={5} style={{ textAlign: 'right', fontWeight: 800, fontSize: 14 }}>
+                      TOTAL
+                    </td>
+                    <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
+                      ₹{(po.total ?? 0).toFixed(2)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

@@ -16,7 +16,8 @@ export const stockValuationRoute = createRoute({
   component: StockValuationPage,
 });
 
-function inr(v: number): string {
+function inr(v: number | null): string {
+  if (v == null) return '';
   return `₹${Math.round(v).toLocaleString('en-IN')}`;
 }
 
@@ -53,7 +54,7 @@ function StockValuationPage(): React.JSX.Element {
       .filter((r) => (filter === 'all' ? true : r.category === filter))
       .filter((r) => (showZero ? true : r.stockQty > 0))
       .filter((r) => (s ? `${r.code} ${r.name}`.toLowerCase().includes(s) : true))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   }, [rows, filter, showZero, search]);
 
   if (isLoading) {
@@ -71,10 +72,13 @@ function StockValuationPage(): React.JSX.Element {
     );
   }
 
+  // Money hidden for L1 Viewers: the API nulls rate/value/grandTotal, so the
+  // Rate + Stock Value columns, the value tiles and the totals are dropped.
+  const priceHidden = data.grandTotal == null;
   const catKeys = ['all', ...data.categories.map((c) => c.category)];
   const catCount = (k: string): number =>
     k === 'all' ? data.grandItems : (data.categories.find((c) => c.category === k)?.count ?? 0);
-  const tblTotal = filtered.reduce((s, r) => s + r.value, 0);
+  const tblTotal = filtered.reduce((s, r) => s + (r.value ?? 0), 0);
 
   return (
     <div>
@@ -116,37 +120,39 @@ function StockValuationPage(): React.JSX.Element {
         zero-stock items
       </label>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 8,
-          marginBottom: 16,
-        }}
-      >
-        <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
-          <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>TOTAL STOCK VALUE</div>
-          <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
-            {inr(data.grandTotal)}
-          </div>
-          <div className="text3" style={{ fontSize: 9 }}>
-            {data.grandStockItems} / {data.grandItems} items in stock
-          </div>
-        </div>
-        {data.categories.map((c) => (
-          <div key={c.category} className="panel" style={{ padding: 10, textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
-              {c.category}
-            </div>
-            <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
-              {inr(c.value)}
+      {priceHidden ? null : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
+          <div className="panel" style={{ padding: 10, textAlign: 'center', border: '2px solid var(--cyan)' }}>
+            <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>TOTAL STOCK VALUE</div>
+            <div className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
+              {inr(data.grandTotal)}
             </div>
             <div className="text3" style={{ fontSize: 9 }}>
-              {c.stockCount} in stock
+              {data.grandStockItems} / {data.grandItems} items in stock
             </div>
           </div>
-        ))}
-      </div>
+          {data.categories.map((c) => (
+            <div key={c.category} className="panel" style={{ padding: 10, textAlign: 'center' }}>
+              <div className="text3" style={{ fontSize: 9, textTransform: 'uppercase' }}>
+                {c.category}
+              </div>
+              <div className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
+                {inr(c.value)}
+              </div>
+              <div className="text3" style={{ fontSize: 9 }}>
+                {c.stockCount} in stock
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Legacy L21029 — searchBox('svSearch','svTable','Search item code or name...').
           Width/padding mirror legacy's own inline styles; our .innovic-input is
@@ -184,15 +190,19 @@ function StockValuationPage(): React.JSX.Element {
                     outranks any single utility class on a <th> — see ISSUE-044.
                     Legacy uses inline here for the same reason. */}
                 <th style={{ textAlign: 'right' }}>Stock Qty</th>
-                <th style={{ textAlign: 'right' }}>Rate</th>
-                <th style={{ textAlign: 'right' }}>Stock Value</th>
+                {priceHidden ? null : (
+                  <>
+                    <th style={{ textAlign: 'right' }}>Rate</th>
+                    <th style={{ textAlign: 'right' }}>Stock Value</th>
+                  </>
+                )}
                 <th>Last GRN</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={priceHidden ? 6 : 8} className="empty-state">
                     No items
                   </td>
                 </tr>
@@ -218,12 +228,16 @@ function StockValuationPage(): React.JSX.Element {
                       {r.stockQty}
                       {r.lowStock ? ' ⚠' : ''}
                     </td>
-                    <td className="td-right mono" style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
-                      {r.hasRate ? inr(r.rate) : 'No Rate'}
-                    </td>
-                    <td className="td-right mono fw-700" style={{ color: r.value > 0 ? 'var(--green)' : 'var(--text3)' }}>
-                      {inr(r.value)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="td-right mono" style={{ color: r.hasRate ? undefined : 'var(--text3)' }}>
+                          {r.hasRate ? inr(r.rate) : 'No Rate'}
+                        </td>
+                        <td className="td-right mono fw-700" style={{ color: (r.value ?? 0) > 0 ? 'var(--green)' : 'var(--text3)' }}>
+                          {inr(r.value)}
+                        </td>
+                      </>
+                    )}
                     <td className="td-ctr" style={{ fontSize: 11 }}>
                       {r.lastGrnDate ?? '—'}
                     </td>
@@ -233,12 +247,14 @@ function StockValuationPage(): React.JSX.Element {
             </tbody>
             <tfoot>
               <tr style={{ background: 'var(--bg4)', fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                <td colSpan={6} className="td-right" style={{ fontSize: 12, color: 'var(--text2)' }}>
+                <td colSpan={priceHidden ? 5 : 6} className="td-right" style={{ fontSize: 12, color: 'var(--text2)' }}>
                   TOTAL ({filtered.length} items)
                 </td>
-                <td className="td-right mono" style={{ color: 'var(--cyan)' }}>
-                  {inr(tblTotal)}
-                </td>
+                {priceHidden ? null : (
+                  <td className="td-right mono" style={{ color: 'var(--cyan)' }}>
+                    {inr(tblTotal)}
+                  </td>
+                )}
                 <td />
               </tr>
             </tfoot>

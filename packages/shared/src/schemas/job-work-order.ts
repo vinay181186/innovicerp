@@ -51,7 +51,7 @@ export const jobWorkOrderLineSchema = z.object({
   /** Σ finished parts delivered back to the client (job_work_order_lines.returned_qty).
    *  Shown on the list as "Dispatched" — Balance = orderQty − returnedQty. */
   returnedQty: z.number().int().nonnegative().default(0),
-  rate: z.string(), // processing charge per unit; numeric stored as string
+  rate: z.string().nullable(), // processing charge/unit; NULL when prices hidden
   dueDate: z.string().nullable(), // ISO date
   status: jwStatusSchema,
   sourceBomMasterId: z.string().uuid().nullable().default(null),
@@ -72,7 +72,7 @@ export const jobWorkOrderSchema = z.object({
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),
   status: jwStatusSchema,
-  gstPercent: z.string(), // numeric stored as string (parity with sales_order)
+  gstPercent: z.string().nullable(), // NULL when prices hidden (parity with sales_order)
   remarks: z.string().nullable(),
   // Client material details (header-level, per legacy CLIENT MATERIAL DETAILS
   // L12839). Client supplies raw material → we process → deliver finished parts.

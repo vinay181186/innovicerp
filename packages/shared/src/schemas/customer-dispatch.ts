@@ -18,7 +18,8 @@ export const dispatchableLineSchema = z.object({
   reservedQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),
   availableQty: z.number().int().nonnegative(), // min(ready + reserved, order) − dispatched
-  rate: z.number().nonnegative(),
+  // SO-line unit price — NULL when the viewer's access hides prices.
+  rate: z.number().nonnegative().nullable(),
 });
 export type DispatchableLine = z.infer<typeof dispatchableLineSchema>;
 

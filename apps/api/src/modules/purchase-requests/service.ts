@@ -22,7 +22,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { assertNotSelfApproval, requireFormAccess } from '../../lib/access';
+import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -186,11 +186,19 @@ function toPurchaseRequest(row: typeof purchaseRequests.$inferSelect): PurchaseR
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// Money-hiding for L1 Viewers ("Can See Price"). A PR's only money is its
+// estimated cost; it is nulled for price-restricted viewers on both list and
+// detail.
+function hidePrMoney<T extends { estCost: string | null }>(r: T): T {
+  return { ...r, estCost: null };
+}
+
 export async function listPurchaseRequests(
   input: ListPurchaseRequestsQuery,
   user: AuthContext,
 ): Promise<ListPurchaseRequestsResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'pr_create');
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
     const searchFrag = term
@@ -273,7 +281,8 @@ export async function listPurchaseRequests(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
-    const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const rowsList = showMoney ? mapped : mapped.map(hidePrMoney);
     return { items: rowsList, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -323,6 +332,7 @@ export async function getPurchaseRequest(
 ): Promise<PurchaseRequestDetail> {
   const companyId = requireCompany(user);
   const vendorByCode = alias(vendors, 'vendor_by_code');
+  const showMoney = await canSeeFormPrice(user, 'pr_create');
   return withUserContext(user, async (tx) => {
     // Resolve the vendor/item display joins the list already carries (per
     // docs/PARITY/linked-display-audit). Consumers previously had only
@@ -405,8 +415,9 @@ export async function getPurchaseRequest(
       .limit(1);
     const found = rows[0];
     if (!found) throw new NotFoundError(`Purchase request ${id} not found`);
+    const prOut = toPurchaseRequest(found.row);
     return {
-      ...toPurchaseRequest(found.row),
+      ...(showMoney ? prOut : hidePrMoney(prOut)),
       vendorName: found.vendorName,
       vendorCode: found.vendorCode,
       vendorAddress: found.vendorAddress,

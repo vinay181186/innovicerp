@@ -58,7 +58,7 @@ export const ncRegisterSchema = z.object({
   reworkJcCodeText: z.string().nullable(),
   reworkOpSeq: z.number().int().nullable(),
   reworkDoneQty: z.string().nullable(),
-  scrapCost: z.string(),
+  scrapCost: z.string().nullable(), // NULL when the viewer's access hides prices
   status: ncStatusSchema,
   reportedByText: z.string().nullable(),
   timeLogged: z.string().nullable(),

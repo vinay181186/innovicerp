@@ -304,6 +304,10 @@ function JwExpandedPanel({ jwId, canWrite }: { jwId: string; canWrite: boolean }
 }
 
 function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: boolean }): React.JSX.Element {
+  // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
+  // the Rate column is dropped here too.
+  const priceHidden = jw.gstPercent == null;
+  const cols = (canWrite ? 13 : 12) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
@@ -314,13 +318,13 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
             <th className="td-ctr">Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr">Balance</th>
-            <th>UOM</th><th className="td-ctr">Rate</th><th>Due Date</th><th>Status</th>
+            <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>Status</th>
             {canWrite ? <th /> : null}
           </tr>
         </thead>
         <tbody>
           {jw.lines.length === 0 ? (
-            <tr><td colSpan={canWrite ? 13 : 12} className="empty-state">No lines yet</td></tr>
+            <tr><td colSpan={cols} className="empty-state">No lines yet</td></tr>
           ) : (
             jw.lines.map((l) => {
               const balance = Math.max(0, l.orderQty - l.returnedQty);
@@ -335,7 +339,7 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
                 <td className="td-ctr mono fw-700" style={{ color: l.returnedQty > 0 ? 'var(--green)' : 'var(--text3)' }}>{l.returnedQty}</td>
                 <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance}</td>
                 <td className="text3" style={{ fontSize: 11, textTransform: 'uppercase' }}>{l.uom}</td>
-                <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>
+                {priceHidden ? null : <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>}
                 <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
                 <td><SoStatusBadge status={l.status} /></td>
                 {canWrite ? (

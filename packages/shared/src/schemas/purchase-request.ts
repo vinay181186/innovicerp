@@ -38,7 +38,7 @@ export const purchaseRequestSchema = z.object({
   itemCodeText: z.string().nullable(),
   itemName: z.string().nullable(),
   qty: z.number().int().positive(),
-  estCost: z.string(), // numeric stored as string
+  estCost: z.string().nullable(), // numeric stored as string; NULL when prices hidden
   requiredDate: z.string().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
