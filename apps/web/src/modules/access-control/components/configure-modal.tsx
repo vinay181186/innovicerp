@@ -752,7 +752,23 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              {ACTION_LABEL[a]}
+                              {a === 'price' ? (
+                                <>
+                                  SEE{' '}
+                                  <span
+                                    style={{
+                                      fontSize: 14,
+                                      fontWeight: 800,
+                                      color: 'var(--orange)',
+                                      verticalAlign: 'middle',
+                                    }}
+                                  >
+                                    ₹
+                                  </span>
+                                </>
+                              ) : (
+                                ACTION_LABEL[a]
+                              )}
                             </span>
                           ))}
                         </div>

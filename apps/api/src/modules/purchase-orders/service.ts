@@ -32,7 +32,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { assertNotSelfApproval, requireFormAccess } from '../../lib/access';
+import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -211,11 +211,27 @@ function maybeDateLike(v: unknown): string | null {
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// Money-hiding for L1 Viewers (ADR: "Can See Price"). When the caller may not
+// see prices on Purchase Orders, the rupee amounts are nulled before they
+// leave the server — lists, detail, prints and exports all build from these,
+// so nulling here hides money everywhere at once. GST percentages are kept:
+// they are not the confidential figures and revealing them alone is harmless.
+function hidePoHeaderMoney<
+  T extends { subtotal: number | null; taxAmount: number | null; totalAmount: number | null },
+>(h: T): T {
+  return { ...h, subtotal: null, taxAmount: null, totalAmount: null };
+}
+
+function hidePoLineMoney<T extends { rate: string | null }>(l: T): T {
+  return { ...l, rate: null };
+}
+
 export async function listPurchaseOrders(
   input: ListPurchaseOrdersQuery,
   user: AuthContext,
 ): Promise<ListPurchaseOrdersResponse> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
     const term = input.search ? `%${input.search}%` : null;
     const searchFrag = term
@@ -285,7 +301,8 @@ export async function listPurchaseOrders(
       .where(and(...conditions));
     const total = totalRows[0]?.value ?? 0;
 
-    const rowsList = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const rowsList = showMoney ? mapped : mapped.map(hidePoHeaderMoney);
     return { items: rowsList, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -333,6 +350,7 @@ export async function getPurchaseOrder(
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'po_create');
   return withUserContext(user, async (tx) => {
     const headerRows = await tx
       .select({ row: purchaseOrders, vendorName: vendors.name })
@@ -356,10 +374,12 @@ export async function getPurchaseOrder(
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
+    const header = toPurchaseOrder(headerRow.row);
+    const lines = lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode));
     return {
-      ...toPurchaseOrder(headerRow.row),
+      ...(showMoney ? header : hidePoHeaderMoney(header)),
       vendorName: headerRow.vendorName,
-      lines: lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode)),
+      lines: showMoney ? lines : lines.map(hidePoLineMoney),
     };
   });
 }

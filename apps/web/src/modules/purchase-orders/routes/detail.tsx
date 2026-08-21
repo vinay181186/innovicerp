@@ -174,7 +174,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
   const totalQty = detail.lines.reduce((s, l) => s + l.qty, 0);
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
-  const totalValue = detail.lines.reduce((s, l) => s + l.qty * Number(l.rate), 0);
+  // Money is hidden for L1 Viewers: the API nulls the header amount and every
+  // line rate together, so a null total is the single signal to blank ₹ here.
+  const priceHidden = detail.totalAmount == null;
+  const totalValue = detail.lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
 
   return (
     <div>
@@ -429,8 +432,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <div>
                   <span className="text3" style={{ fontSize: 10 }}>VALUE</span>
                   <br />
-                  <b style={{ color: 'var(--green)' }}>
-                    ₹{Math.round(totalValue).toLocaleString('en-IN')}
+                  <b style={{ color: priceHidden ? 'var(--text3)' : 'var(--green)' }}>
+                    {priceHidden ? 'Hidden' : `₹${Math.round(totalValue).toLocaleString('en-IN')}`}
                   </b>
                 </div>
               </div>
@@ -605,7 +608,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 // red/green on >0.
 function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
   const { line: l } = props;
-  const amount = l.qty * Number(l.rate);
+  // rate is null when the viewer may not see prices → hide rate + amount.
+  const priceHidden = l.rate == null;
+  const amount = l.qty * Number(l.rate ?? 0);
   const pending = Math.max(0, l.qty - l.receivedQty);
   return (
     <tr>
@@ -619,9 +624,11 @@ function LineRow(props: { line: PurchaseOrderLine }): React.JSX.Element {
       </td>
       <td className="mono fw-700">{l.qty}</td>
       <td className="mono" style={{ fontSize: 11 }}>
-        {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
+        {priceHidden ? 'Hidden' : Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
       </td>
-      <td className="mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+      <td className="mono green">
+        {priceHidden ? 'Hidden' : amount > 0 ? `₹${amount.toFixed(2)}` : '—'}
+      </td>
       <td className="mono green fw-700">{l.receivedQty}</td>
       <td
         className="mono"

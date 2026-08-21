@@ -47,7 +47,9 @@ export const purchaseOrderLineSchema = z.object({
   itemCode: z.string().nullable().default(null),
   itemName: z.string(),
   qty: z.number().int().positive(),
-  rate: z.string(), // numeric stored as string
+  // numeric stored as string; NULL when the viewer's access hides prices
+  // (L1 Viewer without "see price") — see canSeeFormPrice on the API.
+  rate: z.string().nullable(),
   receivedQty: z.number().int().nonnegative(),
   dueDate: z.string().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
@@ -79,9 +81,11 @@ export const purchaseOrderSchema = z.object({
   // subtotal = Σ(qty×rate); taxAmount = subtotal×(sgst+cgst+igst)/100;
   // totalAmount = subtotal + taxAmount. Numbers (service converts the numeric
   // strings) — same shape as invoiceSchema.subtotal/gstAmount/grandTotal.
-  subtotal: z.number().nonnegative(),
-  taxAmount: z.number().nonnegative(),
-  totalAmount: z.number().nonnegative(),
+  // NULL when the viewer's access hides prices (L1 Viewer without "see
+  // price") — the API nulls these instead of returning the amounts.
+  subtotal: z.number().nonnegative().nullable(),
+  taxAmount: z.number().nonnegative().nullable(),
+  totalAmount: z.number().nonnegative().nullable(),
   prCodeText: z.string().nullable(),
   approvedBy: z.string().uuid().nullable(),
   approvedAt: z.string().nullable(),

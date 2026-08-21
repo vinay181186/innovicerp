@@ -191,12 +191,20 @@ export function PoHeaderBand({
           />
           <Row
             label="Subtotal"
-            value={<span className="mono">₹{detail.subtotal.toFixed(2)}</span>}
+            value={
+              <span className="mono">
+                {detail.subtotal == null ? 'Hidden' : `₹${detail.subtotal.toFixed(2)}`}
+              </span>
+            }
             align="right"
           />
           <Row
             label="Tax"
-            value={<span className="mono">₹{detail.taxAmount.toFixed(2)}</span>}
+            value={
+              <span className="mono">
+                {detail.taxAmount == null ? 'Hidden' : `₹${detail.taxAmount.toFixed(2)}`}
+              </span>
+            }
             align="right"
           />
           <div
@@ -213,8 +221,14 @@ export function PoHeaderBand({
             }}
           >
             <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
-            <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green)' }}>
-              ₹{detail.totalAmount.toFixed(2)}
+            <span
+              className="mono fw-700"
+              style={{
+                fontSize: 16,
+                color: detail.totalAmount == null ? 'var(--text3)' : 'var(--green)',
+              }}
+            >
+              {detail.totalAmount == null ? 'Hidden' : `₹${detail.totalAmount.toFixed(2)}`}
             </span>
           </div>
         </Col>

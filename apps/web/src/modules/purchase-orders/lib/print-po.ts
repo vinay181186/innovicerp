@@ -27,7 +27,13 @@ export function printPurchaseOrder(args: {
   const { po, vendor, company, templates } = args;
   const lines = po.lines;
 
-  const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate), 0);
+  // Money is hidden for L1 Viewers: the API nulls the header total and line
+  // rates. A printed PO must not leak what the screen hides, so every rupee
+  // cell prints "—" and the amount-in-words is dropped.
+  const priceHidden = po.totalAmount == null;
+  const money = (n: number): string => (priceHidden ? '—' : inrFormat(n));
+
+  const subtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
@@ -40,13 +46,13 @@ export function printPurchaseOrder(args: {
   if (isIgst) {
     const amt = (subtotal * igstPct) / 100;
     tax += amt;
-    if (igstPct > 0) taxRows.push({ label: `IGST @ ${igstPct}%`, value: inrFormat(amt) });
+    if (igstPct > 0) taxRows.push({ label: `IGST @ ${igstPct}%`, value: money(amt) });
   } else {
     const sAmt = (subtotal * sgstPct) / 100;
     const cAmt = (subtotal * cgstPct) / 100;
     tax += sAmt + cAmt;
-    if (sgstPct > 0) taxRows.push({ label: `SGST @ ${sgstPct}%`, value: inrFormat(sAmt) });
-    if (cgstPct > 0) taxRows.push({ label: `CGST @ ${cgstPct}%`, value: inrFormat(cAmt) });
+    if (sgstPct > 0) taxRows.push({ label: `SGST @ ${sgstPct}%`, value: money(sAmt) });
+    if (cgstPct > 0) taxRows.push({ label: `CGST @ ${cgstPct}%`, value: money(cAmt) });
   }
   const grand = subtotal + tax;
 
@@ -71,7 +77,7 @@ export function printPurchaseOrder(args: {
     vendorAddress,
     vendorGSTIN: vendorGstin,
     vendorContact,
-    totalValue: inrFormat(grand),
+    totalValue: money(grand),
     totalQty: String(totalQty),
   };
 
@@ -102,14 +108,14 @@ export function printPurchaseOrder(args: {
       itemName: l.itemName,
       qty: String(l.qty),
       uom: 'NOS',
-      rate: inrFormat(Number(l.rate)),
-      amount: inrFormat(l.qty * Number(l.rate)),
+      rate: money(Number(l.rate ?? 0)),
+      amount: money(l.qty * Number(l.rate ?? 0)),
     })),
     totals: {
-      subtotal: inrFormat(subtotal),
+      subtotal: money(subtotal),
       taxRows,
-      grand: inrFormat(grand),
-      amountInWords: amountInWords(grand),
+      grand: money(grand),
+      amountInWords: priceHidden ? '' : amountInWords(grand),
     },
   };
 
