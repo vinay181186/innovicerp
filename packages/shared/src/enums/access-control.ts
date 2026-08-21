@@ -124,48 +124,45 @@ export const ACCESS_FORM_KEYS: readonly AccessFormKey[] = ACCESS_FORMS.map((f) =
 // those policies never run, and the `require*Role` guards in the services are
 // the only enforcement there is. That is precisely why the role must follow
 // the access instead of being chosen next to it.
-// `price` = "can see price" — may this tier see rates / amounts / totals /
-// costs on the documents in its department? A pure Viewer (L1) may NOT: that
-// is the whole reason the flag exists (hide money from view-only staff).
-// Everyone who actually works the documents (L2 Data Entry and up, including
-// the L4 Approver who must read a PO's amount to sign it) sees money by
-// default. Like every other perm it is additive: an L1 form can still be
-// ticked "see price" by hand to grant it back on that one form.
+// "Can see price" is deliberately NOT a perm on the tier table. Money is the
+// one right that depends on the DEPARTMENT as well as the level — see
+// `priceStartTier` below — so a tier alone cannot answer it. Ask
+// `tierSeesPrice(dept, tier)` or `tierPermsForDept(dept, tier)` instead.
 export const ACCESS_TIERS = [
   {
     key: 'L1',
     label: 'Viewer',
-    perms: { view: true, entry: false, edit: false, approve: false, price: false },
-    hint: 'Can open and read. Cannot save anything. Does NOT see prices/amounts.',
+    perms: { view: true, entry: false, edit: false, approve: false },
+    hint: 'Can open and read. Cannot save anything. Never sees prices/amounts.',
   },
   {
     key: 'L2',
     label: 'Data Entry',
-    perms: { view: true, entry: true, edit: false, approve: false, price: true },
-    hint: 'Can create new records. Cannot change one after it is saved.',
+    perms: { view: true, entry: true, edit: false, approve: false },
+    hint: 'Can create new records. Cannot change one after it is saved. Sees prices only in Sales, Purchase, Store and Finance.',
   },
   {
     key: 'L3',
     label: 'Editor / Executor',
-    perms: { view: true, entry: true, edit: true, approve: false, price: true },
-    hint: 'Can create and change records. Cannot approve.',
+    perms: { view: true, entry: true, edit: true, approve: false },
+    hint: 'Can create and change records. Cannot approve. Sees prices in any department.',
   },
   {
     key: 'L4',
     label: 'Approver',
-    perms: { view: true, entry: false, edit: false, approve: true, price: true },
+    perms: { view: true, entry: false, edit: false, approve: true },
     hint: 'Can approve or reject. Cannot create or change — and never their own record.',
   },
   {
     key: 'L5',
     label: 'Department Admin',
-    perms: { view: true, entry: true, edit: true, approve: true, price: true },
+    perms: { view: true, entry: true, edit: true, approve: true },
     hint: 'Full rights inside this department only.',
   },
 ] as const satisfies readonly {
   key: string;
   label: string;
-  perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean; price: boolean };
+  perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean };
   hint: string;
 }[];
 
@@ -181,6 +178,49 @@ export function isAccessTierKey(k: unknown): k is AccessTierKey {
 export function accessTier(key: AccessTierKey): AccessTier {
   // Non-null: key is constrained to the registry by its type.
   return ACCESS_TIERS.find((t) => t.key === key)!;
+}
+
+// ── Who may see money ──────────────────────────────────────────
+// "Can see price" is the one right that is NOT decided by the level alone.
+// It depends on the department too.
+//
+// In the four money departments the paperwork IS the money: a Purchase L2
+// clerk types the rate, a Store L2 books a GRN against it, Sales quotes it
+// and Finance settles it. Blind them and they cannot do the job at all.
+//
+// Everywhere else the L2 is a data-entry hand — a production operator booking
+// quantity done, a QC hand recording a result — and the cost of the part is
+// none of their business. There money starts one level higher, at L3, where
+// you are running the department rather than feeding it.
+//
+// L1 never sees money in any department. That is the whole point of L1.
+export const PRICE_AT_L2_DEPTS: readonly AccessDeptKey[] = [
+  'sales',
+  'purchase',
+  'store',
+  'finance',
+];
+
+// The lowest tier that sees money in this department.
+export function priceStartTier(dept: AccessDeptKey): AccessTierKey {
+  return (PRICE_AT_L2_DEPTS as readonly string[]).includes(dept) ? 'L2' : 'L3';
+}
+
+// Does this (department, tier) pair see money by default? L4 Approver counts
+// as above L3 here — an approver who cannot read the amount cannot approve.
+export function tierSeesPrice(dept: AccessDeptKey, tier: AccessTierKey): boolean {
+  const order = ACCESS_TIER_KEYS as readonly string[];
+  return order.indexOf(tier) >= order.indexOf(priceStartTier(dept));
+}
+
+// The full perm set a tier grants inside a given department — the tier table's
+// four write actions plus the department-dependent money right. This is what
+// callers want; `accessTier(k).perms` alone cannot answer the price question.
+export function tierPermsForDept(
+  dept: AccessDeptKey,
+  tier: AccessTierKey,
+): { view: boolean; entry: boolean; edit: boolean; approve: boolean; price: boolean } {
+  return { ...accessTier(tier).perms, price: tierSeesPrice(dept, tier) };
 }
 
 // What a department gets the moment it is picked as someone's MAIN

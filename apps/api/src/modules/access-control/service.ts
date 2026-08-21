@@ -78,7 +78,10 @@ function rowToUserAccess(r: {
 }
 
 // Count granted depts / forms for the list-row summary. A form counts as
-// granted if any of view/entry/edit/approve is true.
+// hand-configured if any of view/entry/edit/approve is true, or if money was
+// granted below the department's normal level (`price`) or taken away above it
+// (`priceOff`) — those are decisions someone made by hand and the row should
+// not read as "nothing set here".
 function countDepts(m: AccessDeptsMap): number {
   const tiers = normalizeDeptsMap(m);
   return ACCESS_DEPT_KEYS.reduce((n, k) => (tiers[k] ? n + 1 : n), 0);
@@ -86,7 +89,9 @@ function countDepts(m: AccessDeptsMap): number {
 function countForms(m: AccessFormsMap): number {
   return ACCESS_FORM_KEYS.reduce((n, k) => {
     const p = m[k];
-    return p && (p.view || p.entry || p.edit || p.approve) ? n + 1 : n;
+    return p && (p.view || p.entry || p.edit || p.approve || p.price || p.priceOff)
+      ? n + 1
+      : n;
   }, 0);
 }
 

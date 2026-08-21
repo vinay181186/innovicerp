@@ -41,10 +41,12 @@ import {
   ACCESS_FORMS,
   ACCESS_TIERS,
   MAIN_DEPT_DEFAULT_TIER,
-  accessTier,
   emptyFormPerms,
+  priceStartTier,
   roleForAccess,
   saveUserAccessInputSchema,
+  tierPermsForDept,
+  type AccessDeptKey,
   type AccessFormPerms,
   type AccessTierKey,
 } from '@innovic/shared';
@@ -67,7 +69,14 @@ type Action = 'view' | 'entry' | 'edit' | 'approve' | 'price';
 // new column that sits after Approve.
 const ACTIONS: readonly Action[] = ['view', 'entry', 'edit', 'approve', 'price'];
 
-const NO_PERMS: FormPerms = { view: false, entry: false, edit: false, approve: false, price: false };
+const NO_PERMS: FormPerms = {
+  view: false,
+  entry: false,
+  edit: false,
+  approve: false,
+  price: false,
+  priceOff: false,
+};
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a
@@ -116,7 +125,9 @@ const ACTION_HINT: Record<Action, string> = {
   entry: 'Entry = create new records',
   edit: 'Edit = change existing records',
   approve: 'Approve = sign off / reject (never your own record)',
-  price: 'Can See Price = see rates, amounts, totals & costs on this form',
+  price:
+    'Can See Price = see rates, amounts, totals & costs on this form. ' +
+    'Click a tier-granted tick to force money OFF for this one form.',
 };
 
 export function ConfigureAccessModal({ userId, userName, onClose }: Props): React.JSX.Element {
@@ -218,10 +229,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     if (tier === '' && key === mainDept) setMainDept('');
   }
 
-  // What the department tier alone already grants for a form.
+  // What the department tier alone already grants for a form. Money is asked
+  // per department, not per tier: Sales / Purchase / Store / Finance see it
+  // from L2, every other department only from L3.
   function tierPermsFor(deptKey: string): FormPerms {
     const t = departments[deptKey];
-    return t ? { ...accessTier(t).perms } : NO_PERMS;
+    if (!t) return NO_PERMS;
+    return { ...tierPermsForDept(deptKey as AccessDeptKey, t), priceOff: false };
   }
 
   // How many ticks in a department come from an EXTRA the admin added on top of
@@ -238,13 +252,17 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         entry: cur.entry || cur.edit,
         edit: cur.edit,
         approve: cur.approve,
-        price: cur.price,
+        price: cur.price && !cur.priceOff,
+        priceOff: cur.priceOff,
       };
       for (const a of ACTIONS) {
         const fromTier =
           fullAccess || (auditor && (a === 'view' || a === 'price')) || base[a];
         if (own[a] && !fromTier) n++;
       }
+      // Hiding money that the tier would have shown is a hand-made change too,
+      // and the one that is easiest to forget — count it.
+      if (cur.priceOff) n++;
     }
     return n;
   }
@@ -252,7 +270,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // Action toggles mirror the stored cascade: Entry ⇒ View, Edit ⇒ View+Entry,
   // Approve ⇒ View. Approve deliberately does NOT imply Edit — an approver who
   // can also rewrite the document is not a separate pair of eyes.
-  function toggleAction(key: string, action: Action): void {
+  function toggleAction(key: string, action: Action, tierGrantsPrice = false): void {
     setForms((prev) => {
       const cur = prev[key] ?? { ...NO_PERMS };
       const next: FormPerms = { ...cur };
@@ -272,8 +290,19 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         if (next.approve) next.view = true;
       } else {
         // Can-see-price is independent — toggling it implies nothing and is
-        // implied by nothing.
-        next.price = !cur.price;
+        // implied by nothing. It is also the ONE column with three states,
+        // because the department tier may already be showing money and an
+        // admin has to be able to take that back for one form. The click
+        // cycles: follow the tier → forced off → follow the tier.
+        if (cur.priceOff) {
+          next.priceOff = false;
+          next.price = false;
+        } else if (tierGrantsPrice) {
+          next.priceOff = true;
+          next.price = false;
+        } else {
+          next.price = !cur.price;
+        }
       }
       return { ...prev, [key]: next };
     });
@@ -725,6 +754,26 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     {/* Form / feature checklist for this department */}
                     {isOpen ? (
                       <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
+                        {/* Money starts at a different level depending on the
+                            department, so say which one applies here rather
+                            than making the admin remember the rule. */}
+                        <div
+                          style={{
+                            padding: '5px 12px 5px 30px',
+                            fontSize: 10,
+                            color: 'var(--text3)',
+                            borderBottom: '1px solid var(--border)',
+                          }}
+                        >
+                          <span style={{ color: 'var(--orange2)', fontWeight: 700 }}>
+                            ₹ from {priceStartTier(d.key)}
+                          </span>{' '}
+                          — in {d.label}, prices show from {priceStartTier(d.key)} upwards.
+                          {priceStartTier(d.key) === 'L3'
+                            ? ' L2 here is data entry only and sees no money.'
+                            : ' This department works with the money itself.'}{' '}
+                          Click a ticked ₹ box to hide money on that one form.
+                        </div>
                         <div
                           style={{
                             display: 'grid',
@@ -785,6 +834,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             edit: cur.edit,
                             approve: cur.approve,
                             price: cur.price,
+                            priceOff: cur.priceOff,
                           };
                           return (
                             <div
@@ -803,24 +853,50 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                   fullAccess ||
                                   (auditor && (action === 'view' || action === 'price')) ||
                                   base[action];
+                                // Money is the one column an admin may switch
+                                // back OFF, so a tier-granted tick stays live
+                                // here instead of being locked like the rest.
+                                const isPrice = action === 'price';
+                                const forcedOff = isPrice && own.priceOff;
+                                const locked = disabled || (fromTier && !isPrice) || fullAccess;
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input
                                       type="checkbox"
-                                      disabled={disabled || fromTier}
-                                      checked={fromTier || own[action]}
-                                      onChange={() => toggleAction(f.key, action)}
+                                      disabled={locked}
+                                      checked={!forcedOff && (fromTier || own[action])}
+                                      onChange={() =>
+                                        toggleAction(f.key, action, isPrice && base.price)
+                                      }
                                       title={
-                                        fromTier && deptTierKey && !disabled
-                                          ? `Granted by the ${f.dept} tier (${deptTierKey})`
-                                          : ACTION_HINT[action]
+                                        forcedOff
+                                          ? 'Money is switched OFF for this form. Click to go back to what the department level gives.'
+                                          : isPrice && fromTier && deptTierKey && !disabled
+                                            ? `Shown by the ${f.dept} level (${deptTierKey}) — click to hide money on this form only`
+                                            : fromTier && deptTierKey && !disabled
+                                              ? `Granted by the ${f.dept} tier (${deptTierKey})`
+                                              : ACTION_HINT[action]
                                       }
                                       style={{
                                         width: 16,
                                         height: 16,
                                         accentColor: ACTION_COLOR[action],
+                                        outline: forcedOff ? '2px solid var(--red)' : undefined,
                                       }}
                                     />
+                                    {forcedOff ? (
+                                      <span
+                                        style={{
+                                          color: 'var(--red)',
+                                          fontSize: 10,
+                                          fontWeight: 800,
+                                          marginLeft: 2,
+                                        }}
+                                        title="Money hidden on this form"
+                                      >
+                                        ✕
+                                      </span>
+                                    ) : null}
                                   </span>
                                 );
                               })}

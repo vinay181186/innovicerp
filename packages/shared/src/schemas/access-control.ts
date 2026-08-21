@@ -22,6 +22,11 @@
 // means an admin cannot accidentally strand a user by unticking one row.
 // To reduce someone's rights, lower their tier.
 //
+// ONE exception: `priceOff`. "Can do the job but must not see the number" is
+// a real, ordinary request for money and has no equivalent for the write
+// actions — if someone should not edit, you simply do not give them L3. So
+// the money column alone is revocable per form, and nothing else is.
+//
 // Legacy shape is still accepted on read: a `true` dept value (what every
 // pre-0100 row holds) normalises to L1 — the safest reading, since before
 // this change a dept tick granted no write rights at all. Migration 0100
@@ -34,6 +39,7 @@ import {
   ACCESS_FORMS,
   ACCESS_TIER_KEYS,
   accessTier,
+  tierSeesPrice,
   type AccessDeptKey,
   type AccessFormKey,
   type AccessTierKey,
@@ -51,9 +57,16 @@ export const accessFormPermsSchema = z.object({
   approve: z.boolean().default(false),
   // `price` = may this user see money (rates / amounts / totals / costs) on
   // this form. Defaults false so pre-price rows parse without a backfill; the
-  // department tier supplies it for L2+ via effectiveFormPerms, so existing
-  // non-viewers keep seeing money. Only pure L1 Viewers lose it.
+  // department tier supplies it by default (see tierSeesPrice), so a tick here
+  // is only needed to grant money BELOW the department's normal starting tier.
   price: z.boolean().default(false),
+  // `priceOff` = the one subtraction in the whole matrix. Set, it hides money
+  // on this form even though the department tier would have shown it — the
+  // "does the job, must not see the number" case (a Sales L2 who enters orders
+  // but is not to see rates). Nothing else is revocable this way: to reduce
+  // any other right you lower the tier. Defaults false, so every stored row
+  // written before this existed keeps behaving exactly as it did.
+  priceOff: z.boolean().default(false),
 });
 export type AccessFormPerms = z.infer<typeof accessFormPermsSchema>;
 
@@ -152,6 +165,7 @@ const NO_PERMS: AccessFormPerms = {
   edit: false,
   approve: false,
   price: false,
+  priceOff: false,
 };
 const ALL_PERMS: AccessFormPerms = {
   view: true,
@@ -159,6 +173,7 @@ const ALL_PERMS: AccessFormPerms = {
   edit: true,
   approve: true,
   price: true,
+  priceOff: false,
 };
 
 export function emptyFormPerms(): AccessFormPerms {
@@ -170,12 +185,14 @@ export function emptyFormPerms(): AccessFormPerms {
 // NOT implied by edit — an Editor who cannot approve is the point of L3).
 export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
   const approve = p.approve;
-  // `price` (can-see-money) is independent — it neither implies nor is implied
-  // by any write action, so it passes straight through the cascade untouched.
+  // `price` / `priceOff` (can-see-money) are independent — they neither imply
+  // nor are implied by any write action, so they pass straight through the
+  // cascade untouched.
   const price = p.price;
-  if (p.edit) return { view: true, entry: true, edit: true, approve, price };
-  if (p.entry) return { view: true, entry: true, edit: false, approve, price };
-  return { view: p.view || approve, entry: false, edit: false, approve, price };
+  const priceOff = p.priceOff;
+  if (p.edit) return { view: true, entry: true, edit: true, approve, price, priceOff };
+  if (p.entry) return { view: true, entry: true, edit: false, approve, price, priceOff };
+  return { view: p.view || approve, entry: false, edit: false, approve, price, priceOff };
 }
 
 // Apply the cascade across every form. Used on save and when computing
@@ -276,14 +293,23 @@ export function effectiveFormPerms(
   const fromTier = tierKey ? accessTier(tierKey).perms : NO_PERMS;
   const fromForm = cascadeFormPerms({ ...NO_PERMS, ...(eff.forms[formKey] ?? NO_PERMS) });
 
+  // Money is the only right the department decides as well as the tier:
+  // Sales / Purchase / Store / Finance from L2, every other department from
+  // L3. See `priceStartTier` for why.
+  const tierPrice = form && tierKey ? tierSeesPrice(form.dept, tierKey) : false;
+
   return {
     view: eff.auditor || fromTier.view || fromForm.view,
     entry: fromTier.entry || fromForm.entry,
     edit: fromTier.edit || fromForm.edit,
     approve: fromTier.approve || fromForm.approve,
     // Auditors read everything, money included; otherwise money follows the
-    // department tier (L2+) or an explicit per-form "see price" tick.
-    price: eff.auditor || fromTier.price || fromForm.price,
+    // department's starting tier or an explicit per-form "see price" tick.
+    // `priceOff` is the single exception to the additive rule and beats all of
+    // them — an admin who ticked "hide" on this form meant it. L6 Super Admin
+    // is unaffected: it returned ALL_PERMS above and never reaches here.
+    price: !fromForm.priceOff && (eff.auditor || tierPrice || fromForm.price),
+    priceOff: fromForm.priceOff,
   };
 }
 
