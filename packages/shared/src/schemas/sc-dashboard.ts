@@ -14,8 +14,8 @@ export const scVendorRowSchema = z.object({
   uniqueItems: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
-  totalVal: z.number().nonnegative(),
-  pendingVal: z.number().nonnegative(),
+  totalVal: z.number().nonnegative().nullable(),
+  pendingVal: z.number().nonnegative().nullable(),
 });
 export type ScVendorRow = z.infer<typeof scVendorRowSchema>;
 
@@ -26,8 +26,8 @@ export const scSoRowSchema = z.object({
   uniqueVendors: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
-  totalVal: z.number().nonnegative(),
-  pendingVal: z.number().nonnegative(),
+  totalVal: z.number().nonnegative().nullable(),
+  pendingVal: z.number().nonnegative().nullable(),
 });
 export type ScSoRow = z.infer<typeof scSoRowSchema>;
 
@@ -41,9 +41,9 @@ export const scPoSummaryRowSchema = z.object({
   lines: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
-  totalVal: z.number().nonnegative(),
-  taxAmount: z.number().nonnegative(),
-  grandTotal: z.number().nonnegative(),
+  totalVal: z.number().nonnegative().nullable(),
+  taxAmount: z.number().nonnegative().nullable(),
+  grandTotal: z.number().nonnegative().nullable(),
   status: z.string(),
   grnCount: z.number().int().nonnegative(),
 });
@@ -62,8 +62,8 @@ export const scPendingLineSchema = z.object({
   qty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
   pendingQty: z.number().nonnegative(),
-  rate: z.number().nonnegative(),
-  pendingVal: z.number().nonnegative(),
+  rate: z.number().nonnegative().nullable(),
+  pendingVal: z.number().nonnegative().nullable(),
   status: z.string(),
 });
 export type ScPendingLine = z.infer<typeof scPendingLineSchema>;
@@ -83,9 +83,9 @@ export const scDashboardResponseSchema = z.object({
     partialPos: z.number().int().nonnegative(),
     closedPos: z.number().int().nonnegative(),
     cancelledPos: z.number().int().nonnegative(),
-    totalOrderVal: z.number().nonnegative(),
-    totalRecvVal: z.number().nonnegative(),
-    pendingVal: z.number().nonnegative(),
+    totalOrderVal: z.number().nonnegative().nullable(),
+    totalRecvVal: z.number().nonnegative().nullable(),
+    pendingVal: z.number().nonnegative().nullable(),
     grnCount: z.number().int().nonnegative(),
     todayGrn: z.number().int().nonnegative(),
   }),

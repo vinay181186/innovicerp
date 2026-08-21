@@ -33,7 +33,7 @@ export const planOpSchema = z.object({
   qcRequired: z.boolean(),
   outsourceVendorId: z.string().uuid().nullable(),
   outsourceVendorText: z.string().nullable(),
-  outsourceCost: z.string(),
+  outsourceCost: z.string().nullable(), // NULL when prices hidden
   outsourcePrId: z.string().uuid().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),

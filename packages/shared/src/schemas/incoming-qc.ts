@@ -70,7 +70,7 @@ export const incomingQcMetricsSchema = z.object({
   oldestGrnNo: z.string().nullable(),
   // Σ over pending GRN lines of pendingQty × po_lines.rate (legacy "Value in
   // QC", HTML L23839). Money stuck waiting for inspection.
-  valueInQc: z.number().nonnegative(),
+  valueInQc: z.number().nonnegative().nullable(), // NULL when prices hidden
   todayAcceptedQty: z.number().int().nonnegative(),
   todayAcceptedGrns: z.number().int().nonnegative(),
   todayRejectedQty: z.number().int().nonnegative(),

@@ -68,6 +68,9 @@ function PlanDetailPage(): React.JSX.Element {
     );
   }
 
+  // Money hidden for L1 Viewers: the API nulls die cost / rate / op outsource
+  // cost together, so the OSP cost column and the cost/rate fields are dropped.
+  const priceHidden = plan.ops.some((o) => o.outsourceCost == null);
   const isEditable = plan.planStatus === 'in_planning' || plan.planStatus === 'planned';
   const canFinalize = plan.planStatus === 'in_planning';
   const canExecute = plan.planStatus === 'planned';
@@ -242,7 +245,7 @@ function PlanDetailPage(): React.JSX.Element {
               </div>
               <Grid>
                 <KV label="Vendor" value={plan.dpVendorCodeText ?? '—'} />
-                <KV label="Cost" value={plan.dpCost ?? '—'} />
+                {priceHidden ? null : <KV label="Cost" value={plan.dpCost ?? '—'} />}
                 <KV label="PR" value={plan.dpPrId ? '✓ Created' : '—'} />
                 {plan.dpRemarks ? <KV label="Remarks" value={plan.dpRemarks} /> : null}
               </Grid>
@@ -257,7 +260,7 @@ function PlanDetailPage(): React.JSX.Element {
               <Grid>
                 <KV label="JW vendor" value={plan.foVendorCodeText ?? '—'} />
                 <KV label="Process" value={plan.foProcess ?? '—'} />
-                <KV label="Rate" value={plan.foRate ?? '—'} />
+                {priceHidden ? null : <KV label="Rate" value={plan.foRate ?? '—'} />}
                 <KV label="Material src" value={plan.foMaterialSrc ?? '—'} />
                 <KV label="Delivery" value={plan.foDeliveryDate ?? '—'} />
                 <KV label="Cost centre" value={plan.foCostCenter ?? '—'} />
@@ -310,7 +313,7 @@ function PlanDetailPage(): React.JSX.Element {
                   <th className="td-right">Cycle (hrs)</th>
                   <th className="td-ctr">QC?</th>
                   <th>OSP vendor</th>
-                  <th className="td-right">OSP cost</th>
+                  {priceHidden ? null : <th className="td-right">OSP cost</th>}
                 </tr>
               </thead>
               <tbody>
@@ -323,7 +326,7 @@ function PlanDetailPage(): React.JSX.Element {
                     <td className="td-right">{op.cycleTimeMin}</td>
                     <td className="td-ctr">{op.qcRequired ? '✓' : ''}</td>
                     <td>{op.outsourceVendorText ?? '—'}</td>
-                    <td className="td-right">{op.outsourceCost}</td>
+                    {priceHidden ? null : <td className="td-right">{op.outsourceCost}</td>}
                   </tr>
                 ))}
               </tbody>

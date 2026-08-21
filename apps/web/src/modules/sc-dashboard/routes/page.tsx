@@ -18,7 +18,8 @@ export const scDashboardRoute = createRoute({
   component: ScDashboardPage,
 });
 
-function inr(n: number): string {
+function inr(n: number | null): string {
+  if (n == null) return '';
   return Math.round(n).toLocaleString('en-IN');
 }
 
@@ -79,7 +80,7 @@ function ScDashboardPage(): React.JSX.Element {
   }, [pendingLines, fltVendor, fltItem, fltSo]);
 
   const fltPendQty = filteredPending.reduce((s, p) => s + p.pendingQty, 0);
-  const fltPendVal = filteredPending.reduce((s, p) => s + p.pendingVal, 0);
+  const fltPendVal = filteredPending.reduce((s, p) => s + (p.pendingVal ?? 0), 0);
 
   function clearFilters(): void {
     setFltVendor('');
@@ -102,7 +103,10 @@ function ScDashboardPage(): React.JSX.Element {
     );
   }
 
-  const grandOrderTotal = data.poSummary.reduce((s, g) => s + g.grandTotal, 0);
+  // Money hidden for L1 Viewers: the API nulls every value on the dashboard, so
+  // the money KPI tiles and the value columns are dropped.
+  const priceHidden = data.summary.totalOrderVal == null;
+  const grandOrderTotal = data.poSummary.reduce((s, g) => s + (g.grandTotal ?? 0), 0);
 
   return (
     <div>
@@ -143,9 +147,13 @@ function ScDashboardPage(): React.JSX.Element {
         <Card label="PARTIAL POs" value={data.summary.partialPos} accent="amber" />
         <Card label="CLOSED POs" value={data.summary.closedPos} accent="green" />
         <Card label="CANCELLED" value={data.summary.cancelledPos} accent="red" />
-        <Card label="ORDER VAL" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
-        <Card label="RECEIVED VAL" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
-        <Card label="PENDING VAL" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
+        {priceHidden ? null : (
+          <>
+            <Card label="ORDER VAL" value={`₹${inr(data.summary.totalOrderVal)}`} accent="cyan" />
+            <Card label="RECEIVED VAL" value={`₹${inr(data.summary.totalRecvVal)}`} accent="green" />
+            <Card label="PENDING VAL" value={`₹${inr(data.summary.pendingVal)}`} accent="amber" />
+          </>
+        )}
         <Card label="GRN TOTAL" value={data.summary.grnCount} accent="cyan" />
         <Card label="GRN TODAY" value={data.summary.todayGrn} accent="green" />
       </div>
@@ -206,8 +214,12 @@ function ScDashboardPage(): React.JSX.Element {
           <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
             {isFiltered ? <span style={{ color: 'var(--amber)' }}>Filtered: </span> : null}
             {filteredPending.length} line{filteredPending.length !== 1 ? 's' : ''} · Pend Qty:{' '}
-            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span> · Pend Value:{' '}
-            <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+            <span style={{ color: 'var(--red)' }}>{fltPendQty}</span>
+            {priceHidden ? null : (
+              <>
+                {' '}· Pend Value: <span style={{ color: 'var(--amber)' }}>₹{inr(fltPendVal)}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="tbl-wrap">
@@ -224,15 +236,19 @@ function ScDashboardPage(): React.JSX.Element {
                 <th className="td-ctr">Order Qty</th>
                 <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
                 <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-                <th>Rate</th>
-                <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pend Value</th>
+                {priceHidden ? null : (
+                  <>
+                    <th>Rate</th>
+                    <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pend Value</th>
+                  </>
+                )}
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
               {filteredPending.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="empty-state">
+                  <td colSpan={priceHidden ? 11 : 13} className="empty-state">
                     No pending PO lines{isFiltered ? ' (try clearing filters)' : ''}
                   </td>
                 </tr>
@@ -275,12 +291,16 @@ function ScDashboardPage(): React.JSX.Element {
                       >
                         {p.pendingQty}
                       </td>
-                      <td className="td-ctr mono" style={{ fontSize: 11 }}>
-                        {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
-                      </td>
-                      <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
-                        {p.pendingVal > 0 ? `₹${inr(p.pendingVal)}` : '—'}
-                      </td>
+                      {priceHidden ? null : (
+                        <>
+                          <td className="td-ctr mono" style={{ fontSize: 11 }}>
+                            {p.rate ? `₹${p.rate.toFixed(2)}` : '—'}
+                          </td>
+                          <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                            {(p.pendingVal ?? 0) > 0 ? `₹${inr(p.pendingVal)}` : '—'}
+                          </td>
+                        </>
+                      )}
                       <td>
                         <span className={`badge ${sb.cls}`}>{sb.label}</span>
                       </td>
@@ -312,14 +332,18 @@ function ScDashboardPage(): React.JSX.Element {
               <th className="td-ctr">Order Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
               <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
-              <th className="td-ctr">Order Value</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+              {priceHidden ? null : (
+                <>
+                  <th className="td-ctr">Order Value</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {data.byVendor.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">No open POs</td>
+                <td colSpan={priceHidden ? 7 : 9} className="empty-state">No open POs</td>
               </tr>
             ) : (
               data.byVendor.map((v) => {
@@ -337,10 +361,14 @@ function ScDashboardPage(): React.JSX.Element {
                     <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(v.totalVal)}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
-                      ₹{inr(v.pendingVal)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(v.totalVal)}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                          ₹{inr(v.pendingVal)}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })
@@ -367,14 +395,18 @@ function ScDashboardPage(): React.JSX.Element {
               <th className="td-ctr">Order Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
               <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending Qty</th>
-              <th className="td-ctr">Order Value</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+              {priceHidden ? null : (
+                <>
+                  <th className="td-ctr">Order Value</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Pending Value</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {data.bySo.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-state">No open POs</td>
+                <td colSpan={priceHidden ? 6 : 8} className="empty-state">No open POs</td>
               </tr>
             ) : (
               data.bySo.map((s) => {
@@ -391,10 +423,14 @@ function ScDashboardPage(): React.JSX.Element {
                     <td className="td-ctr mono" style={{ color: 'var(--red)', fontWeight: 700 }}>
                       {pendQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(s.totalVal)}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
-                      ₹{inr(s.pendingVal)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(s.totalVal)}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--amber)' }}>
+                          ₹{inr(s.pendingVal)}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 );
               })
@@ -408,7 +444,7 @@ function ScDashboardPage(): React.JSX.Element {
         title="📦 Complete Purchase Summary"
         meta={
           <span className="mono" style={{ fontSize: 12, color: 'var(--green)' }}>
-            {data.poSummary.length} POs · Grand Total: ₹{inr(grandOrderTotal)}
+            {data.poSummary.length} POs{priceHidden ? '' : ` · Grand Total: ₹${inr(grandOrderTotal)}`}
           </span>
         }
       >
@@ -423,9 +459,13 @@ function ScDashboardPage(): React.JSX.Element {
               <th className="td-ctr">Qty</th>
               <th className="td-ctr" style={{ color: 'var(--green)' }}>Received</th>
               <th className="td-ctr" style={{ color: 'var(--red)' }}>Pending</th>
-              <th className="td-ctr">Subtotal</th>
-              <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax</th>
-              <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand Total</th>
+              {priceHidden ? null : (
+                <>
+                  <th className="td-ctr">Subtotal</th>
+                  <th className="td-ctr" style={{ color: 'var(--amber)' }}>Tax</th>
+                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Grand Total</th>
+                </>
+              )}
               <th className="td-ctr">GRNs</th>
               <th>Status</th>
             </tr>
@@ -433,7 +473,7 @@ function ScDashboardPage(): React.JSX.Element {
           <tbody>
             {data.poSummary.length === 0 ? (
               <tr>
-                <td colSpan={13} className="empty-state">No purchase orders</td>
+                <td colSpan={priceHidden ? 10 : 13} className="empty-state">No purchase orders</td>
               </tr>
             ) : (
               data.poSummary.map((g) => {
@@ -465,13 +505,17 @@ function ScDashboardPage(): React.JSX.Element {
                     >
                       {pendQty}
                     </td>
-                    <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(g.totalVal)}</td>
-                    <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
-                      ₹{inr(g.taxAmount)}
-                    </td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                      ₹{inr(g.grandTotal)}
-                    </td>
+                    {priceHidden ? null : (
+                      <>
+                        <td className="td-ctr mono" style={{ fontSize: 11 }}>₹{inr(g.totalVal)}</td>
+                        <td className="td-ctr mono" style={{ fontSize: 11, color: 'var(--amber)' }}>
+                          ₹{inr(g.taxAmount)}
+                        </td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+                          ₹{inr(g.grandTotal)}
+                        </td>
+                      </>
+                    )}
                     <td className="td-ctr">{g.grnCount}</td>
                     <td>
                       <span className={`badge ${sb.cls}`}>{sb.label}</span>

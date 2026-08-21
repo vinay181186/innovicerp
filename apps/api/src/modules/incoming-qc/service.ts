@@ -16,6 +16,7 @@ import type {
 } from '@innovic/shared';
 import { goodsReceiptNoteLines, jcOps, jobCards, purchaseOrderLines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -94,6 +95,9 @@ async function creditOutsourceReturn(
 
 export async function getIncomingQc(user: AuthContext): Promise<IncomingQcResponse> {
   const companyId = requireCompany(user);
+  // Money-hiding for L1 Viewers ("Can See Price"): the "Value in QC" figure
+  // rides the Incoming-QC price permission.
+  const showMoney = await canSeeFormPrice(user, 'qc_incoming');
   return withUserContext(user, async (tx) => {
     // ── Pending lines (received but not fully inspected) ──
     const pendingRows = await tx.execute(sql`
@@ -234,7 +238,7 @@ export async function getIncomingQc(user: AuthContext): Promise<IncomingQcRespon
       avgWaitDays,
       oldestDays: oldest ? oldest.waitDays : 0,
       oldestGrnNo: oldest ? oldest.grnNo : null,
-      valueInQc: Math.round(valueInQc),
+      valueInQc: showMoney ? Math.round(valueInQc) : null,
       todayAcceptedQty: Number(t['todayAcceptedQty'] ?? 0),
       todayAcceptedGrns: Number(t['todayAcceptedGrns'] ?? 0),
       todayRejectedQty: Number(t['todayRejectedQty'] ?? 0),

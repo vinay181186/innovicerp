@@ -48,7 +48,7 @@ function uid(): string {
   return Math.random().toString(36).slice(2);
 }
 
-function planOpToRow(op: { opSeq: number; operation: string; opType: string; machineCodeText: string | null; cycleTimeMin: string; outsourceVendorText: string | null; outsourceCost: string; qcRequired: boolean }): OpRow {
+function planOpToRow(op: { opSeq: number; operation: string; opType: string; machineCodeText: string | null; cycleTimeMin: string; outsourceVendorText: string | null; outsourceCost: string | null; qcRequired: boolean }): OpRow {
   return {
     uid: uid(),
     opSeq: op.opSeq,
@@ -58,7 +58,7 @@ function planOpToRow(op: { opSeq: number; operation: string; opType: string; mac
     cycleTimeMin: Number(op.cycleTimeMin),
     qcRequired: op.qcRequired,
     outsourceVendorText: op.outsourceVendorText ?? '',
-    outsourceCost: Number(op.outsourceCost),
+    outsourceCost: Number(op.outsourceCost ?? 0),
   };
 }
 

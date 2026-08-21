@@ -12,13 +12,14 @@ export const soCostingRowSchema = z.object({
   customer: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),
-  soValue: z.number().nonnegative(),
+  // Money — NULL when the viewer's access hides prices.
+  soValue: z.number().nonnegative().nullable(),
   costCenter: z.string().nullable(),
   costCenterName: z.string().nullable(),
-  materialCost: z.number().nonnegative(),
-  outsourceCost: z.number().nonnegative(),
-  machineTimeCost: z.number().nonnegative(),
-  totalCost: z.number().nonnegative(),
+  materialCost: z.number().nonnegative().nullable(),
+  outsourceCost: z.number().nonnegative().nullable(),
+  machineTimeCost: z.number().nonnegative().nullable(),
+  totalCost: z.number().nonnegative().nullable(),
 });
 export type SoCostingRow = z.infer<typeof soCostingRowSchema>;
 
@@ -41,8 +42,8 @@ export const soCostingOpRowSchema = z.object({
    *  Label data only — the cost is already priced per machine server-side.
    *  Empty or one entry on the ordinary never-re-routed op. */
   machines: machineSplitSchema,
-  outsourceCost: z.number().nonnegative(),
-  machineTimeCost: z.number().nonnegative(),
+  outsourceCost: z.number().nonnegative().nullable(),
+  machineTimeCost: z.number().nonnegative().nullable(),
   qty: z.number().int().nonnegative(),
   cycleTimeMin: z.number().nonnegative(),
 });
@@ -54,10 +55,10 @@ export const soCostingLineSchema = z.object({
   itemCode: z.string().nullable(),
   itemName: z.string(),
   orderQty: z.number().int().nonnegative(),
-  materialCost: z.number().nonnegative(),
-  outsourceCost: z.number().nonnegative(),
-  machineTimeCost: z.number().nonnegative(),
-  lineTotal: z.number().nonnegative(),
+  materialCost: z.number().nonnegative().nullable(),
+  outsourceCost: z.number().nonnegative().nullable(),
+  machineTimeCost: z.number().nonnegative().nullable(),
+  lineTotal: z.number().nonnegative().nullable(),
   ops: z.array(soCostingOpRowSchema),
 });
 export type SoCostingLine = z.infer<typeof soCostingLineSchema>;
@@ -68,10 +69,10 @@ export const soCostingDetailSchema = z.object({
   customer: z.string().nullable(),
   costCenter: z.string().nullable(),
   costCenterName: z.string().nullable(),
-  grandMaterial: z.number().nonnegative(),
-  grandOutsource: z.number().nonnegative(),
-  grandMachineTime: z.number().nonnegative(),
-  grandTotal: z.number().nonnegative(),
+  grandMaterial: z.number().nonnegative().nullable(),
+  grandOutsource: z.number().nonnegative().nullable(),
+  grandMachineTime: z.number().nonnegative().nullable(),
+  grandTotal: z.number().nonnegative().nullable(),
   lines: z.array(soCostingLineSchema),
 });
 export type SoCostingDetail = z.infer<typeof soCostingDetailSchema>;

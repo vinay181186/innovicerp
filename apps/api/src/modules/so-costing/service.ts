@@ -17,6 +17,7 @@ import type {
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 const requireCompany = (user: AuthContext): string => {
@@ -38,9 +39,31 @@ type ListRow = {
   machine_time_cost: string | number;
 };
 
+// Money-hiding for L1 Viewers ("Can See Price"). The whole costing report is
+// money; it rides the Sales price permission (so_create).
+function hideCostingRowMoney<
+  T extends {
+    soValue: number | null;
+    materialCost: number | null;
+    outsourceCost: number | null;
+    machineTimeCost: number | null;
+    totalCost: number | null;
+  },
+>(r: T): T {
+  return {
+    ...r,
+    soValue: null,
+    materialCost: null,
+    outsourceCost: null,
+    machineTimeCost: null,
+    totalCost: null,
+  };
+}
+
 export async function listSoCosting(user: AuthContext): Promise<ListSoCostingResponse> {
   const companyId = requireCompany(user);
   const cid = `'${companyId}'::uuid`;
+  const showMoney = await canSeeFormPrice(user, 'so_create');
 
   return withUserContext(user, async (tx) => {
     const res = await tx.execute(
@@ -149,7 +172,7 @@ export async function listSoCosting(user: AuthContext): Promise<ListSoCostingRes
       };
     });
 
-    return { rows };
+    return { rows: showMoney ? rows : rows.map(hideCostingRowMoney) };
   });
 }
 
@@ -179,6 +202,7 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
   const companyId = requireCompany(user);
   const cid = `'${companyId}'::uuid`;
   const sid = `'${soId}'::uuid`;
+  const showMoney = await canSeeFormPrice(user, 'so_create');
 
   return withUserContext(user, async (tx) => {
     const headRes = await tx.execute(
@@ -300,8 +324,8 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
     const lines: SoCostingLine[] = (lineRes as unknown as DetailLineRow[]).map((r) => {
       const ops = opsByLine.get(r.so_line_id) ?? [];
       const materialCost = Number(r.material_cost) || 0;
-      const outsourceCost = ops.reduce((s, o) => s + o.outsourceCost, 0);
-      const machineTimeCost = ops.reduce((s, o) => s + o.machineTimeCost, 0);
+      const outsourceCost = ops.reduce((s, o) => s + (o.outsourceCost ?? 0), 0);
+      const machineTimeCost = ops.reduce((s, o) => s + (o.machineTimeCost ?? 0), 0);
       grandMaterial += materialCost;
       grandOutsource += outsourceCost;
       grandMachineTime += machineTimeCost;
@@ -319,7 +343,7 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
       };
     });
 
-    return {
+    const detail: SoCostingDetail = {
       soId: head.so_id,
       soNo: head.so_no,
       customer: head.customer,
@@ -330,6 +354,22 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
       grandMachineTime,
       grandTotal: grandMaterial + grandOutsource + grandMachineTime,
       lines,
+    };
+    if (showMoney) return detail;
+    return {
+      ...detail,
+      grandMaterial: null,
+      grandOutsource: null,
+      grandMachineTime: null,
+      grandTotal: null,
+      lines: lines.map((l) => ({
+        ...l,
+        materialCost: null,
+        outsourceCost: null,
+        machineTimeCost: null,
+        lineTotal: null,
+        ops: l.ops.map((o) => ({ ...o, outsourceCost: null, machineTimeCost: null })),
+      })),
     };
   });
 }

@@ -110,12 +110,14 @@ function IncomingQcPage(): React.JSX.Element {
               color={data.metrics.oldestDays > 5 ? 'var(--red)' : 'var(--amber)'}
               {...(data.metrics.oldestGrnNo ? { sub: data.metrics.oldestGrnNo } : {})}
             />
-            <Card
-              label="Value in QC"
-              value={`₹${data.metrics.valueInQc.toLocaleString('en-IN')}`}
-              color="var(--amber)"
-              valueFontSize={18}
-            />
+            {data.metrics.valueInQc == null ? null : (
+              <Card
+                label="Value in QC"
+                value={`₹${data.metrics.valueInQc.toLocaleString('en-IN')}`}
+                color="var(--amber)"
+                valueFontSize={18}
+              />
+            )}
             <Card
               label="Today Accepted"
               value={data.metrics.todayAcceptedQty}

@@ -54,6 +54,7 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -180,8 +181,20 @@ export async function listPlans(
   });
 }
 
+// Money-hiding for L1 Viewers ("Can See Price"). A plan's die/proto cost,
+// final-op rate and per-op outsource cost ride the Planning price permission.
+function hidePlanMoney(p: PlanDetail): PlanDetail {
+  return {
+    ...p,
+    dpCost: null,
+    foRate: null,
+    ops: p.ops.map((o) => ({ ...o, outsourceCost: null })),
+  };
+}
+
 export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail> {
   const companyId = requireCompany(user);
+  const showMoney = await canSeeFormPrice(user, 'plan_create');
 
   return withUserContext(user, async (tx) => {
     const headers = await tx
@@ -203,12 +216,13 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)))
       .orderBy(asc(planOps.opSeq));
 
-    return {
+    const detail: PlanDetail = {
       ...toPlan(row.plan),
       itemCode: row.itemCode ?? null,
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
     };
+    return showMoney ? detail : hidePlanMoney(detail);
   });
 }
 

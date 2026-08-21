@@ -27,7 +27,7 @@ export const soCostingDetailRoute = createRoute({
   component: SoCostingDetailPage,
 });
 
-const m2 = (v: number): string => (v > 0 ? `₹${inrFormat(v)}` : '—');
+const m2 = (v: number | null): string => (v != null && v > 0 ? `₹${inrFormat(v)}` : '—');
 
 // Legacy sizes only SO and TOTAL at 16px (L17386/L17392); every other stat
 // inherits the body size.
@@ -75,6 +75,10 @@ function SoCostingDetailPage(): React.JSX.Element {
     );
   }
 
+  // Money hidden for L1 Viewers: the API nulls every cost, so the cost stats,
+  // the Cost column and the per-line/op cost breakdown are dropped.
+  const priceHidden = data.grandTotal == null;
+
   return (
     <div>
       <Link to="/so-costing" className="btn btn-ghost" style={{ marginBottom: 14 }}>
@@ -94,10 +98,14 @@ function SoCostingDetailPage(): React.JSX.Element {
             color="var(--teal, #0d9488)"
           />
         ) : null}
-        <Stat label="MATERIAL" value={m2(data.grandMaterial)} color="var(--blue)" />
-        <Stat label="OUTSOURCE" value={m2(data.grandOutsource)} color="var(--amber)" />
-        <Stat label="MACHINE TIME" value={m2(data.grandMachineTime)} color="var(--cyan)" />
-        <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
+        {priceHidden ? null : (
+          <>
+            <Stat label="MATERIAL" value={m2(data.grandMaterial)} color="var(--blue)" />
+            <Stat label="OUTSOURCE" value={m2(data.grandOutsource)} color="var(--amber)" />
+            <Stat label="MACHINE TIME" value={m2(data.grandMachineTime)} color="var(--cyan)" />
+            <Stat label="TOTAL" value={m2(data.grandTotal)} color="var(--green)" fontSize={16} />
+          </>
+        )}
       </div>
 
       <div className="panel">
@@ -112,12 +120,14 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th>JC / Detail</th>
                 <th>Operation</th>
                 <th>Type</th>
-                <th className="td-ctr" style={{ color: 'var(--green)' }}>Cost</th>
+                {priceHidden ? null : (
+                  <th className="td-ctr" style={{ color: 'var(--green)' }}>Cost</th>
+                )}
               </tr>
             </thead>
             <tbody>
               {data.lines.map((line) => (
-                <LineRows key={line.salesOrderLineId} line={line} />
+                <LineRows key={line.salesOrderLineId} line={line} priceHidden={priceHidden} />
               ))}
             </tbody>
           </table>
@@ -127,7 +137,13 @@ function SoCostingDetailPage(): React.JSX.Element {
   );
 }
 
-function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.JSX.Element {
+function LineRows({
+  line,
+  priceHidden,
+}: {
+  line: SoCostingDetail['lines'][number];
+  priceHidden: boolean;
+}): React.JSX.Element {
   return (
     <>
       <tr>
@@ -140,11 +156,13 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
         <td style={{ fontSize: 11 }}>{line.itemName}</td>
         <td className="td-ctr mono fw-700">{line.orderQty}</td>
         <td colSpan={3} />
-        <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-          {m2(line.lineTotal)}
-        </td>
+        {priceHidden ? null : (
+          <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
+            {m2(line.lineTotal)}
+          </td>
+        )}
       </tr>
-      {line.materialCost > 0 ? (
+      {!priceHidden && (line.materialCost ?? 0) > 0 ? (
         <tr style={{ background: 'var(--bg3)', fontSize: 11 }}>
           <td />
           <td />
@@ -154,7 +172,7 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
             📦 Material POs
           </td>
           <td className="td-ctr mono" style={{ fontSize: 10, color: 'var(--blue)' }}>
-            ₹{inrFormat(line.materialCost)}
+            ₹{inrFormat(line.materialCost ?? 0)}
           </td>
         </tr>
       ) : null}
@@ -175,7 +193,7 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
             </td>
             <td className="text3" style={{ fontSize: 10 }}>
               {typeLabel}
-              {op.machineTimeCost > 0 ? (
+              {(op.machineTimeCost ?? 0) > 0 ? (
                 <span style={{ color: 'var(--amber)', fontSize: 9 }}>
                   {' '}
                   ({op.cycleTimeMin}m × {op.qty})
@@ -185,16 +203,18 @@ function LineRows({ line }: { line: SoCostingDetail['lines'][number] }): React.J
             {/* Legacy L17364-67 prints the outsource and machine-time figures as
                 two separately coloured spans, not a sum. Kept that way: both are
                 server-owned, so nothing is added in the browser. */}
-            <td className="td-ctr mono" style={{ fontSize: 10 }}>
-              {op.outsourceCost > 0 ? (
-                <span style={{ color: 'var(--amber)' }}>₹{inrFormat(op.outsourceCost)}</span>
-              ) : null}
-              {op.outsourceCost > 0 && op.machineTimeCost > 0 ? ' + ' : null}
-              {op.machineTimeCost > 0 ? (
-                <span style={{ color: 'var(--cyan)' }}>₹{inrFormat(op.machineTimeCost)}</span>
-              ) : null}
-              {op.outsourceCost === 0 && op.machineTimeCost === 0 ? '—' : null}
-            </td>
+            {priceHidden ? null : (
+              <td className="td-ctr mono" style={{ fontSize: 10 }}>
+                {(op.outsourceCost ?? 0) > 0 ? (
+                  <span style={{ color: 'var(--amber)' }}>₹{inrFormat(op.outsourceCost ?? 0)}</span>
+                ) : null}
+                {(op.outsourceCost ?? 0) > 0 && (op.machineTimeCost ?? 0) > 0 ? ' + ' : null}
+                {(op.machineTimeCost ?? 0) > 0 ? (
+                  <span style={{ color: 'var(--cyan)' }}>₹{inrFormat(op.machineTimeCost ?? 0)}</span>
+                ) : null}
+                {(op.outsourceCost ?? 0) === 0 && (op.machineTimeCost ?? 0) === 0 ? '—' : null}
+              </td>
+            )}
           </tr>
         );
       })}

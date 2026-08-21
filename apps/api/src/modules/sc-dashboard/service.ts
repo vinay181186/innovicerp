@@ -5,6 +5,7 @@
 import type { ScDashboardResponse, ScPoSummaryRow } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 
 const requireCompany = (user: AuthContext): string => {
@@ -15,6 +16,9 @@ const requireCompany = (user: AuthContext): string => {
 export async function getScDashboard(user: AuthContext): Promise<ScDashboardResponse> {
   const companyId = requireCompany(user);
   const cid = `'${companyId}'::uuid`;
+  // Money-hiding for L1 Viewers ("Can See Price"). The dashboard rides the
+  // Purchase price permission (po_create).
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     // ─── Summary card counts + value totals ────────────────────────
@@ -333,22 +337,29 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       vendorName: r.vendor_name,
     }));
 
+    const summary = {
+      openPos: Number(s.open_pos) || 0,
+      partialPos: Number(s.partial_pos) || 0,
+      closedPos: Number(s.closed_pos) || 0,
+      cancelledPos: Number(s.cancelled_pos) || 0,
+      totalOrderVal: showMoney ? totalOrderVal : null,
+      totalRecvVal: showMoney ? totalRecvVal : null,
+      pendingVal: showMoney ? totalOrderVal - totalRecvVal : null,
+      grnCount: Number(g.c) || 0,
+      todayGrn: Number(g.today_c) || 0,
+    };
     return {
-      summary: {
-        openPos: Number(s.open_pos) || 0,
-        partialPos: Number(s.partial_pos) || 0,
-        closedPos: Number(s.closed_pos) || 0,
-        cancelledPos: Number(s.cancelled_pos) || 0,
-        totalOrderVal,
-        totalRecvVal,
-        pendingVal: totalOrderVal - totalRecvVal,
-        grnCount: Number(g.c) || 0,
-        todayGrn: Number(g.today_c) || 0,
-      },
-      byVendor,
-      bySo,
-      poSummary,
-      pendingLines,
+      summary,
+      byVendor: showMoney
+        ? byVendor
+        : byVendor.map((v) => ({ ...v, totalVal: null, pendingVal: null })),
+      bySo: showMoney ? bySo : bySo.map((v) => ({ ...v, totalVal: null, pendingVal: null })),
+      poSummary: showMoney
+        ? poSummary
+        : poSummary.map((p) => ({ ...p, totalVal: null, taxAmount: null, grandTotal: null })),
+      pendingLines: showMoney
+        ? pendingLines
+        : pendingLines.map((l) => ({ ...l, rate: null, pendingVal: null })),
       recentGrn,
     };
   });
