@@ -14,18 +14,24 @@
 // Changing the main department clears the old one and seeds the new; anything
 // the admin added by hand below is left alone.
 //
-// Rebuilt for the (Tier + Department) model (0100). Structure:
-//  - Header strip: user name + main department + PO approval limit
-//  - Access level: Standard / L6 Super Admin / L7 Auditor
-//  - Department tiers: one tier dropdown per department (L1…L5, or none)
-//  - Form/Feature table (39 rows × View/Entry/Edit/Approve) — EXTRAS on top
-//    of the department tier. A right the tier already grants shows ticked and
-//    locked, with the tier named, so it is obvious where it came from.
+// Rebuilt for the (Tier + Department) model (0100). Layout is a single tight
+// worksheet — a one-line header (user · home dept · PO limit · JSON clone), an
+// access-level segmented control, then ONE department worksheet where each
+// department carries its own tier segments AND, when expanded, its own
+// form/feature checklist. The old design stacked "department tiers" and
+// "form/feature extras" as two separate blocks; folding each department's tier
+// and its forms into one collapsible group is what lets the whole matrix read
+// top-to-bottom without hunting between two tables. Tier selection moved from a
+// dropdown to segmented pills so a level is picked in one click and every
+// available level is visible at once.
 //
-// Why tiers came in as a dropdown rather than more checkboxes: the checklist
-// asks for one named level per department, and a level is a single choice.
-// Four loose checkboxes per department would let an admin build "edit but not
-// view", which is not a tier and cannot be enforced coherently downstream.
+// Why tiers are one choice (segments), not four loose checkboxes: the checklist
+// asks for one named level per department, and a level is a single choice. Four
+// loose checkboxes per department would let an admin build "edit but not view",
+// which is not a tier and cannot be enforced coherently downstream. The
+// per-form checkboxes below the tier are EXTRAS on top of it — a right the tier
+// already grants shows ticked and locked (grey), so it is obvious where it came
+// from.
 //
 // On save: if the role changed, fire useUpdateUser FIRST (legacy L13996),
 // then save the access matrix. Both succeed or modal stays open with error.
@@ -42,7 +48,7 @@ import {
   type AccessFormPerms,
   type AccessTierKey,
 } from '@innovic/shared';
-import { ClipboardPaste, Copy, Loader2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess } from '../api';
@@ -59,6 +65,21 @@ type Action = 'view' | 'entry' | 'edit' | 'approve';
 
 const NO_PERMS: FormPerms = { view: false, entry: false, edit: false, approve: false };
 
+// One-word tier captions for the compact TIER legend in the worksheet header.
+// The full labels ("Editor / Executor", "Department Admin") are too long for a
+// single legend line; the fuller wording still shows on each segment's tooltip.
+const TIER_SHORT: Record<string, string> = {
+  L1: 'VIEWER',
+  L2: 'ENTRY',
+  L3: 'EDITOR',
+  L4: 'APPROVER',
+  L5: 'ADMIN',
+};
+
+// Column template shared by the form checklist head and its rows so the
+// View / Entry / Edit / Approve columns line up under one another.
+const FORM_GRID = '1fr 58px 58px 58px 66px';
+
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
   if (role === 'manager') return 'b-blue';
@@ -72,6 +93,13 @@ const ACTION_COLOR: Record<Action, string> = {
   entry: 'var(--amber)',
   edit: 'var(--green)',
   approve: 'var(--purple)',
+};
+
+const ACTION_HINT: Record<Action, string> = {
+  view: 'View = see data',
+  entry: 'Entry = create new records',
+  edit: 'Edit = change existing records',
+  approve: 'Approve = sign off / reject (never your own record)',
 };
 
 export function ConfigureAccessModal({ userId, userName, onClose }: Props): React.JSX.Element {
@@ -90,6 +118,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Which department groups are open. UI-only — never saved. Seeded so the
+  // departments a person actually has (a tier, or their home dept) start open
+  // and the rest start folded, keeping the worksheet short on load.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Set when the server refuses because this save would drop an admin. The
   // box asks, then resends with the flag; it is never sent speculatively.
   const [adminWarning, setAdminWarning] = useState<string | null>(null);
@@ -115,8 +147,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setFullAccess(data.fullAccess);
     setAuditor(data.auditor);
     setMainDept(data.mainDept ?? '');
-    setDepartments(loadDeptTiers(data.departments));
+    const tiers = loadDeptTiers(data.departments);
+    setDepartments(tiers);
     setForms(fillForms(data.forms));
+    setExpanded(defaultExpanded(tiers, data.mainDept ?? ''));
   }, [data]);
 
   // "Standard" means neither of the two whole-account flags is on, so the
@@ -127,6 +161,15 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   function setLevel(level: 'standard' | 'full' | 'auditor'): void {
     setFullAccess(level === 'full');
     setAuditor(level === 'auditor');
+  }
+
+  function toggleExpand(key: string): void {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   // Changing the main department moves the seeded tier with it: the old main
@@ -141,6 +184,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       return out;
     });
     setMainDept(next);
+    // Open the newly-seeded department so its freshly-granted tier is visible.
+    if (next) setExpanded((prev) => new Set(prev).add(next));
   }
 
   function setDeptTier(key: string, tier: AccessTierKey | ''): void {
@@ -160,6 +205,29 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   function tierPermsFor(deptKey: string): FormPerms {
     const t = departments[deptKey];
     return t ? { ...accessTier(t).perms } : NO_PERMS;
+  }
+
+  // How many ticks in a department come from an EXTRA the admin added on top of
+  // the tier (not from the tier itself). Drives the "+N" badge on the folded
+  // department row so extras are visible without expanding.
+  function deptExtraCount(deptKey: string): number {
+    const base = tierPermsFor(deptKey);
+    let n = 0;
+    for (const f of ACCESS_FORMS) {
+      if (f.dept !== deptKey) continue;
+      const cur = forms[f.key] ?? NO_PERMS;
+      const own: FormPerms = {
+        view: cur.view || cur.entry || cur.edit || cur.approve,
+        entry: cur.entry || cur.edit,
+        edit: cur.edit,
+        approve: cur.approve,
+      };
+      for (const a of ['view', 'entry', 'edit', 'approve'] as const) {
+        const fromTier = fullAccess || (auditor && a === 'view') || base[a];
+        if (own[a] && !fromTier) n++;
+      }
+    }
+    return n;
   }
 
   // Action toggles mirror the stored cascade: Entry ⇒ View, Edit ⇒ View+Entry,
@@ -232,8 +300,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setFullAccess(m.fullAccess);
     setAuditor(m.auditor);
     setMainDept(m.mainDept ?? '');
-    setDepartments(loadDeptTiers(m.departments));
+    const tiers = loadDeptTiers(m.departments);
+    setDepartments(tiers);
     setForms(fillForms(m.forms));
+    setExpanded(defaultExpanded(tiers, m.mainDept ?? ''));
     setShowImport(false);
     setImportText('');
   }
@@ -279,6 +349,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // "tier exceeds role" warning is gone because that contradiction can no
   // longer occur: the role now follows the tiers instead of capping them.
   const derivedRole = roleForAccess({ fullAccess, auditor, departments });
+  const grantedCount = Object.keys(departments).length;
+  const tierLegend = ACCESS_TIERS.map((t) => `${t.key} ${TIER_SHORT[t.key] ?? t.label}`).join(' · ');
 
   return (
     <div
@@ -299,21 +371,101 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       <div
         className="panel"
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}
+        style={{ width: 'min(1100px, 96vw)', maxHeight: '92vh', overflow: 'auto', marginBottom: 0 }}
       >
+        {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
         <div
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '12px 16px',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: '10px 14px',
             borderBottom: '1px solid var(--border)',
+            background: 'linear-gradient(180deg, var(--bg3), var(--bg2))',
+            position: 'sticky',
+            top: 0,
+            zIndex: 8,
           }}
         >
-          <div className="fw-700">🔒 Access Control — {userName}</div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X size={14} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="fw-700" style={{ fontSize: 14 }}>
+              🔒 Access Control
+            </span>
+            <span className="fw-700" style={{ fontSize: 13 }}>
+              {userName}
+            </span>
+            <span
+              className={`badge ${roleBadgeClass(derivedRole)}`}
+              title="System role — worked out from the departments below, not chosen. This is the word the server checks on every save."
+            >
+              {derivedRole}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
+                Home dept
+              </span>
+              <select
+                className="innovic-select"
+                value={mainDept}
+                disabled={disabled}
+                onChange={(e) => changeMainDept(e.target.value)}
+                title="Sets this department to L3 Editor / Executor. Change the level, or add other departments, below."
+                style={{ fontSize: 12, fontWeight: 700, width: 130, padding: '5px 8px' }}
+              >
+                <option value="">— none —</option>
+                {ACCESS_DEPTS.map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Moved here from User Management: the PO approval ceiling is an
+                approval right, and approval is an Access Control action now. */}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="form-label" style={{ margin: 0, whiteSpace: 'nowrap' }}>
+                PO limit ₹
+              </span>
+              <input
+                className="innovic-input"
+                type="number"
+                min={0}
+                step={1000}
+                autoComplete="off"
+                placeholder="e.g. 100000"
+                disabled={fullAccess}
+                value={approvalLimit}
+                onChange={(e) => setApprovalLimit(e.target.value)}
+                title={
+                  fullAccess
+                    ? 'Super Admin approves any amount.'
+                    : 'Blank = use the company limit from System Settings → Approvals.'
+                }
+                style={{ fontSize: 12, width: 110, padding: '5px 8px' }}
+              />
+            </label>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
+                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy JSON'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setShowImport((v) => !v);
+                  setImportError(null);
+                }}
+              >
+                <ClipboardPaste size={13} /> Paste JSON
+              </button>
+            </div>
+          </div>
         </div>
 
         {isLoading ? (
@@ -325,115 +477,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             {error instanceof Error ? error.message : 'Failed to load matrix'}
           </div>
         ) : (
-          <div style={{ padding: 16 }}>
-            {/* Header strip — user + role */}
-            <div
-              style={{
-                marginBottom: 14,
-                padding: '10px 14px',
-                background: 'var(--bg3)',
-                borderRadius: 8,
-                border: '1px solid var(--border)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ minWidth: 220, flex: 1 }}>
-                <b style={{ fontSize: 14 }}>{userName}</b>
-                <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
-                  Pick the department this person works in — it sets that department to{' '}
-                  <b>{MAIN_DEPT_DEFAULT_TIER} Editor / Executor</b> below. Change the level, or
-                  add other departments, as much as you like afterwards.
-                </div>
-                <div className="text3" style={{ fontSize: 10, marginTop: 4 }}>
-                  System role:{' '}
-                  <span className={`badge ${roleBadgeClass(derivedRole)}`}>{derivedRole}</span>{' '}
-                  — worked out from the departments below, not chosen. This is the word the server
-                  checks on every save.
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-                <div className="form-grp" style={{ margin: 0 }}>
-                  <label className="form-label" htmlFor="cfg-dept" style={{ fontSize: 11 }}>
-                    Department
-                  </label>
-                  <select
-                    id="cfg-dept"
-                    className="innovic-select"
-                    value={mainDept}
-                    disabled={disabled}
-                    onChange={(e) => changeMainDept(e.target.value)}
-                    style={{ fontSize: 12, fontWeight: 700 }}
-                  >
-                    <option value="">— none —</option>
-                    {ACCESS_DEPTS.map((d) => (
-                      <option key={d.key} value={d.key}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {/* Moved here from User Management: the PO approval ceiling is
-                    an approval right, and approval is an Access Control action
-                    now. Leaving it on the identity screen split one decision
-                    across two places. */}
-                <div className="form-grp" style={{ margin: 0, width: 170 }}>
-                  <label className="form-label" htmlFor="cfg-limit" style={{ fontSize: 11 }}>
-                    PO approval limit (₹)
-                  </label>
-                  <input
-                    id="cfg-limit"
-                    className="innovic-input"
-                    type="number"
-                    min={0}
-                    step={1000}
-                    autoComplete="off"
-                    placeholder="e.g. 100000"
-                    disabled={fullAccess}
-                    value={approvalLimit}
-                    onChange={(e) => setApprovalLimit(e.target.value)}
-                    style={{ fontSize: 12 }}
-                  />
-                  <div className="form-help" style={{ fontSize: 10 }}>
-                    {fullAccess
-                      ? 'Super Admin approves any amount.'
-                      : 'Blank = use the company limit from System Settings → Approvals.'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Matrix clone toolbar — export current as JSON / paste another */}
-            <div
-              style={{
-                marginBottom: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <button type="button" className="btn btn-ghost btn-sm" onClick={handleCopyJson}>
-                <Copy size={13} /> {copyFlash ? 'Copied ✓' : 'Copy matrix as JSON'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setShowImport((v) => !v);
-                  setImportError(null);
-                }}
-              >
-                <ClipboardPaste size={13} /> Paste matrix JSON
-              </button>
-              <span className="text3" style={{ fontSize: 10 }}>
-                Clone permissions from another user — copy here, paste there, then Save.
-              </span>
-            </div>
-
+          <div style={{ padding: 14 }}>
             {showImport ? (
               <div
                 style={{
@@ -444,6 +488,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   borderRadius: 8,
                 }}
               >
+                <div className="text3" style={{ fontSize: 10, marginBottom: 6 }}>
+                  Clone permissions from another user — copy there, paste here, then Save.
+                </div>
                 <textarea
                   className="innovic-input"
                   value={importText}
@@ -480,231 +527,269 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </div>
             ) : null}
 
-            {/* Access level — Standard / L6 / L7 */}
-            <div style={{ marginBottom: 16 }}>
-              <div
-                style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', marginBottom: 8 }}
-              >
-                🎚️ ACCESS LEVEL
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <LevelChip
-                  checked={standard}
-                  onSelect={() => setLevel('standard')}
-                  color="var(--blue)"
-                  title="Standard"
-                  hint="Set a tier per department below"
-                />
-                <LevelChip
-                  checked={fullAccess}
-                  onSelect={() => setLevel('full')}
-                  color="var(--green)"
-                  title="L6 Super Admin"
-                  hint="Everything, everywhere — ignores everything below"
-                />
-                <LevelChip
-                  checked={auditor}
-                  onSelect={() => setLevel('auditor')}
-                  color="var(--amber)"
-                  title="L7 Auditor"
-                  hint="Reads every department. Saves nothing, anywhere."
-                />
-              </div>
+            {/* ── Access level: Standard / L6 / L7 ── */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+                marginBottom: 14,
+              }}
+            >
+              <span className="form-label" style={{ margin: 0 }}>
+                Access level
+              </span>
+              <Seg
+                value={standard ? 'standard' : fullAccess ? 'full' : 'auditor'}
+                onChange={(v) => setLevel(v as 'standard' | 'full' | 'auditor')}
+                options={[
+                  {
+                    value: 'standard',
+                    label: 'Standard',
+                    title: 'Set a tier per department below.',
+                  },
+                  {
+                    value: 'full',
+                    label: 'L6 Super Admin',
+                    title: 'Everything, everywhere — ignores everything below.',
+                  },
+                  {
+                    value: 'auditor',
+                    label: 'L7 Auditor',
+                    title: 'Reads every department. Saves nothing, anywhere.',
+                  },
+                ]}
+              />
+              <span className="text3" style={{ fontSize: 11 }}>
+                {standard
+                  ? 'Set a tier per department below'
+                  : fullAccess
+                    ? 'Everything, everywhere — the worksheet below is ignored'
+                    : 'Reads every department, writes nothing'}
+              </span>
+              <span className="text3" style={{ fontSize: 11, marginLeft: 'auto', fontFamily: 'var(--mono)' }}>
+                {grantedCount} of {ACCESS_DEPTS.length} departments granted
+              </span>
             </div>
 
-            {/* Department tiers */}
-            <div style={{ marginBottom: 16, opacity: disabled ? 0.55 : 1 }}>
-              <div
-                style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', marginBottom: 4 }}
-              >
-                🏢 DEPARTMENT TIERS
-              </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 8 }}>
-                One level per department. A person can hold different levels in different
-                departments — L3 in Sales and L1 in Store is one user, not two accounts.
-              </div>
+            {/* ── Department worksheet ── */}
+            <div
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                overflow: 'hidden',
+                opacity: disabled ? 0.55 : 1,
+              }}
+            >
+              {/* Column header — DEPARTMENT | TIER (legend) | EXTRA */}
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-                  gap: 8,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 12,
+                  padding: '6px 12px',
+                  background: 'var(--bg3)',
+                  borderBottom: '1px solid var(--border2)',
                 }}
               >
-                {ACCESS_DEPTS.map((d) => {
-                  const tier = departments[d.key] ?? '';
-                  const isMain = d.key === mainDept;
-                  return (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: '0.08em',
+                    color: 'var(--text3)',
+                    minWidth: 190,
+                  }}
+                >
+                  DEPARTMENT
+                </span>
+                <span
+                  className="mono"
+                  style={{ fontSize: 10, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
+                >
+                  TIER — {tierLegend}
+                </span>
+                <span
+                  className="mono"
+                  style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                >
+                  EXTRA
+                </span>
+              </div>
+
+              {ACCESS_DEPTS.map((d) => {
+                const tier = departments[d.key] ?? '';
+                const isMain = d.key === mainDept;
+                const isOpen = expanded.has(d.key);
+                const extras = deptExtraCount(d.key);
+                const deptForms = ACCESS_FORMS.filter((f) => f.dept === d.key);
+                return (
+                  <div key={d.key} style={{ borderTop: '1px solid var(--border)' }}>
+                    {/* Department row: caret + name + tier segments + extra */}
                     <div
-                      key={d.key}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 8,
-                        padding: '6px 10px',
-                        background: 'var(--bg4)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 6,
+                        gap: 12,
+                        padding: '7px 12px',
+                        background: 'var(--bg2)',
                       }}
                     >
-                      <span
-                        style={{ color: d.color, fontWeight: 600, fontSize: 12, minWidth: 84 }}
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(d.key)}
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${d.label}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          minWidth: 190,
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: 0,
+                          textAlign: 'left',
+                        }}
                       >
-                        {d.label}
+                        {isOpen ? (
+                          <ChevronDown size={14} color="var(--text3)" />
+                        ) : (
+                          <ChevronRight size={14} color="var(--text3)" />
+                        )}
+                        <span style={{ color: d.color, fontWeight: 700, fontSize: 13 }}>
+                          {d.label}
+                        </span>
                         {isMain ? (
-                          <span className="text3" style={{ fontSize: 9, display: 'block' }}>
-                            their department
+                          <span className="tag" style={{ color: 'var(--amber2)', background: 'var(--amber3)' }}>
+                            HOME
                           </span>
                         ) : null}
-                      </span>
-                      <select
-                        className="innovic-select"
-                        disabled={disabled}
-                        value={tier}
-                        onChange={(e) => setDeptTier(d.key, e.target.value as AccessTierKey | '')}
-                        style={{ fontSize: 11, flex: 1 }}
+                      </button>
+
+                      <div style={{ flex: 1 }}>
+                        <Seg
+                          value={tier}
+                          onChange={(v) => setDeptTier(d.key, v as AccessTierKey | '')}
+                          disabled={disabled}
+                          options={[
+                            { value: '', label: 'None', title: 'No access to this department.' },
+                            ...ACCESS_TIERS.map((t) => ({
+                              value: t.key,
+                              label: t.key,
+                              title: `${t.key} ${t.label} — ${t.hint}`,
+                            })),
+                          ]}
+                        />
+                      </div>
+
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          minWidth: 26,
+                          textAlign: 'right',
+                          color: extras > 0 ? 'var(--blue)' : 'var(--text3)',
+                        }}
+                        title={extras > 0 ? `${extras} extra right(s) on top of the tier` : 'No extras beyond the tier'}
                       >
-                        <option value="">— no access —</option>
-                        {ACCESS_TIERS.map((t) => (
-                          <option key={t.key} value={t.key}>
-                            {t.key} {t.label}
-                          </option>
-                        ))}
-                      </select>
-
+                        {extras > 0 ? `+${extras}` : '—'}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-              <div className="text3" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.5 }}>
-                {ACCESS_TIERS.map((t) => (
-                  <div key={t.key}>
-                    <b>
-                      {t.key} {t.label}
-                    </b>{' '}
-                    — {t.hint}
-                  </div>
-                ))}
-              </div>
-            </div>
 
-
-            {/* Form / Feature table */}
-            <div>
-              <div
-                style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)', marginBottom: 4 }}
-              >
-                📝 FORM / FEATURE EXTRAS
-              </div>
-              <div className="text3" style={{ fontSize: 10, marginBottom: 8 }}>
-                💡 <b>View</b> = see data | <b>Entry</b> = create new records | <b>Edit</b> =
-                change existing records | <b>Approve</b> = sign off / reject (never your own
-                record). Ticks here <b>add</b> to the department tier — a locked, greyed tick is
-                one the tier already granted. To take a right away, lower the tier.
-              </div>
-              <table className="innovic-table" style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Form / Feature</th>
-                    <th className="td-ctr" style={{ width: 56 }}>
-                      View
-                    </th>
-                    <th className="td-ctr" style={{ width: 56, color: 'var(--amber)' }}>
-                      Entry
-                    </th>
-                    <th className="td-ctr" style={{ width: 56 }}>
-                      Edit
-                    </th>
-                    <th className="td-ctr" style={{ width: 66, color: 'var(--cyan)' }}>
-                      Approve
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ACCESS_DEPTS.flatMap((d) => {
-                    // Cluster the 39 forms under a coloured department header so
-                    // the checklist scans as named groups, not one long wall.
-                    const deptForms = ACCESS_FORMS.filter((f) => f.dept === d.key);
-                    if (deptForms.length === 0) return [];
-                    const groupTier = departments[d.key];
-                    const rows: React.JSX.Element[] = [
-                      <tr key={`grp-${d.key}`}>
-                        <td
-                          colSpan={5}
+                    {/* Form / feature checklist for this department */}
+                    {isOpen ? (
+                      <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
+                        <div
                           style={{
-                            background: 'var(--bg4)',
-                            borderTop: '1px solid var(--border)',
-                            padding: '5px 10px',
+                            display: 'grid',
+                            gridTemplateColumns: FORM_GRID,
+                            padding: '4px 12px 4px 30px',
+                            borderBottom: '1px solid var(--border)',
                           }}
                         >
                           <span
-                            className="mono fw-700"
-                            style={{
-                              color: d.color,
-                              fontSize: 10,
-                              letterSpacing: '0.08em',
-                              textTransform: 'uppercase',
-                            }}
+                            className="mono"
+                            style={{ fontSize: 9, letterSpacing: '0.08em', color: 'var(--text3)' }}
                           >
-                            ▸ {d.label}
+                            FORM / FEATURE
                           </span>
-                          {groupTier ? (
+                          {(['view', 'entry', 'edit', 'approve'] as const).map((a) => (
                             <span
-                              className="badge b-grey"
-                              style={{ marginLeft: 8, fontSize: 9 }}
-                              title={accessTier(groupTier).hint}
+                              key={a}
+                              className="mono"
+                              title={ACTION_HINT[a]}
+                              style={{
+                                fontSize: 9,
+                                letterSpacing: '0.08em',
+                                color: 'var(--text3)',
+                                textAlign: 'center',
+                                textTransform: 'uppercase',
+                              }}
                             >
-                              {groupTier}
+                              {a}
                             </span>
-                          ) : null}
-                        </td>
-                      </tr>,
-                    ];
-                    deptForms.forEach((f, i) => {
-                      const cur = forms[f.key] ?? { ...NO_PERMS };
-                      const base = tierPermsFor(f.dept);
-                      const deptTierKey = departments[f.dept];
-                      // Displayed state = own ticks after cascade, unioned with
-                      // whatever the department tier already gives.
-                      const own: FormPerms = {
-                        view: cur.view || cur.entry || cur.edit || cur.approve,
-                        entry: cur.entry || cur.edit,
-                        edit: cur.edit,
-                        approve: cur.approve,
-                      };
-                      rows.push(
-                        <tr key={f.key} style={{ background: i % 2 ? 'var(--bg3)' : 'var(--bg2)' }}>
-                          <td style={{ fontSize: 12, paddingLeft: 18 }}>{f.label}</td>
-                          {(['view', 'entry', 'edit', 'approve'] as const).map((action) => {
-                            const fromTier =
-                              fullAccess || (auditor && action === 'view') || base[action];
-                            return (
-                              <td key={action} className="td-ctr">
-                                <input
-                                  type="checkbox"
-                                  disabled={disabled || fromTier}
-                                  checked={fromTier || own[action]}
-                                  onChange={() => toggleAction(f.key, action)}
-                                  title={
-                                    fromTier && deptTierKey && !disabled
-                                      ? `Granted by the ${f.dept} tier (${deptTierKey})`
-                                      : undefined
-                                  }
-                                  style={{
-                                    width: 16,
-                                    height: 16,
-                                    accentColor: ACTION_COLOR[action],
-                                  }}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>,
-                      );
-                    });
-                    return rows;
-                  })}
-                </tbody>
-              </table>
+                          ))}
+                        </div>
+
+                        {deptForms.map((f, i) => {
+                          const cur = forms[f.key] ?? { ...NO_PERMS };
+                          const base = tierPermsFor(f.dept);
+                          const deptTierKey = departments[f.dept];
+                          // Displayed state = own ticks after cascade, unioned
+                          // with whatever the department tier already gives.
+                          const own: FormPerms = {
+                            view: cur.view || cur.entry || cur.edit || cur.approve,
+                            entry: cur.entry || cur.edit,
+                            edit: cur.edit,
+                            approve: cur.approve,
+                          };
+                          return (
+                            <div
+                              key={f.key}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: FORM_GRID,
+                                alignItems: 'center',
+                                padding: '4px 12px 4px 30px',
+                                background: i % 2 ? 'var(--bg3)' : 'var(--bg2)',
+                              }}
+                            >
+                              <span style={{ fontSize: 12 }}>{f.label}</span>
+                              {(['view', 'entry', 'edit', 'approve'] as const).map((action) => {
+                                const fromTier =
+                                  fullAccess || (auditor && action === 'view') || base[action];
+                                return (
+                                  <span key={action} style={{ textAlign: 'center' }}>
+                                    <input
+                                      type="checkbox"
+                                      disabled={disabled || fromTier}
+                                      checked={fromTier || own[action]}
+                                      onChange={() => toggleAction(f.key, action)}
+                                      title={
+                                        fromTier && deptTierKey && !disabled
+                                          ? `Granted by the ${f.dept} tier (${deptTierKey})`
+                                          : ACTION_HINT[action]
+                                      }
+                                      style={{
+                                        width: 16,
+                                        height: 16,
+                                        accentColor: ACTION_COLOR[action],
+                                      }}
+                                    />
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
 
             {adminWarning ? (
@@ -756,31 +841,39 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </div>
             ) : null}
 
+            {/* Footer — helper + actions */}
             <div
               style={{
                 marginTop: 14,
                 display: 'flex',
-                justifyContent: 'flex-end',
+                alignItems: 'center',
                 gap: 8,
+                flexWrap: 'wrap',
               }}
             >
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={save.isPending || updateUser.isPending}
-                onClick={() => void onSave(false)}
-              >
-                {save.isPending || updateUser.isPending ? (
-                  <>
-                    <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                  </>
-                ) : (
-                  'Save Access'
-                )}
-              </button>
+              <span className="text3" style={{ fontSize: 11 }}>
+                Tier grants the grey ticks; extra ticks add rights on top of it. To take a right
+                away, lower the tier.
+              </span>
+              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={save.isPending || updateUser.isPending}
+                  onClick={() => void onSave(false)}
+                >
+                  {save.isPending || updateUser.isPending ? (
+                    <>
+                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    'Save Access'
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -802,6 +895,16 @@ function loadDeptTiers(m: Record<string, boolean | AccessTierKey>): DeptTiers {
   return out;
 }
 
+// Departments that start expanded: the ones with a tier, plus the home
+// department (so a just-picked home dept's seed is visible). UI-only.
+function defaultExpanded(tiers: DeptTiers, main: string): Set<string> {
+  const out = new Set<string>();
+  for (const d of ACCESS_DEPTS) {
+    if (tiers[d.key] || d.key === main) out.add(d.key);
+  }
+  return out;
+}
+
 // Every known form key present, so the table renders fully and a save never
 // silently drops a row the admin never touched.
 function fillForms(m: Record<string, AccessFormPerms>): Record<string, FormPerms> {
@@ -813,45 +916,58 @@ function fillForms(m: Record<string, AccessFormPerms>): Record<string, FormPerms
   return filled;
 }
 
-function LevelChip({
-  checked,
-  onSelect,
-  color,
-  title,
-  hint,
+// Segmented pill control — one visible choice per option, active filled blue.
+// Used for the access level and each department's tier. A level is a single
+// choice, so segments (not checkboxes) is the honest control.
+function Seg({
+  options,
+  value,
+  onChange,
+  disabled,
 }: {
-  checked: boolean;
-  onSelect: () => void;
-  color: string;
-  title: string;
-  hint: string;
+  options: { value: string; label: string; title?: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
 }): React.JSX.Element {
   return (
-    <label
+    <div
       style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '8px 12px',
-        background: 'var(--bg4)',
-        border: `1px solid ${checked ? color : 'var(--border)'}`,
-        borderRadius: 6,
-        cursor: 'pointer',
-        flex: '1 1 240px',
+        display: 'inline-flex',
+        border: '1px solid var(--border2)',
+        borderRadius: 'var(--radius)',
+        overflow: 'hidden',
+        background: 'var(--bg2)',
       }}
     >
-      <input
-        type="radio"
-        checked={checked}
-        onChange={onSelect}
-        style={{ accentColor: color, marginTop: 2 }}
-      />
-      <span>
-        <span style={{ color, fontWeight: 700, fontSize: 12 }}>{title}</span>
-        <span className="text3" style={{ display: 'block', fontSize: 10 }}>
-          {hint}
-        </span>
-      </span>
-    </label>
+      {options.map((o, i) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            disabled={disabled}
+            title={o.title}
+            onClick={() => onChange(o.value)}
+            style={{
+              padding: '4px 12px',
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: 'var(--mono)',
+              border: 'none',
+              borderLeft: i ? '1px solid var(--border2)' : 'none',
+              background: active ? 'var(--blue)' : 'transparent',
+              color: active ? 'var(--bg2)' : 'var(--text2)',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled && !active ? 0.5 : 1,
+              transition: 'background .12s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
