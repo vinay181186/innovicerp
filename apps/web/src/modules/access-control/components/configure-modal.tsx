@@ -61,9 +61,13 @@ interface Props {
 
 type FormPerms = AccessFormPerms;
 type DeptTiers = Record<string, AccessTierKey>;
-type Action = 'view' | 'entry' | 'edit' | 'approve';
+type Action = 'view' | 'entry' | 'edit' | 'approve' | 'price';
 
-const NO_PERMS: FormPerms = { view: false, entry: false, edit: false, approve: false };
+// The five checkbox columns, in display order. `price` (can-see-money) is the
+// new column that sits after Approve.
+const ACTIONS: readonly Action[] = ['view', 'entry', 'edit', 'approve', 'price'];
+
+const NO_PERMS: FormPerms = { view: false, entry: false, edit: false, approve: false, price: false };
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a
@@ -77,8 +81,9 @@ const TIER_SHORT: Record<string, string> = {
 };
 
 // Column template shared by the form checklist head and its rows so the
-// View / Entry / Edit / Approve columns line up under one another.
-const FORM_GRID = '1fr 58px 58px 58px 66px';
+// View / Entry / Edit / Approve / See-Price columns line up under one another.
+// Six columns are sized to fit the modal width with NO horizontal scrollbar.
+const FORM_GRID = '1fr 48px 48px 48px 58px 62px';
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -93,6 +98,17 @@ const ACTION_COLOR: Record<Action, string> = {
   entry: 'var(--amber)',
   edit: 'var(--green)',
   approve: 'var(--purple)',
+  price: 'var(--orange)',
+};
+
+// Short column captions. `price` shows as "SEE ₹" so the money column reads at
+// a glance without widening the table.
+const ACTION_LABEL: Record<Action, string> = {
+  view: 'VIEW',
+  entry: 'ENTRY',
+  edit: 'EDIT',
+  approve: 'APPROVE',
+  price: 'SEE ₹',
 };
 
 const ACTION_HINT: Record<Action, string> = {
@@ -100,6 +116,7 @@ const ACTION_HINT: Record<Action, string> = {
   entry: 'Entry = create new records',
   edit: 'Edit = change existing records',
   approve: 'Approve = sign off / reject (never your own record)',
+  price: 'Can See Price = see rates, amounts, totals & costs on this form',
 };
 
 export function ConfigureAccessModal({ userId, userName, onClose }: Props): React.JSX.Element {
@@ -221,9 +238,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         entry: cur.entry || cur.edit,
         edit: cur.edit,
         approve: cur.approve,
+        price: cur.price,
       };
-      for (const a of ['view', 'entry', 'edit', 'approve'] as const) {
-        const fromTier = fullAccess || (auditor && a === 'view') || base[a];
+      for (const a of ACTIONS) {
+        const fromTier =
+          fullAccess || (auditor && (a === 'view' || a === 'price')) || base[a];
         if (own[a] && !fromTier) n++;
       }
     }
@@ -248,9 +267,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           next.view = true;
           next.entry = true;
         }
-      } else {
+      } else if (action === 'approve') {
         next.approve = !cur.approve;
         if (next.approve) next.view = true;
+      } else {
+        // Can-see-price is independent — toggling it implies nothing and is
+        // implied by nothing.
+        next.price = !cur.price;
       }
       return { ...prev, [key]: next };
     });
@@ -716,20 +739,20 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           >
                             FORM / FEATURE
                           </span>
-                          {(['view', 'entry', 'edit', 'approve'] as const).map((a) => (
+                          {ACTIONS.map((a) => (
                             <span
                               key={a}
                               className="mono"
                               title={ACTION_HINT[a]}
                               style={{
                                 fontSize: 9,
-                                letterSpacing: '0.08em',
-                                color: 'var(--text3)',
+                                letterSpacing: '0.06em',
+                                color: a === 'price' ? 'var(--orange2)' : 'var(--text3)',
                                 textAlign: 'center',
-                                textTransform: 'uppercase',
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              {a}
+                              {ACTION_LABEL[a]}
                             </span>
                           ))}
                         </div>
@@ -745,6 +768,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             entry: cur.entry || cur.edit,
                             edit: cur.edit,
                             approve: cur.approve,
+                            price: cur.price,
                           };
                           return (
                             <div
@@ -758,9 +782,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               }}
                             >
                               <span style={{ fontSize: 12 }}>{f.label}</span>
-                              {(['view', 'entry', 'edit', 'approve'] as const).map((action) => {
+                              {ACTIONS.map((action) => {
                                 const fromTier =
-                                  fullAccess || (auditor && action === 'view') || base[action];
+                                  fullAccess ||
+                                  (auditor && (action === 'view' || action === 'price')) ||
+                                  base[action];
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input

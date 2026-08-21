@@ -124,41 +124,48 @@ export const ACCESS_FORM_KEYS: readonly AccessFormKey[] = ACCESS_FORMS.map((f) =
 // those policies never run, and the `require*Role` guards in the services are
 // the only enforcement there is. That is precisely why the role must follow
 // the access instead of being chosen next to it.
+// `price` = "can see price" — may this tier see rates / amounts / totals /
+// costs on the documents in its department? A pure Viewer (L1) may NOT: that
+// is the whole reason the flag exists (hide money from view-only staff).
+// Everyone who actually works the documents (L2 Data Entry and up, including
+// the L4 Approver who must read a PO's amount to sign it) sees money by
+// default. Like every other perm it is additive: an L1 form can still be
+// ticked "see price" by hand to grant it back on that one form.
 export const ACCESS_TIERS = [
   {
     key: 'L1',
     label: 'Viewer',
-    perms: { view: true, entry: false, edit: false, approve: false },
-    hint: 'Can open and read. Cannot save anything.',
+    perms: { view: true, entry: false, edit: false, approve: false, price: false },
+    hint: 'Can open and read. Cannot save anything. Does NOT see prices/amounts.',
   },
   {
     key: 'L2',
     label: 'Data Entry',
-    perms: { view: true, entry: true, edit: false, approve: false },
+    perms: { view: true, entry: true, edit: false, approve: false, price: true },
     hint: 'Can create new records. Cannot change one after it is saved.',
   },
   {
     key: 'L3',
     label: 'Editor / Executor',
-    perms: { view: true, entry: true, edit: true, approve: false },
+    perms: { view: true, entry: true, edit: true, approve: false, price: true },
     hint: 'Can create and change records. Cannot approve.',
   },
   {
     key: 'L4',
     label: 'Approver',
-    perms: { view: true, entry: false, edit: false, approve: true },
+    perms: { view: true, entry: false, edit: false, approve: true, price: true },
     hint: 'Can approve or reject. Cannot create or change — and never their own record.',
   },
   {
     key: 'L5',
     label: 'Department Admin',
-    perms: { view: true, entry: true, edit: true, approve: true },
+    perms: { view: true, entry: true, edit: true, approve: true, price: true },
     hint: 'Full rights inside this department only.',
   },
 ] as const satisfies readonly {
   key: string;
   label: string;
-  perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean };
+  perms: { view: boolean; entry: boolean; edit: boolean; approve: boolean; price: boolean };
   hint: string;
 }[];
 

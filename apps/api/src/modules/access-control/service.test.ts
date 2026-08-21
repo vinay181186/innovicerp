@@ -15,12 +15,13 @@ import * as service from './service';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const VIEWER_EMAIL = 'viewer@innovic.test';
 
-// Shorthand for the four-action perms literal the tests pass in.
+// Shorthand for the perms literal the tests pass in.
 const perms = (p: Partial<AccessFormPerms>): AccessFormPerms => ({
   view: false,
   entry: false,
   edit: false,
   approve: false,
+  price: false,
   ...p,
 });
 

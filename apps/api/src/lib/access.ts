@@ -83,6 +83,26 @@ export async function requireFormAccess(
 }
 
 /**
+ * May this caller see money (rates / amounts / totals / costs) on `formKey`?
+ *
+ * The read-side counterpart to `requireFormAccess`: services call this and
+ * null out money fields before returning when it is false, so a pure L1 Viewer
+ * never receives prices they should not see. Admins bypass; everyone L2+ (and
+ * L7 auditors) sees money via their tier; an L1 form can be granted money back
+ * with an explicit "see price" tick in Access Control.
+ *
+ * Non-throwing — callers branch on the boolean, they do not fail the request.
+ */
+export async function canSeeFormPrice(
+  user: AuthContext,
+  formKey: AccessFormKey,
+): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const eff = await getMyAccess(user);
+  return effectiveFormPerms(eff, formKey).price;
+}
+
+/**
  * Segregation of duty — the approver may not be the person who raised the
  * document. Structural check #4 of the Generic Role Audit Checklist.
  *

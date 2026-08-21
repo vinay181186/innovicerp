@@ -49,6 +49,11 @@ export const accessFormPermsSchema = z.object({
   entry: z.boolean(),
   edit: z.boolean(),
   approve: z.boolean().default(false),
+  // `price` = may this user see money (rates / amounts / totals / costs) on
+  // this form. Defaults false so pre-price rows parse without a backfill; the
+  // department tier supplies it for L2+ via effectiveFormPerms, so existing
+  // non-viewers keep seeing money. Only pure L1 Viewers lose it.
+  price: z.boolean().default(false),
 });
 export type AccessFormPerms = z.infer<typeof accessFormPermsSchema>;
 
@@ -141,8 +146,20 @@ export const effectiveAccessSchema = z.object({
 });
 export type EffectiveAccess = z.infer<typeof effectiveAccessSchema>;
 
-const NO_PERMS: AccessFormPerms = { view: false, entry: false, edit: false, approve: false };
-const ALL_PERMS: AccessFormPerms = { view: true, entry: true, edit: true, approve: true };
+const NO_PERMS: AccessFormPerms = {
+  view: false,
+  entry: false,
+  edit: false,
+  approve: false,
+  price: false,
+};
+const ALL_PERMS: AccessFormPerms = {
+  view: true,
+  entry: true,
+  edit: true,
+  approve: true,
+  price: true,
+};
 
 export function emptyFormPerms(): AccessFormPerms {
   return { ...NO_PERMS };
@@ -153,9 +170,12 @@ export function emptyFormPerms(): AccessFormPerms {
 // NOT implied by edit — an Editor who cannot approve is the point of L3).
 export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
   const approve = p.approve;
-  if (p.edit) return { view: true, entry: true, edit: true, approve };
-  if (p.entry) return { view: true, entry: true, edit: false, approve };
-  return { view: p.view || approve, entry: false, edit: false, approve };
+  // `price` (can-see-money) is independent — it neither implies nor is implied
+  // by any write action, so it passes straight through the cascade untouched.
+  const price = p.price;
+  if (p.edit) return { view: true, entry: true, edit: true, approve, price };
+  if (p.entry) return { view: true, entry: true, edit: false, approve, price };
+  return { view: p.view || approve, entry: false, edit: false, approve, price };
 }
 
 // Apply the cascade across every form. Used on save and when computing
@@ -261,6 +281,9 @@ export function effectiveFormPerms(
     entry: fromTier.entry || fromForm.entry,
     edit: fromTier.edit || fromForm.edit,
     approve: fromTier.approve || fromForm.approve,
+    // Auditors read everything, money included; otherwise money follows the
+    // department tier (L2+) or an explicit per-form "see price" tick.
+    price: eff.auditor || fromTier.price || fromForm.price,
   };
 }
 
@@ -290,6 +313,17 @@ export function canApproveForm(
   formKey: AccessFormKey,
 ): boolean {
   return effectiveFormPerms(eff, formKey).approve;
+}
+
+// May this user see money (rates / amounts / totals / costs) on this form?
+// The single source of truth for hiding prices from L1 Viewers, used by both
+// the web (to drop money columns/tiles) and the API (to null money fields
+// before they leave the server).
+export function canSeePrice(
+  eff: EffectiveAccess | null | undefined,
+  formKey: AccessFormKey,
+): boolean {
+  return effectiveFormPerms(eff, formKey).price;
 }
 
 export function hasDeptAccess(
