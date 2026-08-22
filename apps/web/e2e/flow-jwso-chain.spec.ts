@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 // FULL JWSO → INVOICE CHAIN, driven end to end, plus deep element-behaviour
 // checks on the ADR-102 Party GRN guards shipped in 2335e94.
@@ -21,9 +21,13 @@ const CLIENT_NAME = 'Arindam Engineering';
 /** Line item for the new JWSO. */
 const ITEM_CODE = '554117146000';
 const ITEM_NAME = 'LEVER CATCH RAMMER';
-/** A party material that already exists and is pinned to a DIFFERENT item
- *  (559918174000 LEVER) — the wrong-part case, without inventing fixtures. */
-const WRONG_PM_CODE = 'PM-0001';
+// The wrong-part fixture used to be the hard-coded PM-0001, described as
+// "pinned to a DIFFERENT item". On an empty database that constant collides
+// with the material step 02 creates — PM-0001 became OUR part, the save
+// correctly went through, and the guard check failed on the fixture rather
+// than on the ERP. It is discovered from the live picker now instead
+// (findWrongPart below), and the sub-check is skipped when the client owns no
+// other material to be wrong with.
 const ORDER_QTY = 10;
 const RATE = 125;
 
@@ -106,17 +110,28 @@ async function bannerText(page: Page): Promise<string> {
   // NOTE: the browser re-serializes inline styles WITH spaces —
   // `background: rgba(239, 68, 68, 0.08)` — so a selector written the way the
   // JSX spells it (`rgba(239,68,68`) matches nothing. Match the prefix only.
+  //
+  // The New Party GRN modal paints its error box from design tokens
+  // (`color: var(--red); background: var(--red3)`), not from a literal rgba, so
+  // none of the first three selectors saw it — a correct refusal read back as
+  // no refusal at all and the assertion blamed the ERP. Token-styled boxes are
+  // matched last so the more specific sources still win, and the row-level
+  // "⚠ not L1" marker (same token) is excluded — it is a field marker, not the
+  // submit error.
   const sources = [
     page.locator('[style*="rgba(239"]'),
     page.locator('.form-error'),
     page.locator('[class*="error"]'),
+    page.locator('[style*="--red"]'),
   ];
   for (const loc of sources) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
       if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
       const t = (await loc.nth(i).innerText().catch(() => '')).trim();
-      if (t.length > 8 && !/^Cancel$/i.test(t)) return t.replace(/\s+/g, ' ');
+      if (t.length > 8 && !/^Cancel$/i.test(t) && !t.startsWith('⚠')) {
+        return t.replace(/\s+/g, ' ');
+      }
     }
   }
   return '';
@@ -284,6 +299,30 @@ async function jwsoOfferedBy(page: Page, ph: RegExp): Promise<boolean> {
     .catch(() => false);
 }
 
+/** Find a party material the picker offers that is NOT this line's part, so the
+ *  wrong-part guard has something real to refuse. The row's own red "⚠ not L1"
+ *  marker is the oracle — it is driven by the same itemId comparison the API
+ *  guard uses, so a code that lights it up is genuinely the wrong part.
+ *  Returns '' (and leaves the box empty) when the client owns no other
+ *  material; the caller then reports the sub-check as NOT TESTED instead of
+ *  failing on a fixture that does not exist in this database. */
+async function findWrongPart(page: Page, matBox: Locator): Promise<string> {
+  const codes = await page.locator(`#${'dlPGrnMaterial'} option`).evaluateAll((els) =>
+    els.map((e) => (e as HTMLOptionElement).value).filter(Boolean),
+  );
+  // eslint-disable-next-line no-console
+  console.log(`>> materials offered for this client: ${codes.join(', ') || '(none)'}`);
+  for (const code of codes) {
+    if (code === state.pmCode) continue;
+    await matBox.fill(code);
+    await page.waitForTimeout(1500);
+    if ((await page.getByText(/⚠ not L1/i).count()) > 0) return code;
+  }
+  await matBox.fill('');
+  await page.waitForTimeout(500);
+  return '';
+}
+
 test('@chain 03 — Party GRN guards behave at the element level', async ({ page }) => {
   test.skip(
     Boolean(state.grnCode),
@@ -339,38 +378,53 @@ test('@chain 03 — Party GRN guards behave at the element level', async ({ page
   await lineCtl.selectOption('1');
   await page.waitForTimeout(500);
 
-  // ── ELEMENT 4: WRONG PART. PM-0001 is pinned to item 559918174000, our line
-  //    is 554117146000. The row must flag it in red BEFORE save.
-  await matBox.fill(WRONG_PM_CODE);
-  await page.waitForTimeout(1500);
-  const warned = await page.getByText(/⚠ not L1/i).count();
-  // eslint-disable-next-line no-console
-  console.log(`>> inline mismatch warnings visible: ${warned}`);
+  // ── ELEMENT 4: WRONG PART. Feed the row a material belonging to a DIFFERENT
+  //    part and the row must flag it in red BEFORE save, then the API must
+  //    refuse it. The fixture is found from the picker the screen actually
+  //    offers — the client's own materials — because a hard-coded code silently
+  //    became the RIGHT part once the database was reset.
   const qtyBox = page.locator('table input[type="number"]').first();
-  await qtyBox.fill('1');
-  await page.getByRole('button', { name: /Save GRN/i }).click();
-  await page.waitForTimeout(3500);
-  const wrongPartErr = await bannerText(page);
-  // eslint-disable-next-line no-console
-  console.log(`>> wrong-part refusal: "${wrongPartErr}"`);
-  // Structural proof first: a refused save leaves the modal open. This holds
-  // even if the message markup changes.
-  await expect(
-    page.getByRole('button', { name: /Save GRN/i }),
-    'modal must stay open — the wrong-part save must NOT go through',
-  ).toHaveCount(1);
-  expect(
-    wrongPartErr,
-    'receiving the wrong part must be refused, naming both parts',
-  ).toMatch(/but .*line 1 is|Pick the material for this part/i);
-  record({
-    step: '03a',
-    doc: 'Party GRN (attempt)',
-    code: '—',
-    qty: '1',
-    status: 'REFUSED',
-    note: `wrong part: ${WRONG_PM_CODE} is not line 1's item — ${wrongPartErr.slice(0, 90)}`,
-  });
+  const wrongPm = await findWrongPart(page, matBox);
+  if (!wrongPm) {
+    // eslint-disable-next-line no-console
+    console.log('>> ELEMENT 4 skipped — this client owns no OTHER party material to be wrong with');
+    record({
+      step: '03a',
+      doc: 'Party GRN (attempt)',
+      code: '—',
+      qty: '—',
+      status: 'NOT TESTED',
+      note: `wrong-part guard needs a second party material on ${CLIENT_NAME}; the picker offers only ${state.pmCode}`,
+    });
+  } else {
+    const warned = await page.getByText(/⚠ not L1/i).count();
+    // eslint-disable-next-line no-console
+    console.log(`>> wrong-part fixture ${wrongPm}; inline mismatch warnings visible: ${warned}`);
+    await qtyBox.fill('1');
+    await page.getByRole('button', { name: /Save GRN/i }).click();
+    await page.waitForTimeout(3500);
+    const wrongPartErr = await bannerText(page);
+    // eslint-disable-next-line no-console
+    console.log(`>> wrong-part refusal: "${wrongPartErr}"`);
+    // Structural proof first: a refused save leaves the modal open. This holds
+    // even if the message markup changes.
+    await expect(
+      page.getByRole('button', { name: /Save GRN/i }),
+      'modal must stay open — the wrong-part save must NOT go through',
+    ).toHaveCount(1);
+    expect(
+      wrongPartErr,
+      'receiving the wrong part must be refused, naming both parts',
+    ).toMatch(/but .*line 1 is|Pick the material for this part/i);
+    record({
+      step: '03a',
+      doc: 'Party GRN (attempt)',
+      code: '—',
+      qty: '1',
+      status: 'REFUSED',
+      note: `wrong part: ${wrongPm} is not line 1's item — ${wrongPartErr.slice(0, 90)}`,
+    });
+  }
 
   // ── ELEMENT 5: OVER QTY. Correct material now, but more than ordered.
   await matBox.fill(state.pmCode);
@@ -411,9 +465,26 @@ test('@chain 03 — Party GRN guards behave at the element level', async ({ page
     });
     return;
   }
-  await qtyBox.fill(String(ORDER_QTY));
+  // Receive the BALANCE, not a flat ORDER_QTY. An earlier attempt on this JWSO
+  // may already have banked part of the line (the wrong-part probe used to post
+  // 1), and asking for the full order qty then trips the cumulative cap and the
+  // chain stalls with nothing to issue. The API names the remaining qty in its
+  // refusal, so take it from there rather than guessing.
+  let toReceive = ORDER_QTY;
+  await qtyBox.fill(String(toReceive));
   await page.getByRole('button', { name: /Save GRN/i }).click();
   await page.waitForTimeout(5000);
+  if ((await page.getByRole('button', { name: /Save GRN/i }).count()) > 0) {
+    const capErr = await bannerText(page);
+    const remaining = Number((capErr.match(/only (\d+) more can be received/i) ?? [])[1] ?? 0);
+    // eslint-disable-next-line no-console
+    console.log(`>> line already part-received; balance the API allows: ${remaining} ("${capErr}")`);
+    expect(remaining, `line has no balance left to receive — ${capErr}`).toBeGreaterThan(0);
+    toReceive = remaining;
+    await qtyBox.fill(String(toReceive));
+    await page.getByRole('button', { name: /Save GRN/i }).click();
+    await page.waitForTimeout(5000);
+  }
   await expect(page.getByRole('button', { name: /Save GRN/i }), 'modal closed on success')
     .toHaveCount(0, { timeout: 15_000 });
 
@@ -425,9 +496,9 @@ test('@chain 03 — Party GRN guards behave at the element level', async ({ page
     step: '03c',
     doc: 'Party GRN',
     code: state.grnCode,
-    qty: `${ORDER_QTY} received`,
+    qty: `${toReceive} received`,
     status: 'posted',
-    note: `${state.pmCode} → ${state.jwCode} line 1; party stock +${ORDER_QTY}`,
+    note: `${state.pmCode} → ${state.jwCode} line 1; party stock +${toReceive}`,
   });
 });
 
@@ -556,7 +627,12 @@ test('@chain 06 — issue the client material to the Job Card', async ({ page })
   }
   await page.goto('/party-material-issues', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByRole('button', { name: /New|Issue/i }).first().click();
+  // EXACT name, not /New|Issue/i. Opening this screen adds a tab to the open-
+  // tabs bar whose close button is named "Close Party Material Issue" — that
+  // matched the loose pattern, and the bar sits ABOVE the content, so .first()
+  // clicked CLOSE THE TAB. The app fell back to the Home tab and every later
+  // wait timed out against the Dashboard.
+  await page.getByRole('button', { name: 'New Issue', exact: true }).click();
   await page.waitForTimeout(1500);
 
   await pick(page, /Select JWSO/i, state.jwCode, new RegExp(state.jwCode));
@@ -569,8 +645,15 @@ test('@chain 06 — issue the client material to the Job Card', async ({ page })
   await page.waitForTimeout(1000);
   await page.locator('input[type="number"]').first().fill(String(ORDER_QTY));
   await page.waitForTimeout(400);
-  await page.getByRole('button', { name: /Save|Create|Issue/i }).last().click();
+  // Same reason as above — /Save|Create|Issue/i also matches the tab's close
+  // button, and .last() only happened to miss it.
+  await page.getByRole('button', { name: 'Save Issue', exact: true }).click();
   await page.waitForTimeout(4500);
+  const issueErr = await bannerText(page);
+  if (issueErr) {
+    // eslint-disable-next-line no-console
+    console.log(`>> issue save error: "${issueErr}"`);
+  }
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
@@ -633,16 +716,34 @@ test('@chain 07 — log the operation and pass QC', async ({ page }) => {
   }
   await page.goto('/op-entry', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/IN-JC-/i).fill(state.jcCode);
+  // The Job Card box is a SearchableSelect now ("🔍 Job card no, item, or SO…"),
+  // not the plain IN-JC- text input this step was written against — the old
+  // placeholder matched nothing and the step sat there until it timed out.
+  // Drive it through the same combobox helper every other picker uses.
+  await pick(page, /Job card no, item, or SO/i, state.jcCode, new RegExp(state.jcCode));
   await page.getByRole('button', { name: /^Load$/ }).click();
   await page.waitForTimeout(4000);
 
   await page.getByText('E2E TURNING', { exact: true }).first().click();
   await page.waitForTimeout(1500);
+  // An op that has not been started yet offers "▶ Start Operation" instead of
+  // the completion form. Start it first when that is the state we land in.
+  const startBtn = page.getByRole('button', { name: /Start Operation/i });
+  if ((await startBtn.count()) > 0) {
+    // eslint-disable-next-line no-console
+    console.log('>> op not started — clicking ▶ Start Operation first');
+    await startBtn.first().click();
+    await page.waitForTimeout(4000);
+  }
   await page.getByRole('spinbutton').first().fill(String(ORDER_QTY));
   await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
   await page.getByRole('button', { name: /Submit completion/i }).click();
   await page.waitForTimeout(4000);
+  const opErr = await bannerText(page);
+  if (opErr) {
+    // eslint-disable-next-line no-console
+    console.log(`>> op completion error: "${opErr}"`);
+  }
 
   await page.getByText('DIR', { exact: true }).first().click();
   await page.waitForTimeout(1800);
@@ -786,7 +887,10 @@ test('@chain 10 — cancel a Party GRN and see the qty come back off stock', asy
   await page.goto('/party-grn', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
 
-  const row = page.locator('tr').filter({ hasText: state.grnCode });
+  // The register renders one `.panel` CARD per GRN, not table rows — a `tr`
+  // locator matched nothing and the step read as "the GRN is missing" when it
+  // was on screen with its Cancel button.
+  const row = page.locator('.panel').filter({ hasText: state.grnCode });
   await expect(row, 'our GRN is on the list').toHaveCount(1, { timeout: 15_000 });
   await row.getByRole('button', { name: /Cancel/i }).click();
   await page.waitForTimeout(1500);
