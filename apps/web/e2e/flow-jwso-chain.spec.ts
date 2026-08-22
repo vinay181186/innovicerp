@@ -18,9 +18,15 @@ test.describe.configure({ mode: 'serial' });
 
 const CLIENT_CODE = 'CLI-009';
 const CLIENT_NAME = 'Arindam Engineering';
-/** Line item for the new JWSO. */
-const ITEM_CODE = '554117146000';
-const ITEM_NAME = 'LEVER CATCH RAMMER';
+/** Line item for the new JWSO. Overridable so steps 01+02 can be run on their
+ *  own against a DIFFERENT part to seed the wrong-part fixture the guard in
+ *  step 03 needs — the picker lists every party material of the client, not
+ *  just this order's, so a material pinned to another item is exactly the
+ *  wrong part. Seed with:
+ *    E2E_ITEM=554117144000 E2E_ITEM_NAME=COVER npx playwright test \
+ *      --config=playwright.pages.config.ts -g "@chain 0[12]"  */
+const ITEM_CODE = process.env['E2E_ITEM'] ?? '554117146000';
+const ITEM_NAME = process.env['E2E_ITEM_NAME'] ?? 'LEVER CATCH RAMMER';
 // The wrong-part fixture used to be the hard-coded PM-0001, described as
 // "pinned to a DIFFERENT item". On an empty database that constant collides
 // with the material step 02 creates — PM-0001 became OUR part, the save
@@ -129,7 +135,11 @@ async function bannerText(page: Page): Promise<string> {
     for (let i = 0; i < n; i++) {
       if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
       const t = (await loc.nth(i).innerText().catch(() => '')).trim();
-      if (t.length > 8 && !/^Cancel$/i.test(t) && !t.startsWith('⚠')) {
+      // Skip the row's inline mismatch marker wherever it sits in the string —
+      // it renders as `COVER (5541…) ⚠ not L1 — that line is …`, so the ⚠ is
+      // mid-text and a startsWith() test let it through and shadowed the real
+      // submit error in the red bar below the table.
+      if (t.length > 8 && !/^Cancel$/i.test(t) && !/⚠\s*not L\d/i.test(t)) {
         return t.replace(/\s+/g, ' ');
       }
     }
