@@ -21,6 +21,7 @@ import { useSubmitQcLog } from '@/modules/op-entry/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcHistory } from '@/modules/qc-history/api';
 import { useIncomingQc } from '@/modules/incoming-qc/api';
+import { TpiView } from '@/modules/tpi/components/tpi-view';
 import {
   IncomingCompletedRow,
   IncomingPendingRow,
@@ -59,6 +60,10 @@ function QcCallRegisterPage(): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(lineParam ? `inc:${lineParam}` : null);
   const [pendSearch, setPendSearch] = useState('');
   const [compSearch, setCompSearch] = useState('');
+  // Screen-merge: TPI folded in as a tab (it used to be its own /tpi page, which
+  // stays registered). Tab choice is local — it deliberately does NOT go in the
+  // URL, so this route's own ?line= deep-link param is untouched.
+  const [tab, setTab] = useState<'qc' | 'tpi'>('qc');
 
   // Active operator names for the inline QC entry Inspector datalist
   // (legacy L4164: db.operators filtered status==='Active').
@@ -82,14 +87,10 @@ function QcCallRegisterPage(): React.JSX.Element {
   const ct = compSearch.trim().toLowerCase();
   const matchP = (o: QcHistoryPendingRow): boolean =>
     pt === '' ||
-    [o.jcCode, o.soCode, o.itemCode, o.operation].some((v) =>
-      (v ?? '').toLowerCase().includes(pt),
-    );
+    [o.jcCode, o.soCode, o.itemCode, o.operation].some((v) => (v ?? '').toLowerCase().includes(pt));
   const matchC = (l: QcHistoryLogRow): boolean =>
     ct === '' ||
-    [l.jcCode, l.soCode, l.itemCode, l.operation].some((v) =>
-      (v ?? '').toLowerCase().includes(ct),
-    );
+    [l.jcCode, l.soCode, l.itemCode, l.operation].some((v) => (v ?? '').toLowerCase().includes(ct));
   const matchIncP = (o: IncomingQcPendingRow): boolean =>
     pt === '' ||
     [o.grnNo, o.itemCode, o.itemName, o.vendorName, o.poCode].some((v) =>
@@ -123,31 +124,96 @@ function QcCallRegisterPage(): React.JSX.Element {
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 
-  if (isLoading) {
-    return (
-      <div className="panel">
-        <div className="empty-state">
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
-        </div>
+  // Legacy L4221's full-bleed box (margin:-16, height:calc(100vh - 112px)) is
+  // kept verbatim as the outer shell; it just becomes a flex COLUMN so the tab
+  // bar can sit above the panes without a negative-margin collision. Everything
+  // below the bar gets the leftover height via flex:1 + minHeight:0.
+  const shell = (children: React.ReactNode): React.JSX.Element => (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: 'calc(100vh - 112px)',
+        margin: -16,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          padding: '0 16px',
+          flexShrink: 0,
+        }}
+      >
+        {(
+          [
+            ['qc', '📋 QC Queue'],
+            ['tpi', '🔍 TPI'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === key ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === key ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+      {children}
+    </div>
+  );
+
+  // TPI first, ahead of the QC loading/error gates: TPI runs off its own query,
+  // so a failing qc-history fetch must not black out the TPI tab.
+  if (tab === 'tpi') {
+    return shell(
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+        <TpiView />
+      </div>,
+    );
+  }
+  if (isLoading) {
+    return shell(
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+        <div className="panel">
+          <div className="empty-state">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
+          </div>
+        </div>
+      </div>,
     );
   }
   if (isError || !data) {
-    return (
-      <div className="panel">
-        <div className="empty-state" style={{ color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load QC call register'}
+    return shell(
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+        <div className="panel">
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Failed to load QC call register'}
+          </div>
         </div>
-      </div>
+      </div>,
     );
   }
 
-  // Legacy L4221: full-bleed two-pane split, `margin:-16px` pulling out of
-  // #content's 20px padding (legacy's #content padding is 20px too, so the 4px
-  // residual gutter is legacy's own). Height/margin numbers are legacy's
-  // verbatim — same convention as so-planning/workflow.tsx:66 (legacy L9427).
-  return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 112px)', gap: 0, margin: -16, overflow: 'hidden' }}>
+  // Legacy L4221: full-bleed two-pane split. The `margin:-16` / height now live
+  // on `shell` above (see note there); the split keeps the pane layout and takes
+  // whatever height is left under the tab bar.
+  return shell(
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 0, overflow: 'hidden' }}>
       {/* LEFT PANEL: Pending QC Calls (legacy L4223) */}
       <div
         style={{
@@ -277,13 +343,11 @@ function QcCallRegisterPage(): React.JSX.Element {
           {logs.length === 0 && incCompletedF.length === 0 ? (
             <div className="empty-state">No QC entries yet</div>
           ) : (
-            <>
-              {completedFeed.map((it) => it.node)}
-            </>
+            <>{completedFeed.map((it) => it.node)}</>
           )}
         </div>
       </div>
-    </div>
+    </div>,
   );
 }
 
@@ -420,7 +484,9 @@ function PendingCall(props: {
           {/* Legacy L4167: QC Entry header naming the JC/Op and the operation. */}
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
             ✅ QC Entry — {o.jcCode} Op{o.opSeq} —{' '}
-            <span style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}>
+            <span
+              style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
+            >
               {o.operation}
             </span>
           </div>
