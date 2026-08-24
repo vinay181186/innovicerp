@@ -158,7 +158,6 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },
           { to: '/production-schedule', label: 'Production Schedule (Gantt)', icon: '📅' },
-          { to: '/prod-jw-list', label: 'JWSO List', icon: '📋' },
         ],
       },
     ],
