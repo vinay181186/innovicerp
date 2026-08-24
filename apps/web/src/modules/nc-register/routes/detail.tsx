@@ -113,7 +113,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         problem: detail.reason ?? detail.reasonCategory.replaceAll('_', ' '),
         department: 'QC',
       });
-      void navigate({ to: '/capa' });
+      void navigate({ to: '/nc-register' });
     } catch (e) {
       setCapaError(e instanceof Error ? e.message : 'Failed to create CAPA.');
     }
@@ -172,7 +172,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
               <NcStatusBadge status={detail.status} />
               {detail.linkedCapaCode ? (
                 <Link
-                  to="/capa"
+                  to="/nc-register"
                   className="mono"
                   style={{
                     fontSize: 12,

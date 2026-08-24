@@ -201,10 +201,8 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },
           { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
-          { to: '/tpi', label: 'TPI Inspection', icon: '🔍' },
           { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
-          { to: '/capa', label: 'CAPA', icon: '🛡' },
         ],
       },
       {
@@ -229,7 +227,6 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄' },
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
-          { to: '/outsource-jobs', label: 'Outsource Jobs', icon: '📦' },
           { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛' },
         ],
       },

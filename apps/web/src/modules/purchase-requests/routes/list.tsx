@@ -35,6 +35,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { useSession } from '@/lib/session';
+import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
 import { PrCard } from '../components/pr-card';
@@ -66,6 +67,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const search = purchaseRequestsListRoute.useSearch();
   const navigate = purchaseRequestsListRoute.useNavigate();
   const { data: me } = useSession();
+
+  // Outsource Jobs folded in as a second tab (UI-only merge). The standalone
+  // /outsource-jobs route still exists for now — retirement is a later step.
+  const [tab, setTab] = useState<'pr' | 'osp'>('pr');
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -154,6 +159,14 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   return (
     <div>
+      <div style={{display:'flex',gap:4,borderBottom:'1px solid var(--border)',marginBottom:14}}>
+        {(['pr','osp'] as const).map((t)=>(<button key={t} type="button" onClick={()=>setTab(t)} style={{background:'none',border:'none',borderBottom:tab===t?'2px solid var(--cyan)':'2px solid transparent',color:tab===t?'var(--cyan)':'var(--text3)',fontSize:12,fontWeight:700,padding:'6px 12px',cursor:'pointer',marginBottom:-1}}>{t==='pr'?'📋 Purchase Requests':'🔗 Outsource Jobs'}</button>))}
+      </div>
+
+      {tab === 'osp' ? (
+        <OutsourceJobsView />
+      ) : (
+        <>
       {/* Frozen header band — title + count + search + status + New PR + the
           count strip stay pinned; the PR cards scroll under them. `#content` is
           the scroll container, so the background must be the opaque `--bg` or
@@ -360,6 +373,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

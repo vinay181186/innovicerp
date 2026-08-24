@@ -253,7 +253,7 @@ function NcRegisterListPage(): React.JSX.Element {
               ) : null}
               {r.linkedCapaCode ? (
                 <Link
-                  to="/capa"
+                  to="/nc-register"
                   className="mono"
                   style={{
                     fontSize: 10,

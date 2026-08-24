@@ -29,7 +29,6 @@ import { approvalConfigRoute } from './modules/approval-config/routes/page';
 import { approvalsRoute } from './modules/approvals/routes/page';
 import { backupRoute } from './modules/backup/routes/page';
 import { opLogListRoute } from './modules/op-log/routes/list';
-import { outsourceJobsRoute } from './modules/outsource-jobs/routes/list';
 import { scDashboardRoute } from './modules/sc-dashboard/routes/page';
 import { soCycleTimeRoute } from './modules/so-cycle-time/routes/page';
 import { stuckDashboardRoute } from './modules/stuck-dashboard/routes/page';
@@ -100,8 +99,6 @@ import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/li
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
 import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
-import { capaListRoute } from './modules/capa/routes/list';
-import { tpiRoute } from './modules/tpi/routes/index';
 import { qcCommandRoute } from './modules/qc-command/routes/index';
 import { qcDocumentsListRoute } from './modules/qc-documents/routes/list';
 import { reportRunRoute } from './modules/reports/routes/run';
@@ -256,8 +253,6 @@ const routeTree = rootRoute.addChildren([
     incomingQcRoute,
     qcHistoryRoute,
     qcCallRegisterRoute,
-    capaListRoute,
-    tpiRoute,
     qcCommandRoute,
     qcDocumentsListRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
@@ -293,7 +288,6 @@ const routeTree = rootRoute.addChildren([
     approvalsRoute,
     backupRoute,
     opLogListRoute,
-    outsourceJobsRoute,
     scDashboardRoute,
     soCycleTimeRoute,
     stuckDashboardRoute,

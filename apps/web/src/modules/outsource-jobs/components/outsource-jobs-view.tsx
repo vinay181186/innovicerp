@@ -1,4 +1,10 @@
-// Outsource Jobs (OSP) — mirror of legacy renderOutsourceJobs (L27044).
+// Outsource Jobs (OSP) view — mirror of legacy renderOutsourceJobs (L27044).
+//
+// Lifted verbatim from outsource-jobs/routes/list.tsx so the same screen can be
+// embedded as a tab inside Purchase Requests without retiring the standalone
+// route. The ONLY change from the route version: the two URL-driven filters
+// (soNo, statusBand) are now LOCAL component state instead of useSearch/
+// useNavigate. Every hook and the batch-PO write path are IDENTICAL.
 //
 // Pulls every PR with pr_type='jw_osp', shows status cards + search +
 // JC-source filter + a checkbox-selectable table. "Create PO from Selected"
@@ -14,30 +20,15 @@
 // with no code join, and no plan field at all. See report / ISSUE-067.
 
 import type { ListPurchaseRequestsQuery, PurchaseRequestListItem } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPrBatch } from '@/modules/purchase-orders/api';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
 const PAGE_SIZE = 100;
-
-const listSearchSchema = z.object({
-  soNo: z.string().optional(),
-  statusBand: z.enum(['open', 'po_created']).optional(),
-});
-
-export const outsourceJobsRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'outsource-jobs',
-  validateSearch: listSearchSchema,
-  component: OutsourceJobsPage,
-});
 
 function inr(n: number): string {
   return Math.round(n).toLocaleString('en-IN');
@@ -50,9 +41,10 @@ function statusColor(s: string): string {
   return 'var(--text3)';
 }
 
-function OutsourceJobsPage(): React.JSX.Element {
-  const search = outsourceJobsRoute.useSearch();
-  const navigate = outsourceJobsRoute.useNavigate();
+export function OutsourceJobsView(): React.JSX.Element {
+  // Legacy URL filters, now local (this view is embedded as a PR tab).
+  const [soNo, setSoNo] = useState<string | undefined>(undefined);
+  const [statusBand, setStatusBand] = useState<'open' | 'po_created' | undefined>(undefined);
   const { data: me } = useSession();
   const canEdit = me?.role === 'admin' || me?.role === 'manager';
 
@@ -87,9 +79,9 @@ function OutsourceJobsPage(): React.JSX.Element {
   const filtered = useMemo(() => {
     const q = searchText.toLowerCase().trim();
     return allPrs.filter((pr) => {
-      if (search.soNo && pr.sourceJcCode !== search.soNo) return false;
-      if (search.statusBand === 'open' && pr.status !== 'open' && pr.status !== 'approved') return false;
-      if (search.statusBand === 'po_created' && pr.status !== 'po_created') return false;
+      if (soNo && pr.sourceJcCode !== soNo) return false;
+      if (statusBand === 'open' && pr.status !== 'open' && pr.status !== 'approved') return false;
+      if (statusBand === 'po_created' && pr.status !== 'po_created') return false;
       if (q) {
         const hay = [
           pr.code,
@@ -110,7 +102,7 @@ function OutsourceJobsPage(): React.JSX.Element {
       }
       return true;
     });
-  }, [allPrs, search.soNo, search.statusBand, searchText]);
+  }, [allPrs, soNo, statusBand, searchText]);
 
   // Distinct source JC codes for SO filter.
   const soNos = useMemo(() => {
@@ -239,17 +231,9 @@ function OutsourceJobsPage(): React.JSX.Element {
             padding: 12,
             textAlign: 'center',
             cursor: 'pointer',
-            border: `2px solid ${search.statusBand === 'open' ? 'var(--amber)' : 'transparent'}`,
+            border: `2px solid ${statusBand === 'open' ? 'var(--amber)' : 'transparent'}`,
           }}
-          onClick={() =>
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                statusBand: prev.statusBand === 'open' ? undefined : 'open',
-              }),
-              replace: true,
-            })
-          }
+          onClick={() => setStatusBand((prev) => (prev === 'open' ? undefined : 'open'))}
         >
           <div className="text3" style={{ fontSize: 10 }}>Open PR</div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--amber)' }}>
@@ -263,17 +247,9 @@ function OutsourceJobsPage(): React.JSX.Element {
             padding: 12,
             textAlign: 'center',
             cursor: 'pointer',
-            border: `2px solid ${search.statusBand === 'po_created' ? 'var(--green)' : 'transparent'}`,
+            border: `2px solid ${statusBand === 'po_created' ? 'var(--green)' : 'transparent'}`,
           }}
-          onClick={() =>
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                statusBand: prev.statusBand === 'po_created' ? undefined : 'po_created',
-              }),
-              replace: true,
-            })
-          }
+          onClick={() => setStatusBand((prev) => (prev === 'po_created' ? undefined : 'po_created'))}
         >
           <div className="text3" style={{ fontSize: 10 }}>PO Created</div>
           <div className="mono fw-700" style={{ fontSize: 22, color: 'var(--green)' }}>
@@ -299,13 +275,8 @@ function OutsourceJobsPage(): React.JSX.Element {
         />
         <select
           className="innovic-select"
-          value={search.soNo ?? ''}
-          onChange={(e) =>
-            void navigate({
-              search: (prev) => ({ ...prev, soNo: e.target.value || undefined }),
-              replace: true,
-            })
-          }
+          value={soNo ?? ''}
+          onChange={(e) => setSoNo(e.target.value || undefined)}
           style={{ width: 200, fontSize: 12 }}
         >
           <option value="">All JC sources</option>
