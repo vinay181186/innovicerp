@@ -231,7 +231,6 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
           { to: '/outsource-jobs', label: 'Outsource Jobs', icon: '📦' },
           { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛' },
-          { to: '/service-pos', label: 'Service PO', icon: '💳' },
         ],
       },
       {

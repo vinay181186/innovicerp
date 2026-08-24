@@ -139,7 +139,7 @@ function ServicePosNewPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/service-pos" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+      <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
 

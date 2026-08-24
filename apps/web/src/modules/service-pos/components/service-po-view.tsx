@@ -1,30 +1,24 @@
-// Service POs list — mirror of legacy _spoRegister (renderServicePO L27504).
+// Service PO view — non-inventory purchase orders (labour, maintenance,
+// calibration, consultancy…). Mirror of legacy _spoRegister (renderServicePO
+// L27504): cards (Total / Value / Open / Completed) + searchable table.
 //
-// Cards (Total/Pending/Draft/Total Value) + searchable table.
+// Extracted from the standalone service-pos list route so it can render inside
+// the Purchase Orders screen as a tab. Same hooks, same query, same money
+// gating (the API nulls SPO totals for L1 Viewers). The only change: search /
+// status / page were URL search-params on the retired route, so they are local
+// component state here — the SPO detail and new pages are still their own
+// routes and are linked to as before.
 
 import type { ListServicePosQuery, ServicePoListItem } from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
-import { useMemo } from 'react';
-import { z } from 'zod';
+import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useServicePosList } from '../api';
 
 const PAGE_SIZE = 50;
 
-const listSearchSchema = z.object({
-  search: z.string().optional(),
-  status: z.enum(['draft', 'pending', 'approved', 'completed', 'cancelled']).optional(),
-  page: z.coerce.number().int().positive().default(1),
-});
-
-export const servicePosListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'service-pos',
-  validateSearch: listSearchSchema,
-  component: ServicePosListPage,
-});
+type SpoStatus = NonNullable<ListServicePosQuery['status']>;
 
 function inr(n: number): string {
   return Math.round(n).toLocaleString('en-IN');
@@ -46,20 +40,23 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-function ServicePosListPage(): React.JSX.Element {
-  const search = servicePosListRoute.useSearch();
-  const navigate = servicePosListRoute.useNavigate();
+export function ServicePoView(): React.JSX.Element {
+  // Was `servicePosListRoute.useSearch()` / `.useNavigate()`. The standalone
+  // route is retired, so the same three filters live in component state.
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<SpoStatus | ''>('');
+  const [page, setPage] = useState(1);
   const { data: me } = useSession();
   const canEdit = me?.role === 'admin' || me?.role === 'manager';
 
   const query: ListServicePosQuery = useMemo(
     () => ({
-      search: search.search,
-      status: search.status,
+      search: searchText.trim() || undefined,
+      status: statusFilter || undefined,
       limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
     }),
-    [search.search, search.status, search.page],
+    [searchText, statusFilter, page],
   );
 
   const { data, isLoading, isError, error } = useServicePosList(query);
@@ -86,13 +83,8 @@ function ServicePosListPage(): React.JSX.Element {
           marginBottom: 14,
         }}
       >
-        <div>
-          <div className="section-hdr" style={{ marginBottom: 0 }}>
-            💳 Service PO
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-            Non-inventory purchase orders (labour, maintenance, calibration, consultancy, …).
-          </div>
+        <div className="text3" style={{ fontSize: 11 }}>
+          Non-inventory purchase orders (labour, maintenance, calibration, consultancy, …).
         </div>
         {canEdit ? (
           <Link to="/service-pos/new" className="btn btn-primary">
@@ -129,29 +121,20 @@ function ServicePosListPage(): React.JSX.Element {
         <input
           className="innovic-input"
           placeholder="Search SPO no / vendor / remarks…"
-          value={search.search ?? ''}
-          onChange={(e) =>
-            void navigate({
-              search: (prev) => ({ ...prev, search: e.target.value || undefined, page: 1 }),
-              replace: true,
-            })
-          }
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            setPage(1);
+          }}
           style={{ width: 280, fontSize: 12 }}
         />
         <select
           className="innovic-select"
-          value={search.status ?? ''}
-          onChange={(e) =>
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                status: (e.target.value || undefined) as
-                  | 'draft' | 'pending' | 'approved' | 'completed' | 'cancelled' | undefined,
-                page: 1,
-              }),
-              replace: true,
-            })
-          }
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as SpoStatus | '');
+            setPage(1);
+          }}
           style={{ width: 160, fontSize: 12 }}
         >
           <option value="">All statuses</option>
@@ -221,35 +204,25 @@ function ServicePosListPage(): React.JSX.Element {
         <span>
           {total === 0
             ? 'No entries'
-            : `Showing ${(search.page - 1) * PAGE_SIZE + 1}–${Math.min(search.page * PAGE_SIZE, total)} of ${total}`}
+            : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
         </span>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            disabled={search.page <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, search.page - 1) }),
-                replace: true,
-              })
-            }
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             <ChevronLeft size={14} /> Prev
           </button>
           <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {search.page} / {totalPages}
+            Page {page} / {totalPages}
           </span>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            disabled={search.page >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, search.page + 1) }),
-                replace: true,
-              })
-            }
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
           >
             Next <ChevronRight size={14} />
           </button>

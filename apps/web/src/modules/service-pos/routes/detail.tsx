@@ -81,7 +81,7 @@ function ServicePosDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-body">
           <div style={{ marginBottom: 8 }}>
-            <Link to="/service-pos" className="btn btn-ghost btn-sm">
+            <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
           </div>
@@ -115,14 +115,14 @@ function ServicePosDetailPage(): React.JSX.Element {
   function onDelete(): void {
     softDelete.mutate(id, {
       onSuccess: () => {
-        void navigate({ to: '/service-pos', replace: true });
+        void navigate({ to: '/purchase-orders', replace: true });
       },
     });
   }
 
   return (
     <div>
-      <Link to="/service-pos" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+      <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Service POs
       </Link>
 

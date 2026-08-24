@@ -39,6 +39,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { ServicePoView } from '@/modules/service-pos/components/service-po-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -73,6 +74,11 @@ export const purchaseOrdersListRoute = createRoute({
 });
 
 function PurchaseOrdersListPage(): React.JSX.Element {
+  // Service PO folded in as a tab — an SPO is a purchase order that buys a
+  // service instead of stock, so it belongs on the same screen as the material
+  // /job-work POs rather than in its own menu entry. Its own hooks, query and
+  // money gating are unchanged; the SPO detail/new pages stay separate routes.
+  const [tab, setTab] = useState<'po' | 'spo'>('po');
   const search = purchaseOrdersListRoute.useSearch();
   const navigate = purchaseOrdersListRoute.useNavigate();
   const { data: me } = useSession();
@@ -117,8 +123,26 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     .map((v) => v.replaceAll('_', ' '))
     .join(', ');
 
+  const tabBar = (
+    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      {(['po', 'spo'] as const).map((t) => (
+        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'po' ? '🛒 Purchase Orders' : '🧰 Service PO'}</button>
+      ))}
+    </div>
+  );
+
+  if (tab === 'spo') {
+    return (
+      <div>
+        {tabBar}
+        <ServicePoView />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {tabBar}
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           Title + search + filters + New button stay pinned while the PO cards
           scroll underneath. Background must be opaque var(--bg) or cards show
