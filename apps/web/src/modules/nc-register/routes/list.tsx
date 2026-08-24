@@ -26,6 +26,7 @@ import { SortableHead } from '@/components/shared/sortable-head';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcStatusBadge } from '../components/nc-status-badge';
@@ -127,7 +128,12 @@ function NcRegisterListPage(): React.JSX.Element {
             row.original.jcOpOperation ??
             row.original.operationText ??
             row.original.qcOperationText;
-          if (seq == null && !op) return <span className="text3" style={{ fontSize: 11 }}>—</span>;
+          if (seq == null && !op)
+            return (
+              <span className="text3" style={{ fontSize: 11 }}>
+                —
+              </span>
+            );
           return (
             <span style={{ fontSize: 11 }}>
               {seq != null ? `Op${seq}` : ''}
@@ -159,9 +165,7 @@ function NcRegisterListPage(): React.JSX.Element {
         accessorFn: (r) => Number(r.rejectedQty),
         meta: { tdClass: 'td-ctr mono fw-700' },
         cell: ({ row }) => (
-          <span style={{ color: 'var(--red)' }}>
-            {Number(row.original.rejectedQty).toFixed(0)}
-          </span>
+          <span style={{ color: 'var(--red)' }}>{Number(row.original.rejectedQty).toFixed(0)}</span>
         ),
       },
       {
@@ -270,9 +274,7 @@ function NcRegisterListPage(): React.JSX.Element {
                     display: `NC ${r.code}`,
                     navPage: `/nc-register/${r.id}`,
                   }}
-                  suggestedTitle={
-                    r.status === 'pending' ? `Dispose ${r.code}` : `Review ${r.code}`
-                  }
+                  suggestedTitle={r.status === 'pending' ? `Dispose ${r.code}` : `Review ${r.code}`}
                   className="btn btn-ghost btn-sm"
                   label=""
                 />
@@ -284,6 +286,11 @@ function NcRegisterListPage(): React.JSX.Element {
     ],
     [canWrite, canCapa],
   );
+
+  // Screen-merge: CAPA folded in as a tab (it used to be its own /capa page,
+  // which stays registered). Tab choice is local — it deliberately does NOT go
+  // in the URL, so the NC list's own ?search/?status/?page params are untouched.
+  const [tab, setTab] = useState<'nc' | 'capa'>('nc');
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
@@ -299,199 +306,247 @@ function NcRegisterListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
 
+  const tabBar = (
+    <div
+      style={{
+        display: 'flex',
+        gap: 4,
+        borderBottom: '1px solid var(--border)',
+        marginBottom: 14,
+      }}
+    >
+      {(
+        [
+          ['nc', '⚠️ NC Register'],
+          ['capa', '🛡 CAPA'],
+        ] as const
+      ).map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setTab(key)}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: tab === key ? '2px solid var(--cyan)' : '2px solid transparent',
+            color: tab === key ? 'var(--cyan)' : 'var(--text3)',
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '6px 12px',
+            cursor: 'pointer',
+            marginBottom: -1,
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div>
-      {/* Legacy L22549-22551: title + Report NC only; filters sit below the
+      {tabBar}
+      {tab === 'capa' ? (
+        <CapaView />
+      ) : (
+        <>
+          {/* Legacy L22549-22551: title + Report NC only; filters sit below the
           cards in their own row. */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ❌ NC Register
-        </div>
-        {canWrite ? (
-          <Link to="/nc-register/new" className="btn btn-primary">
-            ❌ Report NC
-          </Link>
-        ) : null}
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 14,
+            }}
+          >
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              ❌ NC Register
+            </div>
+            {canWrite ? (
+              <Link to="/nc-register/new" className="btn btn-primary">
+                ❌ Report NC
+              </Link>
+            ) : null}
+          </div>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <StatCard label="Total" value={summary?.total} color="var(--red)" />
-        <StatCard label="Pending" value={summary?.pending} color="var(--amber)" />
-        <StatCard label="Total Qty" value={summary?.totalQty} />
-        <StatCard label="Rework" value={summary?.reworkQty} color="var(--cyan)" />
-        <StatCard label="Scrap" value={summary?.scrapQty} color="var(--red)" />
-      </div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <StatCard label="Total" value={summary?.total} color="var(--red)" />
+            <StatCard label="Pending" value={summary?.pending} color="var(--amber)" />
+            <StatCard label="Total Qty" value={summary?.totalQty} />
+            <StatCard label="Rework" value={summary?.reworkQty} color="var(--cyan)" />
+            <StatCard label="Scrap" value={summary?.scrapQty} color="var(--red)" />
+          </div>
 
-      {/* Legacy L22553-22557 filter row. Placeholder names only the fields the
+          {/* Legacy L22553-22557 filter row. Placeholder names only the fields the
           API actually searches — legacy's "Search JC, item, reason..." works
           because its filter is a client-side row-text scan; the port's search
           is server-side over code/reason/item (service.ts L215) and does NOT
           match JC. */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          marginBottom: 14,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        <input
-          className="innovic-input"
-          placeholder="🔍 Search NC code, item, reason…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ minWidth: 220, fontSize: 13 }}
-        />
-        <select
-          className="innovic-select"
-          value={search.status ?? ''}
-          onChange={(e) => {
-            const v = e.target.value as NcStatus | '';
-            void navigate({
-              search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-              replace: true,
-            });
-          }}
-          style={{ width: 160, fontSize: 12 }}
-        >
-          <option value="">All Status</option>
-          {NC_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {NC_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <select
-          className="innovic-select"
-          value={search.reasonCategory ?? ''}
-          onChange={(e) => {
-            const v = e.target.value as NcReasonCategory | '';
-            void navigate({
-              search: (prev) => ({
-                ...prev,
-                reasonCategory: v === '' ? undefined : v,
-                page: 1,
-              }),
-              replace: true,
-            });
-          }}
-          style={{ width: 160, fontSize: 12 }}
-        >
-          <option value="">All Reasons</option>
-          {NC_REASON_CATEGORIES.map((r) => (
-            <option key={r} value={r}>
-              {NC_REASON_CATEGORY_LABELS[r]}
-            </option>
-          ))}
-        </select>
-        {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-            <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-          </span>
-        ) : null}
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              marginBottom: 14,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <input
+              className="innovic-input"
+              placeholder="🔍 Search NC code, item, reason…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ minWidth: 220, fontSize: 13 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as NcStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 160, fontSize: 12 }}
+            >
+              <option value="">All Status</option>
+              {NC_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {NC_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            <select
+              className="innovic-select"
+              value={search.reasonCategory ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as NcReasonCategory | '';
+                void navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    reasonCategory: v === '' ? undefined : v,
+                    page: 1,
+                  }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 160, fontSize: 12 }}
+            >
+              <option value="">All Reasons</option>
+              {NC_REASON_CATEGORIES.map((r) => (
+                <option key={r} value={r}>
+                  {NC_REASON_CATEGORY_LABELS[r]}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+          </div>
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>
-                    {error instanceof Error ? error.message : 'Failed to load NCs'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No NCs recorded. NCs are auto-created when QC rejects parts.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          <div className="panel">
+            <div className="tbl-wrap">
+              <table className="innovic-table">
+                <SortableHead table={table} />
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={columns.length} className="empty-state">
+                        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                        Loading…
                       </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    </tr>
+                  ) : isError ? (
+                    <tr>
+                      <td
+                        colSpan={columns.length}
+                        className="empty-state"
+                        style={{ color: 'var(--red)' }}
+                      >
+                        {error instanceof Error ? error.message : 'Failed to load NCs'}
+                      </td>
+                    </tr>
+                  ) : table.getRowModel().rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={columns.length} className="empty-state">
+                        No NCs recorded. NCs are auto-created when QC rejects parts.
+                      </td>
+                    </tr>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <tr key={row.id}>
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      {/* Legacy L22561 tip line. */}
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 NCs are auto-created from QC Call Register. Click <b>✏ Dispose</b> to decide: Rework,
-        Scrap, Use As Is, Return to Vendor, or Make Fresh.
-      </div>
+          {/* Legacy L22561 tip line. */}
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+            💡 NCs are auto-created from QC Call Register. Click <b>✏ Dispose</b> to decide: Rework,
+            Scrap, Use As Is, Return to Vendor, or Make Fresh.
+          </div>
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No NCs'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
           >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+            <span>
+              {total === 0
+                ? 'No NCs'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage <= 1}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -506,10 +561,7 @@ function StatCard(props: {
   return (
     <div className="panel" style={{ minWidth: 100, padding: 12, textAlign: 'center' }}>
       <div style={{ fontSize: 10, color: 'var(--text3)' }}>{props.label}</div>
-      <div
-        className="mono fw-700"
-        style={{ fontSize: 22, color: props.color ?? 'var(--text)' }}
-      >
+      <div className="mono fw-700" style={{ fontSize: 22, color: props.color ?? 'var(--text)' }}>
         {props.value == null ? '—' : Math.round(props.value)}
       </div>
     </div>
