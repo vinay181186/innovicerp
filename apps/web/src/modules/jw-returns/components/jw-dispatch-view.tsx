@@ -1,24 +1,19 @@
-// JW Return Challan — returns machined goods to the customer against a Job Work
-// Order line (ADR-079). Guard is server-side: qty <= produced − already returned.
+// JW Dispatch (JW Return Challan) view — returns machined goods to the customer
+// against a Job Work Order line (ADR-079). Guard is server-side: qty <= produced
+// − already returned. Extracted from the standalone jw-returns list route so it
+// can render inside the Customer Dispatch screen as a tab. Behavior, hooks and
+// modals are identical to the original screen.
 
 import { type CreateJwReturnChallanInput } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCancelJwReturn, useCreateJwReturnChallan, useJwReturnsList } from '../api';
 
-export const jwReturnsListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'jw-returns',
-  component: JwReturnsListPage,
-});
-
-function JwReturnsListPage(): React.JSX.Element {
+export function JwDispatchView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [search, setSearch] = useState('');
@@ -47,8 +42,7 @@ function JwReturnsListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📦 JW Dispatch</div>
+      <div className="mb-3 flex items-center justify-end gap-3">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"

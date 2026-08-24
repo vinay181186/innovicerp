@@ -117,7 +117,6 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋' },
           { to: '/party-grn', label: 'Party Material', icon: '📥' },
-          { to: '/jw-returns', label: 'JW Dispatch', icon: '📦' },
         ],
       },
       {

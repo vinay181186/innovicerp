@@ -20,6 +20,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useCancelDispatch, useDispatchRegister } from '../api';
@@ -61,6 +62,10 @@ function groupByDispatch(rows: CustomerDispatchRegisterRow[]): DispatchGroup[] {
 }
 
 function CustomerDispatchListPage(): React.JSX.Element {
+  // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
+  // families: this one ships finished goods against an SO, that one returns
+  // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
+  const [tab, setTab] = useState<'so' | 'jw'>('so');
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
   const cancel = useCancelDispatch();
@@ -127,8 +132,26 @@ function CustomerDispatchListPage(): React.JSX.Element {
 
   const allExpanded = groups.length > 0 && groups.every((g) => expanded.has(g.dispatchId));
 
+  const tabBar = (
+    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      {(['so', 'jw'] as const).map((t) => (
+        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🚚 Customer Dispatch' : '📦 JW Dispatch'}</button>
+      ))}
+    </div>
+  );
+
+  if (tab === 'jw') {
+    return (
+      <div>
+        {tabBar}
+        <JwDispatchView />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {tabBar}
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           Title + count + filters + Export/Print/New stay pinned while the cards
           scroll underneath. `#content` is the scroll container, so top:0 pins this
