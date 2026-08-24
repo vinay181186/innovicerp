@@ -16,8 +16,8 @@ function PlanNewPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/planning-dashboard" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to dashboard
+      <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to plans
       </Link>
       <div className="section-hdr" style={{ marginBottom: 10 }}>
         ➕ New plan

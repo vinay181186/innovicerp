@@ -87,7 +87,6 @@ import { operatorDetailRoute } from './modules/operators/routes/detail';
 import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
 import { assemblyDetailRoute } from './modules/assembly/routes/detail';
 import { assemblyListRoute } from './modules/assembly/routes/list';
-import { planningDashboardRoute } from './modules/plans/routes/dashboard';
 import { planDetailRoute } from './modules/plans/routes/detail';
 import { planEditRoute } from './modules/plans/routes/edit';
 import { plansListRoute } from './modules/plans/routes/list';
@@ -106,17 +105,14 @@ import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
 import { capaListRoute } from './modules/capa/routes/list';
 import { tpiRoute } from './modules/tpi/routes/index';
 import { reportTypesListRoute } from './modules/report-types/routes/list';
-import { soQcStatusRoute } from './modules/so-qc-status/routes/index';
 import { qcCommandRoute } from './modules/qc-command/routes/index';
 import { qcDocumentsListRoute } from './modules/qc-documents/routes/list';
-import { soDocumentsRoute } from './modules/so-documents/routes/page';
 import { reportRunRoute } from './modules/reports/routes/run';
 import { reportsListRoute } from './modules/reports/routes/list';
 import { savedReportEditRoute } from './modules/saved-reports/routes/edit';
 import { savedReportNewRoute } from './modules/saved-reports/routes/new';
 import { savedReportRunRoute } from './modules/saved-reports/routes/run';
 import { savedReportsListRoute } from './modules/saved-reports/routes/list';
-import { storeTransactionsListRoute } from './modules/store-transactions/routes/list';
 import { purchaseRequestDetailRoute } from './modules/purchase-requests/routes/detail';
 import {
   purchaseRequestEditRoute,
@@ -129,11 +125,9 @@ import { soOverviewListRoute } from './modules/so-overview/routes/list';
 import { soPlanningWorkflowRoute } from './modules/so-planning/routes/workflow';
 import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { soStatusIndexRoute } from './modules/so-status/routes/index';
-import { soTimelineIndexRoute } from './modules/so-timeline/routes/index';
 import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
 import { storeIssuesListRoute } from './modules/store-issues/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
-import { ospWipRoute } from './modules/osp-wip/routes/list';
 import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
@@ -200,11 +194,9 @@ const routeTree = rootRoute.addChildren([
     salesOrderEditRoute,
     soStatusIndexRoute,
     soStatusDetailRoute,
-    soTimelineIndexRoute,
     pendingSoValueRoute,
     storeIssuesListRoute,
     storeInventoryRoute,
-    ospWipRoute,
     toolIssuesListRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
@@ -226,7 +218,6 @@ const routeTree = rootRoute.addChildren([
     productionScheduleRoute,
     soOverviewListRoute,
     soPlanningWorkflowRoute,
-    planningDashboardRoute,
     plansListRoute,
     planNewRoute,
     planDetailRoute,
@@ -256,7 +247,6 @@ const routeTree = rootRoute.addChildren([
     goodsReceiptNotesListRoute,
     goodsReceiptNoteDetailRoute,
     goodsReceiptNoteEditRoute,
-    storeTransactionsListRoute,
     // Order matters: /nc-register/new + /nc-register/$id/edit win against /$id.
     ncRegisterNewRoute,
     ncRegisterListRoute,
@@ -281,10 +271,8 @@ const routeTree = rootRoute.addChildren([
     capaListRoute,
     tpiRoute,
     reportTypesListRoute,
-    soQcStatusRoute,
     qcCommandRoute,
     qcDocumentsListRoute,
-    soDocumentsRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes
     // before either so /alerts on its own resolves to the dashboard.
     alertsDashboardRoute,

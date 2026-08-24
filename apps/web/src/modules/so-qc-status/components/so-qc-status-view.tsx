@@ -1,38 +1,18 @@
-// SO QC Status (legacy renderSOQCStatus L18347). SO selector -> rich per-line
-// QC-stage report: a "QC Stages (in JC)" cell (per-JC, per-op ✅/⏳/❌ rows with
-// accepted/orderQty, (rej), [pending], [Nx] badges), Incoming-QC / TPI / Docs
-// pills, an overall % progress bar, an expandable detail row (Incoming Material
-// QC / TPI / QC Documents sub-tables), and a TOTAL footer. Legacy chrome.
-//
-// Not ported (no server-side source — do NOT approximate):
-//   • QC Documents sub-table "Action" column (legacy L18579 = 5 cols; ours 4).
-//     Legacy links d.url (fileData/downloadUrl); soQcDocDetailSchema carries no
-//     path/url field, so the column would be permanently empty. Needs the doc
-//     download path on the API before it can be rendered.
-//
-// The SO selector is fed by sales-orders' list hook (limit 20), NOT by this
-// module's own uncapped /so-qc-status list endpoint — see report/ISSUE note.
+// SO QC Status view (legacy renderSOQCStatus L18347) — folded in as the "SO
+// Status" tab of QC Documents. SO selector → rich per-line QC-stage report:
+// per-JC/per-op ✅/⏳/❌ rows, Incoming-QC / TPI / Docs pills, an overall %
+// progress bar, an expandable detail row, and a TOTAL footer. Read-only.
+// Uses local component state for the SO selection (the standalone route drove
+// it off the URL).
 
 import type { SoQcLine, SoQcStageOp, SoStatus } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { z } from 'zod';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoQcStatus } from '../api';
-
-const searchSchema = z.object({ so: z.string().uuid().optional() });
-
-export const soQcStatusRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'so-qc-status',
-  validateSearch: searchSchema,
-  component: SoQcStatusPage,
-});
 
 const TABLE_COLS = 9;
 
@@ -48,37 +28,20 @@ function stageIcon(status: SoQcStageOp['status']): string {
   return '❌';
 }
 
-function SoQcStatusPage(): React.JSX.Element {
-  const search = soQcStatusRoute.useSearch();
-  const navigate = soQcStatusRoute.useNavigate();
+export function SoQcStatusView(): React.JSX.Element {
+  const [selectedSo, setSelectedSo] = useState<string | null>(null);
   const [soSearch, setSoSearch] = useState('');
   const soList = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
-  const detail = useSoQcStatus(search.so);
-
-  function selectSo(id: string | null): void {
-    void navigate({ search: () => (id ? { so: id } : {}), replace: true });
-  }
+  const detail = useSoQcStatus(selectedSo ?? undefined);
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🔬 SO QC Status
-        </div>
+      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end' }}>
         <div style={{ minWidth: 300 }}>
           <SearchableSelect
             id="so-qc-select"
-            value={search.so ?? null}
-            onChange={selectSo}
+            value={selectedSo}
+            onChange={setSelectedSo}
             onSearch={setSoSearch}
             loading={soList.isFetching}
             placeholder="🔍 Select SO — type code or customer…"
@@ -91,13 +54,11 @@ function SoQcStatusPage(): React.JSX.Element {
         </div>
       </div>
 
-      {!search.so ? (
+      {!selectedSo ? (
         <div className="panel">
           <div className="empty-state">
             <div className="empty-icon">🔬</div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>
-              Select a Sales Order to view QC status
-            </div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Select a Sales Order to view QC status</div>
             <div style={{ fontSize: 12, marginTop: 6 }}>
               This report shows all QC stages for each SO line in table format
             </div>
@@ -196,13 +157,7 @@ function SoQcStatusPage(): React.JSX.Element {
   );
 }
 
-function StatusPill({
-  done,
-  total,
-}: {
-  done: number;
-  total: number;
-}): React.JSX.Element {
+function StatusPill({ done, total }: { done: number; total: number }): React.JSX.Element {
   if (total === 0) return <span className="text3">—</span>;
   const cls = done >= total ? 'b-green' : 'b-amber';
   const icon = done >= total ? '✅' : '⏳';
@@ -224,10 +179,7 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
         {stageIcon(op.status)}
       </span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{op.operation}</span>
-      <span
-        className="mono fw-700"
-        style={{ fontSize: 10, color: countColor, whiteSpace: 'nowrap' }}
-      >
+      <span className="mono fw-700" style={{ fontSize: 10, color: countColor, whiteSpace: 'nowrap' }}>
         {op.accepted}/{op.orderQty}
       </span>
       {op.rejected > 0 ? (
@@ -351,13 +303,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
       {hasDetail && open ? (
         <tr>
           <td colSpan={TABLE_COLS} style={{ padding: 0 }}>
-            <div
-              style={{
-                background: 'var(--bg)',
-                borderTop: '2px solid var(--cyan)',
-                padding: 16,
-              }}
-            >
+            <div style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}>
               {l.grnDetail.length > 0 ? <GrnDetailTable l={l} /> : null}
               {l.tpiDetail.length > 0 ? <TpiDetailTable l={l} /> : null}
               {l.docDetail.length > 0 ? <DocDetailTable l={l} /> : null}
@@ -369,13 +315,7 @@ function LineRow({ l }: { l: SoQcLine }): React.JSX.Element {
   );
 }
 
-function DetailHeading({
-  color,
-  children,
-}: {
-  color: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
+function DetailHeading({ color, children }: { color: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div
       style={{
@@ -595,8 +535,6 @@ function TotalRow({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
   );
 }
 
-// Summary strip (legacy summary cards L18483): QC Ops / Incoming QC / QC Pending
-// (ops) / Documents / TPI — reduced over the lines.
 function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
   const t = lines.reduce(
     (a, l) => ({
@@ -622,46 +560,21 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
         marginBottom: 16,
       }}
     >
-      <Card
-        label="QC OPS"
-        value={`${t.qcPassed}/${t.qcOps}`}
-        sub="passed"
-        color={allDone(t.qcPassed, t.qcOps)}
-      />
-      <Card
-        label="INCOMING QC"
-        value={`${t.grnDone}/${t.grn}`}
-        sub="done"
-        color={allDone(t.grnDone, t.grn)}
-      />
+      <Card label="QC OPS" value={`${t.qcPassed}/${t.qcOps}`} sub="passed" color={allDone(t.qcPassed, t.qcOps)} />
+      <Card label="INCOMING QC" value={`${t.grnDone}/${t.grn}`} sub="done" color={allDone(t.grnDone, t.grn)} />
       <Card
         label="QC PENDING"
         value={t.pendingOps}
         sub="ops"
         color={t.pendingOps > 0 ? 'var(--red)' : 'var(--green)'}
       />
-      <Card
-        label="DOCUMENTS"
-        value={`${t.docsUp}/${t.docs}`}
-        sub="uploaded"
-        color={allDone(t.docsUp, t.docs)}
-      />
-      <Card
-        label="TPI"
-        value={`${t.tpi}/${t.tpi}`}
-        sub="done"
-        color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'}
-      />
+      <Card label="DOCUMENTS" value={`${t.docsUp}/${t.docs}`} sub="uploaded" color={allDone(t.docsUp, t.docs)} />
+      <Card label="TPI" value={`${t.tpi}/${t.tpi}`} sub="done" color={t.tpi > 0 ? 'var(--green)' : 'var(--text3)'} />
     </div>
   );
 }
 
-function Card(props: {
-  label: string;
-  value: number | string;
-  sub: string;
-  color: string;
-}): React.JSX.Element {
+function Card(props: { label: string; value: number | string; sub: string; color: string }): React.JSX.Element {
   return (
     <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
       <div className="text3" style={{ fontSize: 9 }}>

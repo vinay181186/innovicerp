@@ -20,7 +20,6 @@ const TITLE_MAP: Record<string, string> = {
   '/clients': 'Client Master',
   '/goods-receipt-notes': 'Goods Receipt Notes',
   '/items': 'Item Master',
-  '/store-transactions': 'Stock Ledger',
   '/op-entry': 'Op Entry',
   '/machines': 'Machine Master',
   '/operators': 'Operator Master',

@@ -10,6 +10,7 @@ import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } 
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
+import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
 
@@ -271,6 +272,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
       ) : null}
 
       <RelatedDocsTabs module="sales-orders" id={detail.id} />
+
+      {/* SO Documents — file store folded in from the former standalone screen. */}
+      <div className="section-hdr" style={{ marginTop: 20, marginBottom: 12 }}>
+        📁 SO Documents
+      </div>
+      <SoDocumentsSection soId={detail.id} />
     </div>
   );
 }

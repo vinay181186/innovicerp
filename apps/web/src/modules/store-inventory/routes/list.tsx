@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
+import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 
 type FilterKey = 'all' | 'low' | 'zero';
 
@@ -32,6 +33,8 @@ export const storeInventoryRoute = createRoute({
 function StoreInventoryPage(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Inventory | Stock Ledger tabs — Stock Ledger is the former standalone screen.
+  const [tab, setTab] = useState<'inventory' | 'ledger'>('inventory');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
   const [adjustRow, setAdjustRow] = useState<StoreInventoryRow | null>(null);
@@ -45,6 +48,34 @@ function StoreInventoryPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen). */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+        {(['inventory', 'ledger'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'inventory' ? '🏬 Inventory' : '📖 Stock Ledger'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'ledger' ? (
+        <StockLedger />
+      ) : (
+        <>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="section-hdr m-0">🏬 Store / Inventory</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -250,6 +281,8 @@ function StoreInventoryPage(): React.JSX.Element {
           rows={data?.rows ?? []}
         />
       ) : null}
+        </>
+      )}
     </div>
   );
 }

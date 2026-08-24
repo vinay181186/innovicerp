@@ -234,7 +234,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             </span>
           ) : null}
         </div>
-        <Link to="/store-transactions" className="btn btn-ghost btn-sm">
+        <Link to="/store-inventory" className="btn btn-ghost btn-sm">
           View full ledger →
         </Link>
       </div>

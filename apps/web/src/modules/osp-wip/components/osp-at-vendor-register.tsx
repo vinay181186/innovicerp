@@ -1,29 +1,17 @@
-// OSP At-Vendor / WIP Register (read-only) — how much of each outsourced job
-// is still physically at the vendor, how much came back accepted, and how much
-// was never even sent. Backed by the v_osp_wip view (migration 0064).
-//
-// Every ordered unit reconciles into a bucket:
-//   order_qty = accepted (back good) + at_vendor (still out) + not_sent
-//
-// This is the answer to "how much is at the vendor in process" WITHOUT
-// polluting the finished-stock ledger — see the SO-517 / CONNECTING ROD trace.
+// OSP At-Vendor / WIP Register (read-only) — folded in as the "At-Vendor
+// Register" tab of the OSP / JW Outward DC screen. How much of each outsourced
+// job is still at the vendor, came back accepted, or was never sent. Backed by
+// the v_osp_wip view (migration 0064). Every ordered unit reconciles into a
+// bucket: order_qty = accepted + in_qc + at_vendor + not_sent.
 
 import type { ListOspWipResponse, OspWipRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOspWip } from '../api';
 
 type FilterKey = 'all' | 'at_vendor' | 'not_sent';
 
-export const ospWipRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'osp-wip',
-  component: OspWipPage,
-});
-
-function OspWipPage(): React.JSX.Element {
+export function OspAtVendorRegister(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterKey>('at_vendor');
   const [search, setSearch] = useState('');
 
@@ -34,8 +22,7 @@ function OspWipPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🚚 OSP At-Vendor Register</div>
+      <div className="mb-3 flex items-center justify-end gap-3">
         <input
           type="text"
           className="innovic-input"
@@ -77,11 +64,7 @@ function OspWipPage(): React.JSX.Element {
                 ) : null}
               </span>
               {filter !== 'all' ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setFilter('all')}
-                >
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFilter('all')}>
                   Show All
                 </button>
               ) : null}

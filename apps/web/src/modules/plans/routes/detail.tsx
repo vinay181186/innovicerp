@@ -57,7 +57,7 @@ function PlanDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <Link to="/planning-dashboard" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
+          <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
             <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red)' }}>
@@ -90,7 +90,7 @@ function PlanDetailPage(): React.JSX.Element {
   const onDelete = (): void => {
     softDelete.mutate(plan.id, {
       onSuccess: () => {
-        void navigate({ to: '/planning-dashboard', replace: true });
+        void navigate({ to: '/plans', replace: true });
       },
       onError: (e) => setActionError(e instanceof Error ? e.message : 'Delete failed'),
     });
@@ -100,8 +100,8 @@ function PlanDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/planning-dashboard" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to dashboard
+      <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to plans
       </Link>
 
       <div className="panel">

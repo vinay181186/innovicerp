@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
+import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   signedUrlFor,
@@ -37,7 +38,7 @@ import {
 } from '../api';
 
 const searchSchema = z.object({
-  view: z.enum(['matrix', 'register']).optional(),
+  view: z.enum(['matrix', 'register', 'status']).optional(),
   so: z.string().optional(),
   category: z.enum(QC_DOC_CATEGORIES).optional(),
   search: z.string().optional(),
@@ -95,10 +96,19 @@ function QcDocumentsPage(): React.JSX.Element {
           >
             File Register
           </button>
+          <button
+            type="button"
+            className={view === 'status' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+            onClick={() =>
+              void navigate({ search: (p) => ({ ...p, view: 'status' }), replace: true })
+            }
+          >
+            SO Status
+          </button>
         </div>
       </div>
 
-      {view === 'matrix' ? <MatrixView /> : <RegisterView />}
+      {view === 'matrix' ? <MatrixView /> : view === 'status' ? <SoQcStatusView /> : <RegisterView />}
     </div>
   );
 }

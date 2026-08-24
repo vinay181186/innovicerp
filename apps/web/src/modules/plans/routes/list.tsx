@@ -5,7 +5,9 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { usePlansList } from '../api';
+import { usePlansList, usePlanningDashboard } from '../api';
+import { PlanningKpiStrip } from '../components/planning-kpi-strip';
+import { NeedsPlanningTable } from '../components/needs-planning-table';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -14,6 +16,9 @@ const searchSchema = z.object({
     .optional(),
   planType: z.enum(['manufacture', 'direct_purchase', 'full_outsource', 'assembly']).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
+  // Needs-Planning mode — folded in from the retired Planning Dashboard; swaps
+  // the plans table for the unplanned-SO-lines table.
+  needsPlanning: z.boolean().optional(),
 });
 
 export const plansListRoute = createRoute({
@@ -44,7 +49,7 @@ const LIMIT = 50;
 
 function PlansListPage(): React.JSX.Element {
   const navigate = useNavigate();
-  const { search, status, planType, offset } = plansListRoute.useSearch();
+  const { search, status, planType, offset, needsPlanning } = plansListRoute.useSearch();
   const off = offset ?? 0;
   const { data, isLoading, isError, error } = usePlansList({
     search,
@@ -53,6 +58,30 @@ function PlansListPage(): React.JSX.Element {
     limit: LIMIT,
     offset: off,
   });
+  // KPI counts for the filter-bar tiles (folded in from the Planning Dashboard).
+  const dash = usePlanningDashboard();
+
+  // Tile → URL filter. Status tiles set `status`; the Needs Planning tile flips
+  // the body to the unplanned-SO-lines table. Both clear the other so only one
+  // mode is ever active.
+  const selectStatus = (s: PlanStatus | undefined): void =>
+    void navigate({
+      to: '/plans',
+      search: {
+        ...(search ? { search } : {}),
+        ...(planType ? { planType } : {}),
+        ...(s ? { status: s } : {}),
+      },
+    });
+  const selectNeedsPlanning = (): void =>
+    void navigate({
+      to: '/plans',
+      search: {
+        ...(search ? { search } : {}),
+        ...(planType ? { planType } : {}),
+        ...(needsPlanning ? {} : { needsPlanning: true }),
+      },
+    });
 
   return (
     <div>
@@ -124,7 +153,17 @@ function PlansListPage(): React.JSX.Element {
         </div>
       </div>
 
-      {isLoading ? (
+      <PlanningKpiStrip
+        kpi={dash.data?.kpi ?? {}}
+        activeStatus={status}
+        needsPlanning={!!needsPlanning}
+        onSelectStatus={selectStatus}
+        onSelectNeedsPlanning={selectNeedsPlanning}
+      />
+
+      {needsPlanning ? (
+        <NeedsPlanningTable />
+      ) : isLoading ? (
         <div className="panel">
           <div className="panel-body">
             <div className="text3" style={{ fontSize: 12 }}>

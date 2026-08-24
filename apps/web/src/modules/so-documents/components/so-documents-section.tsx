@@ -1,8 +1,7 @@
-// SO Documents (legacy renderSODocs L19478, ADR-047). Pick a Sales Order from
-// the selector or the all-SOs overview table; then see that SO's files grouped
-// by line → category, with stat cards and an upload dialog. Files live in the
-// `qc-docs` Storage bucket; metadata in the unified file_registry. QC docs are
-// surfaced read-only (source='qc') — managed in the QC module.
+// SO Documents — per-SO file store, folded in as a Documents section on the SO
+// Master detail page (formerly the standalone /so-documents screen, ADR-047).
+// Files live in the `qc-docs` Storage bucket; metadata in the unified
+// file_registry. QC docs are surfaced read-only (source='qc').
 
 import {
   SO_DOC_CATEGORIES,
@@ -11,31 +10,17 @@ import {
   type SoDocCategory,
   type SoDocumentFile,
   type SoDocumentLine,
-  type SoDocumentOverviewRow,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { z } from 'zod';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   soDocSignedUrl,
   uploadSoDocFile,
   useCreateSoDocument,
   useDeleteSoDocument,
   useSoDocDetail,
-  useSoDocOverview,
 } from '../api';
-
-const searchSchema = z.object({ so: z.string().optional() });
-
-export const soDocumentsRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'so-documents',
-  validateSearch: searchSchema,
-  component: SoDocumentsPage,
-});
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '';
@@ -44,9 +29,8 @@ function fmtDate(iso: string | null): string {
   return y && m && day ? `${day}-${m}-${y}` : d;
 }
 
-// Legacy renders the SO status through badge() (L19507/19535), whose map
-// (L1959-1970) knows Open→b-cyan, Closed/Completed→b-green, Cancelled→b-red and
-// falls through to b-grey for anything else ('draft', 'dispatched').
+// Legacy renders the SO status through badge() (L19507/19535), whose map knows
+// Open→b-cyan, Closed/Completed→b-green, Cancelled→b-red, else b-grey.
 function soBadgeColor(status: string): string {
   if (status === 'open') return 'cyan';
   if (status === 'closed') return 'green';
@@ -77,152 +61,7 @@ async function viewFile(storagePath: string): Promise<void> {
   }
 }
 
-function SoDocumentsPage(): React.JSX.Element {
-  const search = soDocumentsRoute.useSearch();
-  const navigate = soDocumentsRoute.useNavigate();
-  const selectedSo = search.so ?? '';
-
-  const { data: overview, isLoading } = useSoDocOverview();
-
-  function selectSo(soId: string): void {
-    void navigate({
-      search: (p) => ({ ...p, so: soId === '' ? undefined : soId }),
-      replace: true,
-    });
-  }
-
-  return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📁 SO Documents
-        </div>
-        <select
-          className="innovic-select"
-          value={selectedSo}
-          onChange={(e) => selectSo(e.target.value)}
-          style={{ minWidth: 280 }}
-        >
-          <option value="">-- Select SO --</option>
-          {/* Legacy counts active fileRegistry rows only (L19485), which is the
-              same set its TOTAL FILES card shows. Adding qcCount here made the
-              selector disagree with our own TOTAL FILES card. */}
-          {(overview?.rows ?? []).map((r) => (
-            <option key={r.salesOrderId} value={r.salesOrderId}>
-              {r.soCode} — {r.customerName ?? ''} ({r.fileCount} files)
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {selectedSo ? (
-        <SoDetailView soId={selectedSo} />
-      ) : (
-        <OverviewTable
-          rows={overview?.rows ?? []}
-          isLoading={isLoading}
-          onSelect={(soId) => selectSo(soId)}
-        />
-      )}
-    </div>
-  );
-}
-
-function OverviewTable({
-  rows,
-  isLoading,
-  onSelect,
-}: {
-  rows: SoDocumentOverviewRow[];
-  isLoading: boolean;
-  onSelect: (soId: string) => void;
-}): React.JSX.Element {
-  return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <span className="panel-title">All Sales Orders</span>
-      </div>
-      <div className="tbl-wrap">
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>SO No</th>
-              <th>Customer</th>
-              <th>Status</th>
-              <th className="td-ctr">Files</th>
-              <th className="td-ctr">QC Docs</th>
-              <th className="td-ctr">Size</th>
-              <th className="td-ctr">Archived</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={8} className="empty-state">
-                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading…
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="empty-state">
-                  No sales orders found
-                </td>
-              </tr>
-            ) : (
-              rows.map((r) => (
-                <tr
-                  key={r.salesOrderId}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onSelect(r.salesOrderId)}
-                >
-                  <td className="td-code" style={{ color: 'var(--cyan)' }}>
-                    {r.soCode}
-                  </td>
-                  <td>{r.customerName ?? ''}</td>
-                  <td>
-                    <span className={`badge b-${soBadgeColor(r.status)}`}>{r.status}</span>
-                  </td>
-                  <td className="td-ctr mono fw-700" style={{ color: 'var(--green)' }}>
-                    {r.fileCount}
-                  </td>
-                  <td className="td-ctr mono" style={{ color: 'var(--text3)' }}>
-                    {r.qcCount}
-                  </td>
-                  <td className="td-ctr mono" style={{ fontSize: 11 }}>
-                    {(r.totalSize / 1048576).toFixed(1)} MB
-                  </td>
-                  <td className="td-ctr">
-                    {r.archivedCount ? (
-                      <span style={{ fontSize: 10, color: 'var(--amber)' }}>
-                        📦 {r.archivedCount} archived
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
-                      📂 View
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function SoDetailView({ soId }: { soId: string }): React.JSX.Element {
+export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSoDocDetail(soId);
   const { data: me } = useSession();
   const canWrite = !!me && me.role !== 'viewer';
@@ -278,28 +117,15 @@ function SoDetailView({ soId }: { soId: string }): React.JSX.Element {
           marginBottom: 16,
         }}
       >
-        <StatCard
-          label="TOTAL FILES"
-          value={String(data.totals.fileCount)}
-          color="var(--green)"
-          size={24}
-        />
+        <StatCard label="TOTAL FILES" value={String(data.totals.fileCount)} color="var(--green)" size={24} />
         <StatCard
           label="TOTAL SIZE"
           value={`${(data.totals.totalSize / 1048576).toFixed(1)} MB`}
           color="var(--cyan)"
           size={18}
         />
-        {/* QC DOCS has no legacy counterpart; it surfaces the read-only
-            qc_documents union our file registry adds. Inserted here so legacy's
-            own four cards keep their order. */}
         <StatCard label="QC DOCS" value={String(data.totals.qcCount)} color="var(--text2)" size={24} />
-        <StatCard
-          label="ARCHIVED"
-          value={String(data.totals.archivedCount)}
-          color="var(--amber)"
-          size={24}
-        />
+        <StatCard label="ARCHIVED" value={String(data.totals.archivedCount)} color="var(--amber)" size={24} />
         <div className="panel" style={{ padding: 10, textAlign: 'center' }}>
           <div style={{ fontSize: 9, color: 'var(--text3)' }}>STATUS</div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>
@@ -398,7 +224,6 @@ function LinePanel({
   onDelete: (f: SoDocumentFile) => void;
 }): React.JSX.Element {
   const lineSize = files.reduce((s, f) => s + (f.fileSize ?? 0), 0);
-  // Files grouped by category, in the legacy display order.
   const byCat = new Map<string, SoDocumentFile[]>();
   for (const f of files) {
     const cat = SO_DOC_CATEGORIES.includes(f.category as SoDocCategory) ? f.category : 'other';
@@ -414,8 +239,6 @@ function LinePanel({
           📦 Line {line.lineNo}: {line.itemCode ?? ''} — {line.itemName ?? ''}
           {line.orderQty ? ` (Qty: ${line.orderQty})` : ''}
         </span>
-        {/* Legacy's line header is always KB (L19586), unlike the per-file
-            rows which switch to MB above 1 MB. */}
         <span style={{ fontSize: 11, color: 'var(--text3)' }}>
           {files.length} files · {(lineSize / 1024).toFixed(0)} KB
         </span>
@@ -471,7 +294,6 @@ function FileRow({
   canWrite: boolean;
   deleting: boolean;
   onDelete: (f: SoDocumentFile) => void;
-  /** Position within its group — drives legacy's zebra striping (L19599). */
   idx: number;
 }): React.JSX.Element {
   const meta = [
@@ -619,11 +441,7 @@ function UploadDialog({
       }}
       onClick={busy ? undefined : onClose}
     >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
         <div className="panel-hdr">
           <span className="panel-title">📤 Upload Documents to {soCode}</span>
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onClose}>
@@ -688,21 +506,13 @@ function UploadDialog({
               </div>
             ) : null}
           </div>
-          {msg ? (
-            <div style={{ fontSize: 12, color: 'var(--red)' }}>{msg}</div>
-          ) : null}
+          {msg ? <div style={{ fontSize: 12, color: 'var(--red)' }}>{msg}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
               Cancel
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void submit()}
-            >
-              {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />}{' '}
-              Upload
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
+              {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />} Upload
             </button>
           </div>
         </div>

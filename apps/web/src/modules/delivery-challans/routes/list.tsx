@@ -34,6 +34,7 @@ import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
 import { DcCard } from '../components/dc-card';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
+import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
 
 const PAGE_SIZE = 25;
 
@@ -41,6 +42,9 @@ const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(DC_STATUSES).optional(),
   page: z.coerce.number().int().positive().default(1),
+  // Second tab: the read-only OSP At-Vendor register, folded in from the former
+  // standalone /osp-wip screen.
+  tab: z.enum(['at_vendor']).optional(),
 });
 
 export const deliveryChallansListRoute = createRoute({
@@ -105,8 +109,44 @@ function DeliveryChallansListPage(): React.JSX.Element {
     }
   }
 
+  const tab = search.tab ?? 'outward';
+
   return (
     <div>
+      {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
+          former standalone /osp-wip screen). */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+        {(['outward', 'at_vendor'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, tab: t === 'outward' ? undefined : 'at_vendor' }),
+                replace: true,
+              })
+            }
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'outward' ? '🚛 Outward DC' : '🚚 At-Vendor Register'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'at_vendor' ? (
+        <OspAtVendorRegister />
+      ) : (
+        <>
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           Title + count + filters + Print/New and the count strip stay pinned while
           the cards scroll underneath. `#content` is the scroll container, so top:0
@@ -306,6 +346,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
         💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
       </div>
+        </>
+      )}
     </div>
   );
 }

@@ -22,6 +22,8 @@ import { usePlanningSoDetail } from '@/modules/so-planning/api';
 import { BomPlanningModal } from '@/modules/so-planning/components/bom-planning-modal';
 import { CreatePlanModal } from '@/modules/so-planning/components/create-plan-modal';
 import { EditPlanModal } from '@/modules/so-planning/components/edit-plan-modal';
+import { useSoTimeline } from '@/modules/so-timeline/api';
+import { SoTimelineBody } from '@/modules/so-timeline/components/timeline-body';
 import { useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
 
@@ -78,6 +80,10 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
   // Planning detail powers the inline plan actions (remaining qty, BOM flags).
   const planning = usePlanningSoDetail(soId);
   const [modal, setModal] = useState<PlanModal>({ kind: 'none' });
+  // Status | Timeline tabs — Timeline folds in the former standalone /so-timeline
+  // screen; its query stays disabled until the tab is opened.
+  const [tab, setTab] = useState<'status' | 'timeline'>('status');
+  const timeline = useSoTimeline(tab === 'timeline' ? soId : null);
   // Mirrors the planning workflow: usePlan fires with '' when not editing
   // (harmless background 404) and EditPlanModal renders only once data arrives.
   const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
@@ -173,24 +179,66 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
         ) : null}
       </div>
 
-      {lines.length === 0 ? (
-        <div className="panel"><div className="panel-body"><div className="empty-state">No lines on this SO yet.</div></div></div>
-      ) : (
-        lines.map((line) => (
-          <LinePanel
-            key={line.id}
-            line={line}
-            soId={header.id}
-            planningLine={planningLines.get(line.id)}
-            onCreatePlan={() => setModal({ kind: 'create', soLineId: line.id })}
-            onAssemblyBom={() => setModal({ kind: 'assembly-bom', soLineId: line.id })}
-          />
-        ))
-      )}
+      {/* Status | Timeline tabs — Timeline is the former standalone SO Timeline screen. */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+        {(['status', 'timeline'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'status' ? 'Status' : '📅 Timeline'}
+          </button>
+        ))}
+      </div>
 
-      {bomItems.length > 0 ? (
-        <BomItemsTable bomNo={header.equipmentInfo?.bomNo ?? ''} equipmentQty={header.equipmentInfo?.equipmentQty ?? 0} items={bomItems} />
-      ) : null}
+      {tab === 'status' ? (
+        <>
+          {lines.length === 0 ? (
+            <div className="panel"><div className="panel-body"><div className="empty-state">No lines on this SO yet.</div></div></div>
+          ) : (
+            lines.map((line) => (
+              <LinePanel
+                key={line.id}
+                line={line}
+                soId={header.id}
+                planningLine={planningLines.get(line.id)}
+                onCreatePlan={() => setModal({ kind: 'create', soLineId: line.id })}
+                onAssemblyBom={() => setModal({ kind: 'assembly-bom', soLineId: line.id })}
+              />
+            ))
+          )}
+
+          {bomItems.length > 0 ? (
+            <BomItemsTable bomNo={header.equipmentInfo?.bomNo ?? ''} equipmentQty={header.equipmentInfo?.equipmentQty ?? 0} items={bomItems} />
+          ) : null}
+        </>
+      ) : (
+        <div>
+          {timeline.isLoading ? (
+            <div className="empty-state">
+              <Loader2 className="inline h-4 w-4 animate-spin" /> Loading timeline…
+            </div>
+          ) : timeline.isError || !timeline.data ? (
+            <div className="empty-state" style={{ color: 'var(--red)' }}>
+              {timeline.error instanceof Error ? timeline.error.message : 'Failed to load timeline'}
+            </div>
+          ) : (
+            <SoTimelineBody data={timeline.data} />
+          )}
+        </div>
+      )}
 
       {/* ── Inline component-planning modals (reused from so-planning) ── */}
       {modal.kind === 'create' && planning.data

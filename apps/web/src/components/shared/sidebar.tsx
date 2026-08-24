@@ -61,7 +61,6 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
-          { to: '/planning-dashboard', label: 'Planning Dashboard', icon: '📊' },
           { to: '/planning', label: 'SO/JWSO Planning', icon: '📋' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
           { to: '/so-status', label: 'SO Status Review', icon: '📊' },
@@ -88,7 +87,6 @@ export const SECTIONS: readonly NavSection[] = [
           // sales job-work (client supplies material); the vendor/OSP side
           // keeps "JW"/"OSP" wording to stay distinct.
           { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
-          { to: '/so-documents', label: 'SO Documents', icon: '📁' },
         ],
       },
       {
@@ -101,7 +99,6 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Report',
         items: [
-          { to: '/so-timeline', label: 'SO Timeline', icon: '📅' },
           { to: '/pending-so-value', label: 'Pending SO Value', icon: '💰' },
         ],
       },
@@ -137,8 +134,6 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Report',
         items: [
           { to: '/store-inventory', label: 'Store / Inventory', icon: '📦' },
-          { to: '/osp-wip', label: 'OSP At-Vendor Register', icon: '🚚' },
-          { to: '/store-transactions', label: 'Stock Ledger', icon: '📖' },
         ],
       },
     ],
@@ -212,7 +207,6 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
           { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
           { to: '/tpi', label: 'TPI Inspection', icon: '🔍' },
-          { to: '/so-qc-status', label: 'SO QC Status', icon: '📋' },
           { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
           { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
           { to: '/capa', label: 'CAPA', icon: '🛡' },
@@ -283,7 +277,6 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
           { to: '/invoices', label: 'Invoices', icon: '📄' },
         ],
       },
