@@ -91,11 +91,6 @@ const ROUTE_LINKS: Record<string, (label: string, linkId: string) => React.JSX.E
       {t}
     </Link>
   ),
-  'service-po': (t, i) => (
-    <Link to="/service-pos/$id" params={{ id: i }} className="td-code">
-      {t}
-    </Link>
-  ),
   grn: (t, i) => (
     <Link to="/goods-receipt-notes/$id" params={{ id: i }} className="td-code">
       {t}
@@ -181,7 +176,13 @@ export function StatusBadge({ status }: { status: string | null }): React.JSX.El
   return <span className={`badge ${statusBadgeClass(status)}`}>{status.replaceAll('_', ' ')}</span>;
 }
 
-function DocRow({ doc, routeKind }: { doc: RelatedDoc; routeKind: string | null }): React.JSX.Element {
+function DocRow({
+  doc,
+  routeKind,
+}: {
+  doc: RelatedDoc;
+  routeKind: string | null;
+}): React.JSX.Element {
   return (
     <tr>
       <td className="mono" style={{ fontSize: 12 }}>
@@ -273,7 +274,10 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid #e5e7eb' }}>
         {events.map((e, idx) => (
-          <li key={`${e.code ?? e.label}-${idx}`} style={{ position: 'relative', padding: '4px 0 4px 14px' }}>
+          <li
+            key={`${e.code ?? e.label}-${idx}`}
+            style={{ position: 'relative', padding: '4px 0 4px 14px' }}
+          >
             <span
               style={{
                 position: 'absolute',
@@ -307,11 +311,16 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
  *  no status, no date, no timeline. Purely for navigation. Used everywhere
  *  except the SO detail (which keeps the full traceability view). */
 function CompactList({ data }: { data: DocumentTraceability }): React.JSX.Element {
-  const sections = [...data.upstream, ...data.downstream, ...data.related].filter((s) => s.count > 0);
+  const sections = [...data.upstream, ...data.downstream, ...data.related].filter(
+    (s) => s.count > 0,
+  );
   return (
     <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {sections.map((s) => (
-        <div key={s.key} style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <div
+          key={s.key}
+          style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}
+        >
           <span className="text3" style={{ fontSize: 12, fontWeight: 600, minWidth: 140 }}>
             {s.icon ? `${s.icon} ` : ''}
             {s.title}

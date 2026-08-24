@@ -39,7 +39,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useSession } from '@/lib/session';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { ServicePoView } from '@/modules/service-pos/components/service-po-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
 import { PoStatusBadge } from '../components/po-status-badge';
@@ -50,11 +49,43 @@ const LIST_LIMIT = 200;
 
 /** One cell of the card's metric strip — big mono number over a tiny uppercase
  *  label, mirroring the SO/WO list (TOTAL QTY / RECEIVED / PENDING / LINES). */
-function QtyBox({ label, value, color, bordered }: { label: string; value: number; color?: string; bordered?: boolean }): React.JSX.Element {
+function QtyBox({
+  label,
+  value,
+  color,
+  bordered,
+}: {
+  label: string;
+  value: number;
+  color?: string;
+  bordered?: boolean;
+}): React.JSX.Element {
   return (
-    <div style={{ padding: '4px 12px', textAlign: 'center', minWidth: 58, borderLeft: bordered ? '1px solid var(--border)' : undefined }}>
-      <div className="mono fw-700" style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}>{value}</div>
-      <div className="mono" style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+    <div
+      style={{
+        padding: '4px 12px',
+        textAlign: 'center',
+        minWidth: 58,
+        borderLeft: bordered ? '1px solid var(--border)' : undefined,
+      }}
+    >
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 15, color: color ?? 'var(--text)', lineHeight: 1.2 }}
+      >
+        {value}
+      </div>
+      <div
+        className="mono"
+        style={{
+          fontSize: 9,
+          color: 'var(--text3)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
@@ -74,11 +105,6 @@ export const purchaseOrdersListRoute = createRoute({
 });
 
 function PurchaseOrdersListPage(): React.JSX.Element {
-  // Service PO folded in as a tab — an SPO is a purchase order that buys a
-  // service instead of stock, so it belongs on the same screen as the material
-  // /job-work POs rather than in its own menu entry. Its own hooks, query and
-  // money gating are unchanged; the SPO detail/new pages stay separate routes.
-  const [tab, setTab] = useState<'po' | 'spo'>('po');
   const search = purchaseOrdersListRoute.useSearch();
   const navigate = purchaseOrdersListRoute.useNavigate();
   const { data: me } = useSession();
@@ -123,26 +149,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     .map((v) => v.replaceAll('_', ' '))
     .join(', ');
 
-  const tabBar = (
-    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
-      {(['po', 'spo'] as const).map((t) => (
-        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'po' ? '🛒 Purchase Orders' : '🧰 Service PO'}</button>
-      ))}
-    </div>
-  );
-
-  if (tab === 'spo') {
-    return (
-      <div>
-        {tabBar}
-        <ServicePoView />
-      </div>
-    );
-  }
-
   return (
     <div>
-      {tabBar}
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           Title + search + filters + New button stay pinned while the PO cards
           scroll underneath. Background must be opaque var(--bg) or cards show
@@ -159,81 +167,86 @@ function PurchaseOrdersListPage(): React.JSX.Element {
           borderBottom: '1px solid var(--border)',
         }}
       >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🛒 Purchase Orders
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            🛒 Purchase Orders
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              className="innovic-input"
+              placeholder="🔍 Search code, PR ref, vendor code…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 240, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as PoStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 140, fontSize: 12 }}
+            >
+              <option value="">All statuses</option>
+              {PO_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+            <select
+              className="innovic-select"
+              value={search.poType ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as PoType | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, poType: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 140, fontSize: 12 }}
+            >
+              <option value="">All types</option>
+              {PO_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canWrite ? (
+              <Link to="/purchase-orders/new" className="btn btn-primary">
+                <Plus size={14} /> New PO
+              </Link>
+            ) : null}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search code, PR ref, vendor code…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as PoStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 140, fontSize: 12 }}
-          >
-            <option value="">All statuses</option>
-            {PO_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-          <select
-            className="innovic-select"
-            value={search.poType ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as PoType | '';
-              void navigate({
-                search: (prev) => ({ ...prev, poType: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 140, fontSize: 12 }}
-          >
-            <option value="">All types</option>
-            {PO_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <Link to="/purchase-orders/new" className="btn btn-primary">
-              <Plus size={14} /> New PO
-            </Link>
-          ) : null}
-        </div>
-      </div>
       </div>
 
       {activeFilter ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}
+        >
           <span className="text3">
-            Filtered: <span className="amber" style={{ fontWeight: 700 }}>{activeFilter}</span>
+            Filtered:{' '}
+            <span className="amber" style={{ fontWeight: 700 }}>
+              {activeFilter}
+            </span>
           </span>
           <button
             type="button"
@@ -265,7 +278,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         </div>
       ) : rows.length === 0 ? (
         <div className="panel">
-          <div className="empty-state" style={{ padding: 20 }}>No purchase orders yet</div>
+          <div className="empty-state" style={{ padding: 20 }}>
+            No purchase orders yet
+          </div>
         </div>
       ) : (
         rows.map((po) => {
@@ -288,8 +303,17 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Band 1: identity + type + status + actions */}
                 <div
-                  onClick={() => void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 14px', cursor: 'pointer' }}
+                  onClick={() =>
+                    void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
+                  }
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                  }}
                 >
                   <Link
                     to="/purchase-orders/$id"
@@ -301,21 +325,44 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   >
                     {po.code}
                   </Link>
-                  <span className={`badge ${isJW ? 'b-amber' : 'b-blue'}`}>{isJW ? 'JW' : 'MAT'}</span>
-                  <span className="fw-700" style={{ fontSize: 13 }}>{po.vendorName ?? po.vendorCodeText ?? '—'}</span>
+                  <span className={`badge ${isJW ? 'b-amber' : 'b-blue'}`}>
+                    {isJW ? 'JW' : 'MAT'}
+                  </span>
+                  <span className="fw-700" style={{ fontSize: 13 }}>
+                    {po.vendorName ?? po.vendorCodeText ?? '—'}
+                  </span>
                   <PoStatusBadge status={po.status} />
                   <span style={{ flex: 1 }} />
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                    <Link to="/purchase-orders/$id" params={{ id: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} title="View">
+                  <div
+                    style={{ display: 'flex', gap: 4, alignItems: 'center' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Link
+                      to="/purchase-orders/$id"
+                      params={{ id: po.id }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11 }}
+                      title="View"
+                    >
                       👁 View
                     </Link>
                     {canWrite && po.status !== 'closed' ? (
-                      <Link to="/purchase-orders/$id/edit" params={{ id: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                      <Link
+                        to="/purchase-orders/$id/edit"
+                        params={{ id: po.id }}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11 }}
+                      >
                         ✎ Edit
                       </Link>
                     ) : null}
                     {canWrite && po.poType === 'job_work' && po.status !== 'draft' ? (
-                      <Link to="/delivery-challans/new" search={{ poId: po.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                      <Link
+                        to="/delivery-challans/new"
+                        search={{ poId: po.id }}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11 }}
+                      >
                         📦 Create DC
                       </Link>
                     ) : null}
@@ -335,20 +382,54 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                 </div>
                 {/* Band 2: metric strip + meta line */}
                 <div
-                  onClick={() => void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '0 14px 10px', cursor: 'pointer' }}
+                  onClick={() =>
+                    void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
+                  }
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    padding: '0 14px 10px',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}>
+                  <div
+                    style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6 }}
+                  >
                     <QtyBox label="Total Qty" value={po.totalQty} />
-                    <QtyBox label="Received" value={po.receivedQty} color={po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)'} bordered />
-                    <QtyBox label="Pending" value={pending} color={pending > 0 ? 'var(--red)' : 'var(--green)'} bordered />
+                    <QtyBox
+                      label="Received"
+                      value={po.receivedQty}
+                      color={po.receivedQty > 0 ? 'var(--green)' : 'var(--text3)'}
+                      bordered
+                    />
+                    <QtyBox
+                      label="Pending"
+                      value={pending}
+                      color={pending > 0 ? 'var(--red)' : 'var(--green)'}
+                      bordered
+                    />
                     <QtyBox label="Lines" value={po.lineCount} bordered />
                   </div>
-                  <div className="mono" style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text3)',
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
                     <span className="text2">{po.poDate}</span>
                     <span>·</span>
                     <span>
-                      PR <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{po.prCodeText ?? '—'}</span>
+                      PR{' '}
+                      <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {po.prCodeText ?? '—'}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -358,7 +439,16 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         })
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          marginTop: 8,
+          fontSize: 12,
+          color: 'var(--text3)',
+        }}
+      >
         <span>
           {total === 0
             ? 'No purchase orders'

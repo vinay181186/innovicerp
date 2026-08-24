@@ -28,7 +28,6 @@ import {
   purchaseOrders,
   salesOrderLines,
   salesOrders,
-  servicePos,
   soMilestones,
   users,
 } from '../../db/schema';
@@ -497,7 +496,6 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
  *   - purchase_order_lines.source_so_line_id ∈ SO line ids → DISTINCT purchase_order
  *   - customer_dispatches.sales_order_id = :id
  *   - invoices.sales_order_id           = :id
- *   - service_pos.so_ref_id             = :id
  *   - assembly_units.sales_order_id     = :id
  */
 export async function getSalesOrderRelated(
@@ -677,23 +675,6 @@ export async function getSalesOrderRelated(
       )
       .orderBy(desc(customerDispatches.dispatchDate));
 
-    const servicePoRows = await tx
-      .select({
-        id: servicePos.id,
-        code: servicePos.spoNo,
-        status: servicePos.status,
-        date: servicePos.spoDate,
-      })
-      .from(servicePos)
-      .where(
-        and(
-          eq(servicePos.soRefId, id),
-          eq(servicePos.companyId, companyId),
-          isNull(servicePos.deletedAt),
-        ),
-      )
-      .orderBy(desc(servicePos.spoDate));
-
     // Assembly units have no status enum — derive from the `dispatched` flag —
     // and no standalone code, so label by serial no (fallback: "Unit #N").
     const assemblyRows = await tx
@@ -784,13 +765,6 @@ export async function getSalesOrderRelated(
       'invoice',
       invoiceRows.map((r) => row(r.id, r.code, r.status, r.date)),
     );
-    const servicePoSection = section(
-      'service-pos',
-      'Service Purchase Orders',
-      '🛠',
-      'service-po',
-      servicePoRows.map((r) => row(r.id, r.code, r.status, r.date)),
-    );
     const assemblySection = section(
       'assembly-units',
       'Assembly Units',
@@ -799,9 +773,15 @@ export async function getSalesOrderRelated(
       // this SO's id.
       'assembly',
       assemblyRows.map((r) =>
-        row(r.id, r.serialNo ?? `Unit #${r.unitNo}`, r.dispatched ? 'dispatched' : 'assembled', r.date, {
-          linkId: id,
-        }),
+        row(
+          r.id,
+          r.serialNo ?? `Unit #${r.unitNo}`,
+          r.dispatched ? 'dispatched' : 'assembled',
+          r.date,
+          {
+            linkId: id,
+          },
+        ),
       ),
     );
 
@@ -811,7 +791,6 @@ export async function getSalesOrderRelated(
       poSection,
       dispatchSection,
       invoiceSection,
-      servicePoSection,
       assemblySection,
     ];
 

@@ -42,8 +42,6 @@ import { dailyTaskReportsRoute } from './modules/daily-task-reports/routes/list'
 import { invoiceListRoute } from './modules/invoices/routes/list';
 import { invoiceNewRoute } from './modules/invoices/routes/create';
 import { invoiceDetailRoute } from './modules/invoices/routes/detail';
-import { servicePosNewRoute } from './modules/service-pos/routes/new';
-import { servicePosDetailRoute } from './modules/service-pos/routes/detail';
 import { trashListRoute } from './modules/trash/routes/list';
 import { clientsListRoute } from './modules/clients/routes/list';
 import { clientDetailRoute } from './modules/clients/routes/detail';
@@ -297,8 +295,6 @@ const routeTree = rootRoute.addChildren([
     invoiceListRoute,
     invoiceNewRoute,
     invoiceDetailRoute,
-    servicePosNewRoute,
-    servicePosDetailRoute,
     trashListRoute,
   ]),
 ]);
