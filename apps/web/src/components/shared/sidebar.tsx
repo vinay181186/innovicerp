@@ -161,7 +161,6 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Report',
         items: [
           { to: '/production-dashboard', label: 'Production Dashboard', icon: '📊' },
-          { to: '/shop-floor', label: 'Shop Floor', icon: '🏭' },
           { to: '/op-entry/running', label: 'Live Operations', icon: '🔴' },
           { to: '/job-queue', label: 'Job Queue', icon: '⬛' },
           { to: '/machine-loading', label: 'Machine Loading', icon: '▣' },

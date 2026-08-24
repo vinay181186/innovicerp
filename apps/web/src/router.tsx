@@ -134,7 +134,6 @@ import { designWorkLogListRoute } from './modules/design-work-log/routes/list';
 import { prodJwListRoute } from './modules/prod-jw-list/routes/list';
 import { dailyReportRoute } from './modules/daily-report/routes/list';
 import { jcOpsRoute } from './modules/jc-ops/routes/list';
-import { shopFloorRoute } from './modules/shop-floor/routes/list';
 import { jobQueueRoute } from './modules/job-queue/routes/list';
 import { productionScheduleRoute } from './modules/production-schedule/routes/list';
 import { vendorsListRoute } from './modules/vendors/routes/list';
@@ -198,7 +197,6 @@ const routeTree = rootRoute.addChildren([
     prodJwListRoute,
     dailyReportRoute,
     jcOpsRoute,
-    shopFloorRoute,
     jobQueueRoute,
     productionScheduleRoute,
     soOverviewListRoute,

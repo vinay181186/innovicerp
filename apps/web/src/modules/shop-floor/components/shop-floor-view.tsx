@@ -1,19 +1,15 @@
-// Shop Floor — mirrors legacy renderShopFloor (HTML L10286).
-// Live running ops grouped by machine.
+// Shop Floor "By Machine" view — extracted body of the former standalone
+// Shop Floor screen (was shop-floor/routes/list.tsx, mirrors legacy
+// renderShopFloor, HTML L10286). Live running ops grouped by machine, with a
+// per-op stop action. Hooks (useShopFloor, useStopRunningOp) are unchanged;
+// this now renders inside the Live Operations Board as a view toggle.
 
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useShopFloor, useStopRunningOp } from '../api';
 
-export const shopFloorRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'shop-floor',
-  component: ShopFloorPage,
-});
-
-function ShopFloorPage(): React.JSX.Element {
+export function ShopFloorView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const { data, isLoading, isError, error, refetch } = useShopFloor();
@@ -23,8 +19,7 @@ function ShopFloorPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-        <div className="section-hdr m-0">🏭 Shop Floor — Live Running Jobs</div>
+      <div className="mb-3 flex items-center justify-end gap-3 flex-wrap">
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 14, color: 'var(--amber)', fontWeight: 700 }}>
             {total} operation{total !== 1 ? 's' : ''} currently running
