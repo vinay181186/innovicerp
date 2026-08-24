@@ -3,6 +3,8 @@
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useInvoiceList } from '../api';
 
@@ -29,19 +31,43 @@ const fmt = (d: string | null | undefined): string => {
 };
 
 function InvoiceListPage(): React.JSX.Element {
+  const [tab, setTab] = useState<'so' | 'jw'>('so');
   const { data, isLoading, isError, error } = useInvoiceList();
+
+  const tabBar = (
+    <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      {(['so', 'jw'] as const).map((t) => (
+        <button key={t} type="button" onClick={() => setTab(t)} style={{ background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent', color: tab === t ? 'var(--cyan)' : 'var(--text3)', fontSize: 12, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', marginBottom: -1 }}>{t === 'so' ? '🧾 SO Invoices' : '🔧 JW Invoices (Labour)'}</button>
+      ))}
+    </div>
+  );
+
+  if (tab === 'jw') {
+    return (
+      <div>
+        {tabBar}
+        <JwInvoiceView />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
-      <div className="empty-state" style={{ padding: 40 }}>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+      <div>
+        {tabBar}
+        <div className="empty-state" style={{ padding: 40 }}>
+          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+        </div>
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
-        {error instanceof Error ? error.message : 'Failed to load'}
+      <div>
+        {tabBar}
+        <div className="empty-state" style={{ padding: 40, color: 'var(--red)' }}>
+          {error instanceof Error ? error.message : 'Failed to load'}
+        </div>
       </div>
     );
   }
@@ -74,6 +100,7 @@ function InvoiceListPage(): React.JSX.Element {
 
   return (
     <div>
+      {tabBar}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div className="section-hdr" style={{ marginBottom: 0 }}>
           📄 Invoices

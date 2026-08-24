@@ -129,7 +129,6 @@ import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { jwReturnsListRoute } from './modules/jw-returns/routes/list';
-import { jwInvoicesListRoute } from './modules/jw-invoices/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
 import { jwDcOutwardDetailRoute } from './modules/jw-dc/routes/detail';
 import { designTrackerListRoute } from './modules/design-tracker/routes/list';
@@ -195,7 +194,6 @@ const routeTree = rootRoute.addChildren([
     partyMaterialsListRoute,
     partyGrnListRoute,
     jwReturnsListRoute,
-    jwInvoicesListRoute,
     jwDcListRoute,
     jwDcOutwardDetailRoute,
     designTrackerListRoute,

@@ -118,7 +118,6 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋' },
           { to: '/party-grn', label: 'Party Material', icon: '📥' },
           { to: '/jw-returns', label: 'JW Dispatch', icon: '📦' },
-          { to: '/jw-invoices', label: 'JW Invoice (Labour)', icon: '🧾' },
         ],
       },
       {

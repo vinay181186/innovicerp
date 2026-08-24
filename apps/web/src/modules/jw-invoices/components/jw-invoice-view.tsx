@@ -1,29 +1,23 @@
-// JW Invoice (Labour) — bills the processing / labour charge for a Job Work
+// JW Invoice (Labour) view — bills the processing / labour charge for a Job Work
 // Order line (qty x line rate + GST from the JWSO header). NO material value:
-// the client owns the material. Mirrors the Party GRN list module.
+// the client owns the material. Extracted from the standalone jw-invoices list
+// route so it can render inside the Invoices screen as a tab. Behavior, hooks,
+// modals and price/money display are identical to the original screen.
 
 import { type CreateJwInvoiceInput } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
 import { useCreateJwInvoice, useJwInvoicesList } from '../api';
-
-export const jwInvoicesListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'jw-invoices',
-  component: JwInvoicesListPage,
-});
 
 function money(n: number): string {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function JwInvoicesListPage(): React.JSX.Element {
+export function JwInvoiceView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [search, setSearch] = useState('');
@@ -50,8 +44,7 @@ function JwInvoicesListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🧾 JW Invoice (Labour)</div>
+      <div className="mb-3 flex items-center justify-end gap-3">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
             type="text"
