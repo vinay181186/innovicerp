@@ -93,15 +93,8 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [{ to: '/clients', label: 'Client Master', icon: '🏢' }],
       },
-      // Legacy sidebar L419–423 (Report group). Only the entries with a
-      // shipped /route in React are listed; the rest land as their modules
-      // ship per docs/PARITY/sales-sidebar.md §summary.
-      {
-        label: 'Report',
-        items: [
-          { to: '/pending-so-value', label: 'Pending SO Value', icon: '💰' },
-        ],
-      },
+      // Pending SO Value (a price-gated revenue report) is filed under the
+      // Reports section, not a Sales menu item — see the Reports block below.
     ],
   },
   {
@@ -233,12 +226,8 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [{ to: '/vendors', label: 'Vendor Master', icon: '🚚' }],
       },
-      {
-        label: 'Report',
-        items: [
-          { to: '/sc-dashboard', label: 'Supply Chain Dashboard', icon: '🔗' },
-        ],
-      },
+      // Supply Chain Dashboard (a price-gated PO/GRN report) is filed under the
+      // Reports section, not a Purchase menu item — see the Reports block below.
     ],
   },
   {
@@ -296,6 +285,8 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/reports', label: 'Reports', icon: '📊' },
           { to: '/saved-reports', label: 'Saved Reports', icon: '✨' },
+          { to: '/pending-so-value', label: 'Pending SO Value', icon: '💰' },
+          { to: '/sc-dashboard', label: 'Supply Chain Dashboard', icon: '🔗' },
           { to: '/stuck-dashboard', label: 'Stuck Dashboard', icon: '⚠' },
           { to: '/so-cycle-time', label: 'SO Cycle Time', icon: '⏱' },
         ],
