@@ -28,6 +28,7 @@ import type {
   ListJwDcOutwardQuery,
   ListJwDcOutwardResponse,
 } from '@innovic/shared';
+import { poSendsMaterialOut } from '@innovic/shared';
 import {
   items,
   jwDcInward,
@@ -627,8 +628,10 @@ export async function getJwDcPoLines(
       .limit(1);
     const po = poRows[0];
     if (!po) throw new NotFoundError(`Purchase Order ${purchaseOrderId} not found`);
-    if (po.poType !== 'job_work') {
-      throw new ValidationError(`PO ${po.code} is not a Job Work PO (type=${po.poType})`);
+    if (!poSendsMaterialOut(po.poType)) {
+      throw new ValidationError(
+        `PO ${po.code} does not send material out (type=${po.poType}) — only Job Work and Service POs can raise an outward DC`,
+      );
     }
 
     const lineRows = (await tx.execute(sql`
@@ -706,8 +709,10 @@ export async function createJwDcOutward(
       .limit(1);
     const po = poRows[0];
     if (!po) throw new NotFoundError(`Purchase Order ${input.purchaseOrderId} not found`);
-    if (po.poType !== 'job_work') {
-      throw new ValidationError(`PO ${po.code} is not a Job Work PO`);
+    if (!poSendsMaterialOut(po.poType)) {
+      throw new ValidationError(
+        `PO ${po.code} does not send material out (type=${po.poType}) — only Job Work and Service POs can be dispatched`,
+      );
     }
 
     // 2) Load PO lines we'll dispatch against

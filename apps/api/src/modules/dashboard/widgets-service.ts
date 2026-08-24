@@ -131,16 +131,22 @@ async function computeWidget(
       break;
     }
     case 'cost_summary': {
+      // Service POs buy work, not goods, so they get their own bucket. Before
+      // this the split was two-way (job_work = Outsource, everything else =
+      // Material) and every service charge was counted as material spend.
       const r = (await q(tx, `SELECT
-          COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type <> 'job_work'),0) AS mat,
-          COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type = 'job_work'),0) AS osp
+          COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type NOT IN ('job_work','service')),0) AS mat,
+          COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type = 'job_work'),0) AS osp,
+          COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type = 'service'),0) AS svc
           FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id AND po.deleted_at IS NULL
           WHERE pol.company_id='${cid}'::uuid AND pol.deleted_at IS NULL`))[0];
       const mat = Math.round(num(r?.['mat'])), osp = Math.round(num(r?.['osp']));
+      const svc = Math.round(num(r?.['svc']));
       w.stats = [
         { label: 'Material', value: `₹${mat}`, tone: 'blue' },
         { label: 'Outsource', value: `₹${osp}`, tone: 'amber' },
-        { label: 'Total', value: `₹${mat + osp}`, tone: 'green' },
+        { label: 'Service', value: `₹${svc}`, tone: 'purple' },
+        { label: 'Total', value: `₹${mat + osp + svc}`, tone: 'green' },
       ];
       break;
     }

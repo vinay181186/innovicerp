@@ -972,11 +972,18 @@ export async function createPurchaseOrderFromPr(
         code,
         poDate: input.header.poDate,
         // Derive the PO type from the SOURCE PR, not the form: an OSP/job-work PR
-        // (jw_osp, or linked to a JC op) → job_work; a plain buy (e.g. a
-        // direct_purchase plan's standard PR with no JC op) → standard. Prevents a
-        // buy being mistyped job_work — which wrongly exposed the outward-DC flow
-        // and hid the Receive/GRN action (IN-PO-00004 / PLN-0006 case).
-        poType: pr.prType === 'jw_osp' || pr.sourceJcOpId ? 'job_work' : 'standard',
+        // (jw_osp, or linked to a JC op) → job_work; a service PR → service; a
+        // plain buy (e.g. a direct_purchase plan's standard PR with no JC op) →
+        // standard. Prevents a buy being mistyped job_work — which wrongly exposed
+        // the outward-DC flow and hid the Receive/GRN action (IN-PO-00004 /
+        // PLN-0006 case). 'service' was previously unreachable: it fell out of the
+        // two-way test as 'standard', so a service PR became a buying PO.
+        poType:
+          pr.prType === 'jw_osp' || pr.sourceJcOpId
+            ? 'job_work'
+            : pr.prType === 'service'
+              ? 'service'
+              : 'standard',
         vendorId: pr.vendorId,
         vendorCodeText: pr.vendorCodeText,
         status: 'open', // PRs only convert to open POs (skip draft state)
@@ -1435,10 +1442,13 @@ export async function createPurchaseOrderFromPrBatch(
         code: input.header.code,
         poDate: input.header.poDate,
         // Same rule as the single convert: job_work only when EVERY PR in the
-        // batch is OSP/job-work (jw_osp or JC-op linked); otherwise standard.
+        // batch is OSP/job-work (jw_osp or JC-op linked), service only when EVERY
+        // PR is a service PR; a mixed batch falls back to standard.
         poType: sortedPrs.every((p) => p.prType === 'jw_osp' || p.sourceJcOpId)
           ? 'job_work'
-          : 'standard',
+          : sortedPrs.every((p) => p.prType === 'service')
+            ? 'service'
+            : 'standard',
         vendorId: input.vendorId,
         vendorCodeText,
         status: 'open',

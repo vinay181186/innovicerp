@@ -25,6 +25,8 @@ function toneColor(t: string | null): string {
       return 'var(--cyan)';
     case 'blue':
       return 'var(--blue)';
+    case 'purple':
+      return 'var(--purple)';
     default:
       return 'var(--text)';
   }

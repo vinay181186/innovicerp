@@ -501,14 +501,26 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
 
   const { data: next } = useNextOutwardCode();
 
-  // Job-work POs for the JWPO dropdown (bug 4.1 — was a free-text picker).
-  const { data: poData } = usePurchaseOrdersList({
+  // POs that send material out, for the JWPO dropdown (bug 4.1 — was a free-text
+  // picker). Two calls rather than one: the list query's `poType` filter takes a
+  // single value, and dropping the filter to sort client-side would risk the
+  // 200-row cap hiding job-work POs behind a wall of ordinary buys.
+  const { data: poDataJw } = usePurchaseOrdersList({
     poType: 'job_work',
     limit: 200,
     offset: 0,
   });
+  const { data: poDataSvc } = usePurchaseOrdersList({
+    poType: 'service',
+    limit: 200,
+    offset: 0,
+  });
+  const poData = useMemo(
+    () => ({ items: [...(poDataJw?.items ?? []), ...(poDataSvc?.items ?? [])] }),
+    [poDataJw, poDataSvc],
+  );
   const selectedPo = useMemo(
-    () => poData?.items.find((p) => p.id === poId) ?? null,
+    () => poData.items.find((p) => p.id === poId) ?? null,
     [poData, poId],
   );
 
@@ -604,7 +616,7 @@ function NewOutwardModal({ onClose }: { onClose: () => void }): React.JSX.Elemen
             onChange={(e) => setPoId(e.target.value || null)}
           >
             <option value="">-- Select JWPO --</option>
-            {(poData?.items ?? []).map((p) => (
+            {poData.items.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
               </option>

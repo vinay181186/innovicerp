@@ -12,13 +12,22 @@
 // every OSP-generated one, which carries a `(vendor TBD)` sentinel) may hold free
 // text and no `vendorId`, and the DB CHECK requires one of the two.
 
-import type { PrStatus } from '@innovic/shared';
+import type { PrStatus, PrType } from '@innovic/shared';
 import { todayLocal } from '@/lib/date';
 
 export interface PrFormValues {
   code: string;
   prDate: string;
   status: PrStatus;
+  /** What this PR is FOR — decides what the PO it becomes can do:
+   *   standard → a buy; the PO ends in a GRN (goods in, stock up)
+   *   service  → buying work, not goods; the PO sends the item out on a DC
+   *              and receives it back, like job work
+   *   jw_osp   → set by the system when an outsource JC op raises the PR; never
+   *              hand-picked, so it is not offered on the form
+   *  Immutable after create (the update schema omits it), so the form shows it
+   *  read-only on edit. */
+  prType: PrType;
   vendorId?: string;
   vendorCodeText?: string;
   itemId?: string;
@@ -35,6 +44,7 @@ export const PR_FORM_DEFAULTS: PrFormValues = {
   code: '',
   prDate: todayLocal(),
   status: 'open',
+  prType: 'standard',
   qty: 1,
   estCost: 0,
 };
@@ -53,4 +63,5 @@ export const PR_USER_ENTERED_FIELDS = [
   'prDate',
   'code',
   'status',
+  'prType',
 ] as const;

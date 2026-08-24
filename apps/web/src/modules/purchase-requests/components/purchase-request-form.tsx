@@ -13,6 +13,7 @@ import {
   type CreatePurchaseRequestInput,
   type ListItemsResponse,
   PR_STATUSES,
+  PR_TYPES,
   type PurchaseRequest,
   type PurchaseRequestDetail,
   type UpdatePurchaseRequestInput,
@@ -147,8 +148,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       await props.onSubmit(payload);
     } else {
       // T23: blank → undefined so the server auto-generates IN-PR-#####.
+      // prType is create-only — `updatePurchaseRequestInputSchema` omits it, so
+      // it is never sent on an edit.
       await props.onSubmit({
         code: values.code.trim() || undefined,
+        prType: values.prType,
         ...payload,
       } as CreatePurchaseRequestInput);
     }
@@ -241,6 +245,48 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
               Status changes via Approve / Reject / Create PO — not here.
             </div>
           ) : null}
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="prType">
+            PR Type
+          </label>
+          {/* What this PR is FOR, and therefore what the PO it becomes can do:
+              standard ends in a GRN (goods in), service sends the item out on a
+              DC and receives it back (the job-work chain). 'jw_osp' is NOT
+              offered — the system stamps that itself when an outsource JC op
+              raises the PR, and hand-picking it would fake an OSP job with no
+              operation behind it.
+
+              Immutable after create: `updatePurchaseRequestInputSchema` omits
+              prType, so on edit this shows the stored value read-only rather
+              than a dropdown that silently would not save. */}
+          {isEdit ? (
+            <input
+              id="prType"
+              className="innovic-input"
+              readOnly
+              title="PR type is fixed when the PR is created"
+              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+              value={(watch('prType') ?? 'standard').replaceAll('_', ' ')}
+            />
+          ) : (
+            <select id="prType" className="innovic-select" {...register('prType')}>
+              {PR_TYPES.filter((t) => t === 'standard' || t === 'service').map((t) => (
+                <option key={t} value={t}>
+                  {t.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+          )}
+          {isEdit ? (
+            <div className="form-help">PR type is fixed at creation.</div>
+          ) : (
+            <div className="form-help">
+              Service = buying work (calibration, heat-treat, plating). Its PO sends
+              the item out on a DC instead of receiving stock in.
+            </div>
+          )}
         </div>
 
         <div className="form-grp">
@@ -375,6 +421,7 @@ function detailToFormValues(detail: PurchaseRequest): FormValues {
     code: detail.code,
     prDate: detail.prDate,
     status: detail.status,
+    prType: detail.prType,
     ...(detail.vendorId ? { vendorId: detail.vendorId } : {}),
     ...(detail.vendorCodeText ? { vendorCodeText: detail.vendorCodeText } : {}),
     ...(detail.itemId ? { itemId: detail.itemId } : {}),

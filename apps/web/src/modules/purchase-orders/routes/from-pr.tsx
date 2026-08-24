@@ -363,11 +363,14 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 <label className="pof-lbl" htmlFor="pof-type">
                   PO Type
                 </label>
-                {/* Only standard/job_work are offered; the server anyway derives
-                    the final type from the source PR (OSP → job work, plain buy
-                    → standard), so a wrong pick here is corrected. */}
+                {/* standard / job_work / service are offered; the server anyway
+                    derives the final type from the source PR (OSP → job work,
+                    service PR → service, plain buy → standard), so a wrong pick
+                    here is corrected. */}
                 <select id="pof-type" className="pof-in" {...register('poType')}>
-                  {PO_TYPES.filter((t) => t === 'standard' || t === 'job_work').map((t) => (
+                  {PO_TYPES.filter(
+                    (t) => t === 'standard' || t === 'job_work' || t === 'service',
+                  ).map((t) => (
                     <option key={t} value={t}>
                       {t.replaceAll('_', ' ')}
                     </option>

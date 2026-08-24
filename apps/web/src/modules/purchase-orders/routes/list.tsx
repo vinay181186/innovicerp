@@ -30,6 +30,7 @@ import {
   type ListPurchaseOrdersQuery,
   PO_STATUSES,
   PO_TYPES,
+  poSendsMaterialOut,
   type PoStatus,
   type PoType,
 } from '@innovic/shared';
@@ -285,6 +286,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       ) : (
         rows.map((po) => {
           const isJW = po.poType === 'job_work';
+          const isSvc = po.poType === 'service';
           const pending = po.totalQty - po.receivedQty;
           const accent =
             po.status === 'closed'
@@ -325,8 +327,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                   >
                     {po.code}
                   </Link>
-                  <span className={`badge ${isJW ? 'b-amber' : 'b-blue'}`}>
-                    {isJW ? 'JW' : 'MAT'}
+                  <span className={`badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}`}>
+                    {isJW ? 'JW' : isSvc ? 'SVC' : 'MAT'}
                   </span>
                   <span className="fw-700" style={{ fontSize: 13 }}>
                     {po.vendorName ?? po.vendorCodeText ?? '—'}
@@ -356,7 +358,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                         ✎ Edit
                       </Link>
                     ) : null}
-                    {canWrite && po.poType === 'job_work' && po.status !== 'draft' ? (
+                    {/* Job Work AND Service both send material out — same DC lane. */}
+                    {canWrite && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
                       <Link
                         to="/delivery-challans/new"
                         search={{ poId: po.id }}

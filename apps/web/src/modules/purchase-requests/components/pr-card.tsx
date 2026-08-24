@@ -150,6 +150,14 @@ export function PrCard({
             {pr.vendorName ?? pr.vendorCodeText ?? '—'}
           </span>
           <PrStatusBadge status={pr.status} />
+          {/* Type tag — only when it is NOT a plain buy, so a normal PR row stays
+              as clean as it was. SVC becomes a Service PO (sends the item out on
+              a DC); OSP is the system-raised outsource PR. */}
+          {pr.prType === 'service' ? (
+            <span className="badge b-teal">SVC</span>
+          ) : pr.prType === 'jw_osp' ? (
+            <span className="badge b-amber">OSP</span>
+          ) : null}
           <span style={{ flex: 1 }} />
           {/* Row actions do something OTHER than open the PR, so the card's
               click must not fire underneath them.

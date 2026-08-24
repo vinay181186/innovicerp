@@ -44,6 +44,7 @@
 // its address and GSTIN already belonged.
 
 import type { PurchaseOrderLine } from '@innovic/shared';
+import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Pencil, Printer, Send, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
@@ -231,7 +232,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
               <Printer size={13} /> Print
             </button>
-            {canIssueOrReceive && detail.poType === 'job_work' && canEdit ? (
+            {/* Job Work AND Service both send OUR material out and expect it
+                back, so both get Issue DC. Everything else is a buy and gets
+                Receive/GRN. Before this a service PO fell into the else-branch
+                and was offered "Receive (new GRN)" — booking stock in against a
+                purchase with no incoming material. */}
+            {canIssueOrReceive && poSendsMaterialOut(detail.poType) && canEdit ? (
               <Link
                 to="/delivery-challans/new"
                 search={{ poId: detail.id }}
@@ -240,7 +246,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <Send size={13} /> Issue DC
               </Link>
             ) : null}
-            {canIssueOrReceive && detail.poType !== 'job_work' && canEdit ? (
+            {canIssueOrReceive && !poSendsMaterialOut(detail.poType) && canEdit ? (
               <Link
                 to="/goods-receipt-notes/new"
                 search={{ poId: detail.id }}
