@@ -100,7 +100,6 @@ import {
 } from './modules/purchase-orders/routes/edit';
 import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-pr';
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
-import { qcDashboardRoute } from './modules/qc-dashboard/routes/index';
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
 import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
@@ -276,7 +275,6 @@ const routeTree = rootRoute.addChildren([
     savedReportEditRoute,
     savedReportRunRoute,
     activityLogListRoute,
-    qcDashboardRoute,
     incomingQcRoute,
     qcHistoryRoute,
     qcCallRegisterRoute,

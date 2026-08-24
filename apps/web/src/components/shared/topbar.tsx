@@ -24,7 +24,6 @@ const TITLE_MAP: Record<string, string> = {
   '/op-entry': 'Op Entry',
   '/machines': 'Machine Master',
   '/operators': 'Operator Master',
-  '/qc-dashboard': 'QC Dashboard',
   '/nc-register': 'NC Register',
   '/purchase-requests': 'Purchase Requests',
   '/purchase-orders': 'Purchase Orders',
