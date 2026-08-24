@@ -6,9 +6,10 @@ import {
   STORE_ISSUE_REF_TYPES,
   type StoreIssueRefType,
 } from '@innovic/shared';
-import { createRoute, Link } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -25,6 +26,7 @@ export const storeIssuesListRoute = createRoute({
 
 function StoreIssuesListPage(): React.JSX.Element {
   const { data: me } = useSession();
+  const [tab, setTab] = useState<'items' | 'tools'>('items');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
@@ -40,6 +42,40 @@ function StoreIssuesListPage(): React.JSX.Element {
 
   return (
     <div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
+        {(['items', 'tools'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'items' ? '📋 Item Issues' : '🔧 Tool Issues'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'tools' ? (
+        <ToolIssueRegisterView />
+      ) : (
+        <>
       <div
         style={{
           display: 'flex',
@@ -202,17 +238,28 @@ function StoreIssuesListPage(): React.JSX.Element {
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
         💡 Item Issue Register tracks material/consumables issued from Store. Stock is auto-deducted.
-        For returnable tools, use{' '}
-        <Link
-          to="/tool-issues"
-          style={{ color: 'var(--cyan)', cursor: 'pointer', textDecoration: 'underline' }}
+        For returnable tools, use the{' '}
+        <button
+          type="button"
+          onClick={() => setTab('tools')}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            color: 'var(--cyan)',
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            font: 'inherit',
+          }}
         >
-          Tool Issue Register
-        </Link>
-        .
+          🔧 Tool Issues
+        </button>{' '}
+        tab.
       </div>
 
       {showModal ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
+        </>
+      )}
     </div>
   );
 }

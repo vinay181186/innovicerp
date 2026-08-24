@@ -1,6 +1,10 @@
 // Tool Issue Register (PL-TI-1) — returnable items register.
 // Mirrors legacy renderToolIssue (HTML L23965) + addToolIssue (L24038) +
 // _toolReturn (L24080).
+//
+// Extracted from the standalone tool-issues route into a reusable view so it can
+// render as a tab inside the Item Issue Register. Uses LOCAL React state only —
+// no route/URL coupling. Hooks, modals, and behavior are IDENTICAL to the route.
 
 import {
   type CreateToolIssueInput,
@@ -9,12 +13,10 @@ import {
   type RecordToolReturnInput,
   type ToolIssueListItem,
 } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
 import {
   useCreateToolIssue,
@@ -26,13 +28,7 @@ import {
 type FilterKey = 'all' | 'out' | 'overdue' | 'returned';
 const PAGE_SIZE = 25;
 
-export const toolIssuesListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'tool-issues',
-  component: ToolIssuesListPage,
-});
-
-function ToolIssuesListPage(): React.JSX.Element {
+export function ToolIssueRegisterView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -68,7 +64,6 @@ function ToolIssuesListPage(): React.JSX.Element {
         className="mb-3 flex items-center justify-between gap-3"
         style={{ flexWrap: 'wrap' }}
       >
-        <div className="section-hdr m-0">🔧 Tool Issue Register (Returnable)</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"

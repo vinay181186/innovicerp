@@ -126,7 +126,6 @@ import { soStatusIndexRoute } from './modules/so-status/routes/index';
 import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
 import { storeIssuesListRoute } from './modules/store-issues/routes/list';
 import { storeInventoryRoute } from './modules/store-inventory/routes/list';
-import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { jwReturnsListRoute } from './modules/jw-returns/routes/list';
@@ -193,7 +192,6 @@ const routeTree = rootRoute.addChildren([
     pendingSoValueRoute,
     storeIssuesListRoute,
     storeInventoryRoute,
-    toolIssuesListRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
     jwReturnsListRoute,
