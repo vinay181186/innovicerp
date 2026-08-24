@@ -78,7 +78,6 @@ import { machinesListRoute } from './modules/machines/routes/list';
 import { machineDetailRoute } from './modules/machines/routes/detail';
 import { machineEditRoute, machineNewRoute } from './modules/machines/routes/edit';
 import { opEntryRoute } from './modules/op-entry/routes/index';
-import { machineOpEntryRoute } from './modules/op-entry/routes/machines';
 import { runningOpsRoute } from './modules/op-entry/routes/running';
 import { machineLoadingRoute } from './modules/machine-loading/routes/list';
 import { productionDashboardRoute } from './modules/production-dashboard/routes/index';
@@ -104,7 +103,6 @@ import { qcHistoryRoute } from './modules/qc-history/routes/index';
 import { qcCallRegisterRoute } from './modules/qc-call-register/routes/index';
 import { capaListRoute } from './modules/capa/routes/list';
 import { tpiRoute } from './modules/tpi/routes/index';
-import { reportTypesListRoute } from './modules/report-types/routes/list';
 import { qcCommandRoute } from './modules/qc-command/routes/index';
 import { qcDocumentsListRoute } from './modules/qc-documents/routes/list';
 import { reportRunRoute } from './modules/reports/routes/run';
@@ -131,7 +129,6 @@ import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { toolIssuesListRoute } from './modules/tool-issues/routes/list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
-import { partyMaterialIssuesListRoute } from './modules/party-material-issues/routes/list';
 import { jwReturnsListRoute } from './modules/jw-returns/routes/list';
 import { jwInvoicesListRoute } from './modules/jw-invoices/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
@@ -185,7 +182,6 @@ const routeTree = rootRoute.addChildren([
     operatorEditRoute,
     opEntryRoute,
     runningOpsRoute,
-    machineOpEntryRoute,
     machineLoadingRoute,
     productionDashboardRoute,
     salesOrdersListRoute,
@@ -200,7 +196,6 @@ const routeTree = rootRoute.addChildren([
     toolIssuesListRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
-    partyMaterialIssuesListRoute,
     jwReturnsListRoute,
     jwInvoicesListRoute,
     jwDcListRoute,
@@ -270,7 +265,6 @@ const routeTree = rootRoute.addChildren([
     qcCallRegisterRoute,
     capaListRoute,
     tpiRoute,
-    reportTypesListRoute,
     qcCommandRoute,
     qcDocumentsListRoute,
     // Order matters: /alerts/config beats /alerts/$code; /alerts list comes

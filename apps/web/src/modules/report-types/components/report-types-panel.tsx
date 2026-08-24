@@ -1,17 +1,12 @@
-// Report / Document Master (legacy renderReportMaster L23677). Master CRUD for
-// report/document types used as QC document-requirement options in Planning.
-// Legacy chrome + inline New/Edit modal. Backed by /report-types (0038).
+// Report / Document Master (legacy renderReportMaster L23677) — folded in as the
+// "Report Types" tab of QC Process Master. Master CRUD for report/document types
+// used as QC document-requirement options in Planning. Self-contained: its own
+// hooks + inline New/Edit modal. Backed by /report-types (0038).
 
-import {
-  REPORT_TYPE_STATUSES,
-  type CreateReportTypeInput,
-  type ReportType,
-} from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { REPORT_TYPE_STATUSES, type CreateReportTypeInput, type ReportType } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useCreateReportType,
   useDeleteReportType,
@@ -19,15 +14,9 @@ import {
   useUpdateReportType,
 } from '../api';
 
-export const reportTypesListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'report-master',
-  component: ReportMasterPage,
-});
-
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: ReportType };
 
-function ReportMasterPage(): React.JSX.Element {
+export function ReportTypesPanel(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useReportTypes();
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
@@ -42,29 +31,17 @@ function ReportMasterPage(): React.JSX.Element {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📄 Report / Document Master
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" />
-            </span>
-          ) : null}
-          {canWrite ? (
-            <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
-              + Add Report Type
-            </button>
-          ) : null}
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        {isFetching && !isLoading ? (
+          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+            <Loader2 className="inline h-3 w-3 animate-spin" />
+          </span>
+        ) : null}
+        {canWrite ? (
+          <button type="button" className="btn btn-primary" onClick={() => setModal({ kind: 'new' })}>
+            + Add Report Type
+          </button>
+        ) : null}
       </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -217,11 +194,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
       }}
       onClick={onClose}
     >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
         <div className="panel-hdr">
           <span className="panel-title">{row ? '✏ Edit Report Type' : '📄 Add Report Type'}</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>

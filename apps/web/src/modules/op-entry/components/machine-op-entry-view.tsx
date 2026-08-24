@@ -1,41 +1,25 @@
-import {
-  type JcOpEnriched,
-  type RunningOp,
-  SHIFTS,
-  SHIFT_LABELS,
-  type Shift,
-} from '@innovic/shared';
-import { Link, createRoute } from '@tanstack/react-router';
+// Machine Op Entry — folded in as the "By Machine" view of Op Entry (formerly the
+// standalone /op-entry/machines route). Pick a machine → see its running op (with
+// the log-entry form) or its pending jobs (with a quick ▶ Start). Uses local
+// component state for the selected machine (the standalone route drove it off the
+// URL). Reuses the same start-op / op-entry-form write path.
+
+import { type JcOpEnriched, type RunningOp, SHIFTS, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
 import { useMachinesList } from '@/modules/machines/api';
-import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
-import { MachineCard } from '../components/machine-card';
-import { OpEntryForm } from '../components/op-entry-form';
+import { MachineCard } from './machine-card';
+import { OpEntryForm } from './op-entry-form';
 
-const searchSchema = z.object({
-  m: z.string().uuid().optional(),
-});
-
-export const machineOpEntryRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'op-entry/machines',
-  validateSearch: searchSchema,
-  component: MachineOpEntryPage,
-});
-
-function MachineOpEntryPage() {
-  const search = machineOpEntryRoute.useSearch();
-  const navigate = machineOpEntryRoute.useNavigate();
+export function MachineOpEntryView(): React.JSX.Element {
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
 
   useRealtimeRunningOps();
   const machines = useMachinesList({ limit: 200, offset: 0 });
   const running = useRunningOps({ status: 'running' });
 
-  const selectedMachineId = search.m ?? null;
   const selectedMachine = useMemo(
     () => machines.data?.machines.find((m) => m.id === selectedMachineId) ?? null,
     [machines.data, selectedMachineId],
@@ -47,13 +31,8 @@ function MachineOpEntryPage() {
     }
     return map;
   }, [running.data]);
-  const selectedRunning = selectedMachineId
-    ? (runningByMachine.get(selectedMachineId) ?? null)
-    : null;
+  const selectedRunning = selectedMachineId ? (runningByMachine.get(selectedMachineId) ?? null) : null;
 
-  // Pending ops for the selected machine when idle. Fetch all jc_ops for the
-  // machine, filter client-side to "available" + "waiting" (the legacy
-  // pickable subset, line 5625-5627).
   const machineOps = useJcOpsEnriched(
     selectedMachineId && !selectedRunning ? { machineId: selectedMachineId } : { machineId: '' },
     { enabled: Boolean(selectedMachineId && !selectedRunning) },
@@ -61,14 +40,11 @@ function MachineOpEntryPage() {
   const pendingOps = useMemo<JcOpEnriched[]>(
     () =>
       (machineOps.data ?? []).filter(
-        (o) =>
-          o.available > 0 && (o.computedStatus === 'available' || o.computedStatus === 'waiting'),
+        (o) => o.available > 0 && (o.computedStatus === 'available' || o.computedStatus === 'waiting'),
       ),
     [machineOps.data],
   );
 
-  // For the running case, fetch the single running op enriched (so the form
-  // has fresh availability + status).
   const runningOpEnriched = useJcOpsEnriched(
     selectedRunning ? { jobCardCode: selectedRunning.jobCardCode } : { jobCardCode: '' },
     { enabled: Boolean(selectedRunning) },
@@ -78,33 +54,8 @@ function MachineOpEntryPage() {
     return runningOpEnriched.data.find((o) => o.id === selectedRunning.jcOpId) ?? null;
   }, [selectedRunning, runningOpEnriched.data]);
 
-  function selectMachine(id: string | null) {
-    void navigate({
-      search: () => (id ? { m: id } : {}),
-      replace: true,
-    });
-  }
-
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚙ Machine Op Entry
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/op-entry" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>
-            📋 JC-wise Entry
-          </Link>
-        </div>
-      </div>
-
       {machines.isLoading ? (
         <div className="panel" style={{ marginBottom: 16 }}>
           <div className="empty-state">
@@ -126,7 +77,7 @@ function MachineOpEntryPage() {
               machine={m}
               running={runningByMachine.get(m.id) ?? null}
               isSelected={m.id === selectedMachineId}
-              onSelect={() => selectMachine(m.id === selectedMachineId ? null : m.id)}
+              onSelect={() => setSelectedMachineId(m.id === selectedMachineId ? null : m.id)}
             />
           ))}
         </div>
@@ -134,22 +85,8 @@ function MachineOpEntryPage() {
 
       {selectedMachine ? (
         selectedRunning && runningOpRow ? (
-          <div
-            style={{
-              background: 'var(--bg3)',
-              border: '2px solid var(--green)',
-              borderRadius: 10,
-              padding: 16,
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 12,
-              }}
-            >
+          <div style={{ background: 'var(--bg3)', border: '2px solid var(--green)', borderRadius: 10, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
                 {selectedMachine.code} — <span style={{ color: 'var(--green)' }}>🟢 Running</span>
               </div>
@@ -165,27 +102,13 @@ function MachineOpEntryPage() {
                 marginBottom: 14,
               }}
             >
-              <div
-                style={{
-                  background: 'var(--bg)',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                }}
-              >
+              <div style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
                 <div className="text3" style={{ fontSize: 9 }}>
                   JOB CARD
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
               </div>
-              <div
-                style={{
-                  background: 'var(--bg)',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                }}
-              >
+              <div style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
                 <div className="text3" style={{ fontSize: 9 }}>
                   OPERATION
                 </div>
@@ -193,14 +116,7 @@ function MachineOpEntryPage() {
                   Op{runningOpRow.opSeq}: {runningOpRow.operation}
                 </div>
               </div>
-              <div
-                style={{
-                  background: 'var(--bg)',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                }}
-              >
+              <div style={{ background: 'var(--bg)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
                 <div className="text3" style={{ fontSize: 9 }}>
                   AVAILABLE
                 </div>
@@ -246,12 +162,6 @@ interface PendingOpsSectionProps {
 
 function PendingOpsSection({ machineCode, machineName, ops, isLoading }: PendingOpsSectionProps) {
   const start = useStartOp();
-  // This quick-start board used to hard-code all three of date, time and shift,
-  // so every job started from here was stamped "today, now, day shift" whether
-  // or not that was true — and the date came from toISOString(), which is UTC:
-  // between 00:00 and 05:30 IST that recorded YESTERDAY. The API has always
-  // accepted all three from the client, so they are simply asked for now.
-  // One shared set of values for the section: pick once, then start any row.
   const [startDate, setStartDate] = useState(todayLocal());
   const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [shift, setShift] = useState<Shift>('day');
@@ -259,14 +169,7 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
     void start.mutateAsync({ jcOpId: opId, startDate, startTime, shift });
   }
   return (
-    <div
-      style={{
-        background: 'var(--bg3)',
-        border: '2px solid var(--border)',
-        borderRadius: 10,
-        padding: 16,
-      }}
-    >
+    <div style={{ background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 10, padding: 16 }}>
       <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)', marginBottom: 4 }}>
         {machineCode} — <span className="text3">⚪ Idle</span>
       </div>
@@ -282,17 +185,7 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>
             Pending Jobs for this Machine ({ops.length})
           </div>
-          {/* Applies to whichever row you press Start on. Seeded to now, so the
-              normal case is still a single click. */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-end',
-              flexWrap: 'wrap',
-              marginBottom: 10,
-            }}
-          >
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div className="form-grp" style={{ margin: 0 }}>
               <label className="form-label" htmlFor="mach-start-date">
                 Start Date

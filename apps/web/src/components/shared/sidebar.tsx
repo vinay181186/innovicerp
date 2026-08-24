@@ -117,8 +117,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥' },
           { to: '/issue-register', label: 'Item Issue Register', icon: '📋' },
           { to: '/tool-issues', label: 'Tool Issue Register', icon: '🔧' },
-          { to: '/party-grn', label: 'Party Material GRN', icon: '📥' },
-          { to: '/party-material-issues', label: 'Party Material Issue', icon: '📤' },
+          { to: '/party-grn', label: 'Party Material', icon: '📥' },
           { to: '/jw-returns', label: 'JW Dispatch', icon: '📦' },
           { to: '/jw-invoices', label: 'JW Invoice (Labour)', icon: '🧾' },
         ],
@@ -149,7 +148,6 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Entry',
         items: [
           { to: '/op-entry', label: 'Op Entry', icon: '✚' },
-          { to: '/op-entry/machines', label: 'Machine Op Entry', icon: '⚙' },
           { to: '/jc-ops', label: 'JC Operations', icon: '⨯' },
           { to: '/daily-report', label: 'Daily Report', icon: '📊' },
         ],
@@ -216,7 +214,6 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [
           { to: '/qc-processes', label: 'QC Process Master', icon: '⚙' },
-          { to: '/report-master', label: 'Report Master', icon: '📄' },
         ],
       },
     ],

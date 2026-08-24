@@ -31,6 +31,7 @@ import { usePartyGrnList } from '../api';
 import { CancelPartyGrnModal } from '../components/cancel-party-grn-modal';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { PartyGrnCard } from '../components/party-grn-card';
+import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 
 const PAGE_SIZE = 50;
 
@@ -47,6 +48,8 @@ function PartyGrnListPage(): React.JSX.Element {
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
+  // Receive | Issue tabs — Issue is the former standalone Party Material Issue screen.
+  const [tab, setTab] = useState<'receive' | 'issue'>('receive');
 
   const { data, isLoading, isError, error } = usePartyGrnList({
     search: search.trim() || undefined,
@@ -60,6 +63,35 @@ function PartyGrnListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
+          Issue screen). */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 12 }}>
+        {(['receive', 'issue'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'receive' ? '📥 Receive (GRN)' : '📤 Issue'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'issue' ? (
+        <PartyMaterialIssueView />
+      ) : (
+        <>
       {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           `#content` is the scroll container, so top:0 pins this to its padding
           box; the background must be opaque var(--bg) or cards show through as
@@ -247,6 +279,8 @@ function PartyGrnListPage(): React.JSX.Element {
       {cancelRow ? (
         <CancelPartyGrnModal row={cancelRow} onClose={() => setCancelRow(null)} />
       ) : null}
+        </>
+      )}
     </div>
   );
 }

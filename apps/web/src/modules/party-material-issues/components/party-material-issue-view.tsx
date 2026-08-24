@@ -1,34 +1,25 @@
-// Party Material Issue (ADR-079 — job-work cycle completion) — issues
-// client-supplied ("party") material to a Job Card for in-house machining.
-// Debits the separate party stock; never touches own-stock store_transactions.
+// Party Material Issue (ADR-079 — job-work cycle completion) — folded in as the
+// "Issue" tab of the Party Material screen (formerly standalone
+// /party-material-issues). Issues client-supplied ("party") material to a Job
+// Card for in-house machining; debits the separate party stock, never own-stock
+// store_transactions. Self-contained: its own hooks + inline modals.
 
-import {
-  type CreatePartyMaterialIssueInput,
-  type PartyMaterialIssueListItem,
-} from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { type CreatePartyMaterialIssueInput, type PartyMaterialIssueListItem } from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { authenticatedRoute } from '@/routes/_authenticated';
-import { useJobCardsList } from '../../job-cards/api';
-import { useJobWorkOrdersList } from '../../job-work-orders/api';
-import { usePartyMaterialsList } from '../../party-materials/api';
+import { useJobCardsList } from '@/modules/job-cards/api';
+import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
+import { usePartyMaterialsList } from '@/modules/party-materials/api';
 import {
   useCancelPartyMaterialIssue,
   useCreatePartyMaterialIssue,
   usePartyMaterialIssuesList,
 } from '../api';
 
-export const partyMaterialIssuesListRoute = createRoute({
-  getParentRoute: () => authenticatedRoute,
-  path: 'party-material-issues',
-  component: PartyMaterialIssuesListPage,
-});
-
-function PartyMaterialIssuesListPage(): React.JSX.Element {
+export function PartyMaterialIssueView(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
   const [search, setSearch] = useState('');
@@ -51,27 +42,20 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">📤 Party Material Issue</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search Issue No., JWSO, material…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 260, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
-            >
-              <Plus size={14} /> New Issue
-            </button>
-          ) : null}
-        </div>
+      <div className="mb-3 flex items-center justify-end gap-3">
+        <input
+          type="text"
+          className="innovic-input"
+          placeholder="🔍 Search Issue No., JWSO, material…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: 260, fontSize: 12 }}
+        />
+        {canWrite ? (
+          <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={14} /> New Issue
+          </button>
+        ) : null}
       </div>
 
       <div className="panel">
@@ -122,19 +106,14 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
                     <td className="text2" style={{ fontSize: 11 }}>
                       {it.issueDate}
                     </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ fontSize: 11, color: 'var(--purple)' }}
-                    >
+                    <td className="mono fw-700" style={{ fontSize: 11, color: 'var(--purple)' }}>
                       {it.jwCodeText ?? '—'}
                     </td>
                     <td className="mono text2" style={{ fontSize: 11 }}>
                       {it.jcCodeText ?? '—'}
                     </td>
                     <td className="fw-700">
-                      <span style={{ color: 'var(--purple)' }}>
-                        {it.partyMaterialCodeText ?? '—'}
-                      </span>
+                      <span style={{ color: 'var(--purple)' }}>{it.partyMaterialCodeText ?? '—'}</span>
                       {it.partyMaterialName ? (
                         <span className="text3" style={{ fontSize: 11 }}>
                           {' '}
@@ -142,10 +121,7 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
                         </span>
                       ) : null}
                     </td>
-                    <td
-                      className="td-ctr mono fw-700"
-                      style={{ fontSize: 14, color: 'var(--green)' }}
-                    >
+                    <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--green)' }}>
                       {it.qty}
                     </td>
                     <td
@@ -188,21 +164,15 @@ function PartyMaterialIssuesListPage(): React.JSX.Element {
       </div>
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6, padding: '0 4px' }}>
-        💡 Party Material Issue debits client-supplied (party) stock when it is issued to a Job
-        Card for in-house machining. Linked to JWSO No. / Job Card.
+        💡 Party Material Issue debits client-supplied (party) stock when it is issued to a Job Card
+        for in-house machining. Linked to JWSO No. / Job Card.
       </div>
 
       {showModal ? <NewPartyMaterialIssueModal onClose={() => setShowModal(false)} /> : null}
-      {cancelRow ? (
-        <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} />
-      ) : null}
+      {cancelRow ? <CancelIssueModal row={cancelRow} onClose={() => setCancelRow(null)} /> : null}
     </div>
   );
 }
-
-// ─── New Party Material Issue modal ─────────────────────────────────────────
-
-// ─── Cancel issue modal (ADR-103) ──────────────────────────────────────────
 
 function CancelIssueModal({
   row,
@@ -292,12 +262,7 @@ function CancelIssueModal({
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Keep it
           </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={cancelMut.isPending}
-            onClick={onConfirm}
-          >
+          <button type="button" className="btn btn-danger" disabled={cancelMut.isPending} onClick={onConfirm}>
             {cancelMut.isPending ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Cancelling…
@@ -332,11 +297,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   });
   const jwHeaders = jwQuery.data?.items ?? [];
 
-  const jcQuery = useJobCardsList({
-    search: jcSearch.trim() || undefined,
-    limit: 50,
-    offset: 0,
-  });
+  const jcQuery = useJobCardsList({ search: jcSearch.trim() || undefined, limit: 50, offset: 0 });
   const jcItems = jcQuery.data?.items ?? [];
 
   const { data: pmData, isFetching: pmFetching } = usePartyMaterialsList({
@@ -358,9 +319,6 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
       setErr('Select a JWSO');
       return;
     }
-    // ADR-103: the job card is what tells the system WHICH part the material
-    // went to, and the production gate reads exactly this. Without it the
-    // material is invisible to the gate and the operator stays blocked.
     if (!jobCardId) {
       setErr('Select the Job Card this material is for — work cannot start without it.');
       return;
@@ -435,12 +393,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               placeholder="0"
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                border: '2px solid var(--green)',
-                borderRadius: 4,
-              }}
+              style={{ fontSize: 14, fontWeight: 700, border: '2px solid var(--green)', borderRadius: 4 }}
             />
           </Field>
 
@@ -453,11 +406,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
                 placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
+                options={jwHeaders.map((j) => ({ id: j.jwId, code: j.code, name: j.customerName ?? '' }))}
               />
             </Field>
           </div>
@@ -471,11 +420,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onSearch={setJcSearch}
                 loading={jcQuery.isFetching}
                 placeholder="🔍 Select Job Card — type number…"
-                options={jcItems.map((jc) => ({
-                  id: jc.id,
-                  code: jc.code,
-                  name: jc.itemName,
-                }))}
+                options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
               />
             </Field>
           </div>
@@ -489,19 +434,13 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onSearch={setPmSearch}
                 loading={pmFetching}
                 placeholder="🔍 Select party material — type code or name…"
-                options={pmAll.map((p) => ({
-                  id: p.id,
-                  code: p.code,
-                  name: `${p.name} · stock ${p.stockQty}`,
-                }))}
+                options={pmAll.map((p) => ({ id: p.id, code: p.code, name: `${p.name} · stock ${p.stockQty}` }))}
               />
             </Field>
             {selectedPm ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 Available party stock:{' '}
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>
-                  {selectedPm.stockQty}
-                </span>{' '}
+                <span style={{ color: 'var(--green)', fontWeight: 700 }}>{selectedPm.stockQty}</span>{' '}
                 {selectedPm.uom}
               </div>
             ) : null}
@@ -539,12 +478,7 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={createMut.isPending}
-            onClick={onSave}
-          >
+          <button type="button" className="btn btn-primary" disabled={createMut.isPending} onClick={onSave}>
             {createMut.isPending ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
@@ -559,23 +493,12 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
+function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div>
       <div
         className="text3"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: 4,
-        }}
+        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}
       >
         {label}
       </div>

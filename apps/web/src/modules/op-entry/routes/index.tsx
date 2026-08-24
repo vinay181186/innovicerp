@@ -14,6 +14,7 @@ import {
   useRunningOps,
 } from '../api';
 import { JcOpsTable } from '../components/jc-ops-table';
+import { MachineOpEntryView } from '../components/machine-op-entry-view';
 import { MachineOutputPanel } from '../components/machine-output-panel';
 import { OpEntryForm } from '../components/op-entry-form';
 import { OpLogHistory } from '../components/op-log-history';
@@ -26,6 +27,9 @@ const searchSchema = z.object({
   // set this intent. Optional; absent = 'complete' (legacy default L5210),
   // which preserves the current combined form behaviour.
   mode: z.enum(['start', 'complete']).optional(),
+  // By Job Card / By Machine switch — 'machine' is the former standalone
+  // /op-entry/machines screen. Absent = 'jc' (the default JC-wise entry).
+  view: z.enum(['machine']).optional(),
 });
 
 export const opEntryRoute = createRoute({
@@ -134,10 +138,46 @@ function OpEntryPage() {
     });
   }
 
+  const view = search.view ?? 'jc';
+
   return (
     <div>
       <div className="section-hdr">Operation Entry</div>
 
+      {/* By Job Card | By Machine switch (By Machine is the former standalone
+          Machine Op Entry screen). */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+        {(['jc', 'machine'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, view: v === 'jc' ? undefined : 'machine' }),
+                replace: true,
+              })
+            }
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: view === v ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: view === v ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {v === 'jc' ? '📋 By Job Card' : '⚙ By Machine'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'machine' ? (
+        <MachineOpEntryView />
+      ) : (
+        <>
       <div className="panel" style={{ marginBottom: 16 }}>
         <div className="panel-body">
           <form
@@ -289,6 +329,8 @@ function OpEntryPage() {
         <div className="panel">
           <div className="empty-state">Enter a job card number to load its ops.</div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

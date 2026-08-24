@@ -25,6 +25,7 @@ import { SortableHead } from '@/components/shared/sortable-head';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
+import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
 
 const PAGE_SIZE = 25;
 
@@ -32,6 +33,9 @@ const listSearchSchema = z.object({
   search: z.string().optional(),
   isActive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().positive().default(1),
+  // Second tab: the Report / Document Master, folded in from the former
+  // standalone /report-master screen.
+  tab: z.enum(['reports']).optional(),
 });
 
 export const qcProcessesListRoute = createRoute({
@@ -180,9 +184,44 @@ function QcProcessesListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+  const tab = search.tab ?? 'processes';
 
   return (
     <div>
+      {/* QC Processes | Report Types tabs (Report Types is the former standalone
+          Report / Document Master screen). */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+        {(['processes', 'reports'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() =>
+              void navigate({
+                search: (prev) => ({ ...prev, tab: t === 'processes' ? undefined : 'reports' }),
+                replace: true,
+              })
+            }
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--green)' : '2px solid transparent',
+              color: tab === t ? 'var(--green)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'processes' ? '⚙ QC Processes' : '📄 Report Types'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reports' ? (
+        <ReportTypesPanel />
+      ) : (
+        <>
       <div
         style={{
           display: 'flex',
@@ -358,6 +397,8 @@ function QcProcessesListPage(): React.JSX.Element {
           </button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
