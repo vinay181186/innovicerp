@@ -120,12 +120,19 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   });
 
   const onValid = async (values: FormValues): Promise<void> => {
+    // Send BOTH the code and the master id whenever the cascade resolved one.
+    //
+    // This used to be an either/or: a non-empty code sent `itemCodeText` ALONE
+    // and dropped `itemId`, so every hand-raised PR was stored with no link to
+    // the Item Master even when the code matched it exactly. That null was then
+    // copied PR -> PO line -> DC line -> GRN line, and creditGrnQcStock returns
+    // early on `!itemId` — so QC accept credited nothing and the stock never
+    // moved. Only system-raised OSP PRs (which set itemId directly) worked.
     const trimmedItemCode = values.itemCodeText?.trim();
-    const itemRefs: { itemId?: string; itemCodeText?: string } = trimmedItemCode
-      ? { itemCodeText: trimmedItemCode }
-      : values.itemId
-        ? { itemId: values.itemId }
-        : {};
+    const itemRefs: { itemId?: string; itemCodeText?: string } = {
+      ...(values.itemId ? { itemId: values.itemId } : {}),
+      ...(trimmedItemCode ? { itemCodeText: trimmedItemCode } : {}),
+    };
 
     const payload = {
       prDate: values.prDate,

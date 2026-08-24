@@ -687,13 +687,26 @@ export async function insertGrnForOspReceipt(
     })
     .returning();
   const header = inserted[0]!;
-  const lineValues = args.lines.map((l, i) => ({
+  // Resolve free-text item codes to the Item Master, exactly as the manual GRN
+  // create path does via resolveLineItemRefs. Without this the auto-GRN copied
+  // whatever the DC line held, and a DC line sourced from a PO line that was
+  // never linked to the master carried a bare code. A GRN line with no item_id
+  // can never credit stock — creditGrnQcStock returns early on `!itemId` — so
+  // QC accept silently moved nothing (IN-GRN-00002 / IN-GRN-00003).
+  const ospCodes = args.lines
+    .filter((l) => !l.itemId && l.itemCodeText)
+    .map((l) => l.itemCodeText!.trim());
+  const ospResolved = await resolveItemCodes(tx, ospCodes, companyId);
+  const lineValues = args.lines.map((l, i) => {
+    const code = l.itemCodeText?.trim();
+    const resolvedId = l.itemId ?? (code ? (ospResolved.get(code) ?? null) : null);
+    return {
     companyId,
     goodsReceiptNoteId: header.id,
     lineNo: i + 1,
     purchaseOrderLineId: l.purchaseOrderLineId,
-    itemId: l.itemId,
-    itemCodeText: l.itemCodeText,
+    itemId: resolvedId,
+    itemCodeText: resolvedId ? null : (code ?? null),
     itemName: l.itemName,
     receivedQty: l.receivedQty,
     qcStatus: 'pending' as const,
@@ -701,7 +714,8 @@ export async function insertGrnForOspReceipt(
     qcRejectedQty: 0,
     createdBy: user.id,
     updatedBy: user.id,
-  }));
+    };
+  });
   const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
   // Recompute PO-line received qty / PO status; no stock (all lines pending).
   await runCascades(tx, companyId, user.id, insertedLines, []);

@@ -1008,14 +1008,25 @@ export async function createPurchaseOrderFromPr(
 
     // Insert single PO line from PR fields.
     const itemNameForLine = pr.itemName ?? pr.itemCodeText ?? 'Item';
+    // A PR raised before the item-link fix (or by any caller that sent only the
+    // typed code) carries item_code_text with a null item_id. Re-resolve here so
+    // the PO line is linked even when its source PR is not — item_id is what the
+    // GRN stock credit keys on.
+    const prItemId =
+      pr.itemId ??
+      (pr.itemCodeText
+        ? ((await resolveItemCodes(tx, [pr.itemCodeText.trim()], companyId)).get(
+            pr.itemCodeText.trim(),
+          ) ?? null)
+        : null);
     const insertedLines = await tx
       .insert(purchaseOrderLines)
       .values({
         companyId,
         purchaseOrderId: header.id,
         lineNo: 1,
-        itemId: pr.itemId,
-        itemCodeText: pr.itemCodeText,
+        itemId: prItemId,
+        itemCodeText: prItemId ? null : pr.itemCodeText,
         itemName: itemNameForLine,
         qty: pr.qty,
         rate: pr.estCost,
@@ -1468,13 +1479,24 @@ export async function createPurchaseOrderFromPrBatch(
       .returning();
     const header = insertedPos[0]!;
 
+    // Same re-resolve as the single convert: a PR carrying only a typed code
+    // gets linked to the Item Master here, so the PO line can credit stock later.
+    const batchResolved = await resolveItemCodes(
+      tx,
+      sortedPrs.filter((p) => !p.itemId && p.itemCodeText).map((p) => p.itemCodeText!.trim()),
+      companyId,
+    );
+
     // Insert one line per PR. Apply rate override if provided.
-    const lineRows = sortedPrs.map((pr, i) => ({
+    const lineRows = sortedPrs.map((pr, i) => {
+      const prItemId =
+        pr.itemId ?? (pr.itemCodeText ? (batchResolved.get(pr.itemCodeText.trim()) ?? null) : null);
+      return {
       companyId,
       purchaseOrderId: header.id,
       lineNo: i + 1,
-      itemId: pr.itemId,
-      itemCodeText: pr.itemCodeText,
+      itemId: prItemId,
+      itemCodeText: prItemId ? null : pr.itemCodeText,
       itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
       qty: pr.qty,
       rate: String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost)),
@@ -1485,7 +1507,8 @@ export async function createPurchaseOrderFromPrBatch(
       lineRemarks: pr.operation ?? null,
       createdBy: user.id,
       updatedBy: user.id,
-    }));
+      };
+    });
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
 
     // Stamp every PR + advance its linked outsource jc_op. lineRows/insertedLines

@@ -92,6 +92,31 @@ async function assertItemExists(
   }
 }
 
+/**
+ * Resolve a free-text item code to its Item Master row.
+ *
+ * A PR may legitimately be raised for something the master has never heard of
+ * (the DB CHECK accepts a bare code), so a miss is NOT an error — it just
+ * leaves item_id null. But when the code DOES match a master item, the link
+ * must be stamped: item_id is what the whole downstream chain keys on, and a
+ * GRN line without it can never credit stock (creditGrnQcStock returns early
+ * on `!itemId`). Server-side so every caller is covered, not just the PR form.
+ */
+async function resolveItemIdByCode(
+  tx: DbTransaction,
+  code: string,
+  companyId: string,
+): Promise<string | null> {
+  const trimmed = code.trim();
+  if (!trimmed) return null;
+  const rows = await tx
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.code, trimmed), eq(items.companyId, companyId), isNull(items.deletedAt)))
+    .limit(1);
+  return rows[0]?.id ?? null;
+}
+
 async function assertJcOpExists(
   tx: DbTransaction,
   jcOpId: string,
@@ -466,6 +491,14 @@ export async function createPurchaseRequest(
     if (input.sourceJcOpId) await assertJcOpExists(tx, input.sourceJcOpId, companyId);
     if (input.sourceSoLineId) await assertSoLineExists(tx, input.sourceSoLineId, companyId);
 
+    // Back-stop for a caller that sends only the typed code: if it names a real
+    // master item, stamp the link. An off-master code still saves as free text.
+    const resolvedItemId =
+      input.itemId ??
+      (input.itemCodeText
+        ? await resolveItemIdByCode(tx, input.itemCodeText, companyId)
+        : null);
+
     const inserted = await tx
       .insert(purchaseRequests)
       .values({
@@ -476,7 +509,7 @@ export async function createPurchaseRequest(
         prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
         vendorId: input.vendorId ?? null,
         vendorCodeText: input.vendorCodeText ?? null,
-        itemId: input.itemId ?? null,
+        itemId: resolvedItemId,
         itemCodeText: input.itemCodeText ?? null,
         itemName: input.itemName ?? null,
         qty: input.qty,
@@ -584,7 +617,14 @@ export async function updatePurchaseRequest(
     if (input.vendorId !== undefined) updates['vendorId'] = input.vendorId ?? null;
     if (input.vendorCodeText !== undefined)
       updates['vendorCodeText'] = input.vendorCodeText ?? null;
-    if (input.itemId !== undefined) updates['itemId'] = input.itemId ?? null;
+    // Same back-stop on edit: a changed code that names a real master item
+    // re-links the PR instead of leaving it as bare text.
+    if (input.itemId !== undefined) {
+      updates['itemId'] = input.itemId ?? null;
+    } else if (input.itemCodeText !== undefined && input.itemCodeText !== null) {
+      const reResolved = await resolveItemIdByCode(tx, input.itemCodeText, companyId);
+      if (reResolved) updates['itemId'] = reResolved;
+    }
     if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
     if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
     if (input.qty !== undefined) updates['qty'] = input.qty;
