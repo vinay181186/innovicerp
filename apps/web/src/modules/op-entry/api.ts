@@ -33,7 +33,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { jobCardsKeys } from '@/modules/job-cards/api';
@@ -319,12 +319,17 @@ export function useStopOp() {
 
 // Subscribe to op_log INSERTs filtered by jc_op_id; invalidate the relevant
 // queries when the server's INSERT propagates (reconciles optimistic writes).
+//
+// The topic carries a per-instance suffix — see the note on
+// useRealtimeRunningOps for why a fixed topic makes the hook unsafe to call
+// from two mounted components at once.
 export function useRealtimeOpLog(jcOpId: string | undefined): void {
   const qc = useQueryClient();
+  const topicId = useChannelTopicId();
   useEffect(() => {
     if (!jcOpId) return;
     const channel = supabase
-      .channel(`op-log:${jcOpId}`)
+      .channel(`op-log:${jcOpId}:${topicId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'op_log', filter: `jc_op_id=eq.${jcOpId}` },
@@ -339,7 +344,28 @@ export function useRealtimeOpLog(jcOpId: string | undefined): void {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [jcOpId, qc]);
+  }, [jcOpId, qc, topicId]);
+}
+
+/** A per-component-instance suffix for a Realtime channel topic.
+ *
+ *  supabase.channel(topic) returns the SAME channel object for a topic that is
+ *  already open. Once that channel has been .subscribe()d, adding another
+ *  postgres_changes callback to it throws:
+ *
+ *    cannot add `postgres_changes` callbacks for realtime:running-ops
+ *    after `subscribe()`
+ *
+ *  which killed the whole page ("Something went wrong!"). It surfaced when Op
+ *  Entry's "By Machine" view was folded into the Op Entry page: the page and
+ *  the view both call useRealtimeRunningOps, so two mounted components asked
+ *  for the one fixed topic. useId gives each caller its own topic, so the hook
+ *  is safe to call from as many components as need it. React 18 wraps useId
+ *  output in colons, which would read oddly inside a colon-delimited topic, so
+ *  they are stripped.
+ */
+function useChannelTopicId(): string {
+  return useId().replaceAll(':', '');
 }
 
 // Subscribe to running_ops changes for the company. The subscription itself
@@ -347,9 +373,10 @@ export function useRealtimeOpLog(jcOpId: string | undefined): void {
 // Realtime applies RLS to the row stream).
 export function useRealtimeRunningOps(): void {
   const qc = useQueryClient();
+  const topicId = useChannelTopicId();
   useEffect(() => {
     const channel = supabase
-      .channel('running-ops')
+      .channel(`running-ops:${topicId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'running_ops' }, () => {
         void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'running'] });
         void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
@@ -358,5 +385,5 @@ export function useRealtimeRunningOps(): void {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [qc]);
+  }, [qc, topicId]);
 }
