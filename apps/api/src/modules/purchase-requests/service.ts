@@ -214,7 +214,8 @@ function toPurchaseRequest(row: typeof purchaseRequests.$inferSelect): PurchaseR
 // estimated cost; it is nulled for price-restricted viewers on both list and
 // detail.
 function hidePrMoney<T extends { estCost: string | null }>(r: T): T {
-  return { ...r, estCost: null };
+  // Also STATE it: the reader must not have to infer 'hidden' from the null.
+  return { ...r, estCost: null, priceVisible: false };
 }
 
 export async function listPurchaseRequests(

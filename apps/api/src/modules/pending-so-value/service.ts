@@ -186,6 +186,7 @@ export async function getPendingSoValue(
     const totals = sumTotals(mapped);
 
     return {
+      priceVisible: showMoney,
       generatedAt: new Date().toISOString(),
       filter,
       rows: showMoney ? mapped : mapped.map(hidePsvRowMoney),

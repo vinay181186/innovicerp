@@ -44,7 +44,9 @@ function PendingSoValuePage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls every value on this report, so
   // the KPI strip and the six value columns are dropped.
-  const priceHidden = !!data && data.totals.orderValue == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !!data && !data.priceVisible;
 
   return (
     <div>

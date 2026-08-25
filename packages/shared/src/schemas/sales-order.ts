@@ -114,6 +114,14 @@ export type SalesOrder = z.infer<typeof salesOrderSchema>;
 /** Detail response: header + ordered lines (open lines first, then by lineNo)
  *  + delivery-schedule milestones (ordered by lotNo). */
 export const salesOrderDetailSchema = salesOrderSchema.extend({
+  /** Told, not inferred. `false` means the server stripped money it may not
+   *  send; absent means money is present. Clients must branch on this rather
+   *  than probing a money field for null — a null money field also means "no
+   *  value yet", and probing it hid the money columns from users fully
+   *  entitled to see them. Optional because the write-back paths (create /
+   *  update / approve) return this shape without passing the money gate, and
+   *  they always carry real figures. */
+  priceVisible: z.boolean().optional(),
   lines: z.array(salesOrderLineSchema),
   milestones: z.array(soMilestoneSchema).default([]),
   // BOM master document NUMBER (bom_masters.bom_no) resolved from bomMasterId,

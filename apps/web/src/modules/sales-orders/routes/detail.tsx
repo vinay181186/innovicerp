@@ -78,7 +78,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line
   // rate together, so a null GST % is the single signal to drop ₹ here.
-  const priceHidden = detail.gstPercent == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = detail.priceVisible === false;
   const totalValue = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (

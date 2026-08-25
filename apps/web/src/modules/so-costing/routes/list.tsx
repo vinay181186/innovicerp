@@ -45,7 +45,9 @@ function SoCostingListPage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls every cost, so the 5 value
   // columns are dropped (Cost Center stays).
-  const priceHidden = rows.some((r) => r.soValue == null);
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = data ? !data.priceVisible : false;
 
   if (isLoading) {
     return (

@@ -77,7 +77,9 @@ function SoCostingDetailPage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls every cost, so the cost stats,
   // the Cost column and the per-line/op cost breakdown are dropped.
-  const priceHidden = data.grandTotal == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !data.priceVisible;
 
   return (
     <div>

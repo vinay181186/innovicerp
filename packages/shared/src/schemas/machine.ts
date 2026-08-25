@@ -49,6 +49,11 @@ export type ListMachinesQuery = z.infer<typeof listMachinesQuerySchema>;
 
 export interface ListMachinesResponse {
   machines: Machine[];
+  /** Told, not inferred. The server strips money it may not send and states it
+   *  here, so a client never guesses from a null value — a null money field
+   *  also means "no value yet", and probing it hid the money columns from
+   *  users fully entitled to see them. */
+  priceVisible: boolean;
   total: number;
   limit: number;
   offset: number;

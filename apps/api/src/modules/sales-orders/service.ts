@@ -211,7 +211,8 @@ function gstToString(g: number): string {
 // before they leave the server — list, detail, print and export all read from
 // these, so nulling here hides money everywhere at once.
 function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
-  return { ...h, gstPercent: null };
+  // Also STATE it: the reader must not have to infer 'hidden' from the null.
+  return { ...h, gstPercent: null, priceVisible: false };
 }
 
 function hideSoLineMoney<T extends { rate: string | null }>(l: T): T {

@@ -74,7 +74,9 @@ function StockValuationPage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls rate/value/grandTotal, so the
   // Rate + Stock Value columns, the value tiles and the totals are dropped.
-  const priceHidden = data.grandTotal == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !data.priceVisible;
   const catKeys = ['all', ...data.categories.map((c) => c.category)];
   const catCount = (k: string): number =>
     k === 'all' ? data.grandItems : (data.categories.find((c) => c.category === k)?.count ?? 0);

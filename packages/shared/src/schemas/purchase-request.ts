@@ -63,6 +63,14 @@ export type PurchaseRequest = z.infer<typeof purchaseRequestSchema>;
  *  fall back to `vendorCodeText`, which on an OSP-generated PR is the
  *  `(vendor TBD)` sentinel — so a vendor picked later never appears. */
 export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
+  /** Told, not inferred. `false` means the server stripped money it may not
+   *  send; absent means money is present. Clients must branch on this rather
+   *  than probing a money field for null — a null money field also means "no
+   *  value yet", and probing it hid the money columns from users fully
+   *  entitled to see them. Optional because the write-back paths (create /
+   *  update / approve) return this shape without passing the money gate, and
+   *  they always carry real figures. */
+  priceVisible: z.boolean().optional(),
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(), // resolved from vendors master when vendorId set
   /** Address line + city + state + pincode, comma-joined, blanks skipped.
@@ -83,6 +91,9 @@ export type PurchaseRequestDetail = z.infer<typeof purchaseRequestDetailSchema>;
  *  source JC op (jc code + op_seq + operation) when set. Mirrors the legacy
  *  PR list columns (`renderPRList()` in the legacy HTML). */
 export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
+  /** Told, not inferred. `false` means the server stripped money it may not
+   *  send; absent means money is present. See the note on the detail shape. */
+  priceVisible: z.boolean().optional(),
   vendorName: z.string().nullable(),
   itemCode: z.string().nullable(), // resolved from items master when itemId set
   sourceJcCode: z.string().nullable(),

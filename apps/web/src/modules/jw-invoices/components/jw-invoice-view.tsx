@@ -40,7 +40,9 @@ export function JwInvoiceView(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls the amounts, so the Rate /
   // Taxable / GST% / GST Amt / Total columns are dropped for them.
-  const priceHidden = items.some((r) => r.totalAmount == null);
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = data ? !data.priceVisible : false;
 
   return (
     <div>

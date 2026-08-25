@@ -317,7 +317,8 @@ function dateLike(v: unknown): string {
 // money (header aggregates only), so only the detail's line rate + header GST %
 // need nulling.
 function hideJwHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
-  return { ...h, gstPercent: null };
+  // Also STATE it: the reader must not have to infer 'hidden' from the null.
+  return { ...h, gstPercent: null, priceVisible: false };
 }
 
 function hideJwLineMoney<T extends { rate: string | null }>(l: T): T {

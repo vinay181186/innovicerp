@@ -99,7 +99,9 @@ function MachinesListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   // Money hidden for L1 Viewers: the API nulls hourRate, so the ₹/hr column is
   // dropped entirely for them.
-  const priceHidden = (data?.machines ?? []).some((m) => m.hourRate == null);
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = data ? !data.priceVisible : false;
 
   // Header/sort config only — rows are rendered as plain <tr>/<td> below so
   // legacy's cell classes (td-ctr, td-code, mono…) land on the <td> itself.

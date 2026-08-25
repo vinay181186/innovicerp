@@ -186,6 +186,7 @@ export async function listPlans(
 function hidePlanMoney(p: PlanDetail): PlanDetail {
   return {
     ...p,
+    priceVisible: false,
     dpCost: null,
     foRate: null,
     ops: p.ops.map((o) => ({ ...o, outsourceCost: null })),
@@ -221,6 +222,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       itemCode: row.itemCode ?? null,
       itemName: row.itemName ?? null,
       ops: opRows.map(toPlanOp),
+      priceVisible: showMoney,
     };
     return showMoney ? detail : hidePlanMoney(detail);
   });
@@ -1435,6 +1437,10 @@ async function getPlanInTx(
     itemCode: row.itemCode ?? null,
     itemName: row.itemName ?? null,
     ops: opRows.map(toPlanOp),
+    // Write-back shape: the caller re-applies the money gate before returning
+    // (see hidePlanMoney, which sets this false). Default true so the field is
+    // always present and the gate stays the single decision point.
+    priceVisible: true,
   };
 }
 

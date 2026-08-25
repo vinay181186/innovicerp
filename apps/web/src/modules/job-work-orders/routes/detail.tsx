@@ -73,7 +73,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const partyReceivedTotal = detail.partyReceivedQty;
   // Money hidden for L1 Viewers: the API nulls the JWSO's GST % and line rates
   // together, so a null GST % is the single signal to drop ₹ here.
-  const priceHidden = detail.gstPercent == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = detail.priceVisible === false;
   const lineValueTotal = detail.lines.reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
 
   return (

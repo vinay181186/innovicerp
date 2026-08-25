@@ -25,6 +25,11 @@ export type SoCostingRow = z.infer<typeof soCostingRowSchema>;
 
 export const listSoCostingResponseSchema = z.object({
   rows: z.array(soCostingRowSchema),
+  /** Told, not inferred. The server strips money it may not send and states it
+   *  here, so a client never has to guess from a null value. A null money field
+   *  also means "no value yet", and probing it made one unpriced row hide the
+   *  money columns from a user fully entitled to see them. */
+  priceVisible: z.boolean(),
 });
 export type ListSoCostingResponse = z.infer<typeof listSoCostingResponseSchema>;
 
@@ -74,5 +79,10 @@ export const soCostingDetailSchema = z.object({
   grandMachineTime: z.number().nonnegative().nullable(),
   grandTotal: z.number().nonnegative().nullable(),
   lines: z.array(soCostingLineSchema),
+  /** Told, not inferred. The server strips money it may not send and states it
+   *  here, so a client never has to guess from a null value. A null money field
+   *  also means "no value yet", and probing it made one unpriced row hide the
+   *  money columns from a user fully entitled to see them. */
+  priceVisible: z.boolean(),
 });
 export type SoCostingDetail = z.infer<typeof soCostingDetailSchema>;

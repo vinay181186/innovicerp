@@ -228,6 +228,8 @@ function hidePoHeaderMoney<
 >(h: T): T {
   return {
     ...h,
+    // Also STATE it: the reader must not have to infer 'hidden' from the nulls.
+    priceVisible: false,
     subtotal: null,
     taxAmount: null,
     totalAmount: null,

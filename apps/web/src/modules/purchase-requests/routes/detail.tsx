@@ -278,7 +278,9 @@ function OtherDetail(props: { detail: PurchaseRequestDetail }): React.JSX.Elemen
   const { detail } = props;
   // Money hidden for L1 Viewers: the API nulls estCost, so the cost fields are
   // dropped entirely (not shown as '—').
-  const priceHidden = detail.estCost == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = detail.priceVisible === false;
   const estCostNum = Number(detail.estCost ?? 0);
   const qtyNum = Number(detail.qty);
   const total = estCostNum * qtyNum;

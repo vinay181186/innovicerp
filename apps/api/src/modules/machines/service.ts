@@ -67,6 +67,7 @@ export async function listMachines(
     const mapped = rows.map(toMachine);
     return {
       machines: showMoney ? mapped : mapped.map(hideMachineMoney),
+      priceVisible: showMoney,
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,

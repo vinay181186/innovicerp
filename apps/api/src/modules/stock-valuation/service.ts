@@ -111,6 +111,7 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
 
     if (!showMoney) {
       return {
+        priceVisible: false,
         rows: rows.map((r) => ({ ...r, rate: null, value: null })),
         categories: categories.map((c) => ({ ...c, value: null })),
         grandTotal: null,
@@ -120,6 +121,7 @@ export async function getStockValuation(user: AuthContext): Promise<StockValuati
     }
 
     return {
+      priceVisible: true,
       rows,
       categories,
       grandTotal,

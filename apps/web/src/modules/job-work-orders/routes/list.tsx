@@ -306,7 +306,9 @@ function JwExpandedPanel({ jwId, canWrite }: { jwId: string; canWrite: boolean }
 function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: boolean }): React.JSX.Element {
   // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
   // the Rate column is dropped here too.
-  const priceHidden = jw.gstPercent == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = jw.priceVisible === false;
   const cols = (canWrite ? 13 : 12) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>

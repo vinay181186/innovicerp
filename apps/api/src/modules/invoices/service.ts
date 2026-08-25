@@ -98,6 +98,8 @@ function hideInvoiceRowMoney<
 function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
   return {
     ...hideInvoiceRowMoney(d),
+    // Also STATE it: the reader must not have to infer 'hidden' from the null.
+    priceVisible: false,
     lines: d.lines.map((l) => ({ ...l, rate: null, lineAmount: null })),
     payments: d.payments.map((p) => ({ ...p, amount: null })),
   };
@@ -139,6 +141,7 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
 
     if (!showMoney) {
       return {
+        priceVisible: false,
         invoices: list.map(hideInvoiceRowMoney),
         summary: {
           ...summary,
@@ -149,7 +152,7 @@ export async function listInvoices(user: AuthContext): Promise<ListInvoicesRespo
         },
       };
     }
-    return { invoices: list, summary };
+    return { invoices: list, summary, priceVisible: true };
   });
 }
 

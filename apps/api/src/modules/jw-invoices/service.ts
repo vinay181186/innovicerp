@@ -216,6 +216,7 @@ export async function listJwInvoices(user: AuthContext): Promise<ListJwInvoicesR
         return showMoney ? item : hideJwInvoiceMoney(item);
       }),
       total: rows.length,
+      priceVisible: showMoney,
     };
   });
 }

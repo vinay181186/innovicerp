@@ -105,7 +105,9 @@ function ScDashboardPage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls every value on the dashboard, so
   // the money KPI tiles and the value columns are dropped.
-  const priceHidden = data.summary.totalOrderVal == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !data.priceVisible;
   const grandOrderTotal = data.poSummary.reduce((s, g) => s + (g.grandTotal ?? 0), 0);
 
   return (

@@ -349,6 +349,7 @@ export async function getScDashboard(user: AuthContext): Promise<ScDashboardResp
       todayGrn: Number(g.today_c) || 0,
     };
     return {
+      priceVisible: showMoney,
       summary,
       byVendor: showMoney
         ? byVendor

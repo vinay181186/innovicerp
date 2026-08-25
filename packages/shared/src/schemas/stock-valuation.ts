@@ -37,5 +37,10 @@ export const stockValuationResponseSchema = z.object({
 
   grandItems: z.number().int().nonnegative(),
   grandStockItems: z.number().int().nonnegative(),
+  /** Told, not inferred. The server strips money it may not send and states it
+   *  here, so a client never has to guess from a null value. A null money field
+   *  also means "no value yet", and probing it made one unpriced row hide the
+   *  money columns from a user fully entitled to see them. */
+  priceVisible: z.boolean(),
 });
 export type StockValuationResponse = z.infer<typeof stockValuationResponseSchema>;

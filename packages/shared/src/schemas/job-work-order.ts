@@ -87,6 +87,14 @@ export const jobWorkOrderSchema = z.object({
 export type JobWorkOrder = z.infer<typeof jobWorkOrderSchema>;
 
 export const jobWorkOrderDetailSchema = jobWorkOrderSchema.extend({
+  /** Told, not inferred. `false` means the server stripped money it may not
+   *  send; absent means money is present. Clients must branch on this rather
+   *  than probing a money field for null — a null money field also means "no
+   *  value yet", and probing it hid the money columns from users fully
+   *  entitled to see them. Optional because the write-back paths (create /
+   *  update / approve) return this shape without passing the money gate, and
+   *  they always carry real figures. */
+  priceVisible: z.boolean().optional(),
   /** Actual client-material received = Σ party_grn_lines.received_qty across this
    *  JWSO's non-deleted Party GRNs. Source of truth for the material-received
    *  badge. */
@@ -102,6 +110,9 @@ export type JobWorkOrderDetail = z.infer<typeof jobWorkOrderDetailSchema>;
  *  partyReceivedQty (Σ Party GRN receipts) vs clientMaterialQty;
  *  earliestDueDate = MIN(line.due). */
 export const jobWorkOrderListItemSchema = z.object({
+  /** Told, not inferred. `false` means the server stripped money it may not
+   *  send; absent means money is present. See the note on the detail shape. */
+  priceVisible: z.boolean().optional(),
   jwId: z.string().uuid(),
   code: z.string(),
   jwDate: z.string(),

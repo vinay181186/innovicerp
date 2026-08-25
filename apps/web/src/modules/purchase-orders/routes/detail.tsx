@@ -194,7 +194,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const receivedQty = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   // Money is hidden for L1 Viewers: the API nulls the header amount and every
   // line rate together, so a null total is the single signal to blank ₹ here.
-  const priceHidden = detail.totalAmount == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = detail.priceVisible === false;
   const totalValue = detail.lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
 
   return (

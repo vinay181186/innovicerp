@@ -70,7 +70,9 @@ function PlanDetailPage(): React.JSX.Element {
 
   // Money hidden for L1 Viewers: the API nulls die cost / rate / op outsource
   // cost together, so the OSP cost column and the cost/rate fields are dropped.
-  const priceHidden = plan.ops.some((o) => o.outsourceCost == null);
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !plan.priceVisible;
   const isEditable = plan.planStatus === 'in_planning' || plan.planStatus === 'planned';
   const canFinalize = plan.planStatus === 'in_planning';
   const canExecute = plan.planStatus === 'planned';

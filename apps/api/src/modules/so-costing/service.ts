@@ -172,7 +172,7 @@ export async function listSoCosting(user: AuthContext): Promise<ListSoCostingRes
       };
     });
 
-    return { rows: showMoney ? rows : rows.map(hideCostingRowMoney) };
+    return { rows: showMoney ? rows : rows.map(hideCostingRowMoney), priceVisible: showMoney };
   });
 }
 
@@ -344,6 +344,7 @@ export async function getSoCostingDetail(soId: string, user: AuthContext): Promi
     });
 
     const detail: SoCostingDetail = {
+      priceVisible: showMoney,
       soId: head.so_id,
       soNo: head.so_no,
       customer: head.customer,

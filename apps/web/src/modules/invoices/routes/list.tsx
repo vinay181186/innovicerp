@@ -75,7 +75,9 @@ function InvoiceListPage(): React.JSX.Element {
   const s = data.summary;
   // Money hidden for L1 Viewers: the API nulls the summary + row amounts, so the
   // money tiles and the Amount/Paid/Balance columns are dropped (counts stay).
-  const priceHidden = s.totalInvoiced == null;
+  // Told by the server, not inferred from a null money field: a null also means
+  // "no value yet", so probing it hid money from users entitled to see it.
+  const priceHidden = !data.priceVisible;
   // Legacy L21139-21145: money tiles 18px, count tiles 20px, OVERDUE carries an
   // "N inv" sub-line (server-supplied count — never computed here).
   const cards: { label: string; value: string; color: string; size: number; sub?: string }[] = [
