@@ -3,8 +3,8 @@
 // operation flow + operations table) and differ only by editable fields.
 // Write-gated to admin/manager.
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Eye } from 'lucide-react';
-import { useSession } from '@/lib/session';
+import { ArrowLeft, Eye, Loader2 } from 'lucide-react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
@@ -17,16 +17,27 @@ export const jobCardEditRoute = createRoute({
 
 function JobCardEditPage(): React.JSX.Element {
   const { id } = jobCardEditRoute.useParams();
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (jc_create sits in Production). Editing a saved
+  // Job Card needs `edit` (L3 Editor and up). URL-reachable, so it gates itself.
+  const { data: eff, isLoading: accessLoading } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
   // Shares the JcStatusContent query cache (same key) — no extra request.
   const { data: jc } = useJobCard(canWrite ? id : undefined);
+
+  if (accessLoading) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
 
   if (!canWrite) {
     return (
       <div className="panel">
         <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ Admin / manager access required to edit a job card.
+          ⛔ You do not have edit access to Job Cards. Ask an admin for L3 Editor or above in
+          Production.
         </div>
       </div>
     );

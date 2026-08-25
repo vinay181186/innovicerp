@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
 import { todayLocal } from '@/lib/date';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useOperatorsList } from '@/modules/operators/api';
 import {
@@ -60,7 +61,14 @@ export function OpEntryForm({
   const genOsp = useGenerateOspPr();
   const session = useSession();
   const companyId = session.data?.companyId ?? null;
+  // OSP-PR generation stays a manager/admin action (server: requireWriteRole).
   const canWrite = session.data?.role === 'admin' || session.data?.role === 'manager';
+  // Tier-driven, per department. Shop-floor Start/Log/Stop = op_entry entry
+  // (Production). The QC inspection sub-form is a QC action, so its submit uses
+  // the SAME key the server enforces on it (qc_submit entry).
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
+  const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
 
   const [logDate, setLogDate] = useState(todayIso());
   // Clock time of the entry, editable on BOTH tabs. Start already accepted a
@@ -555,18 +563,20 @@ export function OpEntryForm({
             </div>
             {errorBanner}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={blockedReason !== null || submitQc.isPending}
-              >
-                {submitQc.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ShieldCheck size={14} />
-                )}
-                Submit QC inspection
-              </button>
+              {canQcSubmit ? (
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={blockedReason !== null || submitQc.isPending}
+                >
+                  {submitQc.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck size={14} />
+                  )}
+                  Submit QC inspection
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -824,39 +834,9 @@ export function OpEntryForm({
 
           {errorBanner}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-            {isStart ? (
-              activeRunningId ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => void handleStop()}
-                  disabled={stop.isPending}
-                >
-                  <Square size={14} />
-                  Stop ({stop.isPending ? 'stopping…' : 'running'})
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
-                  disabled={blockedReason !== null || start.isPending}
-                >
-                  {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
-                  ▶ Start Operation
-                </button>
-              )
-            ) : (
-              <>
-                <button
-                  type="submit"
-                  className="btn btn-success"
-                  disabled={blockedReason !== null || submit.isPending}
-                >
-                  {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit
-                  completion
-                </button>
-                {activeRunningId ? (
+            {canOpEntry ? (
+              isStart ? (
+                activeRunningId ? (
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -868,16 +848,48 @@ export function OpEntryForm({
                   </button>
                 ) : (
                   <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => void handleStart()}
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
                     disabled={blockedReason !== null || start.isPending}
                   >
-                    <Play size={14} />▶ Start session
+                    {start.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play size={14} />}
+                    ▶ Start Operation
                   </button>
-                )}
-              </>
-            )}
+                )
+              ) : (
+                <>
+                  <button
+                    type="submit"
+                    className="btn btn-success"
+                    disabled={blockedReason !== null || submit.isPending}
+                  >
+                    {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓ Submit
+                    completion
+                  </button>
+                  {activeRunningId ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => void handleStop()}
+                      disabled={stop.isPending}
+                    >
+                      <Square size={14} />
+                      Stop ({stop.isPending ? 'stopping…' : 'running'})
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => void handleStart()}
+                      disabled={blockedReason !== null || start.isPending}
+                    >
+                      <Play size={14} />▶ Start session
+                    </button>
+                  )}
+                </>
+              )
+            ) : null}
             <span
               style={{
                 marginLeft: 'auto',

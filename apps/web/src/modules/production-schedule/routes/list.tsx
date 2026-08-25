@@ -9,7 +9,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
@@ -70,8 +70,10 @@ export const productionScheduleRoute = createRoute({
 });
 
 function ProductionSchedulePage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (Production). Dragging a bar reschedules / re-routes
+  // a saved jc_op → jc_create edit (L3 Editor and up).
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
   const search = productionScheduleRoute.useSearch();
   const navigate = productionScheduleRoute.useNavigate();
   const startDate = search.startDate ?? todayIso();

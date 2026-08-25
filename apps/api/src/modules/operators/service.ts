@@ -1,7 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
@@ -107,7 +107,9 @@ export async function createOperator(
   input: CreateOperatorInput,
   user: AuthContext,
 ): Promise<Operator> {
-  requireWriteRole(user);
+  // Tier gate (was requireWriteRole). L2 Data Entry and up in Production can add
+  // an operator; L1 Viewer cannot.
+  await requireFormAccess(user, 'operator_create', 'entry');
   const companyId = requireCompany(user);
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
   // collide on operators_company_code_uniq (23505) — e.g. both auto-generate the
@@ -156,7 +158,8 @@ export async function updateOperator(
   input: UpdateOperatorInput,
   user: AuthContext,
 ): Promise<Operator> {
-  requireWriteRole(user);
+  // Changing a saved operator is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'operator_create', 'edit');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -181,7 +184,9 @@ export async function updateOperator(
 }
 
 export async function softDeleteOperator(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete = the edit+approve pair only L5 Department Admin and above hold.
+  await requireFormAccess(user, 'operator_create', 'edit');
+  await requireFormAccess(user, 'operator_create', 'approve');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

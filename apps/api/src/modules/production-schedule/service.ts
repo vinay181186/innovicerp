@@ -27,6 +27,7 @@ import type {
   RescheduleJcOpInput,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -224,6 +225,9 @@ export async function rescheduleJcOp(
   input: RescheduleJcOpInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
+  // Dragging a bar reschedules / re-routes a saved jc_op — an edit on the Job
+  // Card (jc_create). Previously this write had NO matrix guard at all.
+  await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
 

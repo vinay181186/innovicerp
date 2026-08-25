@@ -8,6 +8,7 @@ import { type JcOpEnriched, type RunningOp, SHIFTS, SHIFT_LABELS, type Shift } f
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMachinesList } from '@/modules/machines/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
 import { MachineCard } from './machine-card';
@@ -162,6 +163,9 @@ interface PendingOpsSectionProps {
 
 function PendingOpsSection({ machineCode, machineName, ops, isLoading }: PendingOpsSectionProps) {
   const start = useStartOp();
+  // Starting a session records shop-floor work → op_entry entry (Production).
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const [startDate, setStartDate] = useState(todayLocal());
   const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [shift, setShift] = useState<Shift>('day');
@@ -247,14 +251,16 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
                     <td>{op.operation}</td>
                     <td className="td-ctr mono fw-700 amber">{op.available}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleStart(op.id)}
-                        disabled={start.isPending}
-                      >
-                        ▶ Start
-                      </button>
+                      {canOpEntry ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleStart(op.id)}
+                          disabled={start.isPending}
+                        >
+                          ▶ Start
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

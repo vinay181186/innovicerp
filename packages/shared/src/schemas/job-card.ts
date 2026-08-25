@@ -248,7 +248,10 @@ export const jobCardOpEditSchema = z.object({
   toolDetails: z.string().nullable(),
   qcRequired: z.boolean(),
   outsourceVendorCode: z.string().nullable(),
-  outsourceCost: z.number().nonnegative(),
+  // Nullable so it can be MASKED: money is hidden below L3 in Production (this
+  // form's dept), nulled server-side via canSeeFormPrice. A real cost is always
+  // ≥ 0 and defaults to 0, so null unambiguously means "not allowed to see it".
+  outsourceCost: z.number().nonnegative().nullable(),
   hasStarted: z.boolean(),
   /** Qty cleared for this op that has not yet been consumed downstream
    *  (op-entry / QC / an earlier OSP) — from public.v_jc_op_status. Drives the

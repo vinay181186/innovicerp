@@ -638,6 +638,10 @@ function nextLogNo(): string {
 
 export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): Promise<OpLog> {
   requireOpEntryRole(user);
+  // Per-department tier gate (op_entry sits in Production). The role guard alone
+  // let anyone with a write-ish role log production; the matrix narrows it to a
+  // user granted `entry` on Op Entry. Admins bypass.
+  await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1463,6 +1467,9 @@ export async function decideOpLogTimeChange(
 
 export async function startOp(input: StartOpInput, user: AuthContext): Promise<RunningOp> {
   requireOpEntryRole(user);
+  // Per-department tier gate (op_entry sits in Production). Starting a machine
+  // session records shop-floor work → `entry`. Admins bypass.
+  await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1620,6 +1627,9 @@ export async function generateOspPr(
 
 export async function stopOp(runningOpId: string, user: AuthContext): Promise<RunningOp> {
   requireOpEntryRole(user);
+  // Per-department tier gate (op_entry sits in Production). Stopping a session
+  // commits the produced qty to op_log → `entry`. Admins bypass.
+  await requireFormAccess(user, 'op_entry', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

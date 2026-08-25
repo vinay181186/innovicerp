@@ -39,7 +39,9 @@ export interface JcOpEditValues {
   toolDetails: string;
   qcRequired: boolean;
   outsourceVendorCode: string;
-  outsourceCost: number;
+  // null = money hidden for this viewer (masked server-side); the cost input is
+  // then not drawn.
+  outsourceCost: number | null;
   hasStarted: boolean;
   available: number;
 }
@@ -424,16 +426,18 @@ export function JcOpEditCard({
                       onChange={(e) => onChange({ outsourceVendorCode: e.target.value })}
                       style={{ fontSize: 10, marginBottom: 3, width: '100%' }}
                     />
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="innovic-input"
-                      value={op.outsourceCost || ''}
-                      placeholder="₹ Cost/pc"
-                      onChange={(e) => onChange({ outsourceCost: Number(e.target.value) })}
-                      style={{ fontSize: 10, width: '100%' }}
-                    />
+                    {op.outsourceCost !== null ? (
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="innovic-input"
+                        value={op.outsourceCost || ''}
+                        placeholder="₹ Cost/pc"
+                        onChange={(e) => onChange({ outsourceCost: Number(e.target.value) })}
+                        style={{ fontSize: 10, width: '100%' }}
+                      />
+                    ) : null}
                   </div>
                 ) : null}
               </div>

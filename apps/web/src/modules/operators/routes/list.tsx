@@ -21,7 +21,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useOperatorsList, useSoftDeleteOperator } from '../api';
 import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
@@ -52,7 +52,13 @@ export const operatorsListRoute = createRoute({
 function OperatorsListPage(): React.JSX.Element {
   const search = operatorsListRoute.useSearch();
   const navigate = operatorsListRoute.useNavigate();
-  const { data: me } = useSession();
+  // Tier-driven, per department (operator_create sits in Production). Add/Import
+  // = entry; Edit = edit; Del = the edit+approve pair only L5+ hold.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'operator_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -84,7 +90,6 @@ function OperatorsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
   const softDelete = useSoftDeleteOperator();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   // Excel import — parse the workbook, then create each operator sequentially
   // (each success invalidates the list via the mutation hook).
@@ -207,7 +212,7 @@ function OperatorsListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canAdd ? (
             <Link to="/operators/new" className="btn btn-primary">
               <Plus size={14} /> Add Operator
             </Link>
@@ -285,7 +290,7 @@ function OperatorsListPage(): React.JSX.Element {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          {canWrite ? (
+                          {canEdit ? (
                             <Link
                               to="/operators/$id/edit"
                               params={{ id: op.id }}
@@ -294,7 +299,7 @@ function OperatorsListPage(): React.JSX.Element {
                               Edit
                             </Link>
                           ) : null}
-                          {canWrite ? (
+                          {canDelete ? (
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
@@ -367,8 +372,9 @@ function OperatorsListPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Excel template + import sit below the table panel (mirror of Vendors). */}
-      {canWrite ? (
+      {/* Excel template + import sit below the table panel (mirror of Vendors).
+          Import creates operators, so it follows the create (entry) right. */}
+      {canAdd ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button
             type="button"

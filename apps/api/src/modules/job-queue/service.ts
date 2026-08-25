@@ -15,6 +15,7 @@ import type {
   ReorderJobQueueInput,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 
@@ -178,6 +179,9 @@ export async function reorderMachineQueue(
   input: ReorderJobQueueInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
+  // Reordering the queue rewrites saved jc_ops (queue_position) — an edit on the
+  // Job Card (jc_create). Previously this write had NO matrix guard at all.
+  await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

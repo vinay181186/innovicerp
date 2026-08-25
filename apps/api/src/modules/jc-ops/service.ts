@@ -12,6 +12,7 @@ import type {
   ListJcOpsBoardResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { emitActivityLog } from '../activity-log/service';
@@ -170,6 +171,9 @@ export async function changeJcOpMachine(
   input: ChangeJcOpMachineInput,
   user: AuthContext,
 ): Promise<{ ok: true }> {
+  // Re-routing a saved JC operation to another machine is an edit on the Job
+  // Card (jc_create). L3 Editor and up in Production may; L2 create-only cannot.
+  await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

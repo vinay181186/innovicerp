@@ -18,7 +18,7 @@ import type { OutsourceOpBalanceInput } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { items, jcOps, jobCards, runningOps, vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { createPurchaseRequest } from '../purchase-requests/service';
@@ -43,7 +43,9 @@ export async function outsourceOpBalance(
   input: OutsourceOpBalanceInput,
   user: AuthContext,
 ): Promise<OutsourceOpBalanceResult> {
-  requireWriteRole(user);
+  // Outsourcing the balance of a started op rewrites the Job Card's routing —
+  // an edit on jc_create (L3 Editor and up in Production).
+  await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
   const { qty, vendorCode } = input;
 

@@ -12,7 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { MachineChip, MachineSplitLines } from '@/components/shared/machine-split';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 // Reuse the existing PR create hook — do not build a parallel one.
 import { useCreatePurchaseRequest } from '@/modules/purchase-requests/api';
 import { useVendorsList } from '@/modules/vendors/api';
@@ -32,8 +32,13 @@ export const jcOpsRoute = createRoute({
 });
 
 function JcOpsPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (jc_create sits in Production). Add Operation,
+  // Change Machine and Outsource balance all rewrite a saved JC's routing → edit.
+  // Create PR is a purchase action — it opens the PR create flow, so it uses the
+  // SAME key as that page (pr_create entry), which the server also enforces.
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+  const canCreatePr = effectiveFormPerms(eff, 'pr_create').entry;
   const [jcCode, setJcCode] = useState('');
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
@@ -138,6 +143,7 @@ function JcOpsPage(): React.JSX.Element {
                     key={o.jcOpId}
                     o={o}
                     canWrite={canWrite}
+                    canCreatePr={canCreatePr}
                     onEdit={() => setEditRow(o)}
                     onCreatePr={() => setPrRow(o)}
                     onOutsource={() => setOutsourceRow(o)}
@@ -175,12 +181,14 @@ const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
 function Row({
   o,
   canWrite,
+  canCreatePr,
   onEdit,
   onCreatePr,
   onOutsource,
 }: {
   o: JcOpsBoardRow;
   canWrite: boolean;
+  canCreatePr: boolean;
   onEdit: () => void;
   onCreatePr: () => void;
   onOutsource: () => void;
@@ -319,7 +327,7 @@ function Row({
             // Legacy L11369 — raise a PR from a pending outsource op. The
             // server-side cascade (purchase-requests service) stamps this op
             // as pr_raised + links the new PR; the board then reflects it.
-            canWrite ? (
+            canCreatePr ? (
               <button
                 type="button"
                 className="btn btn-sm"

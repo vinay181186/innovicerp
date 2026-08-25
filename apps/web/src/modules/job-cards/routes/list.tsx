@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCardsList } from '../api';
@@ -120,10 +120,10 @@ function JobCardsListPage(): React.JSX.Element {
   const { data: operatorsData } = useOperatorsList({ limit: 200, offset: 0 });
   const machines = machinesData?.machines ?? [];
   const operators = operatorsData?.operators ?? [];
-  const { data: me } = useSession();
-  // Legacy gates "+ Plan & Create Job Card" on canEntry(); mirror with the
-  // codebase's admin/manager write gate.
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (jc_create sits in Production). Replaces the old
+  // admin/manager flag. Creating a Job Card is `entry` (L2 Data Entry and up).
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'jc_create').entry;
 
   // Column definitions removed — the list renders SO-style cards below.
 

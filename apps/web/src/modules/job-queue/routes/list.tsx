@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
 import { MachineSplitLines } from '@/components/shared/machine-split';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBackfillMachineIds, useJobQueue, useReorderJobQueue } from '../api';
@@ -35,11 +36,18 @@ export const jobQueueRoute = createRoute({
 
 function JobQueuePage(): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (Production). Reordering the queue rewrites saved
+  // jc_ops → jc_create edit. Start / Log Op open /op-entry, so they use the SAME
+  // key as that page (op_entry entry).
+  const { data: eff } = useMyAccess();
+  const canReorder = effectiveFormPerms(eff, 'jc_create').edit;
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const search = jobQueueRoute.useSearch();
   const navigate = jobQueueRoute.useNavigate();
   const selectedMachineCode = search.machine ?? '';
 
+  // The machine-code backfill stays a pure admin data-hygiene tool (the server
+  // gates it requireAdminRole), so it is not part of the tier model.
   const isAdmin = me?.role === 'admin';
   const { data, isLoading, isError, error } = useJobQueue({});
   const reorderMut = useReorderJobQueue();
@@ -278,7 +286,7 @@ function JobQueuePage(): React.JSX.Element {
                                 alignItems: 'center',
                               }}
                             >
-                              {canWrite && idx > 0 ? (
+                              {canReorder && idx > 0 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -290,7 +298,7 @@ function JobQueuePage(): React.JSX.Element {
                               ) : (
                                 <span style={{ width: 18, display: 'inline-block' }} />
                               )}
-                              {canWrite && idx < m.rows.length - 1 ? (
+                              {canReorder && idx < m.rows.length - 1 ? (
                                 <button
                                   type="button"
                                   style={queueBtnStyle}
@@ -378,7 +386,7 @@ function JobQueuePage(): React.JSX.Element {
                             )}
                           </td>
                           <td>
-                            {isNext && canWrite ? (
+                            {isNext && canOpEntry ? (
                               // T33: only offer "Log Op" once the op is started
                               // on this machine; otherwise show "Start".
                               startedHere ? (

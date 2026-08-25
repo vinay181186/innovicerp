@@ -21,7 +21,7 @@ export interface BuildJcOpValues {
   toolDetails: string;
   qcRequired: boolean;
   outsourceVendorCode: string;
-  outsourceCost: number;
+  outsourceCost: number | null;
 }
 
 /** Minimal QC-doc shape the builder needs. */

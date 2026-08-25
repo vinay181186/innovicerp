@@ -5,29 +5,34 @@ import type { JobCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDeleteJobCard } from '../api';
 
 export function JcRowWriteActions({ jc }: { jc: JobCardListItem }): React.JSX.Element | null {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Tier-driven, per department (jc_create sits in Production). Edit needs `edit`
+  // (L3+); Delete needs the edit+approve pair only L5 Department Admin and up hold.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'jc_create');
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
   const del = useDeleteJobCard();
   const [confirming, setConfirming] = useState(false);
 
-  if (!canWrite) return null;
+  if (!canEdit && !canDelete) return null;
 
   return (
     <>
-      <Link
-        to="/job-cards/$id/edit"
-        params={{ id: jc.id }}
-        className="btn btn-ghost btn-sm"
-        title="Edit job card"
-      >
-        ✎ Edit
-      </Link>
-      {isAdmin ? (
+      {canEdit ? (
+        <Link
+          to="/job-cards/$id/edit"
+          params={{ id: jc.id }}
+          className="btn btn-ghost btn-sm"
+          title="Edit job card"
+        >
+          ✎ Edit
+        </Link>
+      ) : null}
+      {canDelete ? (
         confirming ? (
           <>
             <button

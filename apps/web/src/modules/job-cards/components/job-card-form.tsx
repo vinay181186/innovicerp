@@ -58,7 +58,7 @@ interface FormOp {
   toolDetails: string;
   qcRequired: boolean;
   outsourceVendorCode: string;
-  outsourceCost: number;
+  outsourceCost: number | null;
   hasStarted: boolean;
   /** Remaining qty cleared for this op (from the edit model). Drives the
    *  "Outsource balance" action for a STARTED in-house process op. */

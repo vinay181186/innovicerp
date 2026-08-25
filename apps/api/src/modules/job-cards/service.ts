@@ -31,7 +31,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireAdminRole, requireWriteRole } from '../../lib/auth';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
@@ -478,6 +478,9 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
 
 export async function getJobCardEditModel(id: string, user: AuthContext): Promise<JobCardEditModel> {
   const companyId = requireCompany(user);
+  // Money hidden below L3 in Production: null the per-op outsource cost for a
+  // caller who may not see prices (mirrors machines' hour-rate mask).
+  const showMoney = await canSeeFormPrice(user, 'jc_create');
   return withUserContext(user, async (tx) => {
     const headRows = (await tx.execute(sql`
       SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
@@ -563,7 +566,7 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
         toolDetails: (o['toolDetails'] as string | null) ?? null,
         qcRequired: Boolean(o['qcRequired']),
         outsourceVendorCode: (o['outsourceVendorCode'] as string | null) ?? null,
-        outsourceCost: Number(o['outsourceCost'] ?? 0),
+        outsourceCost: showMoney ? Number(o['outsourceCost'] ?? 0) : null,
         hasStarted: Boolean(o['hasStarted']),
         available: Number(o['available'] ?? 0),
         inputAvail: Number(o['inputAvail'] ?? 0),
@@ -1181,7 +1184,9 @@ async function registerQcDocs(
 }
 
 export async function createJobCard(input: JobCardWriteInput, user: AuthContext): Promise<JobCardListItem> {
-  requireWriteRole(user);
+  // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
+  // Entry and up in Production can raise a Job Card; L1 Viewer cannot.
+  await requireFormAccess(user, 'jc_create', 'entry');
   const companyId = requireCompany(user);
 
   // Governance: direct Job Cards are disabled. SO/item Job Cards must originate
@@ -1299,8 +1304,13 @@ export async function updateJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
 ): Promise<JobCardListItem> {
-  requireWriteRole(user);
+  // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'jc_create', 'edit');
   const companyId = requireCompany(user);
+  // Money-in rule (mirrors machines.updateMachine): a caller who cannot SEE the
+  // outsource cost cannot SET it — their blinded form posts 0, so we keep the
+  // stored value instead of letting it zero a cost they were never shown.
+  const showMoney = await canSeeFormPrice(user, 'jc_create');
 
   await withUserContext(user, async (tx) => {
     const headRows = await tx
@@ -1347,6 +1357,7 @@ export async function updateJobCard(
         outsourceStatus: jcOps.outsourceStatus,
         outsourcePrId: jcOps.outsourcePrId,
         outsourcePoLineId: jcOps.outsourcePoLineId,
+        outsourceCost: jcOps.outsourceCost,
         prStatus: purchaseRequests.status,
         prDeletedAt: purchaseRequests.deletedAt,
       })
@@ -1485,6 +1496,12 @@ export async function updateJobCard(
     for (let i = 0; i < ops.length; i += 1) {
       const o = ops[i]!;
       const t = types[i]!;
+      // Preserve the stored cost when the editor cannot see money (see the
+      // money-in note above); otherwise take the posted value.
+      const postedCost = NUM(t === 'outsource' ? (o.outsourceCost || 0) : 0);
+      const exCost = o.id ? existingById.get(o.id)?.outsourceCost : undefined;
+      const outsourceCostVal =
+        showMoney || exCost == null ? postedCost : NUM(Number(exCost) || 0);
       const vals = {
         machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
         machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
@@ -1497,7 +1514,7 @@ export async function updateJobCard(
         qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
         outsourceVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
         outsourceVendorText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
-        outsourceCost: NUM(t === 'outsource' ? (o.outsourceCost || 0) : 0),
+        outsourceCost: outsourceCostVal,
         updatedBy: user.id,
         updatedAt: now,
       };
@@ -1637,7 +1654,10 @@ export async function updateJobCard(
 }
 
 export async function deleteJobCard(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireAdminRole(user);
+  // Delete = the edit+approve pair only L5 Department Admin and above hold. L3
+  // Editor has edit but not approve; L4 Approver has approve but not edit.
+  await requireFormAccess(user, 'jc_create', 'edit');
+  await requireFormAccess(user, 'jc_create', 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx

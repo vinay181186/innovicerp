@@ -4,7 +4,7 @@ import type { Operator } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useOperator, useSoftDeleteOperator } from '../api';
 
@@ -18,7 +18,7 @@ function OperatorDetailPage(): React.JSX.Element {
   const { id } = operatorDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: operator, isLoading, isError, error } = useOperator(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteOperator();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -55,8 +55,11 @@ function OperatorDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Tier-driven, per department (operator_create sits in Production). Edit = edit
+  // (L3+); Delete = the edit+approve pair only L5+ hold.
+  const perms = effectiveFormPerms(eff, 'operator_create');
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   return (
     <div>
@@ -87,7 +90,7 @@ function OperatorDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

@@ -4,7 +4,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Pencil } from 'lucide-react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobCard } from '../api';
 import { JcStatusContent } from '../components/jc-status-content';
@@ -19,8 +19,10 @@ function JobCardStatusPage(): React.JSX.Element {
   const { id } = jobCardStatusRoute.useParams();
   // Shares the JcStatusContent query cache (same key) — no extra request.
   const { data: jc } = useJobCard(id);
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Edit button uses the SAME key as the page it opens (/job-cards/$id/edit →
+  // jc_create edit).
+  const { data: eff } = useMyAccess();
+  const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

@@ -2,6 +2,7 @@
 
 import type { RunningOp } from '@innovic/shared';
 import { Square } from 'lucide-react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useStopOp } from '../api';
 import { RunningOpStatusBadge } from './status-badge';
 
@@ -11,6 +12,9 @@ interface Props {
 
 export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
   const stop = useStopOp();
+  // Stopping a session commits produced qty to op_log → op_entry entry (Production).
+  const { data: eff } = useMyAccess();
+  const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
   const running = rows.filter((r) => r.status === 'running');
   const recent = rows.filter((r) => r.status !== 'running').slice(0, 20);
 
@@ -61,14 +65,16 @@ export function RunningOpsBoard({ rows }: Props): React.JSX.Element {
                       <RunningOpStatusBadge status={r.status} />
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={stop.isPending}
-                        onClick={() => void stop.mutateAsync(r.id)}
-                      >
-                        <Square size={13} /> Stop
-                      </button>
+                      {canOpEntry ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={stop.isPending}
+                          onClick={() => void stop.mutateAsync(r.id)}
+                        >
+                          <Square size={13} /> Stop
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 ))
