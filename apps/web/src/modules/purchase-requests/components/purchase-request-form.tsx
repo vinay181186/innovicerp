@@ -19,8 +19,10 @@ import {
   type UpdatePurchaseRequestInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type Path, type PathValue, useForm } from 'react-hook-form';
+import { SearchableSelect } from '@/components/shared/searchable-select';
+import { useSalesOrder, useSalesOrdersList } from '@/modules/sales-orders/api';
 import {
   type CascadeField,
   type CascadeFieldOptions,
@@ -74,8 +76,38 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : PR_FORM_DEFAULTS;
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, handleSubmit, formState, watch } = form;
+  const { register, handleSubmit, formState, watch, setValue } = form;
   const errors = formState.errors;
+
+  // SO No. — the PR stores an SO LINE (purchase_requests.source_so_line_id
+  // references sales_order_lines), so picking the order is only half of it. The
+  // Line box appears once an SO is chosen and is what actually gets saved; on an
+  // order with a single line it is picked automatically, so the usual case is
+  // still one field. An edit form starts with the SO id unknown (the detail
+  // carries soCode/soLineNo, not the header id), so the picker shows the stored
+  // code via `valueLabel` until the user opens it.
+  const [soId, setSoId] = useState<string | null>(null);
+  const [soSearch, setSoSearch] = useState('');
+  const soList = useSalesOrdersList({
+    ...(soSearch.trim() ? { search: soSearch.trim() } : {}),
+    limit: 20,
+    offset: 0,
+  });
+  const soDetail = useSalesOrder(soId ?? undefined);
+  const soLines = soDetail.data?.lines ?? [];
+  // An order with exactly one line picks that line itself, so the usual case
+  // stays a single "SO No." box and the Line select is only a decision when the
+  // order genuinely has more than one.
+  const soLineId = watch('sourceSoLineId');
+  useEffect(() => {
+    if (soLines.length === 1 && !soLineId) setValue('sourceSoLineId', soLines[0]!.id);
+  }, [soLines, soLineId, setValue]);
+
+  const storedSoLabel = isEdit
+    ? [props.detail.soCode, props.detail.soLineNo ? `Ln ${props.detail.soLineNo}` : null]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   // Free text already stored on this PR. Its presence is what lets the vendor
   // picker be left empty — see the rule in <PrVendorField>.
@@ -149,16 +181,19 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
       requiredDate: values.requiredDate || undefined,
       operation: values.operation?.trim() || undefined,
       remarks: values.remarks?.trim() || undefined,
+      ...(values.sourceSoLineId ? { sourceSoLineId: values.sourceSoLineId } : {}),
     };
 
     if (isEdit) {
       await props.onSubmit(payload);
     } else {
-      // T23: blank → undefined so the server auto-generates IN-PR-#####.
+      // PR No. is system-generated, full stop: `code` is never sent, so the
+      // server always allocates the next IN-PR-#####. It used to be a free text
+      // box that merely defaulted to auto when left blank, which is how PRs
+      // ended up coded "001" / "002" / "009" instead of the series.
       // prType is create-only — `updatePurchaseRequestInputSchema` omits it, so
       // it is never sent on an edit.
       await props.onSubmit({
-        code: values.code.trim() || undefined,
         prType: values.prType,
         ...payload,
       } as CreatePurchaseRequestInput);
@@ -172,22 +207,84 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           <label className="form-label" htmlFor="code">
             PR No.
           </label>
+          {/* System-generated, never typed. The server allocates the next
+              IN-PR-##### on save. This was a free text box that only defaulted
+              to auto when left blank, which is how PRs ended up numbered
+              "001" / "002" / "009" instead of following the series. */}
           <input
             id="code"
             className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            placeholder={isEdit ? undefined : 'Leave blank to auto-generate'}
-            {...register('code')}
+            readOnly
+            tabIndex={-1}
+            style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+            value={isEdit ? (watch('code') ?? '') : 'Auto-generated on save'}
+            onChange={() => undefined}
           />
-          {isEdit ? (
-            <div className="form-help">Code cannot be changed after creation.</div>
-          ) : (
-            <div className="form-help">Leave blank to auto-generate the next IN-PR-#####.</div>
-          )}
+          <div className="form-help">
+            {isEdit
+              ? 'PR No. cannot be changed after creation.'
+              : 'Allocated by the system — the next IN-PR-##### in the series.'}
+          </div>
           {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
         </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="pr-so">
+            SO No.
+          </label>
+          <SearchableSelect
+            id="pr-so"
+            value={soId}
+            valueLabel={storedSoLabel || undefined}
+            onChange={(id) => {
+              setSoId(id);
+              // Clear any line held from the previously chosen order.
+              setValue('sourceSoLineId', undefined);
+            }}
+            onSearch={setSoSearch}
+            loading={soList.isFetching}
+            placeholder="🔍 Select SO — number or customer…"
+            options={(soList.data?.items ?? []).map((o) => ({
+              id: o.id,
+              code: o.code,
+              name: o.customerName ?? '',
+            }))}
+          />
+          <div className="form-help">
+            Optional — links this PR to the order it was raised for.
+          </div>
+        </div>
+
+        {soId ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="pr-so-line">
+              SO Line<span className="req">★</span>
+            </label>
+            {/* The PR links to an SO LINE, not the header, so the order alone is
+                not enough to save. A single-line order picks itself. */}
+            <select
+              id="pr-so-line"
+              className="innovic-select"
+              disabled={soDetail.isFetching}
+              value={watch('sourceSoLineId') ?? ''}
+              onChange={(e) => setValue('sourceSoLineId', e.target.value || undefined)}
+            >
+              <option value="">
+                {soDetail.isFetching
+                  ? 'Loading lines…'
+                  : soLines.length === 0
+                    ? 'No lines on this SO'
+                    : 'Select a line…'}
+              </option>
+              {soLines.map((l) => (
+                <option key={l.id} value={l.id}>
+                  Ln {l.lineNo} · {l.partName} · Qty {l.orderQty}
+                </option>
+              ))}
+            </select>
+            <div className="form-help">Which line of the order this PR is for.</div>
+          </div>
+        ) : null}
         <div className="form-grp">
           <label className="form-label" htmlFor="prDate">
             Date<span className="req">★</span>
@@ -429,6 +526,7 @@ function detailToFormValues(detail: PurchaseRequest): FormValues {
     prDate: detail.prDate,
     status: detail.status,
     prType: detail.prType,
+    ...(detail.sourceSoLineId ? { sourceSoLineId: detail.sourceSoLineId } : {}),
     ...(detail.vendorId ? { vendorId: detail.vendorId } : {}),
     ...(detail.vendorCodeText ? { vendorCodeText: detail.vendorCodeText } : {}),
     ...(detail.itemId ? { itemId: detail.itemId } : {}),
