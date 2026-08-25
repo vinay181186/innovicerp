@@ -121,9 +121,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Report',
-        items: [
-          { to: '/store-inventory', label: 'Store / Inventory', icon: '📦' },
-        ],
+        items: [{ to: '/store-inventory', label: 'Store / Inventory', icon: '📦' }],
       },
     ],
   },
@@ -198,9 +196,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [
-          { to: '/qc-processes', label: 'QC Process Master', icon: '⚙' },
-        ],
+        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙' }],
       },
     ],
   },
@@ -253,9 +249,7 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         label: 'Entry',
-        items: [
-          { to: '/invoices', label: 'Invoices', icon: '📄' },
-        ],
+        items: [{ to: '/invoices', label: 'Invoices', icon: '📄' }],
       },
       {
         label: 'Master',
@@ -352,9 +346,12 @@ function initials(email: string | undefined): string {
 // Section keys that are NEVER dept-gated (always visible to authenticated
 // users regardless of matrix). 'tasks' has no equivalent dept key in the
 // legacy registry and is plumbing every role needs (alerts + activity log).
-// 'reports' is also ungated — reporting tools are consumed by every role;
-// per-dept Reports links inside other sections still gate via their dept.
-const UNGATED_SECTIONS = new Set<string>(['tasks', 'reports']);
+// Nothing is ungated any more. 'tasks' and 'reports' used to bypass the matrix
+// entirely — a decision taken before the tier model existed — so every account,
+// including one nobody had configured yet, saw the task board, every
+// department's alert drill-downs, the full activity log and 19 cross-department
+// reports. Both are ordinary ACCESS_DEPTS entries now and gate like the rest:
+// invisible until an admin grants them.
 
 // Admin sees every section regardless of matrix (legacy behavior — admin
 // is the only role with implicit dept access on the home routing too).
@@ -364,7 +361,6 @@ function shouldShowSection(
   eff: Parameters<typeof hasDeptAccess>[0],
 ): boolean {
   if (isAdmin) return true;
-  if (UNGATED_SECTIONS.has(sectionKey)) return true;
   // Section keys align 1:1 with ACCESS_DEPTS keys.
   return hasDeptAccess(eff, sectionKey as AccessDeptKey);
 }
@@ -409,7 +405,13 @@ export function Sidebar(): React.JSX.Element {
           <img
             src={INNOVIC_LOGO_DATA_URI}
             alt="Innovic"
-            style={{ display: 'block', maxWidth: '100%', maxHeight: 72, height: 'auto', margin: '0 auto 8px' }}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: 72,
+              height: 'auto',
+              margin: '0 auto 8px',
+            }}
           />
           <div className="sb-company">INNOVIC ERP</div>
           <div className="sb-sub">manufacturing</div>

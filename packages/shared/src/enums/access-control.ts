@@ -15,15 +15,27 @@
 
 // ── Departments (drive sidebar section visibility) ─────────────
 export const ACCESS_DEPTS = [
-  { key: 'planning',   label: 'Planning',   color: '#8B5CF6' },
-  { key: 'sales',      label: 'Sales',      color: '#22C55E' },
-  { key: 'store',      label: 'Store',      color: '#F59E0B' },
-  { key: 'design',     label: 'Design',     color: '#8B5CF6' },
+  { key: 'planning', label: 'Planning', color: '#8B5CF6' },
+  { key: 'sales', label: 'Sales', color: '#22C55E' },
+  { key: 'store', label: 'Store', color: '#F59E0B' },
+  { key: 'design', label: 'Design', color: '#8B5CF6' },
   { key: 'production', label: 'Production', color: '#06B6D4' },
-  { key: 'qc',         label: 'QC',         color: '#EF4444' },
-  { key: 'purchase',   label: 'Purchase',   color: '#2563EB' },
-  { key: 'finance',    label: 'Finance',    color: '#0D9488' },
-  { key: 'system',     label: 'System',     color: '#64748B' },
+  { key: 'qc', label: 'QC', color: '#EF4444' },
+  { key: 'purchase', label: 'Purchase', color: '#2563EB' },
+  { key: 'finance', label: 'Finance', color: '#0D9488' },
+  // Tasks and Reports were hardcoded as "always visible" in the sidebar
+  // (UNGATED_SECTIONS) from before the tier model existed, so every account —
+  // including one nobody had configured — saw the task board, the alert
+  // drill-downs, the activity log and 19 cross-department reports. They are
+  // ordinary departments now: invisible until granted, like everything else.
+  //
+  // They carry no ACCESS_FORMS keys, so the tier alone decides visibility.
+  // Grant them at L1 — a higher tier here would raise the account's derived
+  // role globally (see `roleForAccess`), which is not what "may open Reports"
+  // should mean.
+  { key: 'tasks', label: 'Tasks', color: '#EC4899' },
+  { key: 'reports', label: 'Reports', color: '#0EA5E9' },
+  { key: 'system', label: 'System', color: '#64748B' },
 ] as const;
 
 export type AccessDept = (typeof ACCESS_DEPTS)[number];
@@ -44,55 +56,55 @@ export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 // `dept` MUST be one of ACCESS_DEPT_KEYS.
 export const ACCESS_FORMS = [
   // Sales
-  { key: 'so_create',          dept: 'sales',      label: 'SO Master' },
-  { key: 'jw_create',          dept: 'sales',      label: 'JW Master' },
-  { key: 'client_create',      dept: 'sales',      label: 'Client Master' },
-  { key: 'dispatch_create',    dept: 'sales',      label: 'Dispatch Register' },
+  { key: 'so_create', dept: 'sales', label: 'SO Master' },
+  { key: 'jw_create', dept: 'sales', label: 'JW Master' },
+  { key: 'client_create', dept: 'sales', label: 'Client Master' },
+  { key: 'dispatch_create', dept: 'sales', label: 'Dispatch Register' },
   // Planning
-  { key: 'plan_create',        dept: 'planning',   label: 'SO/JW Planning' },
+  { key: 'plan_create', dept: 'planning', label: 'SO/JW Planning' },
   // Production
-  { key: 'jc_create',          dept: 'production', label: 'Job Cards' },
-  { key: 'op_entry',           dept: 'production', label: 'Op Entry' },
-  { key: 'machop_entry',       dept: 'production', label: 'Machine Op Entry' },
-  { key: 'machine_create',     dept: 'production', label: 'Machine Master' },
-  { key: 'operator_create',    dept: 'production', label: 'Operator Master' },
+  { key: 'jc_create', dept: 'production', label: 'Job Cards' },
+  { key: 'op_entry', dept: 'production', label: 'Op Entry' },
+  { key: 'machop_entry', dept: 'production', label: 'Machine Op Entry' },
+  { key: 'machine_create', dept: 'production', label: 'Machine Master' },
+  { key: 'operator_create', dept: 'production', label: 'Operator Master' },
   // Design
-  { key: 'routecard_create',   dept: 'design',     label: 'Route Cards' },
-  { key: 'bom_create',         dept: 'design',     label: 'BOM Master' },
-  { key: 'design_create',      dept: 'design',     label: 'Design Tracker' },
-  { key: 'dsnproj_create',     dept: 'design',     label: 'Design Projects' },
-  { key: 'dsnissue_create',    dept: 'design',     label: 'Design Issues' },
-  { key: 'dsnworklog_create',  dept: 'design',     label: 'Daily Work Log' },
-  { key: 'dsndcr_create',      dept: 'design',     label: 'Design DCR/DCN' },
+  { key: 'routecard_create', dept: 'design', label: 'Route Cards' },
+  { key: 'bom_create', dept: 'design', label: 'BOM Master' },
+  { key: 'design_create', dept: 'design', label: 'Design Tracker' },
+  { key: 'dsnproj_create', dept: 'design', label: 'Design Projects' },
+  { key: 'dsnissue_create', dept: 'design', label: 'Design Issues' },
+  { key: 'dsnworklog_create', dept: 'design', label: 'Daily Work Log' },
+  { key: 'dsndcr_create', dept: 'design', label: 'Design DCR/DCN' },
   // Store
-  { key: 'item_create',        dept: 'store',      label: 'Item Master' },
-  { key: 'grn_create',         dept: 'store',      label: 'GRN' },
-  { key: 'issue_create',       dept: 'store',      label: 'Item Issue Register' },
-  { key: 'toolissue_create',   dept: 'store',      label: 'Tool Issue Register' },
-  { key: 'party_create',       dept: 'store',      label: 'Party Material' },
+  { key: 'item_create', dept: 'store', label: 'Item Master' },
+  { key: 'grn_create', dept: 'store', label: 'GRN' },
+  { key: 'issue_create', dept: 'store', label: 'Item Issue Register' },
+  { key: 'toolissue_create', dept: 'store', label: 'Tool Issue Register' },
+  { key: 'party_create', dept: 'store', label: 'Party Material' },
   // QC
-  { key: 'qc_submit',          dept: 'qc',         label: 'QC Call Register' },
-  { key: 'qc_incoming',        dept: 'qc',         label: 'Incoming QC' },
-  { key: 'qcprocess_create',   dept: 'qc',         label: 'QC Process Master' },
-  { key: 'nc_dispose',         dept: 'qc',         label: 'NC Register' },
-  { key: 'capa_create',        dept: 'qc',         label: 'CAPA' },
+  { key: 'qc_submit', dept: 'qc', label: 'QC Call Register' },
+  { key: 'qc_incoming', dept: 'qc', label: 'Incoming QC' },
+  { key: 'qcprocess_create', dept: 'qc', label: 'QC Process Master' },
+  { key: 'nc_dispose', dept: 'qc', label: 'NC Register' },
+  { key: 'capa_create', dept: 'qc', label: 'CAPA' },
   // — New React-only QC keys —
-  { key: 'tpi_submit',         dept: 'qc',         label: 'TPI' },
-  { key: 'qcdocs_upload',      dept: 'qc',         label: 'QC Documents' },
+  { key: 'tpi_submit', dept: 'qc', label: 'TPI' },
+  { key: 'qcdocs_upload', dept: 'qc', label: 'QC Documents' },
   // Purchase
-  { key: 'pr_create',          dept: 'purchase',   label: 'Purchase Requests' },
-  { key: 'po_create',          dept: 'purchase',   label: 'Purchase Orders' },
-  { key: 'vendor_create',      dept: 'purchase',   label: 'Vendor Master' },
-  { key: 'oj_create',          dept: 'purchase',   label: 'Outsource Jobs' },
-  { key: 'ospdc_create',       dept: 'purchase',   label: 'OSP DC & Outward' },
-  { key: 'servicepo_create',   dept: 'purchase',   label: 'Service PO' },
+  { key: 'pr_create', dept: 'purchase', label: 'Purchase Requests' },
+  { key: 'po_create', dept: 'purchase', label: 'Purchase Orders' },
+  { key: 'vendor_create', dept: 'purchase', label: 'Vendor Master' },
+  { key: 'oj_create', dept: 'purchase', label: 'Outsource Jobs' },
+  { key: 'ospdc_create', dept: 'purchase', label: 'OSP DC & Outward' },
+  { key: 'servicepo_create', dept: 'purchase', label: 'Service PO' },
   // Finance
-  { key: 'cc_create',          dept: 'finance',    label: 'Cost Center Master' },
+  { key: 'cc_create', dept: 'finance', label: 'Cost Center Master' },
   // System
-  { key: 'user_manage',        dept: 'system',     label: 'User Management' },
+  { key: 'user_manage', dept: 'system', label: 'User Management' },
   // — New React-only System keys —
-  { key: 'accesscontrol_manage', dept: 'system',   label: 'Access Control' },
-  { key: 'printtpl_edit',      dept: 'system',     label: 'Print Templates' },
+  { key: 'accesscontrol_manage', dept: 'system', label: 'Access Control' },
+  { key: 'printtpl_edit', dept: 'system', label: 'Print Templates' },
 ] as const satisfies readonly { key: string; dept: AccessDeptKey; label: string }[];
 
 export type AccessForm = (typeof ACCESS_FORMS)[number];
