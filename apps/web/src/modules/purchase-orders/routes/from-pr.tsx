@@ -15,6 +15,7 @@ import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useDocNumber } from '@/lib/use-doc-number';
@@ -37,6 +38,10 @@ interface FormValues {
   code: string;
   poDate: string;
   poType: PoType;
+  /** Defaults to the PR's vendor. Overridable because the PR's vendor is not
+   *  always the one to buy from — an OSP-generated PR carries the
+   *  `(vendor TBD)` sentinel and no vendor id at all. */
+  vendorId?: string;
   dueDate?: string;
   taxType?: string;
   sgstPct: number;
@@ -107,6 +112,7 @@ const CSS = `
 .pof-f-po{ flex:0 1 176px; min-width:0; }
 .pof-f-date{ flex:0 1 148px; min-width:0; }
 .pof-f-type{ flex:0 1 158px; min-width:0; }
+.pof-f-vendor{ flex:1 1 280px; min-width:0; }
 
 /* Tax + live totals share one row. */
 .pof-tax{ background:#f7f9fc; border:1px solid #e4e7ee; border-radius:8px; padding:12px 14px;
@@ -167,6 +173,15 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch, setValue } = form;
 
+  // Seed the Vendor field from the PR once it has loaded. Only when still
+  // empty, so a vendor the user has already picked is never clobbered by a
+  // refetch.
+  const prVendorId = pr?.vendorId ?? null;
+  const pickedVendorId = watch('vendorId');
+  useEffect(() => {
+    if (prVendorId && !pickedVendorId) setValue('vendorId', prVendorId);
+  }, [prVendorId, pickedVendorId, setValue]);
+
   // PO number field is built inline rather than via the shared DocNumberInput:
   // the spec's 10px label / 36px control / "✕ Already used" wording is local to
   // this screen, and restyling the shared component would move every other form.
@@ -209,6 +224,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
         code: values.code.trim() || undefined,
         poDate: values.poDate,
         poType: values.poType,
+        vendorId: values.vendorId || undefined,
         dueDate: values.dueDate || undefined,
         taxType: values.taxType?.trim() || undefined,
         sgstPct: Number(values.sgstPct),
@@ -404,6 +420,21 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                   {...register('dueDate')}
                 />
               </div>
+
+              {/* Vendor is a FIELD here, not just the read-only fact in the strip
+                  above. It starts on the PR's vendor, which is right almost
+                  always — but an OSP-generated PR carries the `(vendor TBD)`
+                  sentinel and no vendor id, and until now that placeholder went
+                  onto the PO with no way to correct it during the conversion. */}
+              <VendorPicker
+                id="pof-vendor"
+                className="pof-f-vendor"
+                labelText="Vendor"
+                value={watch('vendorId') ?? null}
+                onChange={(id) => setValue('vendorId', id ?? undefined)}
+                initialLabel={vendorCode !== '—' ? `${vendorCode} — ${vendorName}` : ''}
+                carriedText={pr.vendorCodeText ?? ''}
+              />
             </div>
 
             {/* Tax inputs sized to their content, with the running total in the

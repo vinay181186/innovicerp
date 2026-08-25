@@ -963,6 +963,20 @@ export async function createPurchaseOrderFromPr(
       throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
     }
 
+    // Vendor override: validated the same way the main create path validates
+    // its header vendor, and its code snapshotted for the PO's own text column.
+    const overrideVendorId = input.header.vendorId ?? null;
+    let overrideVendorCode: string | null = null;
+    if (overrideVendorId) {
+      await assertVendorExists(tx, overrideVendorId, companyId);
+      const vRows = await tx
+        .select({ code: vendors.code })
+        .from(vendors)
+        .where(eq(vendors.id, overrideVendorId))
+        .limit(1);
+      overrideVendorCode = vRows[0]?.code ?? null;
+    }
+
     // Blank code ⇒ auto-generate the next PO code (same as the main create path).
     const code = input.header.code?.trim() || (await nextPoCode(tx, companyId));
 
@@ -1009,8 +1023,14 @@ export async function createPurchaseOrderFromPr(
             : pr.prType === 'service'
               ? 'service'
               : 'standard',
-        vendorId: pr.vendorId,
-        vendorCodeText: pr.vendorCodeText,
+        // The PR's vendor is the default, not a fixed rule: an OSP-generated PR
+        // carries the `(vendor TBD)` sentinel in vendorCodeText with no
+        // vendor_id, so without an override the PO inherited a placeholder
+        // vendor that could not be corrected on the way through. When the caller
+        // picks one, its code is snapshotted and the free text dropped, matching
+        // resolveItemRefs' "a real link beats carried text" rule.
+        vendorId: overrideVendorId ?? pr.vendorId,
+        vendorCodeText: overrideVendorId ? overrideVendorCode : pr.vendorCodeText,
         status: 'open', // PRs only convert to open POs (skip draft state)
         dueDate: input.header.dueDate ?? pr.requiredDate ?? null,
         taxType: input.header.taxType ?? null,

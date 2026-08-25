@@ -214,6 +214,13 @@ export const createPurchaseOrderFromPrInputSchema = z.object({
     code: z.string().min(1).max(64).regex(codeRegex).optional(),
     poDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'poDate must be YYYY-MM-DD'),
     poType: poTypeSchema.default('job_work'), // outsource PRs default to job_work
+    /** Vendor for the PO. Omitted = keep the PR's vendor, which is what this
+     *  flow always did. It is overridable because the PR's vendor is not always
+     *  the right one to buy from: an OSP-generated PR carries the
+     *  `(vendor TBD)` sentinel and no vendor_id, so without this the conversion
+     *  produced a PO with a placeholder vendor and no way to correct it on the
+     *  way through. */
+    vendorId: z.string().uuid().optional(),
     dueDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'dueDate must be YYYY-MM-DD')
