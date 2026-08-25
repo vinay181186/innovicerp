@@ -174,6 +174,24 @@ export function PoHeaderBand({
               )
             }
           />
+          {/* The customer order this PO ultimately serves, resolved through the
+              PO lines' source SO line. Planning stamps it on every line of a PO
+              raised off a Job Card; a hand-raised PO has no order behind it. */}
+          <Row
+            label="SO"
+            value={
+              detail.soCode ? (
+                <span className="mono" style={{ color: 'var(--purple)' }}>
+                  {detail.soCode}
+                  {detail.soLineNo ? (
+                    <span className="text3"> · Ln {detail.soLineNo}</span>
+                  ) : null}
+                </span>
+              ) : (
+                <span className="text3">—</span>
+              )
+            }
+          />
         </Col>
 
         {/* ── Totals ── */}

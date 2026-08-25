@@ -391,11 +391,30 @@ export async function getPurchaseOrder(
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
+    // The SO behind this PO, through the first line that carries one. A
+    // Planning-raised PO (OSP/job-work PR off a Job Card) stamps
+    // source_so_line_id on every line; a hand-raised PO has none, and stays null.
+    const soLineId = lineRows.find((r) => r.row.sourceSoLineId)?.row.sourceSoLineId ?? null;
+    let soCode: string | null = null;
+    let soLineNo: number | null = null;
+    if (soLineId) {
+      const soRows = await tx
+        .select({ code: salesOrders.code, lineNo: salesOrderLines.lineNo })
+        .from(salesOrderLines)
+        .innerJoin(salesOrders, eq(salesOrders.id, salesOrderLines.salesOrderId))
+        .where(and(eq(salesOrderLines.id, soLineId), isNull(salesOrderLines.deletedAt)))
+        .limit(1);
+      soCode = soRows[0]?.code ?? null;
+      soLineNo = soRows[0]?.lineNo ?? null;
+    }
+
     const header = toPurchaseOrder(headerRow.row);
     const lines = lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode));
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
       vendorName: headerRow.vendorName,
+      soCode,
+      soLineNo,
       lines: showMoney ? lines : lines.map(hidePoLineMoney),
     };
   });

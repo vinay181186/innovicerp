@@ -117,6 +117,15 @@ export const purchaseOrderDetailSchema = purchaseOrderSchema.extend({
   // otherwise (free-text vendor stays in vendorCodeText). Same pattern as
   // salesOrderLine.itemCode (per ISSUE-005 fix).
   vendorName: z.string().nullable().default(null),
+  /** The Sales Order this PO ultimately serves, resolved through its lines'
+   *  source_so_line_id. A PO raised by Planning (an OSP/job-work PR off a Job
+   *  Card) carries that link on every line, so the buyer can see which customer
+   *  order the spend belongs to. Null on a PO raised by hand, which has no
+   *  order behind it. Optional because only the detail READ resolves it — the
+   *  create / update / approve write-backs return this shape without the join,
+   *  and the detail page refetches anyway. */
+  soCode: z.string().nullable().optional(),
+  soLineNo: z.number().int().positive().nullable().optional(),
   lines: z.array(purchaseOrderLineSchema),
 });
 export type PurchaseOrderDetail = z.infer<typeof purchaseOrderDetailSchema>;
