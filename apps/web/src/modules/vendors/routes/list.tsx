@@ -20,7 +20,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
@@ -65,7 +65,6 @@ function ratingBadgeClass(rating: string | null): string {
 function VendorsListPage(): React.JSX.Element {
   const search = vendorsListRoute.useSearch();
   const navigate = vendorsListRoute.useNavigate();
-  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -98,7 +97,19 @@ function VendorsListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
+  // old admin/manager flag, which collapsed all seven tiers into two.
+  //   Add / Excel import -> entry  (L2 Data Entry and up)
+  //   Edit               -> edit   (L3 Editor and up; L2 creates but cannot alter)
+  //   Del                -> edit AND approve. Delete is not one of the four tier
+  //     actions, so it is expressed as the pair only L5 Department Admin and
+  //     above hold: L3 has edit without approve, L4 has approve without edit.
+  //     Previously admin-only, which locked out the tier meant to run the dept.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'vendor_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   const toggleSort = useCallback(
     (field: 'code' | 'name') => {
@@ -208,7 +219,7 @@ function VendorsListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canAdd ? (
             <Link to="/vendors/new" className="btn btn-primary">
               + Add Vendor
             </Link>
@@ -329,7 +340,7 @@ function VendorsListPage(): React.JSX.Element {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        {canWrite ? (
+                        {canEdit ? (
                           <Link
                             to="/vendors/$id/edit"
                             params={{ id: v.id }}
@@ -338,7 +349,7 @@ function VendorsListPage(): React.JSX.Element {
                             Edit
                           </Link>
                         ) : null}
-                        {canWrite ? (
+                        {canDelete ? (
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
@@ -411,7 +422,7 @@ function VendorsListPage(): React.JSX.Element {
       </div>
 
       {/* Legacy L27776-27779: Excel template + import sit below the table panel. */}
-      {canWrite ? (
+      {canAdd ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button
             type="button"

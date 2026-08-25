@@ -9,6 +9,7 @@ import type { CreateDeliveryChallanReceiptInput, DeliveryChallanWithLines } from
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
@@ -35,6 +36,10 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
   const receive = useReceiveDeliveryChallan();
+  // Booking material back is `entry` on ospdc_create (Purchase) — the same right
+  // that raised the DC. Checked here too because the route is reachable by URL.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
 
   const [receiptDate, setReceiptDate] = useState(todayLocal());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
@@ -108,6 +113,16 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     }
   };
 
+  if (!perms.entry) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ You do not have entry access to receive against a delivery challan.
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div>
@@ -146,7 +161,10 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+            >
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
@@ -286,11 +304,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          <Link
-            to="/delivery-challans/$id"
-            params={{ id }}
-            className="btn btn-ghost"
-          >
+          <Link to="/delivery-challans/$id" params={{ id }} className="btn btn-ghost">
             Cancel
           </Link>
           <button type="submit" className="btn btn-primary" disabled={!canSubmit}>

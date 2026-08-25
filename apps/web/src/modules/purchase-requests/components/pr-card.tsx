@@ -8,6 +8,11 @@
 // Nothing about the data or the actions changed — every column the table showed
 // is still on the card, and Approve / Reject / 📝 PO / Assign Task call the same
 // handlers they always did.
+//
+// The one gate that DID change: Approve / Reject and 📝 PO used to share a
+// single `canWrite` flag, so an L3 Editor could approve and an L4 Approver got
+// buttons they may not press. They are now two independent tier rights —
+// `canApprove` (L4+) for the sign-off pair, `canEntry` (L2+) for raising the PO.
 
 import type { PurchaseRequestListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -90,14 +95,18 @@ function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
 
 export function PrCard({
   pr,
-  canWrite,
+  canApprove,
+  canEntry,
   approving,
   rejecting,
   onApprove,
   onReject,
 }: {
   pr: PurchaseRequestListItem;
-  canWrite: boolean;
+  /** L4 Approver and above — signing a PR off is NOT an edit right. */
+  canApprove: boolean;
+  /** L2 Data Entry and above — raising the PO off this PR is an entry right. */
+  canEntry: boolean;
   approving: boolean;
   rejecting: boolean;
   onApprove: (pr: PurchaseRequestListItem) => void;
@@ -176,7 +185,7 @@ export function PrCard({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {canWrite && pr.status === 'open' ? (
+            {canApprove && pr.status === 'open' ? (
               <>
                 <button
                   type="button"
@@ -198,7 +207,7 @@ export function PrCard({
                 </button>
               </>
             ) : null}
-            {canWrite && (pr.status === 'open' || pr.status === 'approved') ? (
+            {canEntry && (pr.status === 'open' || pr.status === 'approved') ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: pr.id }}
@@ -227,9 +236,7 @@ export function PrCard({
                   navPage: `/purchase-requests/${pr.id}`,
                 }}
                 suggestedTitle={
-                  pr.status === 'open'
-                    ? `Review & approve ${pr.code}`
-                    : `Convert ${pr.code} to PO`
+                  pr.status === 'open' ? `Review & approve ${pr.code}` : `Convert ${pr.code} to PO`
                 }
                 label=""
               />

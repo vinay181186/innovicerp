@@ -1,8 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { machines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
   CreateMachineInput,
@@ -95,7 +94,9 @@ export async function createMachine(
   input: CreateMachineInput,
   user: AuthContext,
 ): Promise<Machine> {
-  requireWriteRole(user);
+  // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
+  // Entry can add a machine; L1 Viewer and L4 Approver cannot.
+  await requireFormAccess(user, 'machine_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -128,7 +129,11 @@ export async function createMachine(
         updatedBy: user.id,
       })
       .returning();
-    return toMachine(inserted[0]);
+    // list/get already mask this; the create response did not, so a
+    // price-restricted creator got the rate echoed straight back.
+    const created = toMachine(inserted[0]);
+    const showMoney = await canSeeFormPrice(user, 'machine_create');
+    return showMoney ? created : hideMachineMoney(created);
   });
 }
 
@@ -137,7 +142,8 @@ export async function updateMachine(
   input: UpdateMachineInput,
   user: AuthContext,
 ): Promise<Machine> {
-  requireWriteRole(user);
+  // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'machine_create', 'edit');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -162,7 +168,12 @@ export async function updateMachine(
 }
 
 export async function softDeleteMachine(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit. Previously
+  // this was admin-only, which locked out the very tier meant to run the dept.
+  await requireFormAccess(user, 'machine_create', 'edit');
+  await requireFormAccess(user, 'machine_create', 'approve');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

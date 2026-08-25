@@ -4,7 +4,7 @@ import type { Vendor } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoftDeleteVendor, useVendor } from '../api';
 
@@ -28,7 +28,7 @@ function VendorDetailPage(): React.JSX.Element {
   const { id } = vendorDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: vendor, isLoading, isError, error } = useVendor(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteVendor();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -65,8 +65,15 @@ function VendorDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Tier-driven, per department (vendor_create sits in Purchase). Replaces the
+  // old admin/manager + admin flags, which collapsed all seven tiers into two.
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
+  // edit without approve; L4 Approver has approve without edit. Delete was
+  // admin-only, which locked out the very tier meant to run the department.
+  const perms = effectiveFormPerms(eff, 'vendor_create');
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   return (
     <div>
@@ -97,7 +104,7 @@ function VendorDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

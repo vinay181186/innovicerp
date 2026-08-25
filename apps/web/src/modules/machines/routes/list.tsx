@@ -31,7 +31,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMachinesList } from '../api';
 
@@ -62,7 +62,6 @@ function statusBadgeClass(status: string): string {
 function MachinesListPage(): React.JSX.Element {
   const search = machinesListRoute.useSearch();
   const navigate = machinesListRoute.useNavigate();
-  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -90,7 +89,14 @@ function MachinesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useMachinesList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (machine_create sits in Production). Replaces
+  // the old admin/manager flag, which collapsed all seven tiers into two.
+  //   Add   -> entry (L2 Data Entry and up)
+  //   Edit  -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'machine_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
   // Money hidden for L1 Viewers: the API nulls hourRate, so the ₹/hr column is
   // dropped entirely for them.
   const priceHidden = (data?.machines ?? []).some((m) => m.hourRate == null);
@@ -190,7 +196,7 @@ function MachinesListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canAdd ? (
             <Link to="/machines/new" className="btn btn-primary">
               <Plus size={14} /> Add Machine
             </Link>
@@ -269,7 +275,7 @@ function MachinesListPage(): React.JSX.Element {
                           >
                             View
                           </Link>
-                          {canWrite ? (
+                          {canEdit ? (
                             <Link
                               to="/machines/$id/edit"
                               params={{ id: m.id }}

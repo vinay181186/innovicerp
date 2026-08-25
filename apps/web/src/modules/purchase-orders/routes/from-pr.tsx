@@ -15,6 +15,7 @@ import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
@@ -144,6 +145,12 @@ const CSS = `
 function PurchaseOrderFromPrPage(): React.JSX.Element {
   const { prId } = purchaseOrderFromPrRoute.useSearch();
   const navigate = useNavigate();
+  // Route-level gate. Converting a PR raises a NEW PO, so this is the entry
+  // action (L2 Data Entry and up), same as "+ New PO". Reached from a link on
+  // the PR screen, but the URL is typeable — without this the whole form was
+  // open to anyone who could log in.
+  const { data: eff, isPending: accessPending } = useMyAccess();
+  const canCreate = effectiveFormPerms(eff, 'po_create').entry;
   const { data: pr, isLoading, isError, error } = usePurchaseRequest(prId);
   const createFromPr = useCreatePurchaseOrderFromPr();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -218,10 +225,20 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || accessPending) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading source PR…
+      </div>
+    );
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ Data entry access required to create a purchase order.
+        </div>
       </div>
     );
   }
@@ -300,9 +317,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
             ) : null}
           </div>
         ) : isCancelled ? (
-          <div className="pof-msg pof-msg-err">
-            This PR is cancelled — no PO can be generated.
-          </div>
+          <div className="pof-msg pof-msg-err">This PR is cancelled — no PO can be generated.</div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)}>
             {/* Four inputs, four columns, one row. */}
@@ -382,7 +397,12 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                 <label className="pof-lbl" htmlFor="pof-due">
                   Due Date
                 </label>
-                <input id="pof-due" type="date" className="pof-in pof-num" {...register('dueDate')} />
+                <input
+                  id="pof-due"
+                  type="date"
+                  className="pof-in pof-num"
+                  {...register('dueDate')}
+                />
               </div>
             </div>
 

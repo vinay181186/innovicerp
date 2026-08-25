@@ -38,7 +38,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseOrdersList } from '../api';
@@ -108,7 +108,6 @@ export const purchaseOrdersListRoute = createRoute({
 function PurchaseOrdersListPage(): React.JSX.Element {
   const search = purchaseOrdersListRoute.useSearch();
   const navigate = purchaseOrdersListRoute.useNavigate();
-  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -137,7 +136,15 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (po_create sits in Purchase). Replaces the old
+  // admin-or-manager flag, which collapsed all seven tiers into two and gave a
+  // manager the same rights everywhere.
+  //   + New PO          -> entry (L2 Data Entry and up)
+  //   Edit / Create DC  -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'po_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -230,7 +237,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                 <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
               </span>
             ) : null}
-            {canWrite ? (
+            {canAdd ? (
               <Link to="/purchase-orders/new" className="btn btn-primary">
                 <Plus size={14} /> New PO
               </Link>
@@ -348,7 +355,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                     >
                       👁 View
                     </Link>
-                    {canWrite && po.status !== 'closed' ? (
+                    {canEdit && po.status !== 'closed' ? (
                       <Link
                         to="/purchase-orders/$id/edit"
                         params={{ id: po.id }}
@@ -359,7 +366,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
                       </Link>
                     ) : null}
                     {/* Job Work AND Service both send material out — same DC lane. */}
-                    {canWrite && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
+                    {canEdit && poSendsMaterialOut(po.poType) && po.status !== 'draft' ? (
                       <Link
                         to="/delivery-challans/new"
                         search={{ poId: po.id }}

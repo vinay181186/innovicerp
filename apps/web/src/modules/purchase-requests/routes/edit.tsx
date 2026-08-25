@@ -4,6 +4,7 @@ import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@in
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
 import { PurchaseRequestForm } from '../components/purchase-request-form';
@@ -24,6 +25,12 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreatePurchaseRequest();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Tier-driven, per department (Purchase). The + New PR button is hidden from
+  // anyone without entry rights, but this screen had no gate of its own —
+  // typing the URL still handed over the create form (an L1 Viewer, an L4
+  // Approver). Same guard shape as the edit page below.
+  const { data: eff, isLoading: accessLoading } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'pr_create');
 
   const onSubmit = async (values: CreatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
@@ -34,6 +41,32 @@ function PurchaseRequestNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create purchase request');
     }
   };
+
+  if (accessLoading) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase request…
+      </div>
+    );
+  }
+
+  if (!perms.entry) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to Purchase Requests
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+            ⛔ You do not have create access to Purchase Requests. Ask an admin for L2 Data Entry or
+            above in Purchase.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -68,6 +101,11 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
   const update = useUpdatePurchaseRequest(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Tier-driven, per department (Purchase). This screen had no gate at all —
+  // typing the URL handed the form to anyone, including an L1 Viewer and an
+  // L4 Approver, who deliberately cannot change a saved record.
+  const { data: eff, isLoading: accessLoading } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'pr_create');
 
   const onSubmit = async (values: UpdatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
@@ -79,10 +117,28 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || accessLoading) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase request…
+      </div>
+    );
+  }
+
+  if (!perms.edit) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-requests/$id" params={{ id }} className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to PR
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+            ⛔ You do not have edit access to Purchase Requests. Ask an admin for L3 Editor or above
+            in Purchase.
+          </div>
+        </div>
       </div>
     );
   }
@@ -148,7 +204,10 @@ function PurchaseRequestEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+            >
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>

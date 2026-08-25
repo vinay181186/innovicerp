@@ -4,6 +4,7 @@ import type { CreateVendorInput, UpdateVendorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useUpdateVendor, useVendor } from '../api';
 import { VendorForm } from '../components/vendor-form';
@@ -24,6 +25,11 @@ function VendorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateVendor();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Creating a master record is `entry` on vendor_create (Purchase). Checked
+  // here as well as on the list button — the route is reachable by URL, so
+  // without this an L1 Viewer got the whole form and failed only at the API.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'vendor_create');
 
   const onSubmit = async (values: CreateVendorInput): Promise<void> => {
     setSubmitError(null);
@@ -34,6 +40,16 @@ function VendorNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create vendor');
     }
   };
+
+  if (!perms.entry) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ You do not have entry access to create a vendor.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -68,6 +84,11 @@ function VendorEditPage(): React.JSX.Element {
   const { data: vendor, isLoading, isError, error } = useVendor(id);
   const update = useUpdateVendor(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Changing a saved record is `edit` on vendor_create (Purchase), so L2 Data
+  // Entry (create-only) is correctly refused. Checked here too because the
+  // route is reachable by URL, not just from the Edit button.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'vendor_create');
 
   const onSubmit = async (values: UpdateVendorInput): Promise<void> => {
     setSubmitError(null);
@@ -78,6 +99,16 @@ function VendorEditPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update vendor');
     }
   };
+
+  if (!perms.edit) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ You do not have edit access to change a vendor.
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

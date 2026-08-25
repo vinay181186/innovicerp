@@ -16,7 +16,7 @@
 //    club-PO flow is ported on /outsource-jobs (from-pr-batch) and the list API
 //    has no SO/JC filter param. The legacy tip line that advertises both is
 //    therefore not shipped either.
-//  - Approve / Reject buttons (admin/manager, open PRs) call the dedicated
+//  - Approve / Reject buttons (L4 Approver and above, open PRs) call the dedicated
 //    /approve + /reject endpoints, which stamp approvedBy/approvedAt (approve)
 //    or record a reason + cancel (reject). A raw PATCH can no longer change
 //    status — that path is immutable now, closing ISSUE-025.
@@ -34,7 +34,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { OutsourceJobsView } from '@/modules/outsource-jobs/components/outsource-jobs-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
@@ -66,7 +66,17 @@ export const purchaseRequestsListRoute = createRoute({
 function PurchaseRequestsListPage(): React.JSX.Element {
   const search = purchaseRequestsListRoute.useSearch();
   const navigate = purchaseRequestsListRoute.useNavigate();
-  const { data: me } = useSession();
+  // Tier-driven, per department (Purchase). Entry raises a PR or a PO off one;
+  // approve signs one off. They are separate rights: the old
+  // `role === 'admin' || role === 'manager'` flag collapsed all seven tiers
+  // into two, letting an L3 Editor approve and denying an L4 Approver nothing.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'pr_create');
+  // The card's 📝 PO action raises a PURCHASE ORDER off this PR, so it follows
+  // po_create, not pr_create. Its destination (/purchase-orders/from-pr) guards
+  // on po_create.entry; gating the button on a different key would show it to
+  // someone the next page then refuses.
+  const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
 
   // Outsource Jobs folded in as a second tab (UI-only merge). The standalone
   // /outsource-jobs route still exists for now — retirement is a later step.
@@ -98,7 +108,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   // Approve / Reject are the only paths that advance an open PR — they stamp
   // approvedBy/approvedAt (approve) or record a reason + cancel (reject),
@@ -159,220 +168,247 @@ function PurchaseRequestsListPage(): React.JSX.Element {
 
   return (
     <div>
-      <div style={{display:'flex',gap:4,borderBottom:'1px solid var(--border)',marginBottom:14}}>
-        {(['pr','osp'] as const).map((t)=>(<button key={t} type="button" onClick={()=>setTab(t)} style={{background:'none',border:'none',borderBottom:tab===t?'2px solid var(--cyan)':'2px solid transparent',color:tab===t?'var(--cyan)':'var(--text3)',fontSize:12,fontWeight:700,padding:'6px 12px',cursor:'pointer',marginBottom:-1}}>{t==='pr'?'📋 Purchase Requests':'🔗 Outsource Jobs'}</button>))}
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
+        {(['pr', 'osp'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
+              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'pr' ? '📋 Purchase Requests' : '🔗 Outsource Jobs'}
+          </button>
+        ))}
       </div>
 
       {tab === 'osp' ? (
         <OutsourceJobsView />
       ) : (
         <>
-      {/* Frozen header band — title + count + search + status + New PR + the
+          {/* Frozen header band — title + count + search + status + New PR + the
           count strip stay pinned; the PR cards scroll under them. `#content` is
           the scroll container, so the background must be the opaque `--bg` or
           cards show through. Never bled to the edges: that gives the whole app
           a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              Purchase Requests
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} request{total === 1 ? '' : 's'}
-              {search.status ? (
-                <>
-                  {' '}
-                  · <span className="text2">{search.status.replaceAll('_', ' ')}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search PRs..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as PrStatus | '';
-                setStatusFilter(v === '' ? undefined : v);
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 20,
+              background: 'var(--bg)',
+              paddingBottom: 8,
+              marginBottom: 10,
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 10,
+                gap: 8,
+                flexWrap: 'wrap',
               }}
-              style={{ width: 160, fontSize: 12 }}
             >
-              <option value="">All statuses</option>
-              {PR_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            {canWrite ? (
-              <Link to="/purchase-requests/new" className="btn btn-primary">
-                <Plus size={14} /> New PR
-              </Link>
-            ) : null}
+              <div>
+                <div className="section-hdr" style={{ marginBottom: 0 }}>
+                  Purchase Requests
+                </div>
+                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+                  {total} request{total === 1 ? '' : 's'}
+                  {search.status ? (
+                    <>
+                      {' '}
+                      · <span className="text2">{search.status.replaceAll('_', ' ')}</span> only
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  className="innovic-input"
+                  placeholder="🔍 Search PRs..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  style={{ width: 220, fontSize: 12 }}
+                />
+                <select
+                  className="innovic-select"
+                  value={search.status ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as PrStatus | '';
+                    setStatusFilter(v === '' ? undefined : v);
+                  }}
+                  style={{ width: 160, fontSize: 12 }}
+                >
+                  <option value="">All statuses</option>
+                  {PR_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+                {isFetching && !isLoading ? (
+                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+                  </span>
+                ) : null}
+                {perms.entry ? (
+                  <Link to="/purchase-requests/new" className="btn btn-primary">
+                    <Plus size={14} /> New PR
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            <StatStrip
+              items={[
+                {
+                  key: 'open',
+                  label: 'Open',
+                  count: openCount,
+                  color: 'var(--amber)',
+                  active: search.status === 'open',
+                  onClick: toggleStatus('open'),
+                },
+                {
+                  key: 'approved',
+                  label: 'Approved (Awaiting PO)',
+                  count: approvedCount,
+                  color: 'var(--blue)',
+                  active: search.status === 'approved',
+                  onClick: toggleStatus('approved'),
+                },
+                {
+                  key: 'po_created',
+                  label: 'PO Created',
+                  count: poCreatedCount,
+                  color: 'var(--green)',
+                  active: search.status === 'po_created',
+                  onClick: toggleStatus('po_created'),
+                },
+                {
+                  key: 'all',
+                  label: 'All PRs',
+                  count: allCount,
+                  color: 'var(--cyan)',
+                  active: search.status === undefined,
+                  onClick: () => setStatusFilter(undefined),
+                  title: 'Clear the status filter',
+                },
+              ]}
+            />
           </div>
-        </div>
 
-        <StatStrip
-          items={[
-            {
-              key: 'open',
-              label: 'Open',
-              count: openCount,
-              color: 'var(--amber)',
-              active: search.status === 'open',
-              onClick: toggleStatus('open'),
-            },
-            {
-              key: 'approved',
-              label: 'Approved (Awaiting PO)',
-              count: approvedCount,
-              color: 'var(--blue)',
-              active: search.status === 'approved',
-              onClick: toggleStatus('approved'),
-            },
-            {
-              key: 'po_created',
-              label: 'PO Created',
-              count: poCreatedCount,
-              color: 'var(--green)',
-              active: search.status === 'po_created',
-              onClick: toggleStatus('po_created'),
-            },
-            {
-              key: 'all',
-              label: 'All PRs',
-              count: allCount,
-              color: 'var(--cyan)',
-              active: search.status === undefined,
-              onClick: () => setStatusFilter(undefined),
-              title: 'Clear the status filter',
-            },
-          ]}
-        />
-      </div>
+          {actionError ? (
+            <div
+              style={{
+                color: 'var(--red)',
+                background: 'var(--red3)',
+                border: '1px solid var(--red)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                marginBottom: 10,
+              }}
+            >
+              {actionError}
+            </div>
+          ) : null}
 
-      {actionError ? (
-        <div
-          style={{
-            color: 'var(--red)',
-            background: 'var(--red3)',
-            border: '1px solid var(--red)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {actionError}
-        </div>
-      ) : null}
+          {isLoading ? (
+            <div className="panel empty-state" style={{ padding: 24 }}>
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : isError ? (
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+              {error instanceof Error ? error.message : 'Failed to load purchase requests'}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="panel empty-state" style={{ padding: 24 }}>
+              No purchase requests found
+            </div>
+          ) : (
+            rows.map((pr) => (
+              <PrCard
+                key={pr.id}
+                pr={pr}
+                canApprove={perms.approve}
+                canEntry={canCreatePo}
+                approving={approveMut.isPending}
+                rejecting={rejectMut.isPending}
+                onApprove={handleApprove}
+                onReject={handleReject}
+              />
+            ))
+          )}
 
-      {isLoading ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load purchase requests'}
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          No purchase requests found
-        </div>
-      ) : (
-        rows.map((pr) => (
-          <PrCard
-            key={pr.id}
-            pr={pr}
-            canWrite={canWrite}
-            approving={approveMut.isPending}
-            rejecting={rejectMut.isPending}
-            onApprove={handleApprove}
-            onReject={handleReject}
-          />
-        ))
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No purchase requests'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
           >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+            <span>
+              {total === 0
+                ? 'No purchase requests'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage <= 1}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </>
       )}
     </div>

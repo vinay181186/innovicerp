@@ -19,7 +19,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -30,11 +30,7 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import { applyOutwardToJcOp, reverseOutwardFromJcOp } from './cascades';
-import {
-  applyReceiveToJcOp,
-  dcHasActiveReceipts,
-  isDcFullyReconciled,
-} from './receipt-cascades';
+import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
@@ -609,7 +605,9 @@ export async function createDeliveryChallan(
   input: CreateDeliveryChallanInput,
   user: AuthContext,
 ): Promise<DeliveryChallanWithLines> {
-  requireWriteRole(user);
+  // Tier gate (was requireWriteRole, which only knew admin/manager). L2 Data
+  // Entry can raise an outward DC; L1 Viewer and L4 Approver cannot.
+  await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -643,9 +641,7 @@ export async function createDeliveryChallan(
       await assertSalesOrderLineExists(tx, input.header.salesOrderLineId, companyId);
     }
 
-    const itemIds = input.lines
-      .map((l) => l.itemId)
-      .filter((id): id is string => Boolean(id));
+    const itemIds = input.lines.map((l) => l.itemId).filter((id): id is string => Boolean(id));
     await assertItemIdsExist(tx, itemIds, companyId);
 
     const poLineIds = input.lines
@@ -778,13 +774,13 @@ export async function cancelDeliveryChallan(
   id: string,
   user: AuthContext,
 ): Promise<DeliveryChallanWithLines> {
-  // Admin-only — destructive: reverses jc_op state + writes compensating
-  // stock ledger rows.
-  if (user.role !== 'admin') {
-    throw new AuthorizationError(
-      `Role "${user.role}" cannot cancel delivery challans — admin required`,
-    );
-  }
+  // Destructive: reverses jc_op state + writes compensating stock ledger rows.
+  // Cancel is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit. Previously
+  // this was admin-only, which locked out the very tier meant to run the dept.
+  await requireFormAccess(user, 'ospdc_create', 'edit');
+  await requireFormAccess(user, 'ospdc_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -921,7 +917,9 @@ export async function receiveAgainstDeliveryChallan(
   input: CreateDeliveryChallanReceiptInput,
   user: AuthContext,
 ): Promise<DeliveryChallanWithLines> {
-  requireWriteRole(user);
+  // Booking material back from the vendor creates a receipt, so it is `entry` —
+  // the same right that raised the DC. Was requireWriteRole.
+  await requireFormAccess(user, 'ospdc_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

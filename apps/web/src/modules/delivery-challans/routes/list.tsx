@@ -29,6 +29,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus, Printer } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useDeliveryChallansList } from '../api';
@@ -85,6 +86,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
   const { data: company } = useMyCompany();
+  // Tier-driven, per department (ospdc_create sits in Purchase). Raising a DC is
+  // `entry`, so L2 Data Entry and up; an L1 Viewer no longer sees the button.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -115,7 +120,14 @@ function DeliveryChallansListPage(): React.JSX.Element {
     <div>
       {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
           former standalone /osp-wip screen). */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
         {(['outward', 'at_vendor'] as const).map((t) => (
           <button
             key={t}
@@ -147,205 +159,208 @@ function DeliveryChallansListPage(): React.JSX.Element {
         <OspAtVendorRegister />
       ) : (
         <>
-      {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
+          {/* Frozen header band — matches the SO/WO list (sales-orders/routes/list.tsx).
           Title + count + filters + Print/New and the count strip stay pinned while
           the cards scroll underneath. `#content` is the scroll container, so top:0
           pins this to its padding box; the background must be opaque var(--bg) or
           cards show through as they pass under. Not bled to the edges — that would
           give the app a horizontal scrollbar. */}
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
-          background: 'var(--bg)',
-          paddingBottom: 8,
-          marginBottom: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 10,
-            gap: 8,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div className="section-hdr" style={{ marginBottom: 0 }}>
-              🚛 OSP / JW Outward DC
-            </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
-              {total} DC{total === 1 ? '' : 's'}
-              {search.status ? (
-                <>
-                  {' '}· <span className="text2">{search.status}</span> only
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              className="innovic-input"
-              placeholder="🔍 Search DC, PO, vendor..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ width: 240, fontSize: 12 }}
-            />
-            <select
-              className="innovic-select"
-              value={search.status ?? ''}
-              onChange={(e) => {
-                const v = e.target.value as DcStatus | '';
-                void navigate({
-                  search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                  replace: true,
-                });
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 20,
+              background: 'var(--bg)',
+              paddingBottom: 8,
+              marginBottom: 10,
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: 10,
+                gap: 8,
+                flexWrap: 'wrap',
               }}
-              style={{ width: 160, fontSize: 12 }}
             >
-              <option value="">All statuses</option>
-              {DC_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-            {isFetching && !isLoading ? (
-              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
-              onClick={onPrintRegister}
-              disabled={isLoading || !data}
-              title="Print the dispatch register for the current filter/page"
-            >
-              <Printer size={14} /> Print Register
-            </button>
-            {/* A DC is always issued against a PO, so "new" starts on the PO
+              <div>
+                <div className="section-hdr" style={{ marginBottom: 0 }}>
+                  🚛 OSP / JW Outward DC
+                </div>
+                <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+                  {total} DC{total === 1 ? '' : 's'}
+                  {search.status ? (
+                    <>
+                      {' '}
+                      · <span className="text2">{search.status}</span> only
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <input
+                  className="innovic-input"
+                  placeholder="🔍 Search DC, PO, vendor..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  style={{ width: 240, fontSize: 12 }}
+                />
+                <select
+                  className="innovic-select"
+                  value={search.status ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as DcStatus | '';
+                    void navigate({
+                      search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
+                      replace: true,
+                    });
+                  }}
+                  style={{ width: 160, fontSize: 12 }}
+                >
+                  <option value="">All statuses</option>
+                  {DC_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+                {isFetching && !isLoading ? (
+                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 12 }}
+                  onClick={onPrintRegister}
+                  disabled={isLoading || !data}
+                  title="Print the dispatch register for the current filter/page"
+                >
+                  <Printer size={14} /> Print Register
+                </button>
+                {/* A DC is always issued against a PO, so "new" starts on the PO
                 list rather than a standalone create form. */}
-            <Link to="/purchase-orders" className="btn btn-primary">
-              <Plus size={14} /> New DC (via PO)
-            </Link>
-          </div>
-        </div>
+                {perms.entry ? (
+                  <Link to="/purchase-orders" className="btn btn-primary">
+                    <Plus size={14} /> New DC (via PO)
+                  </Link>
+                ) : null}
+              </div>
+            </div>
 
-        {/* Read-only totals, not filters — no onClick, so each cell renders as a
+            {/* Read-only totals, not filters — no onClick, so each cell renders as a
             <div> instead of a button that does nothing. Rendered with zeros
             while the first page loads so the list below does not jump. */}
-        <StatStrip
-          items={[
-            {
-              key: 'dispatched',
-              label: 'Total Dispatched',
-              count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
-                maximumFractionDigits: 2,
-              }),
-              color: 'var(--red)',
-              sub: 'pieces',
-              title: 'Total quantity sent out on the DCs matching this filter',
-            },
-            {
-              key: 'entries',
-              label: 'Dispatch Entries',
-              count: data?.summary?.entryCount ?? 0,
-              title: 'Number of DC lines in this filter',
-            },
-            {
-              key: 'items',
-              label: 'Items Dispatched',
-              count: data?.summary?.itemCount ?? 0,
-              color: 'var(--cyan)',
-              title: 'Distinct items sent out in this filter',
-            },
-          ]}
-        />
-      </div>
+            <StatStrip
+              items={[
+                {
+                  key: 'dispatched',
+                  label: 'Total Dispatched',
+                  count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
+                    maximumFractionDigits: 2,
+                  }),
+                  color: 'var(--red)',
+                  sub: 'pieces',
+                  title: 'Total quantity sent out on the DCs matching this filter',
+                },
+                {
+                  key: 'entries',
+                  label: 'Dispatch Entries',
+                  count: data?.summary?.entryCount ?? 0,
+                  title: 'Number of DC lines in this filter',
+                },
+                {
+                  key: 'items',
+                  label: 'Items Dispatched',
+                  count: data?.summary?.itemCount ?? 0,
+                  color: 'var(--cyan)',
+                  title: 'Distinct items sent out in this filter',
+                },
+              ]}
+            />
+          </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            ⚠️ DCs are issued against PO_jw. Create from a PO detail page → &ldquo;Issue DC&rdquo;.
-            Receive back from the DC detail page.
-          </span>
-        </div>
-      </div>
+          <div className="panel" style={{ marginBottom: 12 }}>
+            <div className="panel-body" style={{ padding: '10px 14px' }}>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                ⚠️ DCs are issued against PO_jw. Create from a PO detail page → &ldquo;Issue
+                DC&rdquo;. Receive back from the DC detail page.
+              </span>
+            </div>
+          </div>
 
-      {isLoading ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      ) : isError ? (
-        <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
-          {error instanceof Error ? error.message : 'Failed to load DCs'}
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="panel empty-state" style={{ padding: 24 }}>
-          No OSP DCs yet — issue one from a PO detail page.
-        </div>
-      ) : (
-        rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
-      )}
+          {isLoading ? (
+            <div className="panel empty-state" style={{ padding: 24 }}>
+              <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : isError ? (
+            <div className="panel empty-state" style={{ padding: 24, color: 'var(--red)' }}>
+              {error instanceof Error ? error.message : 'Failed to load DCs'}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="panel empty-state" style={{ padding: 24 }}>
+              No OSP DCs yet — issue one from a PO detail page.
+            </div>
+          ) : (
+            rows.map((dc) => <DcCard key={dc.id} dc={dc} />)
+          )}
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No DCs'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
           >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+            <span>
+              {total === 0
+                ? 'No DCs'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage <= 1}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
 
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
-        💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
-      </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
+            💡 Click a card to open the DC · <b>+ Receive</b> books material back from the vendor.
+          </div>
         </>
       )}
     </div>

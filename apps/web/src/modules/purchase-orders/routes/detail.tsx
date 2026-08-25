@@ -51,6 +51,7 @@ import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -77,6 +78,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'po_create');
   const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
@@ -135,12 +138,26 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     if (!ok) window.alert('Allow popups to print.');
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (po_create sits in Purchase). Replaces the old
+  // admin-or-manager flag, which collapsed all seven tiers into two.
+  //   Edit / Issue DC / Receive -> edit (L3 Editor and up)
+  const canEdit = perms.edit;
   const isAdmin = me?.role === 'admin';
   const canIssueOrReceive = ['draft', 'open', 'partial', 'qc_pending'].includes(detail.status);
+  // Approve/Reject needs BOTH halves, matching what the API enforces
+  // (service.ts approvePurchaseOrder: requireFormAccess(…,'approve') AND the
+  // loadApprovalContext `isApprover` check). The TIER says whether you may
+  // approve POs at all — an L3 Editor raises them but never signs them off —
+  // and the named `poApprovers` list says WHICH of those people do it for this
+  // company. Being on the list without the tier is not enough, and the tier
+  // without the list is not enough either. Admins bypass both, as before.
   const isApprover =
-    isAdmin || (me ? (approvalCfg?.poApprovers ?? []).includes(me.id) : false);
+    isAdmin || (perms.approve && me ? (approvalCfg?.poApprovers ?? []).includes(me.id) : false);
   const showApprovalActions = detail.status === 'draft' && isApprover;
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
+  // approve, L4 has approve without edit.
+  const canDelete = perms.edit && perms.approve;
 
   async function doApprove(): Promise<void> {
     if (!detail) return;
@@ -264,7 +281,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
@@ -331,7 +348,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
       <div className="panel">
         <div className="panel-hdr">
-          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>PO Line Items ({detail.lines.length})</div>
+          <div className="panel-title" style={{ color: 'var(--blue)', textTransform: 'uppercase' }}>
+            PO Line Items ({detail.lines.length})
+          </div>
         </div>
         <div className="tbl-wrap">
           <table className="innovic-table">
@@ -362,9 +381,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   </td>
                 </tr>
               ) : (
-                detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} />
-                ))
+                detail.lines.map((l) => <LineRow key={l.id} line={l} priceHidden={priceHidden} />)
               )}
             </tbody>
           </table>
@@ -427,23 +444,31 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 }}
               >
                 <div>
-                  <span className="text3" style={{ fontSize: 10 }}>PO</span>
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    PO
+                  </span>
                   <br />
                   <b style={{ color: 'var(--cyan)' }}>{detail.code}</b>
                 </div>
                 <div>
-                  <span className="text3" style={{ fontSize: 10 }}>VENDOR</span>
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    VENDOR
+                  </span>
                   <br />
                   <b>{detail.vendorName ?? detail.vendorCodeText ?? '—'}</b>
                 </div>
                 <div>
-                  <span className="text3" style={{ fontSize: 10 }}>LINES</span>
+                  <span className="text3" style={{ fontSize: 10 }}>
+                    LINES
+                  </span>
                   <br />
                   <b>{detail.lines.length}</b>
                 </div>
                 {priceHidden ? null : (
                   <div>
-                    <span className="text3" style={{ fontSize: 10 }}>VALUE</span>
+                    <span className="text3" style={{ fontSize: 10 }}>
+                      VALUE
+                    </span>
                     <br />
                     <b style={{ color: 'var(--green)' }}>
                       ₹{Math.round(totalValue).toLocaleString('en-IN')}
@@ -628,10 +653,10 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
   const pending = Math.max(0, l.qty - l.receivedQty);
   return (
     <tr>
-      <td className="mono fw-700" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
-      <td className="td-code">
-        {l.itemCode ?? l.itemCodeText ?? '—'}
+      <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+        {l.lineNo}
       </td>
+      <td className="td-code">{l.itemCode ?? l.itemCodeText ?? '—'}</td>
       <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
       <td className="mono text2" style={{ fontSize: 10 }}>
         {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}

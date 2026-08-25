@@ -4,6 +4,7 @@ import type { CreatePurchaseOrderInput, UpdatePurchaseOrderInput } from '@innovi
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrder, usePurchaseOrder, useUpdatePurchaseOrder } from '../api';
 import { PurchaseOrderForm } from '../components/purchase-order-form';
@@ -24,6 +25,12 @@ function PurchaseOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreatePurchaseOrder();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Route-level gate. The list hides "+ New PO" below L2, but the URL is
+  // typeable — without this the whole form was reachable by anyone. Wait for
+  // the matrix before deciding: an unresolved query reads as "no perms", which
+  // would flash the denial panel at people who do have access.
+  const { data: eff, isPending: accessPending } = useMyAccess();
+  const canCreate = effectiveFormPerms(eff, 'po_create').entry;
 
   const onSubmit = async (values: CreatePurchaseOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -34,6 +41,24 @@ function PurchaseOrderNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create purchase order');
     }
   };
+
+  if (accessPending) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ Data entry access required to create a purchase order.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -65,6 +90,11 @@ function PurchaseOrderNewPage(): React.JSX.Element {
 function PurchaseOrderEditPage(): React.JSX.Element {
   const { id } = purchaseOrderEditRoute.useParams();
   const navigate = useNavigate();
+  // Route-level gate. Editing needs the edit action (L3 Editor and up) — an L2
+  // Data Entry clerk creates a PO but cannot alter one after it is saved. The
+  // list hides the Edit link for them; this stops the typed URL too.
+  const { data: eff, isPending: accessPending } = useMyAccess();
+  const canEdit = effectiveFormPerms(eff, 'po_create').edit;
   const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
   const update = useUpdatePurchaseOrder(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -79,10 +109,20 @@ function PurchaseOrderEditPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || accessPending) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase order…
+      </div>
+    );
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ Edit access required to change a purchase order.
+        </div>
       </div>
     );
   }
@@ -117,7 +157,10 @@ function PurchaseOrderEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+            >
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>

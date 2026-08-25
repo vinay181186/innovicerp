@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { usePurchaseOrder } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -40,6 +41,11 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
   const create = useCreateDeliveryChallan();
+  // Raising a DC is `entry` on ospdc_create (Purchase). Checked here too, not
+  // just on the list button — the route is reachable by URL, and without this
+  // an L1 Viewer got the whole form and failed only at the API.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
 
   const [code, setCode] = useState('');
   const [codeValid, setCodeValid] = useState(false);
@@ -85,6 +91,16 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     // a dependency or the Save button's enabled state lags the real validity.
     [po, dcDate, codeValid, lineDrafts],
   );
+
+  if (!perms.entry) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ You do not have entry access to create an OSP delivery challan.
+        </div>
+      </div>
+    );
+  }
 
   if (!poId) {
     return (
@@ -269,7 +285,17 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           </div>
         </div>
 
-        <div style={{ fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '14px 0 6px' }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--blue)',
+            fontFamily: 'var(--mono)',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            margin: '14px 0 6px',
+          }}
+        >
           Items to Send
         </div>
         <div className="tbl-wrap" style={{ marginBottom: 14 }}>
@@ -288,7 +314,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             <tbody>
               {lineDrafts.map((l, idx) => (
                 <tr key={l.purchaseOrderLineId}>
-                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>{idx + 1}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                    {idx + 1}
+                  </td>
                   <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
                     {l.itemCodeText}
                   </td>

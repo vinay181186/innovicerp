@@ -13,7 +13,7 @@ import { ArrowLeft, FileText, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePurchaseRequest, useSoftDeletePurchaseRequest } from '../api';
 import { PrStatusBadge } from '../components/pr-status-badge';
@@ -28,7 +28,14 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const { id } = purchaseRequestDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = usePurchaseRequest(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'pr_create');
+  // Create PO is a PURCHASE ORDER action that merely starts from this PR, so it
+  // follows po_create — not pr_create. The page it opens
+  // (/purchase-orders/from-pr) guards on po_create.entry, and a button gated on
+  // a different key than its destination is the "button that only fails on
+  // click" pattern this whole pass exists to remove.
+  const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -64,8 +71,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Tier-driven, per department (Purchase). Raising the PO off this PR is an
+  // entry right; changing the PR itself is an edit right.
+  const canEdit = perms.edit;
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // only L5 Department Admin and above hold: edit AND approve. L3 has edit
+  // without approve; L4 has approve without edit.
+  const canDelete = perms.edit && perms.approve;
   const linkedToPo = detail.poId !== null;
 
   const soNo = detail.soCode
@@ -112,7 +124,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             />
             {(detail.status === 'open' || detail.status === 'approved') &&
             !linkedToPo &&
-            canWrite(me?.role) ? (
+            canCreatePo ? (
               <Link
                 to="/purchase-orders/from-pr"
                 search={{ prId: detail.id }}
@@ -141,7 +153,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
@@ -252,10 +264,6 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       <RelatedDocsPanel module="purchase-requests" id={detail.id} />
     </div>
   );
-}
-
-function canWrite(role: string | undefined): boolean {
-  return role === 'admin' || role === 'manager';
 }
 
 /** Fact strip layout — the same wrap/gap the SO detail screen uses. */

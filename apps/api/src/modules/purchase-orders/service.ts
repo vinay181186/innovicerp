@@ -482,7 +482,8 @@ export async function createPurchaseOrder(
   input: CreatePurchaseOrderInput,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
+  // Raising a PO is the `entry` action — L2 Data Entry and up.
+  await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -611,7 +612,9 @@ export async function updatePurchaseOrder(
   input: UpdatePurchaseOrderInput,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
+  // Changing a saved PO is the `edit` action — L3 Editor and up. An L2 clerk
+  // may raise one but not alter it afterwards.
+  await requireFormAccess(user, 'po_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -647,8 +650,10 @@ export async function updatePurchaseOrder(
       if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
         lockedChanges.push('vendor');
       }
-      if (h0.poType !== undefined && h0.poType !== existingHdr.poType) lockedChanges.push('PO type');
-      if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate) lockedChanges.push('PO date');
+      if (h0.poType !== undefined && h0.poType !== existingHdr.poType)
+        lockedChanges.push('PO type');
+      if (h0.poDate !== undefined && h0.poDate !== existingHdr.poDate)
+        lockedChanges.push('PO date');
       if (h0.taxType !== undefined && (h0.taxType ?? null) !== existingHdr.taxType) {
         lockedChanges.push('tax type');
       }
@@ -855,7 +860,13 @@ export async function softDeletePurchaseOrder(
   id: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
+  // approve, L4 has approve without edit. Previously this was `requireWriteRole`
+  // alone, which let any manager delete a PO through the API while the UI only
+  // ever offered Delete to admins.
+  await requireFormAccess(user, 'po_create', 'edit');
+  await requireFormAccess(user, 'po_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -914,7 +925,8 @@ export async function createPurchaseOrderFromPr(
   input: CreatePurchaseOrderFromPrInput,
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
+  // Converting a PR raises a NEW PO — the `entry` action, same as create.
+  await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1158,10 +1170,7 @@ async function loadApprovalContext(
 }
 
 /** Σ(qty × rate) over a PO's active lines — no tax (legacy `tVal` L21727). */
-async function sumPoLineValue(
-  tx: DbTransaction,
-  purchaseOrderId: string,
-): Promise<number> {
+async function sumPoLineValue(tx: DbTransaction, purchaseOrderId: string): Promise<number> {
   const lines = await tx
     .select({ qty: purchaseOrderLines.qty, rate: purchaseOrderLines.rate })
     .from(purchaseOrderLines)
@@ -1198,10 +1207,7 @@ async function getPurchaseOrderInternal(
     .select()
     .from(purchaseOrderLines)
     .where(
-      and(
-        eq(purchaseOrderLines.purchaseOrderId, id),
-        eq(purchaseOrderLines.companyId, companyId),
-      ),
+      and(eq(purchaseOrderLines.purchaseOrderId, id), eq(purchaseOrderLines.companyId, companyId)),
     )
     .orderBy(asc(purchaseOrderLines.lineNo));
 
@@ -1284,7 +1290,8 @@ export async function approvePurchaseOrder(
       {
         action: 'APPROVE',
         entity: 'Purchase Order',
-        detail: po.code + ' approved by ' + (user.email ?? user.id) + (remarks ? ' — ' + remarks : ''),
+        detail:
+          po.code + ' approved by ' + (user.email ?? user.id) + (remarks ? ' — ' + remarks : ''),
         refId: po.code,
       },
       companyId,
@@ -1331,6 +1338,11 @@ export async function rejectPurchaseOrder(
     if (po.status !== 'draft') {
       throw new ValidationError(`PO ${po.code} is ${po.status}; only draft POs can be rejected`);
     }
+
+    // Segregation of duty (0100) — the other half of approve. Rejecting is a
+    // sign-off too: the raiser cannot kill their own PO to bury it, and an
+    // auditor reading the trail must see two different names on the document.
+    assertNotSelfApproval(user, po.createdBy, `PO ${po.code}`);
 
     await tx
       .update(purchaseOrders)
@@ -1387,7 +1399,8 @@ export async function createPurchaseOrderFromPrBatch(
   },
   user: AuthContext,
 ): Promise<PurchaseOrderDetail> {
-  requireWriteRole(user);
+  // Batch conversion raises one NEW PO — the `entry` action, same as create.
+  await requireFormAccess(user, 'po_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1442,9 +1455,7 @@ export async function createPurchaseOrderFromPrBatch(
     }
 
     // Sort PRs by created_at so line_no ordering is stable.
-    const sortedPrs = [...prRows].sort(
-      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
-    );
+    const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
     const insertedPos = await tx
       .insert(purchaseOrders)
@@ -1471,7 +1482,10 @@ export async function createPurchaseOrderFromPrBatch(
         // Batch may span multiple PRs joined into prCodeText; only stamp the FK
         // when there is a single source PR — otherwise leave it null.
         prId: sortedPrs.length === 1 ? sortedPrs[0]!.id : null,
-        prCodeText: sortedPrs.map((p) => p.code).join(', ').slice(0, 200),
+        prCodeText: sortedPrs
+          .map((p) => p.code)
+          .join(', ')
+          .slice(0, 200),
         remarks: input.header.remarks ?? `Batch from ${sortedPrs.length} OSP PR(s)`,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1492,21 +1506,21 @@ export async function createPurchaseOrderFromPrBatch(
       const prItemId =
         pr.itemId ?? (pr.itemCodeText ? (batchResolved.get(pr.itemCodeText.trim()) ?? null) : null);
       return {
-      companyId,
-      purchaseOrderId: header.id,
-      lineNo: i + 1,
-      itemId: prItemId,
-      itemCodeText: prItemId ? null : pr.itemCodeText,
-      itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
-      qty: pr.qty,
-      rate: String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost)),
-      receivedQty: 0,
-      dueDate: pr.requiredDate ?? null,
-      sourceSoLineId: pr.sourceSoLineId,
-      sourceJcOpId: pr.sourceJcOpId,
-      lineRemarks: pr.operation ?? null,
-      createdBy: user.id,
-      updatedBy: user.id,
+        companyId,
+        purchaseOrderId: header.id,
+        lineNo: i + 1,
+        itemId: prItemId,
+        itemCodeText: prItemId ? null : pr.itemCodeText,
+        itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
+        qty: pr.qty,
+        rate: String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost)),
+        receivedQty: 0,
+        dueDate: pr.requiredDate ?? null,
+        sourceSoLineId: pr.sourceSoLineId,
+        sourceJcOpId: pr.sourceJcOpId,
+        lineRemarks: pr.operation ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
       };
     });
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();

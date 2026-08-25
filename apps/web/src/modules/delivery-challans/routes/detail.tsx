@@ -17,6 +17,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Inbox, Loader2, Printer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -42,6 +43,8 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const { id } = deliveryChallanDetailRoute.useParams();
   const { data, isLoading, isError, error } = useDeliveryChallan(id);
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'ospdc_create');
   const { data: vendor } = useVendor(data?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
@@ -116,8 +119,16 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   }
 
   const dc = data;
-  const canReceive = dc.status === 'issued';
-  const canCancel = dc.status === 'issued' && me?.role === 'admin';
+  // Tier-driven, per department (ospdc_create sits in Purchase).
+  //   Receive -> entry. It had NO role gate at all, so an L1 Viewer was shown
+  //              the button and only found out at the API. Status condition kept.
+  //   Cancel  -> edit AND approve. Cancel is not one of the four tier actions,
+  //              so it is expressed as the pair only L5 Department Admin and
+  //              above hold: L3 Editor has edit without approve, L4 Approver has
+  //              approve without edit. It was admin-only, which locked out the
+  //              very tier meant to run the department.
+  const canReceive = dc.status === 'issued' && perms.entry;
+  const canCancel = dc.status === 'issued' && perms.edit && perms.approve;
 
   const onCancel = async (): Promise<void> => {
     setCancelError(null);
@@ -153,7 +164,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 document code (SO detail, PR, JWSO, and the DC list card all use
                 it). This page was the last one left on the old teal, so opening
                 a DC from the list changed the colour of its own number. */}
-            <div className="td-code" style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}
+            >
               {dc.code}
             </div>
             <div
@@ -276,7 +290,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                         <td className="mono">{line.lineNo}</td>
                         <td>
                           <span className="mono">{line.itemCode ?? line.itemCodeText ?? '—'}</span>
-                          {line.itemName ?? line.itemNameText ? (
+                          {(line.itemName ?? line.itemNameText) ? (
                             <span className="text3" style={{ marginLeft: 6 }}>
                               {line.itemName ?? line.itemNameText}
                             </span>
@@ -367,7 +381,11 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
       <Pair label="Transport" value={dc.transport ?? '—'} />
       <Pair
         label="Issued on"
-        value={<span className="mono" style={{ fontSize: 12 }}>{fmtIstDateTime(dc.createdAt)}</span>}
+        value={
+          <span className="mono" style={{ fontSize: 12 }}>
+            {fmtIstDateTime(dc.createdAt)}
+          </span>
+        }
       />
     </div>
   );

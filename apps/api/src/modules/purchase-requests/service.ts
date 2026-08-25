@@ -23,7 +23,6 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { assertNotSelfApproval, canSeeFormPrice, requireFormAccess } from '../../lib/access';
-import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
   ConflictError,
@@ -319,7 +318,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     code: r['code'] as string,
     prDate: dateLike(r['prDate']),
     status: r['status'] as PurchaseRequest['status'],
-    prType: ((r['prType'] as PurchaseRequest['prType'] | null) ?? 'standard'),
+    prType: (r['prType'] as PurchaseRequest['prType'] | null) ?? 'standard',
     vendorId: (r['vendorId'] as string | null) ?? null,
     vendorCodeText: (r['vendorCodeText'] as string | null) ?? null,
     itemId: (r['itemId'] as string | null) ?? null,
@@ -400,10 +399,7 @@ export async function getPurchaseRequest(
         soLineNo: salesOrderLines.lineNo,
       })
       .from(purchaseRequests)
-      .leftJoin(
-        vendors,
-        and(eq(vendors.id, purchaseRequests.vendorId), isNull(vendors.deletedAt)),
-      )
+      .leftJoin(vendors, and(eq(vendors.id, purchaseRequests.vendorId), isNull(vendors.deletedAt)))
       .leftJoin(
         vendorByCode,
         and(
@@ -462,7 +458,8 @@ export async function createPurchaseRequest(
   input: CreatePurchaseRequestInput,
   user: AuthContext,
 ): Promise<PurchaseRequest> {
-  requireWriteRole(user);
+  // Raising a PR is an entry right — L2 Data Entry and above.
+  await requireFormAccess(user, 'pr_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -495,9 +492,7 @@ export async function createPurchaseRequest(
     // master item, stamp the link. An off-master code still saves as free text.
     const resolvedItemId =
       input.itemId ??
-      (input.itemCodeText
-        ? await resolveItemIdByCode(tx, input.itemCodeText, companyId)
-        : null);
+      (input.itemCodeText ? await resolveItemIdByCode(tx, input.itemCodeText, companyId) : null);
 
     const inserted = await tx
       .insert(purchaseRequests)
@@ -572,7 +567,9 @@ export async function updatePurchaseRequest(
   input: UpdatePurchaseRequestInput,
   user: AuthContext,
 ): Promise<PurchaseRequest> {
-  requireWriteRole(user);
+  // Changing a SAVED PR is an edit right — L3 Editor and above. An L2 Data
+  // Entry can create one but deliberately cannot alter it afterwards.
+  await requireFormAccess(user, 'pr_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -592,7 +589,9 @@ export async function updatePurchaseRequest(
     }
     // A PR converted to a PO is locked — no further edits.
     if (existing[0]!.poId !== null || existing[0]!.status === 'po_created') {
-      throw new ConflictError(`Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`);
+      throw new ConflictError(
+        `Purchase request ${existing[0]!.code} is linked to a PO and cannot be edited`,
+      );
     }
 
     if (input.vendorId !== undefined && input.vendorId !== null) {
@@ -670,7 +669,6 @@ export async function approvePurchaseRequest(
   id: string,
   user: AuthContext,
 ): Promise<PurchaseRequest> {
-  requireWriteRole(user);
   // Approving a PR is now a distinct permission, not a side effect of being
   // a manager (0100). An L3 Editor raises PRs; an L4/L5 signs them off.
   await requireFormAccess(user, 'pr_create', 'approve');
@@ -738,7 +736,6 @@ export async function rejectPurchaseRequest(
   reason: string,
   user: AuthContext,
 ): Promise<PurchaseRequest> {
-  requireWriteRole(user);
   // Rejecting is the other half of approving — same permission (0100).
   await requireFormAccess(user, 'pr_create', 'approve');
   const companyId = requireCompany(user);
@@ -769,6 +766,11 @@ export async function rejectPurchaseRequest(
         `PR ${pr.code} is ${pr.status}; only open or approved purchase requests can be rejected`,
       );
     }
+
+    // Segregation of duty (0100): rejecting is the other half of approving, so
+    // the raiser cannot kill their own PR either — approve had this guard and
+    // reject did not.
+    assertNotSelfApproval(user, pr.createdBy, `PR ${pr.code}`);
 
     // PR has no dedicated rejection columns (unlike PO) — record the reason in
     // remarks so it survives on the cancelled row.
@@ -848,7 +850,11 @@ export async function softDeletePurchaseRequest(
   id: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // only L5 Department Admin and above hold: edit AND approve. L3 has edit
+  // without approve; L4 has approve without edit.
+  await requireFormAccess(user, 'pr_create', 'edit');
+  await requireFormAccess(user, 'pr_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
