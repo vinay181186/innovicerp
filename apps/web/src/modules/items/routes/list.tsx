@@ -27,18 +27,13 @@
 
 import { type ItemType, ITEM_TYPES, type Item, type ListItemsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
 import { useCreateItem, useItemsList, useSoftDeleteItem } from '../api';
@@ -93,7 +88,10 @@ export const itemsListRoute = createRoute({
 function ItemsListPage(): React.JSX.Element {
   const search = itemsListRoute.useSearch();
   const navigate = itemsListRoute.useNavigate();
-  const { data: me } = useSession();
+  // Tier-driven, per department (Store). Was a single admin/manager write flag
+  // covering create, edit and delete alike.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'item_create');
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -136,7 +134,12 @@ function ItemsListPage(): React.JSX.Element {
     [navigate],
   );
 
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const canCreate = perms.entry;
+  const canEdit = perms.edit;
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
+  // edit without approve; L4 has approve without edit.
+  const canDelete = perms.edit && perms.approve;
 
   const toggleSort = useCallback(
     (field: 'code' | 'name') => {
@@ -339,7 +342,7 @@ function ItemsListPage(): React.JSX.Element {
             <Link to="/items/$id" params={{ id: row.original.id }} className="btn btn-ghost btn-sm">
               View
             </Link>
-            {canWrite ? (
+            {canEdit ? (
               <Link
                 to="/items/$id/edit"
                 params={{ id: row.original.id }}
@@ -348,7 +351,7 @@ function ItemsListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
-            {canWrite ? (
+            {canDelete ? (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
@@ -366,7 +369,7 @@ function ItemsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [canWrite, softDelete, printDrawing, search.sortBy, search.sortDir, toggleSort],
+    [canEdit, canDelete, softDelete, printDrawing, search.sortBy, search.sortDir, toggleSort],
   );
 
   const table = useReactTable({
@@ -404,7 +407,7 @@ function ItemsListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canCreate ? (
             <>
               <button
                 type="button"
@@ -422,7 +425,8 @@ function ItemsListPage(): React.JSX.Element {
                 disabled={importing}
                 onClick={() => fileRef.current?.click()}
               >
-                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
+                {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import
+                Excel
               </button>
               <input
                 ref={fileRef}
@@ -476,7 +480,10 @@ function ItemsListPage(): React.JSX.Element {
 
       {importError ? (
         <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}>
+          <div
+            className="panel-body"
+            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red)' }}
+          >
             ⚠ {importError}
             <button
               type="button"
@@ -555,8 +562,8 @@ function ItemsListPage(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, padding: '0 4px' }}>
-        💡 Click a row to open the item. · ★ Item Master is for defining items only.
-        Stock / Inventory is managed in <b>Store → Store / Inventory</b>.
+        💡 Click a row to open the item. · ★ Item Master is for defining items only. Stock /
+        Inventory is managed in <b>Store → Store / Inventory</b>.
       </div>
 
       {/* Scroll footer (Rule 4): says whether you are seeing everything, so a
@@ -585,7 +592,10 @@ function ItemsListPage(): React.JSX.Element {
 
 // Excel-import result banner. Duplicates get their own clearly-labelled list so
 // the user can see exactly which item codes already exist in Item Master.
-function ImportResultBanner(props: { result: ImportResult; onClose: () => void }): React.JSX.Element {
+function ImportResultBanner(props: {
+  result: ImportResult;
+  onClose: () => void;
+}): React.JSX.Element {
   const { result, onClose } = props;
   const { total, imported, duplicates, failures, warnings } = result;
   const copyDuplicates = (): void => {
@@ -609,13 +619,23 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
   return (
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-body" style={{ padding: '12px 14px', fontSize: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+        >
           <span style={{ fontWeight: 700 }}>
-            {imported.length > 0 ? '✅' : 'ℹ'} Imported {imported.length} of {total} item{total === 1 ? '' : 's'}
-            {duplicates.length > 0 ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped` : ''}
+            {imported.length > 0 ? '✅' : 'ℹ'} Imported {imported.length} of {total} item
+            {total === 1 ? '' : 's'}
+            {duplicates.length > 0
+              ? ` · ${duplicates.length} duplicate${duplicates.length === 1 ? '' : 's'} skipped`
+              : ''}
             {failures.length > 0 ? ` · ${failures.length} failed` : ''}
           </span>
-          <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={onClose}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 10 }}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
@@ -630,16 +650,30 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
               border: '1px solid rgba(245,158,11,0.35)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                marginBottom: 6,
+              }}
+            >
               <span style={{ fontWeight: 700, color: 'var(--amber)' }}>
                 ⚠ Duplicate item codes — already in Item Master ({duplicates.length})
               </span>
-              <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={copyDuplicates}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 10 }}
+                onClick={copyDuplicates}
+              >
                 📋 Copy codes
               </button>
             </div>
             <div style={{ color: 'var(--text3)', marginBottom: 6 }}>
-              These were skipped (they already exist). Remove them from your sheet, or ignore — they’re already saved.
+              These were skipped (they already exist). Remove them from your sheet, or ignore —
+              they’re already saved.
             </div>
             <div
               style={{
@@ -663,7 +697,16 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
                 <div style={{ fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>
                   ✅ Added rows ({imported.length})
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    maxHeight: 160,
+                    overflowY: 'auto',
+                    userSelect: 'text',
+                  }}
+                >
                   {imported.map(chip)}
                 </div>
               </div>
@@ -674,9 +717,19 @@ function ImportResultBanner(props: { result: ImportResult; onClose: () => void }
                   ✕ Failed rows ({failures.length})
                 </div>
                 <div style={{ color: 'var(--text3)', marginBottom: 6 }}>
-                  ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix the row in your sheet and re-import.
+                  ⚠ These rows were rejected on save — the actual reason is shown next to each. Fix
+                  the row in your sheet and re-import.
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', userSelect: 'text' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    maxHeight: 160,
+                    overflowY: 'auto',
+                    userSelect: 'text',
+                  }}
+                >
                   {failures.map(chip)}
                 </div>
               </div>

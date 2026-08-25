@@ -27,6 +27,7 @@ import type {
 } from '@innovic/shared';
 import { items, storeTransactions, toolIssues, toolIssueReturns } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -107,8 +108,7 @@ export async function listToolIssues(
       filterFrag = sql`AND ti.return_status <> 'returned'
                       AND ti.expected_return_date IS NOT NULL
                       AND ti.expected_return_date < ${today}::date`;
-    else if (input.filter === 'returned')
-      filterFrag = sql`AND ti.return_status = 'returned'`;
+    else if (input.filter === 'returned') filterFrag = sql`AND ti.return_status = 'returned'`;
 
     const result = await tx.execute(sql`
       SELECT
@@ -220,6 +220,11 @@ export async function createToolIssue(
   input: CreateToolIssueInput,
   user: AuthContext,
 ): Promise<ToolIssue> {
+  // Same hole as createStoreIssue: no permission check at all until now, so any
+  // logged-in account could issue a tool out of Store. `toolissue_create` has no
+  // sidebar entry of its own — the register is the second tab of /issue-register
+  // — but it is a first-class registry key and this is where it gets enforced.
+  await requireFormAccess(user, 'toolissue_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -227,7 +232,9 @@ export async function createToolIssue(
     const itemRows = await tx
       .select({ id: items.id, code: items.code, name: items.name })
       .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+      .where(
+        and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
+      )
       .limit(1);
     const itm = itemRows[0];
     if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
@@ -302,6 +309,9 @@ export async function recordToolReturn(
   input: RecordToolReturnInput,
   user: AuthContext,
 ): Promise<ToolIssue> {
+  // Recording a return changes a saved issue record and writes a store
+  // transaction, so it is `edit` rather than `entry`. It had no check at all.
+  await requireFormAccess(user, 'toolissue_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -324,13 +334,9 @@ export async function recordToolReturn(
       throw new ConflictError(`Tool issue ${ti.code} is already fully returned`);
     }
 
-    await tx.execute(
-      sql`SELECT 1 FROM public.tool_issues WHERE id = ${ti.id}::uuid FOR UPDATE`,
-    );
+    await tx.execute(sql`SELECT 1 FROM public.tool_issues WHERE id = ${ti.id}::uuid FOR UPDATE`);
     if (ti.itemId) {
-      await tx.execute(
-        sql`SELECT 1 FROM public.items WHERE id = ${ti.itemId}::uuid FOR UPDATE`,
-      );
+      await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${ti.itemId}::uuid FOR UPDATE`);
     }
 
     // 2) Validate the return doesn't overshoot the issued qty.

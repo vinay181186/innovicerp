@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
@@ -43,7 +43,11 @@ export async function listItems(
         .select()
         .from(items)
         .where(where)
-        .orderBy((input.sortDir === 'desc' ? desc : asc)(input.sortBy === 'name' ? items.name : items.code))
+        .orderBy(
+          (input.sortDir === 'desc' ? desc : asc)(
+            input.sortBy === 'name' ? items.name : items.code,
+          ),
+        )
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(items).where(where),
@@ -99,7 +103,9 @@ export async function getNextItemCode(user: AuthContext): Promise<{ code: string
 }
 
 export async function createItem(input: CreateItemInput, user: AuthContext): Promise<Item> {
-  requireWriteRole(user);
+  // Tier gate (was the admin/manager role check). L2 Data Entry can add an
+  // item; L1 Viewer and L4 Approver cannot.
+  await requireFormAccess(user, 'item_create', 'entry');
   const companyId = requireCompany(user);
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
   // collide on the (company_id, code) unique index — e.g. both auto-generate
@@ -157,7 +163,8 @@ export async function updateItem(
   input: UpdateItemInput,
   user: AuthContext,
 ): Promise<Item> {
-  requireWriteRole(user);
+  // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -194,7 +201,12 @@ export async function updateItem(
 }
 
 export async function softDeleteItem(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit. The owner
+  // scoped delete to the tier meant to run the department.
+  await requireFormAccess(user, 'item_create', 'edit');
+  await requireFormAccess(user, 'item_create', 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

@@ -17,7 +17,7 @@ import type {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useAdjustStock, useSetMinStock, useStoreInventory } from '../api';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
@@ -31,8 +31,13 @@ export const storeInventoryRoute = createRoute({
 });
 
 function StoreInventoryPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (Store). Was admin/manager on `users.role`.
+  // Every write on this screen — ± Adjust, Min Qty and Manual Receipt, which
+  // posts through the same adjust-stock endpoint — moves a saved balance, so
+  // all three sit on `edit`: an L2 Data Entry hand cannot restate stock.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'item_create');
+  const canEdit = perms.edit;
   // Inventory | Stock Ledger tabs — Stock Ledger is the former standalone screen.
   const [tab, setTab] = useState<'inventory' | 'ledger'>('inventory');
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -49,7 +54,14 @@ function StoreInventoryPage(): React.JSX.Element {
   return (
     <div>
       {/* Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen). */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
         {(['inventory', 'ledger'] as const).map((t) => (
           <button
             key={t}
@@ -76,211 +88,215 @@ function StoreInventoryPage(): React.JSX.Element {
         <StockLedger />
       ) : (
         <>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="section-hdr m-0">🏬 Store / Inventory</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search item, material…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowManualReceipt(true)}
-            >
-              + Manual Receipt
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
-      ) : isError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load inventory'}
-            </div>
-          </div>
-        </div>
-      ) : data ? (
-        <>
-          <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
-
-          <div className="panel">
-            <div className="panel-hdr">
-              <span className="panel-title">
-                Stock Levels{' '}
-                {filter !== 'all' ? (
-                  <span style={{ color: 'var(--amber)', fontSize: 12 }}>(Filtered: {filter})</span>
-                ) : null}
-              </span>
-              {filter !== 'all' ? (
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="section-hdr m-0">🏬 Store / Inventory</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                className="innovic-input"
+                placeholder="🔍 Search item, material…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ width: 240, fontSize: 12 }}
+              />
+              {canEdit ? (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setFilter('all')}
+                  className="btn btn-primary"
+                  onClick={() => setShowManualReceipt(true)}
                 >
-                  Show All
+                  + Manual Receipt
                 </button>
               ) : null}
             </div>
-            <div className="tbl-wrap">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th>Item Code</th>
-                    <th>Name</th>
-                    <th>Material</th>
-                    <th>UOM</th>
-                    <th style={{ color: 'var(--green)' }}>In Stock</th>
-                    <th>Min Qty</th>
-                    <th style={{ color: 'var(--blue)' }}>On PO</th>
-                    <th style={{ color: 'var(--orange)' }}>At Vendor</th>
-                    <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
-                    {canWrite ? <th>Actions</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={canWrite ? 10 : 9} className="empty-state">
-                        No items in master
-                      </td>
-                    </tr>
-                  ) : (
-                    data.rows.map((row) => (
-                      <tr
-                        key={row.itemId}
-                        style={{
-                          background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
-                        }}
-                      >
-                        <td className="td-code" style={{ color: 'var(--purple)' }}>
-                          {row.itemCode}
-                        </td>
-                        <td className="fw-700">{row.itemName}</td>
-                        <td className="text2" style={{ fontSize: 11 }}>
-                          {row.material ?? '—'}
-                        </td>
-                        <td className="td-ctr">
-                          <span
-                            className="tag"
-                            style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
-                          >
-                            {row.uom}
-                          </span>
-                        </td>
-                        <td className="td-ctr">
-                          <span
-                            className="mono fw-700"
+          </div>
+
+          {isLoading ? (
+            <div className="panel">
+              <div className="panel-body">
+                <div className="text3" style={{ fontSize: 12 }}>
+                  <Loader2 size={14} className="inline animate-spin" /> Loading…
+                </div>
+              </div>
+            </div>
+          ) : isError ? (
+            <div className="panel">
+              <div className="panel-body">
+                <div className="empty-state" style={{ color: 'var(--red)' }}>
+                  {error instanceof Error ? error.message : 'Failed to load inventory'}
+                </div>
+              </div>
+            </div>
+          ) : data ? (
+            <>
+              <KpiStrip summary={data.summary} filter={filter} setFilter={setFilter} />
+
+              <div className="panel">
+                <div className="panel-hdr">
+                  <span className="panel-title">
+                    Stock Levels{' '}
+                    {filter !== 'all' ? (
+                      <span style={{ color: 'var(--amber)', fontSize: 12 }}>
+                        (Filtered: {filter})
+                      </span>
+                    ) : null}
+                  </span>
+                  {filter !== 'all' ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setFilter('all')}
+                    >
+                      Show All
+                    </button>
+                  ) : null}
+                </div>
+                <div className="tbl-wrap">
+                  <table className="innovic-table">
+                    <thead>
+                      <tr>
+                        <th>Item Code</th>
+                        <th>Name</th>
+                        <th>Material</th>
+                        <th>UOM</th>
+                        <th style={{ color: 'var(--green)' }}>In Stock</th>
+                        <th>Min Qty</th>
+                        <th style={{ color: 'var(--blue)' }}>On PO</th>
+                        <th style={{ color: 'var(--orange)' }}>At Vendor</th>
+                        <th style={{ color: 'var(--amber)' }}>Mfg Pending</th>
+                        {canEdit ? <th>Actions</th> : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={canEdit ? 10 : 9} className="empty-state">
+                            No items in master
+                          </td>
+                        </tr>
+                      ) : (
+                        data.rows.map((row) => (
+                          <tr
+                            key={row.itemId}
                             style={{
-                              fontSize: 15,
-                              color:
-                                row.inStock > 0
-                                  ? 'var(--green)'
-                                  : row.inStock === 0
-                                    ? 'var(--red)'
-                                    : 'var(--text3)',
+                              background: row.lowStock ? 'rgba(220,38,38,0.04)' : undefined,
                             }}
                           >
-                            {row.inStock}
-                          </span>
-                          {row.lowStock ? (
-                            <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700 }}>
-                              ⚠ LOW
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="td-ctr mono text3">{row.minQty || '—'}</td>
-                        <td className="td-ctr">
-                          <span
-                            className="mono"
-                            style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
-                          >
-                            {row.onPoQty || '—'}
-                          </span>
-                        </td>
-                        <td className="td-ctr">
-                          <span
-                            className="mono"
-                            style={{ color: row.atVendorQty > 0 ? 'var(--orange)' : 'var(--text3)' }}
-                            title={
-                              row.atVendorQty > 0
-                                ? `${row.atVendorQty} pcs out at an OSP vendor — not on the shelf`
-                                : undefined
-                            }
-                          >
-                            {row.atVendorQty || '—'}
-                          </span>
-                        </td>
-                        <td className="td-ctr">
-                          <span
-                            className="mono"
-                            style={{ color: row.mfgPendingQty > 0 ? 'var(--amber)' : 'var(--text3)' }}
-                          >
-                            {row.mfgPendingQty || '—'}
-                          </span>
-                        </td>
-                        {canWrite ? (
-                          <td>
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setAdjustRow(row)}
-                                style={{ fontSize: 11 }}
+                            <td className="td-code" style={{ color: 'var(--purple)' }}>
+                              {row.itemCode}
+                            </td>
+                            <td className="fw-700">{row.itemName}</td>
+                            <td className="text2" style={{ fontSize: 11 }}>
+                              {row.material ?? '—'}
+                            </td>
+                            <td className="td-ctr">
+                              <span
+                                className="tag"
+                                style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
                               >
-                                ± Adjust
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setMinRow(row)}
-                                style={{ fontSize: 11 }}
+                                {row.uom}
+                              </span>
+                            </td>
+                            <td className="td-ctr">
+                              <span
+                                className="mono fw-700"
+                                style={{
+                                  fontSize: 15,
+                                  color:
+                                    row.inStock > 0
+                                      ? 'var(--green)'
+                                      : row.inStock === 0
+                                        ? 'var(--red)'
+                                        : 'var(--text3)',
+                                }}
                               >
-                                Min Qty
-                              </button>
-                            </div>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                                {row.inStock}
+                              </span>
+                              {row.lowStock ? (
+                                <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 700 }}>
+                                  ⚠ LOW
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="td-ctr mono text3">{row.minQty || '—'}</td>
+                            <td className="td-ctr">
+                              <span
+                                className="mono"
+                                style={{ color: row.onPoQty > 0 ? 'var(--blue)' : 'var(--text3)' }}
+                              >
+                                {row.onPoQty || '—'}
+                              </span>
+                            </td>
+                            <td className="td-ctr">
+                              <span
+                                className="mono"
+                                style={{
+                                  color: row.atVendorQty > 0 ? 'var(--orange)' : 'var(--text3)',
+                                }}
+                                title={
+                                  row.atVendorQty > 0
+                                    ? `${row.atVendorQty} pcs out at an OSP vendor — not on the shelf`
+                                    : undefined
+                                }
+                              >
+                                {row.atVendorQty || '—'}
+                              </span>
+                            </td>
+                            <td className="td-ctr">
+                              <span
+                                className="mono"
+                                style={{
+                                  color: row.mfgPendingQty > 0 ? 'var(--amber)' : 'var(--text3)',
+                                }}
+                              >
+                                {row.mfgPendingQty || '—'}
+                              </span>
+                            </td>
+                            {canEdit ? (
+                              <td>
+                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setAdjustRow(row)}
+                                    style={{ fontSize: 11 }}
+                                  >
+                                    ± Adjust
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setMinRow(row)}
+                                    style={{ fontSize: 11 }}
+                                  >
+                                    Min Qty
+                                  </button>
+                                </div>
+                              </td>
+                            ) : null}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
-          <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
-            💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ± Adjust
-            for manual corrections.
-          </div>
-        </>
-      ) : null}
+              <div className="text3" style={{ fontSize: 11, marginTop: 8, padding: '0 4px' }}>
+                💡 Stock is automatically updated via GRN (inward) and Dispatch (outward). Use ±
+                Adjust for manual corrections.
+              </div>
+            </>
+          ) : null}
 
-      {adjustRow ? (
-        <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} />
-      ) : null}
-      {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
-      {showManualReceipt ? (
-        <ManualReceiveModal
-          onClose={() => setShowManualReceipt(false)}
-          rows={data?.rows ?? []}
-        />
-      ) : null}
+          {adjustRow ? <AdjustModal row={adjustRow} onClose={() => setAdjustRow(null)} /> : null}
+          {minRow ? <SetMinModal row={minRow} onClose={() => setMinRow(null)} /> : null}
+          {showManualReceipt ? (
+            <ManualReceiveModal
+              onClose={() => setShowManualReceipt(false)}
+              rows={data?.rows ?? []}
+            />
+          ) : null}
         </>
       )}
     </div>
@@ -384,10 +400,7 @@ function AdjustModal({
   };
 
   return (
-    <ModalShell
-      onClose={onClose}
-      title={`± Stock Adjustment — ${row.itemCode} (${row.itemName})`}
-    >
+    <ModalShell onClose={onClose} title={`± Stock Adjustment — ${row.itemCode} (${row.itemName})`}>
       <div
         style={{
           marginBottom: 12,
@@ -459,12 +472,7 @@ function AdjustModal({
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onSave}
-          disabled={mut.isPending}
-        >
+        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
           {mut.isPending ? (
             <>
               <Loader2 size={14} className="inline animate-spin" /> Saving…
@@ -505,12 +513,9 @@ function SetMinModal({
 
   return (
     <ModalShell onClose={onClose} title={`Min Stock — ${row.itemCode} (${row.itemName})`}>
-      <div
-        className="text3"
-        style={{ fontSize: 12, marginBottom: 10 }}
-      >
-        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ LOW tag
-        when current stock ≤ this value. Use 0 to disable.
+      <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
+        Sets the low-stock alert threshold for <b>{row.itemName}</b>. Items show a ⚠ LOW tag when
+        current stock ≤ this value. Use 0 to disable.
       </div>
       <div className="form-grid">
         <div className="form-grp form-full">
@@ -543,12 +548,7 @@ function SetMinModal({
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onSave}
-          disabled={mut.isPending}
-        >
+        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
           {mut.isPending ? (
             <>
               <Loader2 size={14} className="inline animate-spin" /> Saving…
@@ -584,10 +584,7 @@ function ManualReceiveModal({
   const [err, setErr] = useState<string | null>(null);
   const mut = useAdjustStock();
 
-  const selected = useMemo(
-    () => rows.find((r) => r.itemId === itemId) ?? null,
-    [rows, itemId],
-  );
+  const selected = useMemo(() => rows.find((r) => r.itemId === itemId) ?? null, [rows, itemId]);
   const filtered = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     if (!q) return rows;
@@ -745,12 +742,7 @@ function ManualReceiveModal({
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onSave}
-          disabled={mut.isPending}
-        >
+        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
           {mut.isPending ? (
             <>
               <Loader2 size={14} className="inline animate-spin" /> Saving…

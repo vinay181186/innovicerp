@@ -20,6 +20,7 @@ import type {
 } from '@innovic/shared';
 import { clients, items, partyMaterials } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -183,6 +184,10 @@ export async function createPartyMaterial(
   input: CreatePartyMaterialInput,
   user: AuthContext,
 ): Promise<PartyMaterial> {
+  // Tier gate. Adding a master record is a create, so L2 Data Entry and up.
+  // Until now this endpoint had no permission check at all — only a company-id
+  // check — so any logged-in account could add a party material.
+  await requireFormAccess(user, 'party_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -222,11 +227,7 @@ export async function createPartyMaterial(
         .select({ id: items.id, code: items.code })
         .from(items)
         .where(
-          and(
-            eq(items.id, input.itemId),
-            eq(items.companyId, companyId),
-            isNull(items.deletedAt),
-          ),
+          and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
         )
         .limit(1);
       const itm = itemRows[0];
@@ -265,6 +266,8 @@ export async function updatePartyMaterial(
   input: UpdatePartyMaterialInput,
   user: AuthContext,
 ): Promise<PartyMaterial> {
+  // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'party_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -343,11 +346,21 @@ export async function updatePartyMaterial(
 }
 
 export async function softDeletePartyMaterial(id: string, user: AuthContext): Promise<void> {
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // only L5 Department Admin and above hold: edit AND approve. L3 Editor has
+  // edit without approve; L4 Approver has approve without edit. Previously there
+  // was no permission check here at all.
+  await requireFormAccess(user, 'party_create', 'edit');
+  await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   await withUserContext(user, async (tx) => {
     const rows = await tx
-      .select({ id: partyMaterials.id, code: partyMaterials.code, stockQty: partyMaterials.stockQty })
+      .select({
+        id: partyMaterials.id,
+        code: partyMaterials.code,
+        stockQty: partyMaterials.stockQty,
+      })
       .from(partyMaterials)
       .where(
         and(

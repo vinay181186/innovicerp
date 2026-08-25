@@ -14,7 +14,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClientsList } from '../../clients/api';
 import { useItem } from '../../items/api';
@@ -38,9 +38,20 @@ export const partyMaterialsListRoute = createRoute({
 });
 
 function PartyMaterialsListPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
-  const canDelete = me?.role === 'admin';
+  // Tier-driven, per department (party_create sits in Store). Replaces the old
+  // admin/manager flag, which collapsed all seven tiers into two.
+  //   + Add -> entry (L2 Data Entry and up)
+  //   Edit  -> edit  (L3 Editor and up; L2 creates but cannot alter)
+  //   Del   -> edit AND approve. Delete is not one of the four tier actions, so
+  //     it is expressed as the pair only L5 Department Admin and above hold: L3
+  //     has edit without approve, L4 has approve without edit. Previously this
+  //     was admin-only, which locked out the L5 Store Department Admin — the
+  //     tier meant to have full rights inside Store.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'party_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
@@ -82,7 +93,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
             }}
             style={{ width: 240, fontSize: 12 }}
           />
-          {canWrite ? (
+          {canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
               <Plus size={14} /> Add Material
             </button>
@@ -147,7 +158,10 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     </td>
                     <td>{pm.material ?? '—'}</td>
                     <td className="td-ctr">
-                      <span className="tag" style={{ background: 'var(--bg4)', color: 'var(--text2)' }}>
+                      <span
+                        className="tag"
+                        style={{ background: 'var(--bg4)', color: 'var(--text2)' }}
+                      >
                         {pm.uom}
                       </span>
                     </td>
@@ -161,21 +175,15 @@ function PartyMaterialsListPage(): React.JSX.Element {
                     >
                       {pm.stockQty}
                     </td>
-                    <td
-                      className="td-ctr mono"
-                      style={{ fontSize: 12, color: 'var(--amber)' }}
-                    >
+                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--amber)' }}>
                       {pm.issuedQty}
                     </td>
-                    <td
-                      className="td-ctr mono"
-                      style={{ fontSize: 12, color: 'var(--cyan)' }}
-                    >
+                    <td className="td-ctr mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
                       {pm.receivedQty}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        {canWrite ? (
+                        {canEdit ? (
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
@@ -250,9 +258,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
       </div>
 
       {showAdd ? <AddPartyMaterialModal onClose={() => setShowAdd(false)} /> : null}
-      {editRow ? (
-        <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} />
-      ) : null}
+      {editRow ? <EditPartyMaterialModal row={editRow} onClose={() => setEditRow(null)} /> : null}
     </div>
   );
 }
@@ -320,7 +326,11 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   }, [soData, jwData]);
   const orderOptions = useMemo(
     () => [
-      ...(soData?.items ?? []).map((o) => ({ id: o.id, code: o.code, name: o.customerName ?? 'SO' })),
+      ...(soData?.items ?? []).map((o) => ({
+        id: o.id,
+        code: o.code,
+        name: o.customerName ?? 'SO',
+      })),
       ...(jwData?.items ?? []).map((o) => ({
         id: o.jwId,
         code: o.code,
@@ -331,8 +341,8 @@ function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.
   );
 
   // 3) Line items of the picked order (client-side filtered by the picker).
-  const soDetail = useSalesOrder(orderSource === 'so' ? orderId ?? undefined : undefined);
-  const jwDetail = useJobWorkOrder(orderSource === 'jw' ? orderId ?? undefined : undefined);
+  const soDetail = useSalesOrder(orderSource === 'so' ? (orderId ?? undefined) : undefined);
+  const jwDetail = useJobWorkOrder(orderSource === 'jw' ? (orderId ?? undefined) : undefined);
   const orderLines = useMemo(() => {
     if (orderSource === 'so') return soDetail.data?.lines ?? [];
     if (orderSource === 'jw') return jwDetail.data?.lines ?? [];
@@ -708,9 +718,7 @@ function EditPartyMaterialModal({
               className="innovic-input"
               placeholder="🔍 Click to browse or type client code / name to change…"
               value={
-                selectedClient
-                  ? `${selectedClient.code} — ${selectedClient.name}`
-                  : clientSearch
+                selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : clientSearch
               }
               onFocus={() => setClientFocused(true)}
               onBlur={() => setTimeout(() => setClientFocused(false), 150)}
@@ -809,12 +817,7 @@ function ModalActions({
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
       </button>
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={saving}
-        onClick={onSave}
-      >
+      <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
         {saving ? (
           <>
             <Loader2 size={14} className="inline animate-spin" /> Saving…
@@ -882,9 +885,7 @@ function Picklist({
           }}
         >
           <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{it.label}</span>
-          {it.sub ? (
-            <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span>
-          ) : null}
+          {it.sub ? <span style={{ color: 'var(--text3)', marginLeft: 6 }}>· {it.sub}</span> : null}
         </div>
       ))}
     </div>

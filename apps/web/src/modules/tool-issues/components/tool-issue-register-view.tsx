@@ -16,7 +16,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useItemsList } from '../../items/api';
 import {
   useCreateToolIssue,
@@ -29,8 +29,14 @@ type FilterKey = 'all' | 'out' | 'overdue' | 'returned';
 const PAGE_SIZE = 25;
 
 export function ToolIssueRegisterView(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (toolissue_create sits in Store). This view
+  // renders as the Tool Issues tab of /issue-register and is passed no props, so
+  // it gates itself. Issuing a tool is a create (entry); recording its return
+  // changes a saved issue, so that is edit.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'toolissue_create');
+  const canIssue = perms.entry;
+  const canReturn = perms.edit;
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -60,10 +66,7 @@ export function ToolIssueRegisterView(): React.JSX.Element {
         />
       ) : null}
 
-      <div
-        className="mb-3 flex items-center justify-between gap-3"
-        style={{ flexWrap: 'wrap' }}
-      >
+      <div className="mb-3 flex items-center justify-between gap-3" style={{ flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
@@ -89,12 +92,8 @@ export function ToolIssueRegisterView(): React.JSX.Element {
             <option value="overdue">Overdue</option>
             <option value="returned">Returned</option>
           </select>
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowNew(true)}
-            >
+          {canIssue ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
               + Issue Tool
             </button>
           ) : null}
@@ -163,9 +162,7 @@ export function ToolIssueRegisterView(): React.JSX.Element {
                       {ti.issueDate}
                     </td>
                     <td>
-                      <span
-                        style={{ color: 'var(--purple)', fontWeight: 600, fontSize: 11 }}
-                      >
+                      <span style={{ color: 'var(--purple)', fontWeight: 600, fontSize: 11 }}>
                         {ti.itemCode ?? ti.itemCodeText ?? '—'}
                       </span>
                       <br />
@@ -209,7 +206,7 @@ export function ToolIssueRegisterView(): React.JSX.Element {
                       {ti.returnConsumedQty}
                     </td>
                     <td className="td-ctr">
-                      {ti.returnStatus !== 'returned' && canWrite ? (
+                      {ti.returnStatus !== 'returned' && canReturn ? (
                         <button
                           type="button"
                           className="btn btn-sm"
@@ -274,8 +271,8 @@ export function ToolIssueRegisterView(): React.JSX.Element {
       ) : null}
 
       <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        🔧 Tool Issue Register tracks returnable items (tools, inserts, spanners, fixtures).
-        Return button records Good/Damaged/Consumed breakdown. Good qty added back to stock.
+        🔧 Tool Issue Register tracks returnable items (tools, inserts, spanners, fixtures). Return
+        button records Good/Damaged/Consumed breakdown. Good qty added back to stock.
       </div>
 
       {showNew ? <NewToolIssueModal onClose={() => setShowNew(false)} /> : null}
@@ -619,8 +616,7 @@ function ReturnModal({
   issue: ToolIssueListItem;
   onClose: () => void;
 }): React.JSX.Element {
-  const alreadyTotal =
-    issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty;
+  const alreadyTotal = issue.returnGoodQty + issue.returnDamagedQty + issue.returnConsumedQty;
   const remaining = issue.qty - alreadyTotal;
 
   const [returnDate, setReturnDate] = useState(todayLocal());

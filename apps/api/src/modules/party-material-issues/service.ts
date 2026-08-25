@@ -19,7 +19,7 @@ import {
   partyMaterials,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -37,7 +37,12 @@ async function nextIssueCode(tx: DbTransaction, companyId: string): Promise<stri
   const rows = await tx
     .select({ code: partyMaterialIssues.code })
     .from(partyMaterialIssues)
-    .where(and(eq(partyMaterialIssues.companyId, companyId), like(partyMaterialIssues.code, `${prefix}%`)));
+    .where(
+      and(
+        eq(partyMaterialIssues.companyId, companyId),
+        like(partyMaterialIssues.code, `${prefix}%`),
+      ),
+    );
   let max = 0;
   for (const r of rows) {
     const m = r.code.slice(prefix.length).match(/^(\d+)$/);
@@ -73,7 +78,8 @@ export async function createPartyMaterialIssue(
   input: CreatePartyMaterialIssueInput,
   user: AuthContext,
 ): Promise<PartyMaterialIssue> {
-  requireWriteRole(user);
+  // Issuing client material is a create, so L2 Data Entry qualifies.
+  await requireFormAccess(user, 'party_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -247,7 +253,7 @@ export async function createPartyMaterialIssue(
         jcRemaining === 0
           ? `${jc.code} already has all ${jc.orderQty} pieces of material issued. Nothing more is needed for this job card.`
           : `${jc.code} is making ${jc.orderQty} pieces and ${alreadyToJc} are already issued, ` +
-            `so only ${jcRemaining} more can be issued. You entered ${input.qty}.`,
+              `so only ${jcRemaining} more can be issued. You entered ${input.qty}.`,
       );
     }
 
@@ -319,7 +325,10 @@ export async function cancelPartyMaterialIssue(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true; code: string; reversedQty: number }> {
-  requireWriteRole(user);
+  // Cancelling puts the issued quantity back on party stock — a department-admin
+  // action. edit AND approve is the pair only L5/L6 hold.
+  await requireFormAccess(user, 'party_create', 'edit');
+  await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const trimmed = (reason ?? '').trim();
   if (!trimmed) throw new ValidationError('A reason is required to cancel a material issue');
@@ -430,7 +439,9 @@ export async function listPartyMaterialIssues(
       })
       .from(partyMaterialIssues)
       .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
-      .where(and(eq(partyMaterialIssues.companyId, companyId), isNull(partyMaterialIssues.deletedAt)))
+      .where(
+        and(eq(partyMaterialIssues.companyId, companyId), isNull(partyMaterialIssues.deletedAt)),
+      )
       .orderBy(desc(partyMaterialIssues.issueDate), desc(partyMaterialIssues.code))
       .limit(500);
     return {

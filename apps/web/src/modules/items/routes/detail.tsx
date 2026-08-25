@@ -28,7 +28,7 @@ import type { Company, Item } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { signedUrl } from '@/lib/storage';
 import { useMyCompany } from '@/modules/settings/api';
 import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transactions/api';
@@ -51,7 +51,8 @@ function ItemDetailPage(): React.JSX.Element {
   const { id } = itemDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: item, isLoading, isError, error } = useItem(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'item_create');
   const { data: company } = useMyCompany();
   const softDelete = useSoftDeleteItem();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -89,8 +90,14 @@ function ItemDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Tier-driven, per department (Store). Was admin/manager for Edit and
+  // admin-only for Delete.
+  const canEdit = perms.edit;
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
+  // edit without approve; L4 has approve without edit. Admin-only was locking
+  // out the tier meant to run the department.
+  const canDelete = perms.edit && perms.approve;
 
   return (
     <div>
@@ -117,15 +124,11 @@ function ItemDetailPage(): React.JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {canEdit ? (
-              <Link
-                to="/items/$id/edit"
-                params={{ id: item.id }}
-                className="btn btn-ghost btn-sm"
-              >
+              <Link to="/items/$id/edit" params={{ id: item.id }} className="btn btn-ghost btn-sm">
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
@@ -208,7 +211,10 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
       title="On-hand from v_item_stock — sum of in/out/adjust txns"
     >
       <Package size={11} style={{ marginRight: 4 }} />
-      On hand: <span className="mono" style={{ marginLeft: 4 }}>{onHand}</span>
+      On hand:{' '}
+      <span className="mono" style={{ marginLeft: 4 }}>
+        {onHand}
+      </span>
     </span>
   );
 }

@@ -4,12 +4,15 @@
 // Card for in-house machining; debits the separate party stock, never own-stock
 // store_transactions. Self-contained: its own hooks + inline modals.
 
-import { type CreatePartyMaterialIssueInput, type PartyMaterialIssueListItem } from '@innovic/shared';
+import {
+  type CreatePartyMaterialIssueInput,
+  type PartyMaterialIssueListItem,
+} from '@innovic/shared';
 import { Loader2, Plus, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
@@ -20,8 +23,14 @@ import {
 } from '../api';
 
 export function PartyMaterialIssueView(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (party_create sits in Store). This view renders
+  // as the Issue tab of /party-grn, so it has to gate itself — the host screen
+  // passes it no props. Cancel reverses an issued quantity, so it is the L5+
+  // pair only L5/L6 hold: L3 has edit without approve, L4 approve without edit.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'party_create');
+  const canIssue = perms.entry;
+  const canCancel = perms.edit && perms.approve;
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<PartyMaterialIssueListItem | null>(null);
@@ -51,7 +60,7 @@ export function PartyMaterialIssueView(): React.JSX.Element {
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 260, fontSize: 12 }}
         />
-        {canWrite ? (
+        {canIssue ? (
           <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
             <Plus size={14} /> New Issue
           </button>
@@ -85,13 +94,13 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                     Qty
                   </th>
                   <th>Remarks</th>
-                  {canWrite ? <th className="td-ctr">Actions</th> : null}
+                  {canCancel ? <th className="td-ctr">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7} className="empty-state">
+                    <td colSpan={canCancel ? 8 : 7} className="empty-state">
                       No party material issues — click + New Issue
                     </td>
                   </tr>
@@ -113,7 +122,9 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                       {it.jcCodeText ?? '—'}
                     </td>
                     <td className="fw-700">
-                      <span style={{ color: 'var(--purple)' }}>{it.partyMaterialCodeText ?? '—'}</span>
+                      <span style={{ color: 'var(--purple)' }}>
+                        {it.partyMaterialCodeText ?? '—'}
+                      </span>
                       {it.partyMaterialName ? (
                         <span className="text3" style={{ fontSize: 11 }}>
                           {' '}
@@ -121,7 +132,10 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                         </span>
                       ) : null}
                     </td>
-                    <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--green)' }}>
+                    <td
+                      className="td-ctr mono fw-700"
+                      style={{ fontSize: 14, color: 'var(--green)' }}
+                    >
                       {it.qty}
                     </td>
                     <td
@@ -137,7 +151,7 @@ export function PartyMaterialIssueView(): React.JSX.Element {
                     >
                       {it.remarks ?? '—'}
                     </td>
-                    {canWrite ? (
+                    {canCancel ? (
                       <td className="td-ctr">
                         <button
                           type="button"
@@ -262,7 +276,12 @@ function CancelIssueModal({
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Keep it
           </button>
-          <button type="button" className="btn btn-danger" disabled={cancelMut.isPending} onClick={onConfirm}>
+          <button
+            type="button"
+            className="btn btn-danger"
+            disabled={cancelMut.isPending}
+            onClick={onConfirm}
+          >
             {cancelMut.isPending ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Cancelling…
@@ -393,7 +412,12 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               placeholder="0"
-              style={{ fontSize: 14, fontWeight: 700, border: '2px solid var(--green)', borderRadius: 4 }}
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                border: '2px solid var(--green)',
+                borderRadius: 4,
+              }}
             />
           </Field>
 
@@ -406,7 +430,11 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onSearch={setJwSearch}
                 loading={jwQuery.isFetching}
                 placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({ id: j.jwId, code: j.code, name: j.customerName ?? '' }))}
+                options={jwHeaders.map((j) => ({
+                  id: j.jwId,
+                  code: j.code,
+                  name: j.customerName ?? '',
+                }))}
               />
             </Field>
           </div>
@@ -434,13 +462,19 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
                 onSearch={setPmSearch}
                 loading={pmFetching}
                 placeholder="🔍 Select party material — type code or name…"
-                options={pmAll.map((p) => ({ id: p.id, code: p.code, name: `${p.name} · stock ${p.stockQty}` }))}
+                options={pmAll.map((p) => ({
+                  id: p.id,
+                  code: p.code,
+                  name: `${p.name} · stock ${p.stockQty}`,
+                }))}
               />
             </Field>
             {selectedPm ? (
               <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
                 Available party stock:{' '}
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>{selectedPm.stockQty}</span>{' '}
+                <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                  {selectedPm.stockQty}
+                </span>{' '}
                 {selectedPm.uom}
               </div>
             ) : null}
@@ -478,7 +512,12 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" disabled={createMut.isPending} onClick={onSave}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={createMut.isPending}
+            onClick={onSave}
+          >
             {createMut.isPending ? (
               <>
                 <Loader2 size={14} className="inline animate-spin" /> Saving…
@@ -493,12 +532,23 @@ function NewPartyMaterialIssueModal({ onClose }: { onClose: () => void }): React
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
   return (
     <div>
       <div
         className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}
+        style={{
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          marginBottom: 4,
+        }}
       >
         {label}
       </div>

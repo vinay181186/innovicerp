@@ -11,7 +11,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItemsList } from '../../items/api';
 import { useCreateStoreIssue, useNextStoreIssueCode, useStoreIssuesList } from '../api';
@@ -25,12 +25,19 @@ export const storeIssuesListRoute = createRoute({
 });
 
 function StoreIssuesListPage(): React.JSX.Element {
-  const { data: me } = useSession();
   const [tab, setTab] = useState<'items' | 'tools'>('items');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (Store). Was `role === admin || manager`, which
+  // let any manager in any department post a stock issue and locked out the
+  // L2 storekeeper whose job this is. This gate covers the Item Issues tab
+  // only — the Tool Issues tab hits a different endpoint under a different key
+  // (`toolissue_create`) and carries its own create control inside
+  // `tool-issues/components/tool-issue-register-view.tsx`, still on the old
+  // role check. The server-side `toolissue_create` guard is in place either way.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'issue_create');
 
   const { data, isLoading, isError, error } = useStoreIssuesList({
     search: search.trim() || undefined,
@@ -76,188 +83,188 @@ function StoreIssuesListPage(): React.JSX.Element {
         <ToolIssueRegisterView />
       ) : (
         <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📋 Item Issue Register
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="🔍 Search issue, item, JC…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 14,
             }}
-            style={{ minWidth: 220, fontSize: 13 }}
-          />
-          {canWrite ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowModal(true)}
+          >
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              📋 Item Issue Register
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                className="innovic-input"
+                placeholder="🔍 Search issue, item, JC…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                style={{ minWidth: 220, fontSize: 13 }}
+              />
+              {perms.entry ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setShowModal(true)}
+                >
+                  <Plus size={14} /> New Issue
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="panel">
+            {isLoading ? (
+              <div className="panel-body">
+                <div className="text3" style={{ fontSize: 12 }}>
+                  <Loader2 size={14} className="inline animate-spin" /> Loading…
+                </div>
+              </div>
+            ) : isError ? (
+              <div className="panel-body">
+                <div className="empty-state" style={{ color: 'var(--red)' }}>
+                  {error instanceof Error ? error.message : 'Failed to load issues'}
+                </div>
+              </div>
+            ) : data ? (
+              <div className="tbl-wrap">
+                <table className="innovic-table">
+                  <thead>
+                    <tr>
+                      <th>Issue No.</th>
+                      <th>Date</th>
+                      <th>Item Code</th>
+                      <th>Item Name</th>
+                      <th className="td-ctr">Qty</th>
+                      <th>Issued To</th>
+                      <th>Reference</th>
+                      <th>Purpose</th>
+                      <th>Remarks</th>
+                      <th>Issued By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((iss) => (
+                      <tr key={iss.id}>
+                        <td>
+                          <span className="td-code" style={{ color: 'var(--cyan)' }}>
+                            {iss.code}
+                          </span>
+                        </td>
+                        <td className="text2" style={{ fontSize: 11 }}>
+                          {iss.issueDate}
+                        </td>
+                        <td>
+                          <span className="td-code" style={{ color: 'var(--purple)' }}>
+                            {iss.itemCode ?? iss.itemCodeText ?? '—'}
+                          </span>
+                        </td>
+                        <td>{iss.itemName || '—'}</td>
+                        <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
+                          {iss.qty}
+                        </td>
+                        <td>{iss.issuedTo || '—'}</td>
+                        <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                          {`${iss.refType ?? ''} ${iss.refNo || '—'}`}
+                        </td>
+                        <td className="text3" style={{ fontSize: 11 }}>
+                          {iss.purpose || '—'}
+                        </td>
+                        <td
+                          className="text3"
+                          style={{
+                            fontSize: 11,
+                            maxWidth: 100,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={iss.remarks ?? ''}
+                        >
+                          {iss.remarks || '—'}
+                        </td>
+                        <td>{iss.issuedByName || '—'}</td>
+                      </tr>
+                    ))}
+                    {data.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="empty-state">
+                          No issues recorded — click + New Issue
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+
+          {data ? (
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginTop: 8,
+                fontSize: 12,
+                color: 'var(--text3)',
+              }}
             >
-              <Plus size={14} /> New Issue
-            </button>
+              <span>
+                {data.total === 0
+                  ? 'No issues'
+                  : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           ) : null}
-        </div>
-      </div>
 
-      <div className="panel">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red)' }}>
-              {error instanceof Error ? error.message : 'Failed to load issues'}
-            </div>
-          </div>
-        ) : data ? (
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Issue No.</th>
-                  <th>Date</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th className="td-ctr">Qty</th>
-                  <th>Issued To</th>
-                  <th>Reference</th>
-                  <th>Purpose</th>
-                  <th>Remarks</th>
-                  <th>Issued By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((iss) => (
-                  <tr key={iss.id}>
-                    <td>
-                      <span className="td-code" style={{ color: 'var(--cyan)' }}>
-                        {iss.code}
-                      </span>
-                    </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
-                      {iss.issueDate}
-                    </td>
-                    <td>
-                      <span className="td-code" style={{ color: 'var(--purple)' }}>
-                        {iss.itemCode ?? iss.itemCodeText ?? '—'}
-                      </span>
-                    </td>
-                    <td>{iss.itemName || '—'}</td>
-                    <td className="td-ctr mono fw-700" style={{ fontSize: 14 }}>
-                      {iss.qty}
-                    </td>
-                    <td>{iss.issuedTo || '—'}</td>
-                    <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
-                      {`${iss.refType ?? ''} ${iss.refNo || '—'}`}
-                    </td>
-                    <td className="text3" style={{ fontSize: 11 }}>
-                      {iss.purpose || '—'}
-                    </td>
-                    <td
-                      className="text3"
-                      style={{
-                        fontSize: 11,
-                        maxWidth: 100,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={iss.remarks ?? ''}
-                    >
-                      {iss.remarks || '—'}
-                    </td>
-                    <td>{iss.issuedByName || '—'}</td>
-                  </tr>
-                ))}
-                {data.items.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="empty-state">
-                      No issues recorded — click + New Issue
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
-
-      {data ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            marginTop: 8,
-            fontSize: 12,
-            color: 'var(--text3)',
-          }}
-        >
-          <span>
-            {data.total === 0
-              ? 'No issues'
-              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, data.total)} of ${data.total}`}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+            💡 Item Issue Register tracks material/consumables issued from Store. Stock is
+            auto-deducted. For returnable tools, use the{' '}
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setTab('tools')}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: 'var(--cyan)',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                font: 'inherit',
+              }}
             >
-              Prev
-            </button>
-            <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Next
-            </button>
+              🔧 Tool Issues
+            </button>{' '}
+            tab.
           </div>
-        </div>
-      ) : null}
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-        💡 Item Issue Register tracks material/consumables issued from Store. Stock is auto-deducted.
-        For returnable tools, use the{' '}
-        <button
-          type="button"
-          onClick={() => setTab('tools')}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--cyan)',
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            font: 'inherit',
-          }}
-        >
-          🔧 Tool Issues
-        </button>{' '}
-        tab.
-      </div>
-
-      {showModal ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
+          {showModal && perms.entry ? <NewIssueModal onClose={() => setShowModal(false)} /> : null}
         </>
       )}
     </div>

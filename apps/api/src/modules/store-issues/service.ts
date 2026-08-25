@@ -23,6 +23,7 @@ import type {
 } from '@innovic/shared';
 import { items, storeIssues, storeTransactions } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -172,6 +173,11 @@ export async function createStoreIssue(
   input: CreateStoreIssueInput,
   user: AuthContext,
 ): Promise<StoreIssue> {
+  // This endpoint had NO permission check at all — only the company-id check
+  // below — so any logged-in account could post a stock issue and deduct
+  // on-hand. Issuing material is `entry`, so L2 Data Entry and above may; an
+  // L1 Viewer and an L4 Approver may not.
+  await requireFormAccess(user, 'issue_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -180,7 +186,9 @@ export async function createStoreIssue(
     const itemRows = await tx
       .select({ id: items.id, code: items.code, name: items.name })
       .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+      .where(
+        and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
+      )
       .limit(1);
     const itm = itemRows[0];
     if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);

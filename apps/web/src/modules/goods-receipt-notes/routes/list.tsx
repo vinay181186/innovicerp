@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { StatStrip } from '@/components/shared/stat-strip';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNotesList } from '../api';
@@ -43,7 +43,11 @@ export const goodsReceiptNotesListRoute = createRoute({
 function GoodsReceiptNotesListPage(): React.JSX.Element {
   const search = goodsReceiptNotesListRoute.useSearch();
   const navigate = goodsReceiptNotesListRoute.useNavigate();
-  const { data: me } = useSession();
+  // Tier-driven, per department (Store). Was `role === admin || manager`, which
+  // handed a Purchase manager the Store's receipt book and locked out the L2
+  // storekeeper whose job this is.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'grn_create');
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -71,7 +75,6 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
 
   const columns = useMemo<ColumnDef<GoodsReceiptNoteListItem>[]>(
     () => [
@@ -263,57 +266,57 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           borderBottom: '1px solid var(--border)',
         }}
       >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 0,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          📥 Goods Receipt Note (GRN)
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 0,
+            gap: 8,
+          }}
+        >
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            📥 Goods Receipt Note (GRN)
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              className="innovic-input"
+              placeholder="Search code, PO ref, DC, invoice…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ width: 240, fontSize: 12 }}
+            />
+            <select
+              className="innovic-select"
+              value={search.qcStatus ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as GrnQcStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, qcStatus: v === '' ? undefined : v, page: 1 }),
+                  replace: true,
+                });
+              }}
+              style={{ width: 160, fontSize: 12 }}
+            >
+              <option value="">All QC statuses</option>
+              {GRN_QC_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {perms.entry ? (
+              <Link to="/goods-receipt-notes/new" className="btn btn-primary">
+                <Plus size={14} /> New GRN
+              </Link>
+            ) : null}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Search code, PO ref, DC, invoice…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 240, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.qcStatus ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as GrnQcStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, qcStatus: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 160, fontSize: 12 }}
-          >
-            <option value="">All QC statuses</option>
-            {GRN_QC_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <Link to="/goods-receipt-notes/new" className="btn btn-primary">
-              <Plus size={14} /> New GRN
-            </Link>
-          ) : null}
-        </div>
-      </div>
       </div>
 
       {data?.summary ? (
@@ -367,7 +370,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={columns.length} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td
+                    colSpan={columns.length}
+                    className="empty-state"
+                    style={{ color: 'var(--red)' }}
+                  >
                     {error instanceof Error ? error.message : 'Failed to load goods receipt notes'}
                   </td>
                 </tr>

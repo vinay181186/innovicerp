@@ -9,6 +9,7 @@ import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
@@ -29,6 +30,12 @@ function ItemNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateItem();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Tier-driven, per department (Store). The + Add Item button is hidden from
+  // anyone without entry rights, but this screen had no gate of its own —
+  // typing the URL still handed over the create form (an L1 Viewer, an L4
+  // Approver). Same guard shape as the edit page below.
+  const { data: eff, isLoading: accessLoading } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'item_create');
 
   const onSubmit = async (values: CreateItemInput): Promise<void> => {
     setSubmitError(null);
@@ -39,6 +46,32 @@ function ItemNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create item');
     }
   };
+
+  if (accessLoading) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading item…
+      </div>
+    );
+  }
+
+  if (!perms.entry) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/items" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to Item Master
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+            ⛔ You do not have create access to Item Master. Ask an admin for L2 Data Entry or above
+            in Store.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -66,6 +99,10 @@ function ItemEditPage(): React.JSX.Element {
   const { data: item, isLoading, isError, error } = useItem(id);
   const update = useUpdateItem(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Same hole on the edit route: the row's Edit link is hidden without edit
+  // rights, but the URL was open to anyone signed in.
+  const { data: eff, isLoading: accessLoading } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'item_create');
 
   const onSubmit = async (values: UpdateItemInput): Promise<void> => {
     setSubmitError(null);
@@ -77,10 +114,28 @@ function ItemEditPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || accessLoading) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading item…
+      </div>
+    );
+  }
+
+  if (!perms.edit) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/items/$id" params={{ id }} className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back to item
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+            ⛔ You do not have edit access to Item Master. Ask an admin for L3 Editor or above in
+            Store.
+          </div>
+        </div>
       </div>
     );
   }
@@ -104,7 +159,12 @@ function ItemEditPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/items/$id" params={{ id }} className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+      <Link
+        to="/items/$id"
+        params={{ id }}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 10 }}
+      >
         <ArrowLeft size={14} /> Back to item
       </Link>
       <div className="panel">

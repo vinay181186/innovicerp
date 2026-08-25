@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { items, storeTransactions } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -184,12 +185,20 @@ export async function adjustStock(
   input: AdjustStockInput,
   user: AuthContext,
 ): Promise<{ ok: true; stockAfter: number }> {
+  // Tier gate (Item Master / Store). There was NO permission check here at all —
+  // only the company check below — so any logged-in account, an L1 Viewer
+  // included, could move on-hand stock through the API; the browser merely hid
+  // the button. Changing a stock balance is `edit`, not `entry`: the balance is
+  // an existing saved figure, so L2 Data Entry is correctly refused.
+  await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
       .select({ id: items.id, code: items.code })
       .from(items)
-      .where(and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)))
+      .where(
+        and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
+      )
       .limit(1);
     const itm = itemRows[0];
     if (!itm) throw new NotFoundError(`Item ${input.itemId} not found`);
@@ -233,6 +242,10 @@ export async function setMinStock(
   input: SetMinStockInput,
   user: AuthContext,
 ): Promise<{ ok: true; minQty: number }> {
+  // Same hole as adjustStock: unguarded, so anyone logged in could reset the
+  // low-stock threshold on any item. Min qty lives on a saved item row, so the
+  // action is `edit`.
+  await requireFormAccess(user, 'item_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const result = await tx

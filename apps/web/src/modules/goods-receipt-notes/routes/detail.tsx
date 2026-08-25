@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useGoodsReceiptNote, useSoftDeleteGoodsReceiptNote } from '../api';
 import { QcStatusBadge } from '../components/qc-status-badge';
@@ -21,7 +21,10 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useGoodsReceiptNote(id);
-  const { data: me } = useSession();
+  // Tier-driven, per department (Store). Was role admin/manager for Edit and
+  // role admin for Delete.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'grn_create');
   const softDelete = useSoftDeleteGoodsReceiptNote();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -57,8 +60,11 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  const canEdit = perms.edit;
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3 has
+  // edit without approve; L4 has approve without edit.
+  const canDelete = perms.edit && perms.approve;
 
   const totalReceived = detail.lines.reduce((s, l) => s + l.receivedQty, 0);
   const totalAccepted = detail.lines.reduce((s, l) => s + l.qcAcceptedQty, 0);
@@ -74,7 +80,10 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+            >
               {detail.code}
             </div>
             <div className="panel-title" style={{ marginTop: 2 }}>
@@ -109,7 +118,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
@@ -258,10 +267,7 @@ function DetailGrid(props: { detail: GoodsReceiptNoteDetail }): React.JSX.Elemen
       <Pair label="DC No." value={detail.dcNo ?? '—'} />
       <Pair label="Invoice No." value={detail.invoiceNo ?? '—'} />
       <Pair label="PO" value={detail.poCode ?? detail.poCodeText ?? '—'} />
-      <Pair
-        label="Vendor"
-        value={detail.vendorName ?? detail.vendorCodeText ?? '—'}
-      />
+      <Pair label="Vendor" value={detail.vendorName ?? detail.vendorCodeText ?? '—'} />
       <div className="form-grp form-full">
         <span className="form-label">Remarks</span>
         <div style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks ?? '—'}</div>

@@ -31,7 +31,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -525,7 +525,10 @@ export async function createGoodsReceiptNote(
   input: CreateGoodsReceiptNoteInput,
   user: AuthContext,
 ): Promise<GoodsReceiptNoteDetail> {
-  requireWriteRole(user);
+  // Tier gate (was requireWriteRole, which only knew admin/manager). Booking a
+  // receipt is `entry`, so an L2 Data Entry storekeeper can raise a GRN; an L1
+  // Viewer and an L4 Approver cannot.
+  await requireFormAccess(user, 'grn_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -701,19 +704,19 @@ export async function insertGrnForOspReceipt(
     const code = l.itemCodeText?.trim();
     const resolvedId = l.itemId ?? (code ? (ospResolved.get(code) ?? null) : null);
     return {
-    companyId,
-    goodsReceiptNoteId: header.id,
-    lineNo: i + 1,
-    purchaseOrderLineId: l.purchaseOrderLineId,
-    itemId: resolvedId,
-    itemCodeText: resolvedId ? null : (code ?? null),
-    itemName: l.itemName,
-    receivedQty: l.receivedQty,
-    qcStatus: 'pending' as const,
-    qcAcceptedQty: 0,
-    qcRejectedQty: 0,
-    createdBy: user.id,
-    updatedBy: user.id,
+      companyId,
+      goodsReceiptNoteId: header.id,
+      lineNo: i + 1,
+      purchaseOrderLineId: l.purchaseOrderLineId,
+      itemId: resolvedId,
+      itemCodeText: resolvedId ? null : (code ?? null),
+      itemName: l.itemName,
+      receivedQty: l.receivedQty,
+      qcStatus: 'pending' as const,
+      qcAcceptedQty: 0,
+      qcRejectedQty: 0,
+      createdBy: user.id,
+      updatedBy: user.id,
     };
   });
   const insertedLines = await tx.insert(goodsReceiptNoteLines).values(lineValues).returning();
@@ -738,7 +741,9 @@ export async function updateGoodsReceiptNote(
   input: UpdateGoodsReceiptNoteInput,
   user: AuthContext,
 ): Promise<GoodsReceiptNoteDetail> {
-  requireWriteRole(user);
+  // Changing a saved GRN is `edit`, so L2 (create-only) is correctly refused —
+  // that is the whole point of the Data Entry tier.
+  await requireFormAccess(user, 'grn_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1072,7 +1077,11 @@ export async function softDeleteGoodsReceiptNote(
   id: string,
   user: AuthContext,
 ): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit.
+  await requireFormAccess(user, 'grn_create', 'edit');
+  await requireFormAccess(user, 'grn_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -1180,10 +1189,7 @@ export async function softDeleteGoodsReceiptNote(
  *   - goods_receipt_notes.vendor_id              → vendors (master, nullable)
  *   - goods_receipt_note_lines.item_id → DISTINCT items (master, the received items)
  */
-export async function getGrnRelated(
-  id: string,
-  user: AuthContext,
-): Promise<DocumentTraceability> {
+export async function getGrnRelated(id: string, user: AuthContext): Promise<DocumentTraceability> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     // Confirm the GRN is visible before gathering related docs; grab the FK

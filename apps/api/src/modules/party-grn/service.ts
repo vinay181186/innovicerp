@@ -22,6 +22,7 @@ import {
   partyMaterials,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 
@@ -96,9 +97,7 @@ export async function listPartyGrn(
       ? sql`AND pg.job_work_order_id = ${input.jobWorkOrderId}::uuid`
       : sql``;
     const clientFrag = input.clientId ? sql`AND pg.client_id = ${input.clientId}::uuid` : sql``;
-    const fromFrag = input.fromDate
-      ? sql`AND pg.grn_date >= ${input.fromDate}::date`
-      : sql``;
+    const fromFrag = input.fromDate ? sql`AND pg.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND pg.grn_date <= ${input.toDate}::date` : sql``;
 
     const result = await tx.execute(sql`
@@ -198,10 +197,7 @@ function toListItem(r: Record<string, unknown>): PartyGrnListItem {
   };
 }
 
-export async function getPartyGrnDetail(
-  id: string,
-  user: AuthContext,
-): Promise<PartyGrnDetail> {
+export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<PartyGrnDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const headerRows = await tx.execute(sql`
@@ -278,6 +274,11 @@ export async function createPartyGrn(
   input: CreatePartyGrnInput,
   user: AuthContext,
 ): Promise<PartyGrn> {
+  // Tier gate. Booking client material in is a create, so L2 Data Entry and up;
+  // L1 Viewer and L4 Approver cannot. Until now this endpoint had no permission
+  // check at all — only a company-id check — so any logged-in account could
+  // record a receipt.
+  await requireFormAccess(user, 'party_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
@@ -321,12 +322,7 @@ export async function createPartyGrn(
         itemCodeText: partyMaterials.itemCodeText,
       })
       .from(partyMaterials)
-      .where(
-        and(
-          eq(partyMaterials.companyId, companyId),
-          isNull(partyMaterials.deletedAt),
-        ),
-      );
+      .where(and(eq(partyMaterials.companyId, companyId), isNull(partyMaterials.deletedAt)));
     const pmById = new Map(pmRows.map((p) => [p.id, p]));
     for (const id of materialIds) {
       if (!pmById.has(id)) {
@@ -336,9 +332,7 @@ export async function createPartyGrn(
 
     // 3) Lock the rows we'll update
     for (const id of materialIds) {
-      await tx.execute(
-        sql`SELECT 1 FROM public.party_materials WHERE id = ${id}::uuid FOR UPDATE`,
-      );
+      await tx.execute(sql`SELECT 1 FROM public.party_materials WHERE id = ${id}::uuid FOR UPDATE`);
     }
 
     // 4) Insert header
@@ -376,9 +370,7 @@ export async function createPartyGrn(
         itemCodeText: jobWorkOrderLines.itemCodeText,
       })
       .from(jobWorkOrderLines)
-      .where(
-        and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)),
-      );
+      .where(and(eq(jobWorkOrderLines.jobWorkOrderId, jw.id), isNull(jobWorkOrderLines.deletedAt)));
     const lineByNo = new Map(
       jwLines.map((l) => [
         String(l.lineNo),
@@ -400,7 +392,8 @@ export async function createPartyGrn(
     `)) as unknown as Array<{ lineNoText: string | null; received: number }>;
     const receivedByLineNo = new Map<string, number>();
     for (const r of existingRows) {
-      if (r.lineNoText != null) receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
+      if (r.lineNoText != null)
+        receivedByLineNo.set(String(r.lineNoText).trim(), Number(r.received));
     }
 
     // 5) Insert lines + update per-material totals
@@ -519,6 +512,13 @@ export async function cancelPartyGrn(
   reason: string,
   user: AuthContext,
 ): Promise<{ ok: true; code: string; reversedQty: number }> {
+  // Cancel is not one of the four tier actions, and it reverses a received
+  // quantity back off party stock, so it is expressed as the pair only L5
+  // Department Admin and above hold: edit AND approve. L3 Editor has edit
+  // without approve; L4 Approver has approve without edit. Previously there was
+  // no permission check here at all.
+  await requireFormAccess(user, 'party_create', 'edit');
+  await requireFormAccess(user, 'party_create', 'approve');
   const companyId = requireCompany(user);
   const trimmed = (reason ?? '').trim();
   if (!trimmed) throw new ValidationError('A reason is required to cancel a Party GRN');
@@ -528,11 +528,7 @@ export async function cancelPartyGrn(
       .select({ id: partyGrn.id, code: partyGrn.code, remarks: partyGrn.remarks })
       .from(partyGrn)
       .where(
-        and(
-          eq(partyGrn.id, id),
-          eq(partyGrn.companyId, companyId),
-          isNull(partyGrn.deletedAt),
-        ),
+        and(eq(partyGrn.id, id), eq(partyGrn.companyId, companyId), isNull(partyGrn.deletedAt)),
       )
       .limit(1);
     const head = headRows[0];
@@ -606,7 +602,9 @@ export async function cancelPartyGrn(
       .update(partyGrn)
       .set({
         deletedAt: now,
-        remarks: head.remarks ? `${head.remarks}\n[Cancelled] ${trimmed}` : `[Cancelled] ${trimmed}`,
+        remarks: head.remarks
+          ? `${head.remarks}\n[Cancelled] ${trimmed}`
+          : `[Cancelled] ${trimmed}`,
         updatedAt: now,
         updatedBy: user.id,
       })
