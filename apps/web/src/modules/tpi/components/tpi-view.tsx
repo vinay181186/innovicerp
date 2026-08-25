@@ -19,6 +19,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
@@ -308,6 +309,12 @@ function PendingTpi(props: {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
   const companyId = useSession().data?.companyId ?? null;
+  // Same gate as QC Call Register, and deliberately the same form key: TPI posts
+  // through op-entry's submitQcLog, which enforces qc_submit `entry`. (A
+  // `tpi_submit` key exists in the matrix but is wired to nothing — gating on it
+  // here would invent a second, unenforced right.)
+  const { data: eff } = useMyAccess();
+  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
   const [logDate, setLogDate] = useState(todayLocal());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');
@@ -409,7 +416,22 @@ function PendingTpi(props: {
         </div>
       </div>
 
-      {open ? (
+      {/* No `entry` → no form, rather than a disabled one. The completed-records
+          table and its Excel export below stay visible to everyone. */}
+      {open && !canEntry ? (
+        <div
+          style={{
+            padding: 14,
+            background: 'rgba(34,197,94,0.04)',
+            borderTop: '2px solid var(--green)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+            ⛔ TPI entry is not enabled for your access tier — this call is view-only for you.
+          </div>
+        </div>
+      ) : null}
+      {open && canEntry ? (
         <div
           style={{
             padding: 14,

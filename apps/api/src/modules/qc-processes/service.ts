@@ -1,7 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { qcProcesses } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { requireWriteRole } from '../../lib/auth';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
 import type {
@@ -79,7 +79,10 @@ export async function createQcProcess(
   input: CreateQcProcessInput,
   user: AuthContext,
 ): Promise<QcProcess> {
-  requireWriteRole(user);
+  // Was a blanket role check (admin / manager / qc alike). The tier matrix
+  // decides now: creating a master record is `entry`, so L2 Data Entry and
+  // above in QC.
+  await requireFormAccess(user, 'qcprocess_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -118,7 +121,9 @@ export async function updateQcProcess(
   input: UpdateQcProcessInput,
   user: AuthContext,
 ): Promise<QcProcess> {
-  requireWriteRole(user);
+  // Changing a saved record is `edit`, which L2 Data Entry deliberately does
+  // not have — it may create, not alter.
+  await requireFormAccess(user, 'qcprocess_create', 'edit');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -154,7 +159,13 @@ export async function updateQcProcess(
 // delete-and-recreate is the only way a name can change — which is exactly the
 // path this guard has to cover.
 export async function softDeleteQcProcess(id: string, user: AuthContext): Promise<{ ok: true }> {
-  requireWriteRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit. The owner
+  // decided L5 gets delete rights — admin-only was locking out the very tier
+  // meant to run the department.
+  await requireFormAccess(user, 'qcprocess_create', 'edit');
+  await requireFormAccess(user, 'qcprocess_create', 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

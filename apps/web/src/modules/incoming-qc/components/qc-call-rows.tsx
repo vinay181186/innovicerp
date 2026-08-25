@@ -8,6 +8,7 @@ import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shar
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -27,6 +28,12 @@ export function IncomingPendingRow(props: {
   const submit = useSubmitIncomingQc();
   const session = useSession().data;
   const companyId = session?.companyId ?? null;
+  // Incoming material is its OWN form key — this row sits on the QC Call
+  // Register, but accepting a GRN line is qc_incoming `entry` (what
+  // incoming-qc's submitIncomingQc enforces), not qc_submit. Money on this
+  // screen is untouched: the server nulls it via canSeeFormPrice.
+  const { data: eff } = useMyAccess();
+  const canEntry = effectiveFormPerms(eff, 'qc_incoming').entry;
   const [qcDate, setQcDate] = useState(todayIso());
   const [accept, setAccept] = useState('');
   const [reject, setReject] = useState('0');
@@ -154,7 +161,22 @@ export function IncomingPendingRow(props: {
         </div>
       </div>
 
-      {open ? (
+      {/* No `entry` → the inspect form is not drawn; the row itself still reads. */}
+      {open && !canEntry ? (
+        <div
+          style={{
+            padding: '14px 12px',
+            background: 'rgba(34,197,94,0.04)',
+            borderTop: '2px solid var(--green)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+            ⛔ Incoming QC entry is not enabled for your access tier — this line is view-only for
+            you.
+          </div>
+        </div>
+      ) : null}
+      {open && canEntry ? (
         <div
           style={{
             padding: '14px 12px',
@@ -164,7 +186,9 @@ export function IncomingPendingRow(props: {
         >
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>
             ✅ Inspect — {o.itemCode ?? o.itemName ?? 'Item'} ·{' '}
-            <span style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}>
+            <span
+              style={{ background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 4 }}
+            >
               GRN {o.grnNo}
             </span>
             {o.jcCode ? (
@@ -191,8 +215,8 @@ export function IncomingPendingRow(props: {
                 marginBottom: 10,
               }}
             >
-              This line feeds <b>no job card operation</b> — accepting it credits stock only. If
-              you meant to clear a job-card operation, you are on the wrong GRN.
+              This line feeds <b>no job card operation</b> — accepting it credits stock only. If you
+              meant to clear a job-card operation, you are on the wrong GRN.
             </div>
           )}
           <div className="form-grid">
@@ -357,7 +381,9 @@ export function IncomingCompletedRow({ l }: { l: IncomingQcCompletedRow }): Reac
                       color: l.respDays <= 0 ? 'var(--green)' : 'var(--amber)',
                     }}
                   >
-                    ({l.respDays <= 0 ? 'Same day' : `${l.respDays} day${l.respDays > 1 ? 's' : ''}`})
+                    (
+                    {l.respDays <= 0 ? 'Same day' : `${l.respDays} day${l.respDays > 1 ? 's' : ''}`}
+                    )
                   </span>
                 ) : null}
               </>

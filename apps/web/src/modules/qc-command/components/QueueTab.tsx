@@ -32,14 +32,16 @@ function attemptColor(n: number): string {
 export function QueueTab({
   rows,
   canPickUp,
-  isAdmin,
+  canAssign,
   busyId,
   onPickUp,
   onAssign,
 }: {
   rows: QcCommandQueueRow[];
+  // Both come from the caller's qc_submit tier now, not their global role:
+  // pick-up is `entry`, assign-to-another is `edit`.
   canPickUp: boolean;
-  isAdmin: boolean;
+  canAssign: boolean;
   busyId: string | null;
   onPickUp: (jcOpId: string) => void;
   onAssign: (row: QcCommandQueueRow) => void;
@@ -57,7 +59,7 @@ export function QueueTab({
     return (a.customer ?? '').localeCompare(b.customer ?? '');
   });
 
-  const showActions = canPickUp || isAdmin;
+  const showActions = canPickUp || canAssign;
 
   return (
     <>
@@ -213,7 +215,7 @@ export function QueueTab({
                                   )}
                                 </button>
                               ) : null}
-                              {isAdmin ? (
+                              {canAssign ? (
                                 <button
                                   type="button"
                                   className="btn btn-ghost btn-sm"
@@ -235,8 +237,8 @@ export function QueueTab({
           </div>
           {showActions ? (
             <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-              💡 "Pick Up" assigns this item to you. "Assign" (admin only) allocates to any
-              inspector. Attempt counter increments on rework.
+              💡 "Pick Up" assigns this item to you. "Assign" allocates it to any inspector. Attempt
+              counter increments on rework.
             </div>
           ) : null}
         </>

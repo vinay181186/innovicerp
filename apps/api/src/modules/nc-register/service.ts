@@ -11,7 +11,7 @@ import { and, asc, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import { capaRecords, items, jcOps, jobCards, ncRegister, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireOpEntryRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -623,6 +623,11 @@ export async function createNcRegister(
   user: AuthContext,
 ): Promise<NcRegister> {
   requireOpEntryRole(user);
+  // ADR-035: the role guard alone let anyone with a write role raise an NC even
+  // when their QC department tier is L1 (view-only). Reporting an NC is a
+  // create, so it needs `entry` on NC Register. Admins bypass; the matrix can
+  // only narrow what the role already allows.
+  await requireFormAccess(user, 'nc_dispose', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -699,6 +704,9 @@ export async function updateNcRegister(
   user: AuthContext,
 ): Promise<NcRegister> {
   requireOpEntryRole(user);
+  // Changing a saved NC is `edit`, not `entry` — an L2 Data Entry hand may
+  // raise an NC but must not go back and rewrite the reason on one.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -770,6 +778,9 @@ export async function disposeNcRegister(
   user: AuthContext,
 ): Promise<{ result: DisposeNcResult; nc: NcRegister }> {
   requireOpEntryRole(user);
+  // Disposition decides scrap vs rework and moves stock — it rewrites a saved
+  // NC, so it is `edit` (L3 Editor and above), never `entry`.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = (() => {
     if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
     return user.companyId;
@@ -828,6 +839,8 @@ export async function closeNcRework(
   user: AuthContext,
 ): Promise<NcRegister> {
   requireOpEntryRole(user);
+  // Closing the rework changes an already-disposed NC — `edit`.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = (() => {
     if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
     return user.companyId;
@@ -861,6 +874,8 @@ export async function closeNcRework(
  */
 export async function closeNcReturnToVendor(id: string, user: AuthContext): Promise<NcRegister> {
   requireOpEntryRole(user);
+  // Clearing the at-vendor balance changes an already-disposed NC — `edit`.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -886,6 +901,11 @@ export async function closeNcReturnToVendor(id: string, user: AuthContext): Prom
 
 export async function softDeleteNcRegister(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireOpEntryRole(user);
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit.
+  await requireFormAccess(user, 'nc_dispose', 'edit');
+  await requireFormAccess(user, 'nc_dispose', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

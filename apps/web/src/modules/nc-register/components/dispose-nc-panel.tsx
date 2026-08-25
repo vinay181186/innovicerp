@@ -23,6 +23,10 @@ interface Props {
   // Full op list of the NC's JC (legacy `_disposeNC` renders every op). Empty
   // = fall back to a free number input / the NC's own op_seq.
   jcOps: JcOpOption[];
+  // Money right for `nc_dispose` (QC starts at L3 — see priceStartTier). False
+  // for an L1/L2 QC hand, who must not be asked to type a cost the API then
+  // blanks on read-back via `hideNcMoney`.
+  canSeePrice: boolean;
   onSubmit: (input: DisposeNcInput) => Promise<void> | void;
   onCancel: () => void;
   pending: boolean;
@@ -30,7 +34,7 @@ interface Props {
 }
 
 export function DisposeNcPanel(props: Props): React.JSX.Element {
-  const { nc, jcCode, jcOps, onSubmit, onCancel, pending, error } = props;
+  const { nc, jcCode, jcOps, canSeePrice, onSubmit, onCancel, pending, error } = props;
 
   const [action, setAction] = useState<NcDisposition | ''>('');
   const [reworkOpSeq, setReworkOpSeq] = useState<number | ''>(nc.opSeq ?? '');
@@ -50,7 +54,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
     if (action === 'rework' && reworkOpSeq !== '') {
       payload.reworkOpSeq = Number(reworkOpSeq);
     }
-    if (action === 'scrap' && scrapCost !== '') {
+    // Only sent when the user could actually see and type it. A blinded user
+    // leaves `scrapCost` at '' and the key is omitted from the payload entirely
+    // — never sent as 0/null over a value they were not shown.
+    if (action === 'scrap' && canSeePrice && scrapCost !== '') {
       payload.scrapCost = Number(scrapCost);
     }
     void onSubmit(payload);
@@ -61,8 +68,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
       <div className="panel-hdr">
         <div className="panel-title">✏ Disposition — {nc.code}</div>
         <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-          Rejected qty:{' '}
-          <b style={{ color: 'var(--text)' }}>{Number(nc.rejectedQty)}</b>
+          Rejected qty: <b style={{ color: 'var(--text)' }}>{Number(nc.rejectedQty)}</b>
         </span>
       </div>
       <div className="panel-body">
@@ -166,22 +172,31 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
             ) : null}
 
             {action === 'scrap' ? (
-              <div className="form-grp form-full">
-                <label className="form-label" htmlFor="dispScrapCost">
-                  Scrap Cost (₹)
-                </label>
-                <input
-                  id="dispScrapCost"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className="innovic-input"
-                  value={scrapCost === '' ? '' : scrapCost}
-                  onChange={(e) =>
-                    setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
-                  }
-                />
-              </div>
+              canSeePrice ? (
+                <div className="form-grp form-full">
+                  <label className="form-label" htmlFor="dispScrapCost">
+                    Scrap Cost (₹)
+                  </label>
+                  <input
+                    id="dispScrapCost"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="innovic-input"
+                    value={scrapCost === '' ? '' : scrapCost}
+                    onChange={(e) =>
+                      setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="form-grp form-full">
+                  <div className="form-help">
+                    Scrap cost is hidden for your access level — this NC will be saved with no scrap
+                    cost recorded.
+                  </div>
+                </div>
+              )
             ) : null}
 
             <div className="form-grp form-full">
@@ -211,7 +226,8 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none — server will reject.
+              ⚠ Use-As-Is needs the NC to have a resolved op_seq + jc_op_id. This NC has none —
+              server will reject.
             </div>
           ) : null}
 
@@ -227,8 +243,8 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 fontSize: 12,
               }}
             >
-              A supplementary JC will be created with qty {Number(nc.rejectedQty)} and
-              the origin's source SO/JW link inherited. Code:{' '}
+              A supplementary JC will be created with qty {Number(nc.rejectedQty)} and the origin's
+              source SO/JW link inherited. Code:{' '}
               <span className="mono">&lt;origin&gt;-S&lt;n&gt;</span>.
             </div>
           ) : null}

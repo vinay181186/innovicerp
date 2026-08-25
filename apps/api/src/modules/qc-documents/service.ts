@@ -19,6 +19,7 @@ import type {
 } from '@innovic/shared';
 import { qcDocuments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
@@ -73,6 +74,10 @@ export async function createQcDocument(
   input: CreateQcDocumentInput,
   user: AuthContext,
 ): Promise<QcDocument> {
+  // Registering an upload is the write this module exists for, and until now it
+  // had no permission check at all — only the company guard below. The browser
+  // hid the button from an L1 Viewer; the endpoint still accepted the call.
+  await requireFormAccess(user, 'qcdocs_upload', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const inserted = await tx
@@ -104,6 +109,14 @@ export async function createQcDocument(
 }
 
 export async function deleteQcDocument(id: string, user: AuthContext): Promise<{ id: string }> {
+  // Delete is not one of the four tier actions, so it is expressed as the pair
+  // that only L5 Department Admin and above hold: edit AND approve. L3 Editor
+  // has edit but not approve; L4 Approver has approve but not edit. Removing a
+  // quality record is a department-admin action — the owner decided L5 gets
+  // delete rights, because admin-only was locking out the very tier meant to
+  // run the department. This path had no permission check at all before.
+  await requireFormAccess(user, 'qcdocs_upload', 'edit');
+  await requireFormAccess(user, 'qcdocs_upload', 'approve');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const updated = await tx
@@ -417,7 +430,8 @@ export async function getQcMatrix(
           jcOpId: op.jcOpId,
         };
       });
-      const overall: QcMatrixRow['overall'] = lt === 0 ? 'no_qc' : ld >= lt ? 'complete' : 'partial';
+      const overall: QcMatrixRow['overall'] =
+        lt === 0 ? 'no_qc' : ld >= lt ? 'complete' : 'partial';
       matrixRows.push({
         soLineId: g.soLineId,
         lineNo: g.lineNo,

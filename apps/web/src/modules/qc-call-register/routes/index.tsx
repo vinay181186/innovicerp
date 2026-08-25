@@ -13,6 +13,7 @@ import { createRoute, Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { QcReportAttach, QcReportLink } from '@/components/shared/qc-report-attach';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -362,6 +363,13 @@ function PendingCall(props: {
   const submitQc = useSubmitQcLog();
   const session = useSession().data;
   const companyId = session?.companyId ?? null;
+  // Tier-driven, per department. Recording accept/reject qty is `entry` on
+  // qc_submit (QC). op-entry's submitQcLog already refuses without it, but this
+  // screen had no check at all — an L1 Viewer was handed the whole form and only
+  // discovered the 403 on click. The session below still legitimately prefills
+  // the inspector name; only the form is gated.
+  const { data: eff } = useMyAccess();
+  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
   const inspectorListId = `qc-inspectors-${o.jcOpId}`;
   const [logDate, setLogDate] = useState(todayIso());
   const [shift, setShift] = useState<Shift>('day');
@@ -473,7 +481,23 @@ function PendingCall(props: {
         </div>
       </div>
 
-      {open ? (
+      {/* Without `entry` the form is not drawn at all rather than disabled — a
+          disabled empty form has nothing in it to read. The pending and completed
+          queues stay in full: this screen is a monitoring board for that tier. */}
+      {open && !canEntry ? (
+        <div
+          style={{
+            padding: '14px 12px',
+            background: 'rgba(34,197,94,0.04)',
+            borderTop: '2px solid var(--green)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+            ⛔ QC entry is not enabled for your access tier — this call is view-only for you.
+          </div>
+        </div>
+      ) : null}
+      {open && canEntry ? (
         <div
           style={{
             padding: '14px 12px',

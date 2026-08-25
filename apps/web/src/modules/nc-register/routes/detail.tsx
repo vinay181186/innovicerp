@@ -8,7 +8,7 @@ import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useCloseNcReturn,
@@ -31,7 +31,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const { id } = ncRegisterDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useNcRegister(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
@@ -81,13 +81,22 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // source op out of complete. Closing it is what says the replacement landed.
   const isReturnDisposed =
     detail.status === 'disposed' && detail.disposition === 'return_to_vendor';
-  const canEdit = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
-  const isAdmin = me?.role === 'admin';
-  // CAPA can be created/seen by admin/manager/qc (matches capa_records RLS).
-  const canCapa = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // Tier-driven, per department (QC). Was a global role string
+  // (admin||manager||operator) that ignored the user's actual QC tier.
+  const ncPerms = effectiveFormPerms(eff, 'nc_dispose');
+  // Dispose / close rework / close vendor return / Edit all rewrite a saved
+  // NC → `edit` (L3 Editor and above).
+  const canEdit = ncPerms.edit;
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: L3 has edit without
+  // approve, L4 has approve without edit. Was admin-only, which locked out the
+  // very tier meant to run the department.
+  const canDelete = ncPerms.edit && ncPerms.approve;
+  // The button creates a CAPA, so it follows the CAPA form key, not nc_dispose.
+  const canCreateCapaRecord = effectiveFormPerms(eff, 'capa_create').entry;
   // "Create CAPA" only once the NC is disposed/closed and has no linked CAPA
   // (legacy: button shows when status !== 'pending' && !_capaForNC(ncNo)).
-  const showCreateCapa = canCapa && !isPending && !detail.linkedCapaCode;
+  const showCreateCapa = canCreateCapaRecord && !isPending && !detail.linkedCapaCode;
 
   // Resolve op_seq → operation label for the rework dropdown.
   const reworkOpOptions = (jcOps ?? [])
@@ -157,7 +166,10 @@ function NcRegisterDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="td-code" style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}>
+            <div
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+            >
               {detail.code}
             </div>
             <div
@@ -288,7 +300,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12 }}>
@@ -379,7 +391,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
             </div>
           ) : null}
           <DetailGrid detail={detail} jcCode={jcCode} />
-          {detail.disposition || detail.dispositionDate ? <DispositionBlock detail={detail} /> : null}
+          {detail.disposition || detail.dispositionDate ? (
+            <DispositionBlock detail={detail} />
+          ) : null}
         </div>
       </div>
 
@@ -390,6 +404,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
           nc={detail}
           jcCode={jcCode}
           jcOps={reworkOpOptions}
+          canSeePrice={ncPerms.price}
           pending={dispose.isPending}
           error={
             dispose.isError
@@ -467,7 +482,9 @@ function DetailGrid(props: { detail: NcRegister; jcCode: string | null }): React
         </InlinePair>
         <InlinePair label="Operator:">{detail.operatorText ?? '—'}</InlinePair>
         <InlinePair label="Reported By:">{detail.reportedByText ?? '—'}</InlinePair>
-        <InlinePair label="Reason Category:">{detail.reasonCategory.replaceAll('_', ' ')}</InlinePair>
+        <InlinePair label="Reason Category:">
+          {detail.reasonCategory.replaceAll('_', ' ')}
+        </InlinePair>
         <InlinePair label="Reason:">{detail.reason ?? '—'}</InlinePair>
         {detail.timeLogged ? (
           <div className="form-full">

@@ -24,7 +24,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
@@ -50,7 +50,7 @@ export const ncRegisterListRoute = createRoute({
 function NcRegisterListPage(): React.JSX.Element {
   const search = ncRegisterListRoute.useSearch();
   const navigate = ncRegisterListRoute.useNavigate();
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -80,9 +80,17 @@ function NcRegisterListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useNcRegisterList(query);
   const { data: summary } = useNcRegisterSummary();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'operator';
-  // CAPA create is admin/manager/qc (matches capa_records RLS + detail.tsx).
-  const canCapa = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // Tier-driven, per department (QC). Was a global role string
+  // (admin||manager||operator), which handed dispose rights to a manager whose
+  // QC tier is L1 view-only and withheld them from a QC L3 Editor.
+  const ncPerms = effectiveFormPerms(eff, 'nc_dispose');
+  // Reporting an NC creates a record → entry. Disposing / closing rework
+  // rewrites a saved one → edit.
+  const canReportNc = ncPerms.entry;
+  const canDispose = ncPerms.edit;
+  // The CAPA button creates a CAPA, so it follows the CAPA form key — gating it
+  // on nc_dispose meant the button could open a form the API then refused.
+  const canCreateCapa = effectiveFormPerms(eff, 'capa_create').entry;
 
   const columns = useMemo<ColumnDef<NcRegisterListItem>[]>(
     () => [
@@ -218,7 +226,7 @@ function NcRegisterListPage(): React.JSX.Element {
               >
                 👁
               </Link>
-              {canWrite && r.status === 'pending' ? (
+              {canDispose && r.status === 'pending' ? (
                 <Link
                   to="/nc-register/$id"
                   params={{ id: r.id }}
@@ -229,7 +237,7 @@ function NcRegisterListPage(): React.JSX.Element {
                   ✏ Dispose
                 </Link>
               ) : null}
-              {canWrite && r.status === 'disposed' && r.disposition === 'rework' ? (
+              {canDispose && r.status === 'disposed' && r.disposition === 'rework' ? (
                 <Link
                   to="/nc-register/$id"
                   params={{ id: r.id }}
@@ -240,7 +248,7 @@ function NcRegisterListPage(): React.JSX.Element {
                   ✅ Close
                 </Link>
               ) : null}
-              {canCapa && r.status !== 'pending' && !r.linkedCapaCode ? (
+              {canCreateCapa && r.status !== 'pending' && !r.linkedCapaCode ? (
                 <Link
                   to="/nc-register/$id"
                   params={{ id: r.id }}
@@ -284,7 +292,7 @@ function NcRegisterListPage(): React.JSX.Element {
         },
       },
     ],
-    [canWrite, canCapa],
+    [canDispose, canCreateCapa],
   );
 
   // Screen-merge: CAPA folded in as a tab (it used to be its own /capa page,
@@ -363,7 +371,7 @@ function NcRegisterListPage(): React.JSX.Element {
             <div className="section-hdr" style={{ marginBottom: 0 }}>
               ❌ NC Register
             </div>
-            {canWrite ? (
+            {canReportNc ? (
               <Link to="/nc-register/new" className="btn btn-primary">
                 ❌ Report NC
               </Link>

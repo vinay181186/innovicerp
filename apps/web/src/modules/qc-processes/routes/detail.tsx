@@ -1,7 +1,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcProcess, useSoftDeleteQcProcess } from '../api';
 
@@ -15,11 +15,18 @@ function QcProcessDetailPage(): React.JSX.Element {
   const { id } = qcProcessDetailRoute.useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError, error } = useQcProcess(id);
-  const { data: me } = useSession();
   const softDelete = useSoftDeleteQcProcess();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, matching the list and the new/edit routes. Delete is not one
+  // of the four tier actions, so "L5 Department Admin and above" is expressed
+  // as the pair only L5/L6 hold: L3 Editor has edit without approve, L4
+  // Approver has approve without edit. Previously both buttons shared one
+  // admin/manager flag, so an editor could delete and a QC lead could not edit.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'qcprocess_create');
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   if (isLoading) {
     return (
@@ -61,10 +68,7 @@ function QcProcessDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div
-              className="fw-700"
-              style={{ color: 'var(--green)', fontSize: 16 }}
-            >
+            <div className="fw-700" style={{ color: 'var(--green)', fontSize: 16 }}>
               {data.code}
             </div>
             <div
@@ -87,7 +91,7 @@ function QcProcessDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {canEdit ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12 }}>

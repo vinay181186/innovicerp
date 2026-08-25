@@ -23,6 +23,7 @@ import { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { SoQcStatusView } from '@/modules/so-qc-status/components/so-qc-status-view';
@@ -108,7 +109,13 @@ function QcDocumentsPage(): React.JSX.Element {
         </div>
       </div>
 
-      {view === 'matrix' ? <MatrixView /> : view === 'status' ? <SoQcStatusView /> : <RegisterView />}
+      {view === 'matrix' ? (
+        <MatrixView />
+      ) : view === 'status' ? (
+        <SoQcStatusView />
+      ) : (
+        <RegisterView />
+      )}
     </div>
   );
 }
@@ -213,15 +220,15 @@ function MatrixView(): React.JSX.Element {
 
       {/* SO selector (legacy L23042-23047) */}
       <div style={{ marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center' }}>
-        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>
-          SELECT SO:
-        </label>
+        <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>SELECT SO:</label>
         <div style={{ minWidth: 320 }}>
           <SearchableSelect
             id="qc-docs-so"
             value={selectedSo ?? null}
             valueLabel={
-              matrix?.so ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}` : undefined
+              matrix?.so
+                ? `${matrix.so.code}${matrix.so.customerName ? ` — ${matrix.so.customerName}` : ''}`
+                : undefined
             }
             onChange={(id) =>
               void navigate({ search: (p) => ({ ...p, so: id ?? undefined }), replace: true })
@@ -275,7 +282,12 @@ function MatrixView(): React.JSX.Element {
             }}
           >
             <div
-              style={{ width: `${pct}%`, height: '100%', background: 'var(--green)', borderRadius: 4 }}
+              style={{
+                width: `${pct}%`,
+                height: '100%',
+                background: 'var(--green)',
+                borderRadius: 4,
+              }}
             />
           </div>
           <span
@@ -340,7 +352,11 @@ function MatrixView(): React.JSX.Element {
                   <td key={c} />
                 ))}
                 <td>
-                  <select style={fStyle} value={fOverall} onChange={(e) => setFOverall(e.target.value)}>
+                  <select
+                    style={fStyle}
+                    value={fOverall}
+                    onChange={(e) => setFOverall(e.target.value)}
+                  >
                     <option value="">All</option>
                     {overallOpts.map((o) => (
                       <option key={o} value={o}>
@@ -360,7 +376,11 @@ function MatrixView(): React.JSX.Element {
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={7 + cols.length} className="empty-state" style={{ color: 'var(--red)' }}>
+                  <td
+                    colSpan={7 + cols.length}
+                    className="empty-state"
+                    style={{ color: 'var(--red)' }}
+                  >
                     {error instanceof Error ? error.message : 'Failed to load matrix'}
                   </td>
                 </tr>
@@ -414,8 +434,8 @@ function MatrixView(): React.JSX.Element {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
-        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Not uploaded =
-        QC done but no report attached
+        💡 ✅ Done (date) + ⬇ Download | ⏳ Pending (qty) | Waiting | — not applicable | Not
+        uploaded = QC done but no report attached
       </div>
 
       {detailJcId ? (
@@ -427,9 +447,7 @@ function MatrixView(): React.JSX.Element {
 
 function MatrixCellTd({ cell }: { cell: QcMatrixCell }): React.JSX.Element {
   if (!cell.applicable) {
-    return (
-      <td style={{ color: 'var(--text3)', fontSize: 10, textAlign: 'center' }}>—</td>
-    );
+    return <td style={{ color: 'var(--text3)', fontSize: 10, textAlign: 'center' }}>—</td>;
   }
   if (cell.done) {
     if (cell.hasDoc) {
@@ -538,16 +556,27 @@ async function openStoragePath(path: string): Promise<void> {
 
 // Export the matrix to xlsx (legacy _qcDocExportExcel L23157).
 function exportMatrixExcel(matrix: QcMatrixResponse): void {
-  const header = ['Ln', 'CPO Ln', 'Item Code', 'Item Name', 'Qty', 'JC No', ...matrix.qcColumns, 'Overall'];
+  const header = [
+    'Ln',
+    'CPO Ln',
+    'Item Code',
+    'Item Name',
+    'Qty',
+    'JC No',
+    ...matrix.qcColumns,
+    'Overall',
+  ];
   const aoa: (string | number)[][] = [header];
   for (const r of matrix.rows) {
     const cells = r.cells.map((c) => {
       if (!c.applicable) return '—';
       if (c.done) return c.hasDoc ? `✅ Done (${fmtDate(c.docDate)})` : 'Done - No report';
-      if (c.pending) return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} acc` : ''}`;
+      if (c.pending)
+        return `⏳ Pending (${c.qcPending} pcs)${c.accepted > 0 ? ` ${c.accepted} acc` : ''}`;
       return 'Waiting';
     });
-    const overall = r.overall === 'no_qc' || r.overall === 'no_jc' ? 'No QC' : `${r.done}/${r.total}`;
+    const overall =
+      r.overall === 'no_qc' || r.overall === 'no_jc' ? 'No QC' : `${r.done}/${r.total}`;
     aoa.push([
       r.lineNo,
       r.clientPoLineNo ?? '',
@@ -598,8 +627,19 @@ function LineDetailModal({
   jobCardId: string;
   onClose: () => void;
 }): React.JSX.Element {
+  // `me` is still needed for the company id the upload path writes against.
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // Tier-driven, per department (QC), replacing the old role list
+  // (admin/manager/qc). Attaching a document is `entry`; removing one is the
+  // L5-and-above pair — see `canDelete` below.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'qcdocs_upload');
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3
+  // Editor has edit without approve; L4 Approver has approve without edit. The
+  // owner decided L5 gets delete rights — admin-only was locking out the very
+  // tier meant to run the department.
+  const canDelete = perms.edit && perms.approve;
   const { data, isLoading, isError, error } = useQcLineDetail(jobCardId);
 
   return (
@@ -643,7 +683,8 @@ function LineDetailModal({
             <LineDetailBody
               data={data}
               jobCardId={jobCardId}
-              canWrite={canWrite}
+              canUpload={perms.entry}
+              canDelete={canDelete}
               companyId={me?.companyId ?? null}
             />
           ) : null}
@@ -656,12 +697,14 @@ function LineDetailModal({
 function LineDetailBody({
   data,
   jobCardId,
-  canWrite,
+  canUpload,
+  canDelete,
   companyId,
 }: {
   data: QcLineDetailResponse;
   jobCardId: string;
-  canWrite: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
   companyId: string | null;
 }): React.JSX.Element {
   return (
@@ -718,7 +761,9 @@ function LineDetailBody({
       {/* QC Inspection Batches (legacy L23271-23290) */}
       {data.batches.length > 0 ? (
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>QC Inspection Batches</div>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+            QC Inspection Batches
+          </div>
           {data.batches.map((b, i) => (
             <div
               key={b.logId}
@@ -765,7 +810,8 @@ function LineDetailBody({
           jobCardId={jobCardId}
           section={section}
           totalNeeded={data.totalAccepted}
-          canWrite={canWrite}
+          canUpload={canUpload}
+          canDelete={canDelete}
           companyId={companyId}
         />
       ))}
@@ -777,24 +823,27 @@ function DocSection({
   jobCardId,
   section,
   totalNeeded,
-  canWrite,
+  canUpload,
+  canDelete,
   companyId,
 }: {
   jobCardId: string;
   section: QcLineDetailResponse['sections'][number];
   totalNeeded: number;
-  canWrite: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
   companyId: string | null;
 }): React.JSX.Element {
   const del = useDeleteQcDocument();
   const create = useCreateQcDocument();
   const uploads = [...section.docs].sort((a, b) => (a.srFrom ?? 0) - (b.srFrom ?? 0));
-  const totalUploaded = uploads.reduce(
-    (s, u) => s + ((u.srTo ?? 0) - (u.srFrom ?? 0) + 1),
-    0,
-  );
+  const totalUploaded = uploads.reduce((s, u) => s + ((u.srTo ?? 0) - (u.srFrom ?? 0) + 1), 0);
   const isDone = totalUploaded >= totalNeeded && totalNeeded > 0;
-  const statusColor = isDone ? 'var(--green)' : uploads.length > 0 ? 'var(--amber)' : 'var(--text3)';
+  const statusColor = isDone
+    ? 'var(--green)'
+    : uploads.length > 0
+      ? 'var(--amber)'
+      : 'var(--text3)';
   const statusLabel = isDone
     ? '✅ Complete'
     : uploads.length > 0
@@ -846,7 +895,7 @@ function DocSection({
     await del.mutateAsync(id);
   }
 
-  const showUpload = canWrite && (nextSrFrom <= totalNeeded || totalNeeded === 0);
+  const showUpload = canUpload && (nextSrFrom <= totalNeeded || totalNeeded === 0);
 
   return (
     <div
@@ -937,7 +986,7 @@ function DocSection({
             >
               👁 View
             </button>
-            {canWrite ? (
+            {canDelete ? (
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -1051,8 +1100,19 @@ async function downloadDocs(docs: QcLineDetailResponse['sections'][number]['docs
 function RegisterView(): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
+  // `me` is still needed for the company id the upload modal writes against.
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // Tier-driven, per department (QC), replacing the old role list
+  // (admin/manager/qc). 📎 Upload Document is `entry`; removing a registered
+  // upload is the L5-and-above pair — see `canDelete` below.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'qcdocs_upload');
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3
+  // Editor has edit without approve; L4 Approver has approve without edit. The
+  // owner decided L5 gets delete rights — admin-only was locking out the very
+  // tier meant to run the department.
+  const canDelete = perms.edit && perms.approve;
   const del = useDeleteQcDocument();
   const [uploadOpen, setUploadOpen] = useState(false);
 
@@ -1087,7 +1147,7 @@ function RegisterView(): React.JSX.Element {
             <Loader2 className="inline h-3 w-3 animate-spin" />
           </span>
         ) : null}
-        {canWrite ? (
+        {perms.entry ? (
           <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
             📎 Upload Document
           </button>
@@ -1199,7 +1259,7 @@ function RegisterView(): React.JSX.Element {
                         >
                           📎 Open
                         </button>
-                        {canWrite ? (
+                        {canDelete ? (
                           <button
                             type="button"
                             className="btn btn-danger btn-sm"
@@ -1283,7 +1343,11 @@ function UploadModal({
       }}
       onClick={onClose}
     >
-      <div className="panel" style={{ width: 'min(1100px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="panel"
+        style={{ width: 'min(1100px, 96vw)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="panel-hdr">
           <span className="panel-title">📎 Upload QC Document</span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
@@ -1305,7 +1369,11 @@ function UploadModal({
             </div>
             <div className="form-grp">
               <label className="form-label">Document Type</label>
-              <select className="innovic-select" value={docType} onChange={(e) => setDocType(e.target.value)}>
+              <select
+                className="innovic-select"
+                value={docType}
+                onChange={(e) => setDocType(e.target.value)}
+              >
                 {QC_DOC_TYPES.map((t) => (
                   <option key={t}>{t}</option>
                 ))}
@@ -1325,11 +1393,21 @@ function UploadModal({
             </div>
             <div className="form-grp">
               <label className="form-label">JC No. (optional)</label>
-              <input className="innovic-input" value={jcCode} onChange={(e) => setJcCode(e.target.value)} placeholder="IN-JC-00001" />
+              <input
+                className="innovic-input"
+                value={jcCode}
+                onChange={(e) => setJcCode(e.target.value)}
+                placeholder="IN-JC-00001"
+              />
             </div>
             <div className="form-grp">
               <label className="form-label">SO No. (optional)</label>
-              <input className="innovic-input" value={soCode} onChange={(e) => setSoCode(e.target.value)} placeholder="SO-001" />
+              <input
+                className="innovic-input"
+                value={soCode}
+                onChange={(e) => setSoCode(e.target.value)}
+                placeholder="SO-001"
+              />
             </div>
           </div>
           {err ? (
@@ -1341,7 +1419,12 @@ function UploadModal({
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void submit()}
+            >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Upload &amp; Register
             </button>
           </div>

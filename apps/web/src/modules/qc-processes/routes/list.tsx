@@ -22,7 +22,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
 import { ReportTypesPanel } from '@/modules/report-types/components/report-types-panel';
@@ -48,8 +48,18 @@ export const qcProcessesListRoute = createRoute({
 function QcProcessesListPage(): React.JSX.Element {
   const search = qcProcessesListRoute.useSearch();
   const navigate = qcProcessesListRoute.useNavigate();
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven, per department (QC). The old gate was admin/manager only —
+  // narrower than every sibling QC screen, so a QC lead could not maintain the
+  // master they run. Add is `entry`, Edit is `edit`, Del is the L5-and-above
+  // pair below.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'qcprocess_create');
+  // Delete is not one of the four tier actions, so "L5 Department Admin and
+  // above" is expressed as the pair only L5/L6 hold: edit AND approve. L3
+  // Editor has edit without approve; L4 Approver has approve without edit. The
+  // owner decided L5 gets delete rights — admin-only was locking out the very
+  // tier meant to run the department.
+  const canDelete = perms.edit && perms.approve;
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -105,9 +115,7 @@ function QcProcessesListPage(): React.JSX.Element {
         header: 'Description',
         accessorKey: 'description',
         meta: { tdClass: 'text2' },
-        cell: ({ row }) => (
-          <span style={{ fontSize: 11 }}>{row.original.description ?? '—'}</span>
-        ),
+        cell: ({ row }) => <span style={{ fontSize: 11 }}>{row.original.description ?? '—'}</span>,
       },
       {
         header: 'Std Time (min)',
@@ -137,7 +145,7 @@ function QcProcessesListPage(): React.JSX.Element {
         enableSorting: false,
         cell: ({ row }) => (
           <div style={{ display: 'flex', gap: 4 }}>
-            {canWrite ? (
+            {perms.edit ? (
               <Link
                 to="/qc-processes/$id/edit"
                 params={{ id: row.original.id }}
@@ -146,7 +154,7 @@ function QcProcessesListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
-            {canWrite ? (
+            {canDelete ? (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
@@ -168,7 +176,7 @@ function QcProcessesListPage(): React.JSX.Element {
         ),
       },
     ],
-    [search.page, canWrite, softDelete],
+    [search.page, perms.edit, canDelete, softDelete],
   );
 
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -190,7 +198,14 @@ function QcProcessesListPage(): React.JSX.Element {
     <div>
       {/* QC Processes | Report Types tabs (Report Types is the former standalone
           Report / Document Master screen). */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          borderBottom: '1px solid var(--border)',
+          marginBottom: 14,
+        }}
+      >
         {(['processes', 'reports'] as const).map((t) => (
           <button
             key={t}
@@ -222,181 +237,181 @@ function QcProcessesListPage(): React.JSX.Element {
         <ReportTypesPanel />
       ) : (
         <>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          ⚙ QC Process Master
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Search QC process name, description…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ width: 280, fontSize: 12 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.isActive === undefined ? '' : String(search.isActive)}
-            onChange={(e) => {
-              const v = e.target.value;
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  isActive: v === '' ? undefined : v === 'true',
-                  page: 1,
-                }),
-                replace: true,
-              });
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 14,
+              gap: 8,
             }}
-            style={{ width: 130, fontSize: 12 }}
           >
-            <option value="">All</option>
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canWrite ? (
-            <Link to="/qc-processes/new" className="btn btn-primary">
-              <Plus size={14} /> Add QC Process
-            </Link>
-          ) : null}
-        </div>
-      </div>
+            <div className="section-hdr" style={{ marginBottom: 0 }}>
+              ⚙ QC Process Master
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                className="innovic-input"
+                placeholder="Search QC process name, description…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{ width: 280, fontSize: 12 }}
+              />
+              <select
+                className="innovic-select"
+                value={search.isActive === undefined ? '' : String(search.isActive)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      isActive: v === '' ? undefined : v === 'true',
+                      page: 1,
+                    }),
+                    replace: true,
+                  });
+                }}
+                style={{ width: 130, fontSize: 12 }}
+              >
+                <option value="">All</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+              {isFetching && !isLoading ? (
+                <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                  <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+                </span>
+              ) : null}
+              {perms.entry ? (
+                <Link to="/qc-processes/new" className="btn btn-primary">
+                  <Plus size={14} /> Add QC Process
+                </Link>
+              ) : null}
+            </div>
+          </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
-        <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
-            Inspection). These can be added as <b>QC operations</b> in Route Cards and Job Cards,
-            just like machining operations.
-          </span>
-        </div>
-      </div>
+          <div className="panel" style={{ marginBottom: 12 }}>
+            <div className="panel-body" style={{ padding: '10px 14px' }}>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                💡 Define QC inspection processes here (e.g. Dimensional Check, Hardness Test, CMM
+                Inspection). These can be added as <b>QC operations</b> in Route Cards and Job
+                Cards, just like machining operations.
+              </span>
+            </div>
+          </div>
 
-      {/* Why a banner and not a toast: the delete is refused for a reason the
+          {/* Why a banner and not a toast: the delete is refused for a reason the
           user has to act on (retire it as Inactive instead), and that sentence
           names the documents holding it. It stays on screen until the next
           attempt. */}
-      {softDelete.error ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div
-            className="panel-body"
-            style={{
-              padding: '10px 14px',
-              background: 'var(--red3)',
-              color: 'var(--red)',
-              fontSize: 12,
-            }}
-            role="alert"
-          >
-            ⚠ {softDelete.error.message}
-          </div>
-        </div>
-      ) : null}
+          {softDelete.error ? (
+            <div className="panel" style={{ marginBottom: 12 }}>
+              <div
+                className="panel-body"
+                style={{
+                  padding: '10px 14px',
+                  background: 'var(--red3)',
+                  color: 'var(--red)',
+                  fontSize: 12,
+                }}
+                role="alert"
+              >
+                ⚠ {softDelete.error.message}
+              </div>
+            </div>
+          ) : null}
 
-      <div className="panel">
-        <div className="tbl-wrap">
-          <table className="innovic-table">
-            <SortableHead table={table} />
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Loading…
-                  </td>
-                </tr>
-              ) : isError ? (
-                <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="empty-state"
-                    style={{ color: 'var(--red)' }}
-                  >
-                    {error instanceof Error ? error.message : 'Failed to load QC processes'}
-                  </td>
-                </tr>
-              ) : table.getRowModel().rows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length} className="empty-state">
-                    No QC processes defined. Click + Add QC Process.
-                  </td>
-                </tr>
-              ) : (
-                table.getRowModel().rows.map((row) => (
-                  <tr key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          <div className="panel">
+            <div className="tbl-wrap">
+              <table className="innovic-table">
+                <SortableHead table={table} />
+                <tbody>
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={columns.length} className="empty-state">
+                        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                        Loading…
                       </td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    </tr>
+                  ) : isError ? (
+                    <tr>
+                      <td
+                        colSpan={columns.length}
+                        className="empty-state"
+                        style={{ color: 'var(--red)' }}
+                      >
+                        {error instanceof Error ? error.message : 'Failed to load QC processes'}
+                      </td>
+                    </tr>
+                  ) : table.getRowModel().rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={columns.length} className="empty-state">
+                        No QC processes defined. Click + Add QC Process.
+                      </td>
+                    </tr>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <tr key={row.id}>
+                        {row.getVisibleCells().map((cell) => (
+                          <td key={cell.id} className={cell.column.columnDef.meta?.tdClass}>
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginTop: 8,
-          fontSize: 12,
-          color: 'var(--text3)',
-        }}
-      >
-        <span>
-          {total === 0
-            ? 'No QC processes'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
-        </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+              fontSize: 12,
+              color: 'var(--text3)',
+            }}
           >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+            <span>
+              {total === 0
+                ? 'No QC processes'
+                : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage <= 1}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
+                Page {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
+                    replace: true,
+                  })
+                }
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
         </>
       )}
     </div>

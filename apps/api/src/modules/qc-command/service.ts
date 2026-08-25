@@ -13,7 +13,8 @@
 // it has exactly one QC entry with zero rejects (legacy rule, L18339-18342).
 //
 // pickUpQc / assignQc — write qc_assignments (migration 0040). Pick-Up assigns
-// to the caller (any QC writer); Assign-to-another is admin-only.
+// to the caller; Assign-to-another allocates someone else's queue. Both are
+// gated by the access matrix, not by a role list — see the guards below.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
@@ -29,13 +30,11 @@ import type {
   QcParetoRow,
   QcPickUpInput,
   QcReworkRow,
-  UserRole,
 } from '@innovic/shared';
 import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
-
-const QC_WRITERS: readonly UserRole[] = ['admin', 'manager', 'qc'];
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -250,10 +249,21 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
     }
     const toGroupRows = (m: Map<string, { total: number; passed: number }>): QcFpyGroupRow[] =>
       [...m.entries()]
-        .map(([name, v]) => ({ name, total: v.total, passed: v.passed, pct: pct(v.passed, v.total) }))
+        .map(([name, v]) => ({
+          name,
+          total: v.total,
+          passed: v.passed,
+          pct: pct(v.passed, v.total),
+        }))
         .sort((a, b) => a.pct - b.pct);
     const byItem: QcFpyItemRow[] = [...byItemAcc.entries()]
-      .map(([code, v]) => ({ code, name: v.name, total: v.total, passed: v.passed, pct: pct(v.passed, v.total) }))
+      .map(([code, v]) => ({
+        code,
+        name: v.name,
+        total: v.total,
+        passed: v.passed,
+        pct: pct(v.passed, v.total),
+      }))
       .sort((a, b) => a.pct - b.pct)
       .slice(0, 10);
 
@@ -376,7 +386,12 @@ export async function getQcCommand(user: AuthContext): Promise<QcCommandResponse
         passed: fpyPassed,
         byOperation: toGroupRows(byOpAcc),
         byInspector: [...byInspAcc.entries()]
-          .map(([name, v]) => ({ name, total: v.total, passed: v.passed, pct: pct(v.passed, v.total) }))
+          .map(([name, v]) => ({
+            name,
+            total: v.total,
+            passed: v.passed,
+            pct: pct(v.passed, v.total),
+          }))
           .sort((a, b) => b.total - a.total),
         byItem,
       },
@@ -467,9 +482,12 @@ export async function pickUpQc(
   user: AuthContext,
 ): Promise<QcAssignmentResult> {
   const companyId = requireCompany(user);
-  if (!QC_WRITERS.includes(user.role)) {
-    throw new AuthorizationError('Only QC, manager or admin users can pick up QC items');
-  }
+  // ADR-035: the matrix decides, not an inline role list. Taking an op for
+  // yourself is `entry` on the QC Call Register form (QC dept). The old
+  // QC_WRITERS check let a manager whose QC tier is L1 view-only pick up work,
+  // and blocked an L2/L3 QC hand whose derived role happened to be `operator`.
+  // Admins bypass inside requireFormAccess.
+  await requireFormAccess(user, 'qc_submit', 'entry');
   return withUserContext(user, async (tx) => {
     await assertOpInCompany(tx, companyId, input.jcOpId);
     const me = await userName(tx, user.id);
@@ -486,15 +504,16 @@ export async function pickUpQc(
   });
 }
 
-/** Assign — admin allocates an op to any inspector. */
+/** Assign — allocate an op to another inspector (qc_submit `edit`). */
 export async function assignQc(
   input: QcAssignInput,
   user: AuthContext,
 ): Promise<QcAssignmentResult> {
   const companyId = requireCompany(user);
-  if (user.role !== 'admin') {
-    throw new AuthorizationError('Only an admin can assign QC items to another inspector');
-  }
+  // Re-assigning ANOTHER person's queue changes an allocation that is already
+  // saved, so it is `edit` rather than `entry` — L3 Editor / L5 Dept Admin, not
+  // the L2 hand who may only pick work up for themselves.
+  await requireFormAccess(user, 'qc_submit', 'edit');
   return withUserContext(user, async (tx) => {
     await assertOpInCompany(tx, companyId, input.jcOpId);
     const inspectorRows = (await tx.execute(sql`

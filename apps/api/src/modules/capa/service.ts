@@ -11,6 +11,7 @@ import type {
 } from '@innovic/shared';
 import { capaRecords } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
 function requireCompany(user: AuthContext): string {
@@ -37,10 +38,7 @@ function toRecord(r: Row): CapaRecord {
   const today = todayIso();
   const targetDate = dateLike(r.targetDate);
   const overdue =
-    r.status !== 'Closed' &&
-    r.status !== 'Verified' &&
-    targetDate !== null &&
-    targetDate < today;
+    r.status !== 'Closed' && r.status !== 'Verified' && targetDate !== null && targetDate < today;
   return {
     id: r.id,
     companyId: r.companyId,
@@ -89,7 +87,8 @@ export async function listCapa(user: AuthContext): Promise<ListCapaResponse> {
       inProgress: items.filter((c) => c.status === 'In Progress').length,
       verified: items.filter((c) => c.status === 'Verified').length,
       closed: closed.length,
-      effectivenessPct: closed.length > 0 ? Math.round((closedEffective.length / closed.length) * 100) : 0,
+      effectivenessPct:
+        closed.length > 0 ? Math.round((closedEffective.length / closed.length) * 100) : 0,
     };
     return { items, counters };
   });
@@ -120,6 +119,11 @@ export async function getNextCapaCode(user: AuthContext): Promise<{ code: string
 }
 
 export async function createCapa(input: CreateCapaInput, user: AuthContext): Promise<CapaRecord> {
+  // ADR-035: until now this had no permission check at all — any logged-in user
+  // could raise a CAPA. `capa_create` was a registered form key nothing ever
+  // consulted; this is the first place it is enforced. Raising a CAPA is a
+  // create, so `entry` (L2 Data Entry and above in QC). Admins bypass.
+  await requireFormAccess(user, 'capa_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const code = await nextCapaNo(tx, companyId);
@@ -151,6 +155,10 @@ export async function updateCapa(
   input: UpdateCapaInput,
   user: AuthContext,
 ): Promise<CapaRecord> {
+  // Progressing a CAPA through the 5 steps (root cause → verification →
+  // closure) rewrites a saved record, so it is `edit` (L3 and above), not
+  // `entry` — an L2 hand may open a CAPA but not carry it to Closed.
+  await requireFormAccess(user, 'capa_create', 'edit');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -167,7 +175,10 @@ export async function updateCapa(
     if (existing.length === 0) throw new NotFoundError(`CAPA ${id} not found`);
 
     // Only set provided fields; '' clears a date.
-    const patch: Partial<typeof capaRecords.$inferInsert> = { updatedBy: user.id, updatedAt: new Date() };
+    const patch: Partial<typeof capaRecords.$inferInsert> = {
+      updatedBy: user.id,
+      updatedAt: new Date(),
+    };
     const set = <K extends keyof typeof patch>(k: K, v: (typeof patch)[K] | undefined): void => {
       if (v !== undefined) patch[k] = v;
     };
@@ -176,14 +187,16 @@ export async function updateCapa(
     set('rootCause', input.rootCause);
     set('correctiveAction', input.correctiveAction);
     set('responsible', input.responsible);
-    if (input.targetDate !== undefined) patch.targetDate = input.targetDate === '' ? null : input.targetDate;
+    if (input.targetDate !== undefined)
+      patch.targetDate = input.targetDate === '' ? null : input.targetDate;
     set('verification', input.verification);
     set('verifiedBy', input.verifiedBy);
     if (input.verifiedDate !== undefined)
       patch.verifiedDate = input.verifiedDate === '' ? null : input.verifiedDate;
     set('preventiveAction', input.preventiveAction);
     set('effectiveness', input.effectiveness);
-    if (input.reviewDate !== undefined) patch.reviewDate = input.reviewDate === '' ? null : input.reviewDate;
+    if (input.reviewDate !== undefined)
+      patch.reviewDate = input.reviewDate === '' ? null : input.reviewDate;
     set('status', input.status);
 
     const updated = await tx

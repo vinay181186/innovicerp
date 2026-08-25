@@ -9,7 +9,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePickUpQc, useQcCommand } from '../api';
 import { AssignModal } from '../components/AssignModal';
@@ -51,11 +51,18 @@ function QcCommandPage(): React.JSX.Element {
   const tab: Tab = search.tab ?? 'queue';
 
   const cmd = useQcCommand();
-  const { data: me } = useSession();
   const pickUp = usePickUpQc();
 
-  const isAdmin = me?.role === 'admin';
-  const canPickUp = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  // Tier-driven, per department (qc_submit sits in QC) — these were global role
+  // checks (admin / manager / qc), which ignored the QC tier entirely.
+  //   Pick Up  = `entry`: you are creating your own allocation.
+  //   Assign   = `edit`:  re-assigning someone else's queue changes an
+  //                       allocation that is already saved, so L3 Editor and up,
+  //                       not the L2 hand who may only take work for themselves.
+  const { data: eff } = useMyAccess();
+  const qcPerms = effectiveFormPerms(eff, 'qc_submit');
+  const canPickUp = qcPerms.entry;
+  const canAssign = qcPerms.edit;
 
   const [assignRow, setAssignRow] = useState<QcCommandQueueRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -155,7 +162,7 @@ function QcCommandPage(): React.JSX.Element {
             <QueueTab
               rows={cmd.data?.queue ?? []}
               canPickUp={canPickUp}
-              isAdmin={isAdmin}
+              canAssign={canAssign}
               busyId={busyId}
               onPickUp={handlePickUp}
               onAssign={setAssignRow}

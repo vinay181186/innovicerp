@@ -19,7 +19,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { useOperatorsList } from '@/modules/operators/api';
@@ -41,8 +41,15 @@ type ModalState =
 
 export function CapaView(props: { title?: string }): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useCapaList();
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager' || me?.role === 'qc';
+  const { data: eff } = useMyAccess();
+  // Tier-driven, per department (QC), on the CAPA form key — `capa_create` was
+  // a registered key nothing consulted, so this screen ran on the global role
+  // string (admin||manager||qc) and ignored the user's actual QC tier.
+  const perms = effectiveFormPerms(eff, 'capa_create');
+  // Raising a CAPA is a create → entry. Progressing one through the 5 steps
+  // (root cause → verification → closure) rewrites a saved record → edit.
+  const canCreate = perms.entry;
+  const canEdit = perms.edit;
   const [term, setTerm] = useState('');
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 
@@ -85,7 +92,7 @@ export function CapaView(props: { title?: string }): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" />
             </span>
           ) : null}
-          {canWrite ? (
+          {canCreate ? (
             <button
               type="button"
               className="btn btn-primary"
@@ -266,7 +273,7 @@ export function CapaView(props: { title?: string }): React.JSX.Element {
                             >
                               👁
                             </button>
-                            {canWrite && c.status !== 'Closed' ? (
+                            {canEdit && c.status !== 'Closed' ? (
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-sm"
@@ -307,7 +314,7 @@ export function CapaView(props: { title?: string }): React.JSX.Element {
       {modal.kind === 'edit' ? (
         <EditCapaModal
           capa={modal.capa}
-          readOnly={modal.readOnly || !canWrite}
+          readOnly={modal.readOnly || !canEdit}
           onClose={() => setModal({ kind: 'none' })}
         />
       ) : null}
