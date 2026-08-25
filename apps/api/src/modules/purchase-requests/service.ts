@@ -627,7 +627,13 @@ export async function updatePurchaseRequest(
     if (input.itemCodeText !== undefined) updates['itemCodeText'] = input.itemCodeText ?? null;
     if (input.itemName !== undefined) updates['itemName'] = input.itemName ?? null;
     if (input.qty !== undefined) updates['qty'] = input.qty;
-    if (input.estCost !== undefined) updates['estCost'] = estCostToString(input.estCost);
+    // Money in, same rule as money out: a caller who cannot SEE the estimated
+    // cost cannot SET it either — their payload's estCost is ignored and the
+    // stored figure stands. `priceOff` makes "can do the job but must not see
+    // the number" a supported setup, so an editor with prices hidden is real.
+    if (input.estCost !== undefined && (await canSeeFormPrice(user, 'pr_create'))) {
+      updates['estCost'] = estCostToString(input.estCost);
+    }
     if (input.requiredDate !== undefined) updates['requiredDate'] = input.requiredDate ?? null;
     if (input.sourceJcOpId !== undefined) updates['sourceJcOpId'] = input.sourceJcOpId ?? null;
     if (input.sourceSoLineId !== undefined)

@@ -616,6 +616,13 @@ export async function updatePurchaseOrder(
   // may raise one but not alter it afterwards.
   await requireFormAccess(user, 'po_create', 'edit');
   const companyId = requireCompany(user);
+  // Money in, same rule as money out. `priceOff` makes "can do the job but must
+  // not see the number" a supported setup, so an editor with prices hidden is a
+  // real user — and their form posts back money fields it never showed them.
+  // The rate/percent fields carry zod defaults, so a blinded payload does not
+  // merely omit them: it arrives holding a default that would overwrite the
+  // stored figures. Ignore them here — what is stored stands.
+  const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
     const existingHdrRows = await tx
@@ -693,9 +700,9 @@ export async function updatePurchaseOrder(
     updates['status'] = existingHdr.status;
     if (h.dueDate !== undefined) updates['dueDate'] = h.dueDate ?? null;
     if (h.taxType !== undefined) updates['taxType'] = h.taxType ?? null;
-    if (h.sgstPct !== undefined) updates['sgstPct'] = pctToString(h.sgstPct);
-    if (h.cgstPct !== undefined) updates['cgstPct'] = pctToString(h.cgstPct);
-    if (h.igstPct !== undefined) updates['igstPct'] = pctToString(h.igstPct);
+    if (h.sgstPct !== undefined && showMoney) updates['sgstPct'] = pctToString(h.sgstPct);
+    if (h.cgstPct !== undefined && showMoney) updates['cgstPct'] = pctToString(h.cgstPct);
+    if (h.igstPct !== undefined && showMoney) updates['igstPct'] = pctToString(h.igstPct);
     if (h.prCodeText !== undefined) updates['prCodeText'] = h.prCodeText ?? null;
     if (h.approvalRemarks !== undefined) updates['approvalRemarks'] = h.approvalRemarks ?? null;
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
@@ -703,7 +710,7 @@ export async function updatePurchaseOrder(
     await tx.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id));
 
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user);
+      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
     }
 
     let updatedHdr = (
@@ -764,6 +771,10 @@ async function mergeLines(
   companyId: string,
   inputLines: PurchaseOrderLineInput[],
   user: AuthContext,
+  /** False when the caller may not see money on this form — their payload's
+   *  `rate` is then ignored on an EXISTING line so the stored figure survives.
+   *  A NEW line still takes the input (there is no stored value to protect). */
+  showMoney: boolean,
 ): Promise<void> {
   const existing = await tx
     .select({ id: purchaseOrderLines.id, lineNo: purchaseOrderLines.lineNo })
@@ -814,7 +825,7 @@ async function mergeLines(
     }
     if (u.data.itemName !== undefined) lineUpdate['itemName'] = u.data.itemName;
     if (u.data.qty !== undefined) lineUpdate['qty'] = u.data.qty;
-    if (u.data.rate !== undefined) lineUpdate['rate'] = rateToString(u.data);
+    if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
     // received_qty is mutated by the GRN cascade only (T-036c). The form
     // never re-writes it; ignore even if the caller sends one.
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;

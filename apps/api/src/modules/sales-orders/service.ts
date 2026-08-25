@@ -1149,6 +1149,13 @@ export async function updateSalesOrder(
   // non-admin update is rejected server-side even if the UI is bypassed.
   requireAdminRole(user);
   const companyId = requireCompany(user);
+  // Money in, same rule as money out. `priceOff` makes "can do the job but must
+  // not see the number" a supported setup, so an editor with prices hidden is a
+  // real user — and their form posts back the money fields it never showed
+  // them. Worse, `rate` and `gstPercent` carry zod defaults (0 and 18), so the
+  // blinded payload does not merely omit them, it arrives holding a default
+  // that would overwrite the stored figures. Ignore them: what is stored stands.
+  const showMoney = await canSeeFormPrice(user, 'so_create');
 
   return withUserContext(user, async (tx) => {
     const existingHdrRows = await tx
@@ -1181,7 +1188,7 @@ export async function updateSalesOrder(
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) updates['type'] = h.type;
     if (h.status !== undefined) updates['status'] = h.status;
-    if (h.gstPercent !== undefined) updates['gstPercent'] = gstToString(h.gstPercent);
+    if (h.gstPercent !== undefined && showMoney) updates['gstPercent'] = gstToString(h.gstPercent);
     if (h.bomMasterId !== undefined) updates['bomMasterId'] = h.bomMasterId ?? null;
     if (h.bomStatus !== undefined) updates['bomStatus'] = h.bomStatus ?? null;
     if (h.costCenter !== undefined) updates['costCenter'] = h.costCenter ?? null;
@@ -1191,7 +1198,7 @@ export async function updateSalesOrder(
 
     // Lines merge — only when caller provided a `lines` array (option C).
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user);
+      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
     }
 
     // Milestones merge — same option-C semantics (only when provided).
@@ -1313,6 +1320,10 @@ async function mergeLines(
   companyId: string,
   inputLines: SalesOrderLineInput[],
   user: AuthContext,
+  /** False when the caller may not see money on this form — their payload's
+   *  `rate` is then ignored on an EXISTING line so the stored figure survives.
+   *  A NEW line still takes the input (there is no stored value to protect). */
+  showMoney: boolean,
 ): Promise<void> {
   const existing = await tx
     .select({
@@ -1368,7 +1379,7 @@ async function mergeLines(
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
-    if (u.data.rate !== undefined) lineUpdate['rate'] = rateToString(u.data);
+    if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
     if (u.data.clientPoLineNo !== undefined)
       lineUpdate['clientPoLineNo'] = u.data.clientPoLineNo ?? null;

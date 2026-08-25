@@ -798,6 +798,13 @@ export async function updateJobWorkOrder(
 ): Promise<JobWorkOrderDetail> {
   requireWriteRole(user);
   const companyId = requireCompany(user);
+  // Money in, same rule as money out. `priceOff` makes "can do the job but must
+  // not see the number" a supported setup, so an editor with prices hidden is a
+  // real user — and their form posts back money fields it never showed them.
+  // The rate/percent fields carry zod defaults, so a blinded payload does not
+  // merely omit them: it arrives holding a default that would overwrite the
+  // stored figures. Ignore them here — what is stored stands.
+  const showMoney = await canSeeFormPrice(user, 'jw_create');
 
   return withUserContext(user, async (tx) => {
     const existingHdrRows = await tx
@@ -834,7 +841,8 @@ export async function updateJobWorkOrder(
     // soft-delete for cancel; a plain update flipping status would only cause
     // drift. Silently ignore input.status.
     updates['status'] = existingHdr.status;
-    if (h.gstPercent !== undefined) updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
+    if (h.gstPercent !== undefined && showMoney)
+      updates['gstPercent'] = Number(h.gstPercent).toFixed(2);
     if (h.remarks !== undefined) updates['remarks'] = h.remarks ?? null;
     if (h.clientMaterial !== undefined) updates['clientMaterial'] = h.clientMaterial ?? null;
     if (h.clientMaterialQty !== undefined)
@@ -843,7 +851,7 @@ export async function updateJobWorkOrder(
     await tx.update(jobWorkOrders).set(updates).where(eq(jobWorkOrders.id, id));
 
     if (input.lines !== undefined) {
-      await mergeLines(tx, id, companyId, input.lines, user);
+      await mergeLines(tx, id, companyId, input.lines, user, showMoney);
     }
 
     const updatedHdrRows = await tx
@@ -890,6 +898,10 @@ async function mergeLines(
   companyId: string,
   inputLines: JobWorkOrderLineInput[],
   user: AuthContext,
+  /** False when the caller may not see money on this form — their payload's
+   *  `rate` is then ignored on an EXISTING line so the stored figure survives.
+   *  A NEW line still takes the input (there is no stored value to protect). */
+  showMoney: boolean,
 ): Promise<void> {
   const existing = await tx
     .select({
@@ -946,7 +958,8 @@ async function mergeLines(
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
-    if (u.data.rate !== undefined) lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
+    if (u.data.rate !== undefined && showMoney)
+      lineUpdate['rate'] = (u.data.rate ?? 0).toFixed(2);
     if (u.data.dueDate !== undefined) lineUpdate['dueDate'] = u.data.dueDate ?? null;
     if (u.data.status !== undefined) lineUpdate['status'] = u.data.status;
     if (u.data.sourceBomMasterId !== undefined) {

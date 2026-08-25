@@ -160,7 +160,15 @@ export async function updateMachine(
       updates.capacityPerShift = input.capacityPerShift ?? null;
     if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
     if (input.status !== undefined) updates.status = input.status;
-    if (input.hourRate !== undefined) updates.hourRate = String(input.hourRate);
+    // Money in, same rule as money out: a caller who cannot SEE the hour rate
+    // cannot SET it either — their payload's hourRate is ignored and the stored
+    // value stands. `priceOff` exists precisely to make "can do the job but must
+    // not see the number" a supported setup, so an L3 editor with prices hidden
+    // is a real user. Without this their save wrote whatever their blinded form
+    // posted back over a rate they were never shown.
+    if (input.hourRate !== undefined && (await canSeeFormPrice(user, 'machine_create'))) {
+      updates.hourRate = String(input.hourRate);
+    }
 
     const updated = await tx.update(machines).set(updates).where(eq(machines.id, id)).returning();
     return toMachine(updated[0]);
