@@ -416,21 +416,8 @@ function PendingTpi(props: {
         </div>
       </div>
 
-      {/* No `entry` → no form, rather than a disabled one. The completed-records
-          table and its Excel export below stay visible to everyone. */}
-      {open && !canEntry ? (
-        <div
-          style={{
-            padding: 14,
-            background: 'rgba(34,197,94,0.04)',
-            borderTop: '2px solid var(--green)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
-            ⛔ TPI entry is not enabled for your access tier — this call is view-only for you.
-          </div>
-        </div>
-      ) : null}
+      {/* No `entry` → the form is simply not drawn. No notice either: an
+          expanded row that shows only its figures reads as view-only on its own. */}
       {open && canEntry ? (
         <div
           style={{

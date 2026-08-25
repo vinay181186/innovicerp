@@ -161,21 +161,8 @@ export function IncomingPendingRow(props: {
         </div>
       </div>
 
-      {/* No `entry` → the inspect form is not drawn; the row itself still reads. */}
-      {open && !canEntry ? (
-        <div
-          style={{
-            padding: '14px 12px',
-            background: 'rgba(34,197,94,0.04)',
-            borderTop: '2px solid var(--green)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
-            ⛔ Incoming QC entry is not enabled for your access tier — this line is view-only for
-            you.
-          </div>
-        </div>
-      ) : null}
+      {/* No `entry` → the form is simply not drawn. No notice either: an
+          expanded row that shows only its figures reads as view-only on its own. */}
       {open && canEntry ? (
         <div
           style={{

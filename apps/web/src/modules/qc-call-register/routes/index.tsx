@@ -481,22 +481,8 @@ function PendingCall(props: {
         </div>
       </div>
 
-      {/* Without `entry` the form is not drawn at all rather than disabled — a
-          disabled empty form has nothing in it to read. The pending and completed
-          queues stay in full: this screen is a monitoring board for that tier. */}
-      {open && !canEntry ? (
-        <div
-          style={{
-            padding: '14px 12px',
-            background: 'rgba(34,197,94,0.04)',
-            borderTop: '2px solid var(--green)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--amber)' }}>
-            ⛔ QC entry is not enabled for your access tier — this call is view-only for you.
-          </div>
-        </div>
-      ) : null}
+      {/* No `entry` → the form is simply not drawn. No notice either: an
+          expanded row that shows only its figures reads as view-only on its own. */}
       {open && canEntry ? (
         <div
           style={{
