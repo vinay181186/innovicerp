@@ -661,7 +661,7 @@ function LineRow(props: { line: PurchaseOrderLine; priceHidden: boolean }): Reac
       <td className="td-code">{l.itemCode ?? l.itemCodeText ?? '—'}</td>
       <td style={{ color: 'var(--amber)', fontWeight: 700 }}>{l.itemName}</td>
       <td className="mono text2" style={{ fontSize: 10 }}>
-        {l.sourceJcOpId ? 'JC op' : l.sourceSoLineId ? 'SO line' : '—'}
+        {l.sourceJcOpId ? 'JC op' : '—'}
       </td>
       <td className="mono fw-700">{l.qty}</td>
       {priceHidden ? null : (

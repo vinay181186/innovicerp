@@ -80,9 +80,6 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const canDelete = perms.edit && perms.approve;
   const linkedToPo = detail.poId !== null;
 
-  const soNo = detail.soCode
-    ? `${detail.soCode}${detail.soLineNo ? ` · Ln ${detail.soLineNo}` : ''}`
-    : '—';
   const jcNo = detail.sourceJcCode
     ? `${detail.sourceJcCode}${detail.sourceJcOpSeq ? ` · Op ${detail.sourceJcOpSeq}` : ''}`
     : '—';
@@ -215,7 +212,6 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
           ) : null}
           {/* The six facts a buyer scans for, in the SO detail strip idiom. */}
           <div style={STRIP}>
-            <Fact label="SO No." title={soNo} value={<span className="mono">{soNo}</span>} />
             <Fact
               label="Item Code"
               title={itemCode}

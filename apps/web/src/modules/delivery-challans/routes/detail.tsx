@@ -377,7 +377,6 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           )
         }
       />
-      <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
       <Pair label="Transport" value={dc.transport ?? '—'} />
       <Pair
         label="Issued on"

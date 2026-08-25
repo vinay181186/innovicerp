@@ -35,11 +35,6 @@ export interface PrFormValues {
   itemName?: string;
   qty: number;
   estCost: number;
-  /** The SO LINE this PR was raised against. The PR table links to
-   *  sales_order_lines, not to the SO header — the "SO No." shown on the form
-   *  and the list is resolved through this line. Optional: a PR need not come
-   *  from an order at all. */
-  sourceSoLineId?: string;
   requiredDate?: string;
   operation?: string;
   remarks?: string;
@@ -69,5 +64,4 @@ export const PR_USER_ENTERED_FIELDS = [
   'code',
   'status',
   'prType',
-  'sourceSoLineId',
 ] as const;
