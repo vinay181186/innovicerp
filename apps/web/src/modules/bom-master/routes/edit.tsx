@@ -1,6 +1,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBomMaster, useUpdateBomMaster } from '../api';
 import {
@@ -22,6 +23,8 @@ function BomMasterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useBomMaster(id);
   const update = useUpdateBomMaster(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'bom_create');
 
   const initialLines = useMemo<BomFormLineDraft[]>(
     () =>
@@ -54,6 +57,15 @@ function BomMasterEditPage(): React.JSX.Element {
       setSubmitError(e instanceof Error ? e.message : 'Failed to save BOM revision.');
     }
   };
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to BOM Master. Ask an admin for L2 Data Entry or above in
+        Design.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

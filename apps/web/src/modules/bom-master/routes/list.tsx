@@ -6,6 +6,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBomMaster, useBomMastersList } from '../api';
 
@@ -37,6 +38,8 @@ function BomMastersListPage(): React.JSX.Element {
     limit: 100,
     offset: 0,
   });
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'bom_create');
 
   const toggleExpand = (id: string): void => {
     setExpanded((prev) => {
@@ -46,6 +49,14 @@ function BomMastersListPage(): React.JSX.Element {
       return next;
     });
   };
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -83,9 +94,11 @@ function BomMastersListPage(): React.JSX.Element {
             <option value="active">Active</option>
             <option value="obsolete">Obsolete</option>
           </select>
-          <Link to="/bom-masters/new" className="btn btn-primary">
-            <Plus size={14} /> New BOM
-          </Link>
+          {perms.entry ? (
+            <Link to="/bom-masters/new" className="btn btn-primary">
+              <Plus size={14} /> New BOM
+            </Link>
+          ) : null}
         </div>
       </div>
 

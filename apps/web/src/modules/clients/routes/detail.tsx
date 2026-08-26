@@ -4,7 +4,7 @@ import type { Client } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClient, useSoftDeleteClient } from '../api';
 
@@ -18,9 +18,18 @@ function ClientDetailPage(): React.JSX.Element {
   const { id } = clientDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: client, isLoading, isError, error } = useClient(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'client_create');
   const softDelete = useSoftDeleteClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -55,8 +64,8 @@ function ClientDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   return (
     <div>
@@ -87,7 +96,7 @@ function ClientDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

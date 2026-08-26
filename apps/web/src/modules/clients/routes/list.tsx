@@ -13,7 +13,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClientsList, useCreateClient, useSoftDeleteClient } from '../api';
 import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
@@ -46,7 +46,8 @@ export const clientsListRoute = createRoute({
 function ClientsListPage(): React.JSX.Element {
   const search = clientsListRoute.useSearch();
   const navigate = clientsListRoute.useNavigate();
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'client_create');
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -80,7 +81,9 @@ function ClientsListPage(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useClientsList(query);
   const softDelete = useSoftDeleteClient();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   // Excel import — parse the workbook, then create each client sequentially
   // (each success invalidates the list via the mutation hook).
@@ -217,7 +220,7 @@ function ClientsListPage(): React.JSX.Element {
         header: '',
         cell: ({ row }) => (
           <div style={{ display: 'flex', gap: 4 }}>
-            {canWrite ? (
+            {canEdit ? (
               <Link
                 to="/clients/$id/edit"
                 params={{ id: row.original.id }}
@@ -226,7 +229,7 @@ function ClientsListPage(): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
-            {canWrite ? (
+            {canDelete ? (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
@@ -244,7 +247,7 @@ function ClientsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [canWrite, softDelete, search.sortBy, search.sortDir, toggleSort],
+    [canEdit, canDelete, softDelete, search.sortBy, search.sortDir, toggleSort],
   );
 
   const table = useReactTable({
@@ -256,6 +259,14 @@ function ClientsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -300,7 +311,7 @@ function ClientsListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canAdd ? (
             <Link to="/clients/new" className="btn btn-primary">
               <Plus size={14} /> New Client
             </Link>
@@ -427,7 +438,7 @@ function ClientsListPage(): React.JSX.Element {
       </div>
 
       {/* Excel template + import sit below the table panel (mirror of Vendor Master). */}
-      {canWrite ? (
+      {canAdd ? (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button
             type="button"

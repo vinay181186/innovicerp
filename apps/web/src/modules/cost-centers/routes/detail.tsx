@@ -1,7 +1,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useSoftDeleteCostCenter } from '../api';
 
@@ -15,11 +15,22 @@ function CostCenterDetailPage(): React.JSX.Element {
   const { id } = costCenterDetailRoute.useParams();
   const navigate = useNavigate();
   const { data, isLoading, isError, error } = useCostCenter(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteCostCenter();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven (cc_create, Finance). Edit -> edit; Delete -> edit AND approve.
+  const perms = effectiveFormPerms(eff, 'cc_create');
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -84,7 +95,7 @@ function CostCenterDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {canEdit ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12 }}>

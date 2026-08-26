@@ -40,6 +40,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -457,6 +458,7 @@ export async function createRouteCard(
   user: AuthContext,
 ): Promise<RouteCardDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'routecard_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -553,6 +555,7 @@ export async function updateRouteCard(
   user: AuthContext,
 ): Promise<RouteCardDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'routecard_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -706,6 +709,8 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
   if (user.role !== 'admin') {
     throw new AuthorizationError(`Role "${user.role}" cannot delete route cards — admin required`);
   }
+  await requireFormAccess(user, 'routecard_create', 'edit');
+  await requireFormAccess(user, 'routecard_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

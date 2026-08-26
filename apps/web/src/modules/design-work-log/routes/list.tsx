@@ -10,6 +10,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
@@ -57,7 +58,17 @@ function dayName(date: string): string {
 }
 
 function DesignWorkLogPage(): React.JSX.Element {
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnworklog_create');
   const [tab, setTab] = useState<TabKey>('entry');
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   const tabs: Array<{ k: TabKey; label: string }> = [
     { k: 'entry', label: '📝 My Timesheet' },
@@ -102,7 +113,12 @@ function DesignWorkLogPage(): React.JSX.Element {
 
 function EntryTab(): React.JSX.Element {
   const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven (dsnworklog_create, Design dept). Create → entry; delete → the
+  // edit+approve pair (L5 Dept Admin and up).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnworklog_create');
+  const canAdd = perms.entry;
+  const canDelete = perms.edit && perms.approve;
   const engineer = me?.email ?? '';
 
   const [logDate, setLogDate] = useState(todayStr());
@@ -195,7 +211,7 @@ function EntryTab(): React.JSX.Element {
         <Tile label="Total Hours" value={`${totalHrs.toFixed(0)}h`} color="var(--cyan)" />
       </div>
 
-      {canWrite ? (
+      {canAdd ? (
         <div
           className="panel"
           style={{ padding: 16, marginBottom: 16, borderLeft: '3px solid var(--blue)' }}
@@ -405,7 +421,7 @@ function EntryTab(): React.JSX.Element {
                   >
                     {l.hours}h
                   </div>
-                  {canWrite ? (
+                  {canDelete ? (
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"

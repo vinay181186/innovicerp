@@ -2,6 +2,7 @@ import type { UpdateCostCenterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -18,6 +19,20 @@ function CostCenterEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useCostCenter(id);
   const update = useUpdateCostCenter(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Changing a saved record is `edit` on cc_create (Finance), so L2 Data Entry
+  // (create-only) is correctly refused. Checked here too because the route is
+  // reachable by URL, not just from the Edit button.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'cc_create');
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to Cost Center Master. Ask an admin for L2 Data Entry or
+        above in Finance.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

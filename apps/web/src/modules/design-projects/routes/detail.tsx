@@ -25,8 +25,8 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useAddDesignIssueComment,
@@ -71,6 +71,18 @@ function DesignProjectDetailPage(): React.JSX.Element {
   const { id } = designProjectDetailRoute.useParams();
   const { data, isLoading, isError, error } = useDesignProjectDetail(id);
   const [tab, setTab] = useState<TabKey>('tasks');
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
+
+  // "Hide page": a user whose VIEW was removed for Design Projects sees the
+  // no-access panel, not the detail page.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading || !data) {
     return (
@@ -273,8 +285,11 @@ function Badge({ value, kind }: { value: string; kind?: 'status' }): React.JSX.E
 // ─── Tasks tab ────────────────────────────────────────────────────────────
 
 function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tasks are part of the Design Project form (dsnproj_create).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
   const [view, setView] = useState<'table' | 'kanban'>('table');
   const [showAdd, setShowAdd] = useState(false);
   const [editTask, setEditTask] = useState<DesignTask | null>(null);
@@ -301,7 +316,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
           >
             Kanban
           </button>
-          {canWrite ? (
+          {canAdd ? (
             <button
               type="button"
               className="btn btn-primary btn-sm"
@@ -326,13 +341,13 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                   <th>Status</th>
                   <th>Due</th>
                   <th className="td-ctr">Issues</th>
-                  {canWrite ? <th></th> : null}
+                  {canEdit ? <th></th> : null}
                 </tr>
               </thead>
               <tbody>
                 {detail.tasks.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7} className="empty-state">
+                    <td colSpan={canEdit ? 8 : 7} className="empty-state">
                       No tasks yet
                     </td>
                   </tr>
@@ -375,7 +390,7 @@ function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Elemen
                             '✔'
                           )}
                         </td>
-                        {canWrite ? (
+                        {canEdit ? (
                           <td onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
@@ -674,6 +689,8 @@ function ViewTaskModal({
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
   const commentMut = useAddDesignTaskComment();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
 
   const onPost = (): void => {
     if (!comment.trim()) return;
@@ -798,23 +815,25 @@ function ViewTaskModal({
             </div>
           </div>
         ))}
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Add comment…"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={onPost}
-            disabled={commentMut.isPending}
-          >
-            Post
-          </button>
-        </div>
+        {perms.edit ? (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <input
+              className="innovic-input"
+              placeholder="Add comment…"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onPost}
+              disabled={commentMut.isPending}
+            >
+              Post
+            </button>
+          </div>
+        ) : null}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -828,8 +847,11 @@ function ViewTaskModal({
 // ─── Issues tab ───────────────────────────────────────────────────────────
 
 function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Design Issues have their own access form (dsnissue_create).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnissue_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
   const [showAdd, setShowAdd] = useState(false);
   const [editIssue, setEditIssue] = useState<DesignIssue | null>(null);
   const [viewIssue, setViewIssue] = useState<DesignIssue | null>(null);
@@ -838,7 +860,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div className="section-hdr m-0">⚠ Design Issues</div>
-        {canWrite ? (
+        {canAdd ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
             <Plus size={12} /> Raise Issue
           </button>
@@ -857,13 +879,13 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                 <th>Assigned To</th>
                 <th>Date</th>
                 <th>Age</th>
-                {canWrite ? <th></th> : null}
+                {canEdit ? <th></th> : null}
               </tr>
             </thead>
             <tbody>
               {detail.issues.length === 0 ? (
                 <tr>
-                  <td colSpan={canWrite ? 9 : 8} className="empty-state">
+                  <td colSpan={canEdit ? 9 : 8} className="empty-state">
                     No issues 🎉
                   </td>
                 </tr>
@@ -894,7 +916,7 @@ function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                       >
                         {ageDays}d
                       </td>
-                      {canWrite ? (
+                      {canEdit ? (
                         <td onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
@@ -1113,6 +1135,8 @@ function ViewIssueModal({
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
   const commentMut = useAddDesignIssueComment();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnissue_create');
 
   const onPost = (): void => {
     if (!comment.trim()) return;
@@ -1203,23 +1227,25 @@ function ViewIssueModal({
             </div>
           </div>
         ))}
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="Add comment…"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={onPost}
-            disabled={commentMut.isPending}
-          >
-            Post
-          </button>
-        </div>
+        {perms.edit ? (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            <input
+              className="innovic-input"
+              placeholder="Add comment…"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onPost}
+              disabled={commentMut.isPending}
+            >
+              Post
+            </button>
+          </div>
+        ) : null}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -1239,8 +1265,12 @@ function ChecklistTab({
   detail: DesignProjectDetail;
   checkDone: number;
 }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Checklist + release live on the Design Project form (dsnproj_create).
+  // Toggling a checklist item is `edit`; releasing the package is `approve`.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
+  const canEdit = perms.edit;
+  const canApprove = perms.approve;
   const allTasksDone =
     detail.tasks.length > 0 && detail.tasks.every((t) => t.status === 'Completed');
   const allIssuesClosed = detail.issues.every(
@@ -1322,10 +1352,10 @@ function ChecklistTab({
                     alignItems: 'center',
                     gap: 10,
                     padding: '7px 0',
-                    cursor: canWrite ? 'pointer' : 'default',
+                    cursor: canEdit ? 'pointer' : 'default',
                   }}
                   onClick={() =>
-                    canWrite &&
+                    canEdit &&
                     toggleMut.mutate({
                       id: detail.project.id,
                       input: { key: c.key },
@@ -1378,7 +1408,7 @@ function ChecklistTab({
           <div style={{ fontWeight: 700, color: 'var(--green)', fontSize: 15 }}>
             Ready for Release!
           </div>
-          {canWrite && detail.project.status !== 'Released' ? (
+          {canApprove && detail.project.status !== 'Released' ? (
             <button
               type="button"
               className="btn btn-primary"
@@ -1402,8 +1432,11 @@ function ChecklistTab({
 // ─── DCR / DCN tab ────────────────────────────────────────────────────────
 
 function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // DCR/DCN nest under the project (dsndcr_create left un-wired per task).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
   const [subTab, setSubTab] = useState<'dcr' | 'dcn'>('dcr');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showAddDcr, setShowAddDcr] = useState(false);
@@ -1497,7 +1530,7 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
               </option>
             ))}
           </select>
-          {canWrite ? (
+          {canAdd ? (
             subTab === 'dcr' ? (
               <button
                 type="button"
@@ -1553,8 +1586,8 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                     return (
                       <tr
                         key={d.id}
-                        style={{ cursor: canWrite ? 'pointer' : 'default' }}
-                        onClick={() => canWrite && setEditDcr(d)}
+                        style={{ cursor: canEdit ? 'pointer' : 'default' }}
+                        onClick={() => canEdit && setEditDcr(d)}
                       >
                         <td className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 11 }}>
                           {d.code}
@@ -1632,8 +1665,8 @@ function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Eleme
                     return (
                       <tr
                         key={d.id}
-                        style={{ cursor: canWrite ? 'pointer' : 'default' }}
-                        onClick={() => canWrite && setEditDcn(d)}
+                        style={{ cursor: canEdit ? 'pointer' : 'default' }}
+                        onClick={() => canEdit && setEditDcn(d)}
                       >
                         <td
                           className="mono fw-700"

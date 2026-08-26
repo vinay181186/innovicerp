@@ -30,6 +30,7 @@ import {
   salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   ConflictError,
@@ -309,6 +310,7 @@ export async function createDesignTracker(
   input: CreateDesignTrackerInput,
   user: AuthContext,
 ): Promise<DesignTracker> {
+  await requireFormAccess(user, 'design_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
 
@@ -399,6 +401,7 @@ export async function updateDesignTracker(
   input: UpdateDesignTrackerInput,
   user: AuthContext,
 ): Promise<DesignTracker> {
+  await requireFormAccess(user, 'design_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -442,6 +445,7 @@ export async function logDesignTime(
   input: LogDesignTimeInput,
   user: AuthContext,
 ): Promise<DesignTimeLogEntry> {
+  await requireFormAccess(user, 'design_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -489,6 +493,7 @@ export async function submitDesignForReview(
   id: string,
   user: AuthContext,
 ): Promise<DesignTracker> {
+  await requireFormAccess(user, 'design_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -528,6 +533,7 @@ export async function approveDesign(id: string, user: AuthContext): Promise<Desi
   if (user.role !== 'admin' && user.role !== 'manager') {
     throw new AuthorizationError('Only admin/manager can approve designs');
   }
+  await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -572,6 +578,7 @@ export async function reviseDesign(
   if (user.role !== 'admin' && user.role !== 'manager') {
     throw new AuthorizationError('Only admin/manager can send designs back for revision');
   }
+  await requireFormAccess(user, 'design_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

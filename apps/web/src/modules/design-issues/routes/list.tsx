@@ -4,6 +4,7 @@
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDesignIssuesAll } from '../api';
@@ -17,6 +18,8 @@ export const designIssuesListRoute = createRoute({
 });
 
 function DesignIssuesAllPage(): React.JSX.Element {
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnissue_create');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
 
@@ -27,6 +30,16 @@ function DesignIssuesAllPage(): React.JSX.Element {
     offset: 0,
   });
   const summary = data?.summary ?? { total: 0, open: 0, resolved: 0, critical: 0 };
+
+  // "Hide page" (Access Control → Config): a user whose VIEW was removed for
+  // the Design Issues page sees the no-access panel, not the page.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>

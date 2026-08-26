@@ -32,7 +32,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireAdminRole, requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
@@ -950,6 +950,7 @@ export async function createSalesOrder(
   user: AuthContext,
 ): Promise<SalesOrderDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'so_create', 'entry');
   const companyId = requireCompany(user);
 
   // Code is server-authoritative: generate the next IN-SO-##### when the client
@@ -1149,6 +1150,7 @@ export async function updateSalesOrder(
   // Editing an existing SO is admin-only (managers can still create). A
   // non-admin update is rejected server-side even if the UI is bypassed.
   requireAdminRole(user);
+  await requireFormAccess(user, 'so_create', 'edit');
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1426,6 +1428,8 @@ async function mergeLines(
 
 export async function softDeleteSalesOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'so_create', 'edit');
+  await requireFormAccess(user, 'so_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

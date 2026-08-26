@@ -2,6 +2,7 @@ import type { CreateCostCenterInput, ListCostCentersQuery } from '@innovic/share
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -16,6 +17,11 @@ function CostCenterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateCostCenter();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Creating a master record is `entry` on cc_create (Finance). Checked here as
+  // well as on the list button — the route is reachable by URL, so without this
+  // an L1 Viewer got the whole form and failed only at the API.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'cc_create');
 
   // Suggest next code like legacy `CC-NNN` (length + 1, zero-padded). Pull
   // a tight count snapshot — fine to over-pad if there are 1000+ rows.
@@ -25,6 +31,15 @@ function CostCenterNewPage(): React.JSX.Element {
     const next = (countData?.total ?? 0) + 1;
     return `CC-${String(next).padStart(3, '0')}`;
   }, [countData?.total]);
+
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to Cost Center Master. Ask an admin for L2 Data Entry or
+        above in Finance.
+      </div>
+    );
+  }
 
   return (
     <div>

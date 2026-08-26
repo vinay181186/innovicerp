@@ -1,6 +1,7 @@
 import { and, asc, count, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
@@ -82,6 +83,9 @@ export async function createCostCenter(
   user: AuthContext,
 ): Promise<CostCenter> {
   requireWriteRole(user);
+  // Tier gate (Access Control matrix). L2 Data Entry+ in Finance can add a cost
+  // center; L1 Viewer and L4 Approver cannot.
+  await requireFormAccess(user, 'cc_create', 'entry');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -123,6 +127,8 @@ export async function updateCostCenter(
   user: AuthContext,
 ): Promise<CostCenter> {
   requireWriteRole(user);
+  // Changing a saved record is `edit`, so L2 (create-only) is correctly refused.
+  await requireFormAccess(user, 'cc_create', 'edit');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -150,6 +156,10 @@ export async function updateCostCenter(
 
 export async function softDeleteCostCenter(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
+  // Delete is expressed as the pair only L5 Department Admin and above hold:
+  // edit AND approve. L3 Editor has edit but not approve; L4 Approver the reverse.
+  await requireFormAccess(user, 'cc_create', 'edit');
+  await requireFormAccess(user, 'cc_create', 'approve');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

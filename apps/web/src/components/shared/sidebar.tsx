@@ -72,11 +72,11 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
-          { to: '/planning', label: 'SO/JWSO Planning', icon: '📋' },
+          { to: '/planning', label: 'SO/JWSO Planning', icon: '📋', formKey: 'plan_create' },
           { to: '/so-overview', label: 'SO Overview', icon: '📊' },
           { to: '/so-status', label: 'SO Status Review', icon: '📊' },
           { to: '/assemblies', label: 'Assembly Tracker', icon: '📦' },
-          { to: '/plans', label: 'Plans', icon: '📋' },
+          { to: '/plans', label: 'Plans', icon: '📋', formKey: 'plan_create' },
         ],
       },
     ],
@@ -90,19 +90,19 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/sales-orders', label: 'SO Master', icon: '📋' },
-          { to: '/job-work-orders', label: 'JWSO Master', icon: '🔧' },
+          { to: '/sales-orders', label: 'SO Master', icon: '📋', formKey: 'so_create' },
+          { to: '/job-work-orders', label: 'JWSO Master', icon: '🔧', formKey: 'jw_create' },
           // Finished-goods customer dispatch (bills against SO lines). The
           // vendor job-work outward DC register lives under Purchase →
           // "OSP Outward DC" (/delivery-challans), not here. NOTE: "JWSO" =
           // sales job-work (client supplies material); the vendor/OSP side
           // keeps "JW"/"OSP" wording to stay distinct.
-          { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚' },
+          { to: '/customer-dispatches', label: 'Customer Dispatch', icon: '🚚', formKey: 'dispatch_create' },
         ],
       },
       {
         label: 'Master',
-        items: [{ to: '/clients', label: 'Client Master', icon: '🏢' }],
+        items: [{ to: '/clients', label: 'Client Master', icon: '🏢', formKey: 'client_create' }],
       },
       // Pending SO Value (a price-gated revenue report) is filed under the
       // Reports section, not a Sales menu item — see the Reports block below.
@@ -180,12 +180,12 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
-          { to: '/design-projects', label: 'Design Projects', icon: '📋' },
-          { to: '/design-issues', label: 'Design Issues', icon: '⚠' },
-          { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱' },
-          { to: '/bom-masters', label: 'BOM Master', icon: '📦' },
-          { to: '/design-tracker', label: 'Design Tracker', icon: '🎨' },
-          { to: '/route-cards', label: 'Route Cards', icon: '🗒' },
+          { to: '/design-projects', label: 'Design Projects', icon: '📋', formKey: 'dsnproj_create' },
+          { to: '/design-issues', label: 'Design Issues', icon: '⚠', formKey: 'dsnissue_create' },
+          { to: '/design-work-log', label: 'Daily Work Log', icon: '⏱', formKey: 'dsnworklog_create' },
+          { to: '/bom-masters', label: 'BOM Master', icon: '📦', formKey: 'bom_create' },
+          { to: '/design-tracker', label: 'Design Tracker', icon: '🎨', formKey: 'design_create' },
+          { to: '/route-cards', label: 'Route Cards', icon: '🗒', formKey: 'routecard_create' },
         ],
       },
     ],
@@ -264,7 +264,7 @@ export const SECTIONS: readonly NavSection[] = [
       },
       {
         label: 'Master',
-        items: [{ to: '/cost-centers', label: 'Cost Center Master', icon: '🏢' }],
+        items: [{ to: '/cost-centers', label: 'Cost Center Master', icon: '🏢', formKey: 'cc_create' }],
       },
       {
         label: 'Report',

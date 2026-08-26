@@ -96,11 +96,20 @@ const OFF_FIELD: Record<Action, keyof FormPerms> = {
 // Departments where the single-toggle per-page OFF switches are live. Enabled
 // only where BOTH are true: every write endpoint is server-gated
 // (requireFormAccess), so "No create/edit/approve" is actually enforced; and the
-// sidebar links + list/detail routes carry the Hide-page guard. Purchase first,
-// then Store and QC (phase 1). Sales / Planning / Design / Finance need write
-// gates added first; Production needs sidebar keys + route view-guards — add a
-// dept here only once both halves are in place for it.
-const OFF_SWITCH_DEPTS: readonly string[] = ['purchase', 'store', 'qc', 'production'];
+// sidebar links + list/detail routes carry the Hide-page guard. Purchase / Store
+// / QC / Production first (phase 1), then Sales / Planning / Design / Finance
+// once their write endpoints were gated (phase 2). The only ACCESS_DEPTS not here
+// are the non-form sections (tasks, reports, system).
+const OFF_SWITCH_DEPTS: readonly string[] = [
+  'purchase',
+  'store',
+  'qc',
+  'production',
+  'sales',
+  'planning',
+  'design',
+  'finance',
+];
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a

@@ -54,7 +54,7 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -377,6 +377,8 @@ export async function createPlan(
   user: AuthContext,
 ): Promise<PlanDetail> {
   requireWriteRole(user);
+  // Phase 2 matrix enforcement: creating a plan is Planning `plan_create` entry.
+  await requireFormAccess(user, 'plan_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -478,6 +480,7 @@ export async function updatePlan(
   user: AuthContext,
 ): Promise<PlanDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -598,6 +601,8 @@ export async function updatePlan(
  *  with PL-4. Idempotent: planned → planned is a no-op. */
 export async function finalizePlan(id: string, user: AuthContext): Promise<PlanDetail> {
   requireWriteRole(user);
+  // Finalising a saved plan is a change to it → edit.
+  await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -656,6 +661,9 @@ export async function finalizePlan(id: string, user: AuthContext): Promise<PlanD
 
 export async function softDeletePlan(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
+  // Delete = the L5 pair (edit AND approve), matching every other soft-delete.
+  await requireFormAccess(user, 'plan_create', 'edit');
+  await requireFormAccess(user, 'plan_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -776,6 +784,9 @@ export async function executePlan(
   user: AuthContext,
 ): Promise<ExecutePlanResult> {
   requireWriteRole(user);
+  // Executing a saved plan (spawns the Job Cards) is an edit on the plan. The JC
+  // creation it triggers is separately gated on jc_create inside job-cards.
+  await requireFormAccess(user, 'plan_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

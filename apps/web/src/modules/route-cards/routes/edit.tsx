@@ -1,6 +1,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
@@ -22,6 +23,8 @@ function RouteCardEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useRouteCard(id);
   const update = useUpdateRouteCard(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'routecard_create');
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
     () =>
@@ -63,6 +66,15 @@ function RouteCardEditPage(): React.JSX.Element {
       setSubmitError(e instanceof Error ? e.message : 'Failed to save route card revision.');
     }
   };
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to Route Cards. Ask an admin for L2 Data Entry or above in
+        Design.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

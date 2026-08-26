@@ -68,6 +68,7 @@ function accentFor(g: DispatchGroup): string {
 export function DispatchCard(props: {
   g: DispatchGroup;
   isOpen: boolean;
+  canCancel: boolean;
   cancelPending: boolean;
   onToggle: () => void;
   onCancel: () => void;
@@ -119,14 +120,16 @@ export function DispatchCard(props: {
               >
                 🧾 Invoice
               </Link>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                disabled={props.cancelPending}
-                onClick={props.onCancel}
-              >
-                Cancel
-              </button>
+              {props.canCancel ? (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  disabled={props.cancelPending}
+                  onClick={props.onCancel}
+                >
+                  Cancel
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useExecutePlan,
@@ -43,6 +44,8 @@ function PlanDetailPage(): React.JSX.Element {
   const finalize = useFinalizePlan();
   const execute = useExecutePlan();
   const softDelete = useSoftDeletePlan();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'plan_create');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -100,6 +103,14 @@ function PlanDetailPage(): React.JSX.Element {
 
   const status = STATUS_BADGE[plan.planStatus];
 
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   return (
     <div>
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
@@ -127,7 +138,7 @@ function PlanDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {canFinalize ? (
+            {perms.edit && canFinalize ? (
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -143,7 +154,7 @@ function PlanDetailPage(): React.JSX.Element {
                 Finalize
               </button>
             ) : null}
-            {canExecute ? (
+            {perms.edit && canExecute ? (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -163,7 +174,7 @@ function PlanDetailPage(): React.JSX.Element {
                 Execute
               </button>
             ) : null}
-            {isEditable ? (
+            {perms.edit && isEditable ? (
               <Link
                 to="/plans/$id/edit"
                 params={{ id: plan.id }}
@@ -172,7 +183,7 @@ function PlanDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isEditable ? (
+            {perms.edit && perms.approve && isEditable ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

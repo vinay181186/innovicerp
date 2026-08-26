@@ -13,7 +13,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useBomMaster, useDeleteBomMaster } from '../api';
 
@@ -41,7 +41,8 @@ function BomMasterDetailPage(): React.JSX.Element {
   const { id } = bomMasterDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useBomMaster(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'bom_create');
   const del = useDeleteBomMaster();
   const [delError, setDelError] = useState<string | null>(null);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
@@ -64,6 +65,14 @@ function BomMasterDetailPage(): React.JSX.Element {
       setDelError(e instanceof Error ? e.message : 'Delete failed.');
     }
   };
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -122,7 +131,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(me?.role === 'admin' || me?.role === 'manager') && (
+            {perms.edit && (
               <Link
                 to="/bom-masters/$id/edit"
                 params={{ id: detail.id }}
@@ -131,7 +140,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit / Revise
               </Link>
             )}
-            {me?.role === 'admin' && (
+            {perms.edit && perms.approve && (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"

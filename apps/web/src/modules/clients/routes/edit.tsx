@@ -5,6 +5,7 @@ import type { CreateClientInput, UpdateClientInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useClient, useCreateClient, useUpdateClient } from '../api';
 import { ClientForm } from '../components/client-form';
@@ -25,6 +26,8 @@ function ClientNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const create = useCreateClient();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'client_create');
 
   const onSubmit = async (values: CreateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -35,6 +38,15 @@ function ClientNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create client');
     }
   };
+
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to Client Master. Ask an admin for L2 Data Entry or above
+        in Sales.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -69,6 +81,8 @@ function ClientEditPage(): React.JSX.Element {
   const { data: client, isLoading, isError, error } = useClient(id);
   const update = useUpdateClient(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'client_create');
 
   const onSubmit = async (values: UpdateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -79,6 +93,15 @@ function ClientEditPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update client');
     }
   };
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to Client Master. Ask an admin for L2 Data Entry or above in
+        Sales.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

@@ -13,6 +13,7 @@ import type {
 } from '@innovic/shared';
 import { designProjects, designWorkLog } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   NotFoundError,
@@ -110,6 +111,8 @@ export async function createDesignWorkLogEntry(
   input: CreateDesignWorkLogInput,
   user: AuthContext,
 ): Promise<DesignWorkLogEntry> {
+  // Logging a work entry needs L2 Data Entry+ in Design.
+  await requireFormAccess(user, 'dsnworklog_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -161,6 +164,10 @@ export async function createDesignWorkLogEntry(
 }
 
 export async function deleteDesignWorkLogEntry(id: string, user: AuthContext): Promise<void> {
+  // Soft-delete is expressed as the edit+approve pair (L5 Dept Admin and up),
+  // matching the machines module delete pattern.
+  await requireFormAccess(user, 'dsnworklog_create', 'edit');
+  await requireFormAccess(user, 'dsnworklog_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   await withUserContext(user, async (tx) => {

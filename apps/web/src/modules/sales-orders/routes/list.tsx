@@ -22,7 +22,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -137,7 +137,6 @@ function lineToInput(l: SalesOrderLine): SalesOrderLineInput {
 function SalesOrdersListPage(): React.JSX.Element {
   const search = salesOrdersListRoute.useSearch();
   const navigate = salesOrdersListRoute.useNavigate();
-  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -166,7 +165,14 @@ function SalesOrdersListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Access matrix (so_create, dept Sales) replaces the old admin/manager flag.
+  //   New SO / bulk import -> entry; +Line / per-line edit -> edit;
+  //   whole-SO delete      -> edit AND approve (L5 Dept Admin and up).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'so_create');
+  const canCreate = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   // Many cards can be open at once (the reference shows every order with its
   // lines visible), so this is a Set rather than the single id it used to be.
@@ -291,6 +297,17 @@ function SalesOrdersListPage(): React.JSX.Element {
 
   const total = data?.total ?? 0;
 
+  // Hide-page: a user whose VIEW was removed for SO Master sees the no-access
+  // panel, not the list. `eff` undefined only while access loads — don't block
+  // then, or every legitimate user flashes this panel on cold load.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Frozen header band (the reference supplied 2026-08-11) — the title,
@@ -343,7 +360,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
               {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
             </button>
-            {canWrite ? (
+            {canCreate ? (
               <>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} title="Download the bulk SO import template (.xlsx)" onClick={() => downloadSoTemplate()}>
                   ⬇ Template
@@ -361,7 +378,7 @@ function SalesOrdersListPage(): React.JSX.Element {
               </>
             ) : null}
             {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-            {canWrite ? (
+            {canCreate ? (
               <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
             ) : null}
           </div>
@@ -498,20 +515,22 @@ function SalesOrdersListPage(): React.JSX.Element {
                     </span>
                   ) : null}
                   <span style={{ flex: 1 }} />
-                  {canWrite ? (
+                  {canEdit || canDelete ? (
                     <div
                       style={{ display: 'flex', gap: 4, alignItems: 'center' }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Link
-                        to="/sales-orders/$id/edit"
-                        params={{ id: so.id }}
-                        className="btn btn-primary btn-sm"
-                        title="Add line to this SO"
-                      >
-                        + Line
-                      </Link>
-                      {so.status !== 'closed' ? (
+                      {canEdit ? (
+                        <Link
+                          to="/sales-orders/$id/edit"
+                          params={{ id: so.id }}
+                          className="btn btn-primary btn-sm"
+                          title="Add line to this SO"
+                        >
+                          + Line
+                        </Link>
+                      ) : null}
+                      {canEdit && so.status !== 'closed' ? (
                         <AssignTaskButton
                           linkedRef={{
                             type: 'sales_order',
@@ -527,7 +546,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                           label=""
                         />
                       ) : null}
-                      {so.status !== 'closed' ? (
+                      {canDelete && so.status !== 'closed' ? (
                         <button type="button" className="btn btn-danger btn-sm" onClick={() => onDeleteSo(so)}>
                           Del
                         </button>
@@ -587,7 +606,7 @@ function SalesOrdersListPage(): React.JSX.Element {
                 {/* ── Band 3: line items ── */}
                 {isExpanded ? (
                   <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
-                    <SoExpandedPanel soId={so.id} soType={so.type} canWrite={canWrite} />
+                    <SoExpandedPanel soId={so.id} soType={so.type} canEdit={canEdit} canDelete={canDelete} />
                   </div>
                 ) : null}
               </div>
@@ -677,14 +696,14 @@ function ImportPreviewModal({
   );
 }
 
-function SoExpandedPanel({ soId, soType, canWrite }: { soId: string; soType: SoType; canWrite: boolean }): React.JSX.Element {
+function SoExpandedPanel({ soId, soType, canEdit, canDelete }: { soId: string; soType: SoType; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSalesOrder(soId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
   if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load SO detail'}</div>;
-  return soType === 'equipment' ? <EquipmentSoExpand so={data} canWrite={canWrite} /> : <ComponentSoExpand so={data} canWrite={canWrite} />;
+  return soType === 'equipment' ? <EquipmentSoExpand so={data} canEdit={canEdit} canDelete={canDelete} /> : <ComponentSoExpand so={data} canEdit={canEdit} />;
 }
 
-function EquipmentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: boolean }): React.JSX.Element {
+function EquipmentSoExpand({ so, canEdit, canDelete }: { so: SalesOrderDetail; canEdit: boolean; canDelete: boolean }): React.JSX.Element {
   const softDelete = useSoftDeleteSalesOrder();
   const line = so.lines[0];
   if (!line) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>No lines yet — add an item to this SO.</div>;
@@ -702,13 +721,13 @@ function EquipmentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {canWrite ? <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>✏ Edit</Link> : null}
+          {canEdit ? <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>✏ Edit</Link> : null}
           {so.bomMasterId ? (
             <Link to="/planning" className="btn btn-sm" style={{ background: 'rgba(34,211,238,0.08)', color: 'var(--cyan)', border: '1px solid rgba(34,211,238,0.3)', fontWeight: 700, fontSize: 11 }}>📦 Plan BOM Items</Link>
           ) : (
             <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600, alignSelf: 'center' }}>⚠ No BOM linked — assign one in Edit.</span>
           )}
-          {canWrite ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Delete SO ${so.code}?`)) softDelete.mutate(so.id); }}>Del</button> : null}
+          {canDelete ? <button type="button" className="btn btn-danger btn-sm" style={{ fontSize: 11 }} onClick={() => { if (confirm(`Delete SO ${so.code}?`)) softDelete.mutate(so.id); }}>Del</button> : null}
         </div>
       </div>
       {so.bomMasterId ? <EquipmentBomItems soId={so.id} /> : <div style={{ padding: '4px 32px 12px', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>⚠ No BOM linked. Edit this SO to assign a BOM from BOM Master.</div>}
@@ -756,7 +775,7 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
   );
 }
 
-function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: boolean }): React.JSX.Element {
+function ComponentSoExpand({ so, canEdit }: { so: SalesOrderDetail; canEdit: boolean }): React.JSX.Element {
   const update = useUpdateSalesOrder(so.id);
   const onDeleteLine = (lineId: string): void => {
     if (!confirm('Delete this line?')) return;
@@ -785,12 +804,12 @@ function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
             <th className="td-ctr">Qty</th><th className="td-ctr">JC Qty</th>
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr" style={{ color: 'var(--red)' }}>Balance</th>
-            <th>Due Date</th><th>Status</th>{canWrite ? <th /> : null}
+            <th>Due Date</th><th>Status</th>{canEdit ? <th /> : null}
           </tr>
         </thead>
         <tbody>
           {so.lines.length === 0 ? (
-            <tr><td colSpan={canWrite ? 11 : 10} className="empty-state">No lines yet</td></tr>
+            <tr><td colSpan={canEdit ? 11 : 10} className="empty-state">No lines yet</td></tr>
           ) : (
             so.lines.map((l) => {
               const balance = Math.max(0, l.orderQty - l.dispatchedQty);
@@ -809,7 +828,7 @@ function ComponentSoExpand({ so, canWrite }: { so: SalesOrderDetail; canWrite: b
                   <td className="td-ctr mono fw-700" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance <= 0 ? '✅ Done' : balance}</td>
                   <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
                   <td><SoStatusBadge status={l.status} /></td>
-                  {canWrite ? (
+                  {canEdit ? (
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <Link to="/sales-orders/$id/edit" params={{ id: so.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>

@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
@@ -37,6 +38,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'so_create');
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -64,6 +67,15 @@ function SalesOrderDetailPage(): React.JSX.Element {
     );
   }
 
+  // Hide-page: VIEW removed for SO Master → no-access panel, not the detail.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   const onDelete = (): void => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
@@ -72,8 +84,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Access matrix (so_create) replaces the old admin/manager role flags.
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Money hidden for L1 Viewers: the API nulls the SO's GST % and every line
@@ -130,7 +143,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

@@ -25,7 +25,7 @@ import {
   storeTransactions,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -768,6 +768,7 @@ export async function createDispatch(
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'dispatch_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -900,6 +901,8 @@ export async function cancelDispatch(
   user: AuthContext,
 ): Promise<CustomerDispatchDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'dispatch_create', 'edit');
+  await requireFormAccess(user, 'dispatch_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

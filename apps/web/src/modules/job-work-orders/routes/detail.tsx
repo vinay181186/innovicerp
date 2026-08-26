@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
   jwDocSignedUrl,
   useDeleteJwDocument,
@@ -27,6 +28,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'jw_create');
   const softDelete = useSoftDeleteJobWorkOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -54,6 +57,15 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     );
   }
 
+  // Hide-page: VIEW removed for JWSO Master → no-access panel, not the detail.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   const onDelete = (): void => {
     softDelete.mutate(detail.id, {
       onSuccess: () => {
@@ -62,8 +74,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     });
   };
 
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isAdmin = me?.role === 'admin';
+  // Access matrix (jw_create) replaces the old admin/manager role flags.
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   const totalQty = detail.lines.reduce((s, l) => s + l.orderQty, 0);
   // Client material is header-level (migration 0053).
@@ -109,7 +122,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit
               </Link>
             ) : null}
-            {isAdmin ? (
+            {canDelete ? (
               confirmDelete ? (
                 <>
                   <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>

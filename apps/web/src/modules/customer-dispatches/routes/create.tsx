@@ -13,6 +13,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useCreateDispatch, useDispatchableSo, useFinanceSoOptions, useNextDispatchCode } from '../api';
@@ -39,6 +40,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const { data: soOpts } = useFinanceSoOptions();
   const { data: next } = useNextDispatchCode();
   const create = useCreateDispatch();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dispatch_create');
 
   const [soId, setSoId] = useState(preselectSo ?? '');
   const [dispatchDate, setDispatchDate] = useState(todayStr());
@@ -142,6 +145,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to create dispatch');
     }
+  }
+
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to Customer Dispatch. Ask an admin for L2 Data Entry or
+        above in Sales.
+      </div>
+    );
   }
 
   return (

@@ -10,7 +10,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
 import { PrintRouteCardButton } from '../components/print-route-card-button';
@@ -35,6 +35,8 @@ function RouteCardsListPage(): React.JSX.Element {
     limit: 100,
     offset: 0,
   });
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'routecard_create');
 
   const toggleExpand = (id: string): void => {
     setExpanded((prev) => {
@@ -44,6 +46,14 @@ function RouteCardsListPage(): React.JSX.Element {
       return next;
     });
   };
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -62,9 +72,11 @@ function RouteCardsListPage(): React.JSX.Element {
               })
             }
           />
-          <Link to="/route-cards/new" className="btn btn-primary">
-            <Plus size={14} /> Add Route Card
-          </Link>
+          {perms.entry ? (
+            <Link to="/route-cards/new" className="btn btn-primary">
+              <Plus size={14} /> Add Route Card
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -140,7 +152,8 @@ interface RouteCardRowProps {
 }
 
 function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.Element {
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'routecard_create');
   const del = useDeleteRouteCard();
 
   // Legacy delRouteCard (L10279): confirm, then remove. Delete is admin-only
@@ -195,16 +208,18 @@ function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.
             >
               View
             </Link>
-            <Link
-              to="/route-cards/$id/edit"
-              params={{ id: rc.id }}
-              className="btn btn-ghost btn-sm"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Edit
-            </Link>
+            {perms.edit ? (
+              <Link
+                to="/route-cards/$id/edit"
+                params={{ id: rc.id }}
+                className="btn btn-ghost btn-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Edit
+              </Link>
+            ) : null}
             <PrintRouteCardButton rc={rc} />
-            {me?.role === 'admin' ? (
+            {perms.edit && perms.approve ? (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"

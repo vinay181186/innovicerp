@@ -4,6 +4,7 @@ import type { ListPlansResponse, PlanStatus, PlanType } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2, Plus } from 'lucide-react';
 import { z } from 'zod';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlansList, usePlanningDashboard } from '../api';
 import { PlanningKpiStrip } from '../components/planning-kpi-strip';
@@ -60,6 +61,8 @@ function PlansListPage(): React.JSX.Element {
   });
   // KPI counts for the filter-bar tiles (folded in from the Planning Dashboard).
   const dash = usePlanningDashboard();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'plan_create');
 
   // Tile → URL filter. Status tiles set `status`; the Needs Planning tile flips
   // the body to the unplanned-SO-lines table. Both clear the other so only one
@@ -82,6 +85,14 @@ function PlansListPage(): React.JSX.Element {
         ...(needsPlanning ? {} : { needsPlanning: true }),
       },
     });
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -147,9 +158,11 @@ function PlansListPage(): React.JSX.Element {
             <option value="full_outsource">📦 Full Outsource</option>
             <option value="assembly">🔧 Assembly</option>
           </select>
-          <Link to="/plans/new" className="btn btn-primary btn-sm">
-            <Plus size={13} /> New plan
-          </Link>
+          {perms.entry ? (
+            <Link to="/plans/new" className="btn btn-primary btn-sm">
+              <Plus size={13} /> New plan
+            </Link>
+          ) : null}
         </div>
       </div>
 

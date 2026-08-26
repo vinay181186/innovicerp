@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { clients } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
@@ -109,6 +110,7 @@ export async function getNextClientCode(user: AuthContext): Promise<{ code: stri
 
 export async function createClient(input: CreateClientInput, user: AuthContext): Promise<Client> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'client_create', 'entry');
   const companyId = requireCompany(user);
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
   // collide on clients_company_code_uniq (23505) — e.g. both auto-generate the
@@ -161,6 +163,7 @@ export async function updateClient(
   user: AuthContext,
 ): Promise<Client> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'client_create', 'edit');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx
@@ -189,6 +192,8 @@ export async function updateClient(
 
 export async function softDeleteClient(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'client_create', 'edit');
+  await requireFormAccess(user, 'client_create', 'approve');
   requireCompany(user);
   return withUserContext(user, async (tx) => {
     const existing = await tx

@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { uploadJwDocFile, useCreateJwDocument } from '@/modules/jwso-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateJobWorkOrder, useJobWorkOrder, useUpdateJobWorkOrder } from '../api';
@@ -58,6 +59,8 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   const create = useCreateJobWorkOrder();
   const createDoc = useCreateJwDocument();
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'jw_create');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
@@ -75,6 +78,15 @@ function JobWorkOrderNewPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create job-work order');
     }
   };
+
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to JWSO Master. Ask an admin for L2 Data Entry or above in
+        Sales.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -112,6 +124,8 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const update = useUpdateJobWorkOrder(id);
   const createDoc = useCreateJwDocument();
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'jw_create');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
@@ -129,6 +143,15 @@ function JobWorkOrderEditPage(): React.JSX.Element {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update job-work order');
     }
   };
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to JWSO Master. Ask an admin for L2 Data Entry or above in
+        Sales.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

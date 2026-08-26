@@ -4,7 +4,7 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
@@ -21,7 +21,8 @@ function RouteCardDetailPage(): React.JSX.Element {
   const { id } = routeCardDetailRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useRouteCard(id);
-  const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'routecard_create');
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
   const del = useDeleteRouteCard();
@@ -46,6 +47,14 @@ function RouteCardDetailPage(): React.JSX.Element {
       setDelError(e instanceof Error ? e.message : 'Delete failed.');
     }
   };
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -101,7 +110,7 @@ function RouteCardDetailPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
               <Printer size={13} /> Print
             </button>
-            {(me?.role === 'admin' || me?.role === 'manager') && (
+            {perms.edit && (
               <Link
                 to="/route-cards/$id/edit"
                 params={{ id: detail.id }}
@@ -110,7 +119,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 <Pencil size={13} /> Edit / Revise
               </Link>
             )}
-            {me?.role === 'admin' && (
+            {perms.edit && perms.approve && (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"

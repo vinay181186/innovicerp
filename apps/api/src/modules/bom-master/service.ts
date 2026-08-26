@@ -35,6 +35,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import {
   AuthorizationError,
@@ -635,6 +636,7 @@ export async function createBomMaster(
   user: AuthContext,
 ): Promise<BomMasterDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'bom_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -717,6 +719,7 @@ export async function updateBomMaster(
   user: AuthContext,
 ): Promise<BomMasterDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'bom_create', 'edit');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -850,6 +853,8 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
   if (user.role !== 'admin') {
     throw new AuthorizationError(`Role "${user.role}" cannot delete BOM masters — admin required`);
   }
+  await requireFormAccess(user, 'bom_create', 'edit');
+  await requireFormAccess(user, 'bom_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

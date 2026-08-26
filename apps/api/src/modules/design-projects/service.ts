@@ -43,6 +43,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
   NotFoundError,
@@ -446,6 +447,8 @@ export async function createDesignProject(
   input: CreateDesignProjectInput,
   user: AuthContext,
 ): Promise<DesignProject> {
+  // Tier gate (Phase 2). Creating a Design Project needs L2 Data Entry+ in Design.
+  await requireFormAccess(user, 'dsnproj_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -546,6 +549,8 @@ export async function updateDesignProject(
   input: UpdateDesignProjectInput,
   user: AuthContext,
 ): Promise<DesignProject> {
+  // Changing a saved project is `edit`.
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -589,6 +594,8 @@ export async function toggleDesignChecklistItem(
   input: ToggleDesignChecklistItemInput,
   user: AuthContext,
 ): Promise<DesignProject> {
+  // Toggling a release-checklist item mutates the saved project → `edit`.
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -620,6 +627,9 @@ export async function releaseDesignProject(
   id: string,
   user: AuthContext,
 ): Promise<DesignProject> {
+  // Releasing the design package is a formal sign-off → `approve` (judgment
+  // call; see report — it is a finalisation, not a field edit).
+  await requireFormAccess(user, 'dsnproj_create', 'approve');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -658,6 +668,8 @@ export async function createDesignTask(
   input: CreateDesignTaskInput,
   user: AuthContext,
 ): Promise<DesignTask> {
+  // Tasks are part of the Design Project form (no separate task key) → entry.
+  await requireFormAccess(user, 'dsnproj_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -700,6 +712,8 @@ export async function updateDesignTask(
   input: UpdateDesignTaskInput,
   user: AuthContext,
 ): Promise<DesignTask> {
+  // Changing a saved task (incl. status transitions) → `edit`.
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -751,6 +765,9 @@ export async function addDesignTaskComment(
   input: AddDesignCommentInput,
   user: AuthContext,
 ): Promise<DesignTask> {
+  // A discussion comment mutates the saved task record → `edit` (see report:
+  // comment = edit is a judgment call).
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -792,6 +809,9 @@ export async function createDesignIssue(
   input: CreateDesignIssueInput,
   user: AuthContext,
 ): Promise<DesignIssue> {
+  // Design Issues have their own access form (dsnissue_create), even though the
+  // write lives in the projects module (issues nest under a project route).
+  await requireFormAccess(user, 'dsnissue_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -851,6 +871,9 @@ export async function updateDesignIssue(
   input: UpdateDesignIssueInput,
   user: AuthContext,
 ): Promise<DesignIssue> {
+  // Changing a saved issue (incl. resolve/close status transitions) → `edit`
+  // on the dsnissue_create form.
+  await requireFormAccess(user, 'dsnissue_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -905,6 +928,9 @@ export async function addDesignIssueComment(
   input: AddDesignCommentInput,
   user: AuthContext,
 ): Promise<DesignIssue> {
+  // A discussion comment mutates the saved issue record → `edit` on
+  // dsnissue_create (comment = edit is a judgment call; see report).
+  await requireFormAccess(user, 'dsnissue_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -946,6 +972,9 @@ export async function createDesignDcr(
   input: CreateDesignDcrInput,
   user: AuthContext,
 ): Promise<DesignDcr> {
+  // DCR/DCN live under the project (dsndcr_create is left un-wired per task —
+  // report-only), so gate with the containing project form → entry.
+  await requireFormAccess(user, 'dsnproj_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -990,6 +1019,8 @@ export async function updateDesignDcr(
   input: UpdateDesignDcrInput,
   user: AuthContext,
 ): Promise<DesignDcr> {
+  // Changing a saved DCR → `edit` (gated on the project form; see report).
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -1032,6 +1063,8 @@ export async function createDesignDcn(
   input: CreateDesignDcnInput,
   user: AuthContext,
 ): Promise<DesignDcn> {
+  // DCN nests under the project (dsndcr_create left un-wired per task) → entry.
+  await requireFormAccess(user, 'dsnproj_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -1086,6 +1119,8 @@ export async function updateDesignDcn(
   input: UpdateDesignDcnInput,
   user: AuthContext,
 ): Promise<DesignDcn> {
+  // Changing a saved DCN → `edit` (gated on the project form; see report).
+  await requireFormAccess(user, 'dsnproj_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

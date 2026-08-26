@@ -9,6 +9,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useExecutePlan, usePlan } from '@/modules/plans/api';
 import { usePlanningSoDetail, usePlanningSoList } from '../api';
@@ -53,6 +54,11 @@ function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
   const { soId: soIdParam, openPlan } = soPlanningWorkflowRoute.useSearch();
   const soList = usePlanningSoList();
+  // Page + write gate (plan_create, Planning dept). Writes on this page (create
+  // plan, edit, execute, BOM planning) live in the plans module; here we hide
+  // their entry points by tier and hide the whole page if VIEW was removed.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'plan_create');
   const [selSoId, setSelSoId] = useState<string | null>(soIdParam ?? null);
   const [soSearch, setSoSearch] = useState('');
   const [modal, setModal] = useState<ModalState>(
@@ -87,6 +93,17 @@ function PlanningWorkflowPage(): JSX.Element {
       (so.customerName ?? '').toLowerCase().includes(soQuery) ||
       (so.itemsText ?? '').toLowerCase().includes(soQuery),
   );
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
+  // only while access is still loading — don't block then.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', gap: 0, height: 'calc(100vh - 70px)' }}>
@@ -244,6 +261,10 @@ function RightPane({
   const editingPlan = usePlan(modal.kind === 'edit' ? modal.planId : '');
   const executePlan = useExecutePlan();
   const navigate = useNavigate();
+  // Write gate (plan_create, Planning). Create a plan / open BOM planning ->
+  // entry; edit + execute a saved plan -> edit. Read-only cards stay visible.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'plan_create');
 
   // Legacy always renders the header row, then the right content; with no SO
   // selected the header reads "Select an SO" (renderSOPlanning L9439-9441).
@@ -482,6 +503,7 @@ function RightPane({
                     <PlanCard
                       key={p.id}
                       plan={p}
+                      canEdit={perms.edit}
                       onEdit={() => setModal({ kind: 'edit', planId: p.id })}
                       onExecute={() => executePlan.mutate(p.id)}
                       isExecuting={executePlan.isPending && executePlan.variables === p.id}
@@ -548,7 +570,7 @@ function RightPane({
                   borderTop: '1px solid var(--border)',
                 }}
               >
-                {line.hasEquipmentBom ? (
+                {line.hasEquipmentBom && perms.entry ? (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -564,7 +586,7 @@ function RightPane({
                     📦 Equipment BOM Planning ({line.bomPartsCount} parts)
                   </button>
                 ) : null}
-                {line.hasAssemblyBom ? (
+                {line.hasAssemblyBom && perms.entry ? (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -580,7 +602,7 @@ function RightPane({
                     📦 BOM Planning ({line.bomPartsCount} parts)
                   </button>
                 ) : null}
-                {!line.hasEquipmentBom && line.remaining > 0 ? (
+                {!line.hasEquipmentBom && line.remaining > 0 && perms.entry ? (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -683,6 +705,7 @@ function PrLink({
 
 function PlanCard({
   plan,
+  canEdit,
   onEdit,
   onExecute,
   onViewJc,
@@ -690,6 +713,7 @@ function PlanCard({
   executeError = null,
 }: {
   plan: PlanningPlanSummary;
+  canEdit: boolean;
   onEdit: () => void;
   onExecute: () => void | Promise<void>;
   onViewJc: () => void;
@@ -752,7 +776,7 @@ function PlanCard({
         {PLAN_STATUS_LABEL[plan.planStatus]}
       </span>
       <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-        {plan.planStatus === 'in_planning' && (
+        {plan.planStatus === 'in_planning' && canEdit && (
           <button
             type="button"
             className="btn btn-sm"
@@ -767,7 +791,7 @@ function PlanCard({
             ✏ Edit
           </button>
         )}
-        {plan.planStatus === 'planned' && (
+        {plan.planStatus === 'planned' && canEdit && (
           <>
             <button
               type="button"

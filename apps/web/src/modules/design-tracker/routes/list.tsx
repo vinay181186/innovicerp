@@ -9,6 +9,7 @@ import {
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -38,6 +39,8 @@ export const designTrackerListRoute = createRoute({
 function DesignTrackerListPage(): React.JSX.Element {
   const { data: me } = useSession();
   const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'design_create');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
@@ -58,6 +61,14 @@ function DesignTrackerListPage(): React.JSX.Element {
     approved: 0,
     overdue: 0,
   };
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -87,7 +98,7 @@ function DesignTrackerListPage(): React.JSX.Element {
             <option value="approved">Approved</option>
             <option value="overdue">Overdue</option>
           </select>
-          {canWrite ? (
+          {perms.entry ? (
             <button
               type="button"
               className="btn btn-primary"
@@ -315,6 +326,8 @@ function Row({
             ? 'rgba(34,197,94,0.10)'
             : 'rgba(139,92,246,0.10)';
 
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'design_create');
   const submitMut = useSubmitDesignReview();
   const approveMut = useApproveDesign();
   const reviseMut = useReviseDesign();
@@ -384,7 +397,7 @@ function Row({
           >
             ⏱ Log
           </button>
-          {canWrite && row.status !== 'Approved' ? (
+          {perms.edit && row.status !== 'Approved' ? (
             <button
               type="button"
               className="btn btn-ghost btn-sm"

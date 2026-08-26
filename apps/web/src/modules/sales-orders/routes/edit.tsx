@@ -5,6 +5,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
 import { useCreateSalesOrder, useSalesOrder, useUpdateSalesOrder } from '../api';
@@ -27,6 +28,8 @@ function SalesOrderNewPage(): React.JSX.Element {
   const create = useCreateSalesOrder();
   const createDoc = useCreateSoDocument();
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'so_create');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
@@ -80,6 +83,15 @@ function SalesOrderNewPage(): React.JSX.Element {
     }
   };
 
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to SO Master. Ask an admin for L2 Data Entry or above in
+        Sales.
+      </div>
+    );
+  }
+
   return (
     <div className="panel">
       <div className="panel-body">
@@ -108,9 +120,21 @@ function SalesOrderEditPage(): React.JSX.Element {
   const { id } = salesOrderEditRoute.useParams();
   const navigate = useNavigate();
   const { data: me } = useSession();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'so_create');
   const { data: detail, isLoading, isError, error } = useSalesOrder(id);
   const update = useUpdateSalesOrder(id);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Access matrix: edit access to SO Master is required (also enforced server-side).
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to SO Master. Ask an admin for L2 Data Entry or above in
+        Sales.
+      </div>
+    );
+  }
 
   // Editing a Sales Order is admin-only (enforced again server-side).
   if (me && me.role !== 'admin') {

@@ -26,7 +26,7 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
 
@@ -50,8 +50,13 @@ export const costCentersListRoute = createRoute({
 function CostCentersListPage(): React.JSX.Element {
   const search = costCentersListRoute.useSearch();
   const navigate = costCentersListRoute.useNavigate();
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven (cc_create sits in Finance). Add -> entry, Edit -> edit, Delete
+  // -> edit AND approve (the pair only L5 Department Admin and above hold).
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'cc_create');
+  const canAdd = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -111,6 +116,17 @@ function CostCentersListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = search.page;
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
+  // only while access is still loading — don't block then.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -203,7 +219,7 @@ function CostCentersListPage(): React.JSX.Element {
               <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
             </span>
           ) : null}
-          {canWrite ? (
+          {canAdd ? (
             <Link to="/cost-centers/new" className="btn btn-primary">
               <Plus size={14} /> Add Cost Center
             </Link>
@@ -265,8 +281,8 @@ function CostCentersListPage(): React.JSX.Element {
                         </span>
                       </td>
                       <td>
-                        {canWrite ? (
-                          <div style={{ display: 'flex', gap: 4 }}>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {canEdit ? (
                             <Link
                               to="/cost-centers/$id/edit"
                               params={{ id: cc.id }}
@@ -274,6 +290,8 @@ function CostCentersListPage(): React.JSX.Element {
                             >
                               ✏
                             </Link>
+                          ) : null}
+                          {canDelete ? (
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
@@ -286,8 +304,8 @@ function CostCentersListPage(): React.JSX.Element {
                             >
                               ✖
                             </button>
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

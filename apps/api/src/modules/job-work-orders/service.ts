@@ -22,7 +22,7 @@ import {
   plans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import {
@@ -659,6 +659,7 @@ export async function createJobWorkOrder(
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'entry');
   const companyId = requireCompany(user);
 
   // withUniqueRetry re-runs in a fresh transaction if two concurrent creates
@@ -798,6 +799,7 @@ export async function updateJobWorkOrder(
   user: AuthContext,
 ): Promise<JobWorkOrderDetail> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'edit');
   const companyId = requireCompany(user);
   // Money in, same rule as money out. `priceOff` makes "can do the job but must
   // not see the number" a supported setup, so an editor with prices hidden is a
@@ -1022,6 +1024,8 @@ async function mergeLines(
 
 export async function softDeleteJobWorkOrder(id: string, user: AuthContext): Promise<{ ok: true }> {
   requireWriteRole(user);
+  await requireFormAccess(user, 'jw_create', 'edit');
+  await requireFormAccess(user, 'jw_create', 'approve');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

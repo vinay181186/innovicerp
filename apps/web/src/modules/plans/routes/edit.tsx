@@ -1,6 +1,7 @@
 import type { PlanDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
@@ -16,6 +17,17 @@ function PlanEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: plan, isLoading, isError, error } = usePlan(id);
   const update = useUpdatePlan(id);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'plan_create');
+
+  if (eff && !perms.edit) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have edit access to Plans. Ask an admin for L2 Data Entry or above in
+        Planning.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

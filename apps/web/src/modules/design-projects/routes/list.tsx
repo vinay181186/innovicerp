@@ -8,8 +8,8 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
-import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import {
@@ -27,8 +27,10 @@ export const designProjectsListRoute = createRoute({
 });
 
 function DesignProjectsListPage(): React.JSX.Element {
-  const { data: me } = useSession();
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Tier-driven per Access Control (dsnproj_create, Design dept). Replaces the
+  // old admin/manager flag.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dsnproj_create');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showAdd, setShowAdd] = useState(false);
@@ -48,6 +50,16 @@ function DesignProjectsListPage(): React.JSX.Element {
     doneTasks: 0,
     openIssues: 0,
   };
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -113,7 +125,7 @@ function DesignProjectsListPage(): React.JSX.Element {
             <option value="released">Released</option>
             <option value="hold">On Hold</option>
           </select>
-          {canWrite ? (
+          {perms.entry ? (
             <button
               type="button"
               className="btn btn-primary"

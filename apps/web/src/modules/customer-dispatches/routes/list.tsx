@@ -20,6 +20,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { StatStrip } from '@/components/shared/stat-strip';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
@@ -69,6 +70,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useDispatchRegister();
   const { data: company } = useMyCompany();
   const cancel = useCancelDispatch();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'dispatch_create');
+  const canAdd = perms.entry;
+  const canCancel = perms.edit && perms.approve;
   const [search, setSearch] = useState('');
   const [soFilter, setSoFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -139,6 +144,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
       ))}
     </div>
   );
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (tab === 'jw') {
     return (
@@ -237,9 +250,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
               </span>
             ) : null}
-            <Link to="/customer-dispatches/new" className="btn btn-primary">
-              + New Dispatch
-            </Link>
+            {canAdd ? (
+              <Link to="/customer-dispatches/new" className="btn btn-primary">
+                + New Dispatch
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -344,6 +359,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
                 key={g.dispatchId}
                 g={g}
                 isOpen={expanded.has(g.dispatchId)}
+                canCancel={canCancel}
                 cancelPending={cancel.isPending}
                 onToggle={() => toggle(g.dispatchId)}
                 onCancel={() => {

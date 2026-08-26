@@ -21,7 +21,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { useSession } from '@/lib/session';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useJobWorkOrdersList, useSoftDeleteJobWorkOrder } from '../api';
@@ -77,7 +77,6 @@ function accentFor(jw: JobWorkOrderListItem, today: string): string {
 function JobWorkOrdersListPage(): React.JSX.Element {
   const search = jobWorkOrdersListRoute.useSearch();
   const navigate = jobWorkOrdersListRoute.useNavigate();
-  const { data: me } = useSession();
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -105,7 +104,13 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   );
 
   const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query);
-  const canWrite = me?.role === 'admin' || me?.role === 'manager';
+  // Access matrix (jw_create, dept Sales) replaces the old admin/manager flag.
+  //   New JWSO -> entry; Edit -> edit; whole-JWSO delete -> edit AND approve.
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'jw_create');
+  const canCreate = perms.entry;
+  const canEdit = perms.edit;
+  const canDelete = perms.edit && perms.approve;
   const deleteMut = useSoftDeleteJobWorkOrder();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -118,6 +123,17 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
+
+  // Hide-page: a user whose VIEW was removed for JWSO Master sees the no-access
+  // panel, not the list. `eff` undefined only while access loads — don't block
+  // then, or every legitimate user flashes this panel on cold load.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -148,7 +164,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
               {SO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
-            {canWrite ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
+            {canCreate ? <Link to="/job-work-orders/new" className="btn btn-primary">+ New JWSO Order</Link> : null}
           </div>
         </div>
       </div>
@@ -204,14 +220,18 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                   <span className="fw-700" style={{ fontSize: 13 }}>{jw.customerName ?? '—'}</span>
                   <SoStatusBadge status={jw.status} />
                   <span style={{ flex: 1 }} />
-                  {canWrite ? (
+                  {canEdit || canDelete ? (
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                      <Link to="/job-work-orders/$id/edit" params={{ id: jw.jwId }} className="btn btn-ghost btn-sm">
-                        Edit
-                      </Link>
-                      <button type="button" className="btn btn-danger btn-sm" disabled={deleteMut.isPending} onClick={() => onDelete(jw.jwId, jw.code)}>
-                        Del
-                      </button>
+                      {canEdit ? (
+                        <Link to="/job-work-orders/$id/edit" params={{ id: jw.jwId }} className="btn btn-ghost btn-sm">
+                          Edit
+                        </Link>
+                      ) : null}
+                      {canDelete ? (
+                        <button type="button" className="btn btn-danger btn-sm" disabled={deleteMut.isPending} onClick={() => onDelete(jw.jwId, jw.code)}>
+                          Del
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -268,7 +288,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
                 {/* Band 3: line items */}
                 {isExpanded ? (
                   <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)' }}>
-                    <JwExpandedPanel jwId={jw.jwId} canWrite={canWrite} />
+                    <JwExpandedPanel jwId={jw.jwId} canEdit={canEdit} />
                   </div>
                 ) : null}
               </div>
@@ -296,20 +316,20 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 // Inline line-item panel for one JWSO — mirrors the SO Master expand. Loads the
 // JWSO detail (header + lines) and lists each line's item / part / material /
 // qty / rate / due / status.
-function JwExpandedPanel({ jwId, canWrite }: { jwId: string; canWrite: boolean }): React.JSX.Element {
+function JwExpandedPanel({ jwId, canEdit }: { jwId: string; canEdit: boolean }): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobWorkOrder(jwId);
   if (isLoading) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}><Loader2 size={12} className="inline animate-spin" /> Loading lines…</div>;
   if (isError || !data) return <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--red)' }}>{error instanceof Error ? error.message : 'Failed to load JWSO detail'}</div>;
-  return <JwLinesTable jw={data} canWrite={canWrite} />;
+  return <JwLinesTable jw={data} canEdit={canEdit} />;
 }
 
-function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: boolean }): React.JSX.Element {
+function JwLinesTable({ jw, canEdit }: { jw: JobWorkOrderDetail; canEdit: boolean }): React.JSX.Element {
   // Money hidden for L1 Viewers: the API nulls the JWSO GST % + line rates, so
   // the Rate column is dropped here too.
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = jw.priceVisible === false;
-  const cols = (canWrite ? 13 : 12) - (priceHidden ? 1 : 0);
+  const cols = (canEdit ? 13 : 12) - (priceHidden ? 1 : 0);
   return (
     <div style={{ padding: '8px 12px 8px 36px' }}>
       <div style={{ fontSize: 10, color: 'var(--blue)', fontFamily: 'var(--mono)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 6 }}>▸ LINE ITEMS — {jw.code}</div>
@@ -321,7 +341,7 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
             <th className="td-ctr" style={{ color: 'var(--green)' }}>Dispatched</th>
             <th className="td-ctr">Balance</th>
             <th>UOM</th>{priceHidden ? null : <th className="td-ctr">Rate</th>}<th>Due Date</th><th>Status</th>
-            {canWrite ? <th /> : null}
+            {canEdit ? <th /> : null}
           </tr>
         </thead>
         <tbody>
@@ -344,7 +364,7 @@ function JwLinesTable({ jw, canWrite }: { jw: JobWorkOrderDetail; canWrite: bool
                 {priceHidden ? null : <td className="td-ctr mono" style={{ fontSize: 11 }}>{l.rate}</td>}
                 <td className="text2" style={{ fontSize: 11 }}>{l.dueDate ?? '—'}</td>
                 <td><SoStatusBadge status={l.status} /></td>
-                {canWrite ? (
+                {canEdit ? (
                   <td onClick={(e) => e.stopPropagation()}>
                     <Link to="/job-work-orders/$id/edit" params={{ id: jw.id }} className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}>Edit</Link>
                   </td>
