@@ -830,6 +830,14 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
   // a user must have `entry` on the QC Call Register form to accept/reject qty.
   // Admins bypass; the matrix can only narrow what the role already allows.
   await requireFormAccess(user, 'qc_submit', 'entry');
+  // A third-party-inspection record carries a second, narrower gate: it must also
+  // clear the TPI form's entry right. The QC tier grants tpi_submit by default,
+  // so ordinary QC users are unaffected — but this lets an admin switch TPI OFF
+  // for one person (tpi_submit entryOff) without touching their normal QC accept/
+  // reject. Without it the tpi_submit key existed but nothing ever enforced it.
+  if (input.isTpi) {
+    await requireFormAccess(user, 'tpi_submit', 'entry');
+  }
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

@@ -8,6 +8,7 @@ import type { IncomingQcCompletedRow, IncomingQcPendingRow } from '@innovic/shar
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useIncomingQc } from '../api';
 
@@ -46,6 +47,19 @@ function dispColor(d: IncomingQcCompletedRow['disposition']): string {
 
 function IncomingQcPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useIncomingQc();
+  const { data: eff } = useMyAccess();
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !effectiveFormPerms(eff, 'qc_incoming').view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>

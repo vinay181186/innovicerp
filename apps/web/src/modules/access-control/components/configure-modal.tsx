@@ -93,10 +93,14 @@ const OFF_FIELD: Record<Action, keyof FormPerms> = {
   price: 'priceOff',
 };
 
-// Departments where the single-toggle per-page OFF switches are live. Rolling
-// out on Purchase first (the rest keep the classic locked-tier boxes); widen
-// this set to enable the same behaviour elsewhere.
-const OFF_SWITCH_DEPTS: readonly string[] = ['purchase'];
+// Departments where the single-toggle per-page OFF switches are live. Enabled
+// only where BOTH are true: every write endpoint is server-gated
+// (requireFormAccess), so "No create/edit/approve" is actually enforced; and the
+// sidebar links + list/detail routes carry the Hide-page guard. Purchase first,
+// then Store and QC (phase 1). Sales / Planning / Design / Finance need write
+// gates added first; Production needs sidebar keys + route view-guards — add a
+// dept here only once both halves are in place for it.
+const OFF_SWITCH_DEPTS: readonly string[] = ['purchase', 'store', 'qc'];
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a

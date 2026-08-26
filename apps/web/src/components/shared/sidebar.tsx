@@ -118,16 +118,16 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥' },
-          { to: '/issue-register', label: 'Item Issue Register', icon: '📋' },
-          { to: '/party-grn', label: 'Party Material', icon: '📥' },
+          { to: '/goods-receipt-notes', label: 'GRN (Goods Receipt)', icon: '📥', formKey: 'grn_create' },
+          { to: '/issue-register', label: 'Item Issue Register', icon: '📋', formKey: 'issue_create' },
+          { to: '/party-grn', label: 'Party Material', icon: '📥', formKey: 'party_create' },
         ],
       },
       {
         label: 'Master',
         items: [
-          { to: '/items', label: 'Item Master', icon: '◉' },
-          { to: '/party-material', label: 'Party Material Master', icon: '🏭' },
+          { to: '/items', label: 'Item Master', icon: '◉', formKey: 'item_create' },
+          { to: '/party-material', label: 'Party Material Master', icon: '🏭', formKey: 'party_create' },
         ],
       },
       {
@@ -198,16 +198,16 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         items: [
-          { to: '/qc-call-register', label: 'QC Call Register', icon: '📋' },
-          { to: '/qc-command', label: 'QC Command Center', icon: '🔬' },
-          { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬' },
-          { to: '/qc-docs', label: 'QC Documents', icon: '🗃' },
-          { to: '/nc-register', label: 'NC Register', icon: '⚠️' },
+          { to: '/qc-call-register', label: 'QC Call Register', icon: '📋', formKey: 'qc_submit' },
+          { to: '/qc-command', label: 'QC Command Center', icon: '🔬', formKey: 'qc_submit' },
+          { to: '/incoming-qc', label: 'Incoming QC', icon: '🔬', formKey: 'qc_incoming' },
+          { to: '/qc-docs', label: 'QC Documents', icon: '🗃', formKey: 'qcdocs_upload' },
+          { to: '/nc-register', label: 'NC Register', icon: '⚠️', formKey: 'nc_dispose' },
         ],
       },
       {
         label: 'Master',
-        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙' }],
+        items: [{ to: '/qc-processes', label: 'QC Process Master', icon: '⚙', formKey: 'qcprocess_create' }],
       },
     ],
   },

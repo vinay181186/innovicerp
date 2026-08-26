@@ -57,6 +57,18 @@ function ItemDetailPage(): React.JSX.Element {
   const softDelete = useSoftDeleteItem();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div>

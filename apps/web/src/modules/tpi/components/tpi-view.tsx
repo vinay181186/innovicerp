@@ -309,12 +309,14 @@ function PendingTpi(props: {
   const { o, open, onToggle, onDone } = props;
   const submit = useSubmitQcLog();
   const companyId = useSession().data?.companyId ?? null;
-  // Same gate as QC Call Register, and deliberately the same form key: TPI posts
-  // through op-entry's submitQcLog, which enforces qc_submit `entry`. (A
-  // `tpi_submit` key exists in the matrix but is wired to nothing — gating on it
-  // here would invent a second, unenforced right.)
+  // TPI posts through op-entry's submitQcLog, which now enforces BOTH qc_submit
+  // `entry` (ordinary QC accept/reject) AND tpi_submit `entry` (the TPI-specific
+  // gate). The QC tier grants tpi_submit by default, so this only bites when an
+  // admin switches TPI OFF for someone — mirror that here so the button hides
+  // exactly when the server would refuse.
   const { data: eff } = useMyAccess();
-  const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
+  const canEntry =
+    effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
   const [logDate, setLogDate] = useState(todayLocal());
   const [shift, setShift] = useState<Shift>('day');
   const [accept, setAccept] = useState('');

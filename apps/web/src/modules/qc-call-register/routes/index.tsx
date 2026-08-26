@@ -65,6 +65,8 @@ function QcCallRegisterPage(): React.JSX.Element {
   // stays registered). Tab choice is local — it deliberately does NOT go in the
   // URL, so this route's own ?line= deep-link param is untouched.
   const [tab, setTab] = useState<'qc' | 'tpi'>('qc');
+  // Caller's effective access — drives the "Hide page" VIEW guard below.
+  const { data: eff } = useMyAccess();
 
   // Active operator names for the inline QC entry Inspector datalist
   // (legacy L4164: db.operators filtered status==='Active').
@@ -177,6 +179,18 @@ function QcCallRegisterPage(): React.JSX.Element {
       {children}
     </div>
   );
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !effectiveFormPerms(eff, 'qc_submit').view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   // TPI first, ahead of the QC loading/error gates: TPI runs off its own query,
   // so a failing qc-history fetch must not black out the TPI tab.
