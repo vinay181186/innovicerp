@@ -23,7 +23,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { canSeeFormPrice } from '../../lib/access';
+import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -107,7 +107,7 @@ function hideInvoiceDetailMoney(d: InvoiceDetail): InvoiceDetail {
 
 export async function listInvoices(user: AuthContext): Promise<ListInvoicesResponse> {
   const companyId = requireCompany(user);
-  const showMoney = await canSeeFormPrice(user, 'so_create');
+  const showMoney = await canSeeFormPrice(user, 'invoice_create');
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()
@@ -224,7 +224,7 @@ async function getInvoiceInternal(
 
 export async function getInvoice(id: string, user: AuthContext): Promise<InvoiceDetail> {
   const companyId = requireCompany(user);
-  const showMoney = await canSeeFormPrice(user, 'so_create');
+  const showMoney = await canSeeFormPrice(user, 'invoice_create');
   return withUserContext(user, async (tx) => {
     const detail = await getInvoiceInternal(tx, id, companyId);
     return showMoney ? detail : hideInvoiceDetailMoney(detail);
@@ -443,6 +443,9 @@ export async function createInvoice(
   user: AuthContext,
 ): Promise<InvoiceDetail> {
   requireWriteRole(user);
+  // Phase-2 gap fix: Invoices now carries its own Finance form key. Raising an
+  // invoice is `invoice_create` entry.
+  await requireFormAccess(user, 'invoice_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -561,6 +564,8 @@ export async function addPayment(
   user: AuthContext,
 ): Promise<InvoiceDetail> {
   requireWriteRole(user);
+  // Recording a payment is a Finance data-entry action against the invoice.
+  await requireFormAccess(user, 'invoice_create', 'entry');
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {

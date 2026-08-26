@@ -100,6 +100,7 @@ export const ACCESS_FORMS = [
   { key: 'servicepo_create', dept: 'purchase', label: 'Service PO' },
   // Finance
   { key: 'cc_create', dept: 'finance', label: 'Cost Center Master' },
+  { key: 'invoice_create', dept: 'finance', label: 'Invoices' },
   // System
   { key: 'user_manage', dept: 'system', label: 'User Management' },
   // — New React-only System keys —

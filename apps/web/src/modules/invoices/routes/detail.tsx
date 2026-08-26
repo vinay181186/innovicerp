@@ -29,6 +29,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayLocal } from '@/lib/date';
 import { useMyCompany } from '@/modules/settings/api';
@@ -67,6 +68,16 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [payRef, setPayRef] = useState('');
   const [payNotes, setPayNotes] = useState('');
   const [payErr, setPayErr] = useState<string | null>(null);
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'invoice_create');
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -142,7 +153,7 @@ function InvoiceDetailPage(): React.JSX.Element {
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {inv.status !== 'paid' ? (
+          {perms.entry && inv.status !== 'paid' ? (
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setPayOpen((v) => !v)}>
               💳 Add Payment
             </button>

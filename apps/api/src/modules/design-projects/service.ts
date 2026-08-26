@@ -973,8 +973,8 @@ export async function createDesignDcr(
   user: AuthContext,
 ): Promise<DesignDcr> {
   // DCR/DCN live under the project (dsndcr_create is left un-wired per task —
-  // report-only), so gate with the containing project form → entry.
-  await requireFormAccess(user, 'dsnproj_create', 'entry');
+  // DCR/DCN carry their own Design form key (dsndcr_create) → entry.
+  await requireFormAccess(user, 'dsndcr_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -1019,8 +1019,8 @@ export async function updateDesignDcr(
   input: UpdateDesignDcrInput,
   user: AuthContext,
 ): Promise<DesignDcr> {
-  // Changing a saved DCR → `edit` (gated on the project form; see report).
-  await requireFormAccess(user, 'dsnproj_create', 'edit');
+  // Changing a saved DCR → `edit` (its own dsndcr_create key).
+  await requireFormAccess(user, 'dsndcr_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -1063,8 +1063,8 @@ export async function createDesignDcn(
   input: CreateDesignDcnInput,
   user: AuthContext,
 ): Promise<DesignDcn> {
-  // DCN nests under the project (dsndcr_create left un-wired per task) → entry.
-  await requireFormAccess(user, 'dsnproj_create', 'entry');
+  // DCN shares the DCR form key (dsndcr_create) → entry.
+  await requireFormAccess(user, 'dsndcr_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {
@@ -1119,8 +1119,8 @@ export async function updateDesignDcn(
   input: UpdateDesignDcnInput,
   user: AuthContext,
 ): Promise<DesignDcn> {
-  // Changing a saved DCN → `edit` (gated on the project form; see report).
-  await requireFormAccess(user, 'dsnproj_create', 'edit');
+  // Changing a saved DCN → `edit` (its own dsndcr_create key).
+  await requireFormAccess(user, 'dsndcr_create', 'edit');
   const companyId = requireCompany(user);
   const userId = user.id;
   return withUserContext(user, async (tx) => {

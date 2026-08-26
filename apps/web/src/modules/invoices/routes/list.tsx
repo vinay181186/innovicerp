@@ -5,6 +5,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useInvoiceList } from '../api';
 
@@ -33,6 +34,16 @@ const fmt = (d: string | null | undefined): string => {
 function InvoiceListPage(): React.JSX.Element {
   const [tab, setTab] = useState<'so' | 'jw'>('so');
   const { data, isLoading, isError, error } = useInvoiceList();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'invoice_create');
+
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   const tabBar = (
     <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
@@ -107,9 +118,11 @@ function InvoiceListPage(): React.JSX.Element {
         <div className="section-hdr" style={{ marginBottom: 0 }}>
           📄 Invoices
         </div>
-        <Link to="/invoices/new" className="btn btn-primary">
-          + New Invoice
-        </Link>
+        {perms.entry ? (
+          <Link to="/invoices/new" className="btn btn-primary">
+            + New Invoice
+          </Link>
+        ) : null}
       </div>
 
       <div
@@ -199,7 +212,7 @@ function InvoiceListPage(): React.JSX.Element {
                         >
                           👁
                         </Link>
-                        {inv.status !== 'paid' ? (
+                        {perms.entry && inv.status !== 'paid' ? (
                           <Link
                             to="/invoices/$id"
                             params={{ id: inv.id }}

@@ -260,7 +260,7 @@ export const SECTIONS: readonly NavSection[] = [
     groups: [
       {
         label: 'Entry',
-        items: [{ to: '/invoices', label: 'Invoices', icon: '📄' }],
+        items: [{ to: '/invoices', label: 'Invoices', icon: '📄', formKey: 'invoice_create' }],
       },
       {
         label: 'Master',

@@ -1432,9 +1432,9 @@ function ChecklistTab({
 // ─── DCR / DCN tab ────────────────────────────────────────────────────────
 
 function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Element {
-  // DCR/DCN nest under the project (dsndcr_create left un-wired per task).
+  // DCR/DCN carry their own Design form key now (gap fix).
   const { data: eff } = useMyAccess();
-  const perms = effectiveFormPerms(eff, 'dsnproj_create');
+  const perms = effectiveFormPerms(eff, 'dsndcr_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
   const [subTab, setSubTab] = useState<'dcr' | 'dcn'>('dcr');

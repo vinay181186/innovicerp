@@ -11,6 +11,7 @@ import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { inrFormat } from '@/lib/print/doc-print';
 import { todayLocal } from '@/lib/date';
@@ -43,6 +44,8 @@ function InvoiceNewPage(): React.JSX.Element {
   const { data: soOpts } = useFinanceSoOptions();
   const { data: next } = useNextInvoiceCode();
   const create = useCreateInvoice();
+  const { data: eff } = useMyAccess();
+  const perms = effectiveFormPerms(eff, 'invoice_create');
 
   const [soId, setSoId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
@@ -157,6 +160,15 @@ function InvoiceNewPage(): React.JSX.Element {
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to create invoice');
     }
+  }
+
+  if (eff && !perms.entry) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ You do not have create access to Invoices. Ask an admin for L2 Data Entry or above in
+        Finance.
+      </div>
+    );
   }
 
   return (
