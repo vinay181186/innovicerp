@@ -254,10 +254,12 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 >
                   <Printer size={14} /> Print Register
                 </button>
-                {/* A DC is always issued against a PO, so "new" starts on the PO
-                list rather than a standalone create form. */}
+                {/* A DC is always issued against a PO, but the button lands on the
+                OSP Delivery Challan & Outward form itself — the form asks for the
+                PO. Sending the user to the PO list first made them hunt for a row
+                with a "Create DC" action before they ever saw the DC form. */}
                 {perms.entry ? (
-                  <Link to="/purchase-orders" className="btn btn-primary">
+                  <Link to="/delivery-challans/new" className="btn btn-primary">
                     <Plus size={14} /> New DC (via PO)
                   </Link>
                 ) : null}

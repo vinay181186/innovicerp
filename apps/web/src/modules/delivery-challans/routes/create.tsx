@@ -2,6 +2,7 @@
 // line → submit. On success → redirect to detail. Mirrors PO from-pr pattern.
 
 import type { CreateDeliveryChallanInput, Uom } from '@innovic/shared';
+import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -9,7 +10,8 @@ import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
-import { usePurchaseOrder } from '@/modules/purchase-orders/api';
+import { useDebounce } from '@/lib/use-debounce';
+import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateDeliveryChallan } from '../api';
 
@@ -102,31 +104,10 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     );
   }
 
-  if (!poId) {
-    return (
-      <div>
-        <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-          <ArrowLeft size={14} /> Back to Delivery Challans
-        </Link>
-        <div className="panel">
-          <div className="panel-hdr">
-            <div>
-              <div className="panel-title">Pick a JW PO first</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
-                The new-DC form needs a purchase order to source line items from. Go to the PO list
-                and click "New DC" on a JW PO.
-              </div>
-            </div>
-          </div>
-          <div className="panel-body">
-            <Link to="/purchase-orders" className="btn btn-primary">
-              <ArrowLeft size={14} /> Go to purchase orders
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Step 1 of the same form: the DC needs a PO to source lines from, so when
+  // none was passed the form asks for it here instead of bouncing the user to
+  // the PO list. Picking a PO sets ?poId= and the form continues below.
+  if (!poId) return <PoPickerStep />;
 
   if (poLoading) {
     return (
@@ -412,6 +393,123 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             Cancel
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 1: pick the PO this DC ships against ─────────────────────────────
+// Lives in its own component so its list query only runs when there is no
+// poId — the main form must not fire a PO-list fetch it never uses.
+//
+// Only POs that actually send material out are offered (job work + service,
+// per poSendsMaterialOut). A draft PO is excluded because material cannot
+// leave against an unissued order, and cancelled ones are dead.
+function PoPickerStep(): React.JSX.Element {
+  const [search, setSearch] = useState('');
+  const debounced = useDebounce(search.trim(), 300);
+  const { data, isLoading, isError } = usePurchaseOrdersList({
+    search: debounced || undefined,
+    limit: 200,
+    offset: 0,
+  });
+
+  const eligible = useMemo(
+    () =>
+      (data?.items ?? []).filter(
+        (p) => poSendsMaterialOut(p.poType) && p.status !== 'draft' && p.status !== 'cancelled',
+      ),
+    [data],
+  );
+
+  return (
+    <div>
+      <div className="section-hdr" style={{ marginBottom: 8 }}>
+        📦 OSP Delivery Challan &amp; Outward
+      </div>
+
+      <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Delivery Challans
+      </Link>
+
+      <div className="panel" style={{ padding: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>
+          ➕ Create OSP Delivery Challan — Step 1: choose the PO
+        </div>
+        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
+          The challan ships against a purchase order that sends material out (Job Work / Service).
+          Pick one and its lines load into the challan.
+        </div>
+
+        <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
+          <label className="form-label" htmlFor="dc-po-search">
+            Search PO
+          </label>
+          <input
+            id="dc-po-search"
+            className="innovic-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="PO no. / vendor / PR no."
+          />
+        </div>
+
+        {isLoading ? (
+          <div className="empty-state">
+            <Loader2 className="inline h-4 w-4 animate-spin" /> Loading purchase orders…
+          </div>
+        ) : isError ? (
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            Could not load purchase orders.
+          </div>
+        ) : eligible.length === 0 ? (
+          <div className="empty-state" style={{ color: 'var(--amber)' }}>
+            No Job Work / Service PO is open for dispatch
+            {debounced ? ' for this search' : ''}. Raise or issue one first.
+          </div>
+        ) : (
+          <div className="tbl-wrap">
+            <table className="innovic-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th>PO No.</th>
+                  <th>Date</th>
+                  <th>Vendor</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Lines</th>
+                  <th style={{ width: 110 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {eligible.map((p) => (
+                  <tr key={p.id}>
+                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                      {p.code}
+                    </td>
+                    <td className="mono">{p.poDate}</td>
+                    <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
+                    <td style={{ color: 'var(--purple)' }}>
+                      {p.poType === 'service' ? 'Service' : 'Job Work'}
+                    </td>
+                    <td className="mono">{p.status}</td>
+                    <td className="mono">{p.lineCount}</td>
+                    <td>
+                      <Link
+                        to="/delivery-challans/new"
+                        search={{ poId: p.id }}
+                        className="btn btn-primary btn-sm"
+                        style={{ fontSize: 11 }}
+                      >
+                        Select
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
