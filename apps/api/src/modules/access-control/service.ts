@@ -89,7 +89,20 @@ function countDepts(m: AccessDeptsMap): number {
 function countForms(m: AccessFormsMap): number {
   return ACCESS_FORM_KEYS.reduce((n, k) => {
     const p = m[k];
-    return p && (p.view || p.entry || p.edit || p.approve || p.price || p.priceOff)
+    return p &&
+      (p.view ||
+        p.entry ||
+        p.edit ||
+        p.approve ||
+        p.price ||
+        p.priceOff ||
+        // A page with only OFF switches set (Hide page / No create / No edit /
+        // No approve) is still a hand-made decision — count it, or the row reads
+        // "nothing configured" when in fact an action was taken away.
+        p.viewOff ||
+        p.entryOff ||
+        p.editOff ||
+        p.approveOff)
       ? n + 1
       : n;
   }, 0);

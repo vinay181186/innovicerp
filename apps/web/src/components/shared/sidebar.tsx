@@ -11,7 +11,13 @@
 
 import { Link, useLocation } from '@tanstack/react-router';
 import { useState } from 'react';
-import { hasDeptAccess, useMyAccess, type AccessDeptKey } from '@/lib/access-control';
+import {
+  canViewForm,
+  hasDeptAccess,
+  useMyAccess,
+  type AccessDeptKey,
+  type AccessFormKey,
+} from '@/lib/access-control';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { useSession } from '@/lib/session';
 import { usePendingTimeChangeCount } from '@/modules/op-entry/api';
@@ -20,6 +26,11 @@ interface NavItem {
   to: string;
   label: string;
   icon: string; // emoji glyph (matches legacy)
+  // When set, this link is hidden for a user whose access does not grant VIEW
+  // on this form key — the "Hide page" per-page switch (Access Control → Config).
+  // Items without a formKey are always shown to anyone who can see the section,
+  // exactly as before. Wired for Purchase first; add keys to widen it.
+  formKey?: AccessFormKey;
 }
 
 interface NavSubGroup {
@@ -212,14 +223,14 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄' },
-          { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋' },
-          { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛' },
+          { to: '/purchase-requests', label: 'Purchase Requests', icon: '📄', formKey: 'pr_create' },
+          { to: '/purchase-orders', label: 'Purchase Orders', icon: '📋', formKey: 'po_create' },
+          { to: '/delivery-challans', label: 'OSP Outward DC', icon: '🚛', formKey: 'ospdc_create' },
         ],
       },
       {
         label: 'Master',
-        items: [{ to: '/vendors', label: 'Vendor Master', icon: '🚚' }],
+        items: [{ to: '/vendors', label: 'Vendor Master', icon: '🚚', formKey: 'vendor_create' }],
       },
       // Supply Chain Dashboard (a price-gated PO/GRN report) is filed under the
       // Reports section, not a Purchase menu item — see the Reports block below.
@@ -456,7 +467,14 @@ export function Sidebar(): React.JSX.Element {
                 {sec.groups.map((grp, gi) => (
                   <div key={gi}>
                     {grp.label ? <div className="sb-grp">{grp.label}</div> : null}
-                    {grp.items.map((it) => (
+                    {grp.items
+                      .filter(
+                        // "Hide page": a link with a formKey vanishes when the
+                        // user's access does not grant VIEW on it. Admin bypasses,
+                        // and links without a formKey are always shown.
+                        (it) => isAdmin || !it.formKey || canViewForm(eff, it.formKey),
+                      )
+                      .map((it) => (
                       <Link
                         key={it.to}
                         to={it.to}

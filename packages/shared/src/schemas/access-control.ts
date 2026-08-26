@@ -60,13 +60,32 @@ export const accessFormPermsSchema = z.object({
   // department tier supplies it by default (see tierSeesPrice), so a tick here
   // is only needed to grant money BELOW the department's normal starting tier.
   price: z.boolean().default(false),
-  // `priceOff` = the one subtraction in the whole matrix. Set, it hides money
-  // on this form even though the department tier would have shown it — the
-  // "does the job, must not see the number" case (a Sales L2 who enters orders
-  // but is not to see rates). Nothing else is revocable this way: to reduce
-  // any other right you lower the tier. Defaults false, so every stored row
-  // written before this existed keeps behaving exactly as it did.
+  // `priceOff` = money's per-form subtraction. Set, it hides money on this form
+  // even though the department tier would have shown it — the "does the job,
+  // must not see the number" case (a Sales L2 who enters orders but is not to
+  // see rates). Defaults false, so every stored row written before this existed
+  // keeps behaving exactly as it did.
   priceOff: z.boolean().default(false),
+  // ── Per-page OFF switches (the write-action counterparts of priceOff) ──
+  // Each one SUBTRACTS its action on this one form, below whatever the
+  // department tier granted — the same "revoke for one page" lever priceOff is,
+  // generalised to view / create / edit / approve. They exist because the tier
+  // is set per DEPARTMENT: without them an admin who wants "L3 across Purchase
+  // but hands off Vendor Master" has no way to say it. Grants still only ADD;
+  // these are the sanctioned way to take one action away for one page.
+  //
+  //   viewOff    = "Hide page"  — removes the page entirely (sidebar link gone,
+  //                URL shows the no-access panel). Cascades: a page you cannot
+  //                open grants no create / edit / approve / price either.
+  //   entryOff   = "No create"  — can open and read, but cannot create.
+  //   editOff    = "No edit"    — cannot change a saved record.
+  //   approveOff = "No approve" — cannot approve / reject.
+  //
+  // All default false, so every stored row keeps behaving exactly as before.
+  viewOff: z.boolean().default(false),
+  entryOff: z.boolean().default(false),
+  editOff: z.boolean().default(false),
+  approveOff: z.boolean().default(false),
 });
 export type AccessFormPerms = z.infer<typeof accessFormPermsSchema>;
 
@@ -166,6 +185,10 @@ const NO_PERMS: AccessFormPerms = {
   approve: false,
   price: false,
   priceOff: false,
+  viewOff: false,
+  entryOff: false,
+  editOff: false,
+  approveOff: false,
 };
 const ALL_PERMS: AccessFormPerms = {
   view: true,
@@ -174,6 +197,10 @@ const ALL_PERMS: AccessFormPerms = {
   approve: true,
   price: true,
   priceOff: false,
+  viewOff: false,
+  entryOff: false,
+  editOff: false,
+  approveOff: false,
 };
 
 export function emptyFormPerms(): AccessFormPerms {
@@ -187,12 +214,19 @@ export function cascadeFormPerms(p: AccessFormPerms): AccessFormPerms {
   const approve = p.approve;
   // `price` / `priceOff` (can-see-money) are independent — they neither imply
   // nor are implied by any write action, so they pass straight through the
-  // cascade untouched.
+  // cascade untouched. The four OFF switches are subtractions applied AFTER the
+  // cascade (in effectiveFormPerms), so they too pass through here unchanged.
   const price = p.price;
-  const priceOff = p.priceOff;
-  if (p.edit) return { view: true, entry: true, edit: true, approve, price, priceOff };
-  if (p.entry) return { view: true, entry: true, edit: false, approve, price, priceOff };
-  return { view: p.view || approve, entry: false, edit: false, approve, price, priceOff };
+  const off = {
+    priceOff: p.priceOff,
+    viewOff: p.viewOff,
+    entryOff: p.entryOff,
+    editOff: p.editOff,
+    approveOff: p.approveOff,
+  };
+  if (p.edit) return { view: true, entry: true, edit: true, approve, price, ...off };
+  if (p.entry) return { view: true, entry: true, edit: false, approve, price, ...off };
+  return { view: p.view || approve, entry: false, edit: false, approve, price, ...off };
 }
 
 // Apply the cascade across every form. Used on save and when computing
@@ -293,6 +327,22 @@ export function effectiveFormPerms(
   const fromTier = tierKey ? accessTier(tierKey).perms : NO_PERMS;
   const fromForm = cascadeFormPerms({ ...NO_PERMS, ...(eff.forms[formKey] ?? NO_PERMS) });
 
+  // "Hide page" (viewOff) is the whole-page kill switch and wins over the tier,
+  // over per-form grants, and over the auditor read flag — the same way priceOff
+  // beats them for money. Nothing on a page you cannot open is reachable, so
+  // every action collapses to false. (L6 Super Admin never reaches here — it
+  // returned ALL_PERMS above and is never hidden.)
+  if (fromForm.viewOff) {
+    return {
+      ...NO_PERMS,
+      viewOff: true,
+      entryOff: fromForm.entryOff,
+      editOff: fromForm.editOff,
+      approveOff: fromForm.approveOff,
+      priceOff: fromForm.priceOff,
+    };
+  }
+
   // Money is the only right the department decides as well as the tier:
   // Sales / Purchase / Store / Finance from L2, every other department from
   // L3. See `priceStartTier` for why.
@@ -300,15 +350,21 @@ export function effectiveFormPerms(
 
   return {
     view: eff.auditor || fromTier.view || fromForm.view,
-    entry: fromTier.entry || fromForm.entry,
-    edit: fromTier.edit || fromForm.edit,
-    approve: fromTier.approve || fromForm.approve,
+    // Each OFF switch subtracts its own action AFTER the tier ∪ per-form-grant
+    // union — the write-action mirror of priceOff. An admin who ticked "No
+    // create / No edit / No approve" on this one page meant it, so it beats the
+    // tier just like Hide-price does. Grants can only ever ADD; these are the
+    // sanctioned way to take one action back for one page.
+    entry: (fromTier.entry || fromForm.entry) && !fromForm.entryOff,
+    edit: (fromTier.edit || fromForm.edit) && !fromForm.editOff,
+    approve: (fromTier.approve || fromForm.approve) && !fromForm.approveOff,
     // Auditors read everything, money included; otherwise money follows the
     // department's starting tier or an explicit per-form "see price" tick.
-    // `priceOff` is the single exception to the additive rule and beats all of
-    // them — an admin who ticked "hide" on this form meant it. L6 Super Admin
-    // is unaffected: it returned ALL_PERMS above and never reaches here.
     price: !fromForm.priceOff && (eff.auditor || tierPrice || fromForm.price),
+    viewOff: false,
+    entryOff: fromForm.entryOff,
+    editOff: fromForm.editOff,
+    approveOff: fromForm.approveOff,
     priceOff: fromForm.priceOff,
   };
 }

@@ -76,7 +76,27 @@ const NO_PERMS: FormPerms = {
   approve: false,
   price: false,
   priceOff: false,
+  viewOff: false,
+  entryOff: false,
+  editOff: false,
+  approveOff: false,
 };
+
+// The stored "OFF switch" field that backs each action's per-page removal.
+// Ticking a tier-granted box off writes the matching flag; the resolver
+// (effectiveFormPerms) subtracts it. Mirror of the long-standing priceOff.
+const OFF_FIELD: Record<Action, keyof FormPerms> = {
+  view: 'viewOff',
+  entry: 'entryOff',
+  edit: 'editOff',
+  approve: 'approveOff',
+  price: 'priceOff',
+};
+
+// Departments where the single-toggle per-page OFF switches are live. Rolling
+// out on Purchase first (the rest keep the classic locked-tier boxes); widen
+// this set to enable the same behaviour elsewhere.
+const OFF_SWITCH_DEPTS: readonly string[] = ['purchase'];
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a
@@ -235,7 +255,14 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   function tierPermsFor(deptKey: string): FormPerms {
     const t = departments[deptKey];
     if (!t) return NO_PERMS;
-    return { ...tierPermsForDept(deptKey as AccessDeptKey, t), priceOff: false };
+    return {
+      ...tierPermsForDept(deptKey as AccessDeptKey, t),
+      priceOff: false,
+      viewOff: false,
+      entryOff: false,
+      editOff: false,
+      approveOff: false,
+    };
   }
 
   // How many ticks in a department come from an EXTRA the admin added on top of
@@ -254,26 +281,61 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         approve: cur.approve,
         price: cur.price && !cur.priceOff,
         priceOff: cur.priceOff,
+        viewOff: cur.viewOff,
+        entryOff: cur.entryOff,
+        editOff: cur.editOff,
+        approveOff: cur.approveOff,
       };
       for (const a of ACTIONS) {
         const fromTier =
           fullAccess || (auditor && (a === 'view' || a === 'price')) || base[a];
         if (own[a] && !fromTier) n++;
       }
-      // Hiding money that the tier would have shown is a hand-made change too,
-      // and the one that is easiest to forget — count it.
+      // A per-page action switched OFF below the tier is a hand-made change too,
+      // and the one easiest to forget — count each removed action (money hide
+      // included).
       if (cur.priceOff) n++;
+      if (cur.viewOff) n++;
+      if (cur.entryOff) n++;
+      if (cur.editOff) n++;
+      if (cur.approveOff) n++;
     }
     return n;
   }
 
-  // Action toggles mirror the stored cascade: Entry ⇒ View, Edit ⇒ View+Entry,
-  // Approve ⇒ View. Approve deliberately does NOT imply Edit — an approver who
-  // can also rewrite the document is not a separate pair of eyes.
-  function toggleAction(key: string, action: Action, tierGrantsPrice = false): void {
+  // One click on one box. Two worlds meet here:
+  //
+  // 1. The box's action is GRANTED BY THE TIER (or it is the money column, which
+  //    has always worked this way). Then the click is a per-page SUBTRACTION:
+  //    flip the OFF switch. Ticked→unticked writes the flag (removed for this
+  //    page); unticked→ticked clears it (back to the tier). This is the
+  //    single-toggle behaviour rolling out on Purchase — the box just means
+  //    "allowed here?", and the resolver works out it is a removal.
+  //
+  // 2. The tier does NOT grant it. Then the click is the classic ADDITIVE grant,
+  //    with the stored cascade: Entry ⇒ View, Edit ⇒ View+Entry, Approve ⇒ View.
+  //    Approve never implies Edit — an approver who can also rewrite the document
+  //    is not a separate pair of eyes.
+  function toggleAction(key: string, action: Action, tierGrants: boolean): void {
     setForms((prev) => {
       const cur = prev[key] ?? { ...NO_PERMS };
       const next: FormPerms = { ...cur };
+
+      // ── World 1: subtract a tier-granted action for this one page ──
+      if (tierGrants) {
+        const offK = OFF_FIELD[action];
+        const turningOff = !cur[offK];
+        next[offK] = turningOff;
+        // Clear any now-redundant additive grant of the same action so the
+        // stored row reads cleanly (the tier already grants it).
+        if (turningOff) {
+          if (action === 'price') next.price = false;
+          else next[action] = false;
+        }
+        return { ...prev, [key]: next };
+      }
+
+      // ── World 2: additive grant above the tier (unchanged) ──
       if (action === 'view') {
         next.view = !cur.view;
       } else if (action === 'entry') {
@@ -289,20 +351,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         next.approve = !cur.approve;
         if (next.approve) next.view = true;
       } else {
-        // Can-see-price is independent — toggling it implies nothing and is
-        // implied by nothing. It is also the ONE column with three states,
-        // because the department tier may already be showing money and an
-        // admin has to be able to take that back for one form. The click
-        // cycles: follow the tier → forced off → follow the tier.
-        if (cur.priceOff) {
-          next.priceOff = false;
-          next.price = false;
-        } else if (tierGrantsPrice) {
-          next.priceOff = true;
-          next.price = false;
-        } else {
-          next.price = !cur.price;
-        }
+        next.price = !cur.price;
       }
       return { ...prev, [key]: next };
     });
@@ -773,6 +822,19 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             ? ' L2 here is data entry only and sees no money.'
                             : ' This department works with the money itself.'}{' '}
                           Click a ticked ₹ box to hide money on that one form.
+                          {OFF_SWITCH_DEPTS.includes(d.key) ? (
+                            <>
+                              {' '}
+                              <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                                Per-page switches:
+                              </span>{' '}
+                              untick any box to remove that action for one page —{' '}
+                              <span style={{ color: 'var(--red)', fontWeight: 700 }}>red ✕</span> means
+                              removed, <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue •</span>{' '}
+                              means added above the tier. Untick <strong>View</strong> to hide the whole
+                              page.
+                            </>
+                          ) : null}
                         </div>
                         <div
                           style={{
@@ -835,7 +897,17 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             approve: cur.approve,
                             price: cur.price,
                             priceOff: cur.priceOff,
+                            viewOff: cur.viewOff,
+                            entryOff: cur.entryOff,
+                            editOff: cur.editOff,
+                            approveOff: cur.approveOff,
                           };
+                          // On an OFF-switch department every box is a single
+                          // toggle against the tier; elsewhere only money is.
+                          const offDept = OFF_SWITCH_DEPTS.includes(f.dept);
+                          // "Hide page" cascades in the UI too: with View removed,
+                          // the other four boxes read as off and are not clickable.
+                          const pageHidden = offDept && cur.viewOff === true;
                           return (
                             <div
                               key={f.key}
@@ -849,42 +921,80 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                             >
                               <span style={{ fontSize: 12 }}>{f.label}</span>
                               {ACTIONS.map((action) => {
-                                const fromTier =
-                                  fullAccess ||
-                                  (auditor && (action === 'view' || action === 'price')) ||
-                                  base[action];
-                                // Money is the one column an admin may switch
-                                // back OFF, so a tier-granted tick stays live
-                                // here instead of being locked like the rest.
                                 const isPrice = action === 'price';
-                                const forcedOff = isPrice && own.priceOff;
-                                const locked = disabled || (fromTier && !isPrice) || fullAccess;
+                                // Does the department TIER grant this action?
+                                // (Money follows tierSeesPrice, already folded
+                                // into `base.price`.)
+                                const tierGrants =
+                                  fullAccess ||
+                                  (auditor && (action === 'view' || isPrice)) ||
+                                  base[action];
+                                // Which actions behave as a single per-page toggle
+                                // against the tier: money everywhere (long-standing),
+                                // everything on an OFF-switch department.
+                                const offCapable = isPrice || offDept;
+                                // Removed for this page = the OFF flag is set AND
+                                // the tier actually grants it (nothing to remove
+                                // otherwise).
+                                const removed = tierGrants && cur[OFF_FIELD[action]] === true;
+                                // Added above the tier = a hand tick where the tier
+                                // gives nothing.
+                                const added = !tierGrants && own[action];
+                                // With the page hidden, the non-View boxes are
+                                // forced off and not clickable.
+                                const forcedByHide = pageHidden && action !== 'view';
+                                // Locked: non-standard access levels lock the lot;
+                                // a tier-granted box stays locked ONLY where it is
+                                // not off-capable (the classic grey tick).
+                                const locked =
+                                  disabled ||
+                                  fullAccess ||
+                                  forcedByHide ||
+                                  (tierGrants && !offCapable);
+                                const checked =
+                                  !forcedByHide && !removed && (tierGrants || own[action]);
+                                // Red ✕ (removed) can occur anywhere money is
+                                // hidden — unchanged. The blue • (added) marker is
+                                // scoped to OFF-switch departments so every other
+                                // department's checklist looks exactly as before.
+                                const marker = removed ? 'removed' : added && offDept ? 'added' : null;
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input
                                       type="checkbox"
                                       disabled={locked}
-                                      checked={!forcedOff && (fromTier || own[action])}
-                                      onChange={() =>
-                                        toggleAction(f.key, action, isPrice && base.price)
-                                      }
+                                      checked={checked}
+                                      onChange={() => toggleAction(f.key, action, tierGrants)}
                                       title={
-                                        forcedOff
-                                          ? 'Money is switched OFF for this form. Click to go back to what the department level gives.'
-                                          : isPrice && fromTier && deptTierKey && !disabled
-                                            ? `Shown by the ${f.dept} level (${deptTierKey}) — click to hide money on this form only`
-                                            : fromTier && deptTierKey && !disabled
-                                              ? `Granted by the ${f.dept} tier (${deptTierKey})`
-                                              : ACTION_HINT[action]
+                                        forcedByHide
+                                          ? 'Page is hidden (View removed). Tick View to use this page again.'
+                                          : removed
+                                            ? isPrice
+                                              ? 'Money hidden on this page. Click to show it again.'
+                                              : `Removed for this page. Click to restore what the ${f.dept} tier (${deptTierKey}) grants.`
+                                            : offCapable && tierGrants && deptTierKey && !disabled
+                                              ? isPrice
+                                                ? `Shown by the ${f.dept} level (${deptTierKey}) — click to hide money on this page only`
+                                                : `Granted by the ${f.dept} tier (${deptTierKey}) — click to remove it on this page only`
+                                              : added
+                                                ? 'Added for this page, above the tier. Click to remove.'
+                                                : tierGrants && deptTierKey && !disabled
+                                                  ? `Granted by the ${f.dept} tier (${deptTierKey})`
+                                                  : ACTION_HINT[action]
                                       }
                                       style={{
                                         width: 16,
                                         height: 16,
                                         accentColor: ACTION_COLOR[action],
-                                        outline: forcedOff ? '2px solid var(--red)' : undefined,
+                                        outline:
+                                          marker === 'removed'
+                                            ? '2px solid var(--red)'
+                                            : marker === 'added'
+                                              ? '2px solid var(--blue)'
+                                              : undefined,
                                       }}
                                     />
-                                    {forcedOff ? (
+                                    {marker === 'removed' ? (
                                       <span
                                         style={{
                                           color: 'var(--red)',
@@ -892,9 +1002,21 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                           fontWeight: 800,
                                           marginLeft: 2,
                                         }}
-                                        title="Money hidden on this form"
+                                        title="Removed for this page"
                                       >
                                         ✕
+                                      </span>
+                                    ) : marker === 'added' ? (
+                                      <span
+                                        style={{
+                                          color: 'var(--blue)',
+                                          fontSize: 10,
+                                          fontWeight: 800,
+                                          marginLeft: 2,
+                                        }}
+                                        title="Added for this page"
+                                      >
+                                        •
                                       </span>
                                     ) : null}
                                   </span>

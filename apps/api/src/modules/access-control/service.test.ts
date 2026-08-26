@@ -23,6 +23,10 @@ const perms = (p: Partial<AccessFormPerms>): AccessFormPerms => ({
   approve: false,
   price: false,
   priceOff: false,
+  viewOff: false,
+  entryOff: false,
+  editOff: false,
+  approveOff: false,
   ...p,
 });
 

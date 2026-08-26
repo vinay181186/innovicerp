@@ -75,6 +75,18 @@ function VendorDetailPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
+  // "Hide page" (Access Control → Config): once access has loaded, a user
+  // whose VIEW was removed for this page sees the no-access panel, not the
+  // page. `eff` is undefined only while access is still loading — don't block
+  // then, or every legitimate user flashes this panel on cold load.
+  if (eff && !perms.view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   return (
     <div>
       <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
