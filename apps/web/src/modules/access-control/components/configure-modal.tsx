@@ -50,7 +50,7 @@ import {
   type AccessFormPerms,
   type AccessTierKey,
 } from '@innovic/shared';
-import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess } from '../api';
@@ -355,6 +355,34 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       }
       return { ...prev, [key]: next };
     });
+  }
+
+  // Reset one page back to exactly what the department tier gives — clears every
+  // per-page override on it (both the OFF switches and any hand-added grant) by
+  // wiping its stored row. The resolver then falls straight through to the tier.
+  // This is the one-click undo for "why is this box off/on?" — no need to hunt
+  // the exact box that was changed.
+  function resetFormToTier(key: string): void {
+    setForms((prev) => ({ ...prev, [key]: { ...NO_PERMS } }));
+  }
+
+  // Does this page carry any per-page override (an OFF switch or a hand-added
+  // grant)? A clean tier-only page stores all-false; anything true is hand-set.
+  function formHasOverride(key: string): boolean {
+    const p = forms[key];
+    if (!p) return false;
+    return (
+      p.view ||
+      p.entry ||
+      p.edit ||
+      p.approve ||
+      p.price ||
+      p.priceOff ||
+      p.viewOff ||
+      p.entryOff ||
+      p.editOff ||
+      p.approveOff
+    );
   }
 
   // Export the current matrix as a pretty JSON string + copy to clipboard.
@@ -828,11 +856,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               <span style={{ color: 'var(--blue)', fontWeight: 700 }}>
                                 Per-page switches:
                               </span>{' '}
-                              untick any box to remove that action for one page (an unticked box means
-                              not allowed here);{' '}
-                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue •</span> marks a
-                              right added above the tier. Untick <strong>View</strong> to hide the whole
-                              page.
+                              untick any box to remove that action for one page. A{' '}
+                              <span style={{ color: 'var(--text2)', fontWeight: 700 }}>grey dot</span> marks
+                              a box switched off here, a{' '}
+                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue dot</span> one
+                              added above the tier; a plain box is just the tier. Untick{' '}
+                              <strong>View</strong> to hide the whole page, or use{' '}
+                              <strong>↺ tier</strong> to reset a page.
                             </>
                           ) : null}
                         </div>
@@ -919,7 +949,37 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 background: i % 2 ? 'var(--bg3)' : 'var(--bg2)',
                               }}
                             >
-                              <span style={{ fontSize: 12 }}>{f.label}</span>
+                              <span
+                                style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                              >
+                                {f.label}
+                                {/* One-click undo: clear every per-page override on
+                                    this page and fall back to the tier. Shown only
+                                    when the page actually carries an override. */}
+                                {!disabled && formHasOverride(f.key) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => resetFormToTier(f.key)}
+                                    title="Reset this page to the department tier (clears every per-page change on it)"
+                                    aria-label={`Reset ${f.label} to the department tier`}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                      padding: '1px 5px',
+                                      fontSize: 10,
+                                      fontFamily: 'var(--mono)',
+                                      color: 'var(--text3)',
+                                      background: 'transparent',
+                                      border: '1px solid var(--border2)',
+                                      borderRadius: 'var(--radius)',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <RotateCcw size={11} /> tier
+                                  </button>
+                                ) : null}
+                              </span>
                               {ACTIONS.map((action) => {
                                 const isPrice = action === 'price';
                                 // Does the department TIER grant this action?
@@ -953,13 +1013,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                   (tierGrants && !offCapable);
                                 const checked =
                                   !forcedByHide && !removed && (tierGrants || own[action]);
-                                // A removed box shows NO marker — an unticked box
-                                // already reads as "not allowed here", so the red ✕
-                                // was just noise (money column included). Only an
-                                // ADDED right (a tick above the tier, on an OFF-switch
-                                // department) gets the subtle blue • so it is clear it
-                                // is an extra, not part of the tier.
-                                const marker = added && offDept ? 'added' : null;
+                                // A quiet neutral cue — NOT the old red ✕ — on any box
+                                // that differs from the tier, so "off on purpose" never
+                                // looks like "off by default". Grey dot = switched off
+                                // for this page (money-hide included, any department);
+                                // blue dot = added above the tier (OFF-switch depts).
+                                // A plain empty box is just the tier — no dot.
+                                const marker = removed ? 'removed' : added && offDept ? 'added' : null;
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input
@@ -988,22 +1048,27 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                         width: 16,
                                         height: 16,
                                         accentColor: ACTION_COLOR[action],
-                                        outline:
-                                          marker === 'added' ? '2px solid var(--blue)' : undefined,
                                       }}
                                     />
-                                    {marker === 'added' ? (
+                                    {marker ? (
                                       <span
+                                        aria-hidden
+                                        title={
+                                          marker === 'removed'
+                                            ? 'Switched off for this page'
+                                            : 'Added above the tier for this page'
+                                        }
                                         style={{
-                                          color: 'var(--blue)',
-                                          fontSize: 10,
-                                          fontWeight: 800,
-                                          marginLeft: 2,
+                                          display: 'inline-block',
+                                          width: 6,
+                                          height: 6,
+                                          borderRadius: '50%',
+                                          marginLeft: 3,
+                                          verticalAlign: 'middle',
+                                          background:
+                                            marker === 'removed' ? 'var(--text3)' : 'var(--blue)',
                                         }}
-                                        title="Added for this page"
-                                      >
-                                        •
-                                      </span>
+                                      />
                                     ) : null}
                                   </span>
                                 );
