@@ -23,6 +23,17 @@ function JobCardStatusPage(): React.JSX.Element {
   // jc_create edit).
   const { data: eff } = useMyAccess();
   const canWrite = effectiveFormPerms(eff, 'jc_create').edit;
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

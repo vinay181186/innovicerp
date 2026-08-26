@@ -146,17 +146,17 @@ export const SECTIONS: readonly NavSection[] = [
       {
         label: 'Entry',
         items: [
-          { to: '/op-entry', label: 'Op Entry', icon: '✚' },
-          { to: '/jc-ops', label: 'JC Operations', icon: '⨯' },
+          { to: '/op-entry', label: 'Op Entry', icon: '✚', formKey: 'op_entry' },
+          { to: '/jc-ops', label: 'JC Operations', icon: '⨯', formKey: 'jc_create' },
           { to: '/daily-report', label: 'Daily Report', icon: '📊' },
         ],
       },
       {
         label: 'Master',
         items: [
-          { to: '/job-cards', label: 'Job Cards', icon: '▭' },
-          { to: '/machines', label: 'Machine Master', icon: '⚙' },
-          { to: '/operators', label: 'Operator Master', icon: '👷' },
+          { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
+          { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
+          { to: '/operators', label: 'Operator Master', icon: '👷', formKey: 'operator_create' },
         ],
       },
       {

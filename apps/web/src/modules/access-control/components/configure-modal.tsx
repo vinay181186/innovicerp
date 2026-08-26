@@ -100,7 +100,7 @@ const OFF_FIELD: Record<Action, keyof FormPerms> = {
 // then Store and QC (phase 1). Sales / Planning / Design / Finance need write
 // gates added first; Production needs sidebar keys + route view-guards — add a
 // dept here only once both halves are in place for it.
-const OFF_SWITCH_DEPTS: readonly string[] = ['purchase', 'store', 'qc'];
+const OFF_SWITCH_DEPTS: readonly string[] = ['purchase', 'store', 'qc', 'production'];
 
 // One-word tier captions for the compact TIER legend in the worksheet header.
 // The full labels ("Editor / Executor", "Department Admin") are too long for a

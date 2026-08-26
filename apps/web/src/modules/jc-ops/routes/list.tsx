@@ -56,6 +56,18 @@ function JcOpsPage(): React.JSX.Element {
   // send the user to the Job Cards list to pick one first.
   const selectedJc = (data?.jcOptions ?? []).find((j) => j.jcCode === jcCode);
 
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !effectiveFormPerms(eff, 'jc_create').view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">

@@ -3,6 +3,7 @@ import { Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -42,6 +43,7 @@ export const opEntryRoute = createRoute({
 function OpEntryPage() {
   const search = opEntryRoute.useSearch();
   const navigate = opEntryRoute.useNavigate();
+  const { data: eff } = useMyAccess();
 
   const [jcInput, setJcInput] = useState(search.jc ?? '');
   useEffect(() => {
@@ -139,6 +141,18 @@ function OpEntryPage() {
   }
 
   const view = search.view ?? 'jc';
+
+  // "Hide page" (Access Control → Config): once access has loaded, a user whose
+  // VIEW was removed for this page sees the no-access panel, not the page. `eff`
+  // is undefined only while access loads — don't block then, or every legitimate
+  // user flashes this panel on cold load.
+  if (eff && !effectiveFormPerms(eff, 'op_entry').view) {
+    return (
+      <div className="empty-state" style={{ color: 'var(--amber)', padding: 40 }}>
+        ⛔ This page is hidden for your access. Ask an admin if you need access to it.
+      </div>
+    );
+  }
 
   return (
     <div>
