@@ -50,7 +50,7 @@ import {
   type AccessFormPerms,
   type AccessTierKey,
 } from '@innovic/shared';
-import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useSaveUserAccess, useUserAccess } from '../api';
@@ -231,18 +231,28 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       if (next) out[next] = MAIN_DEPT_DEFAULT_TIER;
       return out;
     });
+    // Both departments change tier here — the old home is dropped (→ None) and
+    // the new one seeded at L3 — so clear both departments' per-page tweaks to
+    // match the auto-refresh rule.
+    if (mainDept && mainDept !== next) clearDeptForms(mainDept);
+    if (next) clearDeptForms(next);
     setMainDept(next);
     // Open the newly-seeded department so its freshly-granted tier is visible.
     if (next) setExpanded((prev) => new Set(prev).add(next));
   }
 
   function setDeptTier(key: string, tier: AccessTierKey | ''): void {
+    const tierChanged = (departments[key] ?? '') !== tier;
     setDepartments((prev) => {
       const next = { ...prev };
       if (tier === '') delete next[key];
       else next[key] = tier;
       return next;
     });
+    // Auto-refresh the boxes: a real tier change wipes this department's per-page
+    // tweaks so the checklist reflects the new tier cleanly (re-picking the same
+    // tier changes nothing, so nothing is cleared).
+    if (tierChanged) clearDeptForms(key);
     // Clearing the main department's own row by hand means it is no longer
     // their department. The server drops a main dept it holds no tier in
     // anyway; matching that here keeps the screen honest before Save.
@@ -357,32 +367,21 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     });
   }
 
-  // Reset one page back to exactly what the department tier gives — clears every
-  // per-page override on it (both the OFF switches and any hand-added grant) by
-  // wiping its stored row. The resolver then falls straight through to the tier.
-  // This is the one-click undo for "why is this box off/on?" — no need to hunt
-  // the exact box that was changed.
-  function resetFormToTier(key: string): void {
-    setForms((prev) => ({ ...prev, [key]: { ...NO_PERMS } }));
-  }
-
-  // Does this page carry any per-page override (an OFF switch or a hand-added
-  // grant)? A clean tier-only page stores all-false; anything true is hand-set.
-  function formHasOverride(key: string): boolean {
-    const p = forms[key];
-    if (!p) return false;
-    return (
-      p.view ||
-      p.entry ||
-      p.edit ||
-      p.approve ||
-      p.price ||
-      p.priceOff ||
-      p.viewOff ||
-      p.entryOff ||
-      p.editOff ||
-      p.approveOff
-    );
+  // Auto-refresh: the department tier is the source of truth, and per-page ticks
+  // are only tweaks on top of the CURRENT tier. So whenever a department's tier
+  // changes — up, down, or to None — that department's per-page overrides are
+  // wiped and every box snaps back to exactly what the new tier gives. Changing
+  // the tier IS the reset; there is no manual reset control. (Only fires on an
+  // in-modal tier change, so an already-saved matrix still shows its stored
+  // overrides on load until the admin next touches that department's tier.)
+  function clearDeptForms(deptKey: string): void {
+    setForms((prev) => {
+      const next = { ...prev };
+      for (const f of ACCESS_FORMS) {
+        if (f.dept === deptKey) next[f.key] = { ...NO_PERMS };
+      }
+      return next;
+    });
   }
 
   // Export the current matrix as a pretty JSON string + copy to clipboard.
@@ -861,8 +860,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               a box switched off here, a{' '}
                               <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue dot</span> one
                               added above the tier; a plain box is just the tier. Untick{' '}
-                              <strong>View</strong> to hide the whole page, or use{' '}
-                              <strong>↺ tier</strong> to reset a page.
+                              <strong>View</strong> to hide the whole page. Changing the tier resets
+                              this department&rsquo;s pages to the new level.
                             </>
                           ) : null}
                         </div>
@@ -949,37 +948,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 background: i % 2 ? 'var(--bg3)' : 'var(--bg2)',
                               }}
                             >
-                              <span
-                                style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
-                              >
-                                {f.label}
-                                {/* One-click undo: clear every per-page override on
-                                    this page and fall back to the tier. Shown only
-                                    when the page actually carries an override. */}
-                                {!disabled && formHasOverride(f.key) ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => resetFormToTier(f.key)}
-                                    title="Reset this page to the department tier (clears every per-page change on it)"
-                                    aria-label={`Reset ${f.label} to the department tier`}
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 3,
-                                      padding: '1px 5px',
-                                      fontSize: 10,
-                                      fontFamily: 'var(--mono)',
-                                      color: 'var(--text3)',
-                                      background: 'transparent',
-                                      border: '1px solid var(--border2)',
-                                      borderRadius: 'var(--radius)',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <RotateCcw size={11} /> tier
-                                  </button>
-                                ) : null}
-                              </span>
+                              <span style={{ fontSize: 12 }}>{f.label}</span>
                               {ACTIONS.map((action) => {
                                 const isPrice = action === 'price';
                                 // Does the department TIER grant this action?
