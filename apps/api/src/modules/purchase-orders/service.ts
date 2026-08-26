@@ -538,20 +538,17 @@ export async function createPurchaseOrder(
     const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
     const lineNos = assignLineNos(input.lines, 1);
 
-    // Legacy `_poInitialStatus()` L21589: 'draft' if PO approval enabled,
-    // else 'open'. Caller-passed status wins. APPROVAL_CONFIG_DEFAULTS has
-    // poApproval=true so the default path is to require approval.
-    let initialStatus: 'draft' | 'open' = 'draft';
-    if (!input.header.status) {
-      const cfgRows = await tx
-        .select({ poApproval: approvalConfig.poApproval })
-        .from(approvalConfig)
-        .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
-        .limit(1);
-      const poApprovalOn = cfgRows[0]?.poApproval ?? true;
-      initialStatus = poApprovalOn ? 'draft' : 'open';
-    }
-    const headerStatus = input.header.status ?? initialStatus;
+    // A new PO is ALWAYS born 'open'. Any status on the payload is ignored,
+    // the same way updatePurchaseOrder ignores it — status is the state
+    // machine's to move (approve / reject / cancel + the GRN cascade), never
+    // the caller's to choose. The create form no longer offers the field.
+    //
+    // This replaces legacy `_poInitialStatus()` L21589, which opened a PO in
+    // 'draft' whenever Approval Configuration had PO approval on. That branch
+    // was already unreachable: the shared schema defaults `status` to 'draft',
+    // so `!input.header.status` was never true and the config was never read.
+    // Opening straight at 'open' is now the deliberate rule, not an accident.
+    const headerStatus = 'open' as const;
     const headerType = input.header.poType ?? 'standard';
     const totals = computePoTotals(
       input.lines,

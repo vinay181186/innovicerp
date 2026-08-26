@@ -2,7 +2,6 @@
 
 import {
   type CreatePurchaseOrderInput,
-  PO_STATUSES,
   PO_TYPES,
   type PurchaseOrderDetail,
   type UpdatePurchaseOrderInput,
@@ -207,16 +206,18 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
             ))}
           </select>
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Status
-          </label>
-          {/* Status is READ-ONLY once the PO exists. It moves ONLY through the
-              dedicated approve / reject / cancel actions (the state machine),
-              never a raw edit — so on EDIT we show the current status but never
-              let it be re-picked. On CREATE the initial draft/open choice is
-              still fine (it's driven by approval config server-side). */}
-          {isEdit ? (
+        {/* Status is not a field on CREATE any more: a new PO is always 'open',
+            stamped by the server. The dropdown let a PO be born 'closed' or
+            'cancelled', and its presence also meant the payload always carried
+            a status — which silently disabled the approval-config branch on
+            the server. On EDIT the current status is still shown, read-only:
+            it moves only through Approve / Reject / Cancel and the GRN
+            cascade, never a raw edit. */}
+        {isEdit ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="status">
+              Status
+            </label>
             <input
               id="status"
               className="innovic-input"
@@ -225,16 +226,8 @@ export function PurchaseOrderForm(props: PurchaseOrderFormProps): React.JSX.Elem
               style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
               value={watch('header.status')?.replaceAll('_', ' ') ?? ''}
             />
-          ) : (
-            <select id="status" className="innovic-select" {...register('header.status')}>
-              {PO_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+          </div>
+        ) : null}
 
         <PoVendorField
           form={form}

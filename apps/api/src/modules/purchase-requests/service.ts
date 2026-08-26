@@ -501,7 +501,13 @@ export async function createPurchaseRequest(
         companyId,
         code,
         prDate: input.prDate,
-        status: input.status ?? 'open',
+        // A new PR is ALWAYS born 'open'. Any status on the payload is
+        // ignored, matching updatePurchaseRequest (which omits status
+        // entirely): it advances only through approve / reject / create-PO.
+        // Picking it at creation let a PR be born 'approved' with no
+        // approvedBy/approvedAt behind it, or born 'po_created' and never
+        // convertible. The create form no longer offers the field.
+        status: 'open',
         prType: input.prType ?? (input.sourceJcOpId ? 'jw_osp' : 'standard'),
         vendorId: input.vendorId ?? null,
         vendorCodeText: input.vendorCodeText ?? null,

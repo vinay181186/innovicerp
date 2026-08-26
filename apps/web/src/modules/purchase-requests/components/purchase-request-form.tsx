@@ -136,7 +136,6 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
     const payload = {
       prDate: values.prDate,
-      status: values.status,
       ...(values.vendorId
         ? { vendorId: values.vendorId }
         : values.vendorCodeText?.trim()
@@ -234,32 +233,35 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
             {...register('requiredDate')}
           />
         </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Status
-          </label>
-          {/* Status is immutable on edit — it only advances via the Approve /
-              Reject / Create-PO actions, never a free dropdown. Editable on
-              create (initial state) only. */}
-          <select
-            id="status"
-            className="innovic-select"
-            disabled={isEdit}
-            style={isEdit ? { background: 'var(--bg4)', color: 'var(--text3)' } : undefined}
-            {...register('status')}
-          >
-            {PR_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replaceAll('_', ' ')}
-              </option>
-            ))}
-          </select>
-          {isEdit ? (
+        {/* Status is NOT a field on create: a new PR is always 'open', stamped
+            by the server. Letting it be picked meant a PR could be born
+            'approved' with no approvedBy/approvedAt behind it, or born
+            'po_created' and never convertible. On EDIT the current status is
+            still shown, read-only — it advances only via Approve / Reject /
+            Create PO. */}
+        {isEdit ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="status">
+              Status
+            </label>
+            <select
+              id="status"
+              className="innovic-select"
+              disabled
+              style={{ background: 'var(--bg4)', color: 'var(--text3)' }}
+              {...register('status')}
+            >
+              {PR_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replaceAll('_', ' ')}
+                </option>
+              ))}
+            </select>
             <div className="form-help">
               Status changes via Approve / Reject / Create PO — not here.
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <div className="form-grp">
           <label className="form-label" htmlFor="prType">
