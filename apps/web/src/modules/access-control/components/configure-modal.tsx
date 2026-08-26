@@ -825,13 +825,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                           {OFF_SWITCH_DEPTS.includes(d.key) ? (
                             <>
                               {' '}
-                              <span style={{ color: 'var(--red)', fontWeight: 700 }}>
+                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>
                                 Per-page switches:
                               </span>{' '}
-                              untick any box to remove that action for one page —{' '}
-                              <span style={{ color: 'var(--red)', fontWeight: 700 }}>red ✕</span> means
-                              removed, <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue •</span>{' '}
-                              means added above the tier. Untick <strong>View</strong> to hide the whole
+                              untick any box to remove that action for one page (an unticked box means
+                              not allowed here);{' '}
+                              <span style={{ color: 'var(--blue)', fontWeight: 700 }}>blue •</span> marks a
+                              right added above the tier. Untick <strong>View</strong> to hide the whole
                               page.
                             </>
                           ) : null}
@@ -953,11 +953,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                   (tierGrants && !offCapable);
                                 const checked =
                                   !forcedByHide && !removed && (tierGrants || own[action]);
-                                // Red ✕ (removed) can occur anywhere money is
-                                // hidden — unchanged. The blue • (added) marker is
-                                // scoped to OFF-switch departments so every other
-                                // department's checklist looks exactly as before.
-                                const marker = removed ? 'removed' : added && offDept ? 'added' : null;
+                                // A removed box shows NO marker — an unticked box
+                                // already reads as "not allowed here", so the red ✕
+                                // was just noise (money column included). Only an
+                                // ADDED right (a tick above the tier, on an OFF-switch
+                                // department) gets the subtle blue • so it is clear it
+                                // is an extra, not part of the tier.
+                                const marker = added && offDept ? 'added' : null;
                                 return (
                                   <span key={action} style={{ textAlign: 'center' }}>
                                     <input
@@ -987,26 +989,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                         height: 16,
                                         accentColor: ACTION_COLOR[action],
                                         outline:
-                                          marker === 'removed'
-                                            ? '2px solid var(--red)'
-                                            : marker === 'added'
-                                              ? '2px solid var(--blue)'
-                                              : undefined,
+                                          marker === 'added' ? '2px solid var(--blue)' : undefined,
                                       }}
                                     />
-                                    {marker === 'removed' ? (
-                                      <span
-                                        style={{
-                                          color: 'var(--red)',
-                                          fontSize: 10,
-                                          fontWeight: 800,
-                                          marginLeft: 2,
-                                        }}
-                                        title="Removed for this page"
-                                      >
-                                        ✕
-                                      </span>
-                                    ) : marker === 'added' ? (
+                                    {marker === 'added' ? (
                                       <span
                                         style={{
                                           color: 'var(--blue)',
