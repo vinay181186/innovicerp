@@ -61,7 +61,9 @@ export const listVendorsQuerySchema = z.object({
   isActive: z.coerce.boolean().optional(),
   sortBy: vendorSortFieldSchema.optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
-  limit: z.coerce.number().int().positive().max(200).default(50),
+  // 1000 so the Vendor Master can load the whole master in one scrolling fetch
+  // (no Prev/Next), matching the SO master list. Raised from 200.
+  limit: z.coerce.number().int().positive().max(1000).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 export type ListVendorsQuery = z.infer<typeof listVendorsQuerySchema>;

@@ -31,8 +31,9 @@ import { useClientsList, useCreateClient, useSoftDeleteClient } from '../api';
 import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
 
 // No pagination — Clients is a master list, so it mirrors the SO/WO list: one
-// fetch, everything in a single scrolling list (styling skill, Rule 4). The API
-// caps `limit` at 1000; the count line flags the rare larger set.
+// fetch, everything in a single scrolling list (styling skill, Rule 4). The
+// clients list endpoint caps `limit` at 1000 (packages/shared client schema,
+// raised from 200 to match the SO master); the count line flags a larger set.
 const LIST_LIMIT = 1000;
 
 // Join a list of import warnings/failures for the status line, capping at 50 so

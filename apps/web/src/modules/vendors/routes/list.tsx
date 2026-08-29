@@ -35,8 +35,9 @@ import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
 // No pagination — Vendors is a master list, so it mirrors the SO/WO list: one
-// fetch, everything in a single scrolling list (styling skill, Rule 4). The API
-// caps `limit` at 1000; the count line flags the rare larger set.
+// fetch, everything in a single scrolling list (styling skill, Rule 4). The
+// vendors list endpoint caps `limit` at 1000 (packages/shared vendor schema,
+// raised from 200 to match the SO master); the count line flags a larger set.
 const LIST_LIMIT = 1000;
 // Legacy renders 11 columns; PO/GRN is DELTA (see header note), so 10 here.
 const COL_COUNT = 10;
