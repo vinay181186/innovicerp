@@ -13,19 +13,31 @@
 //     `rating` is a manually-entered letter, so we render the badge only. The
 //     legacy badge's cursor:pointer + title="Click for details" are deliberately
 //     NOT copied — there is no scorecard to open.
+//
+// Styled to the shared list standard (see .claude/skills/styling + the SO Master
+// reference apps/web/src/modules/sales-orders/routes/list.tsx), matching the
+// Client Master: one frozen header band, counts in a <StatStrip> that doubles as
+// the status filter (Rule 3), whole-row navigation with actions stopping
+// propagation (Rule 2), and one scrolling fetch instead of Prev/Next (Rule 4 —
+// status filter + counts are done client-side over the single fetch, which is
+// why the server query drops isActive).
 
 import type { ListVendorsQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { StatStrip } from '@/components/shared/stat-strip';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
-const PAGE_SIZE = 25;
+// No pagination — Vendors is a master list, so it mirrors the SO/WO list: one
+// fetch, everything in a single scrolling list (styling skill, Rule 4). The API
+// caps `limit` at 1000; the count line flags the rare larger set.
+const LIST_LIMIT = 1000;
 // Legacy renders 11 columns; PO/GRN is DELTA (see header note), so 10 here.
 const COL_COUNT = 10;
 
@@ -42,7 +54,6 @@ const listSearchSchema = z.object({
   status: z.enum(['active', 'inactive']).optional(),
   sortBy: z.enum(['code', 'name']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
-  page: z.coerce.number().int().positive().default(1),
 });
 
 export const vendorsListRoute = createRoute({
@@ -76,24 +87,23 @@ function VendorsListPage(): React.JSX.Element {
     const next = trimmed === '' ? undefined : trimmed;
     if (next === search.search) return;
     const id = window.setTimeout(() => {
-      void navigate({ search: (prev) => ({ ...prev, search: next, page: 1 }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, search: next }), replace: true });
     }, 300);
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
 
-  const isActiveFilter =
-    search.status === 'active' ? true : search.status === 'inactive' ? false : undefined;
-
+  // One fetch of every vendor matching the search (no isActive server filter):
+  // the Active/Inactive split is derived + filtered client-side so the StatStrip
+  // can show real counts for all three tiles.
   const query: ListVendorsQuery = useMemo(
     () => ({
       search: search.search,
-      isActive: isActiveFilter,
       sortBy: search.sortBy,
       sortDir: search.sortDir,
-      limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      limit: LIST_LIMIT,
+      offset: 0,
     }),
-    [search.search, isActiveFilter, search.sortBy, search.sortDir, search.page],
+    [search.search, search.sortBy, search.sortDir],
   );
 
   const { data, isLoading, isFetching, isError, error } = useVendorsList(query);
@@ -114,9 +124,16 @@ function VendorsListPage(): React.JSX.Element {
   const toggleSort = useCallback(
     (field: 'code' | 'name') => {
       const next = nextSort(field, { sortBy: search.sortBy, sortDir: search.sortDir });
-      void navigate({ search: (prev) => ({ ...prev, ...next, page: 1 }), replace: true });
+      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
     },
     [navigate, search.sortBy, search.sortDir],
+  );
+
+  const setStatus = useCallback(
+    (status: 'active' | 'inactive' | undefined) => {
+      void navigate({ search: (prev) => ({ ...prev, status }), replace: true });
+    },
+    [navigate],
   );
 
   const softDelete = useSoftDeleteVendor();
@@ -170,10 +187,17 @@ function VendorsListPage(): React.JSX.Element {
     }
   }
 
-  const rows = data?.vendors ?? [];
+  // All rows matching the search; the Active/Inactive filter is client-side.
+  const allRows = useMemo(() => data?.vendors ?? [], [data?.vendors]);
+  const activeCount = useMemo(() => allRows.filter((v) => v.isActive).length, [allRows]);
+  const inactiveCount = allRows.length - activeCount;
+  const rows = useMemo(() => {
+    if (search.status === 'active') return allRows.filter((v) => v.isActive);
+    if (search.status === 'inactive') return allRows.filter((v) => !v.isActive);
+    return allRows;
+  }, [allRows, search.status]);
+
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const currentPage = search.page;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -189,54 +213,85 @@ function VendorsListPage(): React.JSX.Element {
 
   return (
     <div>
+      {/* Frozen header band — title, toolbar and the StatStrip stay put while the
+          rows scroll underneath (mirrors the SO Master list). Opaque `--bg`
+          background so rows don't show through as they pass under it. */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 14,
-          gap: 8,
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: 'var(--bg)',
+          paddingBottom: 8,
+          marginBottom: 10,
+          borderBottom: '1px solid var(--border)',
         }}
       >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          🏭 Vendor Master
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 10,
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div className="section-hdr" style={{ marginBottom: 0 }}>
+            🏭 Vendor Master
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="innovic-input"
+              placeholder="🔍 Search vendor…"
+              title="Search by vendor code or name"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              style={{ minWidth: 220, fontSize: 13 }}
+            />
+            {isFetching && !isLoading ? (
+              <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
+              </span>
+            ) : null}
+            {canAdd ? (
+              <Link to="/vendors/new" className="btn btn-primary">
+                + Add Vendor
+              </Link>
+            ) : null}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            className="innovic-input"
-            placeholder="🔍 Search vendor…"
-            title="Search by vendor code or name"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            style={{ minWidth: 220, fontSize: 13 }}
-          />
-          <select
-            className="innovic-select"
-            value={search.status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as 'active' | 'inactive' | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v === '' ? undefined : v, page: 1 }),
-                replace: true,
-              });
-            }}
-            style={{ width: 120, fontSize: 12 }}
-          >
-            <option value="">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          {isFetching && !isLoading ? (
-            <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
-              <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
-            </span>
-          ) : null}
-          {canAdd ? (
-            <Link to="/vendors/new" className="btn btn-primary">
-              + Add Vendor
-            </Link>
-          ) : null}
-        </div>
+
+        {/* Counts double as the status filter (Rule 3). Active state = coloured
+            label + underline, handled inside <StatStrip>. */}
+        <StatStrip
+          items={[
+            {
+              key: 'all',
+              label: 'All Vendors',
+              count: total,
+              color: 'var(--cyan)',
+              active: search.status === undefined,
+              onClick: () => setStatus(undefined),
+            },
+            {
+              key: 'active',
+              label: 'Active',
+              count: activeCount,
+              color: 'var(--green)',
+              active: search.status === 'active',
+              onClick: () => setStatus('active'),
+            },
+            {
+              key: 'inactive',
+              label: 'Inactive',
+              count: inactiveCount,
+              color: 'var(--text3)',
+              active: search.status === 'inactive',
+              onClick: () => setStatus('inactive'),
+            },
+          ]}
+        />
       </div>
 
       {importMsg ? (
@@ -305,12 +360,19 @@ function VendorsListPage(): React.JSX.Element {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={COL_COUNT} className="empty-state">
-                    No vendors. Add vendors to create Purchase Orders.
+                    {search.status
+                      ? `No ${search.status} vendors`
+                      : 'No vendors. Add vendors to create Purchase Orders.'}
                   </td>
                 </tr>
               ) : (
+                // Whole row navigates to the vendor's detail page (Rule 2).
                 rows.map((v) => (
-                  <tr key={v.id}>
+                  <tr
+                    key={v.id}
+                    onClick={() => void navigate({ to: '/vendors/$id', params: { id: v.id } })}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td className="td-code cyan">
                       <Link
                         to="/vendors/$id"
@@ -350,8 +412,10 @@ function VendorsListPage(): React.JSX.Element {
                         {v.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
+                    {/* Edit/Del go somewhere OTHER than the row's detail page, so
+                        they stop the row-navigation click (Rule 2). */}
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
                         {canEdit ? (
                           <Link
                             to="/vendors/$id/edit"
@@ -388,7 +452,7 @@ function VendorsListPage(): React.JSX.Element {
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           marginTop: 8,
           fontSize: 12,
@@ -398,39 +462,15 @@ function VendorsListPage(): React.JSX.Element {
         <span>
           {total === 0
             ? 'No vendors'
-            : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${total}`}
+            : search.status
+              ? `Showing ${rows.length} ${search.status} of ${total} vendor${total === 1 ? '' : 's'}`
+              : total > LIST_LIMIT
+                ? `Showing first ${LIST_LIMIT} of ${total} — refine with search`
+                : `Showing all ${total} vendor${total === 1 ? '' : 's'}`}
         </span>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage <= 1}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.max(1, currentPage - 1) }),
-                replace: true,
-              })
-            }
-          >
-            <ChevronLeft size={14} /> Prev
-          </button>
-          <span style={{ fontFamily: 'var(--mono)', padding: '0 8px' }}>
-            Page {currentPage} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={currentPage >= totalPages}
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, page: Math.min(totalPages, currentPage + 1) }),
-                replace: true,
-              })
-            }
-          >
-            Next <ChevronRight size={14} />
-          </button>
-        </div>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
+        💡 Click a row to open the vendor. Click a count above to filter by status.
       </div>
 
       {/* Legacy L27776-27779: Excel template + import sit below the table panel. */}
