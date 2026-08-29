@@ -138,6 +138,7 @@ import { vendorDetailRoute } from './modules/vendors/routes/detail';
 import { vendorEditRoute, vendorNewRoute } from './modules/vendors/routes/edit';
 import { authCallbackRoute } from './routes/auth-callback';
 import { authenticatedRoute } from './routes/_authenticated';
+import { changePasswordRoute } from './routes/change-password';
 import { indexRoute } from './routes/index';
 import { loginRoute } from './routes/login';
 import { resetPasswordRoute } from './routes/reset-password';
@@ -149,6 +150,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   authenticatedRoute.addChildren([
     indexRoute,
+    changePasswordRoute,
     itemsListRoute,
     itemNewRoute,
     itemDetailRoute,

@@ -6,8 +6,8 @@
 // Routes not in the map fall back to a humanized version of the
 // pathname (e.g. /sales-orders/abc → "Sales Order").
 
-import { useLocation } from '@tanstack/react-router';
-import { LogOut } from 'lucide-react';
+import { Link, useLocation } from '@tanstack/react-router';
+import { KeyRound, LogOut } from 'lucide-react';
 import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { signOut } from '@/lib/session';
 
@@ -80,6 +80,14 @@ export function TopBar(): React.JSX.Element {
         <span className="sync-dot" />
         SYNCED
       </div>
+      <Link
+        to="/change-password"
+        className="btn btn-ghost btn-sm"
+        title="Change your password"
+      >
+        <KeyRound size={14} />
+        <span>Password</span>
+      </Link>
       <button
         type="button"
         className="btn btn-ghost btn-sm"
