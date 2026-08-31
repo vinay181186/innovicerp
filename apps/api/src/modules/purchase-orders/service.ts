@@ -625,6 +625,114 @@ export async function createPurchaseOrder(
   });
 }
 
+/** Code of the first document that has moved goods against this PO — a GRN, a
+ *  Delivery Challan, or a JW outward DC — or null when nothing has moved yet.
+ *
+ *  This, not the PO's status, is what freezes the money on a PO (see the lock
+ *  in updatePurchaseOrder). Named rather than boolean so the refusal can tell
+ *  the user WHICH receipt closed the door. */
+async function poGoodsMovementDoc(
+  tx: DbTransaction,
+  companyId: string,
+  poId: string,
+): Promise<string | null> {
+  const [grn, dc, jwDc] = await Promise.all([
+    tx
+      .select({ code: goodsReceiptNotes.code })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.companyId, companyId),
+          eq(goodsReceiptNotes.purchaseOrderId, poId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .limit(1),
+    tx
+      .select({ code: deliveryChallans.code })
+      .from(deliveryChallans)
+      .where(
+        and(
+          eq(deliveryChallans.companyId, companyId),
+          eq(deliveryChallans.purchaseOrderId, poId),
+          isNull(deliveryChallans.deletedAt),
+        ),
+      )
+      .limit(1),
+    tx
+      .select({ code: jwDcOutward.code })
+      .from(jwDcOutward)
+      .where(
+        and(
+          eq(jwDcOutward.companyId, companyId),
+          eq(jwDcOutward.purchaseOrderId, poId),
+          isNull(jwDcOutward.deletedAt),
+        ),
+      )
+      .limit(1),
+  ]);
+  return grn[0]?.code ?? dc[0]?.code ?? jwDc[0]?.code ?? null;
+}
+
+/** True when `inputLines` would actually CHANGE the PO's lines.
+ *
+ *  The lock used to fire on `input.lines !== undefined`, i.e. on the mere
+ *  PRESENCE of lines in the payload. The edit form always posts the lines back,
+ *  untouched ones included, so that made every save from the edit screen fail —
+ *  even one that only moved the due date. What it must ask is whether anything
+ *  MEANINGFUL differs: a line added, a line dropped, or a line's item, name,
+ *  quantity or rate changed.
+ *
+ *  Deliberately NOT compared: per-line due date and remarks. They are paperwork,
+ *  like the header's due date, and stay editable after the freeze.
+ *
+ *  Item refs are resolved the same way mergeLines resolves them, so a line
+ *  stored against a master item and posted back as its item CODE reads as
+ *  unchanged instead of looking like an edit. */
+async function poLinesWouldChange(
+  tx: DbTransaction,
+  companyId: string,
+  poId: string,
+  inputLines: PurchaseOrderLineInput[],
+  /** False when the caller may not see money: their `rate` is ignored on save,
+   *  so it must not count as a change here either. */
+  showMoney: boolean,
+): Promise<boolean> {
+  const stored = await tx
+    .select({
+      id: purchaseOrderLines.id,
+      itemId: purchaseOrderLines.itemId,
+      itemCodeText: purchaseOrderLines.itemCodeText,
+      itemName: purchaseOrderLines.itemName,
+      qty: purchaseOrderLines.qty,
+      rate: purchaseOrderLines.rate,
+    })
+    .from(purchaseOrderLines)
+    .where(
+      and(eq(purchaseOrderLines.purchaseOrderId, poId), isNull(purchaseOrderLines.deletedAt)),
+    );
+  if (inputLines.length !== stored.length) return true; // a line added or dropped
+  const storedById = new Map(stored.map((s) => [s.id, s]));
+
+  const codesToResolve = inputLines
+    .filter((l) => !l.itemId && l.itemCodeText)
+    .map((l) => l.itemCodeText!.trim());
+  const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
+
+  for (const l of inputLines) {
+    if (!l.id) return true; // a brand-new line
+    const s = storedById.get(l.id);
+    if (!s) return true; // an id that is not one of this PO's live lines
+    const refs = resolveLineItemRefs(l, resolved);
+    if (refs.itemId !== s.itemId) return true;
+    if ((refs.itemCodeText ?? null) !== (s.itemCodeText ?? null)) return true;
+    if (l.itemName !== s.itemName) return true;
+    if (l.qty !== s.qty) return true;
+    if (showMoney && Number(l.rate) !== Number(s.rate)) return true;
+  }
+  return false;
+}
+
 export async function updatePurchaseOrder(
   id: string,
   input: UpdatePurchaseOrderInput,
@@ -657,21 +765,44 @@ export async function updatePurchaseOrder(
     const existingHdr = existingHdrRows[0];
     if (!existingHdr) throw new NotFoundError(`Purchase order ${id} not found`);
 
-    // ── Status lock (0100) ──────────────────────────────────────────
-    // Once a PO leaves draft it has been approved (or rejected/cancelled),
-    // and the figures on it are what somebody signed for. Editing the lines
-    // afterwards defeated the whole approval ceiling: approve a small PO,
-    // then raise the rates. Structural check #5 of the Generic Role Audit
-    // Checklist.
+    // ── Money lock (0100, retriggered 2026-08-31) ───────────────────
+    // The figures on a PO stop being the buyer's to change once the goods they
+    // describe have actually moved: a GRN booked against it, or a Delivery
+    // Challan / JW outward DC raised against it. Re-rating a PO that stock has
+    // already been received against rewrites history — that is what this
+    // guards. Structural check #5 of the Generic Role Audit Checklist.
     //
-    // Not a freeze of the whole record — the paperwork fields (due date,
-    // remarks, PR reference) stay open, because chasing a delivery date is
-    // not a change to what was approved. To change the money, reject the PO
-    // back to draft and raise it again.
-    if (existingHdr.status !== 'draft') {
+    // It used to trigger on `status !== 'draft'` instead. That worked while a
+    // PO was born draft and only left it on approval. It stopped working when
+    // new POs began opening straight at 'open': every PO was then locked from
+    // the moment it was saved, before anyone had looked at it — and the refusal
+    // told the user to "reject it back to draft first", which nothing in the
+    // system can do (approve → open, reject → cancelled; nothing → draft). A
+    // rate typed wrong could only be escaped by cancelling the PO and raising
+    // it again. Tying the freeze to goods movement restores the correction
+    // window without reopening what it was written to protect.
+    //
+    // Still not a freeze of the whole record: due date, remarks, the PR
+    // reference and the per-line due date / remarks stay open, because chasing
+    // a delivery date is not a change to what was bought.
+    //
+    // A cancelled PO stays locked too — it is a dead document, and its figures
+    // should not be edited after the fact.
+    const goodsDoc = await poGoodsMovementDoc(tx, companyId, id);
+    const lockReason = goodsDoc
+      ? `already has goods moved against it (${goodsDoc})`
+      : existingHdr.status === 'cancelled'
+        ? 'is cancelled'
+        : null;
+    if (lockReason !== null) {
       const h0 = input.header;
       const lockedChanges: string[] = [];
-      if (input.lines !== undefined) lockedChanges.push('lines / rates');
+      if (
+        input.lines !== undefined &&
+        (await poLinesWouldChange(tx, companyId, id, input.lines, showMoney))
+      ) {
+        lockedChanges.push('lines / rates');
+      }
       if (h0.vendorId !== undefined && (h0.vendorId ?? null) !== existingHdr.vendorId) {
         lockedChanges.push('vendor');
       }
@@ -691,8 +822,8 @@ export async function updatePurchaseOrder(
       }
       if (lockedChanges.length > 0) {
         throw new ValidationError(
-          `PO ${existingHdr.code} is ${existingHdr.status}, so ${lockedChanges.join(', ')} ` +
-            `can no longer be changed. Reject it back to draft first, or raise a new PO. ` +
+          `PO ${existingHdr.code} ${lockReason}, so ${lockedChanges.join(', ')} ` +
+            `can no longer be changed. Raise a new PO for the difference. ` +
             `Due date, remarks and the PR reference can still be edited.`,
         );
       }

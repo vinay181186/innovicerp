@@ -4,6 +4,7 @@ import { db } from '../../db/client';
 import {
   activityLog,
   approvalConfig,
+  goodsReceiptNotes,
   items,
   jcOps,
   jobCards,
@@ -75,6 +76,10 @@ afterAll(async () => {
     await db.delete(jcOps).where(eq(jcOps.jobCardId, jc.id));
   }
   await db.delete(jobCards).where(like(jobCards.code, `${TEST_PREFIX}%`));
+
+  // GRNs raised by the money-lock test point at a test PO — drop them before
+  // the POs or the FK holds the delete.
+  await db.delete(goodsReceiptNotes).where(like(goodsReceiptNotes.code, `${TEST_PREFIX}%`));
 
   // Cleanup: lines first (FK), then PRs that point at our test POs, then POs.
   const testHeaders = await db
@@ -351,11 +356,15 @@ describe('purchase-orders service', () => {
     expect(updated.lines[0]?.receivedQty).toBe(0); // ignored
   });
 
-  // ── 0100: money is frozen once the PO leaves draft ────────────────
-  // Without this, the approval ceiling is defeatable: approve a cheap PO,
-  // then edit the rates upward. Structural check #5 of the Generic Role
-  // Audit Checklist.
-  it('updatePurchaseOrder refuses line/rate edits once the PO is out of draft', async () => {
+  // ── 0100: money is frozen once GOODS HAVE MOVED ───────────────────
+  // Without this, the figures are rewritable after the fact: receive stock
+  // against a cheap PO, then edit the rates upward. Structural check #5 of
+  // the Generic Role Audit Checklist.
+  //
+  // The trigger used to be `status !== 'draft'`. Once new POs began opening
+  // straight at 'open' that locked every PO at birth, so this covers the
+  // correction window as well as the freeze.
+  it('updatePurchaseOrder allows rate edits until goods move, then refuses them', async () => {
     const code = `${TEST_PREFIX}LCK`;
     const created = await service.createPurchaseOrder(
       {
@@ -373,27 +382,54 @@ describe('purchase-orders service', () => {
       },
       admin,
     );
+    const lineId = created.lines[0]!.id;
+
+    // Nothing received yet → the rate is still the buyer's to correct.
+    const corrected = await service.updatePurchaseOrder(
+      created.id,
+      {
+        header: {},
+        lines: [{ id: lineId, itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 250 }],
+      },
+      admin,
+    );
+    expect(corrected.lines[0]?.rate).toBe('250.00');
+
+    // Book a GRN against the PO — from here the figures describe stock that
+    // has physically arrived.
+    await db.insert(goodsReceiptNotes).values({
+      companyId: admin.companyId!,
+      code: `${TEST_PREFIX}GRN-LCK`,
+      grnDate: '2026-05-04',
+      purchaseOrderId: created.id,
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+
     await expect(
       service.updatePurchaseOrder(
         created.id,
         {
           header: {},
-          lines: [
-            { id: created.lines[0]!.id, itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 9999 },
-          ],
+          lines: [{ id: lineId, itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 9999 }],
         },
         admin,
       ),
     ).rejects.toBeInstanceOf(ValidationError);
 
-    // Paperwork fields stay open — chasing a delivery date is not a change
-    // to what was approved.
+    // Paperwork stays open after the freeze — AND the edit form always posts
+    // the lines back untouched, so an unchanged `lines` array must not read as
+    // an attempt to change them. This is what made every save fail before.
     const updated = await service.updatePurchaseOrder(
       created.id,
-      { header: { remarks: 'vendor confirmed dispatch' } },
+      {
+        header: { remarks: 'vendor confirmed dispatch' },
+        lines: [{ id: lineId, itemId: firstItemId, itemName: 'Locked', qty: 5, rate: 250 }],
+      },
       admin,
     );
     expect(updated.remarks).toBe('vendor confirmed dispatch');
+    expect(updated.lines[0]?.rate).toBe('250.00');
   });
 
   it('createPurchaseOrderFromPr creates PO + line and stamps PR with poId/poCreatedAt/status', async () => {
