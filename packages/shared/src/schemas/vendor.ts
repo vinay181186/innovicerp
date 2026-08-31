@@ -53,6 +53,38 @@ export type CreateVendorInput = z.infer<typeof createVendorInputSchema>;
 export const updateVendorInputSchema = createVendorInputSchema.partial().omit({ code: true });
 export type UpdateVendorInput = z.infer<typeof updateVendorInputSchema>;
 
+/** BULK CREATE — the Excel importer's whole sheet in ONE request.
+ *
+ *  The importer used to POST /vendors once per row and wait for each answer,
+ *  and every answer invalidated the on-screen vendor list, so the browser also
+ *  re-downloaded the entire master after every single row. Measured on the live
+ *  system that ran at ~1 vendor per second; a 500-row sheet took nine minutes.
+ *  One request, one transaction, one list reload puts the same sheet in in
+ *  seconds.
+ *
+ *  Capped at 2000 rows — comfortably past the largest master anyone would paste
+ *  in, and small enough that the whole insert stays one sane transaction. */
+export const bulkCreateVendorsInputSchema = z.object({
+  vendors: z.array(createVendorInputSchema).min(1).max(2000),
+});
+export type BulkCreateVendorsInput = z.infer<typeof bulkCreateVendorsInputSchema>;
+
+/** One row the bulk create refused, with the reason in the user's words. */
+export interface BulkVendorSkip {
+  /** 1-based position in the submitted array, so the UI can name the sheet row. */
+  index: number;
+  name: string;
+  reason: string;
+}
+
+export interface BulkCreateVendorsResponse {
+  created: number;
+  /** Rows that were not written, each with a plain-English reason. */
+  skipped: BulkVendorSkip[];
+  /** Codes assigned to the rows that were created, in insert order. */
+  codes: string[];
+}
+
 export const vendorSortFieldSchema = z.enum(['code', 'name']);
 export type VendorSortField = z.infer<typeof vendorSortFieldSchema>;
 

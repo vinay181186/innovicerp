@@ -5,6 +5,9 @@ import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
+  BulkCreateVendorsInput,
+  BulkCreateVendorsResponse,
+  BulkVendorSkip,
   CreateVendorInput,
   ListVendorsQuery,
   ListVendorsResponse,
@@ -154,6 +157,126 @@ export async function createVendor(input: CreateVendorInput, user: AuthContext):
       return inserted[0] as unknown as Vendor;
     }),
   );
+}
+
+/**
+ * Create many vendors in ONE transaction — the Excel importer's whole sheet.
+ *
+ * Why this exists: the importer used to call createVendor once per row and wait
+ * for each round trip, and every success invalidated the on-screen vendor list,
+ * so the browser re-downloaded the whole master after every row. Measured on the
+ * live system, that ran at ~1 vendor/second and got slower as the list grew.
+ *
+ * What makes this fast is not batching the HTTP call alone — it is doing the
+ * per-row work ONCE:
+ *   - one access check, one transaction, one RLS context set;
+ *   - existing codes and names read in a single query instead of two per row;
+ *   - the VND-### series continued in memory instead of re-scanning the table
+ *     for every row;
+ *   - one multi-row INSERT instead of N.
+ *
+ * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
+ * in. A sheet with one duplicate should not cost the operator the other 499.
+ */
+export async function createVendorsBulk(
+  input: BulkCreateVendorsInput,
+  user: AuthContext,
+): Promise<BulkCreateVendorsResponse> {
+  // Same gate as a single create — this raises vendors, so it is `entry`.
+  await requireFormAccess(user, 'vendor_create', 'entry');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // One read of what already exists, rather than a duplicate-check per row.
+    // Deleted rows are included on purpose: their CODE is still taken (the
+    // single create refuses to reuse it), so the series must skip past them.
+    const existingRows = await tx
+      .select({ code: vendors.code, name: vendors.name, deletedAt: vendors.deletedAt })
+      .from(vendors)
+      .where(eq(vendors.companyId, companyId));
+
+    const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
+    // Name match is how the importer has always de-duplicated a re-run of the
+    // same sheet (the template carries no Code column). Live rows only — a
+    // deleted vendor's name is free to use again.
+    const takenNames = new Set(
+      existingRows.filter((r) => !r.deletedAt).map((r) => r.name.trim().toLowerCase()),
+    );
+
+    // Continue the VND-### series in memory. nextVendorCode() scans the table
+    // for the highest code; doing that per row is one query per vendor.
+    let nextSeq = 0;
+    for (const r of existingRows) {
+      const m = /^VND-(\d+)$/i.exec(r.code.trim());
+      if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
+    }
+
+    const skipped: BulkVendorSkip[] = [];
+    const values: Array<typeof vendors.$inferInsert> = [];
+    const codes: string[] = [];
+
+    for (const [i, v] of input.vendors.entries()) {
+      const index = i + 1;
+      const name = v.name.trim();
+      const nameKey = name.toLowerCase();
+      if (takenNames.has(nameKey)) {
+        skipped.push({ index, name, reason: 'a vendor with this name already exists' });
+        continue;
+      }
+
+      let code = v.code?.trim();
+      if (code) {
+        if (takenCodes.has(code.toLowerCase())) {
+          skipped.push({ index, name, reason: `code "${code}" is already used` });
+          continue;
+        }
+      } else {
+        nextSeq += 1;
+        code = `VND-${String(nextSeq).padStart(3, '0')}`;
+        // Defensive: a company holding a hand-typed VND-007 alongside the series
+        // could collide. Walk forward until the code is free.
+        while (takenCodes.has(code.toLowerCase())) {
+          nextSeq += 1;
+          code = `VND-${String(nextSeq).padStart(3, '0')}`;
+        }
+      }
+      // Claim both keys so a duplicate INSIDE the sheet is caught too, not just
+      // one against what was already stored.
+      takenCodes.add(code.toLowerCase());
+      takenNames.add(nameKey);
+
+      values.push({
+        companyId,
+        code,
+        name,
+        contactPerson: emptyToNull(v.contactPerson),
+        email: emptyToNull(v.email),
+        phone: emptyToNull(v.phone),
+        gstNumber: emptyToNull(v.gstNumber),
+        addressLine1: emptyToNull(v.addressLine1),
+        city: emptyToNull(v.city),
+        state: emptyToNull(v.state),
+        pincode: emptyToNull(v.pincode),
+        materialsSupplied: emptyToNull(v.materialsSupplied),
+        rating: emptyToNull(v.rating),
+        isActive: v.isActive,
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      codes.push(code);
+    }
+
+    if (values.length > 0) {
+      // One statement for the lot. Chunked because a single INSERT carries one
+      // parameter per column per row and Postgres caps a statement at 65535.
+      const CHUNK = 500;
+      for (let i = 0; i < values.length; i += CHUNK) {
+        await tx.insert(vendors).values(values.slice(i, i + CHUNK));
+      }
+    }
+
+    return { created: values.length, skipped, codes };
+  });
 }
 
 export async function updateVendor(

@@ -31,7 +31,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateVendor, useSoftDeleteVendor, useVendorsList } from '../api';
+import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
 import { downloadVendorTemplate, parseVendorImportFile } from '../lib/import-export';
 
 // No pagination — Vendors is a master list, so it mirrors the SO/WO list: one
@@ -139,9 +139,19 @@ function VendorsListPage(): React.JSX.Element {
 
   const softDelete = useSoftDeleteVendor();
 
-  // Excel import — parse the workbook, then create each vendor sequentially
-  // (each success invalidates the list via the mutation hook).
-  const createVendor = useCreateVendor();
+  // Excel import — the WHOLE sheet goes in one request, and the list reloads
+  // once at the end.
+  //
+  // It used to loop the single-create mutation over the rows: one round trip per
+  // vendor, and because each success invalidated the list query, the browser
+  // re-downloaded the entire vendor master after every row — so the import got
+  // slower the longer it ran. Measured on the live system at ~1 vendor/second,
+  // which put a 500-row sheet at about nine minutes.
+  //
+  // The duplicate-name guard moved to the server with it. It used to compare
+  // against `data.vendors`, i.e. the page of vendors currently loaded on screen,
+  // so anything past that page read as "new" and was created a second time.
+  const bulkCreate = useBulkCreateVendors();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -151,34 +161,20 @@ function VendorsListPage(): React.JSX.Element {
     setImportMsg(null);
     try {
       const { payloads, errors } = await parseVendorImportFile(file);
-      // Re-import guard: the template has no Code column, so the same file would
-      // otherwise create duplicate vendors on every import. Skip any name that
-      // already exists (case-insensitive) in the loaded list.
-      const existingNames = new Set((data?.vendors ?? []).map((v) => v.name.trim().toLowerCase()));
-      const warnings = [...errors];
-      let ok = 0;
-      let skipped = 0;
-      const fails: string[] = [];
-      for (const p of payloads) {
-        const key = p.name.trim().toLowerCase();
-        if (existingNames.has(key)) {
-          skipped += 1;
-          warnings.push(`"${p.name}" already exists — skipped`);
-          continue;
-        }
-        existingNames.add(key);
-        try {
-          await createVendor.mutateAsync(p);
-          ok += 1;
-        } catch (e) {
-          fails.push(`${p.name}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
+      if (payloads.length === 0) {
+        setImportMsg(
+          errors.length
+            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
+            : 'Nothing to import — the sheet has no vendor rows.',
+        );
+        return;
       }
+      const res = await bulkCreate.mutateAsync({ vendors: payloads });
+      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
       setImportMsg(
-        `Imported ${ok}/${payloads.length} vendor(s).` +
-          (skipped ? ` ${skipped} duplicate(s) skipped.` : '') +
-          (warnings.length ? ` ${warnings.length} row warning(s): ${fmtList(warnings)}` : '') +
-          (fails.length ? ` Failures: ${fmtList(fails)}` : ''),
+        `Imported ${res.created}/${payloads.length} vendor(s).` +
+          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
+          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');

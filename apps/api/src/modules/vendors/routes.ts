@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { createVendorInputSchema, listVendorsQuerySchema, updateVendorInputSchema } from './schema';
+import {
+  bulkCreateVendorsInputSchema,
+  createVendorInputSchema,
+  listVendorsQuerySchema,
+  updateVendorInputSchema,
+} from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -31,6 +36,17 @@ export async function vendorsRoutes(app: FastifyInstance): Promise<void> {
     const row = await service.createVendor(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Whole-sheet import. Must precede '/vendors/:id' patterns is not an issue
+  // (different method), but it sits beside the single create on purpose: same
+  // gate, same shape per row — only the round trips differ.
+  app.post('/vendors/bulk', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = bulkCreateVendorsInputSchema.parse(req.body);
+    const result = await service.createVendorsBulk(body, req.user);
+    reply.code(201);
+    return result;
   });
 
   app.patch('/vendors/:id', async (req) => {

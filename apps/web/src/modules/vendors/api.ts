@@ -1,4 +1,6 @@
 import type {
+  BulkCreateVendorsInput,
+  BulkCreateVendorsResponse,
   CreateVendorInput,
   ListVendorsQuery,
   ListVendorsResponse,
@@ -60,6 +62,23 @@ export function useCreateVendor() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
       qc.setQueryData(vendorsKeys.detail(created.id), created);
+    },
+  });
+}
+
+/** Whole-sheet Excel import: ONE request, ONE list reload at the end.
+ *
+ *  The importer used to loop useCreateVendor over the rows, and each success
+ *  invalidated the list — so the browser re-downloaded the entire vendor master
+ *  after every row, getting slower as the master grew. Measured live at about
+ *  one vendor per second. */
+export function useBulkCreateVendors() {
+  const qc = useQueryClient();
+  return useMutation<BulkCreateVendorsResponse, Error, BulkCreateVendorsInput>({
+    mutationFn: (input) =>
+      apiFetch<BulkCreateVendorsResponse>('/vendors/bulk', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: vendorsKeys.lists() });
     },
   });
 }
