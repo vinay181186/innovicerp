@@ -23,7 +23,7 @@ import { z } from 'zod';
 import { SortableHead } from '@/components/shared/sortable-head';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateOperator, useOperatorsList, useSoftDeleteOperator } from '../api';
+import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from '../api';
 import { downloadOperatorTemplate, parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
@@ -91,9 +91,21 @@ function OperatorsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useOperatorsList(query);
   const softDelete = useSoftDeleteOperator();
 
-  // Excel import — parse the workbook, then create each operator sequentially
-  // (each success invalidates the list via the mutation hook).
-  const createOperator = useCreateOperator();
+  // Excel import — the WHOLE sheet goes in one request, and the list reloads
+  // once at the end.
+  //
+  // It used to loop the single-create mutation over the rows: one round trip per
+  // operator, and because each success invalidated the list query, the browser
+  // re-downloaded the entire operator master after every row — so the import got
+  // slower the longer it ran. Measured on the live vendors import (same code
+  // shape) at ~1 row/second, which put a 500-row sheet at about nine minutes.
+  //
+  // The duplicate-NAME guard moved to the server with it — name is the only key
+  // the operator template gives us (it has no Code column). It used to compare
+  // against `data.operators`, i.e. the page of operators currently loaded on
+  // screen, so anything past that page read as "new" and was created a second
+  // time.
+  const bulkCreate = useBulkCreateOperators();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -103,34 +115,20 @@ function OperatorsListPage(): React.JSX.Element {
     setImportMsg(null);
     try {
       const { payloads, errors } = await parseOperatorImportFile(file);
-      // Re-import guard: the template has no Code column, so the same file would
-      // otherwise create duplicate operators on every import. Skip any name that
-      // already exists (case-insensitive) in the loaded list.
-      const existingNames = new Set((data?.operators ?? []).map((o) => o.name.trim().toLowerCase()));
-      const warnings = [...errors];
-      let ok = 0;
-      let skipped = 0;
-      const fails: string[] = [];
-      for (const p of payloads) {
-        const key = p.name.trim().toLowerCase();
-        if (existingNames.has(key)) {
-          skipped += 1;
-          warnings.push(`"${p.name}" already exists — skipped`);
-          continue;
-        }
-        existingNames.add(key);
-        try {
-          await createOperator.mutateAsync(p);
-          ok += 1;
-        } catch (e) {
-          fails.push(`${p.name}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
+      if (payloads.length === 0) {
+        setImportMsg(
+          errors.length
+            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
+            : 'Nothing to import — the sheet has no operator rows.',
+        );
+        return;
       }
+      const res = await bulkCreate.mutateAsync({ operators: payloads });
+      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
       setImportMsg(
-        `Imported ${ok}/${payloads.length} operator(s).` +
-          (skipped ? ` ${skipped} duplicate(s) skipped.` : '') +
-          (warnings.length ? ` ${warnings.length} row warning(s): ${fmtList(warnings)}` : '') +
-          (fails.length ? ` Failures: ${fmtList(fails)}` : ''),
+        `Imported ${res.created}/${payloads.length} operator(s).` +
+          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
+          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');

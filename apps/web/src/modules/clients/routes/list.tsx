@@ -27,7 +27,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { SortTh, nextSort } from '@/components/shared/sortable-th';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useClientsList, useCreateClient, useSoftDeleteClient } from '../api';
+import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
 import { downloadClientTemplate, parseClientImportFile } from '../lib/import-export';
 
 // No pagination — Clients is a master list, so it mirrors the SO/WO list: one
@@ -99,9 +99,21 @@ function ClientsListPage(): React.JSX.Element {
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
 
-  // Excel import — parse the workbook, then create each client sequentially
-  // (each success invalidates the list via the mutation hook).
-  const createClient = useCreateClient();
+  // Excel import — the WHOLE sheet goes in one request, and the list reloads
+  // once at the end.
+  //
+  // It used to loop the single-create mutation over the rows: one round trip per
+  // client, and because each success invalidated the list query, the browser
+  // re-downloaded the entire client master after every row — so the import got
+  // slower the longer it ran. Measured on the live system (the identical vendor
+  // import) at ~1 row/second, which put a 500-row sheet at about nine minutes.
+  //
+  // The duplicate-NAME guard moved to the server with it — name is the key this
+  // page has always de-duplicated on, because the template carries no Code
+  // column. It used to compare against `data.clients`, i.e. the page of clients
+  // currently loaded on screen, so anything past that page read as "new" and was
+  // created a second time. The server now compares against the whole company.
+  const bulkCreate = useBulkCreateClients();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -111,34 +123,20 @@ function ClientsListPage(): React.JSX.Element {
     setImportMsg(null);
     try {
       const { payloads, errors } = await parseClientImportFile(file);
-      // Re-import guard: the template has no Code column, so the same file would
-      // otherwise create duplicate clients on every import. Skip any name that
-      // already exists (case-insensitive) in the loaded list.
-      const existingNames = new Set((data?.clients ?? []).map((c) => c.name.trim().toLowerCase()));
-      const warnings = [...errors];
-      let ok = 0;
-      let skipped = 0;
-      const fails: string[] = [];
-      for (const p of payloads) {
-        const key = p.name.trim().toLowerCase();
-        if (existingNames.has(key)) {
-          skipped += 1;
-          warnings.push(`"${p.name}" already exists — skipped`);
-          continue;
-        }
-        existingNames.add(key);
-        try {
-          await createClient.mutateAsync(p);
-          ok += 1;
-        } catch (e) {
-          fails.push(`${p.name}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
+      if (payloads.length === 0) {
+        setImportMsg(
+          errors.length
+            ? `Nothing to import. ${errors.length} row issue(s): ${fmtList(errors)}`
+            : 'Nothing to import — the sheet has no client rows.',
+        );
+        return;
       }
+      const res = await bulkCreate.mutateAsync({ clients: payloads });
+      const skips = res.skipped.map((s) => `Row ${s.index} "${s.name}": ${s.reason}`);
       setImportMsg(
-        `Imported ${ok}/${payloads.length} client(s).` +
-          (skipped ? ` ${skipped} duplicate(s) skipped.` : '') +
-          (warnings.length ? ` ${warnings.length} row warning(s): ${fmtList(warnings)}` : '') +
-          (fails.length ? ` Failures: ${fmtList(fails)}` : ''),
+        `Imported ${res.created}/${payloads.length} client(s).` +
+          (skips.length ? ` ${skips.length} skipped: ${fmtList(skips)}` : '') +
+          (errors.length ? ` ${errors.length} row warning(s): ${fmtList(errors)}` : ''),
       );
     } catch (e) {
       setImportMsg(e instanceof Error ? e.message : 'Import failed');

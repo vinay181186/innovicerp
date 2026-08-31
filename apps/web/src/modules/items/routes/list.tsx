@@ -36,7 +36,7 @@ import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useMyCompany } from '@/modules/settings/api';
-import { useCreateItem, useItemsList, useSoftDeleteItem } from '../api';
+import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
 import { downloadItemTemplate, parseItemImportFile } from '../lib/import-export';
 import { printItemDrawing } from '../lib/print-drawing';
 
@@ -166,9 +166,13 @@ function ItemsListPage(): React.JSX.Element {
     [company],
   );
 
-  // Excel import — parse the workbook, then create each item sequentially
-  // (each success invalidates the list via the mutation hook).
-  const createItem = useCreateItem();
+  // Excel import — parse the workbook, then send the WHOLE sheet in one request.
+  // It used to POST one item at a time and wait for each answer, and every
+  // answer invalidated the list below, so the browser re-downloaded the entire
+  // item master after every row. On the identical vendor import that measured
+  // about one row a second — nine minutes for a 500-row sheet. Now: one request,
+  // one list reload at the end.
+  const bulkCreate = useBulkCreateItems();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -180,25 +184,38 @@ function ItemsListPage(): React.JSX.Element {
     setImportError(null);
     try {
       const { payloads, errors } = await parseItemImportFile(file);
-      const imported: string[] = [];
+      if (payloads.length === 0) {
+        setImportResult({
+          total: 0,
+          imported: [],
+          duplicates: [],
+          failures: [],
+          warnings: errors,
+        });
+        return;
+      }
+      const res = await bulkCreate.mutateAsync({ items: payloads });
       const duplicates: string[] = [];
       const failures: string[] = [];
-      for (const p of payloads) {
-        // Code is optional on import now (auto-assigned server-side), so fall
-        // back to the name for the result lists the user sees.
-        const label = p.code ?? p.name;
-        try {
-          await createItem.mutateAsync(p);
-          imported.push(label);
-        } catch (e) {
-          const reason = e instanceof Error ? e.message : 'failed';
-          // The API rejects an existing code with `… already exists`; split those
-          // out as duplicates so the user gets a clean list of what to remove.
-          if (/already exists/i.test(reason)) duplicates.push(label);
-          else failures.push(`${label}: ${reason}`);
-        }
+      for (const skip of res.skipped) {
+        // `index` is the 1-based position in the array we sent, so it maps
+        // straight back to the parsed row and its code. Code is optional on
+        // import (auto-assigned server-side), so fall back to the name.
+        const label = payloads[skip.index - 1]?.code ?? skip.name;
+        // A code that is already taken is a duplicate — the user's fix is to
+        // remove that row. Anything else is a genuine failure worth its reason.
+        if (/already exists|deleted item/i.test(skip.reason)) duplicates.push(label);
+        else failures.push(`${label}: ${skip.reason}`);
       }
-      setImportResult({ total: payloads.length, imported, duplicates, failures, warnings: errors });
+      // `codes` are the codes actually assigned, in insert order — including the
+      // ITM-#### the server generated for rows that left the code blank.
+      setImportResult({
+        total: payloads.length,
+        imported: res.codes,
+        duplicates,
+        failures,
+        warnings: errors,
+      });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : 'Import failed');
     } finally {

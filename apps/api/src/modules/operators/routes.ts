@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
+  bulkCreateOperatorsInputSchema,
   createOperatorInputSchema,
   listOperatorsQuerySchema,
   updateOperatorInputSchema,
@@ -35,6 +36,16 @@ export async function operatorsRoutes(app: FastifyInstance): Promise<void> {
     const row = await service.createOperator(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Whole-sheet import. It sits beside the single create on purpose: same gate,
+  // same shape per row — only the round trips differ.
+  app.post('/operators/bulk', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = bulkCreateOperatorsInputSchema.parse(req.body);
+    const result = await service.createOperatorsBulk(body, req.user);
+    reply.code(201);
+    return result;
   });
 
   app.patch('/operators/:id', async (req) => {

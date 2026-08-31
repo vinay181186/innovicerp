@@ -1,4 +1,6 @@
 import type {
+  BulkCreateOperatorsInput,
+  BulkCreateOperatorsResponse,
   CreateOperatorInput,
   ListOperatorsQuery,
   ListOperatorsResponse,
@@ -60,6 +62,23 @@ export function useCreateOperator() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: operatorsKeys.lists() });
       qc.setQueryData(operatorsKeys.detail(created.id), created);
+    },
+  });
+}
+
+/** Whole-sheet Excel import: ONE request, ONE list reload at the end.
+ *
+ *  The importer used to loop useCreateOperator over the rows, and each success
+ *  invalidated the list — so the browser re-downloaded the entire operator
+ *  master after every row, getting slower as the master grew. Measured live on
+ *  the vendors import (same code shape) at about one row per second. */
+export function useBulkCreateOperators() {
+  const qc = useQueryClient();
+  return useMutation<BulkCreateOperatorsResponse, Error, BulkCreateOperatorsInput>({
+    mutationFn: (input) =>
+      apiFetch<BulkCreateOperatorsResponse>('/operators/bulk', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: operatorsKeys.lists() });
     },
   });
 }

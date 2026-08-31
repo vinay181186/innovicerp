@@ -6,6 +6,9 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import type {
+  BulkCreateItemsInput,
+  BulkCreateItemsResponse,
+  BulkItemSkip,
   CreateItemInput,
   Item,
   ListItemsQuery,
@@ -156,6 +159,149 @@ export async function createItem(input: CreateItemInput, user: AuthContext): Pro
       return row;
     }),
   );
+}
+
+/**
+ * Create many items in ONE transaction — the Excel importer's whole sheet.
+ *
+ * Why this exists: the importer used to call createItem once per row and wait
+ * for each round trip, and every success invalidated the on-screen item list, so
+ * the browser re-downloaded the whole master after every row. Measured live on
+ * the identical vendor import, that ran at ~1 row/second — nine minutes for a
+ * 500-row sheet — and got slower as the master grew.
+ *
+ * What makes this fast is not batching the HTTP call alone — it is doing the
+ * per-row work ONCE:
+ *   - one access check, one transaction, one RLS context set;
+ *   - existing codes read in a single query instead of one lookup per row;
+ *   - the ITM-#### series continued in memory instead of re-scanning the table
+ *     for every row;
+ *   - one multi-row INSERT instead of N;
+ *   - one activity-log line for the import instead of one per item.
+ *
+ * DE-DUPLICATION KEY: item CODE, and only code. That is what the importer has
+ * always used — the sheet's "Item Code*" column is required, the parser rejects
+ * a code repeated inside the file, and the API rejected a code already stored.
+ * Names are deliberately NOT de-duplicated: two genuinely different items can
+ * share a name (same part, different revision or customer), so refusing on name
+ * would throw away real rows. The check simply moves here, where it compares
+ * against the WHOLE company instead of only the rows the browser had loaded.
+ *
+ * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
+ * in. A sheet with one duplicate should not cost the operator the other 499.
+ */
+export async function createItemsBulk(
+  input: BulkCreateItemsInput,
+  user: AuthContext,
+): Promise<BulkCreateItemsResponse> {
+  // Same gate as a single create — this raises items, so it is `entry`.
+  await requireFormAccess(user, 'item_create', 'entry');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // One read of what already exists, rather than a duplicate-check per row.
+    // Deleted rows are included on purpose: their CODE is still taken (the
+    // single create refuses to reuse it), so the series must skip past them and
+    // the operator gets told to restore rather than re-create.
+    const existingRows = await tx
+      .select({ code: items.code, deletedAt: items.deletedAt })
+      .from(items)
+      .where(eq(items.companyId, companyId));
+
+    const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
+    const deletedCodes = new Set(
+      existingRows.filter((r) => r.deletedAt).map((r) => r.code.trim().toLowerCase()),
+    );
+
+    // Continue the ITM-#### series in memory. nextItemCode() scans the table for
+    // the highest code; doing that per row is one extra query per item.
+    let nextSeq = 0;
+    for (const r of existingRows) {
+      const m = /^ITM-(\d+)$/i.exec(r.code.trim());
+      if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
+    }
+
+    const skipped: BulkItemSkip[] = [];
+    const values: Array<typeof items.$inferInsert> = [];
+    const codes: string[] = [];
+
+    for (const [i, it] of input.items.entries()) {
+      const index = i + 1;
+      const name = it.name.trim();
+
+      let code = it.code?.trim();
+      if (code) {
+        const key = code.toLowerCase();
+        if (deletedCodes.has(key)) {
+          skipped.push({
+            index,
+            name,
+            reason: `code "${code}" belongs to a deleted item — restore it instead of re-creating`,
+          });
+          continue;
+        }
+        if (takenCodes.has(key)) {
+          skipped.push({ index, name, reason: `code "${code}" already exists` });
+          continue;
+        }
+      } else {
+        // Code is optional on import — the server assigns the next in series,
+        // exactly as the single create does when the form leaves it blank.
+        nextSeq += 1;
+        code = `ITM-${String(nextSeq).padStart(4, '0')}`;
+        // Defensive: a company holding a hand-typed ITM-0007 alongside the
+        // series could collide. Walk forward until the code is free.
+        while (takenCodes.has(code.toLowerCase())) {
+          nextSeq += 1;
+          code = `ITM-${String(nextSeq).padStart(4, '0')}`;
+        }
+      }
+      // Claim the code so a duplicate INSIDE the sheet is caught too, not only
+      // one against what was already stored.
+      takenCodes.add(code.toLowerCase());
+
+      values.push({
+        companyId,
+        code,
+        name,
+        description: it.description ?? null,
+        drawingNo: it.drawingNo ?? null,
+        revision: it.revision,
+        material: it.material ?? null,
+        uom: it.uom,
+        itemType: it.itemType,
+        hsnCode: it.hsnCode ?? null,
+        drawingFilePath: it.drawingFilePath ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      codes.push(code);
+    }
+
+    if (values.length > 0) {
+      // One statement for the lot. Chunked because a single INSERT carries one
+      // parameter per column per row and Postgres caps a statement at 65535.
+      const CHUNK = 500;
+      for (let i = 0; i < values.length; i += CHUNK) {
+        await tx.insert(items).values(values.slice(i, i + CHUNK));
+      }
+      // One line for the whole import. Writing an activity row per item would
+      // put the per-row cost straight back into the transaction, and the log
+      // reader wants "500 items imported", not 500 near-identical lines.
+      await emitActivityLog(
+        tx,
+        {
+          action: 'CREATE',
+          entity: 'Item',
+          detail: `Excel import — ${values.length} item(s): ${codes[0]}…${codes[codes.length - 1]}`,
+        },
+        companyId,
+        user,
+      );
+    }
+
+    return { created: values.length, skipped, codes };
+  });
 }
 
 export async function updateItem(

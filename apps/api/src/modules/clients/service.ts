@@ -6,6 +6,9 @@ import { requireWriteRole } from '../../lib/auth';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import type {
+  BulkClientSkip,
+  BulkCreateClientsInput,
+  BulkCreateClientsResponse,
   Client,
   CreateClientInput,
   ListClientsQuery,
@@ -155,6 +158,130 @@ export async function createClient(input: CreateClientInput, user: AuthContext):
       return inserted[0] as unknown as Client;
     }),
   );
+}
+
+/**
+ * Create many clients in ONE transaction — the Excel importer's whole sheet.
+ *
+ * Why this exists: the importer used to call createClient once per row and wait
+ * for each round trip, and every success invalidated the on-screen client list,
+ * so the browser re-downloaded the whole master after every row. Measured on the
+ * live system, the identical vendor import ran at ~1 row/second and got slower
+ * as the list grew — nine minutes for a 500-row sheet.
+ *
+ * What makes this fast is not batching the HTTP call alone — it is doing the
+ * per-row work ONCE:
+ *   - one access check, one transaction, one RLS context set;
+ *   - existing codes and names read in a single query instead of two per row;
+ *   - the CLI-### series continued in memory instead of re-scanning the table
+ *     for every row;
+ *   - one multi-row INSERT instead of N.
+ *
+ * Tolerant, not all-or-nothing: a bad row is reported and left out, the rest go
+ * in. A sheet with one duplicate should not cost the operator the other 499.
+ */
+export async function createClientsBulk(
+  input: BulkCreateClientsInput,
+  user: AuthContext,
+): Promise<BulkCreateClientsResponse> {
+  // Same gate as a single create — this raises clients, so it is `entry`.
+  requireWriteRole(user);
+  await requireFormAccess(user, 'client_create', 'entry');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    // One read of what already exists, rather than a duplicate-check per row.
+    // Deleted rows are included on purpose: their CODE is still taken (the
+    // single create refuses to reuse it), so the series must skip past them.
+    const existingRows = await tx
+      .select({ code: clients.code, name: clients.name, deletedAt: clients.deletedAt })
+      .from(clients)
+      .where(eq(clients.companyId, companyId));
+
+    const takenCodes = new Set(existingRows.map((r) => r.code.trim().toLowerCase()));
+    // NAME is the de-duplication key the Client Master importer has always used
+    // — the template carries no Code column, so a re-run of the same file has
+    // nothing else to match on. Kept exactly as it was, only moved here: on the
+    // page it compared against the clients loaded on screen, so anything past
+    // that page read as "new" and got created a second time. Here it compares
+    // against the whole company. Live rows only — a deleted client's name is
+    // free to use again.
+    const takenNames = new Set(
+      existingRows.filter((r) => !r.deletedAt).map((r) => r.name.trim().toLowerCase()),
+    );
+
+    // Continue the CLI-### series in memory. nextClientCode() scans the table
+    // for the highest code; doing that per row is one query per client.
+    let nextSeq = 0;
+    for (const r of existingRows) {
+      const m = /^CLI-(\d+)$/i.exec(r.code.trim());
+      if (m) nextSeq = Math.max(nextSeq, Number(m[1]));
+    }
+
+    const skipped: BulkClientSkip[] = [];
+    const values: Array<typeof clients.$inferInsert> = [];
+    const codes: string[] = [];
+
+    for (const [i, c] of input.clients.entries()) {
+      const index = i + 1;
+      const name = c.name.trim();
+      const nameKey = name.toLowerCase();
+      if (takenNames.has(nameKey)) {
+        skipped.push({ index, name, reason: 'a client with this name already exists' });
+        continue;
+      }
+
+      let code = c.code?.trim();
+      if (code) {
+        if (takenCodes.has(code.toLowerCase())) {
+          skipped.push({ index, name, reason: `code "${code}" is already used` });
+          continue;
+        }
+      } else {
+        nextSeq += 1;
+        code = `CLI-${String(nextSeq).padStart(3, '0')}`;
+        // Defensive: a company holding a hand-typed CLI-007 alongside the series
+        // could collide. Walk forward until the code is free.
+        while (takenCodes.has(code.toLowerCase())) {
+          nextSeq += 1;
+          code = `CLI-${String(nextSeq).padStart(3, '0')}`;
+        }
+      }
+      // Claim both keys so a duplicate INSIDE the sheet is caught too, not just
+      // one against what was already stored.
+      takenCodes.add(code.toLowerCase());
+      takenNames.add(nameKey);
+
+      values.push({
+        companyId,
+        code,
+        name,
+        contactPerson: emptyToNull(c.contactPerson),
+        email: emptyToNull(c.email),
+        phone: emptyToNull(c.phone),
+        gstNumber: emptyToNull(c.gstNumber),
+        addressLine1: emptyToNull(c.addressLine1),
+        city: emptyToNull(c.city),
+        state: emptyToNull(c.state),
+        pincode: emptyToNull(c.pincode),
+        isActive: c.isActive,
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      codes.push(code);
+    }
+
+    if (values.length > 0) {
+      // One statement for the lot. Chunked because a single INSERT carries one
+      // parameter per column per row and Postgres caps a statement at 65535.
+      const CHUNK = 500;
+      for (let i = 0; i < values.length; i += CHUNK) {
+        await tx.insert(clients).values(values.slice(i, i + CHUNK));
+      }
+    }
+
+    return { created: values.length, skipped, codes };
+  });
 }
 
 export async function updateClient(

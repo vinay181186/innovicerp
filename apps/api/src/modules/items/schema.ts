@@ -2,12 +2,16 @@
 // schemas or re-export from @innovic/shared; we re-export so the source of
 // truth stays in the shared package and frontend uses the same types.
 export {
+  bulkCreateItemsInputSchema,
   createItemInputSchema,
   itemSchema,
   listItemsQuerySchema,
   updateItemInputSchema,
 } from '@innovic/shared';
 export type {
+  BulkCreateItemsInput,
+  BulkCreateItemsResponse,
+  BulkItemSkip,
   CreateItemInput,
   Item,
   ListItemsQuery,

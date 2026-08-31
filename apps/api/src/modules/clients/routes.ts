@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { createClientInputSchema, listClientsQuerySchema, updateClientInputSchema } from './schema';
+import {
+  bulkCreateClientsInputSchema,
+  createClientInputSchema,
+  listClientsQuerySchema,
+  updateClientInputSchema,
+} from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -31,6 +36,16 @@ export async function clientsRoutes(app: FastifyInstance): Promise<void> {
     const row = await service.createClient(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Whole-sheet import. It sits beside the single create on purpose: same gate,
+  // same shape per row — only the number of round trips differs.
+  app.post('/clients/bulk', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = bulkCreateClientsInputSchema.parse(req.body);
+    const result = await service.createClientsBulk(body, req.user);
+    reply.code(201);
+    return result;
   });
 
   app.patch('/clients/:id', async (req) => {

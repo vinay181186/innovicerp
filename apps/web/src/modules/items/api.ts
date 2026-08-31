@@ -1,4 +1,6 @@
 import type {
+  BulkCreateItemsInput,
+  BulkCreateItemsResponse,
   CreateItemInput,
   Item,
   ListItemsQuery,
@@ -60,6 +62,23 @@ export function useCreateItem() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
       qc.setQueryData(itemsKeys.detail(created.id), created);
+    },
+  });
+}
+
+/** Whole-sheet Excel import: ONE request, ONE list reload at the end.
+ *
+ *  The importer used to loop useCreateItem over the rows, and each success
+ *  invalidated the list — so the browser re-downloaded the entire item master
+ *  after every row, getting slower as the master grew. The same pattern on the
+ *  vendor import measured about one row per second. */
+export function useBulkCreateItems() {
+  const qc = useQueryClient();
+  return useMutation<BulkCreateItemsResponse, Error, BulkCreateItemsInput>({
+    mutationFn: (input) =>
+      apiFetch<BulkCreateItemsResponse>('/items/bulk', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
     },
   });
 }

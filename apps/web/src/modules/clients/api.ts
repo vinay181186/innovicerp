@@ -1,4 +1,6 @@
 import type {
+  BulkCreateClientsInput,
+  BulkCreateClientsResponse,
   Client,
   CreateClientInput,
   ListClientsQuery,
@@ -60,6 +62,24 @@ export function useCreateClient() {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
       qc.setQueryData(clientsKeys.detail(created.id), created);
+    },
+  });
+}
+
+/** Whole-sheet Excel import: ONE request, ONE list reload at the end.
+ *
+ *  The importer used to loop useCreateClient over the rows, and each success
+ *  invalidated the list — so the browser re-downloaded the entire client master
+ *  after every row, getting slower as the master grew. Measured live on the
+ *  identical vendor import at about one row per second, i.e. nine minutes for a
+ *  500-row sheet. */
+export function useBulkCreateClients() {
+  const qc = useQueryClient();
+  return useMutation<BulkCreateClientsResponse, Error, BulkCreateClientsInput>({
+    mutationFn: (input) =>
+      apiFetch<BulkCreateClientsResponse>('/clients/bulk', { method: 'POST', json: input }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: clientsKeys.lists() });
     },
   });
 }

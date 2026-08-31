@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { createItemInputSchema, listItemsQuerySchema, updateItemInputSchema } from './schema';
+import {
+  bulkCreateItemsInputSchema,
+  createItemInputSchema,
+  listItemsQuerySchema,
+  updateItemInputSchema,
+} from './schema';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -31,6 +36,16 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
     const row = await service.createItem(body, req.user);
     reply.code(201);
     return row;
+  });
+
+  // Whole-sheet Excel import. Sits beside the single create on purpose: same
+  // gate, same shape per row — only the number of round trips differs.
+  app.post('/items/bulk', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = bulkCreateItemsInputSchema.parse(req.body);
+    const result = await service.createItemsBulk(body, req.user);
+    reply.code(201);
+    return result;
   });
 
   app.patch('/items/:id', async (req) => {
