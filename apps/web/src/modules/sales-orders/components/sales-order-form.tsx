@@ -37,6 +37,8 @@ import {
   type ListItemsResponse,
   type SalesOrderDetail,
   SELECTABLE_SO_TYPES,
+  SO_GST_DEFAULT,
+  SO_GST_PERCENTS,
   type SoStatus,
   type SoType,
   type UpdateSalesOrderInput,
@@ -106,7 +108,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   soDate: todayLocal(),
   type: 'component_manufacturing',
   status: 'open',
-  gstPercent: 18,
+  gstPercent: SO_GST_DEFAULT,
 };
 const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
@@ -681,7 +683,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         <div className="form-grp">
           <label className="form-label" htmlFor="gstPercent" style={{ color: 'var(--green)' }}>GST %</label>
           <select id="gstPercent" className="innovic-select" {...register('header.gstPercent', { valueAsNumber: true })}>
-            {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
+            {SO_GST_PERCENTS.map((g) => <option key={g} value={g}>{g}%</option>)}
           </select>
         </div>
 

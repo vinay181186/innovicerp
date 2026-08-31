@@ -9,6 +9,7 @@ export * from './enums/running-op-status';
 export * from './enums/shift';
 export * from './enums/jc-priority';
 export * from './enums/jc-computed-status';
+export * from './enums/so-gst';
 export * from './enums/so-type';
 export * from './enums/so-status';
 export * from './enums/po-status';

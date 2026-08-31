@@ -20,29 +20,22 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useClientsList } from '@/modules/clients/api';
 import { soDocSignedUrl } from '@/modules/so-documents/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
 import {
   fetchSalesOrdersForExport,
-  useCreateSalesOrder,
   useSalesOrder,
   useSalesOrdersList,
   useSoftDeleteSalesOrder,
   useUpdateSalesOrder,
 } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
-import {
-  type SoImportResult,
-  downloadSoTemplate,
-  exportSoListExcel,
-  parseSoImportFile,
-} from '../lib/import-export';
+import { exportSoListExcel } from '../lib/import-export';
 
 // ISSUE-020 — legacy puts its cell classes on the <td> itself (e.g. L11867
 // `<td class="td-ctr mono fw-700">`), not on a wrapper span. td-ctr is
@@ -193,56 +186,11 @@ function SalesOrdersListPage(): React.JSX.Element {
     if (confirm(`Delete SO ${so.code}? This soft-deletes the whole order.`)) softDelete.mutate(so.id);
   };
 
-  // Export + bulk-import status banner.
+  // Export status banner — an export that finds nothing, or fails, says so here.
+  // (There was a bulk multi-SO Excel import on this screen; removed on the
+  // user's instruction 2026-08-31. Orders are raised through + New SO / WO. The
+  // per-SO line-item import inside the SO form is untouched.)
   const [importMsg, setImportMsg] = useState<string | null>(null);
-
-  // ── Bulk multi-SO Excel import (one spreadsheet → many Sales Orders) ──
-  // Client master resolves the sheet's "Client" column (by name or code); SOs
-  // must reference a real client, so unmatched rows are reported, not created.
-  const { data: clientsData } = useClientsList({ limit: 200, offset: 0 });
-  const clients = useMemo(() => clientsData?.clients ?? [], [clientsData]);
-  const createSo = useCreateSalesOrder();
-  const importFileRef = useRef<HTMLInputElement>(null);
-  const [importPreview, setImportPreview] = useState<SoImportResult | null>(null);
-  const [importResult, setImportResult] = useState<{ ok: number; total: number; failures: string[] } | null>(null);
-  const [importing, setImporting] = useState(false);
-
-  async function onPickImportFile(file: File): Promise<void> {
-    setImportMsg(null);
-    setImportResult(null);
-    try {
-      const result = await parseSoImportFile(file, clients);
-      // Show the preview even with zero payloads so the parse errors are
-      // visible; Confirm is disabled when there is nothing to create.
-      setImportPreview(result);
-    } catch (e) {
-      setImportMsg(e instanceof Error ? e.message : 'Import failed');
-    } finally {
-      if (importFileRef.current) importFileRef.current.value = '';
-    }
-  }
-
-  async function onConfirmImport(): Promise<void> {
-    if (!importPreview) return;
-    setImporting(true);
-    const failures: string[] = [];
-    let ok = 0;
-    // Sequential create so a mid-batch failure is isolated per SO (the SO No.
-    // from each payload labels any failure).
-    for (const payload of importPreview.payloads) {
-      const soNo = payload.header.code ?? '(no SO No.)';
-      try {
-        await createSo.mutateAsync(payload);
-        ok += 1;
-      } catch (e) {
-        failures.push(`${soNo}: ${e instanceof Error ? e.message : 'failed'}`);
-      }
-    }
-    const total = importPreview.payloads.length;
-    setImporting(false);
-    setImportPreview(null);
-    setImportResult({ ok, total, failures });
-  }
 
   // Export the whole filtered list to Excel — pulls every matching row (not just
   // the visible page) using the current search/type/status filter.
@@ -360,23 +308,6 @@ function SalesOrdersListPage(): React.JSX.Element {
             <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={exporting} title="Export the current (filtered) list to Excel" onClick={() => void onExport()}>
               {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Download className="inline h-3 w-3" />} Export
             </button>
-            {canCreate ? (
-              <>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} title="Download the bulk SO import template (.xlsx)" onClick={() => downloadSoTemplate()}>
-                  ⬇ Template
-                </button>
-                <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} disabled={importing} title="Import many Sales Orders from one spreadsheet" onClick={() => importFileRef.current?.click()}>
-                  {importing ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '📄'} Import Excel
-                </button>
-                <input
-                  ref={importFileRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  style={{ display: 'none' }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickImportFile(f); }}
-                />
-              </>
-            ) : null}
             {isFetching && !isLoading ? <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}><Loader2 className="inline h-3 w-3 animate-spin" /> Updating…</span> : null}
             {canCreate ? (
               <Link to="/sales-orders/new" className="btn btn-primary">+ New SO / WO</Link>
@@ -423,23 +354,6 @@ function SalesOrdersListPage(): React.JSX.Element {
         <div className="panel" style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}>
           {importMsg}
           <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 8, fontSize: 10 }} onClick={() => setImportMsg(null)}>✕</button>
-        </div>
-      ) : null}
-
-      {importResult ? (
-        <div className="panel" style={{ marginBottom: 10, padding: '10px 14px', fontSize: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontWeight: 700, color: importResult.failures.length ? 'var(--amber)' : 'var(--green)' }}>
-              {importResult.failures.length ? '⚠' : '✅'} Imported {importResult.ok}/{importResult.total} sales order(s)
-              {importResult.failures.length ? ` · ${importResult.failures.length} failed` : ''}
-            </span>
-            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} onClick={() => setImportResult(null)}>✕</button>
-          </div>
-          {importResult.failures.length ? (
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: 'var(--red)', maxHeight: 160, overflowY: 'auto' }}>
-              {importResult.failures.map((f, i) => <li key={i}>{f}</li>)}
-            </ul>
-          ) : null}
         </div>
       ) : null}
 
@@ -626,71 +540,6 @@ function SalesOrdersListPage(): React.JSX.Element {
       </div>
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
         💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.
-      </div>
-
-      {importPreview ? (
-        <ImportPreviewModal
-          preview={importPreview}
-          importing={importing}
-          onCancel={() => setImportPreview(null)}
-          onConfirm={() => void onConfirmImport()}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/** Preview/confirm step for the bulk multi-SO import. Summarizes how many Sales
- *  Orders / lines will be created and lists any row-level parse errors before
- *  the user commits to writing them. */
-function ImportPreviewModal({
-  preview,
-  importing,
-  onCancel,
-  onConfirm,
-}: {
-  preview: SoImportResult;
-  importing: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}): React.JSX.Element {
-  const soCount = preview.payloads.length;
-  const lineCount = preview.payloads.reduce((s, p) => s + p.lines.length, 0);
-  const errCount = preview.errors.length;
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
-      onClick={importing ? undefined : onCancel}
-    >
-      <div
-        style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 20, width: 'min(560px, 94vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>📄 Confirm SO Import</div>
-        <div style={{ fontSize: 13, marginBottom: 10 }}>
-          <b style={{ color: 'var(--green)' }}>{soCount}</b> sales order{soCount === 1 ? '' : 's'},{' '}
-          <b style={{ color: 'var(--cyan)' }}>{lineCount}</b> line{lineCount === 1 ? '' : 's'}
-          {errCount ? <>, <b style={{ color: 'var(--amber)' }}>{errCount}</b> row error{errCount === 1 ? '' : 's'}</> : null}.
-        </div>
-        {errCount ? (
-          <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 6, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
-            <div style={{ fontWeight: 700, color: 'var(--amber)', fontSize: 12, marginBottom: 4 }}>⚠ Rows skipped ({errCount})</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: 'var(--text2)', maxHeight: 180, overflowY: 'auto' }}>
-              {preview.errors.map((err, i) => <li key={i}>{err}</li>)}
-            </ul>
-          </div>
-        ) : null}
-        {soCount === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
-            Nothing to import — fix the sheet and try again.
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
-          <button type="button" className="btn btn-ghost" disabled={importing} onClick={onCancel}>Cancel</button>
-          <button type="button" className="btn btn-primary" disabled={importing || soCount === 0} onClick={onConfirm}>
-            {importing ? <Loader2 size={13} className="inline animate-spin" /> : null} Confirm &amp; Create {soCount}
-          </button>
-        </div>
       </div>
     </div>
   );
