@@ -30,6 +30,14 @@ export const deliveryChallanSchema = z.object({
   salesOrderLineId: z.string().uuid().nullable(),
   soRefText: z.string().nullable(),
   transport: z.string().nullable(),
+  // Vehicle number the goods left on. Kept separate from `transport`
+  // (the transporter's NAME) because the OSP DC print and the gate
+  // register need the two apart. Same column name/type as the four
+  // tables that already carry one: jw_dc_outward, jw_dc_inward,
+  // jw_return_challans, customer_dispatches.
+  // Non-optional on purpose: every read path that returns `transport`
+  // must return this too, and typecheck is what enforces it.
+  vehicleNo: z.string().nullable(),
   status: dcStatusSchema,
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -156,6 +164,7 @@ export const createDeliveryChallanInputSchema = z.object({
     salesOrderLineId: z.string().uuid().nullable().optional(),
     soRefText: z.string().nullable().optional(),
     transport: z.string().nullable().optional(),
+    vehicleNo: z.string().nullable().optional(),
   }),
   lines: z.array(createDeliveryChallanLineInputSchema).min(1),
 });

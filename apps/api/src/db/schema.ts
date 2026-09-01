@@ -2022,6 +2022,10 @@ export const deliveryChallans = pgTable(
     }),
     soRefText: text('so_ref_text'),
     transport: text('transport'),
+    // Vehicle number the goods left on — separate from `transport`, which holds
+    // the transporter's NAME. Same column name/type as jw_dc_outward,
+    // jw_dc_inward, jw_return_challans and customer_dispatches.
+    vehicleNo: text('vehicle_no'),
     status: dcStatusEnum('status').notNull().default('issued'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

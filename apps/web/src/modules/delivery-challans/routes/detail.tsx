@@ -393,6 +393,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
           which is the normal shape for an OSP/vendor challan. */}
       <Pair label="SO" value={dc.soCode ?? dc.soRefText ?? '—'} />
       <Pair label="Transport" value={dc.transport ?? '—'} />
+      <Pair label="Vehicle No" value={dc.vehicleNo ?? '—'} />
       <Pair
         label="Issued on"
         value={

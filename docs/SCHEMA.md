@@ -1355,7 +1355,8 @@ Outbound DC against a JW PO — material sent to vendor for outsource processing
 | `vendor_code_text`    | `text`           | not null. Snapshot                                                                                                                                              |
 | `sales_order_line_id` | `uuid`           | nullable, FK → `sales_order_lines` (`on delete set null`). Resolves legacy short-id `soRefId` via the in-run `idMap['sales_order_lines']`                       |
 | `so_ref_text`         | `text`           | nullable. Original soRefId string preserved even when FK is NULL                                                                                                |
-| `transport`           | `text`           | nullable                                                                                                                                                        |
+| `transport`           | `text`           | nullable. The transporter's NAME (not the vehicle)                                                                                                              |
+| `vehicle_no`          | `text`           | nullable. Vehicle the goods left on. Added `0102_dc_vehicle_no.sql`; same column as `jw_dc_outward` / `jw_dc_inward` / `jw_return_challans` / `customer_dispatches` |
 | `status`              | enum `dc_status` | not null, default `issued`. 3 values: issued / received / cancelled. Only `issued` is exhibited; the other two are forward states                               |
 | audit + `deleted_at`  |                  |                                                                                                                                                                 |
 

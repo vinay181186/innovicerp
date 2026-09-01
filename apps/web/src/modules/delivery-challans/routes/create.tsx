@@ -53,6 +53,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   const [codeValid, setCodeValid] = useState(false);
   const [dcDate, setDcDate] = useState(todayLocal());
   const [transport, setTransport] = useState('');
+  // Vehicle number is kept apart from the transporter NAME (`transport`) — the
+  // OSP DC print and the gate register need the two separately.
+  const [vehicleNo, setVehicleNo] = useState('');
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -162,6 +165,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           vendorId: po.vendorId ?? null,
           vendorCodeText: po.vendorCodeText ?? po.code,
           transport: transport.trim() || null,
+          vehicleNo: vehicleNo.trim() || null,
         },
         lines,
       };
@@ -262,6 +266,18 @@ function DeliveryChallanNewPage(): React.JSX.Element {
               value={transport}
               onChange={(e) => setTransport(e.target.value)}
               placeholder="Transport name"
+            />
+          </div>
+          <div className="form-grp">
+            <label className="form-label" htmlFor="dc-vehicle-no">
+              Vehicle No
+            </label>
+            <input
+              id="dc-vehicle-no"
+              className="innovic-input"
+              value={vehicleNo}
+              onChange={(e) => setVehicleNo(e.target.value)}
+              placeholder="GJ-01-AB-1234"
             />
           </div>
         </div>

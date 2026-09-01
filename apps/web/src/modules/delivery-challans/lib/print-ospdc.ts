@@ -31,7 +31,10 @@ export function printOspDc(args: {
   const linkedPo = dc.poCode ?? dc.poCodeText ?? '';
   const recipientName = vendor?.name ?? dc.vendorName ?? dc.vendorCodeText ?? '';
   const recipientAddress = vendor?.addressLine1 ?? '';
-  const vehicleNo = dc.transport ?? '';
+  // Transporter NAME and vehicle NUMBER are two different fields; the print
+  // shows both, each under its own label.
+  const transporter = dc.transport ?? '';
+  const vehicleNo = dc.vehicleNo ?? '';
 
   const data: Record<string, string> = {
     companyName: company?.name ?? '',
@@ -55,7 +58,8 @@ export function printOspDc(args: {
     { label: 'Date', value: fmtDate(dc.dcDate) },
   ];
   if (linkedPo) meta.push({ label: 'Linked PO', value: linkedPo });
-  if (vehicleNo) meta.push({ label: 'Transport', value: vehicleNo });
+  if (transporter) meta.push({ label: 'Transport', value: transporter });
+  if (vehicleNo) meta.push({ label: 'Vehicle No.', value: vehicleNo });
 
   const model: DocPrintModel = {
     doc: 'OSP DC',
