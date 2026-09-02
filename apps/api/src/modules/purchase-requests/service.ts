@@ -76,6 +76,34 @@ async function assertVendorExists(
   }
 }
 
+/**
+ * Resolve a vendor id to its master `code`, upper-cased and trimmed.
+ *
+ * ADR-015 vendor is FK-or-text: a PR carries EITHER `vendor_id` OR the vendor's
+ * code as free text in `vendor_code_text`. Every PR in production today is the
+ * text half (vendor_id NULL, vendor_code_text 'VND-...'), so a list filter on
+ * the FK alone matched nothing. Resolved ONCE per list call so the where-clause
+ * stays a plain column comparison instead of a per-row join.
+ *
+ * A miss returns null and the caller keeps FK-only behaviour — a list filter
+ * must not throw on an unknown id.
+ */
+async function resolveVendorCode(
+  tx: DbTransaction,
+  vendorId: string,
+  companyId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ code: vendors.code })
+    .from(vendors)
+    .where(
+      and(eq(vendors.id, vendorId), eq(vendors.companyId, companyId), isNull(vendors.deletedAt)),
+    )
+    .limit(1);
+  const code = rows[0]?.code?.trim();
+  return code ? code.toUpperCase() : null;
+}
+
 async function assertItemExists(
   tx: DbTransaction,
   itemId: string,
@@ -230,7 +258,18 @@ export async function listPurchaseRequests(
       ? sql`AND (pr.code ILIKE ${term} OR pr.operation ILIKE ${term} OR pr.item_name ILIKE ${term})`
       : sql``;
     const statusFrag = input.status ? sql`AND pr.status = ${input.status}::pr_status` : sql``;
-    const vendorFrag = input.vendorId ? sql`AND pr.vendor_id = ${input.vendorId}::uuid` : sql``;
+    // ADR-015 FK-or-text vendor: match the FK OR the free-text vendor code.
+    // Every live PR stores the vendor as text, so FK-only matched nothing and
+    // the PO form's per-line PR dropdown looked like it ignored the vendor.
+    // Compared upper-cased + trimmed — a text column carries no guarantee.
+    const vendorCode = input.vendorId
+      ? await resolveVendorCode(tx, input.vendorId, companyId)
+      : null;
+    const vendorFrag = input.vendorId
+      ? vendorCode
+        ? sql`AND (pr.vendor_id = ${input.vendorId}::uuid OR upper(btrim(pr.vendor_code_text)) = ${vendorCode})`
+        : sql`AND pr.vendor_id = ${input.vendorId}::uuid`
+      : sql``;
     const jcOpFrag = input.sourceJcOpId
       ? sql`AND pr.source_jc_op_id = ${input.sourceJcOpId}::uuid`
       : sql``;
@@ -298,7 +337,18 @@ export async function listPurchaseRequests(
     ];
     if (input.status) conditions.push(eq(purchaseRequests.status, input.status));
     if (input.prType) conditions.push(eq(purchaseRequests.prType, input.prType));
-    if (input.vendorId) conditions.push(eq(purchaseRequests.vendorId, input.vendorId));
+    // Same FK-or-text rule as the page query above — otherwise the total would
+    // say 0 while the page showed rows.
+    if (input.vendorId) {
+      conditions.push(
+        vendorCode
+          ? or(
+              eq(purchaseRequests.vendorId, input.vendorId),
+              sql`upper(btrim(${purchaseRequests.vendorCodeText})) = ${vendorCode}`,
+            )!
+          : eq(purchaseRequests.vendorId, input.vendorId),
+      );
+    }
     if (input.sourceJcOpId) conditions.push(eq(purchaseRequests.sourceJcOpId, input.sourceJcOpId));
     const totalRows = await tx
       .select({ value: count() })

@@ -66,6 +66,9 @@ export const PO_FORM_CSS = `
 .pof-f-date{ flex:0 1 148px; min-width:0; }
 .pof-f-type{ flex:0 1 158px; min-width:0; }
 .pof-f-vendor{ flex:1 1 280px; min-width:0; }
+/* Delivery Days holds at most 3 digits, so it is narrower than a date box and
+   sits beside it as the pair it is. */
+.pof-f-days{ flex:0 1 116px; min-width:0; }
 .pof-f-full{ flex:1 1 100%; min-width:0; }
 
 /* ── PO line items ────────────────────────────────────────────────────── */
@@ -103,20 +106,18 @@ export const PO_FORM_CSS = `
 .pof-prcode{ font-family:'JetBrains Mono',var(--mono),monospace; font-size:11.5px; font-weight:600;
   color:#2054a8; background:#eef3fb; border:1px solid #d6e3f7; border-radius:6px;
   padding:5px 8px; display:inline-block; white-space:nowrap; }
-/* Per-line guidance note ("pick a vendor first" / "no open PRs for X"). Full
-   table width, because a sentence in the 168px PR cell wraps to six lines and
-   stops being read. Amber = the pof-msg-warn palette; blue = the pof-chip one.
-   No new colours. white-space:normal overrides the table's nowrap default. */
+/* Per-line note: amber "select a Vendor first" (why the PR box is greyed out) or
+   blue "no open PRs for X". Full table width, because a sentence in the 168px PR
+   cell wraps to six lines and stops being read. Amber = the pof-msg-warn palette;
+   blue = the pof-chip one. No new colours. Neither note is dismissible — each
+   describes the current state, and hiding it would leave a dead control with no
+   explanation. white-space:normal overrides the table's nowrap default. */
 .pof-r-note td{ padding-top:0; padding-bottom:2px; white-space:normal; }
 .pof-tip{ display:flex; align-items:flex-start; gap:8px; border-radius:7px;
   padding:7px 10px; font-size:12.5px; line-height:1.45; }
 .pof-tip-t{ flex:1 1 auto; font-weight:600; }
 .pof-tip-warn{ background:#fdf3da; border:1px solid #f2d9a0; color:#8a5a00; }
 .pof-tip-info{ background:#eef3fb; border:1px solid #d6e3f7; color:#2054a8; }
-.pof-tip-x{ flex:0 0 auto; height:20px; width:20px; border:0; border-radius:5px;
-  background:transparent; color:inherit; font-family:inherit; font-size:12px; line-height:1;
-  cursor:pointer; opacity:.7; }
-.pof-tip-x:hover{ opacity:1; background:rgba(0,0,0,.07); }
 
 .pof-x{ height:34px; width:34px; border:1px solid #f0cdc7; background:#fff; color:#c0392b;
   border-radius:7px; cursor:pointer; font-size:15px; line-height:1; font-family:inherit;

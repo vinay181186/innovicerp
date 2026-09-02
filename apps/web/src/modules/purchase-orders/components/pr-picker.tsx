@@ -12,6 +12,10 @@
 // offered — an already-linked (`po_created` / has a poId) or `cancelled` PR is
 // filtered out so it can never be picked.
 //
+// The vendor is a HARD prerequisite: a PR belongs to a vendor, so with no vendor
+// named there is no honest list to show and the caller disables this control
+// outright rather than offering PRs it cannot stand behind.
+//
 // `excludeIds` exists because ONE PO may now cover several PRs, one per line:
 // a PR already picked on another line must not be offerable a second time, or
 // the same request would be ordered twice on one document. The picker also
@@ -22,14 +26,21 @@ import { useEffect, useRef, useState } from 'react';
 import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 
-/** Shown when the buyer reaches for a PR before naming a vendor. Guidance, NOT a
- *  block: the picker still offers every convertible PR, because picking the PR
- *  first and letting it seed the vendor is a legitimate way round this form. */
+/** Why the PR box is greyed out. The vendor is a HARD prerequisite now, not a
+ *  hint: a PR belongs to a vendor, so there is no honest list to show until the
+ *  header names one. */
 export const PICK_VENDOR_FIRST_TIP =
-  "Pick a Vendor first — then this list shows only that vendor's Purchase Requests.";
+  "Select a Vendor first — each line's PR list is only that vendor's Purchase Requests.";
+
+/** The disabled control's own placeholder. The cell is 168px wide, so the detail
+ *  lives in the note above, not in here. */
+export const PICK_VENDOR_FIRST_PLACEHOLDER = 'Select a Vendor first…';
 
 /** Shown when a vendor IS named and the settled query genuinely returned nothing.
- *  An empty dropdown on its own reads as a broken screen. */
+ *  An empty dropdown on its own reads as a broken screen. This is the COMMON case
+ *  rather than an edge one — most vendors have nothing waiting to be converted at
+ *  any given moment — so it is worded as a plain statement of fact with the two
+ *  ways forward, never as an error. */
 export function noOpenPrsMessage(vendorName: string): string {
   const who = vendorName.trim() === '' ? 'this vendor' : vendorName.trim();
   return `No open Purchase Requests for ${who} — raise a PR first, or choose another vendor.`;
@@ -58,18 +69,14 @@ export interface PrPickerProps {
   /** Show only the PR code once picked. The dropdown still lists
    *  "CODE - item - qty"; a table cell is too narrow for all of it. */
   codeOnly?: boolean | undefined;
-  /** The vendor the document is being raised on. When set, only that vendor's
-   *  PRs are offered — the PR's vendor is what ties it to this PO — PLUS the
-   *  OSP "(vendor TBD)" PRs, which carry no vendor at all and are precisely the
-   *  ones a buyer picks a vendor for. Null/undefined offers everything, so a
-   *  buyer who picks the PR first is not blocked. */
+  /** The vendor the document is being raised on. STRICT: only that vendor's PRs
+   *  are offered — the PR's vendor is what ties it to this PO. Null/undefined
+   *  means the caller has nothing to filter by, and should be passing `disabled`
+   *  with it. */
   vendorId?: string | null | undefined;
   /** That vendor's name, for the "no open PRs for <vendor>" message. Display
    *  only — the picker still stores ids. */
   vendorName?: string | undefined;
-  /** Fired when the buyer reaches for this field (click or keyboard focus), so
-   *  the caller can raise the "pick a vendor first" note next to it. */
-  onInteract?: (() => void) | undefined;
   /** True once the query has SETTLED with a vendor chosen and no PR to offer —
    *  distinct from "still loading". Lets the caller show the same message
    *  outside the dropdown, where it is readable. */
@@ -90,7 +97,6 @@ export function PrPicker({
   placeholder = '🔍 Type PR number or item…',
   vendorId,
   vendorName = '',
-  onInteract,
   onNoOptions,
 }: PrPickerProps): React.JSX.Element {
   const [search, setSearch] = useState('');
@@ -99,34 +105,29 @@ export function PrPicker({
     limit: 50,
     offset: 0,
   };
-  // The vendor filter runs SERVER-side (`GET /purchase-requests?vendorId=`), so
-  // it searches the whole table rather than whichever 50 rows this page happens
-  // to hold. Skipped entirely when no vendor is chosen.
-  const vendorQ = usePurchaseRequestsList(vendorId ? { ...base, vendorId } : base, {
-    enabled: Boolean(vendorId),
+  // ONE query, keyed by the vendor. The filter runs SERVER-side
+  // (`GET /purchase-requests?vendorId=`), so it searches the whole table rather
+  // than whichever 50 rows this page happens to hold — and it matches BOTH ways a
+  // PR names its vendor: `vendor_id = :id OR upper(btrim(vendor_code_text)) =
+  // :vendorCode`, the ADR-015 FK-or-text pattern. That second half is the whole
+  // ball game in production, where every PR carries its vendor as TEXT and
+  // `vendor_id` is NULL on all of them.
+  const listQ = usePurchaseRequestsList(vendorId ? { ...base, vendorId } : base, {
+    enabled: !disabled,
   });
-  // The unfiltered page. It IS the option list when no vendor is chosen, and
-  // when one is, it is where the OSP "(vendor TBD)" PRs come from — they have
-  // no vendor_id, so a vendor-filtered query can never return them.
-  const openQ = usePurchaseRequestsList(base);
 
-  // `usePurchaseRequestsList` keeps the previous page on screen while a new one
-  // loads (`placeholderData`), which is right for typing a search term and WRONG
-  // when the header vendor changes: for a moment the list would still be the OLD
-  // vendor's PRs under the new vendor's name. Re-checking each row's own
-  // `vendorId` throws those away, so a vendor change can only ever show the new
-  // vendor's rows or an honest "Loading…".
-  const rows = vendorId
-    ? Array.from(
-        new Map(
-          [
-            ...(vendorQ.data?.items ?? []).filter((pr) => pr.vendorId === vendorId),
-            ...(openQ.data?.items ?? []).filter((pr) => pr.vendorId === null),
-          ].map((pr) => [pr.id, pr]),
-        ).values(),
-      )
-    : (openQ.data?.items ?? []);
-  const isFetching = openQ.isFetching || vendorQ.isFetching;
+  // NO client-side re-check of each row's own `vendorId`, and no "keep the
+  // vendor-less ones" exception. Against production data the first would throw
+  // away every legitimate row (that column is NULL on all of them) and the second
+  // let the entire table through, which is exactly why the filter looked like it
+  // was doing nothing. The server owns the filter; this renders what comes back.
+  //
+  // Stale pages are the CALLER's job: it remounts this picker when the header
+  // vendor changes (see the key in `po-form-line.tsx`). A fresh mount has no
+  // previous page for `placeholderData` to carry over, so the vendor you just
+  // left can never have its PRs shown under the new vendor's name.
+  const rows = listQ.data?.items ?? [];
+  const isFetching = listQ.isFetching;
 
   // Only PRs that can still become a PO. An already-linked or cancelled PR must
   // never be pickable — the server would reject it, and offering it invites a
@@ -150,11 +151,15 @@ export function PrPicker({
   const selected = convertible.find((p) => p.id === value);
 
   // "This vendor has nothing to offer" — asserted only once the query has
-  // SETTLED (both halves idle) and only for the unfiltered list, so a search term
+  // SETTLED (not fetching) and only for the unfiltered list, so a search term
   // that matches nothing still reads as "No matches" rather than blaming the
   // vendor.
   const noneForVendor =
-    Boolean(vendorId) && !isFetching && search.trim() === '' && convertible.length === 0;
+    Boolean(vendorId) &&
+    !disabled &&
+    !isFetching &&
+    search.trim() === '' &&
+    convertible.length === 0;
   const reported = useRef<boolean | null>(null);
   useEffect(() => {
     if (reported.current === noneForVendor) return;
@@ -163,13 +168,7 @@ export function PrPicker({
   }, [noneForVendor, onNoOptions]);
 
   return (
-    <div
-      className={className}
-      // Capture phase: the notice must fire on the way DOWN to the input inside
-      // <SearchableSelect>, which this file must not reach into.
-      onMouseDownCapture={onInteract}
-      onFocusCapture={onInteract}
-    >
+    <div className={className}>
       {showLabel ? (
         <label className="form-label" htmlFor={id}>
           {labelText}
