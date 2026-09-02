@@ -88,10 +88,7 @@ import { plansListRoute } from './modules/plans/routes/list';
 import { planNewRoute } from './modules/plans/routes/new';
 import { purchaseOrdersListRoute } from './modules/purchase-orders/routes/list';
 import { purchaseOrderDetailRoute } from './modules/purchase-orders/routes/detail';
-import {
-  purchaseOrderEditRoute,
-  purchaseOrderNewRoute,
-} from './modules/purchase-orders/routes/edit';
+import { purchaseOrderEditRoute } from './modules/purchase-orders/routes/edit';
 import { purchaseOrderFromPrRoute } from './modules/purchase-orders/routes/from-pr';
 import { purchaseRequestsListRoute } from './modules/purchase-requests/routes/list';
 import { incomingQcRoute } from './modules/incoming-qc/routes/index';
@@ -217,10 +214,9 @@ const routeTree = rootRoute.addChildren([
     purchaseRequestNewRoute,
     purchaseRequestDetailRoute,
     purchaseRequestEditRoute,
-    // Order matters: more-specific paths first so /purchase-orders/from-pr +
-    // /purchase-orders/new beat /purchase-orders/$id.
+    // Order matters: the more-specific /purchase-orders/from-pr must beat
+    // /purchase-orders/$id.
     purchaseOrderFromPrRoute,
-    purchaseOrderNewRoute,
     purchaseOrdersListRoute,
     purchaseOrderDetailRoute,
     purchaseOrderEditRoute,

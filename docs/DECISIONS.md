@@ -7198,3 +7198,52 @@ Auditing that turned up a worse thing. An admin with **no access row** loads an 
 - **Positive:** the three-admins-to-two accident is closed in both directions.
 - **Negative:** the stale warning only clears when an admin opens the box and saves — the drift is surfaced, not repaired.
 - **No migration.** `derivedRole` is computed per request; `confirmAdminChange` is input-only.
+
+## ADR-138: A Purchase Order is always raised against a Purchase Request ("+ New PO" is PR-first)
+**Date:** 2026-09-01
+**Status:** Accepted
+
+### Context
+Two doors created a PO with different data integrity:
+- "+ New PO" (`/purchase-orders/new`) → the multi-line `PurchaseOrderForm` → `POST /purchase-orders` (`createPurchaseOrder`). This path could NOT truly link a PR — its header carries only `prCodeText` (free-text audit note), no `prId` FK. A PO raised here for a PR left the PR `open`/un-converted, so the same PR could be converted again (duplicate PO), `pr.poId` stayed null, and an OSP `jc_op` stayed stuck at `pr_raised`.
+- "PO from PR" (`/purchase-orders/from-pr?prId=`) → `createPurchaseOrderFromPr`, which correctly sets `pr_id`, flips the PR to `po_created`, stamps `poId`/`poCreatedAt`, advances the linked `jc_op`, emits `PR_CONVERT`, and re-resolves the item link.
+
+User rule: a PO cannot be created without a PR — the buyer must pick the PR first, then the PO number.
+
+### Decision
+The "+ New PO" list button now routes into the PR-first conversion flow (`/purchase-orders/from-pr`, no `prId`). That one route serves both doors:
+- **From a PR page** (`?prId=<id>` supplied): the PR is fixed, the picker is hidden — unchanged classic behaviour.
+- **From "+ New PO"** (no `prId`): step 1 is a compulsory `<PrPicker>` (searchable, convertible PRs only — `poId===null && status not in {po_created, cancelled}`); once a PR is chosen the same conversion form renders (step 2) with the PR as a changeable first field, then PO No.
+Both submit through the single tested `createPurchaseOrderFromPr` backend, so every PO created through the UI is PR-linked and the PR is locked against a second PO. New component `PrPicker` mirrors `VendorPicker` (own search + list hook over `<SearchableSelect>`). `from-pr` route's `prId` search param is now optional; the form body is extracted into an inner `FromPrForm` (keyed by PR id so a PR change remounts it clean).
+
+### Alternatives Considered
+- Add required `prId` to the main `createPurchaseOrder` + a PR picker on the multi-line `PurchaseOrderForm` — rejected for now: larger blast radius (shared schema, backend service + shared linking helper, form prefill/reset, tests) and it duplicates the conversion logic the from-pr path already does correctly. The chosen option reuses tested code with zero backend change.
+- Two-screen wizard at `/purchase-orders/new` (pick PR → redirect to from-pr) — rejected: the user wants PR No. then PO No. on one form.
+
+### Consequences
+- Positive: the UI can no longer raise a PR-less PO through "+ New PO"; duplicate-PO / orphaned-PR / stuck-OSP gap is closed for this door; one code path and one backend for both doors.
+- Negative / not covered: enforcement is UI-only. The `POST /purchase-orders` (`createPurchaseOrder`) endpoint still accepts a PR-less PO and is still reachable (a) by typing `/purchase-orders/new`, and (b) from SO-Status → "🛒 Create PO" (`so-status-detail.tsx`, which passes `soLineId` — a legitimately different, SO-line-driven purchase, not a shop PR). Making PR compulsory for EVERY PO server-side is a deliberate follow-up, not done here.
+- The from-pr form is single-line (qty/rate come from the PR estimate, not editable at conversion) — unchanged limitation; multi-PR→one-PO stays the batch flow.
+
+## ADR-139: PR-compulsory PO is enforced server-side — the `POST /purchase-orders` door is removed
+**Date:** 2026-09-02
+**Status:** Accepted
+
+### Context
+ADR-138 made "+ New PO" PR-first in the UI, but left enforcement UI-only: `POST /purchase-orders` (→ `createPurchaseOrder`) still accepted a PR-less PO, reachable by typing `/purchase-orders/new` or via SO-Status → "🛒 Create PO". Per Engineering Rule #1 (the browser is hostile; authorization/validation live server-side) a UI-only rule is not enforcement. User: *"I did not block the server. why u not fix it?"*
+
+### Decision
+Remove the client door, not the primitive.
+- **API:** deleted the `POST /purchase-orders` route. The only create doors are now `POST /purchase-orders/from-pr` (one PR) and `POST /purchase-orders/from-pr-batch` (many PRs), both of which link + lock the PR. `service.createPurchaseOrder` is KEPT but documented as internal/test-fixture only (it has no HTTP route) — ~20+ GRN/DC/approval tests call it directly to stand up a PO fixture in an arbitrary state, so removing it would gut unrelated suites for no gain; it is unreachable by any client.
+- **Route tests:** the four `POST /purchase-orders` tests (201 happy, two 400 validation, viewer 403) are replaced by one asserting the door is closed (404).
+- **Web:** deleted the dead `/purchase-orders/new` route (`PurchaseOrderNewPage` + `purchaseOrderNewRoute`), the now-unused `useCreatePurchaseOrder` hook, and the router registration; repointed SO-Status "Create PO" to `/purchase-orders/from-pr`.
+
+### Alternatives Considered
+- Make `createPurchaseOrder` (the service) throw / require `prId` — rejected: it is the shared fixture primitive across purchase-orders, goods-receipt-notes and delivery-challans tests; changing its contract breaks ~20+ setups I cannot re-run here (they hit the shared prod DB), for no extra safety over closing the HTTP door.
+- Require `prId` only at the route while the service stays lenient — rejected: same outcome as deleting the route (no client can create a PR-less PO) but leaves a live endpoint whose sole purpose is to reject, plus the duplicate-of-from-pr question. Deleting is cleaner.
+
+### Consequences
+- Positive: there is now NO API path to a PR-less PO; the rule is enforced where it must be. One create semantics (always PR-backed) across UI and API.
+- Positive: fresh multi-line POs come from `from-pr-batch` (multiple PRs); single from `from-pr`; multi-line editing on an existing PO is unchanged.
+- Negative: `createPurchaseOrder` survives as un-routed code — a latent temptation to re-expose. Guarded by an explicit "do NOT wire back to a route" comment.
+- Verification limited to typecheck + lint (agents + combined tree); the api suite must be run on a non-prod DB before deploy to confirm the 404 door-closed test and that fixtures still build POs.

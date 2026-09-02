@@ -499,6 +499,16 @@ async function nextPoCode(tx: DbTransaction, companyId: string): Promise<string>
   return `IN-PO-${String(max + 1).padStart(5, '0')}`;
 }
 
+/**
+ * INTERNAL / TEST-FIXTURE ONLY — creates a PO with no Purchase Request link.
+ *
+ * As of ADR-138/ADR-139 a PO is always raised against a PR, so this primitive
+ * is NOT exposed over HTTP (the `POST /purchase-orders` route was removed). The
+ * only client doors are `createPurchaseOrderFromPr` (one PR) and
+ * `createPurchaseOrderFromPrBatch` (many PRs). This function survives because
+ * dozens of GRN / DC / approval tests call it directly to stand up a PO fixture
+ * in an arbitrary state; do NOT wire it back to a route.
+ */
 export async function createPurchaseOrder(
   input: CreatePurchaseOrderInput,
   user: AuthContext,

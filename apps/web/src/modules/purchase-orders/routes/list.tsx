@@ -250,7 +250,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
               </span>
             ) : null}
             {canAdd ? (
-              <Link to="/purchase-orders/new" className="btn btn-primary">
+              <Link to="/purchase-orders/from-pr" className="btn btn-primary">
                 <Plus size={14} /> New PO
               </Link>
             ) : null}

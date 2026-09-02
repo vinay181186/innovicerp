@@ -1,5 +1,17 @@
 // "Create PO from PR" route (UI-003-04).
 //
+// A PO is ALWAYS raised against a Purchase Request (see ADR-130). This one route
+// serves both doors into that flow:
+//   • From a PR page  → `?prId=<id>` is supplied, the PR is fixed, the picker is
+//     hidden (the classic "convert this PR" button).
+//   • From "+ New PO" → no `prId`; the first field is a PR picker (step 1), and
+//     once a PR is chosen the same conversion form renders (step 2). The picker
+//     stays on the form so the PR can be changed.
+//
+// Either way the backend is the single, tested `createPurchaseOrderFromPr` path,
+// which links the PO to the PR, flips it to `po_created`, and blocks a second PO
+// for the same request.
+//
 // Compact single-screen layout: the whole form fits above the fold on a laptop,
 // so the buyer sees the PO total before submitting instead of scrolling to find
 // the button. Deliberately dense — 36px controls, 10px labels — and the
@@ -9,7 +21,12 @@
 // (#eef1f6 / #e4e7ee / #f7f9fc) and type scale differ from the global theme
 // tokens, and confining them here keeps every other screen untouched.
 
-import { type CreatePurchaseOrderFromPrInput, PO_TYPES, type PoType } from '@innovic/shared';
+import {
+  type CreatePurchaseOrderFromPrInput,
+  PO_TYPES,
+  type PoType,
+  type PurchaseRequestDetail,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Loader2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -22,9 +39,12 @@ import { useDocNumber } from '@/lib/use-doc-number';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePurchaseOrderFromPr } from '../api';
+import { PrPicker } from '../components/pr-picker';
 
+// prId is OPTIONAL: present when the PR page hands us a specific PR, absent when
+// the buyer arrives from "+ New PO" and must pick one first.
 const fromPrSearchSchema = z.object({
-  prId: z.string().uuid(),
+  prId: z.string().uuid().optional(),
 });
 
 export const purchaseOrderFromPrRoute = createRoute({
@@ -52,6 +72,9 @@ interface FormValues {
 
 const inr = (n: number): string =>
   `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const prLabel = (pr: PurchaseRequestDetail): string =>
+  `${pr.code} — ${pr.itemName ?? pr.itemCodeText ?? 'item'} · qty ${pr.qty}`;
 
 /* Scoped stylesheet — see file header for why it is local. */
 const CSS = `
@@ -113,6 +136,7 @@ const CSS = `
 .pof-f-date{ flex:0 1 148px; min-width:0; }
 .pof-f-type{ flex:0 1 158px; min-width:0; }
 .pof-f-vendor{ flex:1 1 280px; min-width:0; }
+.pof-f-pr{ flex:1 1 320px; min-width:0; }
 
 /* Tax + live totals share one row. */
 .pof-tax{ background:#f7f9fc; border:1px solid #e4e7ee; border-radius:8px; padding:12px 14px;
@@ -149,15 +173,120 @@ const CSS = `
 `;
 
 function PurchaseOrderFromPrPage(): React.JSX.Element {
-  const { prId } = purchaseOrderFromPrRoute.useSearch();
-  const navigate = useNavigate();
+  const { prId: prIdFromUrl } = purchaseOrderFromPrRoute.useSearch();
   // Route-level gate. Converting a PR raises a NEW PO, so this is the entry
-  // action (L2 Data Entry and up), same as "+ New PO". Reached from a link on
-  // the PR screen, but the URL is typeable — without this the whole form was
-  // open to anyone who could log in.
+  // action (L2 Data Entry and up), same as "+ New PO". The URL is typeable —
+  // without this the whole form was open to anyone who could log in.
   const { data: eff, isPending: accessPending } = useMyAccess();
   const canCreate = effectiveFormPerms(eff, 'po_create').entry;
-  const { data: pr, isLoading, isError, error } = usePurchaseRequest(prId);
+
+  // Came in fixed on a PR (from the PR page) vs. arrived from "+ New PO" and must
+  // pick one. `pickedPrId` only drives the second door.
+  const cameFromPrPage = Boolean(prIdFromUrl);
+  const [pickedPrId, setPickedPrId] = useState<string | undefined>(prIdFromUrl);
+  const activePrId = prIdFromUrl ?? pickedPrId;
+
+  const { data: pr, isLoading, isError, error } = usePurchaseRequest(activePrId);
+
+  if (accessPending) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="panel">
+        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
+          ⛔ Data entry access required to create a purchase order.
+        </div>
+      </div>
+    );
+  }
+
+  // "+ New PO" entry, no PR chosen yet → the PR picker IS the screen (step 1).
+  if (!activePrId) {
+    return <PickPrScreen onPick={(id) => setPickedPrId(id)} />;
+  }
+
+  if (isLoading) {
+    return (
+      <div>
+        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading source PR…
+      </div>
+    );
+  }
+
+  if (isError || !pr) {
+    return (
+      <div className="panel">
+        <div className="panel-body">
+          <div style={{ marginBottom: 8 }}>
+            <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
+              <ArrowLeft size={14} /> Back
+            </Link>
+          </div>
+          <div className="empty-state" style={{ color: 'var(--red)' }}>
+            {error instanceof Error ? error.message : 'Source PR not found'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    // Keyed by the PR id so picking a different PR remounts the form fresh —
+    // clean useForm state, effects re-seed the new PR's vendor/code.
+    <FromPrForm
+      key={pr.id}
+      pr={pr}
+      cameFromPrPage={cameFromPrPage}
+      onChangePr={cameFromPrPage ? undefined : (id) => setPickedPrId(id ?? undefined)}
+    />
+  );
+}
+
+/** Step 1 of the "+ New PO" flow: choose the PR the PO is raised against. */
+function PickPrScreen(props: { onPick: (id: string) => void }): React.JSX.Element {
+  return (
+    <div className="pof-page pof-root">
+      <style>{CSS}</style>
+      <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+        <ArrowLeft size={14} /> Back to Purchase Orders
+      </Link>
+      <div className="pof-card" style={{ maxWidth: 640 }}>
+        <div className="pof-hdr">
+          <span className="pof-title">New Purchase Order</span>
+          <span className="pof-chip">step 1 of 2</span>
+        </div>
+        <div className="pof-note" style={{ marginBottom: 12, fontSize: 12.5 }}>
+          A purchase order is always raised against a Purchase Request. Pick the PR to continue.
+        </div>
+        <div className="pof-f-pr">
+          <PrPicker
+            id="pof-pick-pr"
+            value={null}
+            onChange={(id) => {
+              if (id) props.onPick(id);
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Step 2 / the conversion form. `pr` is loaded and non-null. */
+function FromPrForm(props: {
+  pr: PurchaseRequestDetail;
+  cameFromPrPage: boolean;
+  /** Present only on the "+ New PO" door — lets the buyer change the PR inline. */
+  onChangePr?: ((id: string | null) => void) | undefined;
+}): React.JSX.Element {
+  const { pr, cameFromPrPage, onChangePr } = props;
+  const navigate = useNavigate();
   const createFromPr = useCreatePurchaseOrderFromPr();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -176,7 +305,7 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   // Seed the Vendor field from the PR once it has loaded. Only when still
   // empty, so a vendor the user has already picked is never clobbered by a
   // refetch.
-  const prVendorId = pr?.vendorId ?? null;
+  const prVendorId = pr.vendorId ?? null;
   const pickedVendorId = watch('vendorId');
   useEffect(() => {
     if (prVendorId && !pickedVendorId) setValue('vendorId', prVendorId);
@@ -199,8 +328,8 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
   const isSplit = taxType === 'sgst_cgst';
   const isIgst = taxType === 'igst';
 
-  const qty = Number(pr?.qty ?? 0);
-  const est = Number(pr?.estCost ?? 0);
+  const qty = Number(pr.qty ?? 0);
+  const est = Number(pr.estCost ?? 0);
   const subtotal = qty * est;
   const taxPct = isSplit
     ? Number(watch('cgstPct') || 0) + Number(watch('sgstPct') || 0)
@@ -215,7 +344,6 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
 
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    if (!pr) return;
     const payload: CreatePurchaseOrderFromPrInput = {
       prId: pr.id,
       header: {
@@ -241,41 +369,6 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading || accessPending) {
-    return (
-      <div>
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading source PR…
-      </div>
-    );
-  }
-
-  if (!canCreate) {
-    return (
-      <div className="panel">
-        <div className="panel-body empty-state" style={{ color: 'var(--amber)' }}>
-          ⛔ Data entry access required to create a purchase order.
-        </div>
-      </div>
-    );
-  }
-
-  if (isError || !pr) {
-    return (
-      <div className="panel">
-        <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
-            <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
-              <ArrowLeft size={14} /> Back
-            </Link>
-          </div>
-          <div className="empty-state" style={{ color: 'var(--red)' }}>
-            {error instanceof Error ? error.message : 'Source PR not found'}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const alreadyConverted = pr.poId !== null || pr.status === 'po_created';
   const isCancelled = pr.status === 'cancelled';
 
@@ -290,14 +383,20 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
     <div className="pof-page pof-root">
       <style>{CSS}</style>
 
-      <Link
-        to="/purchase-requests/$id"
-        params={{ id: pr.id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to PR
-      </Link>
+      {cameFromPrPage ? (
+        <Link
+          to="/purchase-requests/$id"
+          params={{ id: pr.id }}
+          className="btn btn-ghost btn-sm"
+          style={{ marginBottom: 10 }}
+        >
+          <ArrowLeft size={14} /> Back to PR
+        </Link>
+      ) : (
+        <Link to="/purchase-orders" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+          <ArrowLeft size={14} /> Back to Purchase Orders
+        </Link>
+      )}
 
       <div className="pof-card">
         {/* Title and source ref on ONE line. */}
@@ -305,6 +404,22 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
           <span className="pof-title">Create Purchase Order</span>
           <span className="pof-chip">from PR {pr.code}</span>
         </div>
+
+        {/* On the "+ New PO" door the PR is a real, changeable FIELD and must be
+            the first one — a PO cannot exist without it. On the PR-page door the
+            PR is fixed, so it stays the read-only chip above. */}
+        {onChangePr ? (
+          <div className="pof-row4">
+            <div className="pof-f-pr">
+              <PrPicker
+                id="pof-pr"
+                value={pr.id}
+                onChange={(id) => onChangePr(id)}
+                initialLabel={prLabel(pr)}
+              />
+            </div>
+          </div>
+        ) : null}
 
         {/* One strip, six facts, divider between each — never a card per fact. */}
         <div className="pof-strip">
@@ -534,7 +649,9 @@ function PurchaseOrderFromPrPage(): React.JSX.Element {
                   type="button"
                   className="pof-btn pof-btn-cancel"
                   onClick={() =>
-                    void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
+                    cameFromPrPage
+                      ? void navigate({ to: '/purchase-requests/$id', params: { id: pr.id } })
+                      : void navigate({ to: '/purchase-orders' })
                   }
                 >
                   Cancel

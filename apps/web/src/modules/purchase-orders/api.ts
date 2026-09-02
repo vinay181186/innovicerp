@@ -1,6 +1,5 @@
 import type {
   CreatePurchaseOrderFromPrInput,
-  CreatePurchaseOrderInput,
   ListPurchaseOrdersQuery,
   ListPurchaseOrdersResponse,
   PurchaseOrderDetail,
@@ -48,18 +47,6 @@ export function usePurchaseOrder(id: string | undefined) {
     queryKey: id ? purchaseOrdersKeys.detail(id) : purchaseOrdersKeys.detail('__missing__'),
     queryFn: () => apiFetch<PurchaseOrderDetail>(`/purchase-orders/${id}`),
     enabled: Boolean(id),
-  });
-}
-
-export function useCreatePurchaseOrder() {
-  const qc = useQueryClient();
-  return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderInput>({
-    mutationFn: (input) =>
-      apiFetch<PurchaseOrderDetail>('/purchase-orders', { method: 'POST', json: input }),
-    onSuccess: (created) => {
-      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
-      qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
-    },
   });
 }
 

@@ -564,7 +564,7 @@ function LinePanel({
           type="button"
           className="btn btn-sm"
           style={{ background: 'rgba(124,58,237,0.08)', color: 'var(--purple)', border: '1px solid rgba(124,58,237,0.25)', fontWeight: 700, fontSize: 11 }}
-          onClick={() => navigate({ to: '/purchase-orders/new', search: { soLineId: line.id } as never })}
+          onClick={() => navigate({ to: '/purchase-orders/from-pr' })}
         >
           🛒 Create PO
         </button>

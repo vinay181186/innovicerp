@@ -107,75 +107,15 @@ describe('purchase-orders routes', () => {
     expect(body).toHaveProperty('total');
   });
 
-  it('POST /purchase-orders returns 201 on valid input', async () => {
-    app = await buildApp(admin);
-    const code = `${TEST_PREFIX}A`;
-    const res = await app.inject({
-      method: 'POST',
-      url: '/purchase-orders',
-      headers: { 'content-type': 'application/json' },
-      payload: {
-        header: {
-          code,
-          poDate: '2026-05-03',
-          poType: 'standard',
-          vendorId: firstVendorId,
-          status: 'draft',
-          sgstPct: 0,
-          cgstPct: 0,
-          igstPct: 0,
-        },
-        lines: [{ itemId: firstItemId, itemName: 'Routed', qty: 5, rate: 0 }],
-      },
-    });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().code).toBe(code);
-  });
-
-  it('POST /purchase-orders returns 400 when both vendor refs missing', async () => {
+  it('POST /purchase-orders is removed — a PO must come from a PR (404)', async () => {
     app = await buildApp(admin);
     const res = await app.inject({
       method: 'POST',
       url: '/purchase-orders',
       headers: { 'content-type': 'application/json' },
-      payload: {
-        header: {
-          code: `${TEST_PREFIX}BAD`,
-          poDate: '2026-05-03',
-          poType: 'standard',
-          status: 'draft',
-          sgstPct: 0,
-          cgstPct: 0,
-          igstPct: 0,
-        },
-        lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
-      },
+      payload: {},
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: 'validation_error' });
-  });
-
-  it('POST /purchase-orders returns 400 with no lines', async () => {
-    app = await buildApp(admin);
-    const res = await app.inject({
-      method: 'POST',
-      url: '/purchase-orders',
-      headers: { 'content-type': 'application/json' },
-      payload: {
-        header: {
-          code: `${TEST_PREFIX}NL`,
-          poDate: '2026-05-03',
-          poType: 'standard',
-          vendorId: firstVendorId,
-          status: 'draft',
-          sgstPct: 0,
-          cgstPct: 0,
-          igstPct: 0,
-        },
-        lines: [],
-      },
-    });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(404);
   });
 
   it('POST /purchase-orders/from-pr converts PR + returns PO 201', async () => {
@@ -219,30 +159,5 @@ describe('purchase-orders routes', () => {
     expect(body.code).toBe(poCode);
     expect(body.lines).toHaveLength(1);
     expect(body.lines[0].qty).toBe(7);
-  });
-
-  it('POST /purchase-orders returns clean 403 for viewer role (not 500 from RLS leak)', async () => {
-    const viewer: AuthContext = { ...admin, role: 'viewer' };
-    app = await buildApp(viewer);
-    const res = await app.inject({
-      method: 'POST',
-      url: '/purchase-orders',
-      headers: { 'content-type': 'application/json' },
-      payload: {
-        header: {
-          code: `${TEST_PREFIX}V`,
-          poDate: '2026-05-03',
-          poType: 'standard',
-          vendorId: firstVendorId,
-          status: 'draft',
-          sgstPct: 0,
-          cgstPct: 0,
-          igstPct: 0,
-        },
-        lines: [{ itemId: firstItemId, itemName: 'X', qty: 1, rate: 0 }],
-      },
-    });
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ error: 'forbidden' });
   });
 });

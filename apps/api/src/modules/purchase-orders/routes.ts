@@ -4,7 +4,6 @@ import { AuthenticationError } from '../../lib/errors';
 import { createPurchaseOrderFromPrBatchInputSchema } from '@innovic/shared';
 import {
   createPurchaseOrderFromPrInputSchema,
-  createPurchaseOrderInputSchema,
   listPurchaseOrdersQuerySchema,
   updatePurchaseOrderInputSchema,
 } from './schema';
@@ -31,14 +30,12 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     return service.getPurchaseOrderRelated(id, req.user);
   });
 
-  app.post('/purchase-orders', async (req, reply) => {
-    if (!req.user) throw new AuthenticationError();
-    const body = createPurchaseOrderInputSchema.parse(req.body);
-    const detail = await service.createPurchaseOrder(body, req.user);
-    reply.code(201);
-    return detail;
-  });
-
+  // NOTE: there is deliberately NO `POST /purchase-orders`. A purchase order is
+  // always raised against a Purchase Request (ADR-138 / ADR-139) — the only
+  // client doors are `/from-pr` (one PR) and `/from-pr-batch` (many PRs). The
+  // `service.createPurchaseOrder` primitive still exists for internal use and as
+  // a test fixture, but it is not reachable over HTTP, so a PR-less PO cannot be
+  // created through the API.
   app.post('/purchase-orders/from-pr', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createPurchaseOrderFromPrInputSchema.parse(req.body);
