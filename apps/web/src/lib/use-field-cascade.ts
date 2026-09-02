@@ -15,7 +15,11 @@
 //     reset while its value is still EXACTLY what this hook last auto-filled;
 //     the moment the user changes it, the field is theirs and we keep our hands
 //     off. Fields the user owns outright (Qty, Rate, remarks) are simply never
-//     listed as dependents — and `userEntered` below hard-blocks them.
+//     listed as dependents — and `userEntered` below hard-blocks them. A field
+//     that is BOTH auto-filled and freely typed (a PO line's Qty/Rate, carried
+//     from its PR) takes `keepUserEdits`, which applies the same "is this still
+//     ours?" test on the FILL side: swapping PR-1 for PR-2 refreshes what PR-1
+//     put there and leaves what the buyer typed alone.
 //  3. RACES. Typing "IT-1", "IT-10", "IT-100" starts three lookups; the slowest
 //     must not land last and refill the row from a code the user has moved past.
 //     Each run takes a request id and an AbortSignal, and a stale reply is
@@ -42,6 +46,18 @@ export interface CascadeFieldOptions {
    *  while it still holds the exact value this hook auto-filled. Default false —
    *  a purely master-derived field (an id) always resets. */
   readonly userEditable?: boolean | undefined;
+  /** Extends `userEditable` to the FILL side: on a fresh match the field is
+   *  written only while it is still empty, or still holds exactly what this hook
+   *  last auto-filled there. Anything else on screen was typed by the user and is
+   *  left alone — so swapping the controller (PR-1 → PR-2 on a PO line) refreshes
+   *  the auto-filled values without stranding the old ones, yet never silently
+   *  replaces a hand-typed one. Default false: fill always replaces, which is what
+   *  the Item Code → Name cascades have always done. */
+  readonly keepUserEdits?: boolean | undefined;
+  /** What counts as "nothing entered yet" for `keepUserEdits`. Defaults to
+   *  blank / null / undefined / NaN / the field's own `empty` value. Override
+   *  where a field has a second value that is still not the user's own work. */
+  readonly isEmpty?: ((value: unknown) => boolean) | undefined;
 }
 
 /** One dependent field, type-erased so a single array can hold dependents of
@@ -49,10 +65,23 @@ export interface CascadeFieldOptions {
 export interface CascadeField<TForm extends FieldValues, TSource> {
   readonly name: string;
   readonly userEditable: boolean;
+  readonly keepUserEdits: boolean;
+  /** True when the field holds nothing the user could call their own. */
+  readonly isEmpty: (value: unknown) => boolean;
   /** Writes the master-derived value and returns what was written. */
   readonly fill: (form: UseFormReturn<TForm>, source: TSource, opts: SetValueConfig) => unknown;
   readonly clear: (form: UseFormReturn<TForm>, opts: SetValueConfig) => void;
   readonly read: (form: UseFormReturn<TForm>) => unknown;
+}
+
+/** The default "nothing entered yet" test. `NaN` is in here because a react-hook-form
+ *  number input registered with `valueAsNumber` yields NaN once the box is emptied —
+ *  an empty box must not read as a value the user typed. */
+function defaultIsEmpty(value: unknown, empty: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string') return value.trim() === '';
+  if (typeof value === 'number' && Number.isNaN(value)) return true;
+  return Object.is(value, empty);
 }
 
 /**
@@ -69,9 +98,12 @@ export function cascadeField<TForm extends FieldValues, TSource, TName extends P
   empty: PathValue<TForm, TName>,
   options: CascadeFieldOptions = {},
 ): CascadeField<TForm, TSource> {
+  const isEmpty = options.isEmpty ?? ((value: unknown): boolean => defaultIsEmpty(value, empty));
   return {
     name,
     userEditable: options.userEditable ?? false,
+    keepUserEdits: options.keepUserEdits ?? false,
+    isEmpty,
     fill: (form, source, opts) => {
       const next = from(source);
       form.setValue(name, next, opts);
@@ -153,6 +185,14 @@ export function useFieldCascade<TForm extends FieldValues, TSource>(
       for (const field of fields) {
         if (blocked.has(field.name)) continue;
         if (source) {
+          // `keepUserEdits`: the field is ours to refresh only while it is still
+          // empty or still holds exactly what we last put there. A value the user
+          // typed over the top is theirs and survives the swap.
+          if (field.keepUserEdits) {
+            const current = field.read(form);
+            const ours = owned.has(field.name) && Object.is(current, owned.get(field.name));
+            if (!ours && !field.isEmpty(current)) continue;
+          }
           owned.set(field.name, field.fill(form, source, opts));
           continue;
         }

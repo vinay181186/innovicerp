@@ -18,9 +18,22 @@
 // renders inside a table cell there, so the label can be turned off (the column
 // header names it) and the placeholder is caller-supplied.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type SearchableOption, SearchableSelect } from '@/components/shared/searchable-select';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
+
+/** Shown when the buyer reaches for a PR before naming a vendor. Guidance, NOT a
+ *  block: the picker still offers every convertible PR, because picking the PR
+ *  first and letting it seed the vendor is a legitimate way round this form. */
+export const PICK_VENDOR_FIRST_TIP =
+  "Pick a Vendor first — then this list shows only that vendor's Purchase Requests.";
+
+/** Shown when a vendor IS named and the settled query genuinely returned nothing.
+ *  An empty dropdown on its own reads as a broken screen. */
+export function noOpenPrsMessage(vendorName: string): string {
+  const who = vendorName.trim() === '' ? 'this vendor' : vendorName.trim();
+  return `No open Purchase Requests for ${who} — raise a PR first, or choose another vendor.`;
+}
 
 export interface PrPickerProps {
   /** DOM id for the input, so the caller's <label htmlFor> still points at it.
@@ -51,6 +64,16 @@ export interface PrPickerProps {
    *  ones a buyer picks a vendor for. Null/undefined offers everything, so a
    *  buyer who picks the PR first is not blocked. */
   vendorId?: string | null | undefined;
+  /** That vendor's name, for the "no open PRs for <vendor>" message. Display
+   *  only — the picker still stores ids. */
+  vendorName?: string | undefined;
+  /** Fired when the buyer reaches for this field (click or keyboard focus), so
+   *  the caller can raise the "pick a vendor first" note next to it. */
+  onInteract?: (() => void) | undefined;
+  /** True once the query has SETTLED with a vendor chosen and no PR to offer —
+   *  distinct from "still loading". Lets the caller show the same message
+   *  outside the dropdown, where it is readable. */
+  onNoOptions?: ((none: boolean) => void) | undefined;
 }
 
 export function PrPicker({
@@ -66,6 +89,9 @@ export function PrPicker({
   codeOnly = false,
   placeholder = '🔍 Type PR number or item…',
   vendorId,
+  vendorName = '',
+  onInteract,
+  onNoOptions,
 }: PrPickerProps): React.JSX.Element {
   const [search, setSearch] = useState('');
   const base = {
@@ -84,11 +110,17 @@ export function PrPicker({
   // no vendor_id, so a vendor-filtered query can never return them.
   const openQ = usePurchaseRequestsList(base);
 
+  // `usePurchaseRequestsList` keeps the previous page on screen while a new one
+  // loads (`placeholderData`), which is right for typing a search term and WRONG
+  // when the header vendor changes: for a moment the list would still be the OLD
+  // vendor's PRs under the new vendor's name. Re-checking each row's own
+  // `vendorId` throws those away, so a vendor change can only ever show the new
+  // vendor's rows or an honest "Loading…".
   const rows = vendorId
     ? Array.from(
         new Map(
           [
-            ...(vendorQ.data?.items ?? []),
+            ...(vendorQ.data?.items ?? []).filter((pr) => pr.vendorId === vendorId),
             ...(openQ.data?.items ?? []).filter((pr) => pr.vendorId === null),
           ].map((pr) => [pr.id, pr]),
         ).values(),
@@ -117,8 +149,27 @@ export function PrPicker({
   const [label, setLabel] = useState(initialLabel);
   const selected = convertible.find((p) => p.id === value);
 
+  // "This vendor has nothing to offer" — asserted only once the query has
+  // SETTLED (both halves idle) and only for the unfiltered list, so a search term
+  // that matches nothing still reads as "No matches" rather than blaming the
+  // vendor.
+  const noneForVendor =
+    Boolean(vendorId) && !isFetching && search.trim() === '' && convertible.length === 0;
+  const reported = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (reported.current === noneForVendor) return;
+    reported.current = noneForVendor;
+    onNoOptions?.(noneForVendor);
+  }, [noneForVendor, onNoOptions]);
+
   return (
-    <div className={className}>
+    <div
+      className={className}
+      // Capture phase: the notice must fire on the way DOWN to the input inside
+      // <SearchableSelect>, which this file must not reach into.
+      onMouseDownCapture={onInteract}
+      onFocusCapture={onInteract}
+    >
       {showLabel ? (
         <label className="form-label" htmlFor={id}>
           {labelText}
@@ -139,6 +190,7 @@ export function PrPicker({
         loading={isFetching}
         options={convertible.map((p) => ({ id: p.id, code: p.code, name: labelFor(p) }))}
         placeholder={placeholder}
+        {...(noneForVendor ? { emptyText: noOpenPrsMessage(vendorName) } : {})}
         {...(codeOnly ? { selectedLabel: (o: SearchableOption) => o.code ?? o.name } : {})}
         valueLabel={
           selected

@@ -115,6 +115,9 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   //    also kept, so the footer can name a line whose PR belongs to a different
   //    vendor than the header now holds.
   const [vendorSeedLabel, setVendorSeedLabel] = useState('');
+  // The picked vendor's "CODE — Name", kept only so a line can say WHICH vendor
+  // has no open PRs. Display copy: the saved value is still the id alone.
+  const [vendorPickedLabel, setVendorPickedLabel] = useState('');
   const [prById, setPrById] = useState<Record<string, PurchaseRequestDetail>>({});
   const autoRemark = useRef('');
   const onPrLoaded = useCallback(
@@ -155,6 +158,16 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const vendorId = watch('header.vendorId') ?? null;
   const vendorCodeText = watch('header.vendorCodeText') ?? '';
   const poDate = watch('header.poDate') ?? '';
+
+  // Just the NAME half of whichever label we hold — "IN-VEN-004 — Shah Heat
+  // Treaters" reads badly inside a sentence. Freshest source wins: what the user
+  // just picked, then a PR's seed, then the saved detail.
+  const detailVendorName = props.mode === 'edit' ? (props.detail.vendorName ?? '') : '';
+  const vendorName = useMemo(() => {
+    const raw = vendorPickedLabel || vendorSeedLabel || detailVendorName;
+    const dash = raw.indexOf('—');
+    return (dash === -1 ? raw : raw.slice(dash + 1)).trim();
+  }, [vendorPickedLabel, vendorSeedLabel, detailVendorName]);
 
   // Lines whose PR belongs to a DIFFERENT vendor than the header now names —
   // i.e. the buyer changed the vendor after picking PRs. Those lines are not
@@ -297,6 +310,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   };
 
   const colCount = isEdit ? 10 : 9;
+  /** The one line that carries the shared PR hints — the first without a PR. */
+  const hintLineIdx = lines.findIndex((l) => !l.sourcePrId);
 
   return (
     <div className="pof-page pof-root">
@@ -414,7 +429,14 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
             className="pof-f-vendor"
             labelText="Vendor"
             value={vendorId}
-            onChange={(id) => setValue('header.vendorId', id ?? undefined)}
+            // Changing this is a CASCADE, not just a field edit: every line's PR
+            // picker re-queries for the new vendor (the id flows down as
+            // `headerVendorId`), and a line still holding the OLD vendor's PR is
+            // named in the footer — never wiped, that would throw away typing.
+            onChange={(id, label) => {
+              setVendorPickedLabel(label);
+              setValue('header.vendorId', id ?? undefined);
+            }}
             initialLabel={vendorSeedLabel || (props.mode === 'edit' ? (props.detail.vendorName ?? '') : '')}
             carriedText={vendorCodeText}
           />
@@ -513,6 +535,12 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                     isEdit={isEdit}
                     colCount={colCount}
                     headerVendorId={vendorId}
+                    vendorName={vendorName}
+                    // The "no open PRs for this vendor" note belongs on ONE row,
+                    // not on every empty one — three copies of the same sentence
+                    // is noise, and the first line without a PR is where the
+                    // buyer is looking.
+                    showPrHints={idx === hintLineIdx}
                     excludePrIds={lines
                       .filter((_, i) => i !== idx)
                       .map((l) => l.sourcePrId)

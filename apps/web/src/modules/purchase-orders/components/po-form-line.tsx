@@ -9,32 +9,55 @@
 // this component's memory of what it auto-filled) follows its line when a row
 // above it is removed and the indexes shift.
 //
-// Auto-fill rule: picking a PR fills item code / name / qty / rate / due date,
-// but ONLY where the user has not typed something of their own — a value that
-// is still exactly what a previous PR put there is fair game, so swapping the
-// PR on a line refills it. Every field stays editable afterwards; that is what
-// "carried from PR — editable" in the band promises.
+// Auto-fill rule: the line's PR is the CONTROLLER; item code / name / qty / rate
+// / due date (and the display-only PR code) are its DEPENDENTS. Swapping PR-1
+// for PR-2 refreshes every dependent PR-1 auto-filled — none of PR-1's values
+// may be left stranded under PR-2's code — while anything the buyer typed over
+// the top is theirs and survives. That "ours vs theirs" bookkeeping, and the
+// race guard for a slow PR fetch landing after a newer pick, is the shared
+// `useFieldCascade`; this file only declares the mapping. Every field stays
+// editable afterwards; that is what "carried from PR — editable" promises.
+//
+// Clearing the PR is deliberately NOT a reset: it unlinks the line (sourcePrId +
+// sourcePrCode) and leaves the item fields where they are, so the buyer can keep
+// the row as a hand-entered one. The footer stops counting it toward "at least
+// one line has a PR" the moment sourcePrId goes.
 
 import type { ListItemsResponse } from '@innovic/shared';
 import type { PurchaseRequestDetail } from '@innovic/shared';
-import { Fragment, useEffect, useRef } from 'react';
-import type { UseFormReturn } from 'react-hook-form';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import type { Path, PathValue, SetValueConfig, UseFormReturn } from 'react-hook-form';
 import { inrFormat } from '@/lib/print/doc-print';
+import {
+  type CascadeField,
+  type CascadeFieldOptions,
+  cascadeField,
+  useFieldCascade,
+} from '@/lib/use-field-cascade';
 import { usePurchaseRequest } from '@/modules/purchase-requests/api';
 import { PO_FORM_ITEM_DATALIST_ID, type PoFormLineValue, type PoFormValues } from './po-form-types';
-import { PrPicker } from './pr-picker';
+import { PICK_VENDOR_FIRST_TIP, noOpenPrsMessage, PrPicker } from './pr-picker';
 
 export type PoItemMasterRow = ListItemsResponse['items'][number];
 
-/** What a PR put into this line last time, so we can tell "still the PR's
- *  value" (overwrite freely) from "the user typed this" (leave alone). */
-interface AppliedFromPr {
-  prId: string;
-  itemCodeText: string;
-  itemName: string;
-  qty: number;
-  rate: number;
-  dueDate: string;
+/** How long the "pick a vendor first" note stays up before it clears itself.
+ *  Long enough to read twice, short enough not to become furniture. */
+const VENDOR_TIP_MS = 6000;
+
+/** What a PR fill writes with. Dirty (it changes what would be saved) but NOT
+ *  validating: this form blocks from its own watched values in the footer, and
+ *  firing RHF validation from an auto-fill would flash errors on untouched rows. */
+const PR_FILL_OPTIONS: SetValueConfig = { shouldDirty: true };
+
+/** `cascadeField` with this form and the PR record pinned, so each dependent
+ *  below reads as just "path, where it comes from, what empty means". */
+function prField<TName extends Path<PoFormValues>>(
+  name: TName,
+  from: (pr: PurchaseRequestDetail) => PathValue<PoFormValues, TName>,
+  empty: PathValue<PoFormValues, TName>,
+  options?: CascadeFieldOptions,
+): CascadeField<PoFormValues, PurchaseRequestDetail> {
+  return cascadeField<PoFormValues, PurchaseRequestDetail, TName>(name, from, empty, options);
 }
 
 export interface PoFormLineProps {
@@ -48,8 +71,15 @@ export interface PoFormLineProps {
   /** PR ids used on the OTHER lines — never offered in this row's picker. */
   excludePrIds: string[];
   /** The header's vendor. When set, the picker offers only that vendor's PRs
-   *  (plus the vendor-less OSP ones) — the PR's vendor is what ties it here. */
+   *  (plus the vendor-less OSP ones) — the PR's vendor is what ties it here.
+   *  Changing it re-queries this line's picker; a line whose PR belongs to the
+   *  OLD vendor is named in the footer rather than silently wiped. */
   headerVendorId: string | null;
+  /** That vendor's name, for the "no open PRs for <vendor>" note. Display only. */
+  vendorName: string;
+  /** True for the ONE line that carries the shared PR hints, so a vendor with no
+   *  open PRs says so once instead of once per row. */
+  showPrHints: boolean;
   /** Item Master indexed by UPPERCASE code. */
   itemsByCode: Map<string, PoItemMasterRow>;
   /** Reports the loaded PR up, so the form can seed Vendor + PO Remarks. */
@@ -67,6 +97,8 @@ export function PoFormLine({
   colCount,
   excludePrIds,
   headerVendorId,
+  vendorName,
+  showPrHints,
   itemsByCode,
   onPrLoaded,
   onRemove,
@@ -76,46 +108,6 @@ export function PoFormLine({
   const { register, setValue, getValues } = form;
   const prId = line?.sourcePrId;
   const { data: pr } = usePurchaseRequest(prId);
-
-  const applied = useRef<AppliedFromPr | null>(null);
-
-  useEffect(() => {
-    if (!prId) {
-      // PR cleared — forget what it filled, so re-picking it fills again.
-      applied.current = null;
-      return;
-    }
-    if (!pr || pr.id !== prId) return;
-    if (applied.current?.prId === prId) return;
-
-    const prev = applied.current;
-    const cur = getValues(`lines.${idx}`);
-    const code = pr.itemCode ?? pr.itemCodeText ?? '';
-    const name = pr.itemName ?? '';
-    const qty = pr.qty;
-    const rate = Number(pr.estCost ?? 0);
-    const due = pr.requiredDate ?? '';
-
-    if (code && (!cur.itemCodeText.trim() || cur.itemCodeText === prev?.itemCodeText)) {
-      setValue(`lines.${idx}.itemCodeText`, code, { shouldDirty: true });
-    }
-    if (name && (!cur.itemName.trim() || cur.itemName === prev?.itemName)) {
-      setValue(`lines.${idx}.itemName`, name, { shouldDirty: true });
-    }
-    if (qty > 0 && (!(Number(cur.qty) > 0) || Number(cur.qty) === prev?.qty)) {
-      setValue(`lines.${idx}.qty`, qty, { shouldDirty: true });
-    }
-    if (rate > 0 && (!(Number(cur.rate) > 0) || Number(cur.rate) === prev?.rate)) {
-      setValue(`lines.${idx}.rate`, rate, { shouldDirty: true });
-    }
-    if (due && (!cur.dueDate || cur.dueDate === prev?.dueDate)) {
-      setValue(`lines.${idx}.dueDate`, due, { shouldDirty: true });
-    }
-    setValue(`lines.${idx}.sourcePrCode`, pr.code);
-
-    applied.current = { prId, itemCodeText: code, itemName: name, qty, rate, dueDate: due };
-    onPrLoaded(pr);
-  }, [pr, prId, idx, getValues, setValue, onPrLoaded]);
 
   // Item Master courtesy fill for a HAND-added line: a code that matches the
   // master names itself. Only when the name box is still empty — a PO may be
@@ -130,27 +122,151 @@ export function PoFormLine({
     }
   }, [matchedName, idx, getValues, setValue]);
 
+  // An EDIT-mode line that arrived from the server already carrying a PR holds
+  // the document's own history: the saved item / qty / rate may deliberately
+  // differ from the PR's and are not ours to refresh. Every other case — a blank
+  // line, or a create-mode line opened from `?prId=` — fills from the first PR it
+  // sees. Read once, at mount, so the flag cannot flip mid-life.
+  const arrivedWithPr = useRef(Boolean(prId)).current;
+
+  // PR (controller) → item code · name · qty · rate · due date · PR code
+  // (dependents). `keepUserEdits` is what makes a SWAP behave: each dependent is
+  // rewritten while it is still empty or still holds exactly what the PREVIOUS PR
+  // put there, and skipped once the buyer has typed a value of their own. That is
+  // what stops PR-1's numbers being stranded on a line now showing PR-2.
+  useFieldCascade<PoFormValues, PurchaseRequestDetail>({
+    form,
+    value: prId,
+    // Inert until THIS line's PR detail has arrived (so a half-loaded record can
+    // never fill the row), and inert again the moment the PR is cleared — the
+    // picker's onChange unlinks the line and the item fields deliberately stay
+    // put, so the buyer can keep it as a hand-entered line.
+    enabled: Boolean(prId) && pr?.id === prId,
+    resolve: () => (pr && pr.id === prId ? pr : null),
+    fields: [
+      prField(`lines.${idx}.itemCodeText`, (p) => p.itemCode ?? p.itemCodeText ?? '', '', {
+        keepUserEdits: true,
+      }),
+      prField(`lines.${idx}.itemName`, (p) => p.itemName ?? '', '', {
+        keepUserEdits: true,
+        // A name the Item Master courtesy-filled under the OUTGOING code was not
+        // hand-written either, so it counts as ours to refresh.
+        isEmpty: (v) => typeof v !== 'string' || v.trim() === '' || v === matchedName,
+      }),
+      prField(`lines.${idx}.qty`, (p) => p.qty, 0, { keepUserEdits: true }),
+      prField(`lines.${idx}.rate`, (p) => Number(p.estCost ?? 0), 0, { keepUserEdits: true }),
+      prField(`lines.${idx}.dueDate`, (p) => p.requiredDate ?? undefined, undefined, {
+        keepUserEdits: true,
+      }),
+    ],
+    // Never PR-written, whatever the picker does: the two remark boxes are the
+    // buyer's own words, and itemId / receivedQty move only via the Item Master
+    // match and the GRN cascade respectively.
+    userEntered: [
+      `lines.${idx}.itemId`,
+      `lines.${idx}.receivedQty`,
+      `lines.${idx}.ramRemark`,
+      `lines.${idx}.lineRemarks`,
+    ],
+    runOnMount: !(isEdit && arrivedWithPr),
+    setValueOptions: PR_FILL_OPTIONS,
+  });
+
+  // `sourcePrCode` is NOT a cascade dependent: it is a pure mirror of whichever
+  // PR the line points at (the PR NO. cell, and the codes the header joins into
+  // its audit ref). Nobody types it, so it is simply kept equal to the loaded
+  // PR's code — including after a clear-and-re-pick of the SAME PR, which the
+  // cascade's "controller has not changed" guard would rightly skip.
+  //
+  // The same effect reports the PR upward: the header seeds Vendor + PO Remarks
+  // from the first one, and the footer needs every PR it has seen to name a line
+  // whose PR belongs to a vendor the header no longer holds.
+  const reportedPrId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pr || pr.id !== prId) return;
+    if (getValues(`lines.${idx}.sourcePrCode`) !== pr.code) {
+      setValue(`lines.${idx}.sourcePrCode`, pr.code, PR_FILL_OPTIONS);
+    }
+    if (reportedPrId.current === pr.id) return;
+    reportedPrId.current = pr.id;
+    onPrLoaded(pr);
+  }, [pr, prId, idx, getValues, setValue, onPrLoaded]);
+
+  // ── Guidance, never a block. Reaching for the PR field with no vendor named
+  //    raises a note beside the line; it clears itself after VENDOR_TIP_MS, on
+  //    the ✕, or the moment a vendor is chosen. The picker keeps working
+  //    meanwhile — picking the PR first and letting it seed the vendor is a
+  //    legitimate route through this form, so this must never disable anything.
+  const [vendorTip, setVendorTip] = useState(false);
+  const [noPrsForVendor, setNoPrsForVendor] = useState(false);
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTipTimer = useCallback(() => {
+    if (tipTimer.current) clearTimeout(tipTimer.current);
+    tipTimer.current = null;
+  }, []);
+  const dismissVendorTip = useCallback(() => {
+    clearTipTimer();
+    setVendorTip(false);
+  }, [clearTipTimer]);
+  const onPickerInteract = useCallback(() => {
+    if (headerVendorId) return;
+    clearTipTimer();
+    setVendorTip(true);
+    tipTimer.current = setTimeout(() => setVendorTip(false), VENDOR_TIP_MS);
+  }, [headerVendorId, clearTipTimer]);
+  useEffect(() => clearTipTimer, [clearTipTimer]);
+  // A vendor arriving answers the question the note was asking.
+  useEffect(() => {
+    if (headerVendorId) {
+      clearTipTimer();
+      setVendorTip(false);
+    }
+  }, [headerVendorId, clearTipTimer]);
+
+  // The PR picker is remounted when this line's PR code first becomes KNOWN, so a
+  // PR that arrived by URL (`?prId=`) shows its code rather than "Select …". It is
+  // deliberately NOT remounted when the code is CLEARED: <SearchableSelect> drops
+  // the selection on the first keystroke, so a remount there threw away the search
+  // the buyer was halfway through typing — which made swapping one PR for another
+  // by typing impossible. Hence a ratchet: it only ever takes a real code.
+  const prCodeKey = useRef('unset');
+  if (line?.sourcePrCode) prCodeKey.current = line.sourcePrCode;
+
   const amount = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
   // An edit-mode line that already carries a PR shows it as a read-only code:
   // that PR is `po_created` and so is (rightly) not in the picker's list.
   const lockedPrCode = isEdit && line?.sourcePrId ? (line.sourcePrCode ?? '— linked —') : null;
 
+  // ONE note slot per line: amber for "do this first", blue for "there is
+  // nothing here to pick". Never both — the second only exists once a vendor is
+  // set, which is exactly when the first stops.
+  let noteText: string | null = null;
+  let noteKind = 'pof-tip-info';
+  if (!headerVendorId && vendorTip) {
+    noteText = PICK_VENDOR_FIRST_TIP;
+    noteKind = 'pof-tip-warn';
+  } else if (headerVendorId && showPrHints && noPrsForVendor && !lockedPrCode) {
+    noteText = noOpenPrsMessage(vendorName);
+  }
+
   return (
     <Fragment>
       <tr className="pof-r-top">
         <td className="pof-sr">{idx + 1}</td>
-        <td style={{ width: 128 }}>
+        {/* 168, not 128. A real PR code is `IN-JWPR-00003` — 13 monospace
+            characters, plus the input's padding and the dropdown caret — and at
+            128px the last digit was cut off, which on a document number is the
+            one character you cannot afford to lose. Same width as Item Code. */}
+        <td style={{ width: 168 }}>
           {lockedPrCode ? (
             <span className="pof-prcode" title={lockedPrCode}>
               {lockedPrCode}
             </span>
           ) : (
             <PrPicker
-              // Remounted when the line's PR code becomes known, so a PR that
-              // arrived by URL (`?prId=`) — and may not be on the picker's
-              // first page of options — still shows its code instead of an
-              // empty "Select …".
-              key={line?.sourcePrCode ?? 'unset'}
+              // See the `prCodeKey` ratchet above: remount on "code known",
+              // never on "code cleared".
+              key={prCodeKey.current}
               id={`pof-pr-${idx}`}
               className=""
               showLabel={false}
@@ -160,9 +276,15 @@ export function PoFormLine({
               initialLabel={line?.sourcePrCode ?? ''}
               excludeIds={excludePrIds}
               vendorId={headerVendorId}
+              vendorName={vendorName}
+              onInteract={onPickerInteract}
+              onNoOptions={setNoPrsForVendor}
               onChange={(id) => {
+                // Clearing UNLINKS the line — id and code go, the item fields
+                // stay. The footer stops counting this line toward "at least one
+                // line has a PR" as soon as sourcePrId is gone.
                 setValue(`lines.${idx}.sourcePrId`, id ?? undefined, { shouldDirty: true });
-                if (!id) setValue(`lines.${idx}.sourcePrCode`, undefined);
+                if (!id) setValue(`lines.${idx}.sourcePrCode`, undefined, { shouldDirty: true });
               }}
             />
           )}
@@ -243,6 +365,31 @@ export function PoFormLine({
           </button>
         </td>
       </tr>
+
+      {/* The note sits on its own full-width row rather than under the 168px PR
+          cell, where a sentence would wrap to six lines and read as a tiny grey
+          hint. Same amber / blue as the rest of the `pof-` palette. */}
+      {noteText ? (
+        <tr className="pof-r-note">
+          <td />
+          <td colSpan={colCount - 1}>
+            <div className={`pof-tip ${noteKind}`} role="status">
+              <span className="pof-tip-t">{noteText}</span>
+              {noteKind === 'pof-tip-warn' ? (
+                <button
+                  type="button"
+                  className="pof-tip-x"
+                  onClick={dismissVendorTip}
+                  title="Dismiss"
+                  aria-label={`Dismiss the vendor note on line ${idx + 1}`}
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+          </td>
+        </tr>
+      ) : null}
 
       <tr>
         <td className="pof-sub-l" colSpan={2}>

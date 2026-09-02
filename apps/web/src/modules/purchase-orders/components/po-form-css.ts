@@ -80,7 +80,10 @@ export const PO_FORM_CSS = `
 
 .pof-tblwrap{ border:1px solid #e4e7ee; border-top:0; border-radius:0 0 8px 8px;
   overflow-x:auto; }
-.pof-tbl{ width:100%; border-collapse:collapse; min-width:940px; }
+/* 980, up from 940: the PR No. column widened by 40px so a full document
+   number fits, and without matching it here the extra width was taken out of
+   the neighbouring columns instead. */
+.pof-tbl{ width:100%; border-collapse:collapse; min-width:980px; }
 .pof-tbl th{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
   color:#8b93a2; text-align:left; padding:9px 6px 3px; white-space:nowrap; }
 .pof-tbl td{ padding:3px 6px; vertical-align:middle; white-space:nowrap; }
@@ -99,7 +102,22 @@ export const PO_FORM_CSS = `
   font-family:'JetBrains Mono',var(--mono),monospace; font-size:12.5px; }
 .pof-prcode{ font-family:'JetBrains Mono',var(--mono),monospace; font-size:11.5px; font-weight:600;
   color:#2054a8; background:#eef3fb; border:1px solid #d6e3f7; border-radius:6px;
-  padding:5px 8px; display:inline-block; }
+  padding:5px 8px; display:inline-block; white-space:nowrap; }
+/* Per-line guidance note ("pick a vendor first" / "no open PRs for X"). Full
+   table width, because a sentence in the 168px PR cell wraps to six lines and
+   stops being read. Amber = the pof-msg-warn palette; blue = the pof-chip one.
+   No new colours. white-space:normal overrides the table's nowrap default. */
+.pof-r-note td{ padding-top:0; padding-bottom:2px; white-space:normal; }
+.pof-tip{ display:flex; align-items:flex-start; gap:8px; border-radius:7px;
+  padding:7px 10px; font-size:12.5px; line-height:1.45; }
+.pof-tip-t{ flex:1 1 auto; font-weight:600; }
+.pof-tip-warn{ background:#fdf3da; border:1px solid #f2d9a0; color:#8a5a00; }
+.pof-tip-info{ background:#eef3fb; border:1px solid #d6e3f7; color:#2054a8; }
+.pof-tip-x{ flex:0 0 auto; height:20px; width:20px; border:0; border-radius:5px;
+  background:transparent; color:inherit; font-family:inherit; font-size:12px; line-height:1;
+  cursor:pointer; opacity:.7; }
+.pof-tip-x:hover{ opacity:1; background:rgba(0,0,0,.07); }
+
 .pof-x{ height:34px; width:34px; border:1px solid #f0cdc7; background:#fff; color:#c0392b;
   border-radius:7px; cursor:pointer; font-size:15px; line-height:1; font-family:inherit;
   display:inline-flex; align-items:center; justify-content:center; }
