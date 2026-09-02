@@ -4,6 +4,7 @@ import { AuthenticationError } from '../../lib/errors';
 import { createPurchaseOrderFromPrBatchInputSchema } from '@innovic/shared';
 import {
   createPurchaseOrderFromPrInputSchema,
+  createPurchaseOrderInputSchema,
   listPurchaseOrdersQuerySchema,
   updatePurchaseOrderInputSchema,
 } from './schema';
@@ -30,12 +31,27 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     return service.getPurchaseOrderRelated(id, req.user);
   });
 
-  // NOTE: there is deliberately NO `POST /purchase-orders`. A purchase order is
-  // always raised against a Purchase Request (ADR-138 / ADR-139) — the only
-  // client doors are `/from-pr` (one PR) and `/from-pr-batch` (many PRs). The
-  // `service.createPurchaseOrder` primitive still exists for internal use and as
-  // a test fixture, but it is not reachable over HTTP, so a PR-less PO cannot be
-  // created through the API.
+  // HISTORY: `POST /purchase-orders` was deliberately absent. A purchase order
+  // is always raised against a Purchase Request (ADR-138 / ADR-139), and the
+  // only way to record that link was the header's single `pr_id` — so the only
+  // client doors were `/from-pr` (one PR) and `/from-pr-batch` (many PRs), and
+  // `service.createPurchaseOrder` was kept as an internal / test fixture that
+  // was not reachable over HTTP, so a PR-less PO could not be created.
+  //
+  // The invariant now holds at LINE level instead: each PO line carries its own
+  // `sourcePrId` (migration 0103), and the shared create contract requires at
+  // least one line to name a PR. One PO can therefore cover several PRs — pick
+  // PR-1, add a line, pick PR-2, add another — and still never be PR-less. The
+  // route is open again on that basis; the rule it protects is unchanged, only
+  // the place it is enforced has moved.
+  app.post('/purchase-orders', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = createPurchaseOrderInputSchema.parse(req.body);
+    const detail = await service.createPurchaseOrder(body, req.user);
+    reply.code(201);
+    return detail;
+  });
+
   app.post('/purchase-orders/from-pr', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createPurchaseOrderFromPrInputSchema.parse(req.body);

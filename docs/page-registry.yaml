@@ -1172,8 +1172,15 @@ pages:
   # ─── Purchase ──────────────────────────────────────────────────────────────
   - module: Purchase
     page_name: Purchase Orders — Create
-    route: /purchase-orders/new
-    react_file: apps/web/src/modules/purchase-orders/routes/edit.tsx
+    route: /purchase-orders/from-pr
+    react_file: apps/web/src/modules/purchase-orders/routes/from-pr.tsx
+    # Corrected 2026-09-02. The route was never /purchase-orders/new — there is no such
+    # route — and the file was the EDIT page. Create lives at /purchase-orders/from-pr.
+    # Both Create and Edit now render ONE component, components/po-form.tsx, from a `mode`
+    # prop — mirroring legacy's poHeaderForm(po), which likewise served both modes and is
+    # why the two are field-identical. The old components/purchase-order-form.tsx,
+    # po-line-row.tsx, po-vendor-field.tsx and po-form-values.ts it replaced are now
+    # unreferenced and pending deletion.
     # Corrected 2026-07-15. L25209 is renderPurchaseOrders — the LIST. Create is addPO
     # L25728 → showModalLg('+ New Purchase Order', poHeaderForm(null), fn).
     # THE SHARED BODY BUILDER IS poHeaderForm(po) L25605 — serving BOTH modes, which is

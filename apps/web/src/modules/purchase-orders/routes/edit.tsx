@@ -1,15 +1,17 @@
-// PO edit route (UI-003-04). Creation lives in the PR-first flow
-// (`routes/from-pr.tsx`) — a PO is always raised against a Purchase Request
-// (ADR-138/ADR-139), so there is no "new PO" route here any more.
+// PO edit route.
+//
+// Renders the SAME <PoForm> as the create route (`routes/from-pr.tsx`), in edit
+// mode: identical layout, lines pre-filled from the PO — each line's source PR
+// shown in the PR NO. cell — plus the read-only Status box and the per-line
+// Received column that only edit needs. The form owns the PATCH itself, so this
+// file is just the route, the access gate and the load/error states.
 
-import type { UpdatePurchaseOrderInput } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { usePurchaseOrder, useUpdatePurchaseOrder } from '../api';
-import { PurchaseOrderForm } from '../components/purchase-order-form';
+import { usePurchaseOrder } from '../api';
+import { PoForm } from '../components/po-form';
 
 export const purchaseOrderEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -19,25 +21,12 @@ export const purchaseOrderEditRoute = createRoute({
 
 function PurchaseOrderEditPage(): React.JSX.Element {
   const { id } = purchaseOrderEditRoute.useParams();
-  const navigate = useNavigate();
   // Route-level gate. Editing needs the edit action (L3 Editor and up) — an L2
   // Data Entry clerk creates a PO but cannot alter one after it is saved. The
   // list hides the Edit link for them; this stops the typed URL too.
   const { data: eff, isPending: accessPending } = useMyAccess();
   const canEdit = effectiveFormPerms(eff, 'po_create').edit;
   const { data: detail, isLoading, isError, error } = usePurchaseOrder(id);
-  const update = useUpdatePurchaseOrder(id);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const onSubmit = async (values: UpdatePurchaseOrderInput): Promise<void> => {
-    setSubmitError(null);
-    try {
-      await update.mutateAsync(values);
-      await navigate({ to: '/purchase-orders/$id', params: { id }, replace: true });
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to update purchase order');
-    }
-  };
 
   if (isLoading || accessPending) {
     return (
@@ -74,40 +63,7 @@ function PurchaseOrderEditPage(): React.JSX.Element {
     );
   }
 
-  return (
-    <div>
-      <Link
-        to="/purchase-orders/$id"
-        params={{ id }}
-        className="btn btn-ghost btn-sm"
-        style={{ marginBottom: 10 }}
-      >
-        <ArrowLeft size={14} /> Back to PO
-      </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
-              Edit Purchase Order
-            </div>
-          </div>
-        </div>
-        <div className="panel-body">
-          <PurchaseOrderForm
-            mode="edit"
-            detail={detail}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => void navigate({ to: '/purchase-orders/$id', params: { id } })}
-          />
-        </div>
-      </div>
-    </div>
-  );
+  // Keyed by the PO id so navigating between two POs' edit screens remounts the
+  // form on the new document's values instead of keeping the old ones.
+  return <PoForm key={detail.id} mode="edit" detail={detail} />;
 }

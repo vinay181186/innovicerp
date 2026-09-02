@@ -385,9 +385,22 @@ export async function getPurchaseOrder(
     if (!headerRow) throw new NotFoundError(`Purchase order ${id} not found`);
 
     const lineRows = await tx
-      .select({ row: purchaseOrderLines, itemCode: items.code })
+      .select({
+        row: purchaseOrderLines,
+        itemCode: items.code,
+        sourcePrCode: purchaseRequests.code,
+      })
       .from(purchaseOrderLines)
       .leftJoin(items, and(eq(items.id, purchaseOrderLines.itemId), isNull(items.deletedAt)))
+      // Same join-the-code pattern as items above: the line stores a uuid, the
+      // reader needs the PR number it can actually read.
+      .leftJoin(
+        purchaseRequests,
+        and(
+          eq(purchaseRequests.id, purchaseOrderLines.sourcePrId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
@@ -409,7 +422,7 @@ export async function getPurchaseOrder(
     }
 
     const header = toPurchaseOrder(headerRow.row);
-    const lines = lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode));
+    const lines = lineRows.map((r) => toPurchaseOrderLine(r.row, r.itemCode, r.sourcePrCode));
     return {
       ...(showMoney ? header : hidePoHeaderMoney(header)),
       vendorName: headerRow.vendorName,
@@ -457,6 +470,10 @@ function toPurchaseOrder(row: typeof purchaseOrders.$inferSelect): PurchaseOrder
 function toPurchaseOrderLine(
   row: typeof purchaseOrderLines.$inferSelect,
   itemCode: string | null = null,
+  /** Live PR code joined from purchase_requests.code on source_pr_id — same
+   *  join-the-code pattern as `itemCode`. Null when the line has no PR behind
+   *  it, and on the write-back paths that return a freshly inserted row. */
+  sourcePrCode: string | null = null,
 ): PurchaseOrderLine {
   return {
     id: row.id,
@@ -473,6 +490,9 @@ function toPurchaseOrderLine(
     dueDate: row.dueDate,
     sourceSoLineId: row.sourceSoLineId,
     sourceJcOpId: row.sourceJcOpId,
+    sourcePrId: row.sourcePrId,
+    sourcePrCode,
+    ramRemark: row.ramRemark,
     lineRemarks: row.lineRemarks,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
@@ -500,14 +520,27 @@ async function nextPoCode(tx: DbTransaction, companyId: string): Promise<string>
 }
 
 /**
- * INTERNAL / TEST-FIXTURE ONLY — creates a PO with no Purchase Request link.
+ * Creates a PO from the PO form — header + N lines, each line naming its own
+ * Purchase Request.
  *
- * As of ADR-138/ADR-139 a PO is always raised against a PR, so this primitive
- * is NOT exposed over HTTP (the `POST /purchase-orders` route was removed). The
- * only client doors are `createPurchaseOrderFromPr` (one PR) and
- * `createPurchaseOrderFromPrBatch` (many PRs). This function survives because
- * dozens of GRN / DC / approval tests call it directly to stand up a PO fixture
- * in an arbitrary state; do NOT wire it back to a route.
+ * HISTORY: ADR-138/ADR-139 said "a PO is always raised against a PR", and the
+ * only way to express that link was the header's single `pr_id` — so this
+ * primitive was taken off HTTP entirely and the only client doors were
+ * `createPurchaseOrderFromPr` (one PR) and `createPurchaseOrderFromPrBatch`
+ * (many PRs). It survived as the fixture dozens of GRN / DC / approval tests
+ * build a PO with.
+ *
+ * That invariant now lives at LINE level instead: `purchase_order_lines
+ * .source_pr_id` (migration 0103) plus the shared contract's rule that at least
+ * one line on a create must carry a `sourcePrId`. A PO can therefore cover
+ * several PRs — one per line — and still never be PR-less, so the route is back
+ * (`POST /purchase-orders`).
+ *
+ * Every distinct PR named by a line is loaded in the SAME transaction, guarded
+ * exactly as the from-PR path guards its single PR (already-converted /
+ * cancelled / wrong company), and stamped with poId + poCreatedAt +
+ * status='po_created'. It is NOT re-vendored: unlike the batch path, this
+ * leaves the source PR's own vendor alone.
  */
 export async function createPurchaseOrder(
   input: CreatePurchaseOrderInput,
@@ -548,6 +581,54 @@ export async function createPurchaseOrder(
     const resolved = await resolveItemCodes(tx, codesToResolve, companyId);
     const lineNos = assignLineNos(input.lines, 1);
 
+    // ── The PRs this PO is raised against ─────────────────────────
+    // DISTINCT, in line order: a buyer picks PR-1, adds a line, picks PR-2,
+    // adds another, and may well add a second line off PR-1. Each PR is
+    // stamped once. The guards are the from-PR path's, word for word — a PR
+    // already on a PO, or cancelled, cannot be bought against again.
+    const distinctPrIds: string[] = [];
+    for (const l of input.lines) {
+      if (l.sourcePrId && !distinctPrIds.includes(l.sourcePrId)) distinctPrIds.push(l.sourcePrId);
+    }
+    const sourcePrs: Array<typeof purchaseRequests.$inferSelect> = [];
+    if (distinctPrIds.length > 0) {
+      const prRows = await tx
+        .select()
+        .from(purchaseRequests)
+        .where(
+          and(
+            inArray(purchaseRequests.id, distinctPrIds),
+            // Company filter, not decoration: a PR id from another company must
+            // not be linkable, so it is treated as not found.
+            eq(purchaseRequests.companyId, companyId),
+            isNull(purchaseRequests.deletedAt),
+          ),
+        );
+      const prById = new Map(prRows.map((r) => [r.id, r]));
+      for (const prId of distinctPrIds) {
+        const pr = prById.get(prId);
+        if (!pr) throw new NotFoundError(`Purchase request ${prId} not found`);
+        if (pr.status === 'po_created' || pr.poId !== null) {
+          throw new ConflictError(`PR ${pr.code} is already linked to a PO`);
+        }
+        if (pr.status === 'cancelled') {
+          throw new ConflictError(`PR ${pr.code} is cancelled — cannot generate PO`);
+        }
+        sourcePrs.push(pr);
+      }
+    }
+    // Header `pr_id` can only hold ONE PR, so it is stamped only when there IS
+    // one — same rule (and same reason) as the batch path. `pr_code_text` is the
+    // readable audit trail that carries all of them.
+    const headerPrId = sourcePrs.length === 1 ? sourcePrs[0]!.id : null;
+    const headerPrCodeText =
+      sourcePrs.length > 0
+        ? sourcePrs
+            .map((p) => p.code)
+            .join(', ')
+            .slice(0, 500)
+        : (input.header.prCodeText ?? null);
+
     // A new PO is ALWAYS born 'open'. Any status on the payload is ignored,
     // the same way updatePurchaseOrder ignores it — status is the state
     // machine's to move (approve / reject / cancel + the GRN cascade), never
@@ -584,7 +665,8 @@ export async function createPurchaseOrder(
         subtotal: totals.subtotal,
         taxAmount: totals.taxAmount,
         totalAmount: totals.totalAmount,
-        prCodeText: input.header.prCodeText ?? null,
+        prId: headerPrId,
+        prCodeText: headerPrCodeText,
         approvalRemarks: input.header.approvalRemarks ?? null,
         remarks: input.header.remarks ?? null,
         createdBy: user.id,
@@ -608,12 +690,31 @@ export async function createPurchaseOrder(
         dueDate: l.dueDate ?? null,
         sourceSoLineId: l.sourceSoLineId ?? null,
         sourceJcOpId: l.sourceJcOpId ?? null,
+        sourcePrId: l.sourcePrId ?? null,
+        ramRemark: l.ramRemark ?? null,
         lineRemarks: l.lineRemarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       };
     });
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
+
+    // Stamp every source PR: linked to this PO, converted, in the same tx as
+    // the PO itself. Deliberately NOT touching the PR's vendorId /
+    // vendorCodeText — the buyer may order from a different vendor than the one
+    // the requester named, and rewriting the source document to match the PO
+    // would destroy what was actually asked for.
+    for (const pr of sourcePrs) {
+      await tx
+        .update(purchaseRequests)
+        .set({
+          poId: header.id,
+          poCreatedAt: new Date(),
+          status: 'po_created',
+          updatedBy: user.id,
+        })
+        .where(eq(purchaseRequests.id, pr.id));
+    }
 
     await emitActivityLog(
       tx,
@@ -626,11 +727,33 @@ export async function createPurchaseOrder(
       companyId,
       user,
     );
+    // One PR_CONVERT per PR, same shape the from-PR path emits, so each PR's
+    // own audit trail records the conversion from its side too.
+    for (const pr of sourcePrs) {
+      await emitActivityLog(
+        tx,
+        {
+          action: 'PR_CONVERT',
+          entity: 'PurchaseRequest',
+          detail: `${pr.code} → ${header.code}`,
+          refId: pr.code,
+        },
+        companyId,
+        user,
+      );
+    }
 
+    const prCodeById = new Map(sourcePrs.map((p) => [p.id, p.code]));
     return {
       ...toPurchaseOrder(header),
       vendorName: null,
-      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
+      lines: insertedLines.map((row) =>
+        toPurchaseOrderLine(
+          row,
+          null,
+          row.sourcePrId ? (prCodeById.get(row.sourcePrId) ?? null) : null,
+        ),
+      ),
     };
   });
 }
@@ -876,8 +999,15 @@ export async function updatePurchaseOrder(
       await tx.select().from(purchaseOrders).where(eq(purchaseOrders.id, id)).limit(1)
     )[0]!;
     const lineRows = await tx
-      .select()
+      .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
       .from(purchaseOrderLines)
+      .leftJoin(
+        purchaseRequests,
+        and(
+          eq(purchaseRequests.id, purchaseOrderLines.sourcePrId),
+          isNull(purchaseRequests.deletedAt),
+        ),
+      )
       .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)))
       .orderBy(asc(purchaseOrderLines.lineNo));
 
@@ -885,7 +1015,7 @@ export async function updatePurchaseOrder(
     // line merge), regardless of whether pcts or lines changed. Persist and
     // reflect the same figures on the returned header.
     const totals = computePoTotals(
-      lineRows,
+      lineRows.map((r) => r.row),
       Number(updatedHdr.sgstPct),
       Number(updatedHdr.cgstPct),
       Number(updatedHdr.igstPct),
@@ -919,7 +1049,7 @@ export async function updatePurchaseOrder(
     return {
       ...toPurchaseOrder(updatedHdr),
       vendorName: null,
-      lines: lineRows.map((row) => toPurchaseOrderLine(row)),
+      lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
     };
   });
 }
@@ -991,6 +1121,12 @@ async function mergeLines(
     if (u.data.sourceSoLineId !== undefined)
       lineUpdate['sourceSoLineId'] = u.data.sourceSoLineId ?? null;
     if (u.data.sourceJcOpId !== undefined) lineUpdate['sourceJcOpId'] = u.data.sourceJcOpId ?? null;
+    // The line's PR link is editable like any other field on the line. NOTE:
+    // moving or clearing it does NOT unlink the PR it used to point at (the PR
+    // keeps its po_id / 'po_created' status) — unlinking on removal is a
+    // separate decision, deliberately not taken here.
+    if (u.data.sourcePrId !== undefined) lineUpdate['sourcePrId'] = u.data.sourcePrId ?? null;
+    if (u.data.ramRemark !== undefined) lineUpdate['ramRemark'] = u.data.ramRemark ?? null;
     if (u.data.lineRemarks !== undefined) lineUpdate['lineRemarks'] = u.data.lineRemarks ?? null;
 
     await tx.update(purchaseOrderLines).set(lineUpdate).where(eq(purchaseOrderLines.id, u.id));
@@ -1017,6 +1153,8 @@ async function mergeLines(
         dueDate: l.dueDate ?? null,
         sourceSoLineId: l.sourceSoLineId ?? null,
         sourceJcOpId: l.sourceJcOpId ?? null,
+        sourcePrId: l.sourcePrId ?? null,
+        ramRemark: l.ramRemark ?? null,
         lineRemarks: l.lineRemarks ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1236,6 +1374,10 @@ export async function createPurchaseOrderFromPr(
         dueDate: pr.requiredDate ?? null,
         sourceSoLineId: pr.sourceSoLineId,
         sourceJcOpId: pr.sourceJcOpId,
+        // Per-line provenance (0103), alongside the header's pr_id — so every
+        // PO line in the system can answer "which PR?" the same way, whether it
+        // came from here, the batch convert, or the PO form.
+        sourcePrId: pr.id,
         lineRemarks: null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1297,7 +1439,7 @@ export async function createPurchaseOrderFromPr(
     return {
       ...toPurchaseOrder(header),
       vendorName: null,
-      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
+      lines: insertedLines.map((row) => toPurchaseOrderLine(row, null, pr.code)),
     };
   });
 }
@@ -1394,8 +1536,15 @@ async function getPurchaseOrderInternal(
   if (!row) throw new NotFoundError(`Purchase order ${id} not found`);
 
   const lineRows = await tx
-    .select()
+    .select({ row: purchaseOrderLines, sourcePrCode: purchaseRequests.code })
     .from(purchaseOrderLines)
+    .leftJoin(
+      purchaseRequests,
+      and(
+        eq(purchaseRequests.id, purchaseOrderLines.sourcePrId),
+        isNull(purchaseRequests.deletedAt),
+      ),
+    )
     .where(
       and(eq(purchaseOrderLines.purchaseOrderId, id), eq(purchaseOrderLines.companyId, companyId)),
     )
@@ -1404,7 +1553,7 @@ async function getPurchaseOrderInternal(
   return {
     ...toPurchaseOrder(row.header),
     vendorName: row.vendorName,
-    lines: lineRows.map((r) => toPurchaseOrderLine(r)),
+    lines: lineRows.map((r) => toPurchaseOrderLine(r.row, null, r.sourcePrCode)),
   };
 }
 
@@ -1647,6 +1796,29 @@ export async function createPurchaseOrderFromPrBatch(
     // Sort PRs by created_at so line_no ordering is stable.
     const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
+    // Same re-resolve as the single convert: a PR carrying only a typed code
+    // gets linked to the Item Master here, so the PO line can credit stock later.
+    const batchResolved = await resolveItemCodes(
+      tx,
+      sortedPrs.filter((p) => !p.itemId && p.itemCodeText).map((p) => p.itemCodeText!.trim()),
+      companyId,
+    );
+
+    // Rates are resolved BEFORE the header insert, because the header stores the
+    // money. This path used to insert the header without subtotal / tax_amount /
+    // total_amount at all, so every batch-created PO sat at ₹0.00 in the list and
+    // on the record while its printed copy — which recomputes from the lines —
+    // showed the real figure. Same computePoTotals the other two create paths use.
+    const batchRates = new Map(
+      sortedPrs.map((pr) => [pr.id, String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost))]),
+    );
+    const batchTotals = computePoTotals(
+      sortedPrs.map((pr) => ({ qty: pr.qty, rate: batchRates.get(pr.id)! })),
+      Number(input.header.sgstPct ?? 0),
+      Number(input.header.cgstPct ?? 0),
+      Number(input.header.igstPct ?? 0),
+    );
+
     const insertedPos = await tx
       .insert(purchaseOrders)
       .values({
@@ -1669,6 +1841,9 @@ export async function createPurchaseOrderFromPrBatch(
         sgstPct: String(input.header.sgstPct ?? 0),
         cgstPct: String(input.header.cgstPct ?? 0),
         igstPct: String(input.header.igstPct ?? 0),
+        subtotal: batchTotals.subtotal,
+        taxAmount: batchTotals.taxAmount,
+        totalAmount: batchTotals.totalAmount,
         // Batch may span multiple PRs joined into prCodeText; only stamp the FK
         // when there is a single source PR — otherwise leave it null.
         prId: sortedPrs.length === 1 ? sortedPrs[0]!.id : null,
@@ -1683,15 +1858,7 @@ export async function createPurchaseOrderFromPrBatch(
       .returning();
     const header = insertedPos[0]!;
 
-    // Same re-resolve as the single convert: a PR carrying only a typed code
-    // gets linked to the Item Master here, so the PO line can credit stock later.
-    const batchResolved = await resolveItemCodes(
-      tx,
-      sortedPrs.filter((p) => !p.itemId && p.itemCodeText).map((p) => p.itemCodeText!.trim()),
-      companyId,
-    );
-
-    // Insert one line per PR. Apply rate override if provided.
+    // Insert one line per PR, at the rate resolved above.
     const lineRows = sortedPrs.map((pr, i) => {
       const prItemId =
         pr.itemId ?? (pr.itemCodeText ? (batchResolved.get(pr.itemCodeText.trim()) ?? null) : null);
@@ -1703,11 +1870,14 @@ export async function createPurchaseOrderFromPrBatch(
         itemCodeText: prItemId ? null : pr.itemCodeText,
         itemName: pr.itemName ?? pr.itemCodeText ?? 'Item',
         qty: pr.qty,
-        rate: String(input.rateOverrides?.[pr.id] ?? Number(pr.estCost)),
+        rate: batchRates.get(pr.id)!,
         receivedQty: 0,
         dueDate: pr.requiredDate ?? null,
         sourceSoLineId: pr.sourceSoLineId,
         sourceJcOpId: pr.sourceJcOpId,
+        // Per-line provenance (0103). The header's pr_id is null on a
+        // multi-PR batch, so without this the line's own PR was unknowable.
+        sourcePrId: pr.id,
         lineRemarks: pr.operation ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -1769,10 +1939,17 @@ export async function createPurchaseOrderFromPrBatch(
       );
     }
 
+    const batchPrCodeById = new Map(sortedPrs.map((pr) => [pr.id, pr.code]));
     return {
       ...toPurchaseOrder(header),
       vendorName: vendorRow?.name ?? null,
-      lines: insertedLines.map((row) => toPurchaseOrderLine(row)),
+      lines: insertedLines.map((row) =>
+        toPurchaseOrderLine(
+          row,
+          null,
+          row.sourcePrId ? (batchPrCodeById.get(row.sourcePrId) ?? null) : null,
+        ),
+      ),
     };
   });
 }

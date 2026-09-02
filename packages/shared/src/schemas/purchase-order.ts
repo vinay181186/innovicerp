@@ -54,6 +54,20 @@ export const purchaseOrderLineSchema = z.object({
   dueDate: z.string().nullable(),
   sourceSoLineId: z.string().uuid().nullable(),
   sourceJcOpId: z.string().uuid().nullable(),
+  /** The Purchase Request this LINE was raised from. Until now a PO carried a
+   *  single header-level `prId`, which the batch path had to null out whenever
+   *  a PO spanned several PRs — so "which PR did this line come from" was
+   *  unanswerable for anything but OSP lines (which could be traced the long
+   *  way round through jc_ops). One PO may now cover many PRs, one per line,
+   *  so the link has to live here. Nullable: a line added by hand on the PO
+   *  form has no PR behind it. */
+  sourcePrId: z.string().uuid().nullable(),
+  /** Live PR code joined from purchase_requests.code when sourcePrId is set.
+   *  Same join-the-code pattern as `itemCode` above — without it the UI has a
+   *  uuid it cannot render, which is exactly why sourceSoLineId / sourceJcOpId
+   *  have never been displayable. */
+  sourcePrCode: z.string().nullable().default(null),
+  ramRemark: z.string().nullable(),
   lineRemarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -157,6 +171,12 @@ export const purchaseOrderLineInputSchema = z
       .optional(),
     sourceSoLineId: z.string().uuid().optional(),
     sourceJcOpId: z.string().uuid().optional(),
+    /** PR this line is raised against. Optional per line — the PO form lets a
+     *  buyer add a spare line by hand — but the create input as a whole still
+     *  requires at least one PR-linked line (see createPurchaseOrderInputSchema),
+     *  so ADR-138 "a PO is always raised against a Purchase Request" holds. */
+    sourcePrId: z.string().uuid().optional(),
+    ramRemark: z.string().max(2000).optional(),
     lineRemarks: z.string().max(2000).optional(),
   })
   .refine((l) => Boolean(l.itemId) || Boolean(l.itemCodeText?.trim()), {
@@ -186,18 +206,35 @@ const _poHeaderInputBase = z.object({
   sgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
   cgstPct: z.coerce.number().nonnegative().max(99.99).default(0),
   igstPct: z.coerce.number().nonnegative().max(99.99).default(0),
-  prCodeText: z.string().max(64).optional(),
+  // 500, not 64. A PO covering several PRs stores their codes comma-joined
+  // here, and the batch path already writes up to 200 chars — so a PO with
+  // ~6+ PRs could be created but never saved again from the edit form, which
+  // re-sends this field untouched and was rejected at 64. The DB column is
+  // plain `text`; 500 is the round number that comfortably clears the 200 the
+  // writer caps at.
+  prCodeText: z.string().max(500).optional(),
   approvalRemarks: z.string().max(2000).optional(),
   remarks: z.string().max(2000).optional(),
 });
 
-/** CREATE — `{header, lines}`. Header + ≥ 1 line; service runs both in tx. */
+/** CREATE — `{header, lines}`. Header + ≥ 1 line; service runs both in tx.
+ *
+ *  This is the shape the redesigned PO form posts. Each line may name its own
+ *  `sourcePrId`, so ONE PO can cover several PRs — pick PR-1, add a line, pick
+ *  PR-2, add another. At least one line must carry a PR: that is what keeps
+ *  ADR-138 ("a PO is always raised against a Purchase Request") true now that
+ *  the header's single `prId` can no longer represent the link on its own. */
 export const createPurchaseOrderInputSchema = z.object({
   header: _poHeaderInputBase.refine(
     (h) => Boolean(h.vendorId) || Boolean(h.vendorCodeText?.trim()),
     { message: 'vendorId or vendorCodeText is required (per ADR-015 vendor CHECK)' },
   ),
-  lines: z.array(purchaseOrderLineInputSchema).min(1, 'At least one line is required'),
+  lines: z
+    .array(purchaseOrderLineInputSchema)
+    .min(1, 'At least one line is required')
+    .refine((lines) => lines.some((l) => Boolean(l.sourcePrId)), {
+      message: 'At least one line must be raised against a Purchase Request',
+    }),
 });
 export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderInputSchema>;
 

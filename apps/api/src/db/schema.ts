@@ -1586,6 +1586,14 @@ export const purchaseOrderLines = pgTable(
     sourceJcOpId: uuid('source_jc_op_id').references((): AnyPgColumn => jcOps.id, {
       onDelete: 'set null',
     }),
+    // The Purchase Request this LINE was raised from (0103). One PO may now
+    // cover several PRs — one per line — so the link lives here, not only on
+    // the header's single `pr_id`. Nullable: a line typed by hand on the PO
+    // form has no PR behind it.
+    sourcePrId: uuid('source_pr_id').references((): AnyPgColumn => purchaseRequests.id, {
+      onDelete: 'set null',
+    }),
+    ramRemark: text('ram_remark'),
     lineRemarks: text('line_remarks'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -1610,6 +1618,9 @@ export const purchaseOrderLines = pgTable(
     index('purchase_order_lines_jc_op_idx')
       .on(t.sourceJcOpId)
       .where(sql`${t.sourceJcOpId} is not null`),
+    index('purchase_order_lines_source_pr_idx')
+      .on(t.sourcePrId)
+      .where(sql`${t.deletedAt} is null`),
     check('purchase_order_lines_qty_positive', sql`${t.qty} > 0`),
     check(
       'purchase_order_lines_received_qty_check',

@@ -1078,6 +1078,8 @@ RLS: same pattern as `purchase_requests`.
 | `due_date`           | `date`          | nullable                                                                                                                  |
 | `source_so_line_id`  | `uuid`          | nullable, FK → `sales_order_lines(id) on delete set null`. Cost-rollup link; legacy carries `soRefId` on PO line          |
 | `source_jc_op_id`    | `uuid`          | nullable, FK → `jc_ops(id) on delete set null`. Outsource workflow link; replaces legacy `outsource_po_no` text on jc_ops |
+| `source_pr_id`       | `uuid`          | nullable, FK → `purchase_requests(id) on delete set null`. Added `0103_po_line_source_pr.sql`. The PR this LINE was raised from — one PO may cover several PRs, one per line, so the link cannot live on the header (`purchase_orders.pr_id` is null whenever a PO spans more than one PR). Null on a line added by hand |
+| `ram_remark`         | `text`          | nullable. Added `0103_po_line_source_pr.sql`. Second free-text note per line, alongside `line_remarks`                     |
 | `line_remarks`       | `text`          | nullable                                                                                                                  |
 | audit + `deleted_at` | (audit pattern) |                                                                                                                           |
 

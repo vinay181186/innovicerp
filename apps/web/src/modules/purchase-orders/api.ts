@@ -1,5 +1,6 @@
 import type {
   CreatePurchaseOrderFromPrInput,
+  CreatePurchaseOrderInput,
   ListPurchaseOrdersQuery,
   ListPurchaseOrdersResponse,
   PurchaseOrderDetail,
@@ -71,6 +72,32 @@ export function useSoftDeletePurchaseOrder() {
     onSuccess: (_, id) => {
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
       qc.removeQueries({ queryKey: purchaseOrdersKeys.detail(id) });
+    },
+  });
+}
+
+/** CREATE — `{header, lines}` straight to POST /purchase-orders. This is what
+ *  the redesigned PO form posts.
+ *
+ *  Unlike `useCreatePurchaseOrderFromPr` below, which knows about exactly ONE
+ *  PR, a PO created here may cover several — one per line — so EVERY referenced
+ *  PR's detail cache is invalidated. Miss one and that PR's page keeps showing
+ *  "no PO raised" after the PO exists. */
+export function useCreatePurchaseOrder() {
+  const qc = useQueryClient();
+  return useMutation<PurchaseOrderDetail, Error, CreatePurchaseOrderInput>({
+    mutationFn: (input) =>
+      apiFetch<PurchaseOrderDetail>('/purchase-orders', { method: 'POST', json: input }),
+    onSuccess: (created, vars) => {
+      void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.lists() });
+      qc.setQueryData(purchaseOrdersKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
+      const prIds = new Set(
+        vars.lines.map((l) => l.sourcePrId).filter((x): x is string => Boolean(x)),
+      );
+      for (const prId of prIds) {
+        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(prId) });
+      }
     },
   });
 }
