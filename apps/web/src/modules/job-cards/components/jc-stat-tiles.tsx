@@ -110,6 +110,17 @@ export function JcStatTiles({
             <span style={{ color: 'var(--text3)' }}> · Size: </span>
             <span className="mono fw-700">{jc.rawMaterialSizeText || '—'}</span>
           </div>
+          {/* The job card's own remarks, directly under the grade and size they
+              usually qualify ("EN24 substituted", "size confirmed with client").
+              They used to sit in the SO / WO tile, two columns away from the
+              material they talk about, which is why they were being missed.
+              Shown here only — one remark, one place. */}
+          {jc.remarks ? (
+            <div style={{ fontSize: 11, marginTop: 4, overflowWrap: 'anywhere' }}>
+              <span style={{ color: 'var(--text3)' }}>Remarks: </span>
+              <span style={{ color: 'var(--text)' }}>{jc.remarks}</span>
+            </div>
+          ) : null}
           {/* Route Card reference (the item's active route card + revision). */}
           <div style={{ fontSize: 11, marginTop: 4 }}>
             {jc.routeCardCode ? (
@@ -136,11 +147,7 @@ export function JcStatTiles({
           {jc.clientPoLineNo ? (
             <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>CPO Ln: {jc.clientPoLineNo}</div>
           ) : null}
-          {jc.remarks ? (
-            <div style={{ ...noteStyle, marginTop: 2 }}>
-              Remarks: <span style={{ color: 'var(--text)' }}>{jc.remarks}</span>
-            </div>
-          ) : null}
+          {/* Remarks moved to the Item tile, under Grade / Size — see there. */}
         </div>
 
         {/* QUANTITY (pcs) — one segmented control, not three cards. */}
