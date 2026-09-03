@@ -4,12 +4,20 @@
 // component state for the selected machine (the standalone route drove it off the
 // URL). Reuses the same start-op / op-entry-form write path.
 
-import { type JcOpEnriched, type RunningOp, SHIFTS, SHIFT_LABELS, type Shift } from '@innovic/shared';
+import {
+  type JcOpEnriched,
+  type RunningOp,
+  SHIFTS,
+  SHIFT_LABELS,
+  type Shift,
+  type StartOpInput,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useMachinesList } from '@/modules/machines/api';
+import { useOperatorsList } from '@/modules/operators/api';
 import { useJcOpsEnriched, useRealtimeRunningOps, useRunningOps, useStartOp } from '../api';
 import { MachineCard } from './machine-card';
 import { OpEntryForm } from './op-entry-form';
@@ -169,8 +177,49 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
   const [startDate, setStartDate] = useState(todayLocal());
   const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [shift, setShift] = useState<Shift>('day');
-  function handleStart(opId: string) {
-    void start.mutateAsync({ jcOpId: opId, startDate, startTime, shift });
+  // Operator is REQUIRED by startOpInputSchema (operatorId OR operatorName).
+  // This view used to post neither, so every ▶ Start was rejected 400 by the
+  // server and — because the click swallowed the rejection — the button simply
+  // did nothing. Same datalist picker as the By Job Card form: free text always
+  // works, and an exact name/code match resolves the master FK.
+  const [operatorName, setOperatorName] = useState('');
+  const [operatorId, setOperatorId] = useState<string | undefined>(undefined);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const operatorsQuery = useOperatorsList({ isActive: true, limit: 200, offset: 0 });
+  const operators = operatorsQuery.data?.operators ?? [];
+
+  function handleOperatorNameChange(value: string): void {
+    setOperatorName(value);
+    const needle = value.trim().toLowerCase();
+    const match = needle
+      ? operators.find(
+          (o) => o.name.trim().toLowerCase() === needle || o.code.trim().toLowerCase() === needle,
+        )
+      : undefined;
+    setOperatorId(match ? match.id : undefined);
+  }
+
+  async function handleStart(opId: string): Promise<void> {
+    setErrorMessage(null);
+    if (!operatorId && !operatorName.trim()) {
+      setErrorMessage('Enter the operator name before starting this operation.');
+      return;
+    }
+    const input: StartOpInput = {
+      jcOpId: opId,
+      startDate,
+      startTime,
+      shift,
+      ...(operatorId ? { operatorId } : {}),
+      ...(operatorName.trim() ? { operatorName: operatorName.trim() } : {}),
+    };
+    try {
+      await start.mutateAsync(input);
+    } catch (err) {
+      // Availability / client-material / machine-busy refusals all land here.
+      // They used to vanish silently.
+      setErrorMessage(err instanceof Error ? err.message : 'Could not start this operation.');
+    }
   }
   return (
     <div style={{ background: 'var(--bg3)', border: '2px solid var(--border)', borderRadius: 10, padding: 16 }}>
@@ -231,7 +280,34 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
                 ))}
               </select>
             </div>
+            <div className="form-grp" style={{ margin: 0, minWidth: 180 }}>
+              <label className="form-label" htmlFor="mach-start-operator">
+                Operator
+              </label>
+              <input
+                id="mach-start-operator"
+                className="innovic-input"
+                list="mach-start-operator-list"
+                value={operatorName}
+                onChange={(e) => handleOperatorNameChange(e.target.value)}
+                placeholder="Operator name"
+                autoComplete="off"
+              />
+              <datalist id="mach-start-operator-list">
+                {operators.map((o) => (
+                  <option key={o.id} value={o.name}>
+                    {o.code}
+                    {o.department ? ` · ${o.department}` : ''}
+                  </option>
+                ))}
+              </datalist>
+            </div>
           </div>
+          {errorMessage ? (
+            <div role="alert" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 10 }}>
+              {errorMessage}
+            </div>
+          ) : null}
           <div className="tbl-wrap">
             <table className="innovic-table">
               <thead>
@@ -255,7 +331,7 @@ function PendingOpsSection({ machineCode, machineName, ops, isLoading }: Pending
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          onClick={() => handleStart(op.id)}
+                          onClick={() => void handleStart(op.id)}
                           disabled={start.isPending}
                         >
                           ▶ Start
