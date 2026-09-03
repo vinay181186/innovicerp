@@ -1,5 +1,5 @@
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/components/shared/searchable-select';
@@ -218,9 +218,6 @@ function OpEntryPage() {
                 selectedLabel={(o) => o.code ?? o.name}
               />
             </div>
-            <button type="submit" className="btn btn-primary">
-              <Search size={14} /> Load
-            </button>
           </form>
         </div>
       </div>
@@ -246,39 +243,42 @@ function OpEntryPage() {
             ) : null}
           </div>
 
-          {/* Two columns: LEFT = Operations table + Log Entry (stacked); RIGHT =
-              Machine-wise output / Recent log tabs sidebar (once an op is
-              selected). Applies to production AND QC inspection ops. */}
+          {/* Row 1 — two columns side by side: LEFT = Operations table,
+              RIGHT = Log Entry form (it sits NEXT TO the table, not under it).
+              Row 2 = the Machine-wise output / Recent log tabs, full width
+              underneath the Operations table. Applies to production AND QC
+              inspection ops. */}
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
               gap: 16,
               alignItems: 'start',
+              marginBottom: 16,
             }}
           >
-            <div>
-              <div className="panel" style={{ marginBottom: 16 }}>
-                <div className="panel-hdr">
-                  <span className="panel-title">Operations — click a row to log entries</span>
-                </div>
-                {ops.isError ? (
-                  <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
-                    {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
-                  </div>
-                ) : ops.isLoading ? (
-                  <div className="empty-state">
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
-                  </div>
-                ) : (
-                  <JcOpsTable
-                    ops={ops.data ?? []}
-                    selectedOpId={search.op ?? null}
-                    onSelect={handleSelectOp}
-                  />
-                )}
+            <div className="panel">
+              <div className="panel-hdr">
+                <span className="panel-title">Operations — click a row to log entries</span>
               </div>
+              {ops.isError ? (
+                <div className="panel-body" style={{ color: 'var(--red)', fontSize: 13 }}>
+                  {ops.error instanceof Error ? ops.error.message : 'Failed to load ops'}
+                </div>
+              ) : ops.isLoading ? (
+                <div className="empty-state">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading ops…
+                </div>
+              ) : (
+                <JcOpsTable
+                  ops={ops.data ?? []}
+                  selectedOpId={search.op ?? null}
+                  onSelect={handleSelectOp}
+                />
+              )}
+            </div>
 
+            <div>
               {selectedOp ? (
                 <OpEntryForm
                   op={selectedOp}
@@ -288,56 +288,54 @@ function OpEntryPage() {
                 />
               ) : ops.data && ops.data.length > 0 ? (
                 <div className="text3" style={{ fontSize: 13 }}>
-                  Select an op above to log entries.
-                </div>
-              ) : null}
-            </div>
-
-            <div>
-              {selectedOp ? (
-                <div className="panel">
-                  <div
-                    className="panel-hdr"
-                    style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
-                  >
-                    {(
-                      [
-                        { key: 'machine', label: 'Machine-wise output' },
-                        { key: 'log', label: 'Recent log' },
-                      ] as const
-                    ).map((t) => {
-                      const active = rightTab === t.key;
-                      return (
-                        <button
-                          key={t.key}
-                          type="button"
-                          // Active tab = solid filled pill (btn-primary), inactive
-                          // = outline (btn-ghost) — clear highlight on click.
-                          className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                          onClick={() => setRightTab(t.key)}
-                          style={{ fontWeight: 700 }}
-                        >
-                          {t.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {rightTab === 'machine' ? (
-                    <MachineOutputPanel
-                      rows={machineOutput.data ?? []}
-                      isLoading={machineOutput.isLoading}
-                    />
-                  ) : (
-                    <OpLogHistory
-                      logs={opLog.data ?? []}
-                      isLoading={opLog.isLoading}
-                      {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
-                    />
-                  )}
+                  Select an op on the left to log entries.
                 </div>
               ) : null}
             </div>
           </div>
+
+          {selectedOp ? (
+            <div className="panel">
+              <div
+                className="panel-hdr"
+                style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
+              >
+                {(
+                  [
+                    { key: 'machine', label: 'Machine-wise output' },
+                    { key: 'log', label: 'Recent log' },
+                  ] as const
+                ).map((t) => {
+                  const active = rightTab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      // Active tab = solid filled pill (btn-primary), inactive
+                      // = outline (btn-ghost) — clear highlight on click.
+                      className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setRightTab(t.key)}
+                      style={{ fontWeight: 700 }}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {rightTab === 'machine' ? (
+                <MachineOutputPanel
+                  rows={machineOutput.data ?? []}
+                  isLoading={machineOutput.isLoading}
+                />
+              ) : (
+                <OpLogHistory
+                  logs={opLog.data ?? []}
+                  isLoading={opLog.isLoading}
+                  {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
+                />
+              )}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="panel">
