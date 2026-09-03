@@ -47,6 +47,15 @@ export const bomMasterLineSchema = z.object({
   childItemId: z.string().uuid(),
   qtyPerSet: z.string(), // numeric stored as string
   bomType: bomLineTypeSchema,
+  // Raw material for THIS child part. A BOM child is a different part from its
+  // parent and is generally cut from different stock, so there is nothing to
+  // inherit — the BOM line is the only place that knows what the child is made
+  // from. Copied onto the child Job Card the BOM cascade raises. Both optional
+  // (a purchase/outsource line buys the part rather than cutting it).
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -119,6 +128,11 @@ export const createBomMasterLineInputSchema = z.object({
   childItemId: z.string().uuid(),
   qtyPerSet: z.number().positive(),
   bomType: bomLineTypeSchema,
+  // Raw material for this child part — see bomMasterLineSchema. Optional.
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
 });
 export type CreateBomMasterLineInput = z.infer<typeof createBomMasterLineInputSchema>;
 

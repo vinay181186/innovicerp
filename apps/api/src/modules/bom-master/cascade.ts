@@ -178,6 +178,15 @@ export async function cascadeBomToSoLine(
         orderQty: childQty,
         priority: 'normal',
         sourceSoLineId: soLineId,
+        // Raw material (0107) from the BOM LINE, not from the parent. A child
+        // is a different part and is generally cut from different stock, so
+        // there is nothing to inherit — the BOM line is where the grade and
+        // size for this child were set. Id and text both copied from the line's
+        // own snapshot, so the child JC prints what the BOM said.
+        rawMaterialGradeId: bl.rawMaterialGradeId,
+        rawMaterialGradeText: bl.rawMaterialGradeText,
+        rawMaterialSizeId: bl.rawMaterialSizeId,
+        rawMaterialSizeText: bl.rawMaterialSizeText,
         createdBy: user.id,
         updatedBy: user.id,
       });
@@ -398,6 +407,12 @@ export async function cascadeBomToJwLine(
         orderQty: childQty,
         priority: 'normal',
         sourceJwLineId: jwLineId,
+        // Same as the SO-line cascade: the grade and size come from the BOM
+        // LINE for this child part, copied across as id + text snapshot.
+        rawMaterialGradeId: bl.rawMaterialGradeId,
+        rawMaterialGradeText: bl.rawMaterialGradeText,
+        rawMaterialSizeId: bl.rawMaterialSizeId,
+        rawMaterialSizeText: bl.rawMaterialSizeText,
         createdBy: user.id,
         updatedBy: user.id,
       })

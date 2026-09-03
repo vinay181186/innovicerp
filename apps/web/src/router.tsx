@@ -80,6 +80,7 @@ import { productionDashboardRoute } from './modules/production-dashboard/routes/
 import { operatorsListRoute } from './modules/operators/routes/list';
 import { operatorDetailRoute } from './modules/operators/routes/detail';
 import { operatorEditRoute, operatorNewRoute } from './modules/operators/routes/edit';
+import { rawMaterialRoute } from './modules/raw-material/routes/index';
 import { assemblyDetailRoute } from './modules/assembly/routes/detail';
 import { assemblyListRoute } from './modules/assembly/routes/list';
 import { planDetailRoute } from './modules/plans/routes/detail';
@@ -168,6 +169,7 @@ const routeTree = rootRoute.addChildren([
     operatorNewRoute,
     operatorDetailRoute,
     operatorEditRoute,
+    rawMaterialRoute,
     opEntryRoute,
     runningOpsRoute,
     machineLoadingRoute,

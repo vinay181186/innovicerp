@@ -37,6 +37,8 @@ export * from './schemas/item';
 export * from './schemas/client';
 export * from './schemas/vendor';
 export * from './schemas/machine';
+export * from './schemas/material-grade';
+export * from './schemas/material-size';
 export * from './schemas/machine-loading';
 export * from './schemas/production-dashboard';
 export * from './schemas/incoming-qc';

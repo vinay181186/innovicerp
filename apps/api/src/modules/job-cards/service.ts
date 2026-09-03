@@ -21,6 +21,8 @@ import {
   jobWorkOrderLines,
   jobWorkOrders,
   machines,
+  materialGrades,
+  materialSizes,
   ncRegister,
   plans,
   purchaseOrderLines,
@@ -139,6 +141,11 @@ export async function listJobCards(
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
+        -- Raw material the JC was raised with. The TEXT snapshots are read, not
+        -- the masters, so the header and the printed JC still show the grade and
+        -- size the JC was raised with after a master row is renamed or removed.
+        jc.raw_material_grade_text AS "rawMaterialGradeText",
+        jc.raw_material_size_text  AS "rawMaterialSizeText",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -258,6 +265,11 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE(so.customer_name, jw.customer_name, cli_so.name, cli_jw.name) AS "customerName",
         sol.client_po_line_no AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
+        -- Raw material the JC was raised with. The TEXT snapshots are read, not
+        -- the masters, so the header and the printed JC still show the grade and
+        -- size the JC was raised with after a master row is renamed or removed.
+        jc.raw_material_grade_text AS "rawMaterialGradeText",
+        jc.raw_material_size_text  AS "rawMaterialSizeText",
         COALESCE((
           SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
                       THEN vos.qc_accepted_qty ELSE vos.completed_qty END
@@ -357,6 +369,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     routeCardCode: (r['routeCardCode'] as string | null) ?? null,
     routeCardRevision: r['routeCardRevision'] != null ? Number(r['routeCardRevision']) : null,
+    rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
+    rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),
@@ -487,7 +501,11 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       SELECT jc.id, jc.code, jc.jc_date AS "jcDate",
         jc.source_so_line_id AS "sourceSoLineId", jc.source_jw_line_id AS "sourceJwLineId",
         jc.order_qty AS "orderQty", jc.priority, jc.due_date AS "dueDate",
-        jc.drawing_file_path AS "drawingFilePath", jc.remarks AS "remarks", i.code AS "itemCode"
+        jc.drawing_file_path AS "drawingFilePath", jc.remarks AS "remarks", i.code AS "itemCode",
+        jc.raw_material_grade_id AS "rawMaterialGradeId",
+        jc.raw_material_grade_text AS "rawMaterialGradeText",
+        jc.raw_material_size_id AS "rawMaterialSizeId",
+        jc.raw_material_size_text AS "rawMaterialSizeText"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
       WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
@@ -555,6 +573,10 @@ export async function getJobCardEditModel(id: string, user: AuthContext): Promis
       dueDate: h['dueDate'] != null ? dateLike(h['dueDate']) : null,
       drawingFilePath: (h['drawingFilePath'] as string | null) ?? null,
       remarks: (h['remarks'] as string | null) ?? null,
+      rawMaterialGradeId: (h['rawMaterialGradeId'] as string | null) ?? null,
+      rawMaterialGradeText: (h['rawMaterialGradeText'] as string | null) ?? null,
+      rawMaterialSizeId: (h['rawMaterialSizeId'] as string | null) ?? null,
+      rawMaterialSizeText: (h['rawMaterialSizeText'] as string | null) ?? null,
       ops: opRows.map((o) => ({
         id: o['id'] as string,
         opSeq: Number(o['opSeq'] ?? 0),
@@ -977,6 +999,74 @@ async function resolveCodeMap(
   return map;
 }
 
+/** Raw material for a hand-raised / hand-edited Job Card (migration 0106).
+ *
+ *  Two independent optional masters (Grade and Size). Each side stores an FK
+ *  AND a text snapshot; the snapshot is what the JC header and the printed JC
+ *  show, so the JC keeps reading the same grade/size after the master row is
+ *  renamed or removed.
+ *
+ *  When an id is sent it is resolved against the company's live master (a
+ *  stale or foreign id is refused rather than stored) and the snapshot is
+ *  written from the master's current name — the payload's text is only a
+ *  fallback. When only text is sent the JC is text-only, which is how a plan
+ *  raised before the masters existed still edits cleanly.
+ */
+async function resolveJcRawMaterial(
+  tx: DbTransaction,
+  companyId: string,
+  input: JobCardWriteInput,
+): Promise<{
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
+}> {
+  const gradeId = input.rawMaterialGradeId ?? null;
+  const sizeId = input.rawMaterialSizeId ?? null;
+  let gradeText = input.rawMaterialGradeText?.trim() || null;
+  let sizeText = input.rawMaterialSizeText?.trim() || null;
+
+  if (gradeId) {
+    const rows = await tx
+      .select({ name: materialGrades.name })
+      .from(materialGrades)
+      .where(
+        and(
+          eq(materialGrades.id, gradeId),
+          eq(materialGrades.companyId, companyId),
+          isNull(materialGrades.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!rows[0]) throw new ValidationError('Raw material grade not found in the Grade master');
+    gradeText = rows[0].name;
+  }
+
+  if (sizeId) {
+    const rows = await tx
+      .select({ name: materialSizes.name })
+      .from(materialSizes)
+      .where(
+        and(
+          eq(materialSizes.id, sizeId),
+          eq(materialSizes.companyId, companyId),
+          isNull(materialSizes.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!rows[0]) throw new ValidationError('Raw material size not found in the Size master');
+    sizeText = rows[0].name;
+  }
+
+  return {
+    rawMaterialGradeId: gradeId,
+    rawMaterialGradeText: gradeText,
+    rawMaterialSizeId: sizeId,
+    rawMaterialSizeText: sizeText,
+  };
+}
+
 type ResolvedOpType = 'process' | 'qc' | 'outsource';
 
 /** How many of `itemId` this SO line needs, when the line drives a BOM and the
@@ -1255,6 +1345,11 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
       'Vendor',
     );
 
+    // Raw material (0106): resolve the master FKs and take the text snapshots
+    // before the insert, so a bad grade/size id fails the whole create rather
+    // than leaving a JC with a dangling reference.
+    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input);
+
     const code = await nextJcCode(tx, companyId);
     const [jc] = await tx
       .insert(jobCards)
@@ -1270,6 +1365,7 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
         remarks: input.remarks ?? null,
         sourceSoLineId: input.sourceSoLineId ?? null,
         sourceJwLineId: input.sourceJwLineId ?? null,
+        ...rawMaterial,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -1694,6 +1790,9 @@ export async function updateJobCard(
         // the link, and an edit must NOT re-point the JC at a different line).
         sourceSoLineId: head.sourceSoLineId,
         sourceJwLineId: head.sourceJwLineId,
+        // Raw material: same resolve-then-snapshot rule as create. The form
+        // always sends both sides, so clearing a picker clears the JC.
+        ...(await resolveJcRawMaterial(tx, companyId, input)),
         updatedBy: user.id,
         updatedAt: now,
       })

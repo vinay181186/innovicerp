@@ -8,6 +8,11 @@ import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+  RawMaterialGroup,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
 export interface PlanFormValues {
@@ -24,6 +29,13 @@ export interface PlanFormValues {
   planQty: number;
   plannedStartDate: string;
   plannedEndDate: string;
+  // Raw material — two INDEPENDENT master pickers, both optional. The id links
+  // to the master; the *Text snapshot is what this plan still prints after the
+  // master row is renamed or deactivated, so both travel together.
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
   bomMasterId: string | null;
   bomParentCode: string;
   bomChildCode: string;
@@ -82,6 +94,10 @@ export function emptyValues(): PlanFormValues {
     planQty: 1,
     plannedStartDate: '',
     plannedEndDate: '',
+    rawMaterialGradeId: null,
+    rawMaterialGradeText: null,
+    rawMaterialSizeId: null,
+    rawMaterialSizeText: null,
     bomMasterId: null,
     bomParentCode: '',
     bomChildCode: '',
@@ -117,6 +133,10 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
     planQty: v.planQty,
     plannedStartDate: v.plannedStartDate || null,
     plannedEndDate: v.plannedEndDate || null,
+    rawMaterialGradeId: v.rawMaterialGradeId ?? null,
+    rawMaterialGradeText: v.rawMaterialGradeText || null,
+    rawMaterialSizeId: v.rawMaterialSizeId ?? null,
+    rawMaterialSizeText: v.rawMaterialSizeText || null,
     bomMasterId: v.bomMasterId ?? null,
     bomParentCode: v.bomParentCode || null,
     bomChildCode: v.bomChildCode || null,
@@ -469,6 +489,38 @@ export function PlanForm({
               onChange={(e) => update('plannedEndDate', e.target.value)}
             />
           </Field>
+          {/* Grade + Size grouped under one RAW MATERIAL bracket, right next to
+              the planned dates. Both optional — no ★ on either. */}
+          <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+            <RawMaterialGroup>
+              <Field label="Grade">
+                <MaterialGradePicker
+                  valueId={values.rawMaterialGradeId}
+                  valueText={values.rawMaterialGradeText}
+                  onChange={(id, text) => {
+                    setValues((v) => ({
+                      ...v,
+                      rawMaterialGradeId: id,
+                      rawMaterialGradeText: text,
+                    }));
+                  }}
+                />
+              </Field>
+              <Field label="Size">
+                <MaterialSizePicker
+                  valueId={values.rawMaterialSizeId}
+                  valueText={values.rawMaterialSizeText}
+                  onChange={(id, text) => {
+                    setValues((v) => ({
+                      ...v,
+                      rawMaterialSizeId: id,
+                      rawMaterialSizeText: text,
+                    }));
+                  }}
+                />
+              </Field>
+            </RawMaterialGroup>
+          </div>
         </div>
       </div>
 

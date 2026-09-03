@@ -23,6 +23,11 @@ import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+  RawMaterialGroup,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
 import {
   useCreateJobCard,
@@ -163,6 +168,13 @@ export function JobCardForm({
   const [dueDate, setDueDate] = useState(model?.dueDate ?? '');
   const [drawingFilePath, setDrawingFilePath] = useState<string | null>(model?.drawingFilePath ?? null);
   const [remarks, setRemarks] = useState(model?.remarks ?? '');
+  // Raw material — both optional and independent. A JC created from a plan
+  // arrives with these already filled from the plan; a hand-raised JC can pick
+  // them here. Id + text snapshot are stored together.
+  const [rmGradeId, setRmGradeId] = useState<string | null>(model?.rawMaterialGradeId ?? null);
+  const [rmGradeText, setRmGradeText] = useState<string | null>(model?.rawMaterialGradeText ?? null);
+  const [rmSizeId, setRmSizeId] = useState<string | null>(model?.rawMaterialSizeId ?? null);
+  const [rmSizeText, setRmSizeText] = useState<string | null>(model?.rawMaterialSizeText ?? null);
   const [drawingName, setDrawingName] = useState<string>(model?.drawingFilePath ? 'Attached' : '');
 
   const [ops, setOps] = useState<FormOp[]>(
@@ -369,6 +381,10 @@ export function JobCardForm({
       dueDate,
       drawingFilePath,
       remarks,
+      rawMaterialGradeId: rmGradeId,
+      rawMaterialGradeText: rmGradeText,
+      rawMaterialSizeId: rmSizeId,
+      rawMaterialSizeText: rmSizeText,
       ops,
       docs,
     });
@@ -547,6 +563,35 @@ export function JobCardForm({
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
+            </div>
+            {/* Raw material — Grade + Size under one bracket, both optional
+                (no ★ on either). Same two pickers Planning uses, so a
+                hand-raised JC carries the same fields a planned one does. */}
+            <div className="form-full">
+              <RawMaterialGroup>
+                <div className="form-grp">
+                  <label className="form-label">Grade</label>
+                  <MaterialGradePicker
+                    valueId={rmGradeId}
+                    valueText={rmGradeText}
+                    onChange={(id, text) => {
+                      setRmGradeId(id);
+                      setRmGradeText(text);
+                    }}
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label">Size</label>
+                  <MaterialSizePicker
+                    valueId={rmSizeId}
+                    valueText={rmSizeText}
+                    onChange={(id, text) => {
+                      setRmSizeId(id);
+                      setRmSizeText(text);
+                    }}
+                  />
+                </div>
+              </RawMaterialGroup>
             </div>
             {/* Remarks has no legacy counterpart (jcModalBody has no such field),
                 but job_cards.remarks is a real column the service persists —

@@ -68,6 +68,7 @@ export const ACCESS_FORMS = [
   { key: 'machop_entry', dept: 'production', label: 'Machine Op Entry' },
   { key: 'machine_create', dept: 'production', label: 'Machine Master' },
   { key: 'operator_create', dept: 'production', label: 'Operator Master' },
+  { key: 'rawmat_create', dept: 'production', label: 'Raw Material Master' },
   // Design
   { key: 'routecard_create', dept: 'design', label: 'Route Cards' },
   { key: 'bom_create', dept: 'design', label: 'BOM Master' },

@@ -37,6 +37,8 @@ import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
 import { jobWorkOrdersRoutes } from './modules/job-work-orders/routes';
 import { machinesRoutes } from './modules/machines/routes';
+import { materialGradesRoutes } from './modules/material-grades/routes';
+import { materialSizesRoutes } from './modules/material-sizes/routes';
 import { ncRegisterRoutes } from './modules/nc-register/routes';
 import { opEntryRoutes } from './modules/op-entry/routes';
 import { goodsReceiptNotesRoutes } from './modules/goods-receipt-notes/routes';
@@ -158,6 +160,9 @@ await app.register(machinesRoutes);
 await app.register(machineLoadingRoutes);
 await app.register(productionDashboardRoutes);
 await app.register(operatorsRoutes);
+// Raw Material Master — two masters (Grade | Size) behind one menu entry.
+await app.register(materialGradesRoutes);
+await app.register(materialSizesRoutes);
 await app.register(opEntryRoutes);
 await app.register(salesOrdersRoutes);
 await app.register(docNumbersRoutes);

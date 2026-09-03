@@ -246,6 +246,11 @@ function PlanDetailPage(): React.JSX.Element {
             <KV label="Plan qty" value={plan.planQty} />
             <KV label="Planned start" value={plan.plannedStartDate ?? '—'} />
             <KV label="Planned end" value={plan.plannedEndDate ?? '—'} />
+            {/* Raw material — read-only here; both are optional, so a plan with
+                neither still shows the pair as dashes rather than hiding them
+                (a missing grade is a planning gap worth seeing). */}
+            <KV label="RM grade" value={plan.rawMaterialGradeText ?? '—'} />
+            <KV label="RM size" value={plan.rawMaterialSizeText ?? '—'} />
             <KV label="Item code" value={plan.itemCode ?? plan.itemCodeText ?? '—'} />
             <KV label="SO ref" value={plan.soCodeText ?? '—'} />
             <KV label="Line #" value={plan.lineNo ?? '—'} />

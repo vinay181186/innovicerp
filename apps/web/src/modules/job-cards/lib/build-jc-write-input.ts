@@ -45,6 +45,15 @@ export interface BuildJcWriteInputArgs {
   dueDate: string;
   drawingFilePath: string | null;
   remarks: string;
+  /** Raw material — both optional and INDEPENDENT (Grade master / Size master).
+   *  The id is the link, the *Text snapshot is what the printed Job Card still
+   *  carries after a master row is renamed or deactivated. Optional on this
+   *  builder so the JC Status edit branch can simply carry the model's values
+   *  through: leaving them out of the payload would blank the columns on save. */
+  rawMaterialGradeId?: string | null;
+  rawMaterialGradeText?: string | null;
+  rawMaterialSizeId?: string | null;
+  rawMaterialSizeText?: string | null;
   ops: BuildJcOpValues[];
   docs: BuildJcDocValues[];
 }
@@ -68,6 +77,10 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     dueDate,
     drawingFilePath,
     remarks,
+    rawMaterialGradeId,
+    rawMaterialGradeText,
+    rawMaterialSizeId,
+    rawMaterialSizeText,
     ops,
     docs,
   } = args;
@@ -106,6 +119,10 @@ export function buildJcWriteInput(args: BuildJcWriteInputArgs): BuildJcWriteInpu
     dueDate: dueDate || null,
     drawingFilePath,
     remarks: remarks.trim() || null,
+    rawMaterialGradeId: rawMaterialGradeId ?? null,
+    rawMaterialGradeText: rawMaterialGradeText || null,
+    rawMaterialSizeId: rawMaterialSizeId ?? null,
+    rawMaterialSizeText: rawMaterialSizeText || null,
     ops: ops.map(
       (o): JcOpInput => ({
         id: o.id,

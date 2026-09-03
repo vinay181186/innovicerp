@@ -33,6 +33,13 @@ function BomMasterEditPage(): React.JSX.Element {
         childItemCodeText: l.childItemCode ?? '',
         qtyPerSet: String(Number(l.qtyPerSet)),
         bomType: l.bomType,
+        // Raw material is per LINE, so each row re-opens with its own grade and
+        // size already picked. Id + stored text snapshot both go back in, so a
+        // row whose master was later renamed still shows what was saved.
+        rawMaterialGradeId: l.rawMaterialGradeId ?? null,
+        rawMaterialGradeText: l.rawMaterialGradeText ?? null,
+        rawMaterialSizeId: l.rawMaterialSizeId ?? null,
+        rawMaterialSizeText: l.rawMaterialSizeText ?? null,
       })),
     [detail],
   );

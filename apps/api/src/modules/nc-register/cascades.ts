@@ -316,6 +316,15 @@ export async function disposeNcCascade(
       // Inherit source link so T-033 close cascade still works on the supp.
       sourceSoLineId: origin.sourceSoLineId,
       sourceJwLineId: origin.sourceJwLineId,
+      // Raw material (0106): the replacement is the SAME part as the JC it
+      // replaces, so it is cut from the same stock — straight inheritance, id
+      // and text both taken from the origin JC's own row. Not re-read from the
+      // master, so a supplementary raised after a grade rename still records
+      // what the original JC was raised with.
+      rawMaterialGradeId: origin.rawMaterialGradeId,
+      rawMaterialGradeText: origin.rawMaterialGradeText,
+      rawMaterialSizeId: origin.rawMaterialSizeId,
+      rawMaterialSizeText: origin.rawMaterialSizeText,
       sourceLegacyRef: `supp-of:${nc.code}`,
       parentNcId: ncId,
       createdBy: ctx.userId,

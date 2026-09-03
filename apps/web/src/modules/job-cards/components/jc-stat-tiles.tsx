@@ -89,22 +89,26 @@ export function JcStatTiles({
         {/* ITEM */}
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={lblStyle}>Item</div>
-          <div className="fw-700" style={{ fontSize: 18, lineHeight: 1.15 }}>
-            {jc.itemName || jc.itemCode}
+          {/* The item CODE is the primary line, the NAME the secondary one
+              (user decision) — the shop floor identifies a job by its code, and
+              the old layout had that the other way round: an 18px name over an
+              11px code chip. The code keeps its mono + purple code identity. */}
+          <div
+            className="fw-700 mono"
+            style={{ fontSize: 18, lineHeight: 1.15, color: 'var(--purple)' }}
+          >
+            {jc.itemCode}
           </div>
-          <div style={{ marginTop: 4 }}>
-            <span
-              className="mono"
-              style={{
-                fontSize: 11,
-                background: 'var(--bg4)',
-                color: 'var(--text2)',
-                padding: '1px 6px',
-                borderRadius: 4,
-              }}
-            >
-              {jc.itemCode}
-            </span>
+          <div className="fw-700" style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+            {jc.itemName || '—'}
+          </div>
+          {/* Raw material planned for this job card (both optional — a dash
+              when the plan carried neither). */}
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            <span style={{ color: 'var(--text3)' }}>Grade: </span>
+            <span className="mono fw-700">{jc.rawMaterialGradeText || '—'}</span>
+            <span style={{ color: 'var(--text3)' }}> · Size: </span>
+            <span className="mono fw-700">{jc.rawMaterialSizeText || '—'}</span>
           </div>
           {/* Route Card reference (the item's active route card + revision). */}
           <div style={{ fontSize: 11, marginTop: 4 }}>

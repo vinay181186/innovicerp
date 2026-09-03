@@ -30,6 +30,8 @@ import {
   bomMasterRevisions,
   bomMasters,
   items,
+  materialGrades,
+  materialSizes,
   plans,
   salesOrderLines,
   salesOrders,
@@ -357,6 +359,10 @@ async function loadBomMasterDetail(
         childItemId: r.line.childItemId,
         qtyPerSet: r.line.qtyPerSet,
         bomType: r.line.bomType,
+        rawMaterialGradeId: r.line.rawMaterialGradeId,
+        rawMaterialGradeText: r.line.rawMaterialGradeText,
+        rawMaterialSizeId: r.line.rawMaterialSizeId,
+        rawMaterialSizeText: r.line.rawMaterialSizeText,
         createdAt: tsLike(r.line.createdAt),
         createdBy: r.line.createdBy,
         updatedAt: tsLike(r.line.updatedAt),
@@ -682,7 +688,11 @@ export async function createBomMaster(
       .returning();
     const header = inserted[0]!;
 
-    const lineValues = assignLineValues(input.lines, header.id, companyId, user.id);
+    // Raw material (0107): one query per master for the whole BOM, resolved
+    // before the insert so a bad grade/size id fails the save rather than
+    // leaving a line with a dangling reference.
+    const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
+    const lineValues = assignLineValues(input.lines, header.id, companyId, user.id, rawMaterial);
     await tx.insert(bomMasterLines).values(lineValues);
 
     // Initial revision row capturing the lines at creation.
@@ -820,7 +830,10 @@ export async function updateBomMaster(
       })
       .where(eq(bomMasters.id, id));
 
-    const lineValues = assignLineValues(input.lines, id, companyId, user.id);
+    // Raw material (0107) — same resolve-then-snapshot rule as create. Lines
+    // are replaced wholesale on every edit, so clearing a picker clears it.
+    const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
+    const lineValues = assignLineValues(input.lines, id, companyId, user.id, rawMaterial);
     await tx.insert(bomMasterLines).values(lineValues);
 
     await tx.insert(bomMasterRevisions).values({
@@ -931,11 +944,110 @@ export async function softDeleteBomMaster(id: string, user: AuthContext): Promis
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+/** Grade/size names keyed by id, for the raw material on the BOM's lines. */
+interface RawMaterialLookup {
+  gradeNames: Map<string, string>;
+  sizeNames: Map<string, string>;
+}
+
+/**
+ * Resolve every grade/size id referenced by the submitted lines in ONE query
+ * per master (not one per line — a 40-line BOM would otherwise cost 80 round
+ * trips). Company-scoped and soft-delete filtered, so a stale or foreign id is
+ * refused here rather than stored as a dangling reference.
+ */
+async function loadRawMaterialNames(
+  tx: DbTransaction,
+  lines: CreateBomMasterLineInput[],
+  companyId: string,
+): Promise<RawMaterialLookup> {
+  const gradeIds = [
+    ...new Set(lines.map((l) => l.rawMaterialGradeId).filter((v): v is string => !!v)),
+  ];
+  const sizeIds = [
+    ...new Set(lines.map((l) => l.rawMaterialSizeId).filter((v): v is string => !!v)),
+  ];
+
+  const gradeNames = new Map<string, string>();
+  if (gradeIds.length > 0) {
+    const rows = await tx
+      .select({ id: materialGrades.id, name: materialGrades.name })
+      .from(materialGrades)
+      .where(
+        and(
+          eq(materialGrades.companyId, companyId),
+          inArray(materialGrades.id, gradeIds),
+          isNull(materialGrades.deletedAt),
+        ),
+      );
+    for (const r of rows) gradeNames.set(r.id, r.name);
+    for (const id of gradeIds) {
+      if (!gradeNames.has(id)) {
+        throw new ValidationError(
+          'A raw material grade on this BOM was not found in the Grade master',
+        );
+      }
+    }
+  }
+
+  const sizeNames = new Map<string, string>();
+  if (sizeIds.length > 0) {
+    const rows = await tx
+      .select({ id: materialSizes.id, name: materialSizes.name })
+      .from(materialSizes)
+      .where(
+        and(
+          eq(materialSizes.companyId, companyId),
+          inArray(materialSizes.id, sizeIds),
+          isNull(materialSizes.deletedAt),
+        ),
+      );
+    for (const r of rows) sizeNames.set(r.id, r.name);
+    for (const id of sizeIds) {
+      if (!sizeNames.has(id)) {
+        throw new ValidationError(
+          'A raw material size on this BOM was not found in the Size master',
+        );
+      }
+    }
+  }
+
+  return { gradeNames, sizeNames };
+}
+
+/** Raw material for one BOM line: FK plus the text snapshot. When an id is
+ *  sent the snapshot is written from the master's current name (the payload's
+ *  text is only a fallback), so what the BOM prints is what the master said at
+ *  the moment the BOM was saved. */
+function lineRawMaterial(
+  l: CreateBomMasterLineInput,
+  lookup: RawMaterialLookup,
+): {
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
+} {
+  const gradeId = l.rawMaterialGradeId ?? null;
+  const sizeId = l.rawMaterialSizeId ?? null;
+  return {
+    rawMaterialGradeId: gradeId,
+    rawMaterialGradeText: gradeId
+      ? (lookup.gradeNames.get(gradeId) ?? null)
+      : l.rawMaterialGradeText?.trim() || null,
+    rawMaterialSizeId: sizeId,
+    rawMaterialSizeText: sizeId
+      ? (lookup.sizeNames.get(sizeId) ?? null)
+      : l.rawMaterialSizeText?.trim() || null,
+  };
+}
+
 function assignLineValues(
   lines: CreateBomMasterLineInput[],
   bomMasterId: string,
   companyId: string,
   userId: string,
+  rawMaterial: RawMaterialLookup,
 ): Array<typeof bomMasterLines.$inferInsert> {
   return lines.map((l, i) => ({
     companyId,
@@ -944,6 +1056,7 @@ function assignLineValues(
     childItemId: l.childItemId,
     qtyPerSet: l.qtyPerSet.toFixed(2),
     bomType: l.bomType,
+    ...lineRawMaterial(l, rawMaterial),
     createdBy: userId,
     updatedBy: userId,
   }));

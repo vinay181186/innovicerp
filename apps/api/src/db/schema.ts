@@ -455,6 +455,106 @@ export const operators = pgTable(
   ],
 ).enableRLS();
 
+// ─── Raw Material masters (migration 0105) ───────────────────────────────
+// Two INDEPENDENT masters behind ONE menu entry ("Raw Material Master",
+// Production → Master, tabs Grade | Size). A size is not scoped to a grade,
+// so picking EN24 does not narrow the size list.
+//
+// Shaped exactly like machines / operators above: company-scoped, auto code
+// series (GRD-### / SZ-####), Active flag, soft delete, audit columns, RLS.
+// Item Master's existing free-text `material` column is deliberately left
+// alone and is NOT migrated into these tables.
+
+export const materialGrades = pgTable(
+  'material_grades',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // Auto GRD-### in the company series; a caller may pass its own.
+    code: text('code').notNull(),
+    // The grade as written on the shop floor — 'EN24', 'SS304'.
+    name: text('name').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    // Live rows only: a deleted code is not re-issued by the series but also
+    // does not block a deliberate re-entry.
+    uniqueIndex('material_grades_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('material_grades_company_name_idx')
+      .on(t.companyId, t.name)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('material_grades_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('material_grades_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const materialSizes = pgTable(
+  'material_sizes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    // Auto SZ-#### in the company series; a caller may pass its own.
+    code: text('code').notNull(),
+    // The size verbatim, symbols and all — 'Ø30 × 1000'. ONE box, by decision.
+    name: text('name').notNull(),
+    description: text('description'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('material_sizes_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('material_sizes_company_name_idx')
+      .on(t.companyId, t.name)
+      .where(sql`${t.deletedAt} is null`),
+    pgPolicy('material_sizes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('material_sizes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Phase 6 tables — Quality + Dispatch (T-038, qc_processes only) ──────
 // Per ADR-016. Master-data lookup only — per-inspection record table is
 // deferred to T-040 (where the workflow UX drives the schema).
@@ -740,6 +840,22 @@ export const jobCards = pgTable(
     // not frozen retroactively; all new ones default TRUE. Read only for
     // JWSO-sourced JCs — SO-sourced ones are never capped.
     clientMaterialGate: boolean('client_material_gate').notNull().default(true),
+    // Raw material this JC is cut from (migration 0106). Copied down from the
+    // plan that created it, or picked by hand on a manually raised JC. Both
+    // masters are optional and independent.
+    //
+    // FK + text snapshot together on purpose: the snapshot is what the JC
+    // header and the printed JC show, so an old JC still reads the grade/size
+    // it was raised with after the master row is renamed or removed (the FK is
+    // ON DELETE SET NULL — the reference drops, the record does not change).
+    rawMaterialGradeId: uuid('raw_material_grade_id').references(() => materialGrades.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeId: uuid('raw_material_size_id').references(() => materialSizes.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialSizeText: text('raw_material_size_text'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2318,6 +2434,20 @@ export const bomMasterLines = pgTable(
       .references(() => items.id),
     qtyPerSet: numeric('qty_per_set', { precision: 12, scale: 2 }).notNull(),
     bomType: bomLineTypeEnum('bom_type').notNull(),
+    // Raw material for THIS child part (migration 0107). A BOM child is a
+    // different part from its parent and is generally cut from different stock,
+    // so there is nothing to inherit — the BOM line is the only place that
+    // knows what the child is made from. Copied onto the child Job Card the
+    // BOM cascade raises. FK + text snapshot, same rule as plans / job_cards:
+    // the snapshot is what prints, so it survives a master rename.
+    rawMaterialGradeId: uuid('raw_material_grade_id').references(() => materialGrades.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeId: uuid('raw_material_size_id').references(() => materialSizes.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialSizeText: text('raw_material_size_text'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -2667,6 +2797,19 @@ export const plans = pgTable(
 
     plannedStartDate: date('planned_start_date'),
     plannedEndDate: date('planned_end_date'),
+
+    // Raw material for this plan (migration 0106) — two INDEPENDENT master
+    // pickers, both optional (a Direct Purchase plan buys a finished item and
+    // has no raw material). FK + text snapshot; the snapshot is copied onto the
+    // Job Card at plan execute so the JC prints what the plan said.
+    rawMaterialGradeId: uuid('raw_material_grade_id').references(() => materialGrades.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeId: uuid('raw_material_size_id').references(() => materialSizes.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialSizeText: text('raw_material_size_text'),
 
     bomMasterId: uuid('bom_master_id').references((): AnyPgColumn => bomMasters.id, {
       onDelete: 'set null',

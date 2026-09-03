@@ -434,6 +434,13 @@ export async function createPlan(
         planQty: input.planQty,
         plannedStartDate: input.plannedStartDate ?? null,
         plannedEndDate: input.plannedEndDate ?? null,
+        // Raw material (0106) — both masters optional and independent. The FK
+        // and the text snapshot are stored together; the snapshot is what is
+        // displayed and printed, and what gets copied onto the JC at execute.
+        rawMaterialGradeId: input.rawMaterialGradeId ?? null,
+        rawMaterialGradeText: input.rawMaterialGradeText ?? null,
+        rawMaterialSizeId: input.rawMaterialSizeId ?? null,
+        rawMaterialSizeText: input.rawMaterialSizeText ?? null,
         bomMasterId: input.bomMasterId ?? null,
         bomParentCode: input.bomParentCode ?? null,
         bomChildCode: input.bomChildCode ?? null,
@@ -529,6 +536,17 @@ export async function updatePlan(
     if (input.planQty !== undefined) updates['planQty'] = input.planQty;
     if (input.plannedStartDate !== undefined) updates['plannedStartDate'] = input.plannedStartDate;
     if (input.plannedEndDate !== undefined) updates['plannedEndDate'] = input.plannedEndDate;
+    // Raw material (0106). Each of the four is written only when the payload
+    // carries it, so clearing the grade on the form (null) is honoured while an
+    // omitted field leaves the stored value alone.
+    if (input.rawMaterialGradeId !== undefined)
+      updates['rawMaterialGradeId'] = input.rawMaterialGradeId;
+    if (input.rawMaterialGradeText !== undefined)
+      updates['rawMaterialGradeText'] = input.rawMaterialGradeText;
+    if (input.rawMaterialSizeId !== undefined)
+      updates['rawMaterialSizeId'] = input.rawMaterialSizeId;
+    if (input.rawMaterialSizeText !== undefined)
+      updates['rawMaterialSizeText'] = input.rawMaterialSizeText;
     if (input.dpVendorId !== undefined) updates['dpVendorId'] = input.dpVendorId;
     if (input.dpVendorCodeText !== undefined) updates['dpVendorCodeText'] = input.dpVendorCodeText;
     if (input.dpCost !== undefined) updates['dpCost'] = numericToString(input.dpCost);
@@ -884,6 +902,15 @@ async function executeManufacture(
       // pass whichever is set so the JC links back to the right order.
       sourceSoLineId: plan.soLineId ?? null,
       sourceJwLineId: plan.jwLineId ?? null,
+      // Raw material carried down from the plan (0106) so the JC header and the
+      // printed JC show what the part is cut from without anyone re-typing it.
+      // The TEXT is copied from the plan's own snapshot, never re-read from the
+      // master — the JC must record exactly what the plan said, even if the
+      // grade or size has since been renamed.
+      rawMaterialGradeId: plan.rawMaterialGradeId,
+      rawMaterialGradeText: plan.rawMaterialGradeText,
+      rawMaterialSizeId: plan.rawMaterialSizeId,
+      rawMaterialSizeText: plan.rawMaterialSizeText,
       createdBy: user.id,
       updatedBy: user.id,
     })
@@ -1173,6 +1200,12 @@ async function executeFullOutsource(
         priority: 'normal',
         sourceSoLineId: plan.soLineId ?? null,
         sourceJwLineId: plan.jwLineId ?? null,
+        // Same raw-material carry-down as the manufacture path: FK plus the
+        // plan's own text snapshot (not a fresh read of the master).
+        rawMaterialGradeId: plan.rawMaterialGradeId,
+        rawMaterialGradeText: plan.rawMaterialGradeText,
+        rawMaterialSizeId: plan.rawMaterialSizeId,
+        rawMaterialSizeText: plan.rawMaterialSizeText,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -1535,6 +1568,10 @@ function toPlan(row: typeof plans.$inferSelect): Plan {
     planQty: row.planQty,
     plannedStartDate: row.plannedStartDate,
     plannedEndDate: row.plannedEndDate,
+    rawMaterialGradeId: row.rawMaterialGradeId,
+    rawMaterialGradeText: row.rawMaterialGradeText,
+    rawMaterialSizeId: row.rawMaterialSizeId,
+    rawMaterialSizeText: row.rawMaterialSizeText,
     bomMasterId: row.bomMasterId,
     bomParentCode: row.bomParentCode,
     bomChildCode: row.bomChildCode,

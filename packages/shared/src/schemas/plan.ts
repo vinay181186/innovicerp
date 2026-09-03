@@ -71,6 +71,16 @@ export const planSchema = z.object({
   plannedStartDate: z.string().nullable(),
   plannedEndDate: z.string().nullable(),
 
+  // Raw material for this plan — two INDEPENDENT master pickers (Grade and
+  // Size). Both optional: a Direct Purchase plan buys a finished item and has
+  // no raw material. The *Text snapshots are written alongside the FK so an old
+  // plan still prints the grade/size it was planned with after a master row is
+  // renamed or removed.
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
+
   bomMasterId: z.string().uuid().nullable(),
   bomParentCode: z.string().nullable(),
   bomChildCode: z.string().nullable(),
@@ -189,6 +199,12 @@ export const createPlanInputSchema = z.object({
   plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 
+  // Raw material (optional on every plan type) — see planSchema.
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
+
   bomMasterId: z.string().uuid().nullable().optional(),
   bomParentCode: z.string().trim().max(80).nullable().optional(),
   bomChildCode: z.string().trim().max(80).nullable().optional(),
@@ -258,6 +274,12 @@ export const updatePlanInputSchema = z.object({
   planQty: z.number().int().positive().optional(),
   plannedStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   plannedEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+
+  // Raw material (optional on every plan type) — see planSchema.
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
 
   dpVendorId: z.string().uuid().nullable().optional(),
   dpVendorCodeText: z.string().trim().max(80).nullable().optional(),

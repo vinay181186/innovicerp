@@ -157,6 +157,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/job-cards', label: 'Job Cards', icon: '▭', formKey: 'jc_create' },
           { to: '/machines', label: 'Machine Master', icon: '⚙', formKey: 'machine_create' },
           { to: '/operators', label: 'Operator Master', icon: '👷', formKey: 'operator_create' },
+          { to: '/raw-material', label: 'Raw Material Master', icon: '▬', formKey: 'rawmat_create' },
         ],
       },
       {

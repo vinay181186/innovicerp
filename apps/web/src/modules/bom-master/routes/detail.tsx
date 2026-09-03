@@ -227,12 +227,18 @@ function BomMasterDetailPage(): React.JSX.Element {
                 <th>Item Name</th>
                 <th className="td-ctr">Qty / Set</th>
                 <th>Type</th>
+                {/* Raw material is per LINE: each child is a different part cut
+                    from its own stock, and this is what the BOM cascade stamps
+                    on that child's Job Card. Blank is normal on a Buy/Outsource
+                    line, so it shows a plain dash, not a warning. */}
+                <th>Grade</th>
+                <th>Size</th>
               </tr>
             </thead>
             <tbody>
               {detail.lines.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty-state">
+                  <td colSpan={7} className="empty-state">
                     No lines on this BOM.
                   </td>
                 </tr>
@@ -256,6 +262,12 @@ function BomMasterDetailPage(): React.JSX.Element {
                         <span style={{ color: cfg.color, fontSize: 11, fontWeight: 700 }}>
                           {cfg.label}
                         </span>
+                      </td>
+                      <td className="mono" style={{ fontSize: 11 }}>
+                        {line.rawMaterialGradeText ?? <span className="text3">—</span>}
+                      </td>
+                      <td className="mono" style={{ fontSize: 11 }}>
+                        {line.rawMaterialSizeText ?? <span className="text3">—</span>}
                       </td>
                     </tr>
                   );

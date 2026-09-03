@@ -690,6 +690,12 @@ function JcStatusEditForm({
       dueDate,
       drawingFilePath: model.drawingFilePath,
       remarks,
+      // Carried through unchanged — this screen has no raw-material pickers, and
+      // omitting them from the payload would blank the JC's grade/size on save.
+      rawMaterialGradeId: model.rawMaterialGradeId,
+      rawMaterialGradeText: model.rawMaterialGradeText,
+      rawMaterialSizeId: model.rawMaterialSizeId,
+      rawMaterialSizeText: model.rawMaterialSizeText,
       ops,
       // Existing QC docs already carry ids → filtered out of the write payload
       // (unchanged server-side); no new-doc upload on this screen.

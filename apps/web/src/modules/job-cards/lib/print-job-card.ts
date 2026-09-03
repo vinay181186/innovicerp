@@ -139,6 +139,8 @@ export function printJobCard(args: {
     <div class="info-grid">
       <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(jc.itemCode)}</div></div>
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(jc.itemName || '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">Grade</div><div class="info-val">${esc(jc.rawMaterialGradeText || '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">Size</div><div class="info-val">${esc(jc.rawMaterialSizeText || '—')}</div></div>
       <div class="info-box"><div class="info-lbl">SO / WO No.</div><div class="info-val" style="font-family:monospace;font-size:12px">${esc(soWoNo)}</div></div>
       <div class="info-box"><div class="info-lbl">Client PO Line</div><div class="info-val" style="color:#7c3aed;font-weight:700">${esc(jc.clientPoLineNo || '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Date</div><div class="info-val">${fmt(jc.jcDate)}</div></div>

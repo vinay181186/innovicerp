@@ -93,6 +93,12 @@ export const jobCardListItemSchema = z.object({
    *  current route card, shown as a reference on the Job Card. */
   routeCardCode: z.string().nullable(),
   routeCardRevision: z.number().int().nullable(),
+  /** Raw material this JC is cut from, carried down from the plan that
+   *  created it (or typed on a hand-made JC). Text snapshots, so a JC still
+   *  prints the grade/size it was raised with after the master row changes.
+   *  Null when no raw material was recorded. */
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -194,6 +200,13 @@ export const jobCardWriteInputSchema = z
     dueDate: isoDate.nullable().optional(),
     drawingFilePath: z.string().max(512).nullable().optional(),
     remarks: z.string().max(2000).nullable().optional(),
+    /** Raw material (both optional, both independent) — the master FK plus a
+     *  text snapshot. Copied from the plan on plan-execute; pickable by hand on
+     *  a manually raised JC. */
+    rawMaterialGradeId: z.string().uuid().nullable().optional(),
+    rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+    rawMaterialSizeId: z.string().uuid().nullable().optional(),
+    rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
     ops: z.array(jcOpInputSchema).default([]),
     qcDocs: z.array(jcDocInputSchema).default([]),
   })
@@ -289,6 +302,10 @@ export const jobCardEditModelSchema = z.object({
   dueDate: z.string().nullable(),
   drawingFilePath: z.string().nullable(),
   remarks: z.string().nullable(),
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
   ops: z.array(jobCardOpEditSchema),
   qcDocs: z.array(jobCardDocSchema),
   /** ISSUE-170 parity: the JC's currently-linked SO/JW source line resolved as

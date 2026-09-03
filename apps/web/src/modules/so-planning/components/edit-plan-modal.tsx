@@ -20,6 +20,11 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+  RawMaterialGroup,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { useCostCentersList } from '@/modules/cost-centers/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useFinalizePlan, useUpdatePlan, useDefaultRouteOps } from '@/modules/plans/api';
@@ -96,6 +101,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const [plannedStartDate, setPlannedStartDate] = useState<string>(plan.plannedStartDate ?? '');
   const [plannedEndDate, setPlannedEndDate] = useState<string>(plan.plannedEndDate ?? '');
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
+  // Raw material — two INDEPENDENT master pickers, both optional (no ★). The
+  // id is the link; the *Text snapshot is what this plan still prints after the
+  // master row is renamed or deactivated, so both are stored together.
+  const [rmGradeId, setRmGradeId] = useState<string | null>(plan.rawMaterialGradeId);
+  const [rmGradeText, setRmGradeText] = useState<string | null>(plan.rawMaterialGradeText);
+  const [rmSizeId, setRmSizeId] = useState<string | null>(plan.rawMaterialSizeId);
+  const [rmSizeText, setRmSizeText] = useState<string | null>(plan.rawMaterialSizeText);
 
   // Manufacture / ops
   const [ops, setOps] = useState<OpRow[]>(() => plan.ops.map(planOpToRow));
@@ -216,6 +228,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
     plannedStartDate: plannedStartDate || null,
     plannedEndDate: plannedEndDate || null,
     remarks: remarks || null,
+    rawMaterialGradeId: rmGradeId,
+    rawMaterialGradeText: rmGradeText,
+    rawMaterialSizeId: rmSizeId,
+    rawMaterialSizeText: rmSizeText,
     dpVendorCodeText: planType === 'direct_purchase' ? dpVendor || null : null,
     dpCost: planType === 'direct_purchase' ? dpCost : null,
     dpRemarks: planType === 'direct_purchase' ? dpRemarks || null : null,
@@ -495,8 +511,19 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         </div>
       </div>
 
-      {/* Dates */}
-      <div className="form-grid" style={{ marginBottom: 14 }}>
+      {/* Dates · raw material · remark — ONE row. Grade and Size sit together
+          under a single RAW MATERIAL bracket; both are optional, so neither
+          carries a ★. Remark moved up here from its old standalone block at the
+          bottom of the modal so the whole header reads in one line. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          gap: 12,
+          alignItems: 'end',
+          marginBottom: 14,
+        }}
+      >
         <div className="form-grp">
           <label className="form-label">Planned Start / Required Date</label>
           <input
@@ -513,6 +540,41 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             className="innovic-input"
             value={plannedEndDate}
             onChange={(e) => setPlannedEndDate(e.target.value)}
+          />
+        </div>
+        <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+          <RawMaterialGroup>
+            <div className="form-grp">
+              <label className="form-label">Grade</label>
+              <MaterialGradePicker
+                valueId={rmGradeId}
+                valueText={rmGradeText}
+                onChange={(id, text) => {
+                  setRmGradeId(id);
+                  setRmGradeText(text);
+                }}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label">Size</label>
+              <MaterialSizePicker
+                valueId={rmSizeId}
+                valueText={rmSizeText}
+                onChange={(id, text) => {
+                  setRmSizeId(id);
+                  setRmSizeText(text);
+                }}
+              />
+            </div>
+          </RawMaterialGroup>
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Remark</label>
+          <input
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Planning notes, special instructions"
           />
         </div>
       </div>
@@ -1038,17 +1100,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
         </div>
       )}
-
-      {/* Remarks */}
-      <div className="form-grp">
-        <label className="form-label">Remarks / Notes</label>
-        <input
-          className="innovic-input"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-          placeholder="Planning notes, special instructions"
-        />
-      </div>
 
       {/* Required QC Documents */}
       <div

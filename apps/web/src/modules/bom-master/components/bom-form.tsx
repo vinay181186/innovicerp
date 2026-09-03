@@ -28,6 +28,11 @@ import { SearchableSelect } from '@/components/shared/searchable-select';
 import { apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { useItemsList } from '@/modules/items/api';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+  RawMaterialGroup,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { useNextBomNo } from '../api';
 
 // xlsx (~400 KB raw / 140 KB gzip) is dynamic-imported inside the two
@@ -97,8 +102,17 @@ const BOMX_CSS = `
   padding:10px 12px; }
 .bomx-row-hd { background:#f7f9fc; border-bottom:1px solid #e6ebf2; font-size:10px;
   font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#64748b; }
-.bomx-row + .bomx-row { border-top:1px solid #eef2f7; }
-.bomx-row-hd + .bomx-row { border-top:none; }
+/* One part = one .bomx-line: the item row on top, its RAW MATERIAL sub-line
+   under it. The separator moved onto the wrapper so Grade/Size stay visually
+   attached to the part they belong to instead of looking like a new row. */
+.bomx-line { display:flex; flex-direction:column; }
+.bomx-line + .bomx-line { border-top:1px solid #eef2f7; }
+.bomx-row-hd + .bomx-line { border-top:none; }
+/* Indented to line up under Item Code (12px row padding + 40px # + 10px gap),
+   and width-capped so the two boxes stay finger-sized rather than stretching
+   across the whole block on a wide screen. */
+.bomx-sub { padding:0 12px 10px 62px; }
+.bomx-sub > * { max-width:520px; }
 .bomx-num { width:28px; height:28px; border-radius:7px; background:#eef2f7; color:#475569;
   font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
 .bomx-search { position:relative; min-width:0; }
@@ -162,6 +176,15 @@ export interface BomFormLineDraft {
   childItemCodeText: string;
   qtyPerSet: string;
   bomType: BomLineType;
+  /** Raw material for THIS child part. A child is a different part from its
+   *  parent and is cut from different stock, so it hangs off the LINE, never
+   *  the BOM header — the cascade stamps each child Job Card from its own
+   *  line. Both optional: a purchase/outsource line buys the part instead of
+   *  cutting it, so blank is normal there. Id + text snapshot move together. */
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
 }
 
 export interface BomFormHeaderDraft {
@@ -248,7 +271,16 @@ const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
 const ITEM_PAGE_MAX = 1000;
 
 function emptyLine(): BomFormLineDraft {
-  return { childItemId: '', childItemCodeText: '', qtyPerSet: '1', bomType: 'manufacture' };
+  return {
+    childItemId: '',
+    childItemCodeText: '',
+    qtyPerSet: '1',
+    bomType: 'manufacture',
+    rawMaterialGradeId: null,
+    rawMaterialGradeText: null,
+    rawMaterialSizeId: null,
+    rawMaterialSizeText: null,
+  };
 }
 
 export function BomForm(props: BomFormProps): React.JSX.Element {
@@ -654,6 +686,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         }
         seenInFile.set(item.id, idx);
         added.push({
+          // The import sheet carries no Grade/Size columns, so an imported row
+          // starts blank and is picked on the form afterwards.
+          ...emptyLine(),
           childItemId: item.id,
           childItemCodeText: item.code,
           qtyPerSet: String(qty),
@@ -1131,70 +1166,111 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   return (
                     <div
                       key={idx}
-                      className="bomx-row"
+                      className="bomx-line"
                       aria-disabled={parentLocked}
                       style={parentLocked ? { opacity: 0.45, pointerEvents: 'none' } : undefined}
                     >
-                      <span className="bomx-num">{idx + 1}</span>
-                      <div className="bomx-search">
-                        <Search size={14} />
-                        <SearchableSelect
-                          id={`bom-item-${idx}`}
-                          value={line.childItemId || null}
-                          onChange={(id) => onItemPicked(idx, id)}
-                          onSearch={(t) => onItemSearch(idx, t)}
-                          loading={itemsFetching}
-                          options={itemOptions}
-                          placeholder="Search item code…"
-                          emptyText="No matching item"
-                          selectedLabel={(o) => o.code ?? o.name}
-                          {...(item
-                            ? { valueLabel: item.code }
-                            : line.childItemCodeText
-                              ? { valueLabel: line.childItemCodeText }
-                              : {})}
+                      <div className="bomx-row">
+                        <span className="bomx-num">{idx + 1}</span>
+                        <div className="bomx-search">
+                          <Search size={14} />
+                          <SearchableSelect
+                            id={`bom-item-${idx}`}
+                            value={line.childItemId || null}
+                            onChange={(id) => onItemPicked(idx, id)}
+                            onSearch={(t) => onItemSearch(idx, t)}
+                            loading={itemsFetching}
+                            options={itemOptions}
+                            placeholder="Search item code…"
+                            emptyText="No matching item"
+                            selectedLabel={(o) => o.code ?? o.name}
+                            {...(item
+                              ? { valueLabel: item.code }
+                              : line.childItemCodeText
+                                ? { valueLabel: line.childItemCodeText }
+                                : {})}
+                          />
+                        </div>
+                        <input
+                          readOnly
+                          placeholder="auto-filled"
+                          value={
+                            item
+                              ? item.material
+                                ? `${item.name} [${item.material}]`
+                                : item.name
+                              : ''
+                          }
                         />
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className="bomx-ctr"
+                          value={line.qtyPerSet}
+                          onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
+                        />
+                        <select
+                          value={line.bomType}
+                          onChange={(e) =>
+                            updateLine(idx, { bomType: e.target.value as BomLineType })
+                          }
+                        >
+                          {BOM_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="bomx-btn bomx-del"
+                          onClick={() => removeLine(idx)}
+                          title="Remove line"
+                          aria-label={`Remove line ${idx + 1}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
-                      <input
-                        readOnly
-                        placeholder="auto-filled"
-                        value={
-                          item
-                            ? item.material
-                              ? `${item.name} [${item.material}]`
-                              : item.name
-                            : ''
-                        }
-                      />
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        className="bomx-ctr"
-                        value={line.qtyPerSet}
-                        onChange={(e) => updateLine(idx, { qtyPerSet: e.target.value })}
-                      />
-                      <select
-                        value={line.bomType}
-                        onChange={(e) =>
-                          updateLine(idx, { bomType: e.target.value as BomLineType })
-                        }
-                      >
-                        {BOM_TYPES.map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="bomx-btn bomx-del"
-                        onClick={() => removeLine(idx)}
-                        title="Remove line"
-                        aria-label={`Remove line ${idx + 1}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+
+                      {/* Raw material for THIS part, on its own sub-line rather
+                          than two more tracks on an already six-track row —
+                          eight boxes side by side would only be reachable by
+                          scrolling the block sideways. Both optional (a
+                          purchase/outsource part is bought, not cut), so
+                          neither label carries a ★. */}
+                      <div className="bomx-sub">
+                        <RawMaterialGroup>
+                          <div className="bomx-f">
+                            <span className="bomx-lbl">Grade</span>
+                            <MaterialGradePicker
+                              id={`bom-line-grade-${idx}`}
+                              valueId={line.rawMaterialGradeId}
+                              valueText={line.rawMaterialGradeText}
+                              onChange={(gradeId, text) =>
+                                updateLine(idx, {
+                                  rawMaterialGradeId: gradeId,
+                                  rawMaterialGradeText: text,
+                                })
+                              }
+                            />
+                          </div>
+                          <div className="bomx-f">
+                            <span className="bomx-lbl">Size</span>
+                            <MaterialSizePicker
+                              id={`bom-line-size-${idx}`}
+                              valueId={line.rawMaterialSizeId}
+                              valueText={line.rawMaterialSizeText}
+                              onChange={(sizeId, text) =>
+                                updateLine(idx, {
+                                  rawMaterialSizeId: sizeId,
+                                  rawMaterialSizeText: text,
+                                })
+                              }
+                            />
+                          </div>
+                        </RawMaterialGroup>
+                      </div>
                     </div>
                   );
                 })}
@@ -1288,5 +1364,12 @@ export function linesToInput(lines: BomFormLineDraft[]): CreateBomMasterLineInpu
     childItemId: l.childItemId,
     qtyPerSet: Number(l.qtyPerSet),
     bomType: l.bomType,
+    // Always sent, never omitted — an edit replaces the lines wholesale on the
+    // server, so a cleared picker has to arrive as an explicit null or the old
+    // grade/size would silently survive the save.
+    rawMaterialGradeId: l.rawMaterialGradeId,
+    rawMaterialGradeText: l.rawMaterialGradeText,
+    rawMaterialSizeId: l.rawMaterialSizeId,
+    rawMaterialSizeText: l.rawMaterialSizeText,
   }));
 }
