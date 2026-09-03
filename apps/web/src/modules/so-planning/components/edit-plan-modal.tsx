@@ -25,7 +25,6 @@ import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
-  RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useCostCentersList } from '@/modules/cost-centers/api';
 import { useMachinesList } from '@/modules/machines/api';
@@ -520,41 +519,78 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         </div>
       </div>
 
-      {/* Dates · raw material · remark — ONE row. Grade and Size sit together
-          under a single RAW MATERIAL bracket; both are optional, so neither
-          carries a ★. Remark moved up here from its old standalone block at the
-          bottom of the modal so the whole header reads in one line. */}
+      {/* Dates · raw material · remark — ONE row. Two small captions sit above
+          the field labels: SCHEDULE over the two dates, RAW MATERIAL over grade
+          / size / remark. The raw-material grouping is shown by the pale blue
+          wash on those three fields plus blue labels — deliberately NO border,
+          card or nested container. Grade and Size are optional, so neither
+          carries a ★. Remark sits here rather than in its old standalone block
+          at the bottom of the modal so the whole header reads in one line.
+          Both groups are flex-wrap, so a narrow window stacks them instead of
+          growing a horizontal scrollbar. */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-          gap: 12,
-          alignItems: 'end',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 14,
+          alignItems: 'flex-end',
           marginBottom: 14,
         }}
       >
-        <div className="form-grp">
-          <label className="form-label">Planned Start / Required Date</label>
-          <input
-            type="date"
-            className="innovic-input"
-            value={plannedStartDate}
-            onChange={(e) => setPlannedStartDate(e.target.value)}
-          />
+        <div style={{ flex: '1 1 300px', minWidth: 0 }}>
+          <div
+            className="mono fw-700 text3"
+            style={{
+              fontSize: 9,
+              textTransform: 'uppercase',
+              letterSpacing: '.08em',
+              marginBottom: 6,
+            }}
+          >
+            Schedule
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label">Planned Start / Required Date</label>
+              <input
+                type="date"
+                className="innovic-input"
+                value={plannedStartDate}
+                onChange={(e) => setPlannedStartDate(e.target.value)}
+              />
+            </div>
+            <div className="form-grp" style={{ flex: '1 1 150px', minWidth: 0 }}>
+              <label className="form-label">Planned End Date</label>
+              <input
+                type="date"
+                className="innovic-input"
+                value={plannedEndDate}
+                onChange={(e) => setPlannedEndDate(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
-        <div className="form-grp">
-          <label className="form-label">Planned End Date</label>
-          <input
-            type="date"
-            className="innovic-input"
-            value={plannedEndDate}
-            onChange={(e) => setPlannedEndDate(e.target.value)}
-          />
-        </div>
-        <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
-          <RawMaterialGroup>
-            <div className="form-grp">
-              <label className="form-label">Grade</label>
+        {/* The tint IS the grouping: the arbitrary variant paints every control
+            inside this block with the pale blue token wash (bg-innovic-blue3 =
+            --blue3), including the Grade / Size pickers' own <input>. */}
+        <div className="[&_input]:bg-innovic-blue3" style={{ flex: '1.6 1 420px', minWidth: 0 }}>
+          <div
+            className="mono fw-700"
+            style={{
+              fontSize: 9,
+              textTransform: 'uppercase',
+              letterSpacing: '.08em',
+              marginBottom: 6,
+              color: 'var(--blue)',
+            }}
+          >
+            Raw Material
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div className="form-grp" style={{ flex: '1 1 130px', minWidth: 0 }}>
+              <label className="form-label" style={{ color: 'var(--blue)' }}>
+                Grade
+              </label>
               <MaterialGradePicker
                 valueId={rmGradeId}
                 valueText={rmGradeText}
@@ -564,8 +600,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 }}
               />
             </div>
-            <div className="form-grp">
-              <label className="form-label">Size</label>
+            <div className="form-grp" style={{ flex: '1 1 140px', minWidth: 0 }}>
+              <label className="form-label" style={{ color: 'var(--blue)' }}>
+                Size
+              </label>
               <MaterialSizePicker
                 valueId={rmSizeId}
                 valueText={rmSizeText}
@@ -575,16 +613,18 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 }}
               />
             </div>
-          </RawMaterialGroup>
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Remark</label>
-          <input
-            className="innovic-input"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="Planning notes, special instructions"
-          />
+            <div className="form-grp" style={{ flex: '2.4 1 200px', minWidth: 0 }}>
+              <label className="form-label" style={{ color: 'var(--blue)' }}>
+                Remark
+              </label>
+              <input
+                className="innovic-input"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Planning notes, special instructions"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
