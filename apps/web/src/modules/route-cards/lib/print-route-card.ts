@@ -45,6 +45,8 @@ export function printRouteCard(args: {
     <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
       <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCode)}</div></div>
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(rc.itemName ?? item?.name ?? '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
+      <div class="info-box"><div class="info-lbl">Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Drawing / Rev</div><div class="info-val" style="font-family:monospace">${esc(drawing)} Rev ${esc(rev)}</div></div>
       <div class="info-box"><div class="info-lbl">Material</div><div class="info-val">${esc(item?.material ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Total Operations</div><div class="info-val">${rc.ops.length}</div></div>

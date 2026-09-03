@@ -669,6 +669,23 @@ export const routeCards = pgTable(
       .notNull()
       .references(() => items.id),
     currentRevision: integer('current_revision').notNull().default(1),
+    // Raw material this item is normally cut from (migration 0108). The route
+    // card says HOW the part is made; grade + size say WHAT it is made from,
+    // so they sit on the same sheet. Both masters are optional and independent.
+    //
+    // FK + text snapshot together, same as job_cards / plans / BOM lines: the
+    // snapshot is what the detail page and the printed route card show, so an
+    // old card still reads the grade/size it was written with after the master
+    // row is renamed or removed (FK is ON DELETE SET NULL — the reference
+    // drops, the record does not change).
+    rawMaterialGradeId: uuid('raw_material_grade_id').references(() => materialGrades.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialGradeText: text('raw_material_grade_text'),
+    rawMaterialSizeId: uuid('raw_material_size_id').references(() => materialSizes.id, {
+      onDelete: 'set null',
+    }),
+    rawMaterialSizeText: text('raw_material_size_text'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

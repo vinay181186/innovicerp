@@ -100,6 +100,7 @@ function RouteCardsListPage(): React.JSX.Element {
                 <th>RC No.</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
+                <th>Grade / Size</th>
                 <th className="td-ctr">Ops</th>
                 <th className="td-ctr">Rev</th>
                 <th>Last Updated</th>
@@ -109,14 +110,14 @@ function RouteCardsListPage(): React.JSX.Element {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
                     Loading…
                   </td>
                 </tr>
               ) : isError ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     <span style={{ color: 'var(--red)' }}>
                       {error instanceof Error ? error.message : 'Failed to load route cards.'}
                     </span>
@@ -124,7 +125,7 @@ function RouteCardsListPage(): React.JSX.Element {
                 </tr>
               ) : !data || data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty-state">
+                  <td colSpan={9} className="empty-state">
                     No route cards yet — click <strong>+ Add Route Card</strong>
                   </td>
                 </tr>
@@ -190,6 +191,14 @@ function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.
           {rc.itemCode ?? '—'}
         </td>
         <td className="fw-700">{rc.itemName ?? '— unknown item —'}</td>
+        {/* Grade over size in one column — the stock this card is cut from,
+            so the master answers "what is it made of" without opening a card. */}
+        <td className="mono" style={{ fontSize: 11 }}>
+          <span className="fw-700">{rc.rawMaterialGradeText ?? '—'}</span>
+          <span className="text3" style={{ fontSize: 10, display: 'block' }}>
+            {rc.rawMaterialSizeText ?? '—'}
+          </span>
+        </td>
         <td className="td-ctr mono">{rc.opCount}</td>
         <td className="td-ctr">
           <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
@@ -238,7 +247,7 @@ function RouteCardRow({ rc, expanded, onToggle }: RouteCardRowProps): React.JSX.
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={8} style={{ padding: 0, background: 'var(--bg3)' }}>
+          <td colSpan={9} style={{ padding: 0, background: 'var(--bg3)' }}>
             <ExpandedOps rcId={rc.id} />
           </td>
         </tr>

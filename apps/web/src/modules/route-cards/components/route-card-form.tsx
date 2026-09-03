@@ -15,6 +15,11 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useItemsList } from '@/modules/items/api';
 import { useMachinesList } from '@/modules/machines/api';
+import {
+  MaterialGradePicker,
+  MaterialSizePicker,
+  RawMaterialGroup,
+} from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useNextRouteCardCode } from '../api';
 
@@ -41,6 +46,14 @@ export interface RouteCardFormHeaderDraft {
   code: string;
   itemId: string;
   itemCodeText: string; // displayed value
+  // Raw material — two INDEPENDENT master pickers, both optional. The id links
+  // to the master; the *Text snapshot is what the detail page and the printout
+  // still show after the master row is renamed, so both travel together and
+  // both go null together when the picker is cleared.
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
   notes: string;
 }
 
@@ -257,6 +270,41 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                   ⚠ not found in item master
                 </div>
               ) : null}
+            </div>
+            {/* Raw material — Grade + Size under one bracket, both optional
+                (no ★ on either). Same two pickers Planning and the Job Card
+                form use, so the route card names the same stock they do. */}
+            <div className="form-full">
+              <RawMaterialGroup>
+                <div className="form-grp">
+                  <label className="form-label">Grade</label>
+                  <MaterialGradePicker
+                    valueId={header.rawMaterialGradeId}
+                    valueText={header.rawMaterialGradeText}
+                    onChange={(id, text) =>
+                      setHeader((prev) => ({
+                        ...prev,
+                        rawMaterialGradeId: id,
+                        rawMaterialGradeText: text,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="form-grp">
+                  <label className="form-label">Size</label>
+                  <MaterialSizePicker
+                    valueId={header.rawMaterialSizeId}
+                    valueText={header.rawMaterialSizeText}
+                    onChange={(id, text) =>
+                      setHeader((prev) => ({
+                        ...prev,
+                        rawMaterialSizeId: id,
+                        rawMaterialSizeText: text,
+                      }))
+                    }
+                  />
+                </div>
+              </RawMaterialGroup>
             </div>
             <div className="form-grp form-full">
               <span className="form-label">Notes</span>
@@ -603,6 +651,23 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
       </td>
     </tr>
   );
+}
+
+// Raw material for the create/update payload. Always emits all four keys, so
+// clearing a picker sends an explicit null and the clear actually sticks —
+// omitting the key would leave the stored value untouched.
+export function rawMaterialToInput(header: RouteCardFormHeaderDraft): {
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
+} {
+  return {
+    rawMaterialGradeId: header.rawMaterialGradeId,
+    rawMaterialGradeText: header.rawMaterialGradeText,
+    rawMaterialSizeId: header.rawMaterialSizeId,
+    rawMaterialSizeText: header.rawMaterialSizeText,
+  };
 }
 
 export function opsToInput(ops: RouteCardFormOpDraft[]): CreateRouteCardOpInput[] {

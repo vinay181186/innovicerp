@@ -9,6 +9,7 @@ import {
   type RouteCardFormHeaderDraft,
   type RouteCardFormOpDraft,
   opsToInput,
+  rawMaterialToInput,
 } from '../components/route-card-form';
 
 export const routeCardEditRoute = createRoute({
@@ -57,6 +58,7 @@ function RouteCardEditPage(): React.JSX.Element {
       const updated = await update.mutateAsync({
         code: header.code.trim(),
         itemId: header.itemId,
+        ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
         ops: opsToInput(ops),
         revisionNote,
@@ -108,6 +110,10 @@ function RouteCardEditPage(): React.JSX.Element {
         code: detail.code,
         itemId: detail.itemId,
         itemCodeText: detail.itemCode ?? '',
+        rawMaterialGradeId: detail.rawMaterialGradeId,
+        rawMaterialGradeText: detail.rawMaterialGradeText,
+        rawMaterialSizeId: detail.rawMaterialSizeId,
+        rawMaterialSizeText: detail.rawMaterialSizeText,
         notes: detail.notes ?? '',
       }}
       initialOps={initialOps}

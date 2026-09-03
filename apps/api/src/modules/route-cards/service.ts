@@ -36,11 +36,20 @@
 //    ops-replace + revision-bump implementation with updateRouteCard
 //    (replaceRouteCardOps). ADR-051 deferred this write half; only the
 //    read half (plans.getDefaultRouteOpsForItem) had been ported.
+//
+// 6. Raw material (grade + size, migration 0108). Header-level, FK +
+//    text snapshot, resolved the same way job-cards does it
+//    (resolveJcRawMaterial): a sent id must be a live row in THIS
+//    company's master or the save is refused, and the snapshot is
+//    always rewritten from the master name. Header-only — it is not
+//    pushed down to plans or job cards.
 
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   items,
   machines,
+  materialGrades,
+  materialSizes,
   routeCardOps,
   routeCardRevisions,
   routeCards,
@@ -178,6 +187,72 @@ async function assertVendorIdsExist(
   return lookup;
 }
 
+interface ResolvedRawMaterial {
+  rawMaterialGradeId: string | null;
+  rawMaterialGradeText: string | null;
+  rawMaterialSizeId: string | null;
+  rawMaterialSizeText: string | null;
+}
+
+// Resolve the grade/size the caller sent against THIS company's live masters.
+// Same contract as job-cards resolveJcRawMaterial: a stale or foreign id is
+// refused with a plain message rather than silently stored, and the text
+// snapshot is always rewritten from the master name (the sent text is only a
+// fallback for the free-text / no-id case).
+//
+// An id left out or sent as null clears the column — the write inputs carry
+// the whole header, so "not sent" means "not set", which is how the caller
+// removes a grade or a size.
+async function resolveRcRawMaterial(
+  tx: DbTransaction,
+  companyId: string,
+  input: CreateRouteCardInput | UpdateRouteCardInput,
+): Promise<ResolvedRawMaterial> {
+  const gradeId = input.rawMaterialGradeId ?? null;
+  const sizeId = input.rawMaterialSizeId ?? null;
+  let gradeText = input.rawMaterialGradeText?.trim() || null;
+  let sizeText = input.rawMaterialSizeText?.trim() || null;
+
+  if (gradeId) {
+    const rows = await tx
+      .select({ name: materialGrades.name })
+      .from(materialGrades)
+      .where(
+        and(
+          eq(materialGrades.id, gradeId),
+          eq(materialGrades.companyId, companyId),
+          isNull(materialGrades.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!rows[0]) throw new ValidationError('Raw material grade not found in the Grade master');
+    gradeText = rows[0].name;
+  }
+
+  if (sizeId) {
+    const rows = await tx
+      .select({ name: materialSizes.name })
+      .from(materialSizes)
+      .where(
+        and(
+          eq(materialSizes.id, sizeId),
+          eq(materialSizes.companyId, companyId),
+          isNull(materialSizes.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!rows[0]) throw new ValidationError('Raw material size not found in the Size master');
+    sizeText = rows[0].name;
+  }
+
+  return {
+    rawMaterialGradeId: gradeId,
+    rawMaterialGradeText: gradeText,
+    rawMaterialSizeId: sizeId,
+    rawMaterialSizeText: sizeText,
+  };
+}
+
 // Generate next IN-RC-NNNNN per company. Mirrors legacy _nextRcNo
 // helper (L6933-6934) — finds the highest numeric suffix used so far
 // and adds 1, zero-padded to 5 digits.
@@ -224,7 +299,12 @@ export async function listRouteCards(
     const result = await tx.execute(sql`
       SELECT
         rc.id, rc.company_id AS "companyId", rc.code, rc.item_id AS "itemId",
-        rc.current_revision AS "currentRevision", rc.notes,
+        rc.current_revision AS "currentRevision",
+        rc.raw_material_grade_id AS "rawMaterialGradeId",
+        rc.raw_material_grade_text AS "rawMaterialGradeText",
+        rc.raw_material_size_id AS "rawMaterialSizeId",
+        rc.raw_material_size_text AS "rawMaterialSizeText",
+        rc.notes,
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
         rc.deleted_at AS "deletedAt",
@@ -265,6 +345,10 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     code: r['code'] as string,
     itemId: r['itemId'] as string,
     currentRevision: Number(r['currentRevision'] ?? 1),
+    rawMaterialGradeId: (r['rawMaterialGradeId'] as string | null) ?? null,
+    rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
+    rawMaterialSizeId: (r['rawMaterialSizeId'] as string | null) ?? null,
+    rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
     notes: (r['notes'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
@@ -333,6 +417,10 @@ async function loadRouteCardDetail(
     code: header.code,
     itemId: header.itemId,
     currentRevision: header.currentRevision,
+    rawMaterialGradeId: header.rawMaterialGradeId,
+    rawMaterialGradeText: header.rawMaterialGradeText,
+    rawMaterialSizeId: header.rawMaterialSizeId,
+    rawMaterialSizeText: header.rawMaterialSizeText,
     notes: header.notes,
     createdAt: tsLike(header.createdAt),
     createdBy: header.createdBy,
@@ -514,6 +602,8 @@ export async function createRouteCard(
       if (dup.length > 0) throw new ConflictError(`Route card code "${code}" already exists`);
     }
 
+    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
+
     const inserted = await tx
       .insert(routeCards)
       .values({
@@ -521,6 +611,7 @@ export async function createRouteCard(
         code,
         itemId: input.itemId,
         currentRevision: 1,
+        ...rawMaterial,
         notes: input.notes ?? null,
         createdBy: user.id,
         updatedBy: user.id,
@@ -628,12 +719,17 @@ export async function updateRouteCard(
     const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
     const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
 
-    // Header fields the ops-replace helper does not own.
+    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
+
+    // Header fields the ops-replace helper does not own. rawMaterial is always
+    // written, never merged — sending null (or leaving the field out) clears
+    // the grade or size instead of keeping the old one.
     await tx
       .update(routeCards)
       .set({
         code: input.code,
         itemId: input.itemId,
+        ...rawMaterial,
         notes: input.notes ?? null,
         updatedBy: user.id,
         updatedAt: new Date(),
@@ -729,6 +825,10 @@ export async function softDeleteRouteCard(id: string, user: AuthContext): Promis
       code: header.code,
       itemId: header.itemId,
       currentRevision: header.currentRevision,
+      rawMaterialGradeId: header.rawMaterialGradeId,
+      rawMaterialGradeText: header.rawMaterialGradeText,
+      rawMaterialSizeId: header.rawMaterialSizeId,
+      rawMaterialSizeText: header.rawMaterialSizeText,
       notes: header.notes,
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,

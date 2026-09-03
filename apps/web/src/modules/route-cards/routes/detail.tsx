@@ -134,6 +134,19 @@ function RouteCardDetailPage(): React.JSX.Element {
         </div>
         <div className="panel-body">
           <div className="form-grid">
+            {/* Raw material sits FIRST, right under the item code / name in the
+                header: grade + size describe WHAT the part is cut from, so they
+                read with the item identity, not buried under Notes. Both are
+                optional — a card with neither still shows the pair as dashes,
+                because a missing grade is a gap worth seeing. */}
+            <div className="form-grp">
+              <span className="form-label">RM Grade</span>
+              <div className="mono fw-700">{detail.rawMaterialGradeText ?? '—'}</div>
+            </div>
+            <div className="form-grp">
+              <span className="form-label">RM Size</span>
+              <div className="mono fw-700">{detail.rawMaterialSizeText ?? '—'}</div>
+            </div>
             <div className="form-grp">
               <span className="form-label">Operations</span>
               <div className="mono fw-700">{detail.ops.length}</div>

@@ -32,6 +32,15 @@ export const routeCardSchema = z.object({
   code: z.string(),
   itemId: z.string().uuid(),
   currentRevision: z.number().int().positive(),
+  // The stock this item is normally cut from. A route card is one-per-item and
+  // says HOW the part is made; grade + size say WHAT it is made from, so they
+  // belong on the same sheet. FK plus a text snapshot, like every other carrier
+  // of raw material — the snapshot is what the detail page and the printout
+  // show, so renaming a master row never rewrites an old route card.
+  rawMaterialGradeId: z.string().uuid().nullable(),
+  rawMaterialGradeText: z.string().nullable(),
+  rawMaterialSizeId: z.string().uuid().nullable(),
+  rawMaterialSizeText: z.string().nullable(),
   notes: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -182,6 +191,11 @@ export const createRouteCardInputSchema = z.object({
   // if omitted (matches legacy _nextRcNo behaviour, L6933).
   code: z.string().min(1).max(64).optional(),
   itemId: z.string().uuid(),
+  // Raw material for this item — both optional; see routeCardSchema.
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
 });
@@ -194,6 +208,11 @@ export type CreateRouteCardInput = z.infer<typeof createRouteCardInputSchema>;
 export const updateRouteCardInputSchema = z.object({
   code: z.string().min(1).max(64),
   itemId: z.string().uuid(),
+  // Raw material for this item — both optional; see routeCardSchema.
+  rawMaterialGradeId: z.string().uuid().nullable().optional(),
+  rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
+  rawMaterialSizeId: z.string().uuid().nullable().optional(),
+  rawMaterialSizeText: z.string().trim().max(160).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
   revisionNote: z.string().max(2000).nullable().optional(),

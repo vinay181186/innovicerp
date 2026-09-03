@@ -9,6 +9,7 @@ import {
   type RouteCardFormOpDraft,
   emptyProcessOp,
   opsToInput,
+  rawMaterialToInput,
 } from '../components/route-card-form';
 
 export const routeCardNewRoute = createRoute({
@@ -33,6 +34,7 @@ function RouteCardNewPage(): React.JSX.Element {
       const created = await create.mutateAsync({
         code: header.code.trim() || undefined,
         itemId: header.itemId,
+        ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
         ops: opsToInput(ops),
       });
@@ -54,7 +56,16 @@ function RouteCardNewPage(): React.JSX.Element {
   return (
     <RouteCardForm
       mode="create"
-      initialHeader={{ code: '', itemId: '', itemCodeText: '', notes: '' }}
+      initialHeader={{
+        code: '',
+        itemId: '',
+        itemCodeText: '',
+        rawMaterialGradeId: null,
+        rawMaterialGradeText: null,
+        rawMaterialSizeId: null,
+        rawMaterialSizeText: null,
+        notes: '',
+      }}
       initialOps={[emptyProcessOp()]}
       onSubmit={submit}
       submitting={create.isPending}
