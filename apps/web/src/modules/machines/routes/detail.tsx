@@ -28,6 +28,12 @@ function MachineDetailPage(): React.JSX.Element {
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const softDelete = useSoftDeleteMachine();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Read access with the other hooks, ABOVE the isLoading / isError gates below.
+  // Called after an early return it runs on some renders and not others, which is
+  // React error #310 ("rendered more hooks than during the previous render") the
+  // moment the machine finishes loading. Same placement as every sibling detail
+  // page. `effectiveFormPerms` is a plain function and stays where it is used.
+  const { data: eff } = useMyAccess();
 
   if (isLoading) {
     return (
@@ -67,7 +73,6 @@ function MachineDetailPage(): React.JSX.Element {
   // edit AND approve. L3 has edit without approve; L4 has approve without edit.
   // Previously delete was admin-only, which locked out the tier meant to run
   // the department.
-  const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'machine_create');
   const canEdit = perms.edit;
   const canDelete = perms.edit && perms.approve;
