@@ -20,6 +20,8 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/components/shared/searchable-select';
+import { addDaysLocal, todayLocal } from '@/lib/date';
+import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import {
   MaterialGradePicker,
   MaterialSizePicker,
@@ -98,8 +100,15 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // option is hidden for JWSO-sourced plans. Server also rejects it (createPlan
   // /updatePlan) so a direct API call can't set it either.
   const isJw = plan.jwLineId != null;
-  const [plannedStartDate, setPlannedStartDate] = useState<string>(plan.plannedStartDate ?? '');
-  const [plannedEndDate, setPlannedEndDate] = useState<string>(plan.plannedEndDate ?? '');
+  // An undated plan opens on today .. today+5 rather than on two blank boxes.
+  // A plan that already carries dates keeps exactly what it was saved with —
+  // the default fills a gap, it never overwrites a planner's own dates.
+  const [plannedStartDate, setPlannedStartDate] = useState<string>(
+    plan.plannedStartDate || todayLocal(),
+  );
+  const [plannedEndDate, setPlannedEndDate] = useState<string>(
+    plan.plannedEndDate || addDaysLocal(plan.plannedStartDate || todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
+  );
   const [remarks, setRemarks] = useState<string>(plan.remarks ?? '');
   // Raw material — two INDEPENDENT master pickers, both optional (no ★). The
   // id is the link; the *Text snapshot is what this plan still prints after the

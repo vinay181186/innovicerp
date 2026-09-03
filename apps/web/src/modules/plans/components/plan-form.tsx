@@ -6,7 +6,7 @@
 import type { CreatePlanInput, PlanType } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { addDaysLocal, todayLocal } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
 import {
   MaterialGradePicker,
@@ -79,6 +79,9 @@ export const PLAN_TYPE_OPTIONS: Array<{ value: PlanType; label: string; icon: st
   { value: 'assembly', label: 'Assembly', icon: '🔧', help: 'Assembly of equipment per BOM' },
 ];
 
+/** Days from planned start to planned end on a brand-new plan. */
+export const PLAN_DEFAULT_SPAN_DAYS = 5;
+
 export function emptyValues(): PlanFormValues {
   return {
     code: '',
@@ -92,8 +95,10 @@ export function emptyValues(): PlanFormValues {
     itemNameText: '',
     orderQty: 1,
     planQty: 1,
-    plannedStartDate: '',
-    plannedEndDate: '',
+    // A new plan opens dated: start today, finish five days later. Both stay
+    // editable — this is a starting point, not a rule.
+    plannedStartDate: todayLocal(),
+    plannedEndDate: addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
     rawMaterialGradeId: null,
     rawMaterialGradeText: null,
     rawMaterialSizeId: null,

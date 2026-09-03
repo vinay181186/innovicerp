@@ -9,7 +9,8 @@ import type {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { todayLocal } from '@/lib/date';
+import { addDaysLocal, todayLocal } from '@/lib/date';
+import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useReleaseReservations, useReserveStock } from '@/modules/plans/api';
 import { Modal } from './modal';
 
@@ -116,6 +117,10 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
       itemNameText: line.itemName ?? '',
       orderQty: line.orderQty,
       planQty,
+      // Born dated: start today, finish five days later. The planner adjusts
+      // both in Edit Plan; this only saves them typing the common case.
+      plannedStartDate: todayLocal(),
+      plannedEndDate: addDaysLocal(todayLocal(), PLAN_DEFAULT_SPAN_DAYS),
     };
     try {
       const created = await createPlan.mutateAsync(input);
