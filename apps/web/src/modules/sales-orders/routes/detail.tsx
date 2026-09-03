@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
+import { signedUrl } from '@/lib/storage';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -21,6 +22,17 @@ import { SoStatusBadge } from '../components/so-status-badge';
 async function openStoredFile(storagePath: string): Promise<void> {
   try {
     const url = await soDocSignedUrl(storagePath);
+    window.open(url, '_blank', 'noopener');
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : 'Could not open file');
+  }
+}
+
+/** Open a per-line drawing file (uploaded to the shared `qc-docs` bucket) via a
+ *  short-lived signed URL in a new tab. */
+async function openDrawing(storagePath: string): Promise<void> {
+  try {
+    const url = await signedUrl(storagePath);
     window.open(url, '_blank', 'noopener');
   } catch (e) {
     window.alert(e instanceof Error ? e.message : 'Could not open file');
@@ -430,6 +442,7 @@ function ClientPoFileBar({
 
 function LineRow(props: { line: SalesOrderLine; priceHidden: boolean }): React.JSX.Element {
   const { line: l, priceHidden } = props;
+  const drawingFilePath = l.drawingFilePath ?? null;
   return (
     <tr>
       <td className="mono" style={{ color: 'var(--blue)' }}>{l.lineNo}</td>
@@ -441,7 +454,23 @@ function LineRow(props: { line: SalesOrderLine; priceHidden: boolean }): React.J
         {l.material ?? '—'}
       </td>
       <td className="mono" style={{ fontSize: 11 }}>
-        {l.drawingNo ?? '—'}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span>{l.drawingNo ?? '—'}</span>
+          {l.revision ? (
+            <span className="text3" style={{ fontSize: 10 }}>Rev {l.revision}</span>
+          ) : null}
+          {drawingFilePath ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ padding: '1px 6px', fontSize: 11, alignSelf: 'flex-start' }}
+              onClick={() => void openDrawing(drawingFilePath)}
+              title="Open drawing in a new tab"
+            >
+              📎 Drawing
+            </button>
+          ) : null}
+        </div>
       </td>
       <td className="mono">{l.orderQty}</td>
       <td className="mono" style={{ color: 'var(--green)' }}>{l.dispatchedQty}</td>

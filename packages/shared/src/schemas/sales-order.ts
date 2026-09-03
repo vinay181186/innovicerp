@@ -50,6 +50,11 @@ export const salesOrderLineSchema = z.object({
   partName: z.string(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
+  // Per-line drawing revision (optional free text, e.g. "A", "R2") and the
+  // uploaded drawing document's storage path (qc-docs bucket, folder
+  // `so-line-drawings`; view via a short-lived signed URL). Both nullable.
+  revision: z.string().nullable().default(null),
+  drawingFilePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
   // Billing status (migration 0050 / ADR-042). dispatchedQty is the cumulative
@@ -175,6 +180,10 @@ export const salesOrderLineInputSchema = z
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
     drawingNo: z.string().max(64).optional(),
+    // Optional per-line drawing revision + uploaded-drawing storage path.
+    // Empty/blank → cleared. Path is set by the web upload flow (qc-docs bucket).
+    revision: z.string().max(32).optional(),
+    drawingFilePath: z.string().max(512).optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 enforced in DB too
     rate: z.coerce.number().nonnegative().default(0),

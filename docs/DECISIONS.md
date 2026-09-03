@@ -7247,3 +7247,23 @@ Remove the client door, not the primitive.
 - Positive: fresh multi-line POs come from `from-pr-batch` (multiple PRs); single from `from-pr`; multi-line editing on an existing PO is unchanged.
 - Negative: `createPurchaseOrder` survives as un-routed code — a latent temptation to re-expose. Guarded by an explicit "do NOT wire back to a route" comment.
 - Verification limited to typecheck + lint (agents + combined tree); the api suite must be run on a non-prod DB before deploy to confirm the 404 door-closed test and that fixtures still build POs.
+
+## ADR-140: Sales Order lines carry an optional drawing revision + uploaded drawing document
+**Date:** 2026-09-03
+**Status:** Accepted
+
+### Context
+An SO line already had `drawing_no` (a text reference) but no way to attach the actual drawing file or record its revision. Users wanted, per SO line: upload a drawing document, view it after upload, and an optional revision next to it.
+
+### Decision
+Two nullable columns on `sales_order_lines` (migration 0104): `revision text` (optional free text) and `drawing_file_path text` (storage path). Reuse the existing file-upload machinery rather than build new: `@/lib/storage` `uploadFile`/`signedUrl` against the private `qc-docs` bucket, folder `so-line-drawings` — the identical pattern the item master already uses for its drawing (`item-drawings`) and QC docs use. The web form uploads direct to Storage and stores only the returned path; the drawing is viewed through a short-lived signed URL. A new compact `SoLineDrawingCell` fits the upload+view control into the line table; the SO detail page shows the revision and a 📎 view link per line. Revision is free text (mirrors item master `revision`), optional, blank by default — not a dropdown.
+
+### Alternatives Considered
+- A separate `so_line_documents` table (like `so_documents` / `qc_documents`, many files per entity) — rejected: the ask is exactly one drawing per line, so a single path column matches the item-master precedent and needs no join.
+- A new dedicated Storage bucket + per-line RLS — rejected: the existing `qc-docs` bucket already serves item/JC drawings and QC docs via a company-prefixed path; adding a bucket is org-wide scope this feature does not need. (The known caveat — qc-docs read is granted to any authenticated user, path prefix is organisational not a security boundary, ADR-032 — is inherited, not introduced here.)
+
+### Consequences
+- Positive: reuses tested upload/view code; no new infra; one migration, two nullable columns, inherits `sales_order_lines` RLS.
+- Positive: viewable both right after upload (form state) and later on the SO detail page.
+- Negative: inherits the qc-docs bucket's coarse read policy (ADR-032) — hardening remains a separate org-wide task.
+- Built via the erp-backend (api) + erp-frontend (web) agents in parallel; shared schema + migration + docs done directly. Migration 0104 applied to the shared DB and verified (both columns text, nullable).

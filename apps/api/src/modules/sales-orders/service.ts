@@ -858,6 +858,8 @@ function toSalesOrderLine(
     partName: row.partName,
     material: row.material,
     drawingNo: row.drawingNo,
+    revision: row.revision,
+    drawingFilePath: row.drawingFilePath,
     uom: row.uom,
     orderQty: row.orderQty,
     dispatchedQty: row.dispatchedQty,
@@ -1068,6 +1070,8 @@ export async function createSalesOrder(
             partName: l.partName,
             material: l.material ?? null,
             drawingNo: l.drawingNo ?? null,
+            revision: l.revision ?? null,
+            drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,
             rate: rateToString(l),
@@ -1380,6 +1384,9 @@ async function mergeLines(
     if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
+    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision ?? null;
+    if (u.data.drawingFilePath !== undefined)
+      lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
     if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
@@ -1411,6 +1418,8 @@ async function mergeLines(
         partName: l.partName,
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
+        revision: l.revision ?? null,
+        drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
         rate: rateToString(l),

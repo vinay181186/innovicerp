@@ -1174,6 +1174,8 @@ export const salesOrderLines = pgTable(
     partName: text('part_name').notNull(),
     material: text('material'),
     drawingNo: text('drawing_no'),
+    revision: text('revision'),
+    drawingFilePath: text('drawing_file_path'),
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
@@ -2767,6 +2769,10 @@ export const planOps = pgTable(
     opType: opTypeEnum('op_type').notNull().default('process'),
     cycleTimeMin: numeric('cycle_time_min', { precision: 10, scale: 2 }).notNull().default('0'),
     program: text('program'),
+    // Migration 0104. route_card_ops and jc_ops both carried a tool number; the
+    // plan between them did not, so it was lost on the way to the Job Card and
+    // blanked back onto the route card on plan execute.
+    toolNo: text('tool_no'),
     toolDetails: text('tool_details'),
     qcRequired: boolean('qc_required').notNull().default(false),
     outsourceVendorId: uuid('outsource_vendor_id').references(() => vendors.id, {

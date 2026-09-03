@@ -58,6 +58,7 @@ import { useBomMastersList } from '@/modules/bom-master/api';
 import { useClientsList, useCreateClient } from '@/modules/clients/api';
 import { useItemsList } from '@/modules/items/api';
 import { downloadSoLineTemplate, parseSoLineFile } from '../lib/import-export';
+import { SoLineDrawingCell } from './so-line-drawing-cell';
 
 interface LineFormValue {
   id?: string | undefined;
@@ -66,6 +67,8 @@ interface LineFormValue {
   partName: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
+  revision?: string | undefined;
+  drawingFilePath?: string | undefined;
   uom: Uom;
   orderQty: number;
   rate: number;
@@ -519,6 +522,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         partName: l.partName.trim(),
         material: l.material?.trim() || undefined,
         drawingNo: l.drawingNo?.trim() || undefined,
+        revision: l.revision?.trim() || undefined,
+        drawingFilePath: l.drawingFilePath || undefined,
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate),
@@ -929,30 +934,32 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           {/* Fixed layout so every column gets exactly its share — the percentage
               widths are balanced to each field's data and scale with the panel. */}
           <div style={{ overflow: 'visible', border: '1px solid var(--border)', borderRadius: 8, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }}>
-            <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 940 }}>
+            <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed', minWidth: 1080 }}>
               <thead>
                 {/* Legacy column order (L12163): # · Item Code ★ · Part Name ·
                     Material · Drawing No. · Client PO Ln · Qty ★ · Rate ₹ · Amount.
-                    UOM is ours (legacy carries it invisibly) — kept, not dropped. */}
+                    UOM is ours (legacy carries it invisibly) — kept, not dropped.
+                    Drawing File + Rev are ours, inserted right after Drawing No. */}
                 <tr>
-                  <th style={{ width: '5%' }}>#</th>
-                  <th style={{ width: '20%' }}>Item Code <span className="req">★</span></th>
-                  <th style={{ width: '15%' }}>Part Name</th>
-                  <th style={{ width: '9%' }}>Material</th>
-                  <th style={{ width: '11%' }}>Drawing No.</th>
-                  <th style={{ width: '9%' }}>Client PO Ln</th>
-                  <th style={{ width: '6%' }}>UOM</th>
-                  <th style={{ width: '8%' }} className="td-ctr">Qty <span className="req">★</span></th>
-                  <th style={{ width: '8%', color: 'var(--green)' }}>Rate ₹</th>
+                  <th style={{ width: '4%' }}>#</th>
+                  <th style={{ width: '16%' }}>Item Code <span className="req">★</span></th>
+                  <th style={{ width: '12%' }}>Part Name</th>
+                  <th style={{ width: '8%' }}>Material</th>
+                  <th style={{ width: '8%' }}>Drawing No.</th>
+                  <th style={{ width: '11%' }}>Drawing File</th>
+                  <th style={{ width: '6%' }}>Rev</th>
+                  <th style={{ width: '8%' }}>Client PO Ln</th>
+                  <th style={{ width: '5%' }}>UOM</th>
+                  <th style={{ width: '7%' }} className="td-ctr">Qty <span className="req">★</span></th>
+                  <th style={{ width: '6%', color: 'var(--green)' }}>Rate ₹</th>
                   <th style={{ width: '6%', color: 'var(--green)' }}>Amount</th>
-                  <th style={{ width: '4%' }} />
+                  <th style={{ width: '3%' }} />
                 </tr>
               </thead>
               <tbody>
                 {fields.length === 0 ? (
-                  /* colSpan 11 = the real column count; legacy's colspan="10"
-                     (L12166) undercounts its own 11 columns — bug not copied. */
-                  <tr><td colSpan={11} className="empty-state" style={{ padding: 14 }}>No lines yet — click &ldquo;+ Add Line&rdquo;</td></tr>
+                  /* colSpan 13 = the real column count (11 legacy + Drawing File + Rev). */
+                  <tr><td colSpan={13} className="empty-state" style={{ padding: 14 }}>No lines yet — click &ldquo;+ Add Line&rdquo;</td></tr>
                 ) : (
                   fields.map((field, idx) => {
                     const ln = watchedLines?.[idx];
@@ -980,6 +987,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.partName` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.material` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.drawingNo` as const)} /></td>
+                        <td>
+                          <SoLineDrawingCell
+                            value={watch(`lines.${idx}.drawingFilePath` as const)}
+                            onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p, { shouldDirty: true })}
+                          />
+                        </td>
+                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" {...register(`lines.${idx}.revision` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
@@ -1207,6 +1221,10 @@ function LineItemCascade({
       `lines.${idx}.status`,
       `lines.${idx}.itemId`,
       `lines.${idx}.itemCodeText`,
+      // Revision + drawing file are line-specific, entered/uploaded by the user —
+      // never auto-filled from the item master.
+      `lines.${idx}.revision`,
+      `lines.${idx}.drawingFilePath`,
     ],
     setValueOptions: { shouldDirty: true },
   });
@@ -1242,6 +1260,8 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
             partName: l.partName,
             ...(l.material ? { material: l.material } : {}),
             ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
+            ...(l.revision ? { revision: l.revision } : {}),
+            ...(l.drawingFilePath ? { drawingFilePath: l.drawingFilePath } : {}),
             uom: l.uom,
             orderQty: l.orderQty,
             rate: Number(l.rate),
