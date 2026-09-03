@@ -162,7 +162,14 @@ function toFormValues(plan: PlanDetail): PlanFormValues {
       opType: op.opType,
       cycleTimeMin: Number(op.cycleTimeMin),
       qcRequired: op.qcRequired,
+      // Carried, not edited — see PlanFormValues.ops. Dropping these here blanked
+      // a route card's machine / program / tool data on every plan edit.
+      machineId: op.machineId,
       machineCodeText: op.machineCodeText ?? '',
+      program: op.program ?? '',
+      toolNo: op.toolNo ?? '',
+      toolDetails: op.toolDetails ?? '',
+      outsourceVendorId: op.outsourceVendorId,
       outsourceVendorText: op.outsourceVendorText ?? '',
       outsourceCost: Number(op.outsourceCost),
     })),

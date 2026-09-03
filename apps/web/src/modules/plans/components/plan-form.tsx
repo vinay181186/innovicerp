@@ -39,13 +39,22 @@ export interface PlanFormValues {
   foCostCenter: string;
   foRemarks: string;
   remarks: string;
+  // Route-card-derived fields (machineId / program / toolNo / toolDetails /
+  // outsourceVendorId) are CARRIED, not edited here — the user enters them on
+  // the Route Card. They used to be absent from this type, so loading a route
+  // card silently blanked them on the way to plan_ops and the Job Card.
   ops: Array<{
     opSeq: number;
     operation: string;
     opType: 'process' | 'outsource' | 'qc';
     cycleTimeMin: number;
     qcRequired: boolean;
+    machineId: string | null;
     machineCodeText: string;
+    program: string;
+    toolNo: string;
+    toolDetails: string;
+    outsourceVendorId: string | null;
     outsourceVendorText: string;
     outsourceCost: number;
   }>;
@@ -135,7 +144,12 @@ export function toCreateInput(v: PlanFormValues): CreatePlanInput {
             opType: op.opType,
             cycleTimeMin: op.cycleTimeMin,
             qcRequired: op.qcRequired,
+            machineId: op.machineId,
             machineCodeText: op.machineCodeText || null,
+            program: op.program || null,
+            toolNo: op.toolNo || null,
+            toolDetails: op.toolDetails || null,
+            outsourceVendorId: op.outsourceVendorId,
             outsourceVendorText: op.outsourceVendorText || null,
             outsourceCost: op.outsourceCost,
           }))
@@ -164,7 +178,14 @@ export function PlanForm({
   const [values, setValues] = useState<PlanFormValues>(initialValues);
 
   // Reload default ops button is wired against itemId; query enabled only when item is set.
-  const { data: defaultOps, isFetching: loadingOps } = useDefaultRouteOps(values.itemId);
+  const {
+    data: defaultOps,
+    isFetching: loadingOps,
+    isLoading: routeCardLoading,
+    isError: routeCardFailed,
+  } = useDefaultRouteOps(values.itemId);
+  // The item has an active route card only when the lookup came back with one.
+  const hasRouteCard = !!defaultOps && defaultOps.ops.length > 0;
 
   useEffect(() => {
     setValues(initialValues);
@@ -216,7 +237,12 @@ export function PlanForm({
         opType: op.opType ?? 'process',
         cycleTimeMin: op.cycleTimeMin ?? 0,
         qcRequired: op.qcRequired ?? false,
+        machineId: op.machineId ?? null,
         machineCodeText: op.machineCodeText ?? '',
+        program: op.program ?? '',
+        toolNo: op.toolNo ?? '',
+        toolDetails: op.toolDetails ?? '',
+        outsourceVendorId: op.outsourceVendorId ?? null,
         outsourceVendorText: op.outsourceVendorText ?? '',
         outsourceCost: op.outsourceCost ?? 0,
       })),
@@ -234,7 +260,12 @@ export function PlanForm({
           opType: 'process',
           cycleTimeMin: 0,
           qcRequired: false,
+          machineId: null,
           machineCodeText: '',
+          program: '',
+          toolNo: '',
+          toolDetails: '',
+          outsourceVendorId: null,
           outsourceVendorText: '',
           outsourceCost: 0,
         },
@@ -569,8 +600,23 @@ export function PlanForm({
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title">Operations ({values.ops.length})</div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {defaultOps && defaultOps.ops.length > 0 ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {/* No route card used to render nothing here, so "this item has
+                  no route card" and "the lookup has not answered yet" looked
+                  identical — the user saw a blank header either way. */}
+              {values.itemId && !hasRouteCard && !routeCardFailed ? (
+                <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                  {routeCardLoading ? (
+                    'Loading…'
+                  ) : (
+                    <>
+                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      the operations below
+                    </>
+                  )}
+                </span>
+              ) : null}
+              {hasRouteCard && defaultOps ? (
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
@@ -673,7 +719,9 @@ export function PlanForm({
                             setValues((v) => ({
                               ...v,
                               ops: v.ops.map((o, i) =>
-                                i === idx ? { ...o, machineCodeText: e.target.value } : o,
+                                i === idx
+                                  ? { ...o, machineCodeText: e.target.value, machineId: null }
+                                  : o,
                               ),
                             }))
                           }
@@ -719,7 +767,13 @@ export function PlanForm({
                             setValues((v) => ({
                               ...v,
                               ops: v.ops.map((o, i) =>
-                                i === idx ? { ...o, outsourceVendorText: e.target.value } : o,
+                                i === idx
+                                  ? {
+                                      ...o,
+                                      outsourceVendorText: e.target.value,
+                                      outsourceVendorId: null,
+                                    }
+                                  : o,
                               ),
                             }))
                           }

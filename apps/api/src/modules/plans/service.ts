@@ -17,6 +17,8 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
+  CreateRouteCardOpInput,
+  DefaultRouteOpsResponse,
   DocumentTraceability,
   ListPlansQuery,
   ListPlansResponse,
@@ -66,6 +68,7 @@ import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { emitActivityLog } from '../activity-log/service';
 import { nextJcCode } from '../job-cards/service';
+import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 
 const EDITABLE_STATUSES: readonly PlanStatus[] = ['in_planning', 'planned'];
@@ -544,18 +547,29 @@ export async function updatePlan(
     await tx.update(plans).set(updates).where(eq(plans.id, id));
 
     // Ops replace-all when provided. The edit form payload does NOT carry the
-    // route-card–derived fields (program / toolDetails / machineId), so a naive
-    // soft-delete + reinsert would wipe them on every edit. Load the existing
-    // ops first, key them by opSeq, and restore those fields onto any new op
-    // whose opSeq matches — but only where the payload itself does not supply a
-    // value (`?? prior`). New ops with no matching opSeq keep null, as before.
+    // route-card–derived fields (program / toolNo / toolDetails / machineId), so
+    // a naive soft-delete + reinsert would wipe them on every edit. Load the
+    // existing ops first, key them by opSeq, and restore those fields onto any
+    // new op whose opSeq matches — but only where the payload itself does not
+    // supply a value (`?? prior`). New ops with no matching opSeq keep null, as
+    // before.
+    //
+    // outsourceVendorId (the live vendor FK) is restored too, but ONLY when the
+    // op still names the same vendor in text. The payload carries the vendor as
+    // text and never as an id, so a blind `?? prior` would keep pointing at the
+    // OLD vendor after someone retyped the vendor on the op — and execute reads
+    // the FK in preference to the text, which would raise the OSP PR against the
+    // wrong vendor. Text changed → the stale FK is dropped, exactly as today.
     if (input.ops !== undefined) {
       const priorOps = await tx
         .select({
           opSeq: planOps.opSeq,
           program: planOps.program,
+          toolNo: planOps.toolNo,
           toolDetails: planOps.toolDetails,
           machineId: planOps.machineId,
+          outsourceVendorId: planOps.outsourceVendorId,
+          outsourceVendorText: planOps.outsourceVendorText,
         })
         .from(planOps)
         .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)));
@@ -569,11 +583,16 @@ export async function updatePlan(
         const preservedOps = input.ops.map((op) => {
           const prior = priorBySeq.get(op.opSeq);
           if (!prior) return op;
+          const sameVendorText =
+            (op.outsourceVendorText ?? '') === (prior.outsourceVendorText ?? '');
           return {
             ...op,
             program: op.program ?? prior.program,
+            toolNo: op.toolNo ?? prior.toolNo,
             toolDetails: op.toolDetails ?? prior.toolDetails,
             machineId: op.machineId ?? prior.machineId,
+            outsourceVendorId:
+              op.outsourceVendorId ?? (sameVendorText ? prior.outsourceVendorId : null),
           };
         });
         await insertOps(tx, companyId, id, preservedOps, user);
@@ -716,17 +735,23 @@ export async function softDeletePlan(id: string, user: AuthContext): Promise<{ o
 // ─── Default route-card ops loader (PL-4) ─────────────────────────────────
 
 /** Fetch the active route card's ops for an item, formatted as PlanOpInput[]
- *  ready to splice into a plan create form. Returns [] when no active route
- *  card exists. UI calls this from the "Load default ops" button. */
+ *  ready to splice into a plan create form, together with WHICH card they came
+ *  from (code + revision) so the screen can say so. Both identity fields are
+ *  null — and ops empty — when the item has no active route card. UI calls this
+ *  from the "Load default ops" button. */
 export async function getDefaultRouteOpsForItem(
   itemId: string,
   user: AuthContext,
-): Promise<PlanOpInput[]> {
+): Promise<DefaultRouteOpsResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
     const rcRows = await tx
-      .select({ id: routeCards.id })
+      .select({
+        id: routeCards.id,
+        code: routeCards.code,
+        currentRevision: routeCards.currentRevision,
+      })
       .from(routeCards)
       .where(
         and(
@@ -737,7 +762,7 @@ export async function getDefaultRouteOpsForItem(
       )
       .limit(1);
     const rc = rcRows[0];
-    if (!rc) return [];
+    if (!rc) return { ops: [], routeCardCode: null, routeCardRevision: null };
 
     const ops = await tx
       .select()
@@ -745,7 +770,7 @@ export async function getDefaultRouteOpsForItem(
       .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
       .orderBy(asc(routeCardOps.opSeq));
 
-    return ops.map((op) => ({
+    const mapped: PlanOpInput[] = ops.map((op) => ({
       opSeq: op.opSeq,
       machineId: op.machineId,
       machineCodeText: op.machineCodeText,
@@ -753,12 +778,15 @@ export async function getDefaultRouteOpsForItem(
       opType: op.opType,
       cycleTimeMin: Number(op.cycleTimeMin),
       program: op.program,
+      toolNo: op.toolNo,
       toolDetails: op.toolDetails,
       qcRequired: op.qcRequired,
       outsourceVendorId: op.ospVendorId,
       outsourceVendorText: op.ospVendorCodeText,
       outsourceCost: 0,
     }));
+
+    return { ops: mapped, routeCardCode: rc.code, routeCardRevision: rc.currentRevision };
   });
 }
 
@@ -901,6 +929,7 @@ async function executeManufacture(
     opType: op.opType,
     cycleTimeMin: op.cycleTimeMin,
     program: op.program,
+    toolNo: op.toolNo,
     toolDetails: op.toolDetails,
     qcRequired: op.qcRequired,
     outsourceVendorId: op.outsourceVendorId,
@@ -923,6 +952,7 @@ async function executeManufacture(
       opType: 'qc',
       cycleTimeMin: '0',
       program: null,
+      toolNo: null,
       toolDetails: null,
       qcRequired: true,
       outsourceVendorId: null,
@@ -944,6 +974,36 @@ async function executeManufacture(
       outsourceVendorText: jcOps.outsourceVendorText,
       outsourceCost: jcOps.outsourceCost,
     });
+
+  // Route-card auto-save (ADR-051 write half): remember this item's routing so
+  // the next plan for the same item can load it straight back. Fed from the
+  // PLAN's ops — never `opRows`, which may carry the system-appended terminal
+  // QC op (ADR-069 Rule B); saving that would make the routing grow one QC op
+  // per cycle. Same transaction as the JC, so a failure unwinds both.
+  const routeCardOpsFromPlan: CreateRouteCardOpInput[] = ops.map((op) => ({
+    machineId:
+      op.machineId ??
+      (op.machineCodeText ? (machineIdByCode.get(op.machineCodeText) ?? null) : null),
+    machineCodeText: op.machineCodeText,
+    operation: op.operation,
+    opType: op.opType,
+    cycleTimeMin: Number(op.cycleTimeMin),
+    program: op.program,
+    toolNo: op.toolNo,
+    toolDetails: op.toolDetails,
+    qcRequired: op.qcRequired,
+    ospVendorId: op.outsourceVendorId,
+    ospVendorCodeText: op.outsourceVendorText,
+    ospLeadDays: null,
+  }));
+  await saveRouteCardForItem(
+    tx,
+    plan.companyId,
+    plan.itemId,
+    routeCardOpsFromPlan,
+    user,
+    plan.code,
+  );
 
   // Auto-raise a JW_OSP purchase request for every op ticked "Outsource".
   // Mirrors the manual OSP-PR flow (op-entry/osp-cascade) but fires at plan
@@ -1410,6 +1470,7 @@ async function insertOps(
     opType: op.opType ?? 'process',
     cycleTimeMin: (op.cycleTimeMin ?? 0).toFixed(2),
     program: op.program ?? null,
+    toolNo: op.toolNo ?? null,
     toolDetails: op.toolDetails ?? null,
     qcRequired: op.qcRequired ?? false,
     outsourceVendorId: op.outsourceVendorId ?? null,
@@ -1520,6 +1581,7 @@ function toPlanOp(row: typeof planOps.$inferSelect): PlanOp {
     opType: row.opType,
     cycleTimeMin: row.cycleTimeMin,
     program: row.program,
+    toolNo: row.toolNo,
     toolDetails: row.toolDetails,
     qcRequired: row.qcRequired,
     outsourceVendorId: row.outsourceVendorId,

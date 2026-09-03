@@ -37,7 +37,8 @@ import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
-import type { DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import { saveRouteCardForItem } from '../route-cards/service';
+import type { CreateRouteCardOpInput, DocumentTraceability, RelatedDoc } from '@innovic/shared';
 import type {
   JcOpInput,
   JobCardCompletionEvent,
@@ -1160,6 +1161,40 @@ function buildOpRows(
   });
 }
 
+/** Translate this JC's ops into route-card ops for the auto-save (ADR-051's
+ *  deferred write half). Same machine/vendor resolution buildOpRows does, so
+ *  the saved route card carries live FKs where the codes resolved and the code
+ *  text as fallback where they did not.
+ *
+ *  IMPORTANT: callers pass `input.ops` — the ops as the USER entered them, NOT
+ *  the `withTerminalQcOp(input.ops)` result. The system-appended terminal QC op
+ *  must never reach the route card, or the next plan would load it and get a
+ *  second one appended on save (see stripAutoTerminalQcOp in route-cards). */
+function toRouteCardOps(
+  ops: JcOpInput[],
+  types: ResolvedOpType[],
+  machineMap: Map<string, string>,
+  vendorMap: Map<string, string>,
+): CreateRouteCardOpInput[] {
+  return ops.map((o, i) => {
+    const t = types[i]!;
+    return {
+      machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
+      machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
+      operation: o.operation,
+      opType: t,
+      cycleTimeMin: Number(o.cycleTimeMin || 0),
+      program: o.program ?? null,
+      toolNo: o.toolNo ?? null,
+      toolDetails: o.toolDetails ?? null,
+      qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
+      ospVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
+      ospVendorCodeText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
+      ospLeadDays: null,
+    };
+  });
+}
+
 async function registerQcDocs(
   tx: DbTransaction,
   input: JobCardWriteInput,
@@ -1245,6 +1280,18 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
       await tx
         .insert(jcOps)
         .values(buildOpRows(ops, types, { companyId, jobCardId, userId: user.id }, machineMap, vendorMap));
+      // ADR-051 write half: remember this item's routing so the next plan for
+      // the same item can load it back. Same transaction as the JC — a failure
+      // here rolls the Job Card back too. Deliberately fed `input.ops` (what
+      // the user entered), never the appended terminal QC op.
+      await saveRouteCardForItem(
+        tx,
+        companyId,
+        item.id,
+        toRouteCardOps(input.ops, types.slice(0, input.ops.length), machineMap, vendorMap),
+        user,
+        code,
+      );
     }
     await registerQcDocs(tx, input, { companyId, jobCardId, jcCode: code, userId: user.id });
 
@@ -1354,6 +1401,15 @@ export async function updateJobCard(
         opType: jcOps.opType,
         opSeq: jcOps.opSeq,
         machineCodeText: jcOps.machineCodeText,
+        // Routing detail — read so the route-card auto-save below can tell a
+        // real routing change from an edit that only touched the header.
+        operation: jcOps.operation,
+        cycleTimeMin: jcOps.cycleTimeMin,
+        program: jcOps.program,
+        toolNo: jcOps.toolNo,
+        toolDetails: jcOps.toolDetails,
+        qcRequired: jcOps.qcRequired,
+        outsourceVendorText: jcOps.outsourceVendorText,
         outsourceStatus: jcOps.outsourceStatus,
         outsourcePrId: jcOps.outsourcePrId,
         outsourcePoLineId: jcOps.outsourcePoLineId,
@@ -1476,6 +1532,33 @@ export async function updateJobCard(
     const now = new Date();
     // 1. Soft-delete removed ops (all guaranteed un-started by the guard above).
     const removedIds = existing.filter((o) => !payloadIds.has(o.id)).map((o) => o.id);
+
+    // Did the ROUTING actually change? Compared against the pre-edit rows read
+    // above, so an edit that only touched the header (due date, remarks, qty)
+    // leaves the item's route card completely alone.
+    const opsChanged =
+      removedIds.length > 0 ||
+      ops.length !== existing.length ||
+      ops.some((o, i) => {
+        const ex = o.id ? existingById.get(o.id) : undefined;
+        if (!ex) return true; // added op
+        const t = types[i]!;
+        const machineText = t === 'process' ? (o.machineCode ?? '') : t === 'qc' ? 'QC' : '';
+        return (
+          ex.opSeq !== i + 1 ||
+          ex.opType !== t ||
+          ex.operation !== o.operation ||
+          Number(ex.cycleTimeMin) !== Number(o.cycleTimeMin || 0) ||
+          (ex.machineCodeText ?? '') !== machineText ||
+          (ex.program ?? '') !== (o.program ?? '') ||
+          (ex.toolNo ?? '') !== (o.toolNo ?? '') ||
+          (ex.toolDetails ?? '') !== (o.toolDetails ?? '') ||
+          Boolean(ex.qcRequired) !== (t === 'qc' ? true : Boolean(o.qcRequired)) ||
+          (ex.outsourceVendorText ?? '') !==
+            (t === 'outsource' ? (o.outsourceVendorCode ?? '') : '')
+        );
+      });
+
     if (removedIds.length > 0) {
       await tx
         .update(jcOps)
@@ -1631,6 +1714,20 @@ export async function updateJobCard(
         jcCode: head.code,
         userId: user.id,
       });
+    }
+
+    // 6. Route-card auto-save (ADR-051 write half) — only when the routing
+    //    itself changed, and only from the ops the user submitted (the appended
+    //    terminal QC op is filtered out inside saveRouteCardForItem).
+    if (opsChanged && input.ops.length > 0) {
+      await saveRouteCardForItem(
+        tx,
+        companyId,
+        item.id,
+        toRouteCardOps(input.ops, types.slice(0, input.ops.length), machineMap, vendorMap),
+        user,
+        head.code,
+      );
     }
 
     await emitActivityLog(

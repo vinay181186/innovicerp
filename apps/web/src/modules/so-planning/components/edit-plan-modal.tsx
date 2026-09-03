@@ -48,15 +48,38 @@ function uid(): string {
   return Math.random().toString(36).slice(2);
 }
 
-function planOpToRow(op: { opSeq: number; operation: string; opType: string; machineCodeText: string | null; cycleTimeMin: string; outsourceVendorText: string | null; outsourceCost: string | null; qcRequired: boolean }): OpRow {
+// The five route-card fields (machineId / program / toolNo / toolDetails /
+// outsourceVendorId) are CARRIED through this modal, never edited in it — the
+// user enters them on the Route Card. Reading them here and writing them back
+// in buildPayload() is what stops a plan edit blanking them.
+function planOpToRow(op: {
+  opSeq: number;
+  operation: string;
+  opType: string;
+  machineId: string | null;
+  machineCodeText: string | null;
+  cycleTimeMin: string;
+  program: string | null;
+  toolNo: string | null;
+  toolDetails: string | null;
+  outsourceVendorId: string | null;
+  outsourceVendorText: string | null;
+  outsourceCost: string | null;
+  qcRequired: boolean;
+}): OpRow {
   return {
     uid: uid(),
     opSeq: op.opSeq,
     operation: op.operation,
     opType: (op.opType ?? 'process') as PlanOpInput['opType'],
+    machineId: op.machineId,
     machineCodeText: op.machineCodeText ?? '',
     cycleTimeMin: Number(op.cycleTimeMin),
+    program: op.program,
+    toolNo: op.toolNo,
+    toolDetails: op.toolDetails,
     qcRequired: op.qcRequired,
+    outsourceVendorId: op.outsourceVendorId,
     outsourceVendorText: op.outsourceVendorText ?? '',
     outsourceCost: Number(op.outsourceCost ?? 0),
   };
@@ -159,11 +182,17 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const docPresets = useMemo(() => DOC_PRESETS_FALLBACK, []);
   const defaultOpsQuery = useDefaultRouteOps(plan.itemId);
 
+  // How many ops this modal filled in from the route card, or null if it did
+  // not fill any in (the plan already had its own ops). Only used for the
+  // "N operations loaded" line — it never reaches the save payload.
+  const [autoLoadedCount, setAutoLoadedCount] = useState<number | null>(null);
+
   // Recompute ops when defaultOpsQuery resolves on first load AND the plan
   // currently has zero ops (initial blank state from chained-from-create).
   useEffect(() => {
     const incoming = (defaultOpsQuery.data?.ops ?? []) as PlanOpInput[];
     if (ops.length === 0 && incoming.length > 0) {
+      setAutoLoadedCount(incoming.length);
       setOps(
         incoming.map((op) => ({
           uid: uid(),
@@ -204,9 +233,14 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             opSeq: i + 1,
             operation: o.operation,
             opType: o.opType,
+            machineId: o.machineId ?? null,
             machineCodeText: o.machineCodeText || null,
             cycleTimeMin: o.cycleTimeMin,
+            program: o.program || null,
+            toolNo: o.toolNo || null,
+            toolDetails: o.toolDetails || null,
             qcRequired: o.qcRequired,
+            outsourceVendorId: o.outsourceVendorId ?? null,
             outsourceVendorText: o.outsourceVendorText || null,
             outsourceCost: o.outsourceCost,
           }))
@@ -506,9 +540,45 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               alignItems: 'center',
             }}
           >
-            <span className="form-label" style={{ marginBottom: 0 }}>
-              Operations Routing
-            </span>
+            <div style={{ minWidth: 0 }}>
+              <span className="form-label" style={{ marginBottom: 0 }}>
+                Operations Routing
+              </span>
+              {/* Where these ops came from. Planning has always auto-filled them
+                  from the item's active route card, but silently — a card that
+                  loaded and a card that does not exist looked identical here.
+                  Display only: the code and revision never enter the payload. */}
+              {plan.itemId ? (
+                <div style={{ fontSize: 11, marginTop: 2 }}>
+                  {defaultOpsQuery.isLoading ? (
+                    <span style={{ color: 'var(--text3)' }}>Loading…</span>
+                  ) : defaultOpsQuery.isError ? null : defaultOpsQuery.data?.routeCardCode ? (
+                    <>
+                      <span style={{ color: 'var(--text3)' }}>Route Card: </span>
+                      <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                        {defaultOpsQuery.data.routeCardCode}
+                      </span>
+                      {defaultOpsQuery.data.routeCardRevision != null ? (
+                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 9 }}>
+                          Rev {defaultOpsQuery.data.routeCardRevision}
+                        </span>
+                      ) : null}
+                      {autoLoadedCount != null ? (
+                        <span style={{ color: 'var(--text3)' }}>
+                          {' '}
+                          &mdash; {autoLoadedCount} operations loaded
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span style={{ color: 'var(--text3)' }}>
+                      Route Card: <span style={{ color: 'var(--amber)' }}>none</span> &mdash; enter
+                      the operations below
+                    </span>
+                  )}
+                </div>
+              ) : null}
+            </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--text3)' }}>{ops.length} ops</span>
               <button
@@ -682,6 +752,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               value={machineIdByCode(op.machineCodeText ?? '')}
                               onChange={(id) =>
                                 updateOp(op.uid, {
+                                  machineId: id,
                                   machineCodeText: id ? (machineById.get(id)?.code ?? '') : '',
                                 })
                               }
@@ -757,6 +828,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                 value={vendorIdByCode(op.outsourceVendorText ?? '')}
                                 onChange={(id) =>
                                   updateOp(op.uid, {
+                                    outsourceVendorId: id,
                                     outsourceVendorText: id ? (vendorById.get(id)?.code ?? '') : '',
                                   })
                                 }

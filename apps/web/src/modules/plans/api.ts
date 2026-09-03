@@ -1,10 +1,10 @@
 import type {
   CreatePlanInput,
+  DefaultRouteOpsResponse,
   ExecutePlanResultShape,
   ListPlansQuery,
   ListPlansResponse,
   PlanDetail,
-  PlanOpInput,
   PlanningDashboardResponse,
   ReleaseReservationInput,
   ReservationActionResult,
@@ -173,11 +173,17 @@ export function useNextPlanCode() {
   });
 }
 
+/** The item's active route card: its operations AND its identity.
+ *
+ *  `routeCardCode` / `routeCardRevision` are both null when the item has no
+ *  active route card (the same case in which `ops` comes back empty). They are
+ *  for display only — the screens show which card filled the operations in, and
+ *  never put the code or revision into a plan payload. */
 export function useDefaultRouteOps(itemId: string | null) {
-  return useQuery<{ ops: PlanOpInput[] }>({
+  return useQuery<DefaultRouteOpsResponse>({
     queryKey: plansKeys.defaultOps(itemId),
     queryFn: () =>
-      apiFetch<{ ops: PlanOpInput[] }>(
+      apiFetch<DefaultRouteOpsResponse>(
         `/plans/default-ops?itemId=${encodeURIComponent(itemId!)}`,
       ),
     enabled: !!itemId,

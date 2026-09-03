@@ -73,7 +73,9 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
   app.get('/plans/default-ops', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { itemId } = defaultRouteOpsQuerySchema.parse(req.query);
-    return { ops: await service.getDefaultRouteOpsForItem(itemId, req.user) };
+    // Service already answers in the defaultRouteOpsResponseSchema shape
+    // ({ ops, routeCardCode, routeCardRevision }) — no wrapping here.
+    return service.getDefaultRouteOpsForItem(itemId, req.user);
   });
 
   app.get('/planning-dashboard', async (req) => {

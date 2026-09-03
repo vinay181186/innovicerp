@@ -29,6 +29,11 @@ export const planOpSchema = z.object({
   opType: planOpTypeSchema,
   cycleTimeMin: z.string(),
   program: z.string().nullable(),
+  /** Tool number. Added alongside `plan_ops.tool_no` — route cards and jc_ops
+   *  both carried one, but the plan in between did not, so a route card's tool
+   *  number was dropped on the way to the Job Card AND blanked back onto the
+   *  route card the next time a plan for that item was executed. */
+  toolNo: z.string().nullable(),
   toolDetails: z.string().nullable(),
   qcRequired: z.boolean(),
   outsourceVendorId: z.string().uuid().nullable(),
@@ -152,6 +157,9 @@ const planOpInputSchema = z.object({
   opType: planOpTypeSchema.optional(),
   cycleTimeMin: z.number().nonnegative().optional(),
   program: z.string().trim().max(200).nullable().optional(),
+  // Same 64 as route_card_ops.tool_no and jc_ops.tool_no — the plan is the
+  // middle of that chain and must not narrow it.
+  toolNo: z.string().trim().max(64).nullable().optional(),
   toolDetails: z.string().trim().max(500).nullable().optional(),
   qcRequired: z.boolean().optional(),
   outsourceVendorId: z.string().uuid().nullable().optional(),
@@ -344,3 +352,19 @@ export const defaultRouteOpsQuerySchema = z.object({
   itemId: z.string().uuid(),
 });
 export type DefaultRouteOpsQuery = z.infer<typeof defaultRouteOpsQuerySchema>;
+
+/** What `GET /plans/default-ops` answers with.
+ *
+ *  It used to return `{ ops }` and nothing else, which is why planning could
+ *  load a route card's operations but never say so — the screen had no code or
+ *  revision to show, so a card that loaded and a card that did not exist looked
+ *  identical. The card's identity travels with its ops now.
+ *
+ *  Both identity fields are null when the item has no active route card, which
+ *  is also when `ops` is empty. */
+export const defaultRouteOpsResponseSchema = z.object({
+  ops: z.array(planOpInputSchema),
+  routeCardCode: z.string().nullable(),
+  routeCardRevision: z.number().int().positive().nullable(),
+});
+export type DefaultRouteOpsResponse = z.infer<typeof defaultRouteOpsResponseSchema>;

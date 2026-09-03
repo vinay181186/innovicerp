@@ -29,6 +29,13 @@
 // 4. Audit emission. CREATE / EDIT / DELETE rows land in activity_log
 //    with entity='Route Card' so the activity-log viewer can filter
 //    for route-card changes (legacy L7004 / L10275).
+//
+// 5. Auto-save (saveRouteCardForItem, bottom of this file). Saving a
+//    Job Card / executing a plan writes the item's route card so the
+//    next plan for the same item can load the routing back. Shares the
+//    ops-replace + revision-bump implementation with updateRouteCard
+//    (replaceRouteCardOps). ADR-051 deferred this write half; only the
+//    read half (plans.getDefaultRouteOpsForItem) had been ported.
 
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -42,6 +49,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { requireWriteRole } from '../../lib/auth';
+import { DEFAULT_FINAL_QC_OP, needsDefaultQcOp } from '../../lib/jc-default-qc';
 import {
   AuthorizationError,
   ConflictError,
@@ -620,74 +628,35 @@ export async function updateRouteCard(
     const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
     const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
 
-    // Capture PRE-update ops for the revision snapshot + diff note.
-    const oldOpRows = await tx
-      .select({
-        op: routeCardOps,
-        machineCode: machines.code,
-        ospVendorCode: vendors.code,
-      })
-      .from(routeCardOps)
-      .leftJoin(machines, eq(machines.id, routeCardOps.machineId))
-      .leftJoin(vendors, eq(vendors.id, routeCardOps.ospVendorId))
-      .where(and(eq(routeCardOps.routeCardId, id), isNull(routeCardOps.deletedAt)));
-    const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
-      opSeq: r.op.opSeq,
-      machineCode: r.machineCode ?? r.op.machineCodeText ?? null,
-      operation: r.op.operation,
-      opType: r.op.opType,
-      cycleTimeMin: r.op.cycleTimeMin,
-      ospVendorCode: r.ospVendorCode ?? r.op.ospVendorCodeText ?? null,
-      ospLeadDays: r.op.ospLeadDays,
-    }));
-
-    const newSnapshot: DiffOp[] = input.ops.map((o, i) => ({
-      opSeq: i + 1,
-      machineCode:
-        (o.machineId ? machinesLookup.byId.get(o.machineId)?.code : null) ??
-        o.machineCodeText ??
-        null,
-      operation: o.operation,
-      opType: o.opType,
-      cycleTimeMin: o.cycleTimeMin.toFixed(2),
-      ospVendorCode:
-        (o.ospVendorId ? vendorsLookup.byId.get(o.ospVendorId)?.code : null) ??
-        o.ospVendorCodeText ??
-        null,
-      ospLeadDays: o.ospLeadDays ?? null,
-    }));
-
-    const autoNote = computeRouteCardDiffNote(oldSnapshot, newSnapshot);
-    const finalNote = input.revisionNote?.trim() || autoNote;
-
-    // Hard-delete old op rows (pre-state is captured in the snapshot).
-    await tx.delete(routeCardOps).where(eq(routeCardOps.routeCardId, id));
-
-    const newRevision = header.currentRevision + 1;
-
+    // Header fields the ops-replace helper does not own.
     await tx
       .update(routeCards)
       .set({
         code: input.code,
         itemId: input.itemId,
         notes: input.notes ?? null,
-        currentRevision: newRevision,
         updatedBy: user.id,
         updatedAt: new Date(),
       })
       .where(eq(routeCards.id, id));
 
-    const opValues = assignOpValues(input.ops, id, companyId, user.id);
-    await tx.insert(routeCardOps).values(opValues);
-
-    await tx.insert(routeCardRevisions).values({
-      companyId,
-      routeCardId: id,
-      revisionNo: newRevision,
-      notes: finalNote,
-      opsSnapshot: buildOpsSnapshot(input.ops, machinesLookup, vendorsLookup),
-      createdBy: user.id,
-    });
+    // Ops swap + revision bump + snapshot live in ONE place
+    // (replaceRouteCardOps) shared with the auto-save path below.
+    // skipWhenUnchanged is false here: an explicit user save always
+    // records a revision, exactly as it did before this refactor.
+    const { newRevision } = await replaceRouteCardOps(
+      tx,
+      {
+        routeCardId: id,
+        companyId,
+        currentRevision: header.currentRevision,
+        ops: input.ops,
+        machinesLookup,
+        vendorsLookup,
+        note: input.revisionNote?.trim() || null,
+      },
+      user,
+    );
 
     await emitActivityLog(
       tx,
@@ -823,4 +792,320 @@ function buildOpsSnapshot(
       null,
     ospLeadDays: o.ospLeadDays ?? null,
   }));
+}
+
+// ─── Shared ops-replace + revision bump ───────────────────────────────────
+//
+// One implementation of "snapshot the ops that are there, swap in the new
+// ones, bump current_revision, log a revision row". Used by updateRouteCard
+// (explicit user edit) and by saveRouteCardForItem (auto-save from a Job
+// Card / plan execute).
+
+/** A route card op reduced to the fields that are actually persisted, so two
+ *  op lists can be compared for equality without caring about row ids. */
+interface ComparableOp {
+  opSeq: number;
+  machineId: string | null;
+  machineCodeText: string | null;
+  operation: string;
+  opType: string;
+  cycleTimeMin: number;
+  program: string | null;
+  toolNo: string | null;
+  toolDetails: string | null;
+  qcRequired: boolean;
+  ospVendorId: string | null;
+  ospVendorCodeText: string | null;
+  ospLeadDays: number | null;
+}
+
+function comparableFromInput(o: CreateRouteCardOpInput, index: number): ComparableOp {
+  return {
+    opSeq: index + 1,
+    machineId: o.machineId ?? null,
+    machineCodeText: o.machineCodeText ?? null,
+    operation: o.operation,
+    opType: o.opType,
+    cycleTimeMin: Number(o.cycleTimeMin ?? 0),
+    program: o.program ?? null,
+    toolNo: o.toolNo ?? null,
+    toolDetails: o.toolDetails ?? null,
+    qcRequired: Boolean(o.qcRequired),
+    ospVendorId: o.ospVendorId ?? null,
+    ospVendorCodeText: o.ospVendorCodeText ?? null,
+    ospLeadDays: o.ospLeadDays ?? null,
+  };
+}
+
+function comparableFromRow(r: typeof routeCardOps.$inferSelect): ComparableOp {
+  return {
+    opSeq: r.opSeq,
+    machineId: r.machineId ?? null,
+    machineCodeText: r.machineCodeText ?? null,
+    operation: r.operation,
+    opType: r.opType,
+    cycleTimeMin: Number(r.cycleTimeMin),
+    program: r.program ?? null,
+    toolNo: r.toolNo ?? null,
+    toolDetails: r.toolDetails ?? null,
+    qcRequired: Boolean(r.qcRequired),
+    ospVendorId: r.ospVendorId ?? null,
+    ospVendorCodeText: r.ospVendorCodeText ?? null,
+    ospLeadDays: r.ospLeadDays ?? null,
+  };
+}
+
+function opsAreIdentical(current: ComparableOp[], next: ComparableOp[]): boolean {
+  if (current.length !== next.length) return false;
+  return JSON.stringify(current) === JSON.stringify(next);
+}
+
+interface ReplaceRouteCardOpsParams {
+  routeCardId: string;
+  companyId: string;
+  /** The card's revision BEFORE this call. */
+  currentRevision: number;
+  ops: CreateRouteCardOpInput[];
+  machinesLookup: MachinesLookup;
+  vendorsLookup: VendorsLookup;
+  /** Explicit revision note; when null/empty an auto diff note is generated. */
+  note?: string | null;
+  /** Prefix put in front of the auto diff note (auto-save names its source doc). */
+  notePrefix?: string | null;
+  /** When true, an ops list identical to the stored one is a no-op: no revision
+   *  bump, no snapshot row. Used by the auto-save path so re-running the same
+   *  routing does not inflate the revision history. */
+  skipWhenUnchanged?: boolean;
+}
+
+async function replaceRouteCardOps(
+  tx: DbTransaction,
+  p: ReplaceRouteCardOpsParams,
+  user: AuthContext,
+): Promise<{ newRevision: number; changed: boolean }> {
+  // Capture PRE-update ops for the revision snapshot + diff note.
+  const oldOpRows = await tx
+    .select({
+      op: routeCardOps,
+      machineCode: machines.code,
+      ospVendorCode: vendors.code,
+    })
+    .from(routeCardOps)
+    .leftJoin(machines, eq(machines.id, routeCardOps.machineId))
+    .leftJoin(vendors, eq(vendors.id, routeCardOps.ospVendorId))
+    .where(
+      and(
+        eq(routeCardOps.routeCardId, p.routeCardId),
+        eq(routeCardOps.companyId, p.companyId),
+        isNull(routeCardOps.deletedAt),
+      ),
+    )
+    .orderBy(asc(routeCardOps.opSeq));
+
+  if (
+    p.skipWhenUnchanged === true &&
+    opsAreIdentical(
+      oldOpRows.map((r) => comparableFromRow(r.op)),
+      p.ops.map(comparableFromInput),
+    )
+  ) {
+    return { newRevision: p.currentRevision, changed: false };
+  }
+
+  const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
+    opSeq: r.op.opSeq,
+    machineCode: r.machineCode ?? r.op.machineCodeText ?? null,
+    operation: r.op.operation,
+    opType: r.op.opType,
+    cycleTimeMin: r.op.cycleTimeMin,
+    ospVendorCode: r.ospVendorCode ?? r.op.ospVendorCodeText ?? null,
+    ospLeadDays: r.op.ospLeadDays,
+  }));
+
+  const newSnapshot: DiffOp[] = p.ops.map((o, i) => ({
+    opSeq: i + 1,
+    machineCode:
+      (o.machineId ? p.machinesLookup.byId.get(o.machineId)?.code : null) ??
+      o.machineCodeText ??
+      null,
+    operation: o.operation,
+    opType: o.opType,
+    cycleTimeMin: o.cycleTimeMin.toFixed(2),
+    ospVendorCode:
+      (o.ospVendorId ? p.vendorsLookup.byId.get(o.ospVendorId)?.code : null) ??
+      o.ospVendorCodeText ??
+      null,
+    ospLeadDays: o.ospLeadDays ?? null,
+  }));
+
+  const autoNote = computeRouteCardDiffNote(oldSnapshot, newSnapshot);
+  const explicit = p.note?.trim();
+  const finalNote = explicit
+    ? explicit
+    : p.notePrefix
+      ? `${p.notePrefix} — ${autoNote}`
+      : autoNote;
+
+  // Hard-delete old op rows (pre-state is captured in the snapshot).
+  await tx
+    .delete(routeCardOps)
+    .where(
+      and(eq(routeCardOps.routeCardId, p.routeCardId), eq(routeCardOps.companyId, p.companyId)),
+    );
+
+  const newRevision = p.currentRevision + 1;
+
+  await tx
+    .update(routeCards)
+    .set({ currentRevision: newRevision, updatedBy: user.id, updatedAt: new Date() })
+    .where(and(eq(routeCards.id, p.routeCardId), eq(routeCards.companyId, p.companyId)));
+
+  await tx.insert(routeCardOps).values(assignOpValues(p.ops, p.routeCardId, p.companyId, user.id));
+
+  await tx.insert(routeCardRevisions).values({
+    companyId: p.companyId,
+    routeCardId: p.routeCardId,
+    revisionNo: newRevision,
+    notes: finalNote,
+    opsSnapshot: buildOpsSnapshot(p.ops, p.machinesLookup, p.vendorsLookup),
+    createdBy: user.id,
+  });
+
+  return { newRevision, changed: true };
+}
+
+// ─── Auto-save from a source document (Job Card / plan execute) ───────────
+
+/** Drop a trailing QC op that the SYSTEM appended (ADR-069 Rule B — job-cards
+ *  `withTerminalQcOp`, plans `needsDefaultQcOp`).
+ *
+ *  Why this matters: that QC op is generated, not entered. Stored on the route
+ *  card it would load back into the next plan, and the JC write would append a
+ *  fresh one on top — the routing would grow one QC op every cycle.
+ *
+ *  The test is the exact inverse of the append rule: strip the last op only
+ *  when it looks exactly like the generated one (opType 'qc', named DIR, cycle
+ *  time 0, qcRequired true) AND the remaining prefix is one that
+ *  `needsDefaultQcOp` would append that same op to. So anything stripped is
+ *  re-created byte-identically downstream, and an op that would NOT be
+ *  re-created (a mid-route DIR, a DIR following an outsource step, a QC step
+ *  the user named something else) is left untouched. */
+export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRouteCardOpInput[] {
+  const last = ops[ops.length - 1];
+  if (!last) return ops;
+  if (last.opType !== 'qc') return ops;
+  if (last.operation.trim().toUpperCase() !== DEFAULT_FINAL_QC_OP) return ops;
+  if (Number(last.cycleTimeMin ?? 0) !== 0) return ops;
+  if (last.qcRequired !== true) return ops;
+  const head = ops.slice(0, -1);
+  return needsDefaultQcOp(head) ? head : ops;
+}
+
+/** Write the item's route card from a source document's operations — the write
+ *  half of legacy `saveRouteCardForItem` (legacy L6918) that ADR-051 left as a
+ *  follow-up. Callers: job-cards create/edit and plans execute.
+ *
+ *  Runs inside the CALLER'S transaction on purpose: the route card must be
+ *  atomic with the Job Card, so a failure rolls both back instead of leaving a
+ *  Job Card beside a half-written route card.
+ *
+ *  Behaviour (legacy parity):
+ *    - nothing to save (empty after stripping the auto QC op) → no-op
+ *    - no active card for the item → create at revision 1 + a revision snapshot
+ *      noted "Created from <source code>"
+ *    - active card exists → replace its ops, bump the revision, snapshot noted
+ *      with the source code. One active card per item per company, matching the
+ *      `route_cards_company_item_uniq` partial unique index — never a second card.
+ *    - stored ops already identical → left completely untouched, so repeatedly
+ *      executing the same routing does not inflate the revision history.
+ *
+ *  PERMISSIONS — deliberate: NO `requireFormAccess(user, 'routecard_create')`
+ *  here. This is a side effect of a document the caller was already authorised
+ *  to save; gating it would stop a Data-Entry clerk who holds jc_create but no
+ *  Route Card rights from creating a Job Card at all. The caller's gate is the
+ *  gate that applies. */
+export async function saveRouteCardForItem(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  ops: CreateRouteCardOpInput[],
+  user: AuthContext,
+  /** Code of the document this routing came from (JC code or plan code) — goes
+   *  into the revision note so history says where the change came from. */
+  sourceCode: string,
+): Promise<void> {
+  const cleanOps = stripAutoTerminalQcOp(ops);
+  if (cleanOps.length === 0) return;
+
+  const machinesLookup = await loadMachinesByIds(
+    tx,
+    cleanOps.map((o) => o.machineId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
+  const vendorsLookup = await loadVendorsByIds(
+    tx,
+    cleanOps.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x)),
+    companyId,
+  );
+
+  const existing = await tx
+    .select({
+      id: routeCards.id,
+      code: routeCards.code,
+      currentRevision: routeCards.currentRevision,
+    })
+    .from(routeCards)
+    .where(
+      and(
+        eq(routeCards.companyId, companyId),
+        eq(routeCards.itemId, itemId),
+        isNull(routeCards.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  const card = existing[0];
+  if (card) {
+    await replaceRouteCardOps(
+      tx,
+      {
+        routeCardId: card.id,
+        companyId,
+        currentRevision: card.currentRevision,
+        ops: cleanOps,
+        machinesLookup,
+        vendorsLookup,
+        notePrefix: `Updated from ${sourceCode}`,
+        skipWhenUnchanged: true,
+      },
+      user,
+    );
+    return;
+  }
+
+  const code = await nextRouteCardCode(tx, companyId);
+  const inserted = await tx
+    .insert(routeCards)
+    .values({
+      companyId,
+      code,
+      itemId,
+      currentRevision: 1,
+      notes: null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: routeCards.id });
+  const header = inserted[0]!;
+
+  await tx.insert(routeCardOps).values(assignOpValues(cleanOps, header.id, companyId, user.id));
+
+  await tx.insert(routeCardRevisions).values({
+    companyId,
+    routeCardId: header.id,
+    revisionNo: 1,
+    notes: `Created from ${sourceCode}`,
+    opsSnapshot: buildOpsSnapshot(cleanOps, machinesLookup, vendorsLookup),
+    createdBy: user.id,
+  });
 }

@@ -428,11 +428,14 @@ describe('plans service — executePlan + defaults (PL-4)', () => {
       },
     ]);
 
-    const ops = await service.getDefaultRouteOpsForItem(itemId, admin);
-    expect(ops).toHaveLength(2);
-    expect(ops[0]?.operation).toBe('turn');
-    expect(ops[0]?.cycleTimeMin).toBe(4.5);
-    expect(ops[1]?.qcRequired).toBe(true);
+    const res = await service.getDefaultRouteOpsForItem(itemId, admin);
+    expect(res.ops).toHaveLength(2);
+    expect(res.ops[0]?.operation).toBe('turn');
+    expect(res.ops[0]?.cycleTimeMin).toBe(4.5);
+    expect(res.ops[1]?.qcRequired).toBe(true);
+    // The card's identity now travels with its ops (defaultRouteOpsResponseSchema).
+    expect(res.routeCardCode).toBe(`${TEST_PREFIX}RC-A`);
+    expect(res.routeCardRevision).toBe(1);
   });
 
   it('executePlan rejects when plan is not in planned status', async () => {

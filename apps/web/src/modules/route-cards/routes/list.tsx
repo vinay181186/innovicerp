@@ -83,9 +83,10 @@ function RouteCardsListPage(): React.JSX.Element {
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            💡 Route cards define the standard manufacturing sequence for each item. They are{' '}
-            <b>auto-loaded</b> when creating Job Cards. You can also create/edit route cards
-            directly here. Revision history is tracked on every save.
+            💡 Route cards define the standard manufacturing sequence for each item. A card's
+            operations are <b>loaded into the plan</b> when you plan that item, and executing that
+            plan creates the Job Card. You can also create/edit route cards directly here. Revision
+            history is tracked on every save.
           </span>
         </div>
       </div>
