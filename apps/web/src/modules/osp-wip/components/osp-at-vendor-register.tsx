@@ -9,10 +9,13 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useOspWip } from '../api';
 
-type FilterKey = 'all' | 'at_vendor' | 'not_sent';
+type FilterKey = 'all' | 'at_vendor' | 'not_sent' | 'ready_to_send';
 
 export function OspAtVendorRegister(): React.JSX.Element {
-  const [filter, setFilter] = useState<FilterKey>('at_vendor');
+  // Opens on 'all', not 'at_vendor'. The at-vendor bucket is empty whenever
+  // every outsourced op has come back, so defaulting to it showed an empty
+  // table on a register that does have rows. The KPI tile still filters to it.
+  const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
 
   const { data, isLoading, isError, error } = useOspWip({
@@ -59,7 +62,13 @@ export function OspAtVendorRegister(): React.JSX.Element {
                 Outsourced Operations{' '}
                 {filter !== 'all' ? (
                   <span style={{ color: 'var(--amber)', fontSize: 12 }}>
-                    (Filtered: {filter === 'at_vendor' ? 'still at vendor' : 'not yet sent'})
+                    (Filtered:{' '}
+                    {filter === 'at_vendor'
+                      ? 'still at vendor'
+                      : filter === 'not_sent'
+                        ? 'not yet sent'
+                        : 'ready to send today'}
+                    )
                   </span>
                 ) : null}
               </span>
@@ -94,12 +103,18 @@ export function OspAtVendorRegister(): React.JSX.Element {
                     <th className="td-ctr" style={{ color: 'var(--blue)' }}>
                       Not Sent
                     </th>
+                    {/* Purple: the only colour in this table not already spoken for by a
+                        bucket (it labels the item CODE, never a quantity), so a purple
+                        number cannot be misread as at-vendor/in-QC/accepted/not-sent. */}
+                    <th className="td-ctr" style={{ color: 'var(--purple)' }}>
+                      Ready to Send
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="empty-state">
+                      <td colSpan={14} className="empty-state">
                         No outsourced operations match this filter
                       </td>
                     </tr>
@@ -115,8 +130,11 @@ export function OspAtVendorRegister(): React.JSX.Element {
             💡 Every ordered piece reconciles as{' '}
             <b>Ordered = Accepted + In-QC + At-Vendor + Not-Sent</b>. "Accepted" is incoming-QC
             passed; "In QC" is returned but QC still pending; "At Vendor" is material physically out
-            (sent − returned) — all tracked here, not in finished stock. Figures are derived from
-            job-card counters and the return GRN's incoming QC; nothing is keyed in.
+            (sent − returned) — all tracked here, not in finished stock. <b>Not Sent</b> is the
+            order balance still to be outsourced eventually; <b>Ready to Send</b> is how much the
+            previous operation has actually cleared, i.e. what a challan will accept today.
+            Figures are derived from job-card counters and the return GRN's incoming QC; nothing
+            is keyed in.
           </div>
         </>
       ) : null}
@@ -173,6 +191,17 @@ function Row({ row }: { row: OspWipRow }): React.JSX.Element {
           {row.notSentQty || '—'}
         </span>
       </td>
+      {/* Not Sent is order − sent, an ORDER-level figure that over-states what may
+          physically leave (JC-8 op 8 read 70 while op 7 had cleared only 30, all of
+          them already out). This is the shop-floor number the challan will accept. */}
+      <td className="td-ctr">
+        <span
+          className="mono fw-700"
+          style={{ color: row.readyToSendQty > 0 ? 'var(--purple)' : 'var(--text3)' }}
+        >
+          {row.readyToSendQty || '—'}
+        </span>
+      </td>
     </tr>
   );
 }
@@ -187,7 +216,7 @@ function KpiStrip({
   setFilter: (k: FilterKey) => void;
 }): React.JSX.Element {
   const tiles: Array<{
-    variant: 'cyan' | 'amber' | 'blue' | 'green';
+    variant: 'cyan' | 'amber' | 'blue' | 'green' | 'purple';
     label: string;
     value: number | string;
     sub?: string;
@@ -213,6 +242,16 @@ function KpiStrip({
       value: summary.notSentQty,
       sub: 'Ordered but not dispatched',
       onClick: () => setFilter(filter === 'not_sent' ? 'all' : 'not_sent'),
+    },
+    {
+      // 'purple' matches the column below it. Like the 'blue' tile above, the
+      // theme defines no `.stat-card.purple` accent bar (see innovic-theme.css
+      // L468) — the tile renders bar-less, exactly as Not Sent already does.
+      variant: 'purple',
+      label: 'Ready to Send (pcs)',
+      value: summary.readyToSendQty,
+      sub: 'Cleared upstream, can go today',
+      onClick: () => setFilter(filter === 'ready_to_send' ? 'all' : 'ready_to_send'),
     },
     {
       variant: 'green',

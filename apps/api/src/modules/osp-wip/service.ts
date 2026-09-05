@@ -36,6 +36,7 @@ interface WipRawRow {
   at_vendor_qty: number;
   not_sent_qty: number;
   in_qc_qty: number;
+  ready_to_send_qty: number;
 }
 
 export async function listOspWip(
@@ -54,7 +55,8 @@ export async function listOspWip(
         w.jc_op_id, w.job_card_id, w.jc_code, w.op_seq, w.operation, w.outsource_status,
         w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
-        w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty
+        w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
+        w.ready_to_send_qty
       FROM public.v_osp_wip w
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
@@ -82,6 +84,10 @@ export async function listOspWip(
       atVendorQty: Number(r.at_vendor_qty),
       notSentQty: Number(r.not_sent_qty),
       inQcQty: Number(r.in_qc_qty),
+      // What may actually leave today (0110). notSentQty above is the ORDER
+      // balance and over-states this whenever the shop floor has not yet
+      // cleared the whole order into the op.
+      readyToSendQty: Number(r.ready_to_send_qty),
     }));
 
     // Summary always reflects ALL outsource ops (tiles are whole-register
@@ -92,6 +98,7 @@ export async function listOspWip(
       atVendorQty: rows.reduce((s, r) => s + r.atVendorQty, 0),
       notSentQty: rows.reduce((s, r) => s + r.notSentQty, 0),
       sentQty: rows.reduce((s, r) => s + r.sentQty, 0),
+      readyToSendQty: rows.reduce((s, r) => s + r.readyToSendQty, 0),
     };
 
     const filteredRows =
@@ -99,7 +106,9 @@ export async function listOspWip(
         ? rows.filter((r) => r.atVendorQty > 0)
         : input.filter === 'not_sent'
           ? rows.filter((r) => r.notSentQty > 0)
-          : rows;
+          : input.filter === 'ready_to_send'
+            ? rows.filter((r) => r.readyToSendQty > 0)
+            : rows;
 
     return {
       generatedAt: new Date().toISOString(),

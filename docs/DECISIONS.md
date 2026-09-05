@@ -7267,3 +7267,42 @@ Two nullable columns on `sales_order_lines` (migration 0104): `revision text` (o
 - Positive: viewable both right after upload (form state) and later on the SO detail page.
 - Negative: inherits the qc-docs bucket's coarse read policy (ADR-032) — hardening remains a separate org-wide task.
 - Built via the erp-backend (api) + erp-frontend (web) agents in parallel; shared schema + migration + docs done directly. Migration 0104 applied to the shared DB and verified (both columns text, nullable).
+
+## ADR-141: The +New PO screen must link the PO to its job card operation; the OSP register gains a "Ready to Send" column
+**Date:** 2026-09-05
+**Status:** Accepted
+
+### Context
+IN-JC-26-00008 op 8 "Coating" sat at `pr_raised` with 0 sent and 0 done, while PO IN-PO-00004 existed, challan IN-DC-00002 had sent 30 pcs to the vendor, and GRN IN-GRN-00001 had received and QC-accepted 30. Op 9 (TPI) showed nothing to inspect. The user also reported that the OSP outward challan accepted any quantity.
+
+All of it traced to ONE empty column. `createPurchaseOrderFromPr` (the PR screen's "Create PO") stamps `purchase_order_lines.source_jc_op_id`, `jc_ops.outsource_po_line_id` and `outsource_status='po_created'`. The manual `createPurchaseOrder` (the +New PO screen) stamped only the source PR. That column is load-bearing in three places:
+- `delivery-challans/cascades.ts` finds the op BY `outsource_po_line_id`; not finding it, it returned `{ fired: false }` silently — so the ADR-078 "cannot send more than upstream cleared" guard never ran, and the only surviving cap was `challan qty <= PO line qty` (100).
+- `v_jc_op_status` reads an outsource op's OUTPUT through the same column, so nothing the vendor returned counted and the next op got `input_avail = 0`.
+- `incoming-qc` credits the return through `purchase_order_lines.source_jc_op_id`, so QC-accepted pieces never reached the op.
+
+Separately, `v_osp_wip.not_sent_qty` is `job_cards.order_qty - outsource_sent_qty` — an ORDER-level figure. For op 8 it read 70 while op 7 had cleared only 30, all already at the vendor. The true "can I ship today" answer was 0. The register had no field carrying that number at all.
+
+### Decision
+Three parts.
+
+1. **`createPurchaseOrder` now carries the PR's `sourceJcOpId` onto its PO line and stamps the op** (`outsourcePoLineId`, `outsourceStatus='po_created'`), mirroring the from-PR path. The op update is guarded `isNull(jcOps.outsourcePoLineId)` so an op already committed to a PO line is never silently re-pointed.
+2. **`applyOutwardToJcOp` refuses instead of skipping** when a **job_work** PO line has no linked op, naming the repair ("raise the PO from its purchase request"). A buying PO legitimately has no op, so the pass-through survives for `poType != 'job_work'`.
+3. **`v_osp_wip` gains `ready_to_send_qty`** (migration 0110) = `GREATEST(0, input_avail - in-house completed - outsource_sent_qty)`, mirroring the cascade guard line for line, joined from `v_jc_op_status`. Surfaced as a new column + KPI tile + `ready_to_send` filter on the OSP At-Vendor Register.
+
+Migration 0109 repairs rows written before (1) — data-only, idempotent, quantities recomputed from the challans and GRNs that already exist.
+
+### Alternatives Considered
+- **Redefine `not_sent_qty` to mean the shop-floor figure** — rejected on the user's explicit choice. The two answer different questions: `not_sent_qty` plans the vendor's week ("70 of this order still to coat"), `ready_to_send_qty` says what may leave today ("0"). Losing the first to gain the second trades one blind spot for another.
+- **Fix only the view and leave the PO screen alone** — rejected: the register would then show correct availability for an op whose returns still never reach the job card. The missing link is the root cause; the column is a separate readability gap.
+- **Subtract the client-material gate (`loadMaterialCap`) inside the view** — rejected: it needs per-op party-material lookups that do not belong in a register view, and it only ever LOWERS the cap. The column is a planning indicator; the write path stays the authority, so the challan may still refuse a qty the column offered.
+- **Remove the +New PO screen's PR field entirely** so every OSP PO must come from the PR screen — rejected as bigger scope than the bug; ADR-139 already closed the PR-less PO door, and linking correctly is strictly better than forbidding.
+
+### Consequences
+- Positive: one root-cause fix closes four reported symptoms (status frozen, unlimited challan qty, returns not reaching the JC, next op starved).
+- Positive: the outward-DC guard can no longer be disabled by a data gap — it now refuses rather than waving the send through.
+- Positive: the register shows the number the challan will actually accept.
+- Negative: `updatePurchaseOrder`'s line-replace path was NOT given the same PR->op carry. Editing a PO's lines can still drop the link. Recorded as Open.
+- Negative: `v_osp_wip` now joins `v_jc_op_status`, a heavier view. Acceptable for a register screen scoped to outsource ops; watch if the OSP op count grows.
+- Open: JW DC Outward (Returnable Gate Pass) still sends goods with no availability check and no `jc_ops` cascade, and the two challan modules cannot see each other's sent totals. Awaiting the user's decision.
+- Open: OSP PRs are still raised at the full order qty (`plan.planQty` / `jc.orderQty`) regardless of what has cleared. Awaiting the user's decision — it may be deliberate procurement practice.
+- Verification: typecheck + lint only (the api suite hits the shared prod DB). 0109 and 0110 applied and verified against live data: op 8 now reads `received`, sent 30, returned 30; op 9 `input_avail` 30; `ready_to_send_qty` 0 for op 8 and 1 for IN-JC-26-00002 op 1.
