@@ -675,6 +675,19 @@ export async function createPurchaseOrder(
       .returning();
     const header = inserted[0]!;
 
+    // An OSP purchase request remembers the job-card operation it was raised
+    // for. The PR-screen "Create PO" path copies that onto its PO line; this
+    // path never did, so a PO built on the +New PO screen left the operation
+    // with no PO line to point back at. That one missing link silently disabled
+    // the outward-DC quantity guard (which finds the op BY that link) and
+    // stopped the vendor's returned pieces ever reaching the job card
+    // (IN-JC-26-00008 op 8 / IN-PO-00004: 30 sent and accepted, card frozen at
+    // "PR raised"). Carry the PR's op onto the line unless the caller named one.
+    const jcOpIdByPrId = new Map<string, string>();
+    for (const pr of sourcePrs) {
+      if (pr.sourceJcOpId) jcOpIdByPrId.set(pr.id, pr.sourceJcOpId);
+    }
+
     const lineValues = input.lines.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
       return {
@@ -689,7 +702,8 @@ export async function createPurchaseOrder(
         receivedQty: l.receivedQty ?? 0,
         dueDate: l.dueDate ?? null,
         sourceSoLineId: l.sourceSoLineId ?? null,
-        sourceJcOpId: l.sourceJcOpId ?? null,
+        sourceJcOpId:
+          l.sourceJcOpId ?? (l.sourcePrId ? (jcOpIdByPrId.get(l.sourcePrId) ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
         ramRemark: l.ramRemark ?? null,
         lineRemarks: l.lineRemarks ?? null,
@@ -698,6 +712,26 @@ export async function createPurchaseOrder(
       };
     });
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
+
+    // Advance every linked outsource op, exactly as the from-PR path does at
+    // createPurchaseOrderFromPr. Once the op knows its PO line, the outward-DC
+    // cascade can find it -- which is what caps the send at the qty upstream has
+    // actually cleared, and what lets the GRN / incoming-QC return flow back
+    // onto the job card. Only ops not already committed to a PO line are
+    // touched, so re-running against an op that is already on another PO is a
+    // no-op rather than a silent re-point.
+    for (const line of insertedLines) {
+      if (!line.sourceJcOpId) continue;
+      await tx
+        .update(jcOps)
+        .set({
+          outsourcePoLineId: line.id,
+          outsourceStatus: 'po_created',
+          updatedAt: new Date(),
+          updatedBy: user.id,
+        })
+        .where(and(eq(jcOps.id, line.sourceJcOpId), isNull(jcOps.outsourcePoLineId)));
+    }
 
     // Stamp every source PR: linked to this PO, converted, in the same tx as
     // the PO itself. Deliberately NOT touching the PR's vendorId /

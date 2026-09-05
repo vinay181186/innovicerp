@@ -31,7 +31,7 @@
 // and let a later dispatch drive on-hand negative (SO-517 trace).
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { jcOps, jobCards } from '../../db/schema';
+import { jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
 import { loadMaterialCap, materialCapMessage } from '../op-entry/service';
@@ -85,7 +85,31 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
     )
     .limit(1);
   const op = rows[0];
-  if (!op) return { fired: false };
+  if (!op) {
+    // A buying PO legitimately has no operation behind it -- nothing to cap, so
+    // pass through. A JOB-WORK PO line is different: it exists precisely because
+    // an operation is being outsourced, so arriving here means the PO was built
+    // without its op link and EVERY guard below is about to be skipped in
+    // silence. That is how a 100-pc challan was raised against an operation that
+    // had cleared 30 (IN-JC-26-00008 op 8 / IN-PO-00004). Refuse, and name the
+    // repair, instead of letting the send through unchecked.
+    const poRows = await tx
+      .select({ poType: purchaseOrders.poType, poCode: purchaseOrders.code })
+      .from(purchaseOrderLines)
+      .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
+      .where(eq(purchaseOrderLines.id, purchaseOrderLineId))
+      .limit(1);
+    const po = poRows[0];
+    if (po?.poType === 'job_work') {
+      throw new ValidationError(
+        `PO ${po.poCode} is a job-work order, but this line is not linked to a job card ` +
+          'operation -- so how many pieces may be sent cannot be checked. Raise the PO from ' +
+          'its purchase request (Purchase Requests -> Create PO) so the operation is linked, ' +
+          'then issue the challan.',
+      );
+    }
+    return { fired: false };
+  }
 
   // Availability guard (ADR-078): you cannot outsource more than the previous
   // stage has actually cleared into this op. The in-house progress paths already
