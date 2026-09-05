@@ -675,17 +675,27 @@ export async function createPurchaseOrder(
       .returning();
     const header = inserted[0]!;
 
-    // An OSP purchase request remembers the job-card operation it was raised
-    // for. The PR-screen "Create PO" path copies that onto its PO line; this
-    // path never did, so a PO built on the +New PO screen left the operation
-    // with no PO line to point back at. That one missing link silently disabled
-    // the outward-DC quantity guard (which finds the op BY that link) and
-    // stopped the vendor's returned pieces ever reaching the job card
-    // (IN-JC-26-00008 op 8 / IN-PO-00004: 30 sent and accepted, card frozen at
-    // "PR raised"). Carry the PR's op onto the line unless the caller named one.
+    // A purchase request remembers BOTH the job-card operation it was raised for
+    // and the sales-order line that ultimately pays for it. The PR-screen
+    // "Create PO" path copies both onto its PO line; this path copied neither,
+    // so a PO built on the +New PO screen produced a line with no provenance:
+    //
+    //   * no op link -> the operation had no PO line to point back at, which
+    //     silently disabled the outward-DC quantity guard (it finds the op BY
+    //     that link) and stopped the vendor's returned pieces ever reaching the
+    //     job card. IN-JC-26-00008 op 8 / IN-PO-00004: 30 sent and accepted,
+    //     card frozen at "PR raised".
+    //   * no SO line -> the OSP delivery challan could not name its Sales Order.
+    //     The DC read resolves the SO through `pol.source_so_line_id` and has no
+    //     other route, so IN-DC-00002/3/4 all printed "-" for SO even though the
+    //     chain PO line -> PR -> SO line was intact one hop away.
+    //
+    // Carry both off the source PR unless the caller named one explicitly.
     const jcOpIdByPrId = new Map<string, string>();
+    const soLineIdByPrId = new Map<string, string>();
     for (const pr of sourcePrs) {
       if (pr.sourceJcOpId) jcOpIdByPrId.set(pr.id, pr.sourceJcOpId);
+      if (pr.sourceSoLineId) soLineIdByPrId.set(pr.id, pr.sourceSoLineId);
     }
 
     const lineValues = input.lines.map((l, i) => {
@@ -701,7 +711,8 @@ export async function createPurchaseOrder(
         rate: rateToString(l),
         receivedQty: l.receivedQty ?? 0,
         dueDate: l.dueDate ?? null,
-        sourceSoLineId: l.sourceSoLineId ?? null,
+        sourceSoLineId:
+          l.sourceSoLineId ?? (l.sourcePrId ? (soLineIdByPrId.get(l.sourcePrId) ?? null) : null),
         sourceJcOpId:
           l.sourceJcOpId ?? (l.sourcePrId ? (jcOpIdByPrId.get(l.sourcePrId) ?? null) : null),
         sourcePrId: l.sourcePrId ?? null,
