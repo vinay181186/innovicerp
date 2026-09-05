@@ -1030,6 +1030,12 @@ async function executeManufacture(
     routeCardOpsFromPlan,
     user,
     plan.code,
+    {
+      rawMaterialGradeId: plan.rawMaterialGradeId,
+      rawMaterialGradeText: plan.rawMaterialGradeText,
+      rawMaterialSizeId: plan.rawMaterialSizeId,
+      rawMaterialSizeText: plan.rawMaterialSizeText,
+    },
   );
 
   // Auto-raise a JW_OSP purchase request for every op ticked "Outsource".

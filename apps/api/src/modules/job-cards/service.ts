@@ -1387,6 +1387,7 @@ export async function createJobCard(input: JobCardWriteInput, user: AuthContext)
         toRouteCardOps(input.ops, types.slice(0, input.ops.length), machineMap, vendorMap),
         user,
         code,
+        rawMaterial,
       );
     }
     await registerQcDocs(tx, input, { companyId, jobCardId, jcCode: code, userId: user.id });
@@ -1775,6 +1776,10 @@ export async function updateJobCard(
     }
 
     // 4. Header.
+    // Resolved once, up here: the header write below AND the route-card
+    // auto-save at step 6 both need it, and resolving it twice would run the
+    // master lookups twice for the same answer.
+    const rawMaterial = await resolveJcRawMaterial(tx, companyId, input);
     await tx
       .update(jobCards)
       .set({
@@ -1792,7 +1797,9 @@ export async function updateJobCard(
         sourceJwLineId: head.sourceJwLineId,
         // Raw material: same resolve-then-snapshot rule as create. The form
         // always sends both sides, so clearing a picker clears the JC.
-        ...(await resolveJcRawMaterial(tx, companyId, input)),
+        // Hoisted above rather than resolved inline because the route-card
+        // auto-save further down needs the same values.
+        ...rawMaterial,
         updatedBy: user.id,
         updatedAt: now,
       })
@@ -1826,6 +1833,7 @@ export async function updateJobCard(
         toRouteCardOps(input.ops, types.slice(0, input.ops.length), machineMap, vendorMap),
         user,
         head.code,
+        rawMaterial,
       );
     }
 

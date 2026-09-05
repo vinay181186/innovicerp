@@ -189,7 +189,7 @@ async function assertVendorIdsExist(
   return lookup;
 }
 
-interface ResolvedRawMaterial {
+export interface ResolvedRawMaterial {
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
@@ -1200,6 +1200,11 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *
  *  Behaviour (legacy parity):
  *    - nothing to save (empty after stripping the auto QC op) → no-op
+ *    - the source document's raw material grade + size are carried onto the
+ *      card. They are what the card is cut from, and until this was wired the
+ *      auto-save wrote the operations and dropped the material, so every card
+ *      born from a Job Card or a plan showed a blank Grade and Size on the
+ *      detail page and in the master list.
  *    - no active card for the item → create at revision 0 + a revision snapshot
  *      noted "Created from <source code>"
  *    - active card exists → replace its ops, bump the revision, snapshot noted
@@ -1222,6 +1227,10 @@ export async function saveRouteCardForItem(
   /** Code of the document this routing came from (JC code or plan code) — goes
    *  into the revision note so history says where the change came from. */
   sourceCode: string,
+  /** The grade + size the source document was planned against. Required, not
+   *  optional: there are only three callers and each one has this to hand, and
+   *  an optional argument is exactly how it went missing in the first place. */
+  rawMaterial: ResolvedRawMaterial,
 ): Promise<void> {
   const cleanOps = stripAutoTerminalQcOp(ops);
   if (cleanOps.length === 0) return;
@@ -1242,6 +1251,8 @@ export async function saveRouteCardForItem(
       id: routeCards.id,
       code: routeCards.code,
       currentRevision: routeCards.currentRevision,
+      rawMaterialGradeText: routeCards.rawMaterialGradeText,
+      rawMaterialSizeText: routeCards.rawMaterialSizeText,
     })
     .from(routeCards)
     .where(
@@ -1255,6 +1266,39 @@ export async function saveRouteCardForItem(
 
   const card = existing[0];
   if (card) {
+    // Raw material moves FORWARDS only. A plan that names EN24 sets EN24; a
+    // plan that names nothing leaves whatever the card already held. Blanking a
+    // grade because this particular document happened not to mention one would
+    // throw away the answer to "what is this part cut from".
+    const rmPatch: Partial<ResolvedRawMaterial> = {};
+    const rmChanges: string[] = [];
+    if (
+      rawMaterial.rawMaterialGradeText &&
+      rawMaterial.rawMaterialGradeText !== card.rawMaterialGradeText
+    ) {
+      rmChanges.push(
+        `Grade ${noteVal(card.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
+      );
+      rmPatch.rawMaterialGradeId = rawMaterial.rawMaterialGradeId;
+      rmPatch.rawMaterialGradeText = rawMaterial.rawMaterialGradeText;
+    }
+    if (
+      rawMaterial.rawMaterialSizeText &&
+      rawMaterial.rawMaterialSizeText !== card.rawMaterialSizeText
+    ) {
+      rmChanges.push(
+        `Size ${noteVal(card.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
+      );
+      rmPatch.rawMaterialSizeId = rawMaterial.rawMaterialSizeId;
+      rmPatch.rawMaterialSizeText = rawMaterial.rawMaterialSizeText;
+    }
+    if (rmChanges.length > 0) {
+      await tx
+        .update(routeCards)
+        .set({ ...rmPatch, updatedBy: user.id, updatedAt: new Date() })
+        .where(and(eq(routeCards.id, card.id), eq(routeCards.companyId, companyId)));
+    }
+
     await replaceRouteCardOps(
       tx,
       {
@@ -1265,7 +1309,11 @@ export async function saveRouteCardForItem(
         machinesLookup,
         vendorsLookup,
         notePrefix: `Updated from ${sourceCode}`,
-        skipWhenUnchanged: true,
+        headerNote: rmChanges.length > 0 ? rmChanges.join(', ') : null,
+        // A material swap IS a change, so it earns a revision even when the
+        // operations came back identical. skipWhenUnchanged exists to stop
+        // re-running the same plan inflating the history — not to hide this.
+        skipWhenUnchanged: rmChanges.length === 0,
       },
       user,
     );
@@ -1280,6 +1328,7 @@ export async function saveRouteCardForItem(
       code,
       itemId,
       currentRevision: 0,
+      ...rawMaterial,
       notes: null,
       createdBy: user.id,
       updatedBy: user.id,
