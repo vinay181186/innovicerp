@@ -175,7 +175,7 @@ describe('route-card service — CRUD', () => {
       admin,
     );
     expect(detail.code).toMatch(/^IN-RC-\d{5}$/);
-    expect(detail.currentRevision).toBe(1);
+    expect(detail.currentRevision).toBe(0);
     expect(detail.ops).toHaveLength(1);
     expect(detail.ops[0]!.opSeq).toBe(1);
     expect(detail.ops[0]!.machineCode).toBe(`${TEST_PREFIX}MACH`);
@@ -405,7 +405,7 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
-    expect(created.currentRevision).toBe(1);
+    expect(created.currentRevision).toBe(0);
 
     const updated = await service.updateRouteCard(
       created.id,
@@ -431,11 +431,11 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
-    expect(updated.currentRevision).toBe(2);
+    expect(updated.currentRevision).toBe(1);
     expect(updated.ops).toHaveLength(2);
     expect(updated.revisions).toHaveLength(2);
-    const rev2 = updated.revisions.find((r) => r.revisionNo === 2)!;
-    expect(rev2.notes).toMatch(/Added|Changed/);
+    const rev1 = updated.revisions.find((r) => r.revisionNo === 1)!;
+    expect(rev1.notes).toMatch(/Added|Changed/);
   });
 
   it('updateRouteCard honours caller-provided revisionNote over auto-generated', async () => {
@@ -487,8 +487,8 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
-    const rev2 = updated.revisions.find((r) => r.revisionNo === 2)!;
-    expect(rev2.notes).toBe(customNote);
+    const rev1 = updated.revisions.find((r) => r.revisionNo === 1)!;
+    expect(rev1.notes).toBe(customNote);
   });
 
   it('updateRouteCard rejects move-to-already-claimed-item (ConflictError)', async () => {

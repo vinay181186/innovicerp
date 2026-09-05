@@ -387,6 +387,8 @@ export type DefaultRouteOpsQuery = z.infer<typeof defaultRouteOpsQuerySchema>;
 export const defaultRouteOpsResponseSchema = z.object({
   ops: z.array(planOpInputSchema),
   routeCardCode: z.string().nullable(),
-  routeCardRevision: z.number().int().positive().nullable(),
+  // nonnegative: a brand-new route card is Rev 0, and the planning screen
+  // must be able to show that rather than fail validation.
+  routeCardRevision: z.number().int().nonnegative().nullable(),
 });
 export type DefaultRouteOpsResponse = z.infer<typeof defaultRouteOpsResponseSchema>;

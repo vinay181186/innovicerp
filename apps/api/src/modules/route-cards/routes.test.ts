@@ -122,7 +122,7 @@ describe('route-card routes', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.code).toBe(`${TEST_PREFIX}R1`);
-    expect(body.currentRevision).toBe(1);
+    expect(body.currentRevision).toBe(0);
     expect(body.ops).toHaveLength(1);
     expect(body.revisions).toHaveLength(1);
   });

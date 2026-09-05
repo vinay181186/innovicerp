@@ -31,7 +31,11 @@ export const routeCardSchema = z.object({
   companyId: z.string().uuid(),
   code: z.string(),
   itemId: z.string().uuid(),
-  currentRevision: z.number().int().positive(),
+  // Revision 0 is the number a card is BORN with; the first edit makes it
+  // Rev 1. nonnegative, not positive — `.positive()` here would reject every
+  // freshly created card. Cards created before this change still start at 1
+  // and were deliberately left alone, so both are valid.
+  currentRevision: z.number().int().nonnegative(),
   // The stock this item is normally cut from. A route card is one-per-item and
   // says HOW the part is made; grade + size say WHAT it is made from, so they
   // belong on the same sheet. FK plus a text snapshot, like every other carrier
@@ -84,7 +88,8 @@ export const routeCardRevisionSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   routeCardId: z.string().uuid(),
-  revisionNo: z.number().int().positive(),
+  // 0 for the creation row — see routeCardSchema.currentRevision.
+  revisionNo: z.number().int().nonnegative(),
   notes: z.string().nullable(),
   // Snapshot of ops AS THEY WERE at this revision. Stored as jsonb
   // so the diff trail survives even after op rows are replaced.

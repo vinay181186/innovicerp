@@ -4,9 +4,10 @@
 //
 // Architectural notes:
 //
-// 1. Revision lifecycle. createRouteCard writes current_revision=1 +
+// 1. Revision lifecycle. createRouteCard writes current_revision=0 +
 //    a matching route_card_revisions row with the initial ops as the
-//    snapshot. updateRouteCard bumps current_revision by 1, snapshots
+//    snapshot — a card is BORN at Rev 0, and its first edit makes it
+//    Rev 1. updateRouteCard bumps current_revision by 1, snapshots
 //    the PRE-update ops, and auto-generates a diff note if the caller
 //    didn't provide one. Matches legacy revisionLog[] behaviour
 //    (saveRouteCardForItem L6929-6931).
@@ -610,7 +611,7 @@ export async function createRouteCard(
         companyId,
         code,
         itemId: input.itemId,
-        currentRevision: 1,
+        currentRevision: 0,
         ...rawMaterial,
         notes: input.notes ?? null,
         createdBy: user.id,
@@ -626,7 +627,7 @@ export async function createRouteCard(
     await tx.insert(routeCardRevisions).values({
       companyId,
       routeCardId: header.id,
-      revisionNo: 1,
+      revisionNo: 0,
       notes: 'Initial creation',
       opsSnapshot: snapshot,
       createdBy: user.id,
@@ -1111,7 +1112,7 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *
  *  Behaviour (legacy parity):
  *    - nothing to save (empty after stripping the auto QC op) → no-op
- *    - no active card for the item → create at revision 1 + a revision snapshot
+ *    - no active card for the item → create at revision 0 + a revision snapshot
  *      noted "Created from <source code>"
  *    - active card exists → replace its ops, bump the revision, snapshot noted
  *      with the source code. One active card per item per company, matching the
@@ -1190,7 +1191,7 @@ export async function saveRouteCardForItem(
       companyId,
       code,
       itemId,
-      currentRevision: 1,
+      currentRevision: 0,
       notes: null,
       createdBy: user.id,
       updatedBy: user.id,
@@ -1203,7 +1204,7 @@ export async function saveRouteCardForItem(
   await tx.insert(routeCardRevisions).values({
     companyId,
     routeCardId: header.id,
-    revisionNo: 1,
+    revisionNo: 0,
     notes: `Created from ${sourceCode}`,
     opsSnapshot: buildOpsSnapshot(cleanOps, machinesLookup, vendorsLookup),
     createdBy: user.id,

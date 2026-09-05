@@ -668,7 +668,12 @@ export const routeCards = pgTable(
     itemId: uuid('item_id')
       .notNull()
       .references(() => items.id),
-    currentRevision: integer('current_revision').notNull().default(1),
+    // A new card is born at revision 0; the first edit bumps it to 1
+    // (migration 0111). Cards created before that change started at 1 and
+    // were left as they were, so old and new numbering both exist on
+    // purpose. Nothing writes this default today — both create paths pass
+    // the value explicitly — but a third copy saying "1" would be a trap.
+    currentRevision: integer('current_revision').notNull().default(0),
     // Raw material this item is normally cut from (migration 0108). The route
     // card says HOW the part is made; grade + size say WHAT it is made from,
     // so they sit on the same sheet. Both masters are optional and independent.
