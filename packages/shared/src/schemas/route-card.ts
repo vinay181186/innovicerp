@@ -108,10 +108,20 @@ export const routeCardRevisionSchema = z.object({
       toolDetails: z.string().nullable().optional(),
       ospVendorCode: z.string().nullable().optional(),
       ospLeadDays: z.number().int().nullable().optional(),
+      // Whether this step needed QC. Optional on purpose: revision rows
+      // written before this field was added do not carry it, and an old
+      // history row must keep loading rather than fail validation. Absent
+      // means "not recorded", which is why the screen shows nothing at all
+      // for those rows instead of guessing "no".
+      qcRequired: z.boolean().optional(),
     }),
   ),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
+  /** Who made this revision, resolved for display. The id was always stored;
+   *  without the name beside it the history could say WHEN a routing changed
+   *  but never WHO changed it. Null when the user row is gone. */
+  createdByName: z.string().nullable().default(null),
 });
 export type RouteCardRevision = z.infer<typeof routeCardRevisionSchema>;
 

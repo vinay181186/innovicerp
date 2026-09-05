@@ -490,7 +490,7 @@ Append-only history of past route card revisions. Snapshot held as `jsonb` (arch
 | `route_card_id` | `uuid`        | not null, FK → `route_cards(id) on delete cascade`    |
 | `revision_no`   | `integer`     | not null. 1-indexed                                   |
 | `notes`         | `text`        | nullable. Legacy `notes` (e.g. `"Updated"`)           |
-| `ops_snapshot`  | `jsonb`       | not null. Frozen array of ops at the time of revision |
+| `ops_snapshot`  | `jsonb`       | not null. Frozen array of the ops **as at this revision** (not the ops before it — Rev 2's snapshot is the routing Rev 2 produced). Per op: `opSeq`, `machineId`, `machineCode`, `operation`, `opType`, `cycleTimeMin`, `program`, `toolNo`, `toolDetails`, `ospVendorCode`, `ospLeadDays`, `qcRequired`. `qcRequired` was added 2026-09-05 and is **absent** on rows written before then — readers must treat missing as "not recorded", never as `false`. No migration: jsonb, so old rows simply lack the key |
 | `created_at`    | `timestamptz` | not null, default `now()`                             |
 | `created_by`    | `uuid`        | not null, FK → `users(id)`                            |
 

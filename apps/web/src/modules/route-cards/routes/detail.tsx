@@ -1,9 +1,18 @@
 // Route Card detail page — header + ops table + revision history.
 // Mirrors legacy viewRouteCard modal (L10143).
 
+import type { RouteCardRevision } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil, Printer, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Printer,
+  Trash2,
+} from 'lucide-react';
+import { Fragment, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useItem } from '../../items/api';
@@ -295,41 +304,183 @@ function RouteCardDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      {detail.revisions.length > 0 ? (
-        <div className="panel">
-          <div className="panel-hdr">
-            <div className="panel-title">▸ Revision History ({detail.revisions.length})</div>
-          </div>
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>Rev</th>
-                  <th>Date</th>
-                  <th>Notes</th>
-                  <th className="td-ctr">Snapshot ops</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.revisions.map((rev) => (
-                  <tr key={rev.id}>
+      {detail.revisions.length > 0 ? <RevisionHistory revisions={detail.revisions} /> : null}
+    </div>
+  );
+}
+
+// ─── Revision history ─────────────────────────────────────────────────────
+//
+// Every revision has always carried a FULL snapshot of the operations as they
+// stood at that revision — the server keeps it as JSON precisely so the trail
+// survives the live op rows being wiped and rewritten on each save. The panel
+// used to print the length of that array and nothing else, so the history could
+// say Rev 2 held eight operations without saying what they were.
+//
+// Each row opens now. The colours and chips deliberately match the live
+// operations table above, so an old routing reads exactly like the current one.
+
+function opAccent(opType: string): string {
+  return opType === 'qc'
+    ? 'var(--green)'
+    : opType === 'outsource'
+      ? 'var(--purple)'
+      : 'var(--text3)';
+}
+
+function RevisionHistory({ revisions }: { revisions: RouteCardRevision[] }): React.JSX.Element {
+  // One revision open at a time. Two snapshots expanded in a single column read
+  // as one long undifferentiated list, which is worse than showing neither.
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  return (
+    <div className="panel">
+      <div className="panel-hdr">
+        <div className="panel-title">▸ Revision History ({revisions.length})</div>
+        <div className="text3" style={{ fontSize: 11 }}>
+          Click a revision to see the operations it held
+        </div>
+      </div>
+      <div className="tbl-wrap">
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th style={{ width: 28 }} />
+              <th>Rev</th>
+              <th>Date</th>
+              <th>By</th>
+              <th>Notes</th>
+              <th className="td-ctr">Ops</th>
+            </tr>
+          </thead>
+          <tbody>
+            {revisions.map((rev) => {
+              const open = openId === rev.id;
+              return (
+                <Fragment key={rev.id}>
+                  <tr
+                    onClick={() => setOpenId(open ? null : rev.id)}
+                    style={{ cursor: 'pointer' }}
+                    title={open ? 'Hide the operations' : 'Show the operations at this revision'}
+                  >
+                    <td className="td-ctr text3">
+                      {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    </td>
                     <td className="mono fw-700" style={{ color: 'var(--amber)' }}>
                       Rev {rev.revisionNo}
                     </td>
                     <td className="text2" style={{ fontSize: 11 }}>
                       {new Date(rev.createdAt).toISOString().slice(0, 10)}
                     </td>
+                    <td className="text2" style={{ fontSize: 11 }}>
+                      {rev.createdByName ?? '—'}
+                    </td>
                     <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
                       {rev.notes ?? '—'}
                     </td>
                     <td className="td-ctr mono">{rev.opsSnapshot.length}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
+                  {open ? (
+                    <tr>
+                      <td colSpan={6} style={{ background: 'var(--bg3)', padding: '8px 12px 12px' }}>
+                        <div
+                          className="text3"
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: '.07em',
+                            marginBottom: 6,
+                          }}
+                        >
+                          ROUTING AT REV {rev.revisionNo}
+                        </div>
+                        <div className="tbl-wrap">
+                          <table className="innovic-table">
+                            <thead>
+                              <tr>
+                                <th className="td-ctr">#</th>
+                                <th>Type</th>
+                                <th>Machine / Vendor</th>
+                                <th>Operation</th>
+                                <th className="td-ctr">Cycle</th>
+                                <th>Program / Lead</th>
+                                <th>Tool No</th>
+                                <th>Tool Details</th>
+                                <th className="td-ctr">QC</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rev.opsSnapshot.map((op) => {
+                                const accent = opAccent(op.opType);
+                                return (
+                                  <tr key={`${rev.id}-${op.opSeq}`}>
+                                    <td className="td-ctr mono fw-700" style={{ color: accent }}>
+                                      {op.opSeq}
+                                    </td>
+                                    <td>
+                                      <span
+                                        className="badge"
+                                        style={{ color: accent, fontWeight: 700 }}
+                                      >
+                                        {op.opType.toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td className="mono" style={{ fontSize: 12 }}>
+                                      {op.opType === 'outsource'
+                                        ? (op.ospVendorCode ?? '—')
+                                        : (op.machineCode ?? '—')}
+                                    </td>
+                                    <td className="fw-700">{op.operation}</td>
+                                    <td className="td-ctr mono">{Number(op.cycleTimeMin) || '—'}</td>
+                                    <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
+                                      {op.opType === 'outsource'
+                                        ? op.ospLeadDays != null
+                                          ? `${op.ospLeadDays}d lead`
+                                          : '—'
+                                        : (op.program ?? '—')}
+                                    </td>
+                                    <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                                      {op.toolNo ?? '—'}
+                                    </td>
+                                    <td className="text3" style={{ fontSize: 12 }}>
+                                      {op.toolDetails ?? '—'}
+                                    </td>
+                                    {/* undefined means this revision predates the
+                                        QC flag being snapshotted. Shown as "not
+                                        recorded" — never guessed as a No. */}
+                                    <td
+                                      className="td-ctr"
+                                      style={{
+                                        color:
+                                          op.qcRequired === true ? 'var(--green)' : 'var(--text3)',
+                                      }}
+                                      title={
+                                        op.qcRequired === undefined
+                                          ? 'Not recorded — this revision predates QC being kept in the history'
+                                          : undefined
+                                      }
+                                    >
+                                      {op.qcRequired === undefined
+                                        ? '—'
+                                        : op.qcRequired
+                                          ? 'Yes'
+                                          : 'No'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

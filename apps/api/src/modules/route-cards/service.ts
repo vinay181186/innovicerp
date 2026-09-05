@@ -54,6 +54,7 @@ import {
   routeCardOps,
   routeCardRevisions,
   routeCards,
+  users,
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -406,9 +407,13 @@ async function loadRouteCardDetail(
     )
     .orderBy(asc(routeCardOps.opSeq));
 
+  // Left join, not a lookup loop: the name is wanted for display only, and a
+  // deleted user must still leave its revision visible rather than drop the
+  // row out of the history.
   const revisionRows = await tx
-    .select()
+    .select({ rev: routeCardRevisions, byName: users.fullName, byEmail: users.email })
     .from(routeCardRevisions)
+    .leftJoin(users, eq(users.id, routeCardRevisions.createdBy))
     .where(and(eq(routeCardRevisions.routeCardId, id), eq(routeCardRevisions.companyId, companyId)))
     .orderBy(desc(routeCardRevisions.revisionNo));
 
@@ -460,7 +465,7 @@ async function loadRouteCardDetail(
       }),
     ),
     revisions: revisionRows.map(
-      (r): RouteCardRevision => ({
+      ({ rev: r, byName, byEmail }): RouteCardRevision => ({
         id: r.id,
         companyId: r.companyId,
         routeCardId: r.routeCardId,
@@ -469,6 +474,10 @@ async function loadRouteCardDetail(
         opsSnapshot: r.opsSnapshot as RouteCardRevision['opsSnapshot'],
         createdAt: tsLike(r.createdAt),
         createdBy: r.createdBy,
+        // full_name when the user filled one in, otherwise the email's local
+        // part — the same fallback the NC Register uses, so one person reads
+        // the same on both screens.
+        createdByName: byName?.trim() || byEmail?.split('@')[0] || null,
       }),
     ),
   };
@@ -489,6 +498,22 @@ interface DiffOp {
   cycleTimeMin: string;
   ospVendorCode?: string | null;
   ospLeadDays?: number | null;
+  // The note used to ignore these four. A save that changed ONLY a tool
+  // number bumped the revision and then logged "No op changes" against it —
+  // the history recorded that something happened and denied it in the same
+  // breath. They are compared now.
+  program?: string | null;
+  toolNo?: string | null;
+  toolDetails?: string | null;
+  qcRequired?: boolean | null;
+}
+
+/** Free text inside a diff note has to stay readable in a table cell — tool
+ *  details can run to a paragraph. Long values are shown truncated. */
+function noteVal(v: string | null | undefined): string {
+  const s = (v ?? '').trim();
+  if (s.length === 0) return '—';
+  return s.length > 40 ? `${s.slice(0, 40)}…` : s;
 }
 
 // Build a human-readable diff between two op sequences. Keyed by
@@ -528,6 +553,18 @@ export function computeRouteCardDiffNote(oldOps: DiffOp[], newOps: DiffOp[]): st
     }
     if ((oo.ospLeadDays ?? null) !== (no.ospLeadDays ?? null)) {
       parts.push(`lead ${oo.ospLeadDays ?? '—'} → ${no.ospLeadDays ?? '—'}d`);
+    }
+    if ((oo.program ?? null) !== (no.program ?? null)) {
+      parts.push(`program ${noteVal(oo.program)} → ${noteVal(no.program)}`);
+    }
+    if ((oo.toolNo ?? null) !== (no.toolNo ?? null)) {
+      parts.push(`tool ${noteVal(oo.toolNo)} → ${noteVal(no.toolNo)}`);
+    }
+    if ((oo.toolDetails ?? null) !== (no.toolDetails ?? null)) {
+      parts.push(`tool details ${noteVal(oo.toolDetails)} → ${noteVal(no.toolDetails)}`);
+    }
+    if (Boolean(oo.qcRequired) !== Boolean(no.qcRequired)) {
+      parts.push(`QC ${oo.qcRequired ? 'yes' : 'no'} → ${no.qcRequired ? 'yes' : 'no'}`);
     }
     if (parts.length > 0) changed.push(`${label} (${parts.join(', ')})`);
   }
@@ -722,6 +759,39 @@ export async function updateRouteCard(
 
     const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
 
+    // What changed ABOVE the operation table — computed here, while `header`
+    // still holds the pre-save values. These edits bump the revision like any
+    // other save, so leaving them out of the note meant a card could go from
+    // Rev 2 to Rev 3 with "No op changes" written against it and no record
+    // anywhere that the raw material grade had been swapped.
+    const headerChanges: string[] = [];
+    if (input.code !== header.code) {
+      headerChanges.push(`Code ${header.code} → ${input.code}`);
+    }
+    if (input.itemId !== header.itemId) {
+      // Plain select, not assertItemExists: the OLD item may since have been
+      // deleted, and that must not block recording that it was replaced.
+      const prev = await tx
+        .select({ code: items.code })
+        .from(items)
+        .where(eq(items.id, header.itemId))
+        .limit(1);
+      headerChanges.push(`Item ${prev[0]?.code ?? '—'} → ${item.code}`);
+    }
+    if ((rawMaterial.rawMaterialGradeText ?? null) !== (header.rawMaterialGradeText ?? null)) {
+      headerChanges.push(
+        `Grade ${noteVal(header.rawMaterialGradeText)} → ${noteVal(rawMaterial.rawMaterialGradeText)}`,
+      );
+    }
+    if ((rawMaterial.rawMaterialSizeText ?? null) !== (header.rawMaterialSizeText ?? null)) {
+      headerChanges.push(
+        `Size ${noteVal(header.rawMaterialSizeText)} → ${noteVal(rawMaterial.rawMaterialSizeText)}`,
+      );
+    }
+    if ((input.notes ?? null) !== (header.notes ?? null)) {
+      headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
+    }
+
     // Header fields the ops-replace helper does not own. rawMaterial is always
     // written, never merged — sending null (or leaving the field out) clears
     // the grade or size instead of keeping the old one.
@@ -751,6 +821,7 @@ export async function updateRouteCard(
         machinesLookup,
         vendorsLookup,
         note: input.revisionNote?.trim() || null,
+        headerNote: headerChanges.length > 0 ? headerChanges.join(', ') : null,
       },
       user,
     );
@@ -892,6 +963,7 @@ function buildOpsSnapshot(
       o.ospVendorCodeText ??
       null,
     ospLeadDays: o.ospLeadDays ?? null,
+    qcRequired: Boolean(o.qcRequired),
   }));
 }
 
@@ -973,6 +1045,12 @@ interface ReplaceRouteCardOpsParams {
   note?: string | null;
   /** Prefix put in front of the auto diff note (auto-save names its source doc). */
   notePrefix?: string | null;
+  /** Changes to the card's HEADER (code, item, grade, size, notes) — appended
+   *  to whatever note the ops produce. Without this a save that only swapped
+   *  the raw material grade bumped the revision and recorded nothing about
+   *  what actually changed. Appended even when the user typed their own note,
+   *  so a header change can never go unrecorded. */
+  headerNote?: string | null;
   /** When true, an ops list identical to the stored one is a no-op: no revision
    *  bump, no snapshot row. Used by the auto-save path so re-running the same
    *  routing does not inflate the revision history. */
@@ -1021,6 +1099,10 @@ async function replaceRouteCardOps(
     cycleTimeMin: r.op.cycleTimeMin,
     ospVendorCode: r.ospVendorCode ?? r.op.ospVendorCodeText ?? null,
     ospLeadDays: r.op.ospLeadDays,
+    program: r.op.program,
+    toolNo: r.op.toolNo,
+    toolDetails: r.op.toolDetails,
+    qcRequired: r.op.qcRequired,
   }));
 
   const newSnapshot: DiffOp[] = p.ops.map((o, i) => ({
@@ -1037,15 +1119,21 @@ async function replaceRouteCardOps(
       o.ospVendorCodeText ??
       null,
     ospLeadDays: o.ospLeadDays ?? null,
+    program: o.program ?? null,
+    toolNo: o.toolNo ?? null,
+    toolDetails: o.toolDetails ?? null,
+    qcRequired: Boolean(o.qcRequired),
   }));
 
   const autoNote = computeRouteCardDiffNote(oldSnapshot, newSnapshot);
   const explicit = p.note?.trim();
-  const finalNote = explicit
+  const opsNote = explicit
     ? explicit
     : p.notePrefix
       ? `${p.notePrefix} — ${autoNote}`
       : autoNote;
+  const headerNote = p.headerNote?.trim();
+  const finalNote = headerNote ? `${opsNote} · ${headerNote}` : opsNote;
 
   // Hard-delete old op rows (pre-state is captured in the snapshot).
   await tx
