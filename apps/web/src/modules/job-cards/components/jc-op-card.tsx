@@ -330,8 +330,19 @@ export function JcOpCard({
                 color={pendingQty > 0 ? 'var(--amber)' : 'var(--text3)'}
                 highlight={pendingQty > 0}
               />
+              {/* PENDING above is the whole un-done balance and COUNTS the pieces
+                  already sitting at the vendor. This is what may go out today:
+                  upstream cleared − done in-house − already sent, read from
+                  v_osp_wip so the card, the OSP register and the outward-challan
+                  guard share ONE formula. JC-9 op 3: cleared 11, sent 10 → 1. */}
               <QtyTile
-                label="VENDOR"
+                label="READY TO SEND"
+                value={isOut ? op.readyToSendQty : '—'}
+                color={isOut && op.readyToSendQty > 0 ? 'var(--purple)' : 'var(--text3)'}
+                highlight={isOut && op.readyToSendQty > 0}
+              />
+              <QtyTile
+                label="AT VENDOR"
                 value={isOut ? op.atVendorQty : '—'}
                 color={isOut && op.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
               />

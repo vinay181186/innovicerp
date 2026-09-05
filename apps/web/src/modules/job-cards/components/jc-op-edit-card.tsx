@@ -300,7 +300,7 @@ export function JcOpEditCard({
                 highlight={Boolean(en) && pendingQty > 0}
               />
               <QtyTile
-                label="VENDOR"
+                label="AT VENDOR"
                 value={en && isOut ? en.atVendorQty : '—'}
                 color={en && isOut && en.atVendorQty > 0 ? 'var(--blue)' : 'var(--text3)'}
               />

@@ -79,6 +79,14 @@ export const jcOpEnrichedSchema = z.object({
   available: z.number().int().nonnegative(),
   /** Outsource pieces physically at the vendor (sent − received); 0 otherwise. */
   atVendorQty: z.number().int().nonnegative(),
+  /** Outsource pieces that may go to the vendor RIGHT NOW; 0 otherwise.
+   *
+   *  `pendingQty` on an outsource op is the whole un-done balance and counts
+   *  pieces already sitting at the vendor. This does not: it is
+   *  `input_avail − done in-house − already sent`, read from v_osp_wip so the
+   *  card, the OSP register and the outward-challan guard all use ONE formula.
+   *  JC-9 op 3: upstream cleared 11, 10 already sent → 1. */
+  readyToSendQty: z.number().int().nonnegative(),
   /** Outsource pieces returned but incoming-QC still pending (received − accepted − rejected); 0 otherwise. */
   inQcQty: z.number().int().nonnegative(),
   qcPending: z.number().int().nonnegative(),

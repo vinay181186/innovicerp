@@ -111,6 +111,13 @@ export async function listJcOpsEnriched(
         s.input_avail          AS "inputAvail",
         s.available            AS "available",
         s.at_vendor_qty        AS "atVendorQty",
+        -- What may go to the vendor RIGHT NOW. Read from v_osp_wip rather than
+        -- recomputed here, so the op card, the OSP At-Vendor Register and the
+        -- outward-challan guard can never disagree about the same op. NULL for
+        -- every non-outsource op (that view only holds op_type='outsource'),
+        -- hence the COALESCE -- matching how the card already blanks VENDOR
+        -- and IN QC on an in-house op.
+        COALESCE(w.ready_to_send_qty, 0) AS "readyToSendQty",
         s.in_qc_qty            AS "inQcQty",
         s.qc_pending           AS "qcPending",
         s.pending_qty          AS "pendingQty",
@@ -131,6 +138,7 @@ export async function listJcOpsEnriched(
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = o.machine_id
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = o.id
+      LEFT JOIN public.v_osp_wip w ON w.jc_op_id = o.id
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object('machineCode', v.machine_code, 'qty', v.completed_qty)
@@ -154,6 +162,7 @@ export async function listJcOpsEnriched(
       inputAvail: Number(r['inputAvail'] ?? 0),
       available: Number(r['available'] ?? 0),
       atVendorQty: Number(r['atVendorQty'] ?? 0),
+      readyToSendQty: Number(r['readyToSendQty'] ?? 0),
       inQcQty: Number(r['inQcQty'] ?? 0),
       qcPending: Number(r['qcPending'] ?? 0),
       pendingQty: Number(r['pendingQty'] ?? 0),
