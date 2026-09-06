@@ -13,9 +13,9 @@ import {
 } from '@innovic/shared';
 import { Loader2, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useSession } from '@/lib/session';
 import {
-  soDocSignedUrl,
   uploadSoDocFile,
   useCreateSoDocument,
   useDeleteSoDocument,
@@ -52,21 +52,18 @@ function fileIcon(file: SoDocumentFile): string {
   return '📁';
 }
 
-async function viewFile(storagePath: string): Promise<void> {
-  try {
-    const url = await soDocSignedUrl(storagePath);
-    window.open(url, '_blank', 'noopener');
-  } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
-  }
-}
-
 export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useSoDocDetail(soId);
   const { data: me } = useSession();
   const canWrite = !!me && me.role !== 'viewer';
   const deleteDoc = useDeleteSoDocument();
   const [uploadOpen, setUploadOpen] = useState(false);
+  // The file the user asked to look at, or null when nothing is open. Viewing
+  // used to `window.open` a signed URL and let the browser decide — which, with
+  // Chrome set to download PDFs, saved the file instead of showing it, and
+  // always saved for types it cannot render (.eml, .xlsx). Now the row opens
+  // the in-app preview; saving is the modal's own Download button.
+  const [preview, setPreview] = useState<SoDocumentFile | null>(null);
 
   // Group files by line number; unlinked = no soLineNo and unmatched soLineId.
   const { byLine, unlinked } = useMemo(() => {
@@ -152,6 +149,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           canWrite={canWrite}
           deletingId={deleteDoc.isPending ? deleteDoc.variables : undefined}
           onDelete={onDelete}
+          onView={setPreview}
         />
       ))}
 
@@ -169,6 +167,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
                 canWrite={canWrite}
                 deleting={deleteDoc.isPending && deleteDoc.variables === f.id}
                 onDelete={onDelete}
+                onView={setPreview}
                 idx={fi}
               />
             ))}
@@ -183,6 +182,15 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
           lines={data.lines}
           companyId={me?.companyId ?? null}
           onClose={() => setUploadOpen(false)}
+        />
+      ) : null}
+
+      {preview ? (
+        <FilePreviewModal
+          storagePath={preview.storagePath}
+          fileName={preview.fileName}
+          fileType={preview.fileType}
+          onClose={() => setPreview(null)}
         />
       ) : null}
     </div>
@@ -216,12 +224,14 @@ function LinePanel({
   canWrite,
   deletingId,
   onDelete,
+  onView,
 }: {
   line: SoDocumentLine;
   files: SoDocumentFile[];
   canWrite: boolean;
   deletingId: string | undefined;
   onDelete: (f: SoDocumentFile) => void;
+  onView: (f: SoDocumentFile) => void;
 }): React.JSX.Element {
   const lineSize = files.reduce((s, f) => s + (f.fileSize ?? 0), 0);
   const byCat = new Map<string, SoDocumentFile[]>();
@@ -272,6 +282,7 @@ function LinePanel({
                   canWrite={canWrite}
                   deleting={deletingId === f.id}
                   onDelete={onDelete}
+                  onView={onView}
                   idx={fi}
                 />
               ))}
@@ -288,12 +299,14 @@ function FileRow({
   canWrite,
   deleting,
   onDelete,
+  onView,
   idx,
 }: {
   file: SoDocumentFile;
   canWrite: boolean;
   deleting: boolean;
   onDelete: (f: SoDocumentFile) => void;
+  onView: (f: SoDocumentFile) => void;
   idx: number;
 }): React.JSX.Element {
   const meta = [
@@ -342,10 +355,10 @@ function FileRow({
           type="button"
           className="btn btn-ghost btn-sm"
           style={{ fontSize: 10 }}
-          title="View / download"
-          onClick={() => void viewFile(file.storagePath)}
+          title="Preview this file (download from the preview window)"
+          onClick={() => onView(file)}
         >
-          ⬇ View
+          👁 View
         </button>
         {canWrite && file.source === 'registry' ? (
           <button

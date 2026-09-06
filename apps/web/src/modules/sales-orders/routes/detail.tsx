@@ -6,38 +6,31 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Activity, ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { soDocSignedUrl, uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
+import { uploadSoDocFile, useCreateSoDocument, useSoDocDetail } from '@/modules/so-documents/api';
 import { useSession } from '@/lib/session';
-import { signedUrl } from '@/lib/storage';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
 import { SoStatusBadge } from '../components/so-status-badge';
 
-/** Open a stored SO document (PO doc / email ref) via a short-lived signed URL,
- *  inline in a new tab — the signed URL carries no attachment disposition, so
- *  the browser views (not downloads) any type it can render (PDF, images). */
-async function openStoredFile(storagePath: string): Promise<void> {
-  try {
-    const url = await soDocSignedUrl(storagePath);
-    window.open(url, '_blank', 'noopener');
-  } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
-  }
-}
-
-/** Open a per-line drawing file (uploaded to the shared `qc-docs` bucket) via a
- *  short-lived signed URL in a new tab. */
-async function openDrawing(storagePath: string): Promise<void> {
-  try {
-    const url = await signedUrl(storagePath);
-    window.open(url, '_blank', 'noopener');
-  } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
-  }
-}
+/** The file the user asked to look at, or null when nothing is open.
+ *
+ *  Every 📎 on this page used to `window.open` a signed URL, which let the
+ *  browser decide — and Chrome's "download PDFs instead of opening them"
+ *  setting turned a look into a silent save. Now the click only records WHICH
+ *  file, and FilePreviewModal shows it inside the app; saving is a separate,
+ *  deliberate press of the modal's own Download button.
+ *
+ *  Spread straight into the modal (`{...preview}`) so the optional keys stay
+ *  absent rather than explicitly undefined (exactOptionalPropertyTypes). */
+type PreviewFile = {
+  storagePath: string;
+  fileName?: string;
+  fileType?: string | null;
+};
 
 export const salesOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -54,6 +47,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'so_create');
   const softDelete = useSoftDeleteSalesOrder();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // One preview slot for the whole page — the client PO bar, the email
+  // references and the per-line drawings all feed the same modal.
+  const [preview, setPreview] = useState<PreviewFile | null>(null);
 
   if (isLoading) {
     return (
@@ -217,7 +213,12 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <ClientPoFileBar detail={detail} canEdit={canEdit} companyId={me?.companyId ?? null} />
+      <ClientPoFileBar
+        detail={detail}
+        canEdit={canEdit}
+        companyId={me?.companyId ?? null}
+        onPreview={setPreview}
+      />
 
       <div className="panel">
         <div className="panel-hdr">
@@ -260,7 +261,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
                 </tr>
               ) : (
                 detail.lines.map((l) => (
-                  <LineRow key={l.id} line={l} priceHidden={priceHidden} />
+                  <LineRow key={l.id} line={l} priceHidden={priceHidden} onPreview={setPreview} />
                 ))
               )}
             </tbody>
@@ -305,6 +306,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
         📁 SO Documents
       </div>
       <SoDocumentsSection soId={detail.id} />
+
+      {preview ? <FilePreviewModal {...preview} onClose={() => setPreview(null)} /> : null}
     </div>
   );
 }
@@ -316,10 +319,12 @@ function ClientPoFileBar({
   detail,
   canEdit,
   companyId,
+  onPreview,
 }: {
   detail: SalesOrderDetail;
   canEdit: boolean;
   companyId: string | null;
+  onPreview: (file: PreviewFile) => void;
 }): React.JSX.Element {
   const createDoc = useCreateSoDocument();
   const qc = useQueryClient();
@@ -375,7 +380,10 @@ function ClientPoFileBar({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => void openStoredFile(detail.clientPoFilePath!)}
+              // Only the path is on the SO record; the modal derives a display
+              // name from it.
+              onClick={() => onPreview({ storagePath: detail.clientPoFilePath! })}
+              title="Preview the client PO document"
             >
               👁 View
             </button>
@@ -419,7 +427,13 @@ function ClientPoFileBar({
                 type="button"
                 className="btn btn-ghost btn-sm"
                 title={f.fileName}
-                onClick={() => void openStoredFile(f.storagePath)}
+                onClick={() =>
+                  onPreview({
+                    storagePath: f.storagePath,
+                    fileName: f.fileName,
+                    fileType: f.fileType,
+                  })
+                }
               >
                 👁 View
                 <span
@@ -440,8 +454,12 @@ function ClientPoFileBar({
   );
 }
 
-function LineRow(props: { line: SalesOrderLine; priceHidden: boolean }): React.JSX.Element {
-  const { line: l, priceHidden } = props;
+function LineRow(props: {
+  line: SalesOrderLine;
+  priceHidden: boolean;
+  onPreview: (file: PreviewFile) => void;
+}): React.JSX.Element {
+  const { line: l, priceHidden, onPreview } = props;
   const drawingFilePath = l.drawingFilePath ?? null;
   return (
     <tr>
@@ -464,8 +482,8 @@ function LineRow(props: { line: SalesOrderLine; priceHidden: boolean }): React.J
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ padding: '1px 6px', fontSize: 11, alignSelf: 'flex-start' }}
-              onClick={() => void openDrawing(drawingFilePath)}
-              title="Open drawing in a new tab"
+              onClick={() => onPreview({ storagePath: drawingFilePath })}
+              title="Preview drawing"
             >
               📎 Drawing
             </button>

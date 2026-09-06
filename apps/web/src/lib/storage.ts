@@ -36,15 +36,22 @@ export async function uploadFile(
   return path;
 }
 
-/** Issues a short-lived signed URL for downloading/viewing a stored file. */
+/** Issues a short-lived signed URL for a stored file.
+ *
+ *  `download` decides what the browser does with it, and it is the ONLY thing
+ *  that decides — leave it off and Supabase serves the object inline
+ *  (`Content-Disposition: inline`), which is what a preview needs; pass the
+ *  file name and Supabase serves `Content-Disposition: attachment`, which is
+ *  what makes the browser save it. Viewing and saving are two deliberate
+ *  actions, so they get two different links. */
 export async function signedUrl(
   storagePath: string,
-  opts?: { bucket?: string; expiresIn?: number },
+  opts?: { bucket?: string; expiresIn?: number; download?: boolean | string },
 ): Promise<string> {
   const bucket = opts?.bucket ?? DEFAULT_BUCKET;
   const { data, error } = await supabase.storage
     .from(bucket)
-    .createSignedUrl(storagePath, opts?.expiresIn ?? 120);
+    .createSignedUrl(storagePath, opts?.expiresIn ?? 120, { download: opts?.download ?? false });
   if (error || !data) throw new Error(`Could not open file: ${error?.message ?? 'unknown'}`);
   return data.signedUrl;
 }

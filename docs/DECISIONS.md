@@ -7306,3 +7306,37 @@ Migration 0109 repairs rows written before (1) — data-only, idempotent, quanti
 - Open: JW DC Outward (Returnable Gate Pass) still sends goods with no availability check and no `jc_ops` cascade, and the two challan modules cannot see each other's sent totals. Awaiting the user's decision.
 - Open: OSP PRs are still raised at the full order qty (`plan.planQty` / `jc.orderQty`) regardless of what has cleared. Awaiting the user's decision — it may be deliberate procurement practice.
 - Verification: typecheck + lint only (the api suite hits the shared prod DB). 0109 and 0110 applied and verified against live data: op 8 now reads `received`, sent 30, returned 30; op 9 `input_avail` 30; `ready_to_send_qty` 0 for op 8 and 1 for IN-JC-26-00002 op 1.
+
+## ADR-142: Stored files preview in-app; downloading is a separate, explicit action
+**Date:** 2026-09-05
+**Status:** Accepted
+
+### Context
+Every 📎 button in the app did the same thing: mint a short-lived signed URL and `window.open(url, '_blank')`. Nine call sites, one behaviour — hand the file to the browser and let the browser decide what to do with it.
+
+That decision is not ours and not stable. Chrome's "Download PDFs instead of automatically opening them in Chrome" setting is on by default on many machines; with it on, a click meant as *look at this drawing* silently writes a file to the user's Downloads folder. And for anything the browser cannot render in-page there was never a choice at all — the JWSO Client-PO uploads are `message/rfc822` (verified: both objects in the `jw-docs` folder of the `qc-docs` bucket) and always downloaded, as did the one `.xlsx` in `so-docs`.
+
+The comment on `openStoredFile` in the SO detail page asserted the opposite — "the signed URL carries no attachment disposition, so the browser views (not downloads) any type it can render". The disposition half is true; the conclusion is not, because the browser setting overrides it. Stored MIME types were checked and are correct (`application/pdf` ×4 in `so-line-drawings`, `application/pdf` ×3 in `qc-reports`, `image/jpeg` in `item-drawings`), so this was never a metadata problem — there was simply no in-app viewer.
+
+### Decision
+Split the two intentions that were sharing one button.
+
+**Viewing** happens inside the app. A new shared `components/shared/file-preview-modal.tsx` renders the file in the existing `.overlay` / `.modal.modal-lg` theme: PDFs in an `<iframe>`, images in an `<img>`, and for anything else an explicit "this file type cannot be previewed in the browser — use Download" panel rather than a silent save or a blank frame. Its signed URL is minted with a 600s expiry, not the 120s default, because a PDF viewer re-requests byte ranges while the reader scrolls and an expired link mid-read shows an empty page.
+
+**Downloading** happens only from the modal's Download button, which mints a *second* signed URL with `download: <fileName>`. `@/lib/storage` `signedUrl()` gains an optional `download?: boolean | string` that passes straight through to `createSignedUrl`'s third argument; Supabase then answers with `Content-Disposition: attachment`. An in-page anchor click consumes it so the current page stays put.
+
+Applied to the surfaces the user named: SO detail (per-line drawings + SO Documents), the SO line drawing cell on the SO form, and the JWSO detail Documents panel.
+
+### Alternatives Considered
+- **Force the disposition at upload time** (store `contentDisposition: inline` on the object) — rejected: it does not survive the browser's own PDF setting, which is the actual cause, and it would make *download* the hard case instead.
+- **Two links per row — "Preview" and "Download"** — rejected: doubles every file row in already-dense tables, and preview is overwhelmingly the common action. One click previews; Download is one further click inside the viewer.
+- **A PDF.js viewer bundled into the app** — rejected: a large dependency to re-implement what every supported browser already renders in an iframe. Revisit only if in-iframe rendering proves unreliable.
+- **Leaving `window.open` and documenting the browser setting** — rejected: the user reported the download behaviour as a defect, and telling 24 staff to change a Chrome setting is not a fix.
+
+### Consequences
+- Positive: one shared component; the remaining file-open sites (item drawings, item detail, QC report attachments) can adopt it later with a two-line change each.
+- Positive: unpreviewable types now say so instead of silently downloading.
+- Negative: previews are iframe-based, so they inherit whatever the browser's built-in PDF viewer does. No annotation, no page-link deep-linking.
+- Negative: the modal holds an inline signed URL for up to 10 minutes; if the tab is left open and shared over the shoulder, the link is live for that window. Inherits the qc-docs bucket's coarse read policy either way (ADR-032).
+- Not changed here, deliberately: `items/components/drawing-upload-field.tsx`, `items/routes/detail.tsx`, `items/lib/print-drawing.ts` and `components/shared/qc-report-attach.tsx` still `window.open`. Out of the scope the user asked for; they are the natural next adopters.
+- Verification: typecheck + lint only (the api suite hits the shared prod DB).

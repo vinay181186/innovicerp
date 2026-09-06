@@ -1,12 +1,13 @@
 // Compact drawing-file upload for a single SO line, sized to live inside an
 // ~11%-wide table cell. Mirrors items/DrawingUploadField's logic (upload via the
-// shared @/lib/storage helper, view via a short-lived signed URL) but trades the
-// full-width layout for tiny inline controls. Reads companyId from the session.
+// shared @/lib/storage helper, view in the shared file-preview modal) but trades
+// the full-width layout for tiny inline controls. Reads companyId from session.
 
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { useSession } from '@/lib/session';
-import { signedUrl, uploadFile } from '@/lib/storage';
+import { uploadFile } from '@/lib/storage';
 
 export function SoLineDrawingCell({
   value,
@@ -18,6 +19,10 @@ export function SoLineDrawingCell({
   const { data: me } = useSession();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Viewing opens the in-app preview instead of handing the file to the
+  // browser: `window.open` on a signed URL let Chrome's "download PDFs" setting
+  // save the drawing to disk when the user only wanted to look at it.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   async function onPick(file: File | null): Promise<void> {
     if (!file) return;
@@ -37,16 +42,6 @@ export function SoLineDrawingCell({
     }
   }
 
-  async function view(): Promise<void> {
-    if (!value) return;
-    try {
-      const url = await signedUrl(value);
-      window.open(url, '_blank', 'noopener');
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not open file');
-    }
-  }
-
   if (busy) {
     return (
       <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
@@ -62,8 +57,8 @@ export function SoLineDrawingCell({
           type="button"
           className="btn btn-ghost btn-sm"
           style={{ padding: '2px 6px', fontSize: 11 }}
-          onClick={() => void view()}
-          title="Open drawing in a new tab"
+          onClick={() => setPreviewOpen(true)}
+          title="Preview drawing"
         >
           📎 view
         </button>
@@ -77,6 +72,9 @@ export function SoLineDrawingCell({
         >
           ✕
         </button>
+        {previewOpen ? (
+          <FilePreviewModal storagePath={value} onClose={() => setPreviewOpen(false)} />
+        ) : null}
       </div>
     );
   }

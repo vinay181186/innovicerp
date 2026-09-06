@@ -4,14 +4,11 @@ import type { JobWorkOrderDetail, JobWorkOrderLine, JwDocumentFile } from '@inno
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import {
-  jwDocSignedUrl,
-  useDeleteJwDocument,
-  useJwDocuments,
-} from '@/modules/jwso-documents/api';
+import { useDeleteJwDocument, useJwDocuments } from '@/modules/jwso-documents/api';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useJobWorkOrder, useSoftDeleteJobWorkOrder } from '../api';
@@ -249,19 +246,31 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
 }
 
 /** Client PO / other documents attached to the JWSO (#8). Reflects the upload
- *  made from the JWSO form; view opens a short-lived signed URL. */
+ *  made from the JWSO form; clicking a file PREVIEWS it inside the app. */
 function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JSX.Element {
   const { data, isLoading } = useJwDocuments(props.jwId);
   const del = useDeleteJwDocument();
   const files = data?.files ?? [];
 
-  const onView = async (storagePath: string): Promise<void> => {
-    try {
-      const url = await jwDocSignedUrl(storagePath);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not open file');
-    }
+  // The file currently being previewed. Was `window.open(signedUrl)`, which let
+  // the browser decide — and Chrome's "Download PDFs instead of automatically
+  // opening them" setting turned a look into a silent save to disk. Previewing
+  // now happens in-app; saving only via the modal's own Download button.
+  const [preview, setPreview] = useState<{
+    storagePath: string;
+    fileName: string;
+    fileType: string | null;
+  } | null>(null);
+
+  // fileType comes straight from file_registry: the JWSO Client PO uploads are
+  // often `message/rfc822` (.eml), which the modal answers with a plain
+  // "cannot be previewed, use Download" instead of an empty frame.
+  const onView = (file: JwDocumentFile): void => {
+    setPreview({
+      storagePath: file.storagePath,
+      fileName: file.fileName,
+      fileType: file.fileType,
+    });
   };
 
   return (
@@ -305,6 +314,15 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
           </tbody>
         </table>
       </div>
+
+      {preview ? (
+        <FilePreviewModal
+          storagePath={preview.storagePath}
+          fileName={preview.fileName}
+          fileType={preview.fileType}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -312,7 +330,7 @@ function JwDocumentsPanel(props: { jwId: string; canDelete: boolean }): React.JS
 function DocRow(props: {
   file: JwDocumentFile;
   canDelete: boolean;
-  onView: (storagePath: string) => void;
+  onView: (file: JwDocumentFile) => void;
   onDelete: (id: string) => void;
   deleting: boolean;
 }): React.JSX.Element {
@@ -325,7 +343,7 @@ function DocRow(props: {
           type="button"
           className="btn btn-ghost btn-sm"
           style={{ fontSize: 12 }}
-          onClick={() => props.onView(f.storagePath)}
+          onClick={() => props.onView(f)}
         >
           📎 {f.fileName}
         </button>

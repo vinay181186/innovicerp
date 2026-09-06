@@ -23,7 +23,7 @@ import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { soDocSignedUrl } from '@/modules/so-documents/api';
+import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useSoStatus } from '../../so-status/api';
@@ -82,16 +82,6 @@ function QtyBox({
       </div>
     </div>
   );
-}
-
-/** Open a stored client-PO document via a short-lived signed URL (ISSUE-013). */
-async function openClientPoFile(storagePath: string): Promise<void> {
-  try {
-    const url = await soDocSignedUrl(storagePath);
-    window.open(url, '_blank', 'noopener');
-  } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file');
-  }
 }
 
 const listSearchSchema = z.object({
@@ -195,6 +185,11 @@ function SalesOrdersListPage(): React.JSX.Element {
   // Export the whole filtered list to Excel — pulls every matching row (not just
   // the visible page) using the current search/type/status filter.
   const [exporting, setExporting] = useState(false);
+  // Client-PO document being previewed (ADR-142). The paperclip used to
+  // `window.open` a signed URL, which let Chrome's "download PDFs" setting save
+  // the file when the user only meant to look at it. Preview in-app; the modal
+  // owns the one button that actually downloads.
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
   async function onExport(): Promise<void> {
     setExporting(true);
     try {
@@ -500,8 +495,8 @@ function SalesOrdersListPage(): React.JSX.Element {
                         type="button"
                         className="btn btn-ghost btn-sm"
                         style={{ padding: '0 4px', lineHeight: 1 }}
-                        title="View Client PO Document"
-                        onClick={(e) => { e.stopPropagation(); void openClientPoFile(so.clientPoFilePath!); }}
+                        title="Preview Client PO Document"
+                        onClick={(e) => { e.stopPropagation(); setPreviewPath(so.clientPoFilePath!); }}
                       >
                         📎
                       </button>
@@ -541,6 +536,9 @@ function SalesOrdersListPage(): React.JSX.Element {
       <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6, padding: '0 4px' }}>
         💡 Click the <b>SO number</b> to open its detail page · click the card to show its line items · use <b>+ Line</b> to add or edit lines.
       </div>
+      {previewPath ? (
+        <FilePreviewModal storagePath={previewPath} onClose={() => setPreviewPath(null)} />
+      ) : null}
     </div>
   );
 }
