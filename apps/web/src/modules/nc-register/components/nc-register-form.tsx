@@ -11,7 +11,7 @@ import {
 } from '@innovic/shared';
 import { todayLocal } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
@@ -51,6 +51,10 @@ const DEFAULTS: FormValues = {
 
 type CreateMode = {
   mode: 'create';
+  /** Seed values, laid OVER the blank defaults. Used when the form is opened
+   *  from a QC operation card, which already knows the job card, the item, the
+   *  operation and how many pieces it rejected. */
+  initial?: Partial<FormValues>;
   onSubmit: (values: CreateNcRegisterInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
@@ -70,7 +74,10 @@ export type NcRegisterFormProps = CreateMode | EditMode;
 
 export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
-  const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
+  const seed = props.mode === 'create' ? props.initial : undefined;
+  const defaults: FormValues = isEdit
+    ? detailToFormValues(props.detail)
+    : { ...DEFAULTS, ...seed };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch, setValue } = form;
@@ -142,6 +149,12 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     setValue('code', `NC-${String(max + 1).padStart(4, '0')}`, { shouldDirty: false });
   }, [recentNcs, isEdit, setValue, watch]);
 
+  // The job card the form OPENED on. When the op card seeds a JC and an
+  // operation, this effect must not wipe the operation the moment it runs on
+  // mount — it only clears the op selection when the user picks a DIFFERENT
+  // JC than the one the form started with (legacy behaviour, `fRejOp`).
+  const seededJcId = useRef(defaults.jobCardId);
+
   useEffect(() => {
     if (isEdit) return;
     if (!selectedJcId) return;
@@ -155,6 +168,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
         setValue('itemNameText', jc.itemName, { shouldDirty: true });
       }
     }
+    if (selectedJcId === seededJcId.current) return;
     // Reset the op selection when the JC changes — legacy clears `fRejOp`.
     setValue('jcOpId', undefined, { shouldDirty: false });
     setValue('opSeq', undefined, { shouldDirty: false });

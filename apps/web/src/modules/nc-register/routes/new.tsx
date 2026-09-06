@@ -4,18 +4,45 @@ import type { CreateNcRegisterInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
 
+// Everything is OPTIONAL: this screen is still opened bare from "+ Report NC".
+// When a QC operation card sends the user here it hands over the job card, the
+// item and the operation that rejected the pieces, so the inspector types the
+// defect and nothing else. Same shape as purchase-orders/routes/from-pr.tsx.
+// Values arrive as URL strings; opSeq / rejectedQty are turned into numbers
+// below and silently dropped if they are not numbers.
+const ncNewSearchSchema = z.object({
+  jobCardId: z.string().uuid().optional(),
+  jcOpId: z.string().uuid().optional(),
+  opSeq: z.string().optional(),
+  operation: z.string().optional(),
+  itemId: z.string().uuid().optional(),
+  itemCode: z.string().optional(),
+  itemName: z.string().optional(),
+  rejectedQty: z.string().optional(),
+});
+
 export const ncRegisterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'nc-register/new',
+  validateSearch: ncNewSearchSchema,
   component: NcRegisterNewPage,
 });
 
+// "12" → 12; "", "abc", undefined → undefined (the field just stays empty).
+function toInt(v: string | undefined): number | undefined {
+  if (v == null || v.trim() === '') return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
 function NcRegisterNewPage(): React.JSX.Element {
+  const search = ncRegisterNewRoute.useSearch();
   const navigate = useNavigate();
   const create = useCreateNcRegister();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -24,6 +51,22 @@ function NcRegisterNewPage(): React.JSX.Element {
   // typing the URL still handed over the form (an L1 Viewer, an L4 Approver).
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'nc_dispose');
+
+  // What the op card handed over, mapped onto the form's own field names
+  // (operation → operationText, itemCode → itemCodeText, …). Absent keys are
+  // left out entirely so the form's own defaults still apply.
+  const opSeq = toInt(search.opSeq);
+  const rejectedQty = toInt(search.rejectedQty);
+  const seed = {
+    ...(search.jobCardId ? { jobCardId: search.jobCardId } : {}),
+    ...(search.jcOpId ? { jcOpId: search.jcOpId } : {}),
+    ...(opSeq != null ? { opSeq } : {}),
+    ...(search.operation ? { operationText: search.operation } : {}),
+    ...(search.itemId ? { itemId: search.itemId } : {}),
+    ...(search.itemCode ? { itemCodeText: search.itemCode } : {}),
+    ...(search.itemName ? { itemNameText: search.itemName } : {}),
+    ...(rejectedQty != null ? { rejectedQty } : {}),
+  };
 
   if (accessLoading) {
     return (
@@ -68,6 +111,7 @@ function NcRegisterNewPage(): React.JSX.Element {
         <div className="panel-body">
           <NcRegisterForm
             mode="create"
+            initial={seed}
             submitError={submitError}
             submitLabel="Save"
             onCancel={() => void navigate({ to: '/nc-register' })}

@@ -7666,3 +7666,95 @@ A new `GET /access-control/qc-users` returns the QC people as `{ id, name, email
 - Negative: an inspector who is not a system account can no longer be typed in freely on these two screens. If that turns out to be a real case, the fix is a master like TPI Master (ADR-146), not a return to free text.
 - Not changed here: the GRN screen's own QC path (`goods-receipt-notes/service.ts`) still stamps `qcInspectedBy: user.id` on its completed transition. It is a different screen with a different flow and was not in the user's ask; it is the natural next adopter.
 - Verification: typecheck + lint (the api suite hits the shared prod DB, so it is not runnable here). No migration — both columns already existed.
+
+## ADR-148: An operation can need two OSP actions at once — the ladder is condition-driven, not status-driven
+
+**Date:** 2026-09-06
+**Status:** Accepted — amends ADR-145
+
+### Context
+
+ADR-145 built the op card's action strip as one button per `outsource_status`:
+`pr_raised` → Gen PO, `po_created` → Gen DC, `sent` → Receive, `received` →
+Incoming QC. That reads as a ladder, and a ladder is the wrong shape.
+
+Outsourcing is not a single pass. Material goes out in batches. While batch 1
+is at the vendor waiting to be received, the upstream operation can clear batch
+2 — which is ready to go out on a NEW challan. The status is `sent` for both
+facts, so the card offered only Receive and silently hid the send. Live data at
+the time of writing, from `v_osp_wip`:
+
+    jc_code           op  status     ready_to_send  in_qc  open_dc
+    IN-JC-26-00013    2   sent            15          0    IN-DC-00009
+    IN-JC-26-00008    8   received        25          0    IN-DC-00007
+    IN-JC-26-00011    3   sent             1          0    IN-DC-00005
+    IN-JC-26-00009    3   sent             1          0    IN-DC-00003
+    IN-JC-26-00002    1   sent             1          0    IN-DC-00001
+
+Five operations needed two buttons; every one of them showed one.
+
+The same mistake sat in the fourth rung. Incoming QC keyed off
+`status === 'received'`, but IN-JC-26-00008 op 8 is `received` with
+`in_qc_qty = 0` — everything sent back has already been inspected. The card was
+offering work that does not exist.
+
+### Decision
+
+Every button tests its OWN condition — quantities and ids, never
+`outsource_status` — and all that apply render together.
+
+| button | condition |
+| --- | --- |
+| 🧾 Gen PO | `outsourcePrId && !outsourcePoId` |
+| 🚚 Gen DC (n) | `outsourcePoId && readyToSendQty > 0` |
+| 📥 Receive `<dc>` | `outsourceOpenDcId` |
+| 🔬 Incoming QC | `inQcQty > 0` |
+
+`readyToSendQty` (ADR-141) and `inQcQty` were already on the enriched op; no
+contract or query changed. The first button rendered takes `btn-primary` and
+the rest are quiet, so there is still one place for the eye to land. Gen DC
+carries its count — `🚚 Gen DC (15)` — because the number is the reason the
+button is there. `outsource_status` still supplies the reference TEXT
+("Sent", "PR: …"); it no longer decides anything.
+
+Separately, **⚠ NC stops appearing on every card.** ADR-145 put it on all of
+them on the argument that a fault can be found anywhere. Two things were wrong
+with that: it is not a next action, and `/nc-register/new` took no parameters,
+so the button opened a blank form — the inspector retyped the job card, item,
+operation and quantity they had just been looking at. It now shows only on a QC
+operation with `qcRejectedQty > 0`, labelled `⚠ NC (5)` to match the `🔬 QC (5)`
+beside it, and carries `jobCardId / itemId / itemCode / itemName / jcOpId /
+opSeq / operation / rejectedQty` into the form as optional search params. The
+form gained an optional `initial` laid over its blank defaults, and its
+"clear the operation when the job card changes" effect now skips the job card
+the form opened on — otherwise the seeded operation was wiped a frame after
+mount.
+
+### Alternatives considered
+
+- **Keep one button and pick the "most urgent" step** — rejected: there is no
+  correct answer. Receiving 5 pieces and sending 15 are both real work, owned
+  by the same person, and hiding either loses a day.
+- **Show every button always and disable the inapplicable ones** — rejected:
+  this codebase hides on unavailability and disables only for in-flight
+  mutations; a row of dead buttons is noise.
+- **Drive Incoming QC off `at_vendor_qty` instead** — rejected: pieces at the
+  vendor are not inspectable. `in_qc_qty` (returned − accepted − rejected) is
+  exactly "back, and waiting on QC".
+- **Delete the NC button outright** — considered and nearly taken, since it is
+  an exception path. Kept only because a pre-filled NC raised from the very QC
+  op that rejected the pieces is genuinely shorter than the NC Register route.
+
+### Consequences
+
+- Positive: the card can no longer hide available work. The five operations
+  above now show both of their actions.
+- Positive: no card shows an action with nothing behind it — Incoming QC only
+  when something is actually awaiting inspection.
+- Neutral: the NC button is invisible everywhere in the live data today, because
+  no QC operation has rejected pieces yet. That is correct, not a regression.
+- Negative: a card can now carry three controls where it carried one. Mitigated
+  by one primary and the rest quiet.
+- Verification: typecheck, **build** (`tsc -b && vite build` — what CI actually
+  runs; a typecheck-only pass let ADR-145 through with a compile error) and
+  eslint. Conditions checked against `v_osp_wip` row by row.

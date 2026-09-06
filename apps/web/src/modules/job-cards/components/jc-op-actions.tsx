@@ -7,14 +7,22 @@
 // WHY the buttons exist at all: the card used to END the OSP story in dead
 // text. An op sitting at `pr_raised` showed "PR: IN-JWPR-00012" and nothing
 // else, so the planner had to remember that the next step is a PO, leave the
-// Job Card, find the PR again and convert it. Each status now names its own
-// next step and links straight to the screen that performs it.
+// Job Card, find the PR again and convert it. The card now names every step
+// that is open right now and links straight to the screen that performs it —
+// note EVERY step, not one: an op can need two at once (see
+// OutsourceNextAction below).
 //
 // WHY no "Gen GRN": receiving the outward challan is what books the GRN, so one
 // link covers both. GRN also sits in the Store department, which shop-floor
 // users rarely hold — one link, one department.
-import type { JcOpEnriched, JcOpsBoardRow, OutsourceStatus } from '@innovic/shared';
+import type {
+  JcOpEnriched,
+  JcOpsBoardRow,
+  JobCardListItem,
+  OutsourceStatus,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { cloneElement } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
@@ -54,91 +62,113 @@ export function OutsourceInfo({
   );
 }
 
-// The NEXT ACTION for an outsource op, gated on the form key of the page it
-// OPENS (not on jc_create, the page it sits on) — a button gated on a different
-// key than its destination is the "button that only fails on click" pattern
-// (purchase-requests/routes/detail.tsx:33-38). Hidden, never disabled, when the
-// caller lacks the right; hidden too until the access matrix has loaded, which
-// is what every other action button here does (pr-card.tsx:212,
+// The NEXT ACTIONS for an outsource op, gated on the form key of the page each
+// one OPENS (not on jc_create, the page they sit on) — a button gated on a
+// different key than its destination is the "button that only fails on click"
+// pattern (purchase-requests/routes/detail.tsx:33-38). Hidden, never disabled,
+// when the caller lacks the right; hidden too until the access matrix has
+// loaded, which is what every other action button here does (pr-card.tsx:212,
 // jc-row-write-actions.tsx:25).
 //
-// Each link also needs its id: a status with no id behind it (e.g. `sent` with
-// every challan already received) renders text only, as before.
+// WHY this is a LIST and not a single status-picked button: an OSP op can
+// genuinely need two actions at the same moment. Some pieces are at the vendor
+// waiting to come back while MORE pieces have since cleared the upstream
+// operation and are ready to go out on a NEW challan. Live proof:
+// IN-JC-26-00013 op 2 is `sent` with IN-DC-00009 still out AND 15 pcs newly
+// cleared upstream — it needs Gen DC and Receive at once. Same for
+// IN-JC-26-00002 op 1, IN-JC-26-00009 op 3, IN-JC-26-00011 op 3, and
+// IN-JC-26-00008 op 8 (which is `received` yet still has 25 ready to send and
+// IN-DC-00007 out). Each button below therefore tests its OWN condition —
+// quantities and ids, not `outsource_status` — and every applicable one shows.
+//
+// Each link also needs its id: no id behind a step (e.g. a `sent` op whose
+// challans are all received) simply drops that button, as before.
 function OutsourceNextAction({
   row,
-  status,
+  op,
 }: {
   row: JcOpsBoardRow | undefined;
-  status: OutsourceStatus;
+  op: JcOpEnriched;
 }): React.JSX.Element | null {
   const { data: eff } = useMyAccess();
   if (!row) return null;
 
-  // pr_raised → raise the PO from that PR. Same destination and same gate as
-  // the PR page's own "Create PO" button.
-  if (status === 'pr_raised' && row.outsourcePrId && effectiveFormPerms(eff, 'po_create').entry) {
-    return (
+  const actions: React.JSX.Element[] = [];
+
+  // 1. Gen PO — a PR exists and nothing has been raised from it yet.
+  //    IN-JC-26-00003 op 6 and IN-JC-26-00007 op 6 sit here. Same destination
+  //    and same gate as the PR page's own "Create PO" button.
+  if (row.outsourcePrId && !row.outsourcePoId && effectiveFormPerms(eff, 'po_create').entry) {
+    actions.push(
       <Link
+        key="po"
         to="/purchase-orders/from-pr"
         search={{ prId: row.outsourcePrId }}
-        className="btn btn-sm btn-primary"
         title="Raise the purchase order for this outsourced operation"
       >
         🧾 Gen PO
-      </Link>
+      </Link>,
     );
   }
 
-  // po_created → send the material out on an outward challan against that PO.
-  if (status === 'po_created' && row.outsourcePoId && effectiveFormPerms(eff, 'ospdc_create').entry) {
-    return (
+  // 2. Gen DC — a PO exists and pieces are cleared upstream and not yet sent.
+  //    STATUS-INDEPENDENT on purpose: IN-JC-26-00008 op 8 is `received` and
+  //    still has 25 pcs waiting to go out. The count is on the label so the
+  //    planner sees how many without reading the tile.
+  if (row.outsourcePoId && op.readyToSendQty > 0 && effectiveFormPerms(eff, 'ospdc_create').entry) {
+    actions.push(
       <Link
+        key="dc"
         to="/delivery-challans/new"
         search={{ poId: row.outsourcePoId }}
-        className="btn btn-sm btn-primary"
-        title="Raise the outward delivery challan for this purchase order"
+        title="Raise the outward delivery challan for the pieces ready to send"
       >
-        🚚 Gen DC
-      </Link>
+        🚚 Gen DC ({op.readyToSendQty})
+      </Link>,
     );
   }
 
-  // sent → receive the ONE challan still out at the vendor. The server picks it
-  // (oldest still-issued DC on this op's PO line), because an op can have
-  // several: IN-JC-26-00008 op 8 carries IN-DC-00002 (received), IN-DC-00006
-  // (cancelled) and IN-DC-00007 (issued) and only the last is receivable.
-  // IN-JC-26-00011 op 3 is the plain case — `sent`, with IN-DC-00005 open.
-  if (
-    status === 'sent' &&
-    row.outsourceOpenDcId &&
-    effectiveFormPerms(eff, 'ospdc_create').entry
-  ) {
-    return (
+  // 3. Receive — a challan is still out at the vendor. Also status-independent.
+  //    The server picks the challan (oldest still-issued DC on this op's PO
+  //    line), because an op can have several: IN-JC-26-00008 op 8 carries
+  //    IN-DC-00002 (received), IN-DC-00006 (cancelled) and IN-DC-00007
+  //    (issued) and only the last is receivable.
+  if (row.outsourceOpenDcId && effectiveFormPerms(eff, 'ospdc_create').entry) {
+    actions.push(
       <Link
+        key="recv"
         to="/delivery-challans/$id/receive"
         params={{ id: row.outsourceOpenDcId }}
-        className="btn btn-sm btn-primary"
         title="Receive this challan back from the vendor (this also books the GRN)"
       >
         📥 Receive {row.outsourceOpenDcCode ?? 'challan'}
-      </Link>
+      </Link>,
     );
   }
 
-  // received → the material is back and waiting to be inspected.
-  if (status === 'received' && effectiveFormPerms(eff, 'qc_incoming').view) {
-    return (
-      <Link
-        to="/incoming-qc"
-        className="btn btn-sm btn-primary"
-        title="Inspect the material received back from the vendor"
-      >
+  // 4. Incoming QC — pieces are back from the vendor and NOT yet inspected.
+  //    Driven by inQcQty, not by `status === 'received'`: IN-JC-26-00008 op 8
+  //    is `received` with in_qc = 0, i.e. everything is already inspected, so
+  //    there is nothing to inspect and the button must not show.
+  if (op.inQcQty > 0 && effectiveFormPerms(eff, 'qc_incoming').view) {
+    actions.push(
+      <Link key="iqc" to="/incoming-qc" title="Inspect the material received back from the vendor">
         🔬 Incoming QC
-      </Link>
+      </Link>,
     );
   }
 
-  return null;
+  if (actions.length === 0) return null;
+
+  // One primary per card, so the eye has one place to land: the first
+  // applicable step leads, the rest are quiet.
+  return (
+    <>
+      {actions.map((a, i) =>
+        cloneElement(a, { className: i === 0 ? 'btn btn-sm btn-primary' : 'btn btn-sm' }),
+      )}
+    </>
+  );
 }
 
 // Footer strip for an outsource op (legacy L11070-74): the reference — PR code
@@ -150,14 +180,15 @@ function OutsourceNextAction({
 // button is gated.
 export function OutsourceActionRefs({
   jcCode,
-  jcOpId,
-  status,
+  op,
 }: {
   jcCode: string;
-  jcOpId: string;
-  status: OutsourceStatus;
+  op: JcOpEnriched;
 }): React.JSX.Element {
-  const row = useOutsourceRow(jcCode, jcOpId);
+  const row = useOutsourceRow(jcCode, op.id);
+  // The status still supplies the REFERENCE TEXT (unchanged); it no longer
+  // decides which buttons appear — see OutsourceNextAction above.
+  const status: OutsourceStatus = op.outsourceStatus ?? 'pending';
   const ref =
     status === 'pr_raised' && row?.outsourcePrCode ? (
       <span style={{ fontSize: 11, color: 'var(--blue)' }}>PR: {row.outsourcePrCode}</span>
@@ -169,7 +200,7 @@ export function OutsourceActionRefs({
   return (
     <>
       {ref}
-      <OutsourceNextAction row={row} status={status} />
+      <OutsourceNextAction row={row} op={op} />
     </>
   );
 }
@@ -193,13 +224,15 @@ export function OutsourceActionRefs({
 // Returns null — no strip, no top border — when a fully gated-out user would
 // otherwise be shown an empty ruled-off band.
 export function JcOpFooter({
-  jcCode,
+  jc,
   op,
   onStart,
   onLog,
   onQc,
 }: {
-  jcCode: string;
+  /** The whole Job Card row: the OSP ladder needs its code, and the ⚠ NC link
+   *  seeds the NC form with the JC + item it is raised against. */
+  jc: JobCardListItem;
   op: JcOpEnriched;
   onStart: (opId: string) => void;
   onLog: (opId: string) => void;
@@ -219,7 +252,11 @@ export function JcOpFooter({
   const canTpi =
     effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
   // ⚠ NC opens /nc-register/new, which guards on nc_dispose.entry.
-  const canNc = effectiveFormPerms(eff, 'nc_dispose').entry;
+  // It is now shown ONLY on a QC operation that actually rejected something:
+  // the QC op is what finds the fault and raises the NC, and with no rejects
+  // there is nothing to report. (No QC op in the live data has rejects today,
+  // so the button is correctly invisible everywhere right now.)
+  const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').entry;
 
   const showLog =
     !isOut &&
@@ -243,7 +280,14 @@ export function JcOpFooter({
   const showQcText = isQc && op.qcPending === 0;
 
   const hasFooter =
-    isOut || showDone || showLog || showStart || showQcBtn || showQcText || (isTpi && canTpi) || canNc;
+    isOut ||
+    showDone ||
+    showLog ||
+    showStart ||
+    showQcBtn ||
+    showQcText ||
+    (isTpi && canTpi) ||
+    showNc;
   if (!hasFooter) return null;
 
   return (
@@ -259,11 +303,7 @@ export function JcOpFooter({
       }}
     >
       {isOut ? (
-        <OutsourceActionRefs
-          jcCode={jcCode}
-          jcOpId={op.id}
-          status={op.outsourceStatus ?? 'pending'}
-        />
+        <OutsourceActionRefs jcCode={jc.code} op={op} />
       ) : isQc ? (
         showQcBtn ? (
           <button
@@ -309,16 +349,29 @@ export function JcOpFooter({
           📋 TPI
         </Link>
       ) : null}
-      {/* A fault can be found at ANY operation — process, QC or at the vendor —
-          so Report NC sits on every card. Last in the strip and quiet: it is the
-          exception path, not the next step. */}
-      {canNc ? (
+      {/* Report NC — the QC operation that rejected pieces is where the fault is
+          found, so the button only appears there, labelled with the reject
+          count like the 🔬 QC (5) button beside it. The link carries the JC,
+          the item and the operation into the form, so the inspector lands on a
+          part-filled NC instead of a blank one. Last in the strip and quiet: it
+          is the exception path, not the next step. */}
+      {showNc ? (
         <Link
           to="/nc-register/new"
+          search={{
+            jobCardId: jc.id,
+            itemId: jc.itemId,
+            itemCode: jc.itemCode,
+            itemName: jc.itemName,
+            jcOpId: op.id,
+            opSeq: String(op.opSeq),
+            operation: op.operation,
+            rejectedQty: String(op.qcRejectedQty),
+          }}
           className="btn btn-sm btn-ghost"
-          title="Report a non-conformance found at this operation"
+          title="Report a non-conformance for the pieces this QC operation rejected"
         >
-          ⚠ NC
+          ⚠ NC ({op.qcRejectedQty})
         </Link>
       ) : null}
     </div>

@@ -407,7 +407,7 @@ export function JcOpCard({
             with the OSP ladder, because every button in it is permission-gated
             on the screen it opens and that gating belongs in one place. ── */}
         <JcOpFooter
-          jcCode={jc.code}
+          jc={jc}
           op={op}
           onStart={onStart}
           onLog={onLog}
