@@ -181,7 +181,13 @@ export function JcOpCard({
             gap: 22,
             flexWrap: 'wrap',
             alignItems: 'flex-start',
-            marginBottom: logs.length > 0 || hasFooter ? 10 : 0,
+            // Was `logs.length > 0 || hasFooter`, but `hasFooter` was deleted
+            // along with the conditional wrapper when the footer became
+            // unconditional (f438b86) — and this one use of it survived, which
+            // is what stopped the app compiling. The footer's own visibility
+            // now lives inside JcOpFooter, where this file cannot see it, so
+            // the gap is fixed rather than guessed at.
+            marginBottom: 10,
           }}
         >
           <div>
