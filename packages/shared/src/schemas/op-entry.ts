@@ -119,6 +119,11 @@ export const opLogSchema = z.object({
   rejectQty: z.number().int().nonnegative(),
   operatorId: z.string().uuid().nullable(),
   operatorName: z.string().nullable(),
+  /** The QC user who signed this inspection off (0115). Null on production
+   *  entries and on every row written before that migration — those name an
+   *  inspector in `operatorName` and link to nobody, and are not backfilled
+   *  because there is no honest way to work out which login was meant. */
+  qcUserId: z.string().uuid().nullable().default(null),
   /** The machine this entry's qty was produced on (0095). Stamped at log time,
    *  so it survives a later machine change on the operation. Null on QC entries
    *  and on pre-0095 rows whose op never carried a resolved machine. */
@@ -334,6 +339,16 @@ export const submitQcLogInputSchema = z
     shift: shiftSchema,
     operatorId: z.string().uuid().optional(),
     operatorName: z.string().min(1).max(120).optional(),
+    /** The QC USER who signed this inspection off, picked from the Access
+     *  Control QC list (ADR-147). Separate from `operatorId`, which points at
+     *  the OPERATORS master — machinists — and so could never hold a login.
+     *  Without this the QC Call Register could only record the inspector's
+     *  name, linking the entry to nobody.
+     *
+     *  Optional: an inspection recorded for someone who is not a system
+     *  account still saves its name, exactly as before. `operatorName` keeps
+     *  the snapshot regardless. */
+    qcUserId: z.string().uuid().optional(),
     remarks: z.string().max(500).optional(),
     // TPI (Third Party Inspection) metadata — set when this QC log is a TPI
     // inspection (legacy renderTPI / _tpiSubmit). Persisted on op_log (0037).

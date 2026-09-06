@@ -187,6 +187,33 @@ function assignLineNos(lines: GoodsReceiptNoteLineInput[], startFrom: number): n
   return out;
 }
 
+// Who INSPECTED this line, as opposed to who typed the GRN (ADR-149).
+//
+// The GRN screen now asks: `qcInspectedByUserId` is the person picked from the
+// Access Control QC list, `qcInspectedByName` the name recorded on the day. A
+// payload that mentions NEITHER key never opened the QC fields, so it keeps the
+// pre-ADR-147 rule — stamp whoever saved the GRN on the completed transition —
+// rather than leaving the line credited to nobody.
+//
+// A payload that DOES mention one is answering the question, so the fallback
+// stops: a line naming someone in text must not also be linked to the typist,
+// which is the exact "links to the wrong person" this closes.
+function qcInspectorOnInsert(
+  l: GoodsReceiptNoteLineInput,
+  saverUserId: string,
+): { qcInspectedBy: string | null; qcInspectedByText: string | null } {
+  if (l.qcInspectedByUserId === undefined && l.qcInspectedByName === undefined) {
+    return {
+      qcInspectedBy: l.qcStatus === 'completed' ? saverUserId : null,
+      qcInspectedByText: null,
+    };
+  }
+  return {
+    qcInspectedBy: l.qcInspectedByUserId ?? null,
+    qcInspectedByText: l.qcInspectedByName ?? null,
+  };
+}
+
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
@@ -433,6 +460,7 @@ async function getGoodsReceiptNoteInternal(
         gnl.qc_date AS "qcDate",
         gnl.qc_remarks AS "qcRemarks",
         gnl.qc_inspected_by AS "qcInspectedBy",
+        gnl.qc_inspected_by_text AS "qcInspectedByText",
         gnl.qc_report_path AS "qcReportPath",
         gnl.qc_report_name AS "qcReportName",
         gnl.remarks, gnl.created_at AS "createdAt", gnl.created_by AS "createdBy",
@@ -483,6 +511,7 @@ async function getGoodsReceiptNoteInternal(
       qcDate: maybeDateLike(r['qcDate']),
       qcRemarks: (r['qcRemarks'] as string | null) ?? null,
       qcInspectedBy: (r['qcInspectedBy'] as string | null) ?? null,
+      qcInspectedByText: (r['qcInspectedByText'] as string | null) ?? null,
       qcReportPath: (r['qcReportPath'] as string | null) ?? null,
       qcReportName: (r['qcReportName'] as string | null) ?? null,
       remarks: (r['remarks'] as string | null) ?? null,
@@ -591,6 +620,7 @@ export async function createGoodsReceiptNote(
 
     const lineValues = input.lines.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
+      const inspector = qcInspectorOnInsert(l, user.id);
       return {
         companyId,
         goodsReceiptNoteId: header.id,
@@ -606,7 +636,8 @@ export async function createGoodsReceiptNote(
         qcRejectedQty: l.qcRejectedQty,
         qcDate: l.qcDate ?? null,
         qcRemarks: l.qcRemarks ?? null,
-        qcInspectedBy: l.qcStatus === 'completed' ? user.id : null,
+        qcInspectedBy: inspector.qcInspectedBy,
+        qcInspectedByText: inspector.qcInspectedByText,
         qcReportPath: l.qcReportPath ?? null,
         qcReportName: l.qcReportName ?? null,
         remarks: l.remarks ?? null,
@@ -929,8 +960,26 @@ async function mergeLines(
     if (u.data.qcRemarks !== undefined) lineUpdate['qcRemarks'] = u.data.qcRemarks ?? null;
     if (u.data.qcReportPath !== undefined) lineUpdate['qcReportPath'] = u.data.qcReportPath ?? null;
     if (u.data.qcReportName !== undefined) lineUpdate['qcReportName'] = u.data.qcReportName ?? null;
-    // qcInspectedBy auto-stamped on the completed transition.
-    if (u.data.qcStatus === 'completed' && u.prev.qcStatus !== 'completed') {
+    // Who INSPECTED this line (ADR-149). The picked QC user wins; the
+    // typed name is kept beside it, deliberately not derived from it, so a
+    // signed-off inspection reads the same after that person is renamed or
+    // removed. `undefined` (key absent) and `null` (key sent empty) are
+    // different answers — the ADR-143 distinction — so an omitted key never
+    // blanks a stored name.
+    //
+    // The user.id stamp survives only for payloads that mention neither key:
+    // a GRN saved by someone who never opened the QC fields must behave as it
+    // always did, crediting the saver rather than nobody.
+    const inspectorPicked = u.data.qcInspectedByUserId !== undefined;
+    const inspectorNamed = u.data.qcInspectedByName !== undefined;
+    if (inspectorPicked) lineUpdate['qcInspectedBy'] = u.data.qcInspectedByUserId ?? null;
+    if (inspectorNamed) lineUpdate['qcInspectedByText'] = u.data.qcInspectedByName ?? null;
+    if (
+      !inspectorPicked &&
+      !inspectorNamed &&
+      u.data.qcStatus === 'completed' &&
+      u.prev.qcStatus !== 'completed'
+    ) {
       lineUpdate['qcInspectedBy'] = user.id;
     }
     if (u.data.remarks !== undefined) lineUpdate['remarks'] = u.data.remarks ?? null;
@@ -974,6 +1023,7 @@ async function mergeLines(
     const newLineNos = assignLineNos(toInsert, startFrom);
     const values = toInsert.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
+      const inspector = qcInspectorOnInsert(l, user.id);
       return {
         companyId,
         goodsReceiptNoteId: grnId,
@@ -989,7 +1039,8 @@ async function mergeLines(
         qcRejectedQty: l.qcRejectedQty,
         qcDate: l.qcDate ?? null,
         qcRemarks: l.qcRemarks ?? null,
-        qcInspectedBy: l.qcStatus === 'completed' ? user.id : null,
+        qcInspectedBy: inspector.qcInspectedBy,
+        qcInspectedByText: inspector.qcInspectedByText,
         qcReportPath: l.qcReportPath ?? null,
         qcReportName: l.qcReportName ?? null,
         remarks: l.remarks ?? null,

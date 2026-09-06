@@ -55,7 +55,14 @@ export const goodsReceiptNoteLineSchema = z.object({
   qcRejectedQty: z.number().int().nonnegative(),
   qcDate: z.string().nullable(),
   qcRemarks: z.string().nullable(),
+  /** The QC user this line's inspection is credited to. Until ADR-149 the GRN
+   *  screen never asked, and the service stamped whoever SAVED the GRN — the
+   *  typist, not the inspector. */
   qcInspectedBy: z.string().uuid().nullable(),
+  /** The inspector's name as recorded on the day. Kept alongside the link, and
+   *  deliberately not derived from it: a signed-off inspection must not change
+   *  when that person is later renamed, moved or removed. */
+  qcInspectedByText: z.string().nullable().default(null),
   // Incoming-QC report attachment (migration 0043) — Storage path (qc-docs
   // bucket) + original file name for the inspection report on this GRN line
   // (legacy _viewQCReport, HTML L23860).
@@ -145,6 +152,16 @@ export const goodsReceiptNoteLineInputSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'qcDate must be YYYY-MM-DD')
       .optional(),
     qcRemarks: z.string().max(2000).optional(),
+    /** Who did the QC on this line, picked from the Access Control QC list
+     *  (ADR-147). Both are optional: a GRN saved without touching QC sends
+     *  neither, and the line keeps whatever it already had.
+     *
+     *  Before this the GRN screen collected no inspector at all and the
+     *  service stamped `user.id` on the completed transition — which recorded
+     *  whoever saved the GRN, routinely a storekeeper rather than the person
+     *  who actually inspected the goods. */
+    qcInspectedByUserId: z.string().uuid().nullable().optional(),
+    qcInspectedByName: z.string().max(120).nullable().optional(),
     // QC report attachment (migration 0043) — set when an inspector attaches a
     // report on this GRN line. qcReportPath is the qc-docs Storage path.
     qcReportPath: z.string().nullable().optional(),

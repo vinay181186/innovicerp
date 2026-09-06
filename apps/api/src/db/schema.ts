@@ -1091,6 +1091,15 @@ export const opLog = pgTable(
     rejectQty: integer('reject_qty').notNull().default(0),
     operatorId: uuid('operator_id').references(() => operators.id),
     operatorName: text('operator_name'),
+    // The QC USER who signed this inspection off (migration 0115 / ADR-149).
+    // Distinct from operator_id, which points at the OPERATORS master — the
+    // shop-floor machinists. A QC inspection is signed by a person with a
+    // login, configured in Access Control, and there was nowhere to record
+    // which one: only operator_name held the text, so a QC entry named a
+    // person and linked to nobody. Null on production entries and on every
+    // row written before 0115. operator_name still keeps its own snapshot —
+    // a signed-off inspection must not change when a person is renamed.
+    qcUserId: uuid('qc_user_id').references(() => users.id),
     // The machine that produced THIS entry's qty, stamped at log time from the
     // open running session (falling back to the op's machine). Migration 0095.
     // Before it existed, machine-wise output had to be read off the operation's

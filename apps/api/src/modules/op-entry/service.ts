@@ -196,6 +196,7 @@ export async function listOpLog(input: ListOpLogQuery, user: AuthContext): Promi
         rejectQty: opLog.rejectQty,
         operatorId: opLog.operatorId,
         operatorName: opLog.operatorName,
+        qcUserId: opLog.qcUserId,
         machineId: opLog.machineId,
         machineCode: machines.code,
         machineCodeText: opLog.machineCodeText,
@@ -225,6 +226,7 @@ type OpLogRow = {
   rejectQty: number;
   operatorId: string | null;
   operatorName: string | null;
+  qcUserId: string | null;
   machineId: string | null;
   machineCode: string | null;
   machineCodeText: string | null;
@@ -250,6 +252,7 @@ function toOpLog(r: OpLogRow): OpLog {
     rejectQty: r.rejectQty,
     operatorId: r.operatorId,
     operatorName: r.operatorName,
+    qcUserId: r.qcUserId,
     machineId: r.machineId,
     machineCode: r.machineCode,
     machineCodeText: r.machineCodeText,
@@ -280,6 +283,7 @@ async function selectOpLogById(
       rejectQty: opLog.rejectQty,
       operatorId: opLog.operatorId,
       operatorName: opLog.operatorName,
+      qcUserId: opLog.qcUserId,
       machineId: opLog.machineId,
       machineCode: machines.code,
       machineCodeText: opLog.machineCodeText,
@@ -803,6 +807,8 @@ export async function submitOpLog(input: SubmitOpLogInput, user: AuthContext): P
       rejectQty: row.rejectQty,
       operatorId: row.operatorId,
       operatorName: row.operatorName,
+      // Null here by construction: only submitQcLog ever sets it.
+      qcUserId: row.qcUserId,
       machineId: row.machineId,
       machineCode: stamped.machineCode,
       machineCodeText: row.machineCodeText,
@@ -951,6 +957,14 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
         rejectQty: input.rejectQty,
         operatorId: input.operatorId ?? null,
         operatorName: input.operatorName ?? null,
+        // 0115 / ADR-149 — the QC user who signed this inspection off. It sits
+        // BESIDE operatorId rather than replacing it because operatorId points
+        // at the OPERATORS master (shop-floor machinists) and can never hold a
+        // login id; until this column existed a QC entry named an inspector in
+        // operatorName and linked to nobody. operatorName stays as it was: the
+        // snapshot of who signed off on the day, which must not move when a
+        // person is later renamed or removed.
+        qcUserId: input.qcUserId ?? null,
         // 0095 — no machine on QC: inspection is not machining, and jc_ops
         // carries the literal 'QC' as a type label, not a machine (ISSUE-010).
         // Time of the inspection, when supplied (was hard-coded null).
@@ -1051,6 +1065,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       rejectQty: row.rejectQty,
       operatorId: row.operatorId,
       operatorName: row.operatorName,
+      qcUserId: row.qcUserId,
       // Always null on QC entries — see the insert above.
       machineId: row.machineId,
       machineCode: null,

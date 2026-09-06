@@ -7758,3 +7758,42 @@ mount.
 - Verification: typecheck, **build** (`tsc -b && vite build` — what CI actually
   runs; a typecheck-only pass let ADR-145 through with a compile error) and
   eslint. Conditions checked against `v_osp_wip` row by row.
+
+## ADR-149: The QC log and the GRN screen link to the inspector too — finishing ADR-147
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+ADR-147 replaced the free-text and operator-list "QC By" fields with a dropdown of the people Access Control lets do QC work, and pointed `goods_receipt_note_lines.qc_inspected_by` at the person picked rather than whoever pressed Submit. It closed Incoming QC and left two paths open, both flagged at the time. The user's instruction was one line: *"go fix gaps."*
+
+**The QC log.** The QC Call Register's process-QC entry got the dropdown but could still only save a NAME. `op_log` has `operator_id`, but it references the **operators** master — shop-floor machinists — and a QC inspector is a person with a login, configured in Access Control. There was literally nowhere to put them, so the entry named someone and linked to nobody.
+
+**The GRN screen.** `goods_receipt_note_lines` already had *both* columns (`qc_inspected_by` and `qc_inspected_by_text`) since long before this work. The form simply never asked who inspected, and three code paths stamped `user.id` on the completed transition. That records whoever SAVED the GRN — routinely a storekeeper booking in a delivery, not the person who inspected the goods. No schema was missing here; the question was never being asked.
+
+### Decision
+**`op_log` gains `qc_user_id uuid references users(id)`** (migration 0115), nullable, sitting *beside* `operator_id` rather than replacing it. The two answer different questions — which machinist ran the work, and which QC person signed it off — and an op can have both. A partial index on `(qc_user_id, log_date) where qc_user_id is not null` makes "every inspection this person signed" cheap without indexing the production rows that will never have the column set.
+
+**The GRN line input gains `qcInspectedByUserId` and `qcInspectedByName`**, and the form grows a 👤 QC By field in the per-line QC block, respecting the same lock that already freezes QC-completed lines. The service now follows a three-way rule:
+- a picked user is written as the inspector;
+- a supplied name is written to `qc_inspected_by_text`;
+- **neither supplied → the old behaviour stands**, stamping `user.id` on the completed transition. A GRN saved by someone who never opened the QC fields behaves exactly as it does today.
+
+An **absent** key means "the payload does not mention QC, leave it alone"; an explicit null means "clear it". The same distinction that mattered for the SO drawing path in ADR-143, and for the same reason: `JSON.stringify` drops undefined, so absence cannot be allowed to mean erasure.
+
+**The name is still stored as text in both places**, and is still not derived from the link. Third time this rule has decided a design (ADR-146 for TPI, ADR-147 for Incoming QC, here for the other two): a signed-off inspection is a record of what was true on the day, and must not change when a person is renamed, moved between departments, or removed.
+
+### Alternatives Considered
+- **Reuse `op_log.operator_id` for the QC user** — rejected, and it is the change someone will propose later. It is an FK to the `operators` master; pointing it at `users` would need the constraint dropped, would break every operator-wise production report that joins it, and would conflate a machinist with an inspector in one column.
+- **Widen `operator_id` to a polymorphic "person id" with a type discriminator** — rejected: it buys nothing here and loses the foreign key on both sides. Two nullable FKs are honest about the two different things.
+- **Drop `operator_name` on QC entries now that the link exists** — rejected for the reason above. The link says who it was; the text says what we recorded at the time, and they are allowed to diverge.
+- **Make the GRN's QC By mandatory** — rejected: a GRN is often saved with QC still pending, and forcing an inspector at booking-in time would make people put any name in to get past the field. The fallback to the submitter is the honest default when nobody has inspected yet.
+- **Backfill `qc_user_id` from `operator_name` by matching text to logins** — rejected: the names were typed freely for years, and a fuzzy match that is right most of the time is worse than an empty column in an audit trail.
+
+### Consequences
+- Positive: "every inspection signed by this person" is now answerable across all three QC paths — incoming inspection, process QC, and the GRN screen.
+- Positive: the GRN screen stops silently crediting the storekeeper who booked the delivery in.
+- Negative: entries written before today keep what they had — `op_log.qc_user_id` null, and old GRN lines still pointing at whoever saved them. Neither is backfilled, deliberately.
+- Negative: `op_log` now carries two person columns, and a reader has to know which is which. The column comment in `schema.ts` says so explicitly.
+- Not changed here: the NC record raised by a QC rejection still has no inspector link — `nc_register` has no column for one, only `reported_by_text` plus the standard created_by/updated_by, which correctly mean "who created this NC". Adding one is a separate decision with its own migration.
+- **Deploy ordering is not optional here, and the reason is wider than this feature.** `so-overview/service.ts` (x2) and `so-status/service.ts` each run a bare `.select().from(opLog)`, which Drizzle expands to every column declared in `schema.ts`. The moment `qcUserId` is declared there, those three queries ask Postgres for `qc_user_id` — so shipping the code before 0115 takes down **SO Overview and SO Status**, screens that never mention QC. Any future additive column on a table read by a bare select carries the same trap.
+- Verification: typecheck + lint on all three packages, web build. Migration 0115 applied 2026-09-06 and verified live — column and partial index present, all 50 existing op_log rows null, and `select *` over op_log succeeds, which is the check that matters for the ordering hazard above. The api suite hits the shared prod DB, so it is not runnable here.

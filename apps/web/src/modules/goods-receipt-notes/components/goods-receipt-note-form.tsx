@@ -9,13 +9,16 @@ import {
   type UpdateGoodsReceiptNoteInput,
 } from '@innovic/shared';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { todayLocal } from '@/lib/date';
 import { QcReportAttach } from '@/components/shared/qc-report-attach';
+import { SearchableSelect } from '@/components/shared/searchable-select';
 import { useSession } from '@/lib/session';
+import { useQcUserOptions } from '@/modules/qc-users/api';
+import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { useVendorsList } from '@/modules/vendors/api';
 
@@ -33,6 +36,12 @@ interface LineFormValue {
   qcRejectedQty: number;
   qcDate?: string;
   qcRemarks?: string;
+  /** Who inspected this line — the picked Access Control QC user, plus the name
+   *  as it read on the day. Both are kept because the name is the record and the
+   *  id is only the link: a signed-off inspection must not change wording when
+   *  that person is later renamed or removed. */
+  qcInspectedByUserId?: string | null;
+  qcInspectedByName?: string | null;
   qcReportPath?: string | null;
   qcReportName?: string | null;
   remarks?: string;
@@ -69,6 +78,8 @@ const NEW_LINE: LineFormValue = {
   qcStatus: 'pending',
   qcAcceptedQty: 0,
   qcRejectedQty: 0,
+  qcInspectedByUserId: null,
+  qcInspectedByName: null,
 };
 
 type CreateMode = {
@@ -114,6 +125,14 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
   const companyId = useSession().data?.companyId ?? null;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
+  // One fetch for the whole form — every line's QC By box reads the same list,
+  // and the query key is shared with the other QC By fields in the app.
+  const qcUsers = useQcUserOptions();
+  const qcOptions = useMemo(
+    () => toQcSearchOptions(qcUsers.data?.options ?? []),
+    [qcUsers.data?.options],
+  );
+
   const { data: vendorsData } = useVendorsList({ limit: 200, offset: 0 });
   const vendors = vendorsData?.vendors ?? [];
 
@@ -148,6 +167,8 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
           qcStatus: 'pending',
           qcAcceptedQty: 0,
           qcRejectedQty: 0,
+          qcInspectedByUserId: null,
+          qcInspectedByName: null,
         }),
       );
     if (newLines.length > 0) replace(newLines);
@@ -201,6 +222,10 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         qcRejectedQty: Number(l.qcRejectedQty),
         qcDate: l.qcDate || undefined,
         qcRemarks: l.qcRemarks?.trim() || undefined,
+        // Omitted entirely when nobody was picked, so a GRN saved without
+        // touching QC sends exactly what it sent before this field existed.
+        ...(l.qcInspectedByUserId ? { qcInspectedByUserId: l.qcInspectedByUserId } : {}),
+        ...(l.qcInspectedByName?.trim() ? { qcInspectedByName: l.qcInspectedByName.trim() } : {}),
         qcReportPath: l.qcReportPath ?? undefined,
         qcReportName: l.qcReportName ?? undefined,
         remarks: l.remarks?.trim() || undefined,
@@ -533,6 +558,32 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                     />
                   </div>
                   <div className="form-grp">
+                    <label className="form-label">👤 QC By</label>
+                    {/* Until now the server stamped whoever SAVED the GRN, which
+                        is usually the storekeeper and not the inspector. Locked
+                        the same way as QC Status above: disabled, but still
+                        showing the recorded name. */}
+                    <SearchableSelect
+                      value={watch(`lines.${idx}.qcInspectedByUserId`) ?? null}
+                      onChange={(id) => {
+                        setValue(`lines.${idx}.qcInspectedByUserId`, id, { shouldDirty: true });
+                        setValue(
+                          `lines.${idx}.qcInspectedByName`,
+                          qcUsers.data?.options.find((u) => u.id === id)?.name ?? null,
+                          { shouldDirty: true },
+                        );
+                      }}
+                      options={qcOptions}
+                      onSearch={NO_SERVER_SEARCH}
+                      loading={qcUsers.isFetching}
+                      valueLabel={watch(`lines.${idx}.qcInspectedByName`) ?? ''}
+                      selectedLabel={qcSelectedLabel}
+                      disabled={locked}
+                      placeholder="🔍 Select QC person…"
+                      emptyText="No QC users — set them up in Access Control"
+                    />
+                  </div>
+                  <div className="form-grp">
                     <label className="form-label">QC Remarks</label>
                     <input
                       className="innovic-input"
@@ -655,6 +706,8 @@ function detailToFormValues(detail: GoodsReceiptNoteDetail): FormValues {
         qcRejectedQty: l.qcRejectedQty,
         ...(l.qcDate ? { qcDate: l.qcDate } : {}),
         ...(l.qcRemarks ? { qcRemarks: l.qcRemarks } : {}),
+        ...(l.qcInspectedBy ? { qcInspectedByUserId: l.qcInspectedBy } : {}),
+        ...(l.qcInspectedByText ? { qcInspectedByName: l.qcInspectedByText } : {}),
         ...(l.qcReportPath ? { qcReportPath: l.qcReportPath } : {}),
         ...(l.qcReportName ? { qcReportName: l.qcReportName } : {}),
         ...(l.remarks ? { remarks: l.remarks } : {}),

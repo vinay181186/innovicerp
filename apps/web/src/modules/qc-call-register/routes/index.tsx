@@ -434,13 +434,22 @@ function PendingCall(props: {
       setErr('Enter who did the QC (QC By).');
       return;
     }
+    // Nobody touched the dropdown, so the field still holds the seeded name of
+    // the signed-in person. Their own user id is on the session, so link the
+    // entry to them — but only when they are genuinely on the QC list, because
+    // that list, not this screen's permissions, is what "a QC person" means.
+    const seededId = session && qcOptions.some((u) => u.id === session.id) ? session.id : null;
+    const qcUserId = inspectorId ?? seededId;
     const input: SubmitQcLogInput = {
       jcOpId: o.jcOpId,
       qty: acc,
       rejectQty: rej,
       logDate,
       shift,
+      // The name stays the snapshot of who signed off on the day; the id below
+      // is the extra link, sent only when there is a real user behind it.
       operatorName: inspector.trim(),
+      ...(qcUserId ? { qcUserId } : {}),
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
       ...(qcReportPath ? { qcReportPath, qcReportName } : {}),
     };
