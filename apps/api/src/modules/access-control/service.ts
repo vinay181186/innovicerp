@@ -15,13 +15,14 @@
 import {
   ACCESS_DEPTS,
   ACCESS_DEPT_KEYS,
-  ACCESS_TIER_KEYS,
   isAccessDeptKey,
   roleForAccess,
   ACCESS_FORM_KEYS,
   type AccessDeptsMap,
+  type AccessFormKey,
   type AccessFormsMap,
   cascadeFormsMap,
+  effectiveFormPerms,
   type EffectiveAccess,
   type ListUserAccessResponse,
   normalizeDeptsMap,
@@ -212,22 +213,52 @@ export async function listUserAccess(user: AuthContext): Promise<ListUserAccessR
 }
 
 // ── QC user options ────────────────────────────────────────────
-// The lowest Quality tier that may sign off an inspection. L1 is view-only, so
-// an L1 QC grant means "may open Quality screens", not "may inspect" — naming
-// that person as the inspector would credit the work to someone who cannot do
-// it. Ranked through ACCESS_TIER_KEYS the same way `roleForAccess` ranks tiers,
-// so a new tier in the registry cannot leave this comparison behind.
-const QC_INSPECTOR_MIN_TIER = 'L2';
+// The forms that ARE a QC entry: recording an inspection on a job-card
+// operation, and recording one on incoming goods. Someone who may create on
+// either of these is someone who may sign off an inspection, which is exactly
+// what a "QC By" dropdown is asking for.
+//
+// Deliberately NOT every qc-department form. Entry rights on QC Process Master
+// or TPI Master mean "may maintain a lookup list", not "may inspect", and
+// putting those people forward as inspectors would name someone who does not
+// do the job.
+const QC_ENTRY_FORMS: readonly AccessFormKey[] = ['qc_submit', 'qc_incoming'];
 
-// This person's Quality tier when it is high enough to inspect, else null.
-// `normalizeDeptsMap` reads the pre-0100 literal `true` as L1 — which is
-// exactly the view-only case being excluded, so legacy rows need no special
-// handling here.
-function qcInspectorTier(departments: unknown): string | null {
-  const tier = normalizeDeptsMap(asDeptsMap(departments))['qc'];
-  if (!tier) return null;
-  const order = ACCESS_TIER_KEYS as readonly string[];
-  return order.indexOf(tier) >= order.indexOf(QC_INSPECTOR_MIN_TIER) ? tier : null;
+/** Was this person GIVEN the right to make a QC entry?
+ *
+ *  Asked through the app's own permission function rather than re-derived
+ *  here, so the dropdown can never disagree with what the QC screens actually
+ *  let someone do. That matters in three ways a tier comparison got wrong:
+ *
+ *    - a per-form grant counts. Someone given explicit entry on QC Call
+ *      Register without a Quality tier is a QC user, and was invisible before.
+ *    - "No create" counts. An admin who switched entry OFF for QC on one
+ *      person meant it; they were still being offered as an inspector.
+ *    - L1 still falls out on its own, because the L1 tier grants no entry —
+ *      the old min-tier rule is subsumed rather than removed.
+ *
+ *  Full Access counts, on the user's explicit instruction: those accounts may
+ *  make any entry in the system, QC included, so refusing to let one be
+ *  recorded as the inspector would deny something that is actually true. They
+ *  are sorted to the BOTTOM instead (see the ordering below) so the people
+ *  whose job this is open the list, rather than being mixed in with admins. */
+function wasGrantedQcEntry(eff: EffectiveAccess): boolean {
+  return QC_ENTRY_FORMS.some((f) => effectiveFormPerms(eff, f).entry);
+}
+
+/** Did their QUALITY access grant this, as opposed to Full Access covering
+ *  everything? Not a filter — only the sort key that separates the QC team and
+ *  the people given QC rights from the admins who merely may. */
+function grantedQcEntryDirectly(eff: EffectiveAccess): boolean {
+  return wasGrantedQcEntry({ ...eff, fullAccess: false });
+}
+
+/** Their Quality tier for display, whatever it is — L1 included. The tier no
+ *  longer decides who is on the list, so it is reported rather than filtered
+ *  on: someone can now qualify through a per-form grant with a low tier, or
+ *  none at all. `normalizeDeptsMap` reads the pre-0100 literal `true` as L1. */
+function qcTierLabel(departments: unknown): string | null {
+  return normalizeDeptsMap(asDeptsMap(departments))['qc'] ?? null;
 }
 
 // The people Access Control actually lets do QC work — the source list behind
@@ -242,7 +273,8 @@ function qcInspectorTier(departments: unknown): string | null {
 // `users.role` is not the filter (see the schema comment in @innovic/shared):
 // the role is derived as the narrowest role covering everything someone was
 // granted, so a Quality lead who also writes Production derives as 'manager'
-// and would vanish from the list. The department tier is the honest answer.
+// and would vanish from the list. What someone was GRANTED is the honest answer,
+// and `wasGrantedQcEntry` asks the app's own permission function for it.
 export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption[]> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -252,8 +284,13 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
         fullName: users.fullName,
         email: users.email,
         acFullAccess: userAccess.fullAccess,
+        acAuditor: userAccess.auditor,
         acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
+        // Needed because the qualifying test is the app's real permission
+        // check, which unions the department tier with per-form grants and
+        // then subtracts the per-page OFF switches.
+        acForms: userAccess.forms,
       })
       .from(users)
       .leftJoin(
@@ -272,13 +309,20 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
         ),
       );
 
-    const options: QcUserOption[] = rows.flatMap((r) => {
+    // `_direct` rides along purely as a sort key and is stripped before return,
+    // so the wire shape stays exactly QcUserOption.
+    const options: Array<QcUserOption & { _direct: boolean }> = rows.flatMap((r) => {
       const fullAccess = r.acFullAccess ?? false;
-      const tier = qcInspectorTier(r.acDepartments);
-      // Full Access covers every department, Quality included, so those
-      // accounts qualify without a QC grant of their own — `tier` stays null
-      // and the UI can say why they are on the list.
-      if (!fullAccess && !tier) return [];
+      // Built exactly as getMyAccess builds it, so this asks the same question
+      // of the same shape the QC screens ask of themselves.
+      const eff: EffectiveAccess = {
+        fullAccess,
+        auditor: r.acAuditor ?? false,
+        departments: normalizeDeptsMap(asDeptsMap(r.acDepartments)),
+        forms: cascadeFormsMap(asFormsMap(r.acForms)),
+      };
+      if (!wasGrantedQcEntry(eff)) return [];
+      const tier = qcTierLabel(r.acDepartments);
       return [
         {
           id: r.id,
@@ -288,16 +332,26 @@ export async function listQcUserOptions(user: AuthContext): Promise<QcUserOption
           tier,
           isQcDept: r.acMainDept === 'qc',
           fullAccess,
+          // Sort key only — see the ordering below. Not part of the wire shape
+          // the UI reads.
+          _direct: grantedQcEntryDirectly(eff),
         },
       ];
     });
 
-    // The actual QC team first, then everyone else who merely may do it, each
-    // group by name — so the dropdown opens on the people whose job this is
-    // instead of burying them under the admins.
-    return options.sort((a, b) =>
-      a.isQcDept === b.isQcDept ? a.name.localeCompare(b.name) : a.isQcDept ? -1 : 1,
-    );
+    // Three bands, so the list opens on the people whose job this actually is:
+    //   1. the QC team          — Quality is their MAIN department
+    //   2. granted QC entry     — a Quality tier or a per-form grant says so
+    //   3. everyone else        — Full Access accounts who merely MAY do it
+    // Within a band, by name. Band 3 exists because Full Access covers every
+    // entry in the system including QC, so those accounts genuinely qualify —
+    // but an admin is rarely the person who inspected, and burying the QC team
+    // under them is what made this dropdown read as "everybody".
+    const band = (o: (typeof options)[number]): number =>
+      o.isQcDept ? 0 : o._direct ? 1 : 2;
+    return options
+      .sort((a, b) => (band(a) === band(b) ? a.name.localeCompare(b.name) : band(a) - band(b)))
+      .map(({ _direct: _drop, ...o }) => o);
   });
 }
 

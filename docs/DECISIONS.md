@@ -7759,6 +7759,40 @@ mount.
   runs; a typecheck-only pass let ADR-145 through with a compile error) and
   eslint. Conditions checked against `v_osp_wip` row by row.
 
+## ADR-147a (amendment, 2026-09-06): the QC By list is "who was GRANTED QC entry", and Full Access counts
+
+ADR-147 shipped with the rule "Quality tier L2 or above, plus Full Access accounts". The user's correction was that the dropdown still read as everybody: *"currently qc by filed dropdown shows all qc person. show names who has qc rights to entry."*
+
+**The rule is now: was this person GRANTED `entry` on a QC entry form** — `qc_submit` (QC Call Register) or `qc_incoming` (Incoming QC) — asked through the app's own `effectiveFormPerms` rather than re-derived from tiers. Deliberately not every qc-department form: entry on QC Process Master or TPI Master means "may maintain a lookup list", not "may inspect".
+
+Asking the real permission function fixes three things the tier comparison got wrong, and two of them were silent:
+- a **per-form grant** counts — someone given explicit entry on QC Call Register with no Quality tier was invisible before, and is a QC user;
+- a **per-page "No create"** switch now takes someone back off the list — before, an admin who had explicitly removed a person's QC entry rights was still offering them as an inspector;
+- **L1 falls out on its own**, because the L1 tier grants no entry. The old min-tier constant is subsumed rather than removed.
+
+**Full Access accounts stay on the list.** An intermediate version excluded them — of the 13 names offered, four were Super Admins (`dummy`, `japan`, `Jinal`, `Vinay N Makwana`), three with no QC tier at all and one at L1, present only because Full Access short-circuits every permission check. The user rejected that exclusion directly: *"but they have full access. they can do any entries."* That is correct, and it is the deciding argument — those accounts genuinely may record a QC entry, so a list of who may do it that omits them would be describing something untrue. Refusing them would also have meant an admin could not be recorded as the inspector on work they really did.
+
+**Ordering carries the distinction instead of the filter.** Three bands, then by name inside each:
+1. the QC team — Quality is their MAIN department;
+2. granted QC entry — a Quality tier or a per-form grant says so;
+3. everyone else — Full Access accounts who merely may.
+
+So the dropdown opens on the people whose job this is, and the admins are present but last. The UI already labels a Full Access account as such in its row, so nobody reads one as QC staff.
+
+**The tiers are not a ladder, and that is why the old rule was wrong.** `ACCESS_TIERS` reads:
+
+| Tier | Label | view | entry | edit | approve |
+| --- | --- | --- | --- | --- | --- |
+| L1 | Viewer | ✓ | ✗ | ✗ | ✗ |
+| L2 | Data Entry | ✓ | **✓** | ✗ | ✗ |
+| L3 | Editor / Executor | ✓ | **✓** | ✓ | ✗ |
+| L4 | **Approver** | ✓ | **✗** | ✗ | ✓ |
+| L5 | Department Admin | ✓ | **✓** | ✓ | ✓ |
+
+**L4 ranks above L3 but grants less** — it is a sign-off role with no data entry at all. Any rule of the form "tier index ≥ L2" therefore lets an Approver through, which is exactly what shipped in `1bfcaed`. `kiran` (Quality L4) is in the live dropdown today and should never have been: they may approve an inspection, not record one. The user caught it — *"this person has qc right to approve only. what about entry. does he have?"* — and they were right.
+
+Net effect on live data: **13 names become 12**, the one removed being the L4 Approver. All four Full Access accounts stay, sorted last. This is the case that makes the amendment worth shipping: the reordering is cosmetic, but asking the real permission table instead of comparing tier numbers is a correctness fix, and it will keep being one every time a new tier is added with a non-monotonic permission set.
+
 ## ADR-149: The QC log and the GRN screen link to the inspector too — finishing ADR-147
 **Date:** 2026-09-06
 **Status:** Accepted
