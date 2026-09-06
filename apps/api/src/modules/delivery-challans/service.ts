@@ -29,13 +29,20 @@ import {
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
-import { applyOutwardToJcOp, reverseOutwardFromJcOp } from './cascades';
+import {
+  applyOutwardToJcOp,
+  jobWorkUnlinkedRefusal,
+  loadOutwardSendable,
+  reverseOutwardFromJcOp,
+} from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import type { DocumentTraceability } from '@innovic/shared';
 import type {
   CreateDeliveryChallanInput,
   CreateDeliveryChallanReceiptInput,
+  DcSendableLine,
+  DcSendablePreview,
   DeliveryChallanListItem,
   DeliveryChallanReceipt,
   DeliveryChallanWithLines,
@@ -408,6 +415,119 @@ export async function getDeliveryChallan(
   return withUserContext(user, async (tx) => loadDeliveryChallanWithLines(tx, id, companyId));
 }
 
+// ─── How many pieces may go out now (read-only preview) ────────────────────
+//
+// The DC form asks this the moment it opens, so the Send Now box can say what
+// it will accept BEFORE anything is typed. Every number comes from
+// loadOutwardSendable — the same helper the save-time guard uses — so the form
+// and the challan can never disagree.
+
+export async function getSendableForPo(
+  purchaseOrderId: string,
+  user: AuthContext,
+): Promise<DcSendablePreview> {
+  // A read, so `view` is enough: raising the challan is separately gated on
+  // `entry` in createDeliveryChallan and on the form itself.
+  await requireFormAccess(user, 'ospdc_create', 'view');
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const poLines = await tx
+      .select({ id: purchaseOrderLines.id, qty: purchaseOrderLines.qty })
+      .from(purchaseOrderLines)
+      .where(
+        and(
+          eq(purchaseOrderLines.purchaseOrderId, purchaseOrderId),
+          eq(purchaseOrderLines.companyId, companyId),
+          isNull(purchaseOrderLines.deletedAt),
+        ),
+      )
+      .orderBy(asc(purchaseOrderLines.lineNo));
+
+    const alreadyOnDcs = await sumSentQtyByPoLine(
+      tx,
+      poLines.map((l) => l.id),
+      companyId,
+    );
+
+    const lines: DcSendableLine[] = [];
+    for (const l of poLines) {
+      const poQty = Number(l.qty ?? 0);
+      const sentOnDcs = alreadyOnDcs.get(l.id) ?? 0;
+      const poBalance = Math.max(0, poQty - sentOnDcs);
+      const s = await loadOutwardSendable(tx, companyId, l.id);
+
+      // A job-work line with no operation behind it can never be checked, so
+      // nothing may go out on it. Say so here rather than at Save.
+      if (s.kind === 'job_work_unlinked') {
+        lines.push({
+          purchaseOrderLineId: l.id,
+          maxSendNow: 0,
+          limitKind: 'not_linked',
+          limitReason: jobWorkUnlinkedRefusal(s.poCode),
+          jobCardCode: null,
+          opSeq: null,
+        });
+        continue;
+      }
+
+      // A buying PO: the PO line is the whole story.
+      if (s.kind === 'unlinked') {
+        lines.push({
+          purchaseOrderLineId: l.id,
+          maxSendNow: poBalance,
+          limitKind: sentOnDcs > 0 ? 'po_balance' : 'po_qty',
+          limitReason:
+            sentOnDcs > 0
+              ? `Earlier challans have already sent ${sentOnDcs} of the ${poQty} pcs on this PO line, so ${poBalance} are left.`
+              : null,
+          jobCardCode: null,
+          opSeq: null,
+        });
+        continue;
+      }
+
+      const opAllowed = Math.max(0, s.effectiveSendable);
+      const maxSendNow = Math.min(poBalance, opAllowed);
+      const where = `Job card ${s.jcCode} operation ${s.op.opSeq}`;
+      const pcs = maxSendNow === 1 ? 'pc' : 'pcs';
+
+      // Which of the three limits is actually doing the stopping decides what
+      // the user is told, because each one has a different way out: finish the
+      // upstream operation, issue the client's material, or raise another PO.
+      let limitKind: DcSendableLine['limitKind'] = 'po_qty';
+      let limitReason: string | null = null;
+      if (opAllowed <= poBalance && s.cap && s.effectiveSendable < s.sendable) {
+        limitKind = 'material';
+        limitReason =
+          `${where} is waiting on the client's material — only ${maxSendNow} ${pcs} can go out. ` +
+          `JWSO ${s.cap.jwCode}: ${s.cap.received} of ${s.cap.orderQty} ` +
+          `${s.cap.issuedBased ? 'issued to this job card' : 'received for this part'}.`;
+      } else if (opAllowed <= poBalance) {
+        limitKind = 'operation';
+        limitReason =
+          `${where} has only ${maxSendNow} ${pcs} ready to send — the previous operation has ` +
+          `cleared ${s.inputAvail}, ${s.inHouseCompleted} were finished in-house here, and ` +
+          `${s.alreadySent} are already with the vendor.`;
+      } else if (sentOnDcs > 0) {
+        limitKind = 'po_balance';
+        limitReason = `Earlier challans have already sent ${sentOnDcs} of the ${poQty} pcs on this PO line, so ${poBalance} are left.`;
+      }
+
+      lines.push({
+        purchaseOrderLineId: l.id,
+        maxSendNow,
+        limitKind,
+        limitReason,
+        jobCardCode: s.jcCode || null,
+        opSeq: s.op.opSeq,
+      });
+    }
+
+    return { purchaseOrderId, lines };
+  });
+}
+
 // ─── Writes (T-059a outward) ───────────────────────────────────────────────
 
 function dcDetail(code: string, vendorCodeText: string | null | undefined): string {
@@ -489,17 +609,24 @@ async function assertItemIdsExist(
   }
 }
 
+interface PoLineRef {
+  id: string;
+  purchaseOrderId: string;
+  itemId: string | null;
+  qty: number;
+  /** Carried so a refusal can name the line the way the user sees it on screen.
+   *  The over-ship error used to quote the row's uuid, which tells the person
+   *  holding the challan nothing about which item to fix. */
+  lineNo: number;
+  itemCodeText: string | null;
+}
+
 async function loadPoLineMap(
   tx: DbTransaction,
   poLineIds: string[],
   companyId: string,
-): Promise<
-  Map<string, { id: string; purchaseOrderId: string; itemId: string | null; qty: number }>
-> {
-  const out = new Map<
-    string,
-    { id: string; purchaseOrderId: string; itemId: string | null; qty: number }
-  >();
+): Promise<Map<string, PoLineRef>> {
+  const out = new Map<string, PoLineRef>();
   const unique = Array.from(new Set(poLineIds));
   if (unique.length === 0) return out;
   const rows = await tx
@@ -508,6 +635,8 @@ async function loadPoLineMap(
       purchaseOrderId: purchaseOrderLines.purchaseOrderId,
       itemId: purchaseOrderLines.itemId,
       qty: purchaseOrderLines.qty,
+      lineNo: purchaseOrderLines.lineNo,
+      itemCodeText: purchaseOrderLines.itemCodeText,
     })
     .from(purchaseOrderLines)
     .where(
@@ -523,6 +652,8 @@ async function loadPoLineMap(
       purchaseOrderId: r.purchaseOrderId,
       itemId: r.itemId,
       qty: Number(r.qty ?? 0),
+      lineNo: r.lineNo,
+      itemCodeText: r.itemCodeText,
     });
   }
   if (out.size !== unique.length) {
@@ -674,7 +805,9 @@ export async function createDeliveryChallan(
       const remaining = pol.qty - already;
       if (inc > remaining) {
         throw new ConflictError(
-          `PO line ${poLineId} has ${remaining} pcs remaining; cannot ship ${inc}`,
+          `Line ${pol.lineNo}${pol.itemCodeText ? ` (${pol.itemCodeText})` : ''} has ` +
+            `${remaining} pcs left to send of the ${pol.qty} on the purchase order — ` +
+            `cannot send ${inc}.`,
         );
       }
     }

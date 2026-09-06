@@ -1,6 +1,7 @@
 import type {
   CreateDeliveryChallanInput,
   CreateDeliveryChallanReceiptInput,
+  DcSendablePreview,
   DeliveryChallanWithLines,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
@@ -14,6 +15,7 @@ export const deliveryChallansKeys = {
   list: (q: ListDeliveryChallansQuery) => [...deliveryChallansKeys.lists(), q] as const,
   details: () => [...deliveryChallansKeys.all, 'detail'] as const,
   detail: (id: string) => [...deliveryChallansKeys.details(), id] as const,
+  sendable: (poId: string) => [...deliveryChallansKeys.all, 'sendable', poId] as const,
 };
 
 function toQueryString(q: ListDeliveryChallansQuery): string {
@@ -47,6 +49,25 @@ export function useDeliveryChallan(id: string | undefined) {
     queryKey: id ? deliveryChallansKeys.detail(id) : deliveryChallansKeys.detail('__missing__'),
     queryFn: () => apiFetch<DeliveryChallanWithLines>(`/delivery-challans/${id}`),
     enabled: Boolean(id),
+  });
+}
+
+/** How many pieces each line of a PO may actually send right now.
+ *
+ *  The create form asks for this on open so the Send Now box can say what it
+ *  will accept while the number is being typed. Without it the form only knew
+ *  the PO quantity, happily took a number the shop floor could not support, and
+ *  left the refusal to the server after Save.
+ *
+ *  Never cached across visits (staleTime 0): the answer moves every time an
+ *  operation is logged or another challan goes out, and a stale allowance is
+ *  worse than none — it would green-light a qty that is no longer there. */
+export function useDcSendable(poId: string | undefined) {
+  return useQuery<DcSendablePreview>({
+    queryKey: deliveryChallansKeys.sendable(poId ?? '__missing__'),
+    queryFn: () => apiFetch<DcSendablePreview>(`/delivery-challans/sendable/${poId}`),
+    enabled: Boolean(poId),
+    staleTime: 0,
   });
 }
 

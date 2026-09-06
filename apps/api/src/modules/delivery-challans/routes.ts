@@ -9,6 +9,7 @@ import {
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+const poIdParamSchema = z.object({ poId: z.string().uuid() });
 
 export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void> {
   app.get('/delivery-challans', async (req) => {
@@ -27,6 +28,15 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getDeliveryChallanRelated(id, req.user);
+  });
+
+  // How many pieces each line of a PO may actually send RIGHT NOW. Read-only,
+  // and asked by the create form on open so the Send Now box can warn while the
+  // number is being typed instead of failing at Save.
+  app.get('/delivery-challans/sendable/:poId', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { poId } = poIdParamSchema.parse(req.params);
+    return service.getSendableForPo(poId, req.user);
   });
 
   app.post('/delivery-challans', async (req, reply) => {

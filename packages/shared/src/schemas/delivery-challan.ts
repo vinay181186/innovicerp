@@ -212,12 +212,11 @@ export type DeliveryChallanReceipt = z.infer<typeof deliveryChallanReceiptSchema
 // received lands on an auto-GRN as pending QC, and the accept/reject decision
 // (with its defect record) is made at Incoming QC — the single reject surface.
 
-export const createDeliveryChallanReceiptLineInputSchema = z
-  .object({
-    deliveryChallanLineId: z.string().uuid(),
-    receivedQty: z.number().int().positive(),
-    remarks: z.string().nullable().optional(),
-  });
+export const createDeliveryChallanReceiptLineInputSchema = z.object({
+  deliveryChallanLineId: z.string().uuid(),
+  receivedQty: z.number().int().positive(),
+  remarks: z.string().nullable().optional(),
+});
 export type CreateDeliveryChallanReceiptLineInput = z.infer<
   typeof createDeliveryChallanReceiptLineInputSchema
 >;
@@ -236,3 +235,52 @@ export type CreateDeliveryChallanReceiptInput = z.infer<
 // included in the DC detail load (each DC has 0..N receipts).
 export const deliveryChallanReceiptWithLinesSchema = deliveryChallanReceiptSchema;
 export type DeliveryChallanReceiptWithLines = z.infer<typeof deliveryChallanReceiptWithLinesSchema>;
+
+// ─── How many pieces may go out now (send-qty preview) ─────────────────────
+//
+// The DC form used to cap the Send Now box at the PO line quantity, which is
+// the wrong number: what may actually leave depends on how far the shop floor
+// has got and on what earlier challans already sent. So the user typed a qty
+// the form accepted, pressed Save, and only then met a red server error. This
+// shape carries the real cap back to the form so the answer arrives while the
+// number is being typed.
+//
+// The API computes it with the same helper the save-time guard uses, so the
+// number shown here is the number the challan will accept.
+
+export const dcSendableLimitKindSchema = z.enum([
+  /** Nothing narrows the line — the PO quantity is the only cap. */
+  'po_qty',
+  /** Earlier challans have already shipped part of this PO line. */
+  'po_balance',
+  /** The job-card operation behind the line has not cleared that many yet. */
+  'operation',
+  /** A JWSO job card still waiting on the client's material. */
+  'material',
+  /** A job-work PO line with no operation linked — nothing can be checked,
+   *  so nothing may be sent until the link is repaired. */
+  'not_linked',
+]);
+export type DcSendableLimitKind = z.infer<typeof dcSendableLimitKindSchema>;
+
+export const dcSendableLineSchema = z.object({
+  purchaseOrderLineId: z.string().uuid(),
+  /** The most this line may go out on this challan, every rule considered. */
+  maxSendNow: z.number().int().nonnegative(),
+  limitKind: dcSendableLimitKindSchema,
+  /** Plain-English explanation of the cap, written server-side so the form and
+   *  the save-time guard can never word the same limit differently. Null when
+   *  the PO quantity is the only thing in the way. */
+  limitReason: z.string().nullable(),
+  /** Where the line's work sits, for a message that names the job rather than
+   *  a uuid. Null on a buying PO line with no operation behind it. */
+  jobCardCode: z.string().nullable(),
+  opSeq: z.number().int().nullable(),
+});
+export type DcSendableLine = z.infer<typeof dcSendableLineSchema>;
+
+export const dcSendablePreviewSchema = z.object({
+  purchaseOrderId: z.string().uuid(),
+  lines: z.array(dcSendableLineSchema),
+});
+export type DcSendablePreview = z.infer<typeof dcSendablePreviewSchema>;

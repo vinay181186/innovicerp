@@ -1,11 +1,11 @@
 // New DC route (T-059a). Pick a JW PO → load its lines → enter ship qty per
 // line → submit. On success → redirect to detail. Mirrors PO from-pr pattern.
 
-import type { CreateDeliveryChallanInput, Uom } from '@innovic/shared';
+import type { CreateDeliveryChallanInput, DcSendableLine, Uom } from '@innovic/shared';
 import { poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { DocNumberInput } from '@/components/shared/doc-number-input';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -13,7 +13,7 @@ import { todayLocal } from '@/lib/date';
 import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { useCreateDeliveryChallan } from '../api';
+import { useCreateDeliveryChallan, useDcSendable } from '../api';
 
 const newSearchSchema = z.object({
   poId: z.string().uuid().optional(),
@@ -38,11 +38,49 @@ interface LineDraft {
   dcRemarks: string;
 }
 
+/** The most this line may go out on, all rules considered. The PO quantity is
+ *  a ceiling the server also enforces; the sendable preview is usually lower. */
+function maxSendNow(cap: DcSendableLine | undefined, poLineQty: number): number {
+  return cap ? Math.min(cap.maxSendNow, poLineQty) : poLineQty;
+}
+
+/** The friendly warning for one line, or null when the typed qty is fine.
+ *
+ *  This used to be a server error the user met only AFTER pressing Save — a red
+ *  banner quoting upstream/in-house/sent arithmetic against a number they had
+ *  long since forgotten typing. Said here, while they type, it is an answer
+ *  instead of a rejection: what the box will take, and what would free up more.
+ *  The explanation half comes from the API so the form and the challan can never
+ *  word the same limit differently. */
+function sendNowIssue(
+  typed: string,
+  cap: DcSendableLine | undefined,
+  poLineQty: number,
+): string | null {
+  if (typed.trim() === '') return null;
+  const qty = Number(typed);
+  if (Number.isNaN(qty)) return 'Enter a number of pieces.';
+  if (qty < 0) return 'Enter 1 or more pieces.';
+  const max = maxSendNow(cap, poLineQty);
+  if (qty <= max) return null;
+  const pcs = max === 1 ? 'pc' : 'pcs';
+  const head =
+    max === 0
+      ? 'Nothing can go out on this line yet.'
+      : `Only ${max} ${pcs} can go out right now — you have typed ${qty}.`;
+  return cap?.limitReason
+    ? `${head} ${cap.limitReason}`
+    : `${head} This purchase order line is for ${poLineQty} pcs.`;
+}
+
 function DeliveryChallanNewPage(): React.JSX.Element {
   const { poId } = deliveryChallanNewRoute.useSearch();
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
   const create = useCreateDeliveryChallan();
+  // Asked as soon as the PO is known, so the allowance is on screen before the
+  // first keystroke rather than after the first failed save.
+  const { data: sendable } = useDcSendable(poId);
   // Raising a DC is `entry` on ospdc_create (Purchase). Checked here too, not
   // just on the list button — the route is reachable by URL, and without this
   // an L1 Viewer got the whole form and failed only at the API.
@@ -79,6 +117,12 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     );
   }, [po]);
 
+  const capByLine = useMemo(() => {
+    const m = new Map<string, DcSendableLine>();
+    for (const l of sendable?.lines ?? []) m.set(l.purchaseOrderLineId, l);
+    return m;
+  }, [sendable]);
+
   const canSubmit = useMemo(
     () =>
       Boolean(po) &&
@@ -87,14 +131,18 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       Boolean(dcDate) &&
       codeValid &&
       lineDrafts.some((l) => Number(l.shipQty) > 0) &&
+      // Every line must be both a sensible number AND within what may actually
+      // be sent — the same check that writes the message under the row, so the
+      // button can never be enabled while a warning is showing.
       lineDrafts.every((l) => {
-        const q = Number(l.shipQty);
         if (l.shipQty === '') return true;
-        return !Number.isNaN(q) && q > 0 && q <= l.poLineQty;
+        const q = Number(l.shipQty);
+        if (Number.isNaN(q) || q <= 0) return false;
+        return sendNowIssue(l.shipQty, capByLine.get(l.purchaseOrderLineId), l.poLineQty) === null;
       }),
     // codeValid flips asynchronously (the doc-number duplicate check); it MUST be
     // a dependency or the Save button's enabled state lags the real validity.
-    [po, dcDate, codeValid, lineDrafts],
+    [po, dcDate, codeValid, lineDrafts, capByLine],
   );
 
   if (!perms.entry) {
@@ -309,67 +357,125 @@ function DeliveryChallanNewPage(): React.JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {lineDrafts.map((l, idx) => (
-                <tr key={l.purchaseOrderLineId}>
-                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
-                    {idx + 1}
-                  </td>
-                  <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                    {l.itemCodeText}
-                  </td>
-                  <td>{l.itemNameText}</td>
-                  <td className="mono">{l.poLineQty}</td>
-                  <td>
-                    <input
-                      type="number"
-                      step="1"
-                      min={0}
-                      max={l.poLineQty}
-                      className="innovic-input"
-                      value={l.shipQty}
-                      onChange={(e) =>
-                        setLineDrafts((prev) => {
-                          const next = prev.slice();
-                          next[idx] = { ...next[idx]!, shipQty: e.target.value };
-                          return next;
-                        })
-                      }
-                      style={{ width: '100%', fontWeight: 700, color: 'var(--green)' }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="innovic-input"
-                      value={l.materialText}
-                      onChange={(e) =>
-                        setLineDrafts((prev) => {
-                          const next = prev.slice();
-                          next[idx] = { ...next[idx]!, materialText: e.target.value };
-                          return next;
-                        })
-                      }
-                      placeholder="optional"
-                      style={{ width: '100%' }}
-                    />
-                  </td>
-                  <td>
-                    <textarea
-                      rows={1}
-                      className="innovic-textarea"
-                      value={l.dcRemarks}
-                      onChange={(e) =>
-                        setLineDrafts((prev) => {
-                          const next = prev.slice();
-                          next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
-                          return next;
-                        })
-                      }
-                      placeholder="optional"
-                      style={{ width: '100%' }}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {lineDrafts.map((l, idx) => {
+                const cap = capByLine.get(l.purchaseOrderLineId);
+                const max = maxSendNow(cap, l.poLineQty);
+                const issue = sendNowIssue(l.shipQty, cap, l.poLineQty);
+                // Nothing at all may go out on this line — worth saying out
+                // loud, since there is no quantity the user could type that
+                // would produce the explanation.
+                const blocked = max === 0 && Boolean(cap?.limitReason);
+                return (
+                  <Fragment key={l.purchaseOrderLineId}>
+                    <tr>
+                      <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                        {idx + 1}
+                      </td>
+                      <td className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                        {l.itemCodeText}
+                      </td>
+                      <td>{l.itemNameText}</td>
+                      <td className="mono">{l.poLineQty}</td>
+                      <td>
+                        <input
+                          type="number"
+                          step="1"
+                          min={0}
+                          max={max}
+                          className="innovic-input"
+                          value={l.shipQty}
+                          onChange={(e) =>
+                            setLineDrafts((prev) => {
+                              const next = prev.slice();
+                              next[idx] = { ...next[idx]!, shipQty: e.target.value };
+                              return next;
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            fontWeight: 700,
+                            color: issue ? 'var(--red)' : 'var(--green)',
+                            borderColor: issue ? 'var(--red)' : undefined,
+                          }}
+                        />
+                        {/* The allowance, stated before anything is typed. Amber
+                        whenever the shop floor allows less than the PO line, so
+                        the tighter number is the one that catches the eye. */}
+                        {cap ? (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              marginTop: 3,
+                              color: max < l.poLineQty ? 'var(--amber)' : 'var(--text3)',
+                            }}
+                          >
+                            Can send now: <b className="mono">{max}</b>
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <input
+                          className="innovic-input"
+                          value={l.materialText}
+                          onChange={(e) =>
+                            setLineDrafts((prev) => {
+                              const next = prev.slice();
+                              next[idx] = { ...next[idx]!, materialText: e.target.value };
+                              return next;
+                            })
+                          }
+                          placeholder="optional"
+                          style={{ width: '100%' }}
+                        />
+                      </td>
+                      <td>
+                        <textarea
+                          rows={1}
+                          className="innovic-textarea"
+                          value={l.dcRemarks}
+                          onChange={(e) =>
+                            setLineDrafts((prev) => {
+                              const next = prev.slice();
+                              next[idx] = { ...next[idx]!, dcRemarks: e.target.value };
+                              return next;
+                            })
+                          }
+                          placeholder="optional"
+                          style={{ width: '100%' }}
+                        />
+                      </td>
+                    </tr>
+                    {/* Full width, under the row it belongs to: the explanation runs
+                    to a sentence or two and would be unreadable squeezed into
+                    the 12%-wide quantity cell.
+
+                    Two ways it appears. Red, when a number bigger than the
+                    allowance has been typed. Amber and unprompted, when the
+                    line can send NOTHING — there is no quantity that would
+                    reveal the reason, so waiting to be asked would leave the
+                    user staring at a zero with no explanation. */}
+                    {issue || blocked ? (
+                      <tr>
+                        <td colSpan={7} style={{ padding: '0 8px 8px' }}>
+                          <div
+                            style={{
+                              color: issue ? 'var(--red)' : 'var(--amber)',
+                              background: issue ? 'var(--red3)' : 'var(--amber3)',
+                              border: `1px solid ${issue ? 'var(--red)' : 'var(--amber)'}`,
+                              borderRadius: 6,
+                              padding: '6px 10px',
+                              fontSize: 12,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {issue ?? `Nothing can go out on this line yet. ${cap?.limitReason}`}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

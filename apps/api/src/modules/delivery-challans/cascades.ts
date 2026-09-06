@@ -30,11 +30,12 @@
 // the return. This eliminated the send(−)/receive(+) pair that netted to zero
 // and let a later dispatch drive on-hand negative (SO-517 trace).
 
+import type { OutsourceStatus } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
-import { loadMaterialCap, materialCapMessage } from '../op-entry/service';
+import { type MaterialCap, loadMaterialCap, materialCapMessage } from '../op-entry/service';
 
 export interface OutwardCascadeArgs {
   tx: DbTransaction;
@@ -59,9 +60,61 @@ export interface OutwardCascadeResult {
 
 const PRE_SENT_STATUSES = new Set(['pending', 'pr_raised', 'po_created']);
 
-export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<OutwardCascadeResult> {
-  const { tx, companyId, adminUserId, dcCode, dcDate, purchaseOrderLineId, qty } = args;
+/** The one job-card operation a PO line stands for, as far as the outward
+ *  cascade cares. */
+interface OutwardOpRow {
+  id: string;
+  opSeq: number;
+  jobCardId: string;
+  outsourceStatus: OutsourceStatus | null;
+  outsourceSentQty: number;
+  outsourceSentDate: string | null;
+  outsourceDcNo: string | null;
+}
 
+/** Everything that decides how many pieces may still go out to the vendor on
+ *  one PO line.
+ *
+ *  Pulled out of the guard below so the DC form can ask the SAME question
+ *  before the user presses Save. The form used to cap its Send Now box at the
+ *  PO line quantity — a number that ignores both the shop floor and earlier
+ *  challans — so an impossible quantity was accepted, submitted, and only then
+ *  refused in red. One arithmetic, asked twice, answered the same way. */
+export type OutwardSendable =
+  | {
+      /** No job-card operation behind the line: an ordinary buying PO. Nothing
+       *  to cap here — the PO quantity is the only limit. */
+      kind: 'unlinked';
+    }
+  | {
+      /** A JOB-WORK line with no operation linked. The check is impossible, so
+       *  nothing may go out until the link is repaired. */
+      kind: 'job_work_unlinked';
+      poCode: string;
+    }
+  | {
+      kind: 'op';
+      op: OutwardOpRow;
+      jcCode: string;
+      /** Cleared into this op by the previous one (or the JC order qty at op 1). */
+      inputAvail: number;
+      inHouseCompleted: number;
+      /** Already gone to the vendor on earlier challans. */
+      alreadySent: number;
+      /** input − done in-house − already sent, before the client-material gate. */
+      sendable: number;
+      /** …and after that gate. This is the real limit. */
+      effectiveSendable: number;
+      cap: MaterialCap | null;
+    };
+
+export type OutwardSendableOp = Extract<OutwardSendable, { kind: 'op' }>;
+
+export async function loadOutwardSendable(
+  tx: DbTransaction,
+  companyId: string,
+  purchaseOrderLineId: string,
+): Promise<OutwardSendable> {
   const rows = await tx
     .select({
       id: jcOps.id,
@@ -91,8 +144,7 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
     // an operation is being outsourced, so arriving here means the PO was built
     // without its op link and EVERY guard below is about to be skipped in
     // silence. That is how a 100-pc challan was raised against an operation that
-    // had cleared 30 (IN-JC-26-00008 op 8 / IN-PO-00004). Refuse, and name the
-    // repair, instead of letting the send through unchecked.
+    // had cleared 30 (IN-JC-26-00008 op 8 / IN-PO-00004).
     const poRows = await tx
       .select({ poType: purchaseOrders.poType, poCode: purchaseOrders.code })
       .from(purchaseOrderLines)
@@ -100,15 +152,8 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
       .where(eq(purchaseOrderLines.id, purchaseOrderLineId))
       .limit(1);
     const po = poRows[0];
-    if (po?.poType === 'job_work') {
-      throw new ValidationError(
-        `PO ${po.poCode} is a job-work order, but this line is not linked to a job card ` +
-          'operation -- so how many pieces may be sent cannot be checked. Raise the PO from ' +
-          'its purchase request (Purchase Requests -> Create PO) so the operation is linked, ' +
-          'then issue the challan.',
-      );
-    }
-    return { fired: false };
+    if (po?.poType === 'job_work') return { kind: 'job_work_unlinked', poCode: po.poCode };
+    return { kind: 'unlinked' };
   }
 
   // Availability guard (ADR-078): you cannot outsource more than the previous
@@ -139,32 +184,62 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   // the limit lifts automatically as more material is received. No-op for
   // SO-sourced JCs and for non-first ops (already bounded by upstream output).
   const cap = await loadMaterialCap(tx, op, companyId);
-  const effectiveSendable = cap ? Math.max(0, sendable - cap.shortfall) : sendable;
-  if (qty > effectiveSendable) {
-    if (cap && effectiveSendable < sendable) {
-      // ADR-103 changed what the cap MEASURES for gated job cards (issued to
-      // this JC, not received for the part). This message hard-coded "received
-      // … record a Party Material GRN", which sent the user to the wrong screen
-      // — the real blocker on a gated JC is the missing Party Material ISSUE.
-      // Share op-entry's wording so both gates say the same true thing.
-      throw new ValidationError(
-        `${materialCapMessage(cap, effectiveSendable, qty)} ` +
-          `(blocking the outward DC to the vendor.)`,
-      );
-    }
-    throw new ValidationError(
-      `Cannot outsource ${qty} pcs — only ${Math.max(0, sendable)} available on this operation ` +
-        `(upstream cleared ${inputAvail}, done in-house ${inHouseCompleted}, already sent ${op.outsourceSentQty}). ` +
-        `Complete or free up the quantity before sending it to the vendor.`,
-    );
-  }
 
   const jcRows = await tx
     .select({ code: jobCards.code })
     .from(jobCards)
     .where(eq(jobCards.id, op.jobCardId))
     .limit(1);
-  const jcCode = jcRows[0]?.code ?? '';
+
+  return {
+    kind: 'op',
+    op,
+    jcCode: jcRows[0]?.code ?? '',
+    inputAvail,
+    inHouseCompleted,
+    alreadySent: op.outsourceSentQty,
+    sendable,
+    effectiveSendable: cap ? Math.max(0, sendable - cap.shortfall) : sendable,
+    cap,
+  };
+}
+
+/** The refusal shown when a challan asks for more than may go out. */
+export function outwardCapRefusal(s: OutwardSendableOp, qty: number): string {
+  if (s.cap && s.effectiveSendable < s.sendable) {
+    // ADR-103 changed what the cap MEASURES for gated job cards (issued to
+    // this JC, not received for the part). This message hard-coded "received
+    // … record a Party Material GRN", which sent the user to the wrong screen
+    // — the real blocker on a gated JC is the missing Party Material ISSUE.
+    // Share op-entry's wording so both gates say the same true thing.
+    return `${materialCapMessage(s.cap, s.effectiveSendable, qty)} (blocking the outward DC to the vendor.)`;
+  }
+  return (
+    `Cannot outsource ${qty} pcs — only ${Math.max(0, s.sendable)} available on this operation ` +
+    `(upstream cleared ${s.inputAvail}, done in-house ${s.inHouseCompleted}, already sent ${s.alreadySent}). ` +
+    `Complete or free up the quantity before sending it to the vendor.`
+  );
+}
+
+/** The refusal for a job-work PO line that was never linked to its operation. */
+export function jobWorkUnlinkedRefusal(poCode: string): string {
+  return (
+    `PO ${poCode} is a job-work order, but this line is not linked to a job card ` +
+    'operation -- so how many pieces may be sent cannot be checked. Raise the PO from ' +
+    'its purchase request (Purchase Requests -> Create PO) so the operation is linked, ' +
+    'then issue the challan.'
+  );
+}
+
+export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<OutwardCascadeResult> {
+  const { tx, companyId, adminUserId, dcCode, dcDate, purchaseOrderLineId, qty } = args;
+
+  const s = await loadOutwardSendable(tx, companyId, purchaseOrderLineId);
+  if (s.kind === 'unlinked') return { fired: false };
+  if (s.kind === 'job_work_unlinked') throw new ValidationError(jobWorkUnlinkedRefusal(s.poCode));
+  if (qty > s.effectiveSendable) throw new ValidationError(outwardCapRefusal(s, qty));
+
+  const { op, jcCode } = s;
 
   const prevStatus = op.outsourceStatus ?? null;
   const nextStatus =
