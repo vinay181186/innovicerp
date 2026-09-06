@@ -8,6 +8,9 @@ export {
   salesOrderLineSchema,
   salesOrderListItemSchema,
   salesOrderSchema,
+  soDrawingHistoryLineSchema,
+  soDrawingHistorySchema,
+  soDrawingRevisionSchema,
   updateSalesOrderInputSchema,
 } from '@innovic/shared';
 export type {
@@ -22,6 +25,10 @@ export type {
   SalesOrderLineInput,
   SalesOrderListItem,
   SalesOrderMilestoneInput,
+  SoDrawingAction,
+  SoDrawingHistory,
+  SoDrawingHistoryLine,
+  SoDrawingRevision,
   SoMilestone,
   UpdateSalesOrderInput,
 } from '@innovic/shared';

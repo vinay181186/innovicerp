@@ -13,7 +13,9 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { SoDocumentsSection } from '@/modules/so-documents/components/so-documents-section';
+import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import { salesOrdersKeys, useSalesOrder, useSoftDeleteSalesOrder } from '../api';
+import { fmtIstDateTime } from '../lib/format';
 import { SoStatusBadge } from '../components/so-status-badge';
 
 /** The file the user asked to look at, or null when nothing is open.
@@ -50,6 +52,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // One preview slot for the whole page — the client PO bar, the email
   // references and the per-line drawings all feed the same modal.
   const [preview, setPreview] = useState<PreviewFile | null>(null);
+  // Fetched HERE, not inside the tab, because the tab strip needs the count to
+  // decide whether to show 📐 Drawing History at all. <SoDrawingHistory /> calls
+  // the same hook, and the shared query key means TanStack Query serves it from
+  // cache rather than firing a second request.
+  const { data: drawingHistory } = useSoDrawingHistory(id);
 
   if (isLoading) {
     return (
@@ -299,7 +306,21 @@ function SalesOrderDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <RelatedDocsTabs module="sales-orders" id={detail.id} />
+      <RelatedDocsTabs
+        module="sales-orders"
+        id={detail.id}
+        extraTabs={[
+          {
+            key: 'drawing-history',
+            title: 'Drawing History',
+            icon: '📐',
+            // Zero hides the tab, so an SO whose lines never carried a drawing
+            // looks exactly as it did before.
+            count: drawingHistory?.lines.length ?? 0,
+            render: () => <SoDrawingHistory salesOrderId={detail.id} />,
+          },
+        ]}
+      />
 
       {/* SO Documents — file store folded in from the former standalone screen. */}
       <div className="section-hdr" style={{ marginTop: 20, marginBottom: 12 }}>
@@ -474,9 +495,9 @@ function LineRow(props: {
       <td className="mono" style={{ fontSize: 11 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span>{l.drawingNo ?? '—'}</span>
-          {l.revision ? (
-            <span className="text3" style={{ fontSize: 10 }}>Rev {l.revision}</span>
-          ) : null}
+          {/* Always shown: Rev is a server-owned number, and Rev 0 (the drawing
+              the line was born with) is a real value a falsy check would hide. */}
+          <span className="text3" style={{ fontSize: 10 }}>Rev {l.revision}</span>
           {drawingFilePath ? (
             <button
               type="button"
@@ -616,21 +637,6 @@ function DetailGrid(props: { detail: SalesOrderDetail }): React.JSX.Element {
       </div>
     </div>
   );
-}
-
-/** Format a stored UTC timestamp as IST date + time (e.g. "16 Jun 2026, 02:30 PM"). */
-function fmtIstDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
 }
 
 function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {

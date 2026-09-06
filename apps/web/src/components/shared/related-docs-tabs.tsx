@@ -19,12 +19,27 @@ import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { StatusBadge, Timeline, renderCode } from '@/components/shared/related-docs-panel';
 
+/** A tab whose contents this component knows nothing about. The Related
+ *  Documents strip is shared by SO / JWSO / PO, so a panel that only one of
+ *  them has (the SO's drawing trail) is passed in rather than baked in here.
+ *  `count` doubles as the badge and as the hide switch — a zero-count tab is
+ *  dropped, exactly like an empty /related bucket. */
+export type RelatedDocsExtraTab = {
+  key: string;
+  title: string;
+  icon?: string;
+  count: number;
+  render: () => React.JSX.Element;
+};
+
 export function RelatedDocsTabs({
   module,
   id,
+  extraTabs,
 }: {
   module: string;
   id: string;
+  extraTabs?: RelatedDocsExtraTab[];
 }): React.JSX.Element | null {
   const { data, isLoading, isError } = useQuery<DocumentTraceability>({
     queryKey: ['related-docs', module, id],
@@ -42,12 +57,16 @@ export function RelatedDocsTabs({
   const sections: RelatedSection[] = [...data.upstream, ...data.downstream, ...data.related].filter(
     (s) => s.count > 0,
   );
+  const extras = (extraTabs ?? []).filter((t) => t.count > 0);
   const hasTimeline = data.timeline.length > 0;
-  if (sections.length === 0 && !hasTimeline) return null;
+  if (sections.length === 0 && extras.length === 0 && !hasTimeline) return null;
 
   // Honour the clicked tab; fall back to the first bucket if the stored key no
-  // longer exists (e.g. that bucket emptied after a refetch).
-  const active = sections.find((s) => s.key === activeKey) ?? sections[0] ?? null;
+  // longer exists (e.g. that bucket emptied after a refetch). An extra tab is
+  // only ever active because it was clicked — it never wins the fallback, so
+  // the card still opens on the documents the page has always shown.
+  const activeExtra = extras.find((t) => t.key === activeKey) ?? null;
+  const active = activeExtra ? null : (sections.find((s) => s.key === activeKey) ?? sections[0] ?? null);
 
   return (
     <div className="panel" style={{ marginTop: 14 }}>
@@ -57,7 +76,7 @@ export function RelatedDocsTabs({
         </div>
       </div>
       <div className="panel-body">
-        {sections.length > 0 ? (
+        {sections.length > 0 || extras.length > 0 ? (
           <>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
               {sections.map((s) => {
@@ -97,7 +116,49 @@ export function RelatedDocsTabs({
                   </button>
                 );
               })}
+              {/* Module-supplied tabs sit after the /related buckets, wearing
+                  the same button so the strip reads as one row of choices. */}
+              {extras.map((t) => {
+                const isActive = activeExtra?.key === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setActiveKey(t.key)}
+                    style={
+                      isActive
+                        ? {
+                            background: 'var(--purple)',
+                            color: 'var(--bg2)',
+                            border: '1px solid var(--purple)',
+                          }
+                        : {
+                            background: 'var(--bg4)',
+                            color: 'var(--text2)',
+                            border: '1px solid var(--border)',
+                          }
+                    }
+                  >
+                    {t.icon ? `${t.icon} ` : ''}
+                    {t.title}
+                    <span
+                      className="mono"
+                      style={{
+                        marginLeft: 6,
+                        fontWeight: 700,
+                        color: isActive ? 'var(--bg2)' : 'var(--text3)',
+                      }}
+                    >
+                      {t.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+            {activeExtra ? (
+              <div style={{ marginBottom: hasTimeline ? 18 : 0 }}>{activeExtra.render()}</div>
+            ) : null}
             {active ? (
               <table
                 className="innovic-table"

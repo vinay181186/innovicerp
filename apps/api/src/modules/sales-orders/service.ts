@@ -28,6 +28,7 @@ import {
   purchaseOrders,
   salesOrderLines,
   salesOrders,
+  soLineDrawingRevisions,
   soMilestones,
   users,
 } from '../../db/schema';
@@ -60,6 +61,9 @@ import type {
   SalesOrderLineInput,
   SalesOrderListItem,
   SalesOrderMilestoneInput,
+  SoDrawingAction,
+  SoDrawingHistory,
+  SoDrawingHistoryLine,
   SoMilestone,
   UpdateSalesOrderInput,
 } from './schema';
@@ -202,6 +206,98 @@ function rateToString(input: SalesOrderLineInput): string {
 
 function gstToString(g: number): string {
   return g.toFixed(2);
+}
+
+// ─── Drawing revisions ────────────────────────────────────────────────────
+//
+// The Rev on an SO line belongs to the DRAWING FILE, not to the line and not
+// to the item. A line is born at Rev 0 and climbs by exactly one every time
+// the file it points at genuinely changes; an ordinary re-save that leaves the
+// drawing alone must change nothing at all. Same "skip when unchanged" rule
+// route-card revisions follow, for the same reason — a revision log that
+// counts saves instead of changes is noise.
+
+type DrawingRevisionInsert = typeof soLineDrawingRevisions.$inferInsert;
+
+/** A history row waiting to be written, still carrying the line's item refs so
+ *  the item-code snapshot can be resolved in one query for the whole batch. */
+interface PendingDrawingRevision {
+  /** Master item the line points at, when it points at one. */
+  itemId: string | null;
+  /** Free-text code, used when the line points at no master item. */
+  itemCodeText: string | null;
+  row: Omit<DrawingRevisionInsert, 'itemCodeText'>;
+}
+
+/** null, '' and a whitespace-only string all mean "no drawing". The form posts
+ *  an explicit null when the user clears one — undefined would be dropped by
+ *  JSON.stringify and the server would never learn the drawing went away.
+ *  Comparing raw values would read '' as a change and bump the Rev for nothing. */
+function normalizeDrawingPath(v: string | null | undefined): string | null {
+  const trimmed = typeof v === 'string' ? v.trim() : '';
+  return trimmed === '' ? null : trimmed;
+}
+
+/** What happened to the drawing between what is stored and what the payload
+ *  carries. `null` means nothing did, and nothing at all is then recorded. */
+function drawingTransition(oldPath: string | null, newPath: string | null): SoDrawingAction | null {
+  if (oldPath === newPath) return null;
+  if (oldPath === null) return 'added';
+  return newPath === null ? 'removed' : 'replaced';
+}
+
+/** `action` is stored as plain text (a descriptive label, deliberately not a
+ *  DB enum) — narrow it on the way back out. */
+function toDrawingAction(v: string): SoDrawingAction {
+  return v === 'replaced' || v === 'removed' ? v : 'added';
+}
+
+/** Rev-0 'added' rows for freshly-inserted lines that arrived carrying a
+ *  drawing. A line inserted without one just sits at Rev 0 with no history —
+ *  that is what lets the UI hide the tab on an SO that has no drawings. */
+function birthDrawingRevisions(
+  lines: Array<typeof salesOrderLines.$inferSelect>,
+  user: AuthContext,
+): PendingDrawingRevision[] {
+  return lines
+    .filter((l) => normalizeDrawingPath(l.drawingFilePath) !== null)
+    .map((l) => ({
+      itemId: l.itemId,
+      itemCodeText: l.itemCodeText,
+      row: {
+        companyId: l.companyId,
+        salesOrderId: l.salesOrderId,
+        soLineId: l.id,
+        revisionNo: l.revision,
+        action: 'added',
+        drawingFilePath: l.drawingFilePath,
+        drawingNo: l.drawingNo,
+        createdBy: user.id,
+      },
+    }));
+}
+
+/** Write the collected history rows in one insert, snapshotting each line's
+ *  item code as it stands at this moment — the trail must still read correctly
+ *  if the line is later re-pointed at another item. No-op when nothing changed,
+ *  which is the common case, so the code lookup never runs on a plain re-save. */
+async function insertDrawingRevisions(
+  tx: DbTransaction,
+  pending: PendingDrawingRevision[],
+  companyId: string,
+): Promise<void> {
+  if (pending.length === 0) return;
+  const codeMap = await resolveItemCodesById(
+    tx,
+    pending.map((pr) => pr.itemId),
+    companyId,
+  );
+  await tx.insert(soLineDrawingRevisions).values(
+    pending.map((pr) => ({
+      ...pr.row,
+      itemCodeText: (pr.itemId ? codeMap.get(pr.itemId) : null) ?? pr.itemCodeText,
+    })),
+  );
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -815,6 +911,103 @@ export async function getSalesOrderRelated(
   });
 }
 
+/** Read-only drawing trail for one SO: for every line that has ever carried a
+ *  drawing, the whole chain of files it pointed at, newest revision first.
+ *
+ *  Lines with no revision row are omitted entirely — an SO whose lines never
+ *  had a drawing comes back with an empty array so the UI can hide the tab.
+ *  Soft-deleted lines drop out with them, same as every other SO read. */
+export async function getSalesOrderDrawingHistory(
+  id: string,
+  user: AuthContext,
+): Promise<SoDrawingHistory> {
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    // Confirm the SO exists / is visible before reading its history.
+    const headers = await tx
+      .select({ id: salesOrders.id, code: salesOrders.code })
+      .from(salesOrders)
+      .where(
+        and(
+          eq(salesOrders.id, id),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError(`Sales order ${id} not found`);
+
+    // One pass over every revision row of every live line. The line's identity
+    // (item code, part name, current Rev) is joined LIVE — the item_code_text
+    // on the revision row is the snapshot of what it was at that revision, and
+    // belongs to the trail, not to the header of the group.
+    const rows = await tx
+      .select({
+        soLineId: salesOrderLines.id,
+        lineNo: salesOrderLines.lineNo,
+        partName: salesOrderLines.partName,
+        lineDrawingNo: salesOrderLines.drawingNo,
+        lineItemCode: items.code,
+        lineItemCodeText: salesOrderLines.itemCodeText,
+        currentRevision: salesOrderLines.revision,
+        revisionId: soLineDrawingRevisions.id,
+        revisionNo: soLineDrawingRevisions.revisionNo,
+        action: soLineDrawingRevisions.action,
+        drawingFilePath: soLineDrawingRevisions.drawingFilePath,
+        drawingNo: soLineDrawingRevisions.drawingNo,
+        createdAt: soLineDrawingRevisions.createdAt,
+        createdByName: users.fullName,
+      })
+      .from(soLineDrawingRevisions)
+      .innerJoin(salesOrderLines, eq(salesOrderLines.id, soLineDrawingRevisions.soLineId))
+      .leftJoin(items, eq(items.id, salesOrderLines.itemId))
+      .leftJoin(users, eq(users.id, soLineDrawingRevisions.createdBy))
+      .where(
+        and(
+          eq(soLineDrawingRevisions.salesOrderId, id),
+          eq(soLineDrawingRevisions.companyId, companyId),
+          isNull(salesOrderLines.deletedAt),
+        ),
+      )
+      .orderBy(asc(salesOrderLines.lineNo), desc(soLineDrawingRevisions.revisionNo));
+
+    // Group in insertion order: the ORDER BY above already delivers lines by
+    // lineNo ascending and each line's revisions newest-first.
+    const byLine = new Map<string, SoDrawingHistoryLine>();
+    for (const r of rows) {
+      let line = byLine.get(r.soLineId);
+      if (!line) {
+        line = {
+          soLineId: r.soLineId,
+          lineNo: r.lineNo,
+          itemCode: r.lineItemCode ?? r.lineItemCodeText,
+          partName: r.partName,
+          drawingNo: r.lineDrawingNo,
+          currentRevision: r.currentRevision,
+          revisions: [],
+        };
+        byLine.set(r.soLineId, line);
+      }
+      line.revisions.push({
+        id: r.revisionId,
+        revisionNo: r.revisionNo,
+        action: toDrawingAction(r.action),
+        drawingFilePath: r.drawingFilePath,
+        drawingNo: r.drawingNo,
+        createdAt: tsLike(r.createdAt),
+        createdByName: r.createdByName,
+      });
+    }
+
+    return {
+      salesOrderId: header.id,
+      soCode: header.code,
+      lines: Array.from(byLine.values()),
+    };
+  });
+}
+
 function toSalesOrder(row: typeof salesOrders.$inferSelect): SalesOrder {
   return {
     id: row.id,
@@ -1070,7 +1263,9 @@ export async function createSalesOrder(
             partName: l.partName,
             material: l.material ?? null,
             drawingNo: l.drawingNo ?? null,
-            revision: l.revision ?? null,
+            // Rev is server-owned: every line is born at 0 regardless of what
+            // the payload says (the input schema no longer carries one).
+            revision: 0,
             drawingFilePath: l.drawingFilePath ?? null,
             uom: l.uom,
             orderQty: l.orderQty,
@@ -1084,6 +1279,10 @@ export async function createSalesOrder(
           };
         });
         insertedLines = await tx.insert(salesOrderLines).values(lineValues).returning();
+        // A line born holding a drawing starts its trail at Rev 0 with an
+        // 'added' row — without it, the drawing the SO shipped with would be
+        // the one drawing missing from the history.
+        await insertDrawingRevisions(tx, birthDrawingRevisions(insertedLines, user), companyId);
       }
 
       await emitActivityLog(
@@ -1336,6 +1535,11 @@ async function mergeLines(
     .select({
       id: salesOrderLines.id,
       lineNo: salesOrderLines.lineNo,
+      // The drawing AS STORED. The Rev bump is decided by comparing this
+      // against the payload — never by anything the client sends.
+      drawingFilePath: salesOrderLines.drawingFilePath,
+      drawingNo: salesOrderLines.drawingNo,
+      revision: salesOrderLines.revision,
     })
     .from(salesOrderLines)
     .where(and(eq(salesOrderLines.salesOrderId, salesOrderId), isNull(salesOrderLines.deletedAt)));
@@ -1372,6 +1576,10 @@ async function mergeLines(
       .where(inArray(salesOrderLines.id, absentIds));
   }
 
+  // History rows for every drawing that actually changed in this save,
+  // written in one insert once the loops below are done.
+  const pendingRevisions: PendingDrawingRevision[] = [];
+
   // Apply updates.
   for (const u of toUpdate) {
     const refs = resolveLineItemRefs(u.data, resolved);
@@ -1384,9 +1592,38 @@ async function mergeLines(
     if (u.data.partName !== undefined) lineUpdate['partName'] = u.data.partName;
     if (u.data.material !== undefined) lineUpdate['material'] = u.data.material ?? null;
     if (u.data.drawingNo !== undefined) lineUpdate['drawingNo'] = u.data.drawingNo ?? null;
-    if (u.data.revision !== undefined) lineUpdate['revision'] = u.data.revision ?? null;
-    if (u.data.drawingFilePath !== undefined)
+    if (u.data.drawingFilePath !== undefined) {
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
+      // Rev climbs by exactly one, and only when the file genuinely differs
+      // from what is stored. Clearing a drawing counts: the drawing record
+      // changed, so it gets its own revision — one that points at no file.
+      const stored = existingById.get(u.id)!;
+      const action = drawingTransition(
+        normalizeDrawingPath(stored.drawingFilePath),
+        normalizeDrawingPath(u.data.drawingFilePath),
+      );
+      if (action !== null) {
+        const nextRevision = stored.revision + 1;
+        lineUpdate['revision'] = nextRevision;
+        pendingRevisions.push({
+          itemId: refs.itemId,
+          itemCodeText: refs.itemCodeText,
+          row: {
+            companyId,
+            salesOrderId,
+            soLineId: u.id,
+            revisionNo: nextRevision,
+            action,
+            drawingFilePath: normalizeDrawingPath(u.data.drawingFilePath),
+            // Snapshot the drawing number as it stands after this save, not
+            // as it was stored, so the row describes the drawing it records.
+            drawingNo:
+              u.data.drawingNo !== undefined ? (u.data.drawingNo ?? null) : stored.drawingNo,
+            createdBy: user.id,
+          },
+        });
+      }
+    }
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== undefined) lineUpdate['orderQty'] = u.data.orderQty;
     if (u.data.rate !== undefined && showMoney) lineUpdate['rate'] = rateToString(u.data);
@@ -1418,7 +1655,8 @@ async function mergeLines(
         partName: l.partName,
         material: l.material ?? null,
         drawingNo: l.drawingNo ?? null,
-        revision: l.revision ?? null,
+        // Server-owned, same as the create path: a new line is born at Rev 0.
+        revision: 0,
         drawingFilePath: l.drawingFilePath ?? null,
         uom: l.uom,
         orderQty: l.orderQty,
@@ -1431,8 +1669,11 @@ async function mergeLines(
         updatedBy: user.id,
       };
     });
-    await tx.insert(salesOrderLines).values(values);
+    const addedLines = await tx.insert(salesOrderLines).values(values).returning();
+    pendingRevisions.push(...birthDrawingRevisions(addedLines, user));
   }
+
+  await insertDrawingRevisions(tx, pendingRevisions, companyId);
 }
 
 export async function softDeleteSalesOrder(id: string, user: AuthContext): Promise<{ ok: true }> {

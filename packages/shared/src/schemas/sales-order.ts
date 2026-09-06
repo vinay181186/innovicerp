@@ -50,10 +50,13 @@ export const salesOrderLineSchema = z.object({
   partName: z.string(),
   material: z.string().nullable(),
   drawingNo: z.string().nullable(),
-  // Per-line drawing revision (optional free text, e.g. "A", "R2") and the
-  // uploaded drawing document's storage path (qc-docs bucket, folder
-  // `so-line-drawings`; view via a short-lived signed URL). Both nullable.
-  revision: z.string().nullable().default(null),
+  // The drawing file's revision number, owned by the server. A line is born at
+  // Rev 0 and the number climbs by one each time the drawing file itself
+  // changes (replaced or cleared) — never on an ordinary re-save. Every step is
+  // kept in so_line_drawing_revisions; see schemas/so-drawing-history.ts.
+  revision: z.number().int().nonnegative().default(0),
+  // Uploaded drawing document's storage path (qc-docs bucket, folder
+  // `so-line-drawings`; view via a short-lived signed URL). Nullable.
   drawingFilePath: z.string().nullable().default(null),
   uom: uomSchema,
   orderQty: z.number().int().positive(),
@@ -180,10 +183,19 @@ export const salesOrderLineInputSchema = z
     partName: z.string().min(1).max(255),
     material: z.string().max(255).optional(),
     drawingNo: z.string().max(64).optional(),
-    // Optional per-line drawing revision + uploaded-drawing storage path.
-    // Empty/blank → cleared. Path is set by the web upload flow (qc-docs bucket).
-    revision: z.string().max(32).optional(),
-    drawingFilePath: z.string().max(512).optional(),
+    // Uploaded-drawing storage path, set by the web upload flow (qc-docs bucket).
+    //
+    // There is deliberately NO `revision` here. Rev belongs to the drawing file
+    // and is decided by the server: it compares this path against the stored
+    // one and bumps only on a real change. A client-supplied number could
+    // rewrite history, so the client does not get to send one.
+    // Nullable, not merely optional: an ABSENT key means "the payload does not
+    // mention the drawing, leave it alone", while an explicit null means "the
+    // user cleared it". Those are different intentions and the Rev logic acts
+    // on them differently — only the second one records a 'removed' revision.
+    // (`undefined` cannot carry the second meaning: JSON.stringify drops the
+    // key entirely, which is why clearing a drawing silently did nothing.)
+    drawingFilePath: z.string().max(512).nullable().optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 enforced in DB too
     rate: z.coerce.number().nonnegative().default(0),

@@ -37,6 +37,15 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     return service.getSalesOrderRelated(id, req.user);
   });
 
+  // Read-only drawing trail: every file each line's drawing has pointed at,
+  // newest first. Separate from getById for the same reason as /related — the
+  // SO-detail load path stays untouched and cannot regress.
+  app.get('/sales-orders/:id/drawing-history', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getSalesOrderDrawingHistory(id, req.user);
+  });
+
   app.post('/sales-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createSalesOrderInputSchema.parse(req.body);

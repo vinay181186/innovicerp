@@ -67,7 +67,9 @@ interface LineFormValue {
   partName: string;
   material?: string | undefined;
   drawingNo?: string | undefined;
-  revision?: string | undefined;
+  /** The drawing file's revision number. Server-owned: it bumps when the
+   *  uploaded drawing actually changes, so the form only ever displays it. */
+  revision: number;
   drawingFilePath?: string | undefined;
   uom: Uom;
   orderQty: number;
@@ -113,7 +115,7 @@ const HEADER_DEFAULTS: FormValues['header'] = {
   status: 'open',
   gstPercent: SO_GST_DEFAULT,
 };
-const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0 };
+const NEW_LINE: LineFormValue = { itemCodeText: '', partName: '', uom: 'NOS', orderQty: 1, rate: 0, revision: 0 };
 const NEW_MILESTONE: MilestoneFormValue = { lotNo: 1, qty: 0 };
 
 /** Chrome for the form's own action bar. The Back link, title and breadcrumb are
@@ -522,8 +524,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         partName: l.partName.trim(),
         material: l.material?.trim() || undefined,
         drawingNo: l.drawingNo?.trim() || undefined,
-        revision: l.revision?.trim() || undefined,
-        drawingFilePath: l.drawingFilePath || undefined,
+        // null, not undefined: JSON.stringify drops undefined keys, so clearing
+        // a drawing sent nothing at all and the server kept the old file. An
+        // explicit null is what tells it the drawing was removed — and what
+        // makes the removal show up in the drawing history.
+        drawingFilePath: l.drawingFilePath || null,
         uom: l.uom,
         orderQty: Number(l.orderQty),
         rate: Number(l.rate),
@@ -947,7 +952,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <th style={{ width: '8%' }}>Material</th>
                   <th style={{ width: '8%' }}>Drawing No.</th>
                   <th style={{ width: '11%' }}>Drawing File</th>
-                  <th style={{ width: '6%' }}>Rev</th>
+                  <th style={{ width: '6%' }}>Rev <span className="req">★</span></th>
                   <th style={{ width: '8%' }}>Client PO Ln</th>
                   <th style={{ width: '5%' }}>UOM</th>
                   <th style={{ width: '7%' }} className="td-ctr">Qty <span className="req">★</span></th>
@@ -993,7 +998,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             onChange={(p) => setValue(`lines.${idx}.drawingFilePath` as const, p, { shouldDirty: true })}
                           />
                         </td>
-                        <td><input className="innovic-input" autoComplete="off" placeholder="Rev" {...register(`lines.${idx}.revision` as const)} /></td>
+                        {/* Rev is the DRAWING FILE's number, not a field of the line. The
+                            server bumps it when the uploaded drawing actually changes, so a
+                            typed-over value here would just be a lie about which drawing this
+                            line ships against. Display only; new lines start at 0. */}
+                        <td><input className="innovic-input" autoComplete="off" readOnly value={ln?.revision ?? 0} /></td>
                         <td><input className="innovic-input" autoComplete="off" placeholder="PO Line#" style={{ color: 'var(--purple)', fontWeight: 600 }} {...register(`lines.${idx}.clientPoLineNo` as const)} /></td>
                         <td><input className="innovic-input" autoComplete="off" readOnly {...register(`lines.${idx}.uom` as const)} /></td>
                         <td><input type="number" min={1} placeholder="Qty" className="innovic-input" style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', padding: '4px 4px' }} {...register(`lines.${idx}.orderQty` as const, { valueAsNumber: true })} /></td>
@@ -1221,9 +1230,9 @@ function LineItemCascade({
       `lines.${idx}.status`,
       `lines.${idx}.itemId`,
       `lines.${idx}.itemCodeText`,
-      // Revision + drawing file are line-specific, entered/uploaded by the user —
-      // never auto-filled from the item master.
-      `lines.${idx}.revision`,
+      // The drawing file is line-specific, uploaded by the user — never
+      // auto-filled from the item master. (Rev is not listed: nobody enters it,
+      // the server derives it from the drawing file.)
       `lines.${idx}.drawingFilePath`,
     ],
     setValueOptions: { shouldDirty: true },
@@ -1260,7 +1269,7 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
             partName: l.partName,
             ...(l.material ? { material: l.material } : {}),
             ...(l.drawingNo ? { drawingNo: l.drawingNo } : {}),
-            ...(l.revision ? { revision: l.revision } : {}),
+            revision: l.revision,
             ...(l.drawingFilePath ? { drawingFilePath: l.drawingFilePath } : {}),
             uom: l.uom,
             orderQty: l.orderQty,

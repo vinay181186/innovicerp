@@ -1312,7 +1312,11 @@ export const salesOrderLines = pgTable(
     partName: text('part_name').notNull(),
     material: text('material'),
     drawingNo: text('drawing_no'),
-    revision: text('revision'),
+    // The DRAWING FILE's revision number, owned by the server (migration 0112).
+    // Born at 0; +1 only when drawing_file_path actually changes. Every step is
+    // archived in so_line_drawing_revisions below. Was free text until 0112 —
+    // the only three values in the wild were '1', so the cast was lossless.
+    revision: integer('revision').notNull().default(0),
     drawingFilePath: text('drawing_file_path'),
     uom: uomEnum('uom').notNull().default('NOS'),
     orderQty: integer('order_qty').notNull(),
@@ -1362,6 +1366,63 @@ export const salesOrderLines = pgTable(
       for: 'all',
       to: 'authenticated',
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// Append-only drawing history for a sales-order line (migration 0112).
+//
+// One row per revision of that line's drawing FILE. Rev 0 is the drawing the
+// line was born with; every later row is a replacement or a removal. Rows are
+// never updated and never deleted — an old drawing stays reachable forever,
+// which is the whole point (the files themselves were never deleted either:
+// uploadFile timestamps every name and never upserts).
+//
+// drawingFilePath is null ONLY on an 'removed' row. drawingNo/itemCodeText are
+// snapshots taken at the moment of the change so the history still reads
+// correctly after the line is re-pointed at another item.
+//
+// Mirrors route_card_revisions / bom_master_revisions: parent carries the
+// current number, this table carries the trail.
+export const soLineDrawingRevisions = pgTable(
+  'so_line_drawing_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    salesOrderId: uuid('sales_order_id')
+      .notNull()
+      .references(() => salesOrders.id, { onDelete: 'cascade' }),
+    soLineId: uuid('so_line_id')
+      .notNull()
+      .references(() => salesOrderLines.id, { onDelete: 'cascade' }),
+    revisionNo: integer('revision_no').notNull(),
+    /** 'added' | 'replaced' | 'removed' — kept as text, not an enum: this is a
+     *  descriptive label, and a new kind of change should not need a migration
+     *  to the type graph. */
+    action: text('action').notNull(),
+    drawingFilePath: text('drawing_file_path'),
+    drawingNo: text('drawing_no'),
+    itemCodeText: text('item_code_text'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (t) => [
+    uniqueIndex('so_line_drawing_revisions_line_rev_uniq').on(t.soLineId, t.revisionNo),
+    index('so_line_drawing_revisions_so_idx').on(t.salesOrderId),
+    index('so_line_drawing_revisions_line_created_idx').on(t.soLineId, t.createdAt),
+    pgPolicy('so_line_drawing_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('so_line_drawing_revisions_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
   ],

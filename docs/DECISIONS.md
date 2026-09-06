@@ -7340,3 +7340,127 @@ Applied to the surfaces the user named: SO detail (per-line drawings + SO Docume
 - Negative: the modal holds an inline signed URL for up to 10 minutes; if the tab is left open and shared over the shoulder, the link is live for that window. Inherits the qc-docs bucket's coarse read policy either way (ADR-032).
 - Not changed here, deliberately: `items/components/drawing-upload-field.tsx`, `items/routes/detail.tsx`, `items/lib/print-drawing.ts` and `components/shared/qc-report-attach.tsx` still `window.open`. Out of the scope the user asked for; they are the natural next adopters.
 - Verification: typecheck + lint only (the api suite hits the shared prod DB).
+
+## ADR-143: The SO line's Rev is the drawing FILE's revision, server-owned, with an append-only history
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+A sales-order line carries a drawing file and a Rev. Since migration 0104 these two had nothing to do with each other: `sales_order_lines.revision` was `text`, optional, typed by hand, and `drawing_file_path` was a single slot that the next upload simply overwrote. Replacing a drawing left the number alone, and the drawing it replaced vanished from the record. Nobody could answer "which drawing did we actually ship IN-SO-00521 against in July".
+
+The user's requirement: *"rev field is compulsory. rev must start with 0. this field auto update as drawing file edits. i want drawing file revision wise history must maintain"*, and on being asked whose revision it is: *"this revision is of drawing file. we have to maintain drawing history of per so line wise drawing."*
+
+Three facts from the live database decided the shape:
+- Of 42 live SO lines, only 3 carried a Rev at all, and all three were the string `'1'`. The `text -> integer` cast is therefore lossless on real data, so a new parallel column was unnecessary.
+- 5 lines hold a drawing. Two of them have no Rev.
+- No drawing file has ever actually been deleted. `uploadFile` stamps `${Date.now()}-` on every name and passes `upsert: false`, so every superseded drawing is still sitting in the `qc-docs` bucket under `so-line-drawings/`. History was being lost at the *database* level only — the files were always there to point back at.
+
+A fourth fact made per-line history safe to build: SO lines are updated in place by `id` and soft-deleted when absent from a payload (`mergeLines`). Route-card ops, by contrast, are hard-deleted and re-inserted, which is precisely why `route_card_revisions` has to carry a jsonb snapshot of the whole op list. A drawing revision can safely hold a plain FK to its line.
+
+### Decision
+Rev belongs to the drawing file, and the server owns it.
+
+- `sales_order_lines.revision` becomes `integer NOT NULL DEFAULT 0` (migration 0112). A line is **born at Rev 0** — the same "born at zero, the first edit is what makes it Rev 1" rule already settled for route cards in ADR-0111/migration 0111.
+- The number climbs by exactly one when `drawing_file_path` *genuinely changes* between the stored value and the payload. An ordinary re-save that leaves the drawing alone bumps nothing and records nothing — the same `skipWhenUnchanged` discipline as `replaceRouteCardOps`, for the same reason: a revision log that counts saves instead of changes is noise.
+- Clearing a drawing **is** a change and does bump, recorded as `action: 'removed'` with a null path. Losing the drawing is exactly the kind of event this log exists to capture.
+- `revision` is removed from `salesOrderLineInputSchema` entirely. A client that could send a number could rewrite history, so the client does not get to send one. The Rev cell on the SO form becomes a read-only display.
+- New append-only `so_line_drawing_revisions` — one row per revision, holding the path it pointed at plus `drawing_no` and `item_code_text` **snapshotted at the moment of the change**, so the trail still reads correctly after a line is re-pointed at another item. Written inside the same transaction as the SO save.
+- Read back through `GET /sales-orders/:id/drawing-history`, surfaced as a 📐 Drawing History tab in the SO detail Related Documents card: item-code chips as a second tab level, then that line's revisions newest-first, each with a 👁 that opens the stored file in the ADR-142 preview modal.
+
+Seeding: every line that already holds a drawing gets ONE row, at the number it currently carries (0 for the two with no Rev, 1 for the three that had `'1'`), stamped with that line's own creator and creation time. The drawings that came before cannot be invented, so the trail starts where the record actually starts.
+
+### Alternatives Considered
+- **Keep `revision` as free text and add a separate integer `drawing_rev`** — rejected: two Rev columns on one line, and the user asked for *the* Rev field to behave this way, not for a second one beside it.
+- **Letters, matching `items.revision` (`text NOT NULL DEFAULT 'A'`)** — rejected: the user said "rev must start with 0", and integers are what the two existing revision logs in this codebase use. Item Master's letters are left alone; that is a different revision of a different thing and was not in scope.
+- **A jsonb snapshot per revision, mirroring `route_card_revisions` exactly** — rejected as over-built here. That table snapshots because its children are hard-deleted; SO lines survive, so a FK plus the two snapshotted display fields is enough.
+- **Bump the Rev on any SO line save** — rejected: the number would then measure how often someone opened the form, not how many drawings there have been.
+- **Backfill a plausible history from the storage bucket's timestamped file names** — rejected: the bucket holds every old file, but nothing ties a superseded file back to the line it belonged to. Inventing that mapping would put fiction in an audit trail.
+
+### Consequences
+- Positive: the drawing a line shipped against is now answerable for every future change, and the old file stays one click away.
+- Positive: `revision` being `NOT NULL DEFAULT 0` means the SO form's Rev column can never be blank again, which is what "compulsory" actually needed.
+- Negative: history before 2026-09-06 does not exist and cannot be reconstructed. The five lines with drawings each start with a single seeded row.
+- Negative: three lines are seeded at Rev 1 rather than 0 — they keep the number a human typed. Their next drawing change takes them to 2.
+- Not changed here, deliberately: Job Cards and JWSO lines also carry a single drawing slot with no history, and `items.revision` is still a letter. The user scoped this request to SO lines; those are the natural next adopters and would each need their own decision about whether Rev means the same thing.
+- Found while building this: clearing a drawing had NEVER persisted. The SO form sent `drawingFilePath: l.drawingFilePath || undefined`, `JSON.stringify` drops undefined keys, so the payload simply omitted the field and `mergeLines`' `!== undefined` guard left the stored path alone — the ✕ button appeared to work and the drawing came back on reload. Fixed as part of this change: the input schema takes `.nullable()` and the form posts an explicit `null`. Absent now means "the payload does not mention the drawing"; null means "the user cleared it". Without this the 'removed' revision could never have fired.
+- Verification: typecheck + lint on all three packages, web build. The api suite is not runnable here (it seeds and deletes on the shared prod DB). Migration 0112 applied 2026-09-06 and verified against live data: the column is `integer NOT NULL DEFAULT 0`, 39 lines sit at Rev 0 and 3 at Rev 1, and the 5 lines holding a drawing each seeded exactly one `added` row.
+
+## ADR-144: The OSP challan says how many pieces may go out while the qty is being typed, not after Save
+
+**Date:** 2026-09-06
+**Status:** Accepted
+
+### Context
+
+Raising an outward OSP challan (`/delivery-challans/new`) capped its "Send Now"
+box at the PO line quantity. That is not the number that governs. What may
+actually leave the factory is what ADR-078 / ADR-081 enforce at write time:
+
+    sendable = upstream cleared − finished in-house here − already with the vendor
+
+…further capped, on a gated JWSO job card, by the client material issued
+(ADR-103), and separately by what earlier challans already shipped on the line.
+
+So the form accepted 5 pcs against a PO line of 71, the user pressed Save, and
+met a red banner: "Cannot outsource 5 pcs — only 1 available on this operation
+(upstream cleared 11, done in-house 0, already sent 10)." Correct, and useless
+at that moment — the form had invited the number it then refused. Live data at
+the time of writing: IN-PO-00005 / ITM-001, PO qty 71, of which exactly 1 pc
+could go out.
+
+### Decision
+
+Ask the same question before the first keystroke.
+
+1. `applyOutwardToJcOp`'s arithmetic moved into `loadOutwardSendable(tx,
+   companyId, poLineId)` in `delivery-challans/cascades.ts`, plus
+   `outwardCapRefusal` / `jobWorkUnlinkedRefusal` for the wording. The guard
+   now calls the helper instead of computing inline — the behaviour at Save is
+   byte-for-byte what it was.
+2. New read-only endpoint `GET /delivery-challans/sendable/:poId`
+   (`service.getSendableForPo`, gated on `ospdc_create` **view**) returns, per
+   PO line, `maxSendNow` + a plain-English `limitReason` + `limitKind`
+   (`po_qty` | `po_balance` | `operation` | `material` | `not_linked`).
+3. The create form shows "Can send now: N" under every qty box — amber when the
+   shop floor allows less than the PO line — and, the moment a larger number is
+   typed, a full-width sentence under that row saying what will be taken and
+   why. Save stays disabled while any such warning is showing.
+4. The unrelated over-ship refusal on the same screen ("PO line
+   `<uuid>` has N pcs remaining") now names the line number and item code.
+
+The cap is computed server-side and phrased server-side. The form renders a
+sentence it did not write, so the two can never disagree about the same limit.
+
+### Alternatives Considered
+
+- **Client-side check against `v_osp_wip.ready_to_send_qty`** (ADR-141) —
+  rejected: that view deliberately omits the client-material gate and covers
+  only `op_type='outsource'` rows, so it can offer a quantity the challan then
+  refuses. It is a planning indicator; the write path is the authority.
+- **Just soften the save-time message** — rejected: the complaint is the
+  timing, not the words. Being told after the fact that the form misled you is
+  not an improvement on being told politely.
+- **Clamp the input to the maximum** (what the older JW-DC outward modal does)
+  — rejected: silently rewriting a typed number teaches nothing. The user asked
+  for 5 because they believed 5 were there; they need to know where the other 4
+  went, not watch the digit change.
+
+### Consequences
+
+- Positive: the impossible quantity is now unreachable from the form, and the
+  reason arrives with the allowance rather than after a round trip.
+- Positive: one arithmetic, two callers. A future change to the sending rules
+  updates the form's warning automatically.
+- Negative: one extra request when the form opens, and it is never cached
+  (`staleTime: 0`) — a stale allowance would green-light a qty that has since
+  gone to someone else, which is worse than showing none.
+- Negative: the preview cannot be authoritative. Between the read and the Save
+  another challan may consume the balance, so the server guard stays exactly
+  where it was and can still refuse.
+- Not changed here, deliberately: the older JW-DC outward modal
+  (`jw-dc/routes/list.tsx` → `POST /jw-dc/outward`) computes `available` as
+  PO qty − already sent and **never calls the ADR-078 guard at all**, so it can
+  still send more than the shop floor has cleared. That is a write-path hole,
+  not a message problem, and needs its own decision.
+- Verification: `pnpm -r typecheck` + eslint + prettier. The api suite is not
+  runnable here (it seeds and deletes on the shared prod DB).
