@@ -15,6 +15,25 @@
 // WHY no "Gen GRN": receiving the outward challan is what books the GRN, so one
 // link covers both. GRN also sits in the Store department, which shop-floor
 // users rarely hold — one link, one department.
+//
+// THE RULE every control in this file obeys: a button appears only when its
+// action can be PERFORMED RIGHT NOW. Not "is this the next step in theory" —
+// is there work behind it this minute. So each one is gated on a QUANTITY or an
+// ID, never on a status alone, and each mirrors the server's own refusal:
+//
+//   ▶ Start / ✚ Log   available > 0        (startOp / submitOpLog refuse at 0)
+//   🔬 QC / 📋 TPI     qcPending > 0        (nothing waiting to be inspected)
+//   ⚠ NC              qcRejectedQty > 0    (nothing was rejected)
+//   🚚 Gen DC         readyToSendQty > 0   (nothing cleared to send)
+//   📥 Receive        an open challan exists
+//   🔬 Incoming QC    inQcQty > 0          (nothing back awaiting inspection)
+//   🧾 Gen PO         a PR exists with no PO raised from it
+//
+// An op whose upstream has cleared nothing therefore shows NO action strip at
+// all — IN-JC-26-00013 op 3 (TPI, `waiting`, input 0) used to offer a TPI link
+// that could do nothing, because op 2 still has every piece at the vendor.
+// A control the user cannot act on is worse than no control: it reads as work
+// available and costs a page load to discover it is not.
 import type {
   JcOpEnriched,
   JcOpsBoardRow,
@@ -258,10 +277,27 @@ export function JcOpFooter({
   // so the button is correctly invisible everywhere right now.)
   const showNc = isQc && op.qcRejectedQty > 0 && effectiveFormPerms(eff, 'nc_dispose').entry;
 
+  // A button only appears when the action behind it can actually be PERFORMED
+  // right now. `available` is the op's workable qty (upstream cleared − already
+  // done), so `available === 0` means the previous operation has not cleared
+  // anything into this one and the shop floor has nothing to do here yet.
+  //
+  // Both of these mirror the server's own refusals exactly, so the button can
+  // no longer be the "button that only fails on click":
+  //   startOp      → "No qty available to start for this operation" when
+  //                  available <= 0 (op-entry/service.ts).
+  //   submitOpLog  → the same availability check, plus a refusal while the op
+  //                  is `qc_pending` ("waiting for QC clearance — go to QC
+  //                  dashboard"), which is why Log drops out in that state too.
+  //
+  // IN-JC-26-00013 op 3 is the case that prompted this: `waiting`, input 0, so
+  // every control on it was an invitation the server would reject.
   const showLog =
     !isOut &&
     !isQc &&
     canOpEntry &&
+    op.available > 0 &&
+    op.computedStatus !== 'qc_pending' &&
     (op.computedStatus === 'in_progress' ||
       op.computedStatus === 'running' ||
       op.completedQty > 0);
@@ -269,11 +305,18 @@ export function JcOpFooter({
     !isQc &&
     !isOut &&
     canOpEntry &&
+    op.available > 0 &&
     (op.computedStatus === 'available' || op.computedStatus === 'waiting');
   const showDone = !isOut && !isQc && op.computedStatus === 'complete';
   // A third-party-inspection op is an ordinary QC op whose operation name says
   // TPI (e.g. "TPI Final Inspection") — the routing carries no separate flag.
-  const isTpi = isQc && op.operation.toLowerCase().includes('tpi');
+  //
+  // `qcPending > 0` for the same reason as the 🔬 QC button beside it: with
+  // nothing waiting to be inspected there is no inspection to open. Six of the
+  // seven TPI ops in the live data are `waiting` with input 0 — including
+  // IN-JC-26-00013 op 3, whose upstream op 2 still has all 20 pcs at the
+  // vendor. Only IN-JC-26-00011 op 2 (qc_pending 4) has real TPI work.
+  const isTpi = isQc && op.qcPending > 0 && op.operation.toLowerCase().includes('tpi');
   const showQcBtn = isQc && op.qcPending > 0 && canQc;
   // The QC branch's plain text ("✓ QC Done" / "Waiting") only ever showed when
   // nothing was pending, exactly as before.
