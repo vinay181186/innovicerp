@@ -65,9 +65,11 @@ function sendNowIssue(
   if (qty <= max) return null;
   const pcs = max === 1 ? 'pc' : 'pcs';
   const head =
-    max === 0
-      ? 'Nothing can go out on this line yet.'
-      : `Only ${max} ${pcs} can go out right now — you have typed ${qty}.`;
+    max > 0
+      ? `Only ${max} ${pcs} can go out right now — you have typed ${qty}.`
+      : cap?.limitKind === 'fully_sent'
+        ? 'This purchase order line has already been fully sent.'
+        : 'Nothing can go out on this line yet.';
   return cap?.limitReason
     ? `${head} ${cap.limitReason}`
     : `${head} This purchase order line is for ${poLineQty} pcs.`;
@@ -365,6 +367,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                 // loud, since there is no quantity the user could type that
                 // would produce the explanation.
                 const blocked = max === 0 && Boolean(cap?.limitReason);
+                // A finished line is not a problem to be flagged — it is the
+                // job done. Amber here would train the user to ignore amber.
+                const done = cap?.limitKind === 'fully_sent';
                 return (
                   <Fragment key={l.purchaseOrderLineId}>
                     <tr>
@@ -406,10 +411,20 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                             style={{
                               fontSize: 10,
                               marginTop: 3,
-                              color: max < l.poLineQty ? 'var(--amber)' : 'var(--text3)',
+                              color: done
+                                ? 'var(--green)'
+                                : max < l.poLineQty
+                                  ? 'var(--amber)'
+                                  : 'var(--text3)',
                             }}
                           >
-                            Can send now: <b className="mono">{max}</b>
+                            {done ? (
+                              <b>&#10003; Fully sent</b>
+                            ) : (
+                              <>
+                                Can send now: <b className="mono">{max}</b>
+                              </>
+                            )}
                           </div>
                         ) : null}
                       </td>
@@ -459,16 +474,25 @@ function DeliveryChallanNewPage(): React.JSX.Element {
                         <td colSpan={7} style={{ padding: '0 8px 8px' }}>
                           <div
                             style={{
-                              color: issue ? 'var(--red)' : 'var(--amber)',
-                              background: issue ? 'var(--red3)' : 'var(--amber3)',
-                              border: `1px solid ${issue ? 'var(--red)' : 'var(--amber)'}`,
+                              color: issue ? 'var(--red)' : done ? 'var(--text2)' : 'var(--amber)',
+                              background: issue
+                                ? 'var(--red3)'
+                                : done
+                                  ? 'var(--bg3)'
+                                  : 'var(--amber3)',
+                              border: `1px solid ${
+                                issue ? 'var(--red)' : done ? 'var(--border)' : 'var(--amber)'
+                              }`,
                               borderRadius: 6,
                               padding: '6px 10px',
                               fontSize: 12,
                               lineHeight: 1.5,
                             }}
                           >
-                            {issue ?? `Nothing can go out on this line yet. ${cap?.limitReason}`}
+                            {issue ??
+                              (done
+                                ? cap?.limitReason
+                                : `Nothing can go out on this line yet. ${cap?.limitReason}`)}
                           </div>
                         </td>
                       </tr>

@@ -253,7 +253,20 @@ export const dcSendableLimitKindSchema = z.enum([
   'po_qty',
   /** Earlier challans have already shipped part of this PO line. */
   'po_balance',
-  /** The job-card operation behind the line has not cleared that many yet. */
+  /** Every piece on the line has gone out. Not a warning: the line is DONE,
+   *  and the screen colours it calmly rather than in alarm. */
+  'fully_sent',
+  /** The operation behind the line has received nothing yet — the operation
+   *  before it has not cleared a single piece. */
+  'not_started',
+  /** Everything the operation has received is already at the vendor. Waiting
+   *  on the operation before it, not on anything the user can do here. */
+  'at_vendor',
+  /** The balance was finished IN-HOUSE on this operation (ADR-081 dual lane),
+   *  so there is nothing left to outsource. */
+  'done_in_house',
+  /** The job-card operation behind the line has not cleared that many yet —
+   *  the general case, when none of the sharper ones above fits. */
   'operation',
   /** A JWSO job card still waiting on the client's material. */
   'material',

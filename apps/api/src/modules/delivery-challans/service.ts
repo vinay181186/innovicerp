@@ -422,6 +422,12 @@ export async function getDeliveryChallan(
 // loadOutwardSendable — the same helper the save-time guard uses — so the form
 // and the challan can never disagree.
 
+/** "1 pc" / "2 pcs" — a message that says "1 pcs" reads as a bug in the app
+ *  and costs the sentence its authority. */
+function pcs(n: number): string {
+  return n === 1 ? '1 pc' : `${n} pcs`;
+}
+
 export async function getSendableForPo(
   purchaseOrderId: string,
   user: AuthContext,
@@ -471,15 +477,24 @@ export async function getSendableForPo(
         continue;
       }
 
+      // Said the same way whether or not an operation stands behind the line:
+      // when the purchase order line is exhausted, that IS the answer, and no
+      // amount of shop-floor detail changes it.
+      const fullySent = poQty > 0 && poBalance === 0;
+      const fullySentReason =
+        `All ${pcs(poQty)} on this purchase order line have already gone out on ` +
+        `earlier challans. There is nothing left to send on it.`;
+
       // A buying PO: the PO line is the whole story.
       if (s.kind === 'unlinked') {
         lines.push({
           purchaseOrderLineId: l.id,
           maxSendNow: poBalance,
-          limitKind: sentOnDcs > 0 ? 'po_balance' : 'po_qty',
-          limitReason:
-            sentOnDcs > 0
-              ? `Earlier challans have already sent ${sentOnDcs} of the ${poQty} pcs on this PO line, so ${poBalance} are left.`
+          limitKind: fullySent ? 'fully_sent' : sentOnDcs > 0 ? 'po_balance' : 'po_qty',
+          limitReason: fullySent
+            ? fullySentReason
+            : sentOnDcs > 0
+              ? `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this purchase order line, so ${poBalance} are left.`
               : null,
           jobCardCode: null,
           opSeq: null,
@@ -490,28 +505,61 @@ export async function getSendableForPo(
       const opAllowed = Math.max(0, s.effectiveSendable);
       const maxSendNow = Math.min(poBalance, opAllowed);
       const where = `Job card ${s.jcCode} operation ${s.op.opSeq}`;
-      const pcs = maxSendNow === 1 ? 'pc' : 'pcs';
+      // The same phrase for mid-sentence use. Written out rather than
+      // where.toLowerCase() — that lowercased the job card CODE too, turning
+      // IN-JC-26-00010 into "in-jc-26-00010", which is not its name and is not
+      // what anyone would search for.
+      const whereMid = `job card ${s.jcCode} operation ${s.op.opSeq}`;
 
-      // Which of the three limits is actually doing the stopping decides what
-      // the user is told, because each one has a different way out: finish the
-      // upstream operation, issue the client's material, or raise another PO.
+      // Which limit is actually doing the stopping decides what the user is
+      // told, because each one has a different way out — finish the operation
+      // before this one, issue the client's material, raise another PO, or
+      // nothing at all because the line is already complete. One generic
+      // "not available" sentence for all of them would be true and useless.
       let limitKind: DcSendableLine['limitKind'] = 'po_qty';
       let limitReason: string | null = null;
-      if (opAllowed <= poBalance && s.cap && s.effectiveSendable < s.sendable) {
+
+      const materialBinding = Boolean(s.cap) && s.effectiveSendable < s.sendable;
+      const opBinding = opAllowed <= poBalance;
+
+      if (fullySent) {
+        limitKind = 'fully_sent';
+        limitReason = fullySentReason;
+      } else if (opBinding && materialBinding && s.cap) {
         limitKind = 'material';
         limitReason =
-          `${where} is waiting on the client's material — only ${maxSendNow} ${pcs} can go out. ` +
+          `${where} is waiting on the client's material — ` +
+          `${maxSendNow === 0 ? 'nothing can go out yet' : `only ${pcs(maxSendNow)} can go out`}. ` +
           `JWSO ${s.cap.jwCode}: ${s.cap.received} of ${s.cap.orderQty} ` +
           `${s.cap.issuedBased ? 'issued to this job card' : 'received for this part'}.`;
-      } else if (opAllowed <= poBalance) {
+      } else if (opBinding && maxSendNow === 0 && s.inputAvail === 0) {
+        // Nothing has reached the operation at all. Naming the previous
+        // operation as the thing to chase is the only useful instruction here.
+        limitKind = 'not_started';
+        limitReason =
+          `${where} has not received any pieces yet — the operation before it has not ` +
+          `cleared any. Nothing can go out until it does.`;
+      } else if (opBinding && maxSendNow === 0 && s.inHouseCompleted > 0) {
+        // ADR-081 dual lane: the balance went down the in-house lane instead.
+        limitKind = 'done_in_house';
+        limitReason =
+          `Of the ${pcs(s.inputAvail)} ${whereMid} has received, ` +
+          `${s.inHouseCompleted} finished in-house and ${s.alreadySent} already went to the ` +
+          `vendor — none are left to send out.`;
+      } else if (opBinding && maxSendNow === 0 && s.alreadySent > 0) {
+        limitKind = 'at_vendor';
+        limitReason =
+          `All ${pcs(s.alreadySent)} that ${whereMid} has received are already ` +
+          `with the vendor. More can go out only as the operation before it clears more.`;
+      } else if (opBinding) {
         limitKind = 'operation';
         limitReason =
-          `${where} has only ${maxSendNow} ${pcs} ready to send — the previous operation has ` +
-          `cleared ${s.inputAvail}, ${s.inHouseCompleted} were finished in-house here, and ` +
-          `${s.alreadySent} are already with the vendor.`;
+          `${where} has only ${pcs(maxSendNow)} ready to send — the operation before it has ` +
+          `cleared ${s.inputAvail}, ${s.inHouseCompleted} finished in-house here, and ` +
+          `${s.alreadySent} already went to the vendor.`;
       } else if (sentOnDcs > 0) {
         limitKind = 'po_balance';
-        limitReason = `Earlier challans have already sent ${sentOnDcs} of the ${poQty} pcs on this PO line, so ${poBalance} are left.`;
+        limitReason = `Earlier challans have already sent ${sentOnDcs} of the ${pcs(poQty)} on this purchase order line, so ${poBalance} are left.`;
       }
 
       lines.push({
