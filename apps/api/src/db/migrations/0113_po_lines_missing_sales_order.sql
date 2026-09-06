@@ -36,6 +36,11 @@
 -- Nothing else on the row is touched — not qty, not rate, not received_qty.
 -- updated_at is deliberately left alone: this corrects what the row always
 -- meant rather than recording a change the user made.
+--
+-- The two UPDATEs are separated by a `--> statement-breakpoint` marker because
+-- that -- not the semicolon -- is what src/db/apply-sql.ts splits on. Without
+-- it the whole file is handed to the driver as a single string, which is how
+-- the first attempt at this migration ran and changed nothing.
 -- ============================================================
 
 -- 1) Through the purchase request.
@@ -48,6 +53,8 @@ UPDATE public.purchase_order_lines pol
    AND pol.source_so_line_id IS NULL
    AND pol.deleted_at IS NULL
    AND pr.deleted_at IS NULL;
+
+--> statement-breakpoint
 
 -- 2) Through the job-card operation, for anything step 1 could not reach.
 UPDATE public.purchase_order_lines pol
